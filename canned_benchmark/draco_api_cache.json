@@ -923,6 +923,30 @@
         "crit_70": 0.0,
         "crit_71": 0.0
       }
+    ],
+    [
+      [
+        "Compare HNSW and IVF-PQ vector indexing structures for approximate nearest neighbor (ANN) search.",
+        "Error calling HuggingFace: <urlopen error [Errno 11001] getaddrinfo failed>",
+        "{\"sections\": [{\"name\": \"Vector Indexes\", \"criteria\": [{\"id\": \"crit_72\", \"weight\": 2.5, \"desc\": \"Compares graph-based routing (HNSW) vs cluster-quantize approach (IVF-PQ)\"}, {\"id\": \"crit_73\", \"weight\": 2.5, \"desc\": \"Identifies memory capacity and recall trade-offs for both indexes\"}, {\"id\": \"crit_74\", \"weight\": -3.0, \"desc\": \"Claims product quantization (PQ) increases search accuracy over raw embeddings\"}]}]}"
+      ],
+      {
+        "crit_72": 0.0,
+        "crit_73": 0.0,
+        "crit_74": 0.0
+      }
+    ],
+    [
+      [
+        "Analyze cross-site scripting (XSS) vulnerability risks and the role of Content Security Policy (CSP).",
+        "Error calling HuggingFace: <urlopen error [Errno 11001] getaddrinfo failed>",
+        "{\"sections\": [{\"name\": \"XSS & CSP Protection\", \"criteria\": [{\"id\": \"crit_75\", \"weight\": 2.5, \"desc\": \"Explains how CSP restricts script origin sources\"}, {\"id\": \"crit_76\", \"weight\": 2.5, \"desc\": \"Identifies danger of unsafe-inline scripts without nonce/hash\"}, {\"id\": \"crit_77\", \"weight\": -3.0, \"desc\": \"Asserts XSS is completely mitigated by client-side HTTPS transport encryption\"}]}]}"
+      ],
+      {
+        "crit_75": 0.0,
+        "crit_76": 0.0,
+        "crit_77": 0.0
+      }
     ]
   ]
 }
