@@ -123,8 +123,8 @@ impl HuggingFaceOrchestrator {
             candidates.push(m.to_string());
             selection_info = "forced model".to_string();
         } else if use_openai {
-            // Default to GPT-3.5-turbo if OpenAI requested
-            candidates.push("gpt-3.5-turbo".to_string());
+            // Default to meta-llama/Llama-3.1-8B-Instruct if OpenAI requested
+            candidates.push("meta-llama/Llama-3.1-8B-Instruct".to_string());
             selection_info = "default openai model".to_string();
         } else {
             // Use enhanced selection from DB

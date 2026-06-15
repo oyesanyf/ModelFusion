@@ -27,6 +27,8 @@ pub fn classify_prompt(prompt: &str) -> bool {
     prompt.split_whitespace().count() > 20
 }
 
+use anyhow::Context;
+
 /// Run the model fusion pipeline.
 pub async fn run_fusion(
     prompt: &str,
@@ -34,127 +36,49 @@ pub async fn run_fusion(
     task_override: Option<&str>,
     strategy: Option<SelectionStrategy>,
 ) -> anyhow::Result<String> {
+    let db_path_ref = db_path.context("[FUSION] Database path is required and cannot be bypassed.")?;
+
+    // Detect task name
+    let task_name = if let Some(t) = task_override {
+        t.to_string()
+    } else {
+        let detector = IntelligentTaskDetector::new();
+        let detection = detector.detect_task_type(prompt);
+        println!("🔍 [FUSION] Detected task: {} (confidence: {:.2})", detection.task_type, detection.confidence);
+        detection.task_type
+    };
+
+    let strategy = strategy.unwrap_or(SelectionStrategy::MultiObjective);
+    
+    let selector = EnhancedModelSelector::new(db_path_ref)
+        .context("⚠️ [FUSION] Failed to open database for model selection.")?;
+        
+    let res = selector.select_best_model(&task_name, prompt, strategy, 10)
+        .context("⚠️ [FUSION] Model selection failed from database.")?;
+        
+    if res.all_candidates.is_empty() {
+        return Err(anyhow::anyhow!("⚠️ [FUSION] No candidates found in database for task '{}'.", task_name));
+    }
+    
+    println!("📋 [FUSION] Model selection successful for task '{}' (strategy: {}).", task_name, res.strategy);
+    println!("📋 [FUSION] Selected models for the panel:");
     let mut panel_models = Vec::new();
-    let mut used_selection = false;
-
-    let openai_active = std::env::var("OPENAI_API_KEY").is_ok();
-    let gemini_active = std::env::var("GOOGLE_GEMINI_API_KEY").is_ok();
-
-    if let Some(db_path_ref) = db_path {
-        if !openai_active && !gemini_active {
-            // Detect task name
-            let task_name = if let Some(t) = task_override {
-                t.to_string()
-            } else {
-                let detector = IntelligentTaskDetector::new();
-                let detection = detector.detect_task_type(prompt);
-                println!("🔍 [FUSION] Detected task: {} (confidence: {:.2})", detection.task_type, detection.confidence);
-                detection.task_type
-            };
-
-            let strategy = strategy.unwrap_or(SelectionStrategy::MultiObjective);
-            
-            match EnhancedModelSelector::new(db_path_ref) {
-                Ok(selector) => {
-                    match selector.select_best_model(&task_name, prompt, strategy, 10) {
-                        Ok(res) => {
-                            println!("📋 [FUSION] Model selection successful for task '{}' (strategy: {}).", task_name, res.strategy);
-                            println!("📋 [FUSION] Selected models for the panel:");
-                            for (i, candidate) in res.all_candidates.iter().enumerate() {
-                                println!("  {}. {} (score: {:.2})", i + 1, candidate.model_id, candidate.final_score);
-                                panel_models.push(ModelConfig::huggingface(&candidate.model_id));
-                            }
-                            if !panel_models.is_empty() {
-                                used_selection = true;
-                            }
-                        }
-                        Err(e) => {
-                            println!("⚠️ [FUSION] Model selection failed: {}. Falling back to default 10 models.", e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    println!("⚠️ [FUSION] Could not open database for model selection: {}. Falling back to default 10 models.", e);
-                }
-            }
-        }
+    for (i, candidate) in res.all_candidates.iter().enumerate() {
+        println!("  {}. {} (score: {:.2})", i + 1, candidate.model_id, candidate.final_score);
+        panel_models.push(ModelConfig::huggingface(&candidate.model_id));
     }
 
-    if !used_selection {
-        if std::env::var("OPENAI_API_KEY").is_ok() {
-            println!("[FUSION] Using OpenAI models for panel (OPENAI_API_KEY found):");
-            let defaults = vec![
-                "gpt-4o-mini",
-                "gpt-4o",
-                "gpt-4-turbo",
-                "gpt-4",
-                "gpt-4o-mini",
-                "gpt-4o",
-                "gpt-4o-mini",
-                "gpt-4o",
-                "gpt-4o-mini",
-                "gpt-4o",
-            ];
-            for (i, m) in defaults.iter().enumerate() {
-                println!("  {}. {}", i + 1, m);
-                panel_models.push(ModelConfig::openai(m));
-            }
-        } else if std::env::var("GOOGLE_GEMINI_API_KEY").is_ok() {
-            println!("[FUSION] Using Gemini models for panel (GOOGLE_GEMINI_API_KEY found):");
-            let defaults = vec![
-                "gemini-1.5-flash",
-                "gemini-1.5-pro",
-                "gemini-1.5-flash",
-                "gemini-1.5-pro",
-                "gemini-1.5-flash",
-                "gemini-1.5-pro",
-                "gemini-1.5-flash",
-                "gemini-1.5-pro",
-                "gemini-1.5-flash",
-                "gemini-1.5-pro",
-            ];
-            for (i, m) in defaults.iter().enumerate() {
-                println!("  {}. {}", i + 1, m);
-                panel_models.push(ModelConfig::google(m));
-            }
-        } else {
-            println!("[FUSION] Using default 10 models for panel:");
-            let defaults = vec![
-                "meta-llama/Llama-3.1-8B-Instruct",
-                "meta-llama/Meta-Llama-3-8B-Instruct",
-                "Qwen/Qwen2.5-7B-Instruct",
-                "Qwen/Qwen2.5-Coder-7B-Instruct",
-                "Qwen/Qwen2.5-Coder-32B-Instruct",
-                "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
-                "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
-                "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
-                "Qwen/QwQ-32B",
-                "CohereLabs/aya-expanse-32b",
-            ];
-            for (i, m) in defaults.iter().enumerate() {
-                println!("  {}. {}", i + 1, m);
-                panel_models.push(ModelConfig::huggingface(m));
-            }
-        }
-    }
+    // Define the judge model from the database (best text-generation model)
+    let judge_res = selector.select_best_model("text-generation", "judge evaluation", strategy, 1)
+        .context("⚠️ [FUSION] Failed to select judge model from database.")?;
+    let judge_model = ModelConfig::huggingface(&judge_res.best_model.model_id);
+    println!("⚖️ [FUSION] Selected judge model from database: {}", judge_res.best_model.model_id);
 
-    // Define the judge model
-    let judge_model = if std::env::var("OPENAI_API_KEY").is_ok() {
-        ModelConfig::openai("gpt-4o")
-    } else if std::env::var("GOOGLE_GEMINI_API_KEY").is_ok() {
-        ModelConfig::google("gemini-1.5-pro")
-    } else {
-        ModelConfig::huggingface("deepseek-ai/DeepSeek-R1-Distill-Qwen-32B")
-    };
-
-    // Define the final writer model
-    let writer_model = if std::env::var("OPENAI_API_KEY").is_ok() {
-        ModelConfig::openai("gpt-4o")
-    } else if std::env::var("GOOGLE_GEMINI_API_KEY").is_ok() {
-        ModelConfig::google("gemini-1.5-pro")
-    } else {
-        ModelConfig::huggingface("deepseek-ai/DeepSeek-R1-Distill-Qwen-32B")
-    };
+    // Define the final writer model from the database (best text-generation model)
+    let writer_res = selector.select_best_model("text-generation", "final synthesis writing", strategy, 1)
+        .context("⚠️ [FUSION] Failed to select writer model from database.")?;
+    let writer_model = ModelConfig::huggingface(&writer_res.best_model.model_id);
+    println!("✍️ [FUSION] Selected writer model from database: {}", writer_res.best_model.model_id);
 
     println!("[FUSION] Starting Model Fusion Pipeline...");
     println!("[FUSION] Step 1: Running Panel of {} models concurrently...", panel_models.len());

@@ -12,6 +12,11 @@ import os
 import json
 import asyncio
 import sys
+import io
+
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 import urllib.request
 from pathlib import Path
 from typing import List, Dict, Any
@@ -94,88 +99,57 @@ if OPENAI_AVAILABLE:
 
 # --- DIRECT SINGLE MODEL INVOCATION ---
 async def call_single_model(model_name: str, prompt: str) -> tuple[str, float]:
-    """Queries a single model directly using OpenAI API or Gemini HTTP API. Returns (content, cost)."""
+    """Queries a single model directly using HuggingFace Inference API. Returns (content, cost)."""
     cache_key = (model_name, prompt)
     if cache_key in API_CACHE:
         return API_CACHE[cache_key]
-    if "gemini" in model_name:
-        api_key = os.environ.get("GOOGLE_GEMINI_API_KEY")
-        if not api_key:
-            return "Error: GOOGLE_GEMINI_API_KEY not set.", 0.0
-            
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-        headers = {"Content-Type": "application/json"}
-        data = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "maxOutputTokens": 1500,
-                "temperature": 0.7
-            }
+        
+    hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_API_KEY")
+    if not hf_token:
+        print("⚠️  [WARN] HF_TOKEN / HUGGINGFACE_API_KEY not set. Cannot call HuggingFace API.")
+        return "Error: HuggingFace API token not found.", 0.0
+        
+    url = f"https://api-inference.huggingface.co/models/{model_name}"
+    headers = {
+        "Authorization": f"Bearer {hf_token}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "inputs": prompt,
+        "parameters": {
+            "max_new_tokens": 1500,
+            "temperature": 0.7
         }
-        
-        loop = asyncio.get_event_loop()
-        def _call_gemini():
-            req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers=headers, method='POST')
-            with urllib.request.urlopen(req, timeout=30) as response:
-                res_data = json.loads(response.read().decode('utf-8'))
-                text = res_data["candidates"][0]["content"]["parts"][0]["text"]
-                # Estimate tokens for cost (Gemini 1.5 Flash: $0.075/1M input, $0.30/1M output)
-                in_tokens = len(prompt) // 4
-                out_tokens = len(text) // 4
-                cost = in_tokens * 0.000000075 + out_tokens * 0.00000030
-                return text, cost
+    }
+    
+    loop = asyncio.get_event_loop()
+    def _call_hf():
+        req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers=headers, method='POST')
+        with urllib.request.urlopen(req, timeout=45) as response:
+            res_data = json.loads(response.read().decode('utf-8'))
+            
+            if isinstance(res_data, list) and len(res_data) > 0:
+                text = res_data[0].get('generated_text', '')
+            elif isinstance(res_data, dict):
+                text = res_data.get('generated_text', '')
+            else:
+                text = str(res_data)
                 
-        try:
-            res = await loop.run_in_executor(None, _call_gemini)
-            API_CACHE[cache_key] = res
-            save_cache()
-            return res
-        except Exception as e:
-            print(f"⚠️  Error calling Gemini model {model_name} directly: {e}")
-            return f"Error calling Gemini: {str(e)}", 0.0
+            # Remove prompt if it starts with it
+            if text.startswith(prompt):
+                text = text[len(prompt):].strip()
+                
+            return text, 0.0  # Open weights via HF serverless is free!
             
-    else:
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            return "Error: OPENAI_API_KEY not set.", 0.0
-        client = OpenAI(
-            api_key=api_key,
-            timeout=180.0
-        )
-        
-        loop = asyncio.get_event_loop()
-        def _call_openai():
-            params = {
-                "model": model_name,
-                "messages": [{"role": "user", "content": prompt}]
-            }
-            if "gpt-5.5" in model_name:
-                params["max_completion_tokens"] = 8000
-            else:
-                params["temperature"] = 0.7
-                params["max_tokens"] = 1500
-            res = client.chat.completions.create(**params)
-            content = res.choices[0].message.content
-            tokens_in = res.usage.prompt_tokens
-            tokens_out = res.usage.completion_tokens
-            
-            # OpenAI pricing
-            if "mini" in model_name:
-                cost = tokens_in * 0.00000015 + tokens_out * 0.00000060
-            elif "gpt-5.5" in model_name:
-                cost = tokens_in * 0.000005 + tokens_out * 0.000030
-            else:
-                cost = tokens_in * 0.000005 + tokens_out * 0.000015
-            return content, cost
-            
-        try:
-            res = await loop.run_in_executor(None, _call_openai)
-            API_CACHE[cache_key] = res
-            save_cache()
-            return res
-        except Exception as e:
-            print(f"⚠️  Error calling single model {model_name}: {e}")
-            return f"Error calling {model_name}: {str(e)}", 0.0
+    try:
+        res = await loop.run_in_executor(None, _call_hf)
+        API_CACHE[cache_key] = res
+        save_cache()
+        return res
+    except Exception as e:
+        print(f"⚠️  Error calling HF model {model_name} directly: {e}")
+        return f"Error calling HuggingFace: {str(e)}", 0.0
 
 # --- RUST FUSION PIPELINE INVOCATION ---
 async def rust_fusion_pipeline(prompt: str) -> str:
@@ -327,110 +301,62 @@ def judge_response_against_rubric(prompt: str, pipeline_output: str, rubric_json
     return res
 
 def _judge_response_against_rubric_uncached(prompt: str, pipeline_output: str, rubric_json: str) -> dict:
-    # Check if we can run via OpenAI, OpenRouter, or Gemini LLM Judge
-    has_keys = OPENROUTER_API_KEY or OPENAI_API_KEY or GOOGLE_GEMINI_API_KEY
-    if OPENAI_AVAILABLE and has_keys:
+    hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_API_KEY")
+    if hf_token:
         try:
-            if OPENAI_API_KEY:
-                print("   -> Contacting OpenAI gpt-4o Judge...")
-                judge_client = OpenAI(
-                    api_key=OPENAI_API_KEY,
-                    timeout=30.0
-                )
-                model_name = "gpt-4o"
-                
-                judge_instructions = (
-                    "You are an objective, strict scientific fact-checker grading a Deep Research pipeline output.\n"
-                    "You will be given the Original Problem, the Generated Output, and a structured Rubric.\n"
-                    "For each criterion inside the rubric, return a structured verdict detailing whether it is MET or UNMET.\n\n"
-                    "Crucial Weight Rule:\n"
-                    "- If a criterion describes a POSITIVE feature, mark MET only if the output successfully achieves it.\n"
-                    "- If a criterion describes an ERROR or HALLUCINATION (indicated by negative weight context), "
-                    "mark MET if the model committed that error. Mark UNMET if the model remained clean."
-                )
-                
-                user_content = f"Problem: {prompt}\n\nOutput to Grade: {pipeline_output}\n\nRubric Schema:\n{rubric_json}"
-                
-                response = judge_client.beta.chat.completions.parse(
-                    model=model_name,
-                    messages=[
-                        {"role": "system", "content": judge_instructions},
-                        {"role": "user", "content": user_content}
-                    ],
-                    response_format=TaskEvaluation,
-                    temperature=0.0
-                )
-                parsed_results = response.choices[0].message.parsed
-                return {v.criterion_id: v.verdict for v in parsed_results.verdicts}
-                
-            elif GOOGLE_GEMINI_API_KEY:
-                # Direct HTTP call for Gemini JSON judge
-                print("   -> Contacting Gemini 1.5 Flash Judge directly via HTTP...")
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GOOGLE_GEMINI_API_KEY}"
-                headers = {"Content-Type": "application/json"}
-                
-                judge_instructions = (
-                    "You are an objective, strict scientific fact-checker grading a Deep Research pipeline output.\n"
-                    "You will be given the Original Problem, the Generated Output, and a structured Rubric.\n"
-                    "For each criterion inside the rubric, return a structured verdict detailing whether it is MET or UNMET.\n\n"
-                    "Crucial Weight Rule:\n"
-                    "- If a criterion describes a POSITIVE feature, mark MET only if the output successfully achieves it.\n"
-                    "- If a criterion describes an ERROR or HALLUCINATION (indicated by negative weight context), "
-                    "mark MET if the model committed that error. Mark UNMET if the model remained clean.\n"
-                    "You MUST return a JSON object with this schema: {\"verdicts\": [{\"criterion_id\": \"...\", \"verdict\": \"MET/UNMET\", \"reasoning\": \"...\"}]}"
-                )
-                
-                user_content = f"Problem: {prompt}\n\nOutput to Grade: {pipeline_output}\n\nRubric Schema:\n{rubric_json}"
-                
-                data = {
-                    "contents": [
-                        {"role": "user", "parts": [{"text": f"{judge_instructions}\n\n{user_content}"}]}
-                    ],
-                    "generationConfig": {
-                        "responseMimeType": "application/json",
-                        "temperature": 0.0
-                    }
+            print("   -> Contacting HuggingFace DeepSeek-R1-32B Judge...")
+            url = "https://api-inference.huggingface.co/models/deepseek-ai/DeepSeek-R1-Distill-Qwen-32B"
+            headers = {
+                "Authorization": f"Bearer {hf_token}",
+                "Content-Type": "application/json"
+            }
+            
+            judge_instructions = (
+                "You are an objective, strict grading agent evaluating a pipeline output against a rubric.\n"
+                "You will be given the Original Problem, the Generated Output, and a Rubric.\n"
+                "For each criterion inside the rubric, return a verdict of MET or UNMET.\n\n"
+                "Crucial Weight Rule:\n"
+                "- If a criterion describes a positive requirement, mark MET only if the output successfully achieves it.\n"
+                "- If a criterion describes an error or threat (negative weight), mark MET if the model committed that error, and UNMET if it did not.\n"
+                "You MUST return a JSON object with this exact schema: {\"verdicts\": [{\"criterion_id\": \"...\", \"verdict\": \"MET/UNMET\", \"reasoning\": \"...\"}]}"
+            )
+            
+            user_content = f"Problem: {prompt}\n\nOutput to Grade: {pipeline_output}\n\nRubric Schema:\n{rubric_json}"
+            
+            full_prompt = f"<|im_start|>system\n{judge_instructions}<|im_end|>\n<|im_start|>user\n{user_content}<|im_end|>\n<|im_start|>assistant\n```json\n"
+            
+            data = {
+                "inputs": full_prompt,
+                "parameters": {
+                    "max_new_tokens": 2000,
+                    "temperature": 0.1
                 }
-                req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers=headers, method='POST')
-                with urllib.request.urlopen(req, timeout=30) as response:
-                    res_data = json.loads(response.read().decode('utf-8'))
-                    text_content = res_data["candidates"][0]["content"]["parts"][0]["text"]
-                    parsed = json.loads(text_content)
-                    return {v["criterion_id"]: v["verdict"] for v in parsed["verdicts"]}
-            else:
-                print("   -> Contacting OpenRouter Claude Judge...")
-                judge_client = OpenAI(
-                    base_url="https://openrouter.ai/api/v1",
-                    api_key=OPENROUTER_API_KEY,
-                    timeout=30.0
-                )
-                model_name = JUDGE_MODEL
+            }
+            
+            req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers=headers, method='POST')
+            with urllib.request.urlopen(req, timeout=45) as response:
+                res_data = json.loads(response.read().decode('utf-8'))
                 
-                judge_instructions = (
-                    "You are an objective, strict scientific fact-checker grading a Deep Research pipeline output.\n"
-                    "You will be given the Original Problem, the Generated Output, and a structured Rubric.\n"
-                    "For each criterion inside the rubric, return a structured verdict detailing whether it is MET or UNMET.\n\n"
-                    "Crucial Weight Rule:\n"
-                    "- If a criterion describes a POSITIVE feature, mark MET only if the output successfully achieves it.\n"
-                    "- If a criterion describes an ERROR or HALLUCINATION (indicated by negative weight context), "
-                    "mark MET if the model committed that error. Mark UNMET if the model remained clean."
-                )
+                if isinstance(res_data, list) and len(res_data) > 0:
+                    text_content = res_data[0].get('generated_text', '')
+                elif isinstance(res_data, dict):
+                    text_content = res_data.get('generated_text', '')
+                else:
+                    text_content = str(res_data)
                 
-                user_content = f"Problem: {prompt}\n\nOutput to Grade: {pipeline_output}\n\nRubric Schema:\n{rubric_json}"
+                if text_content.startswith(full_prompt):
+                    text_content = text_content[len(full_prompt):].strip()
                 
-                response = judge_client.beta.chat.completions.parse(
-                    model=model_name,
-                    messages=[
-                        {"role": "system", "content": judge_instructions},
-                        {"role": "user", "content": user_content}
-                    ],
-                    response_format=TaskEvaluation,
-                    temperature=0.0
-                )
-                parsed_results = response.choices[0].message.parsed
-                return {v.criterion_id: v.verdict for v in parsed_results.verdicts}
+                # Extract json block
+                if "```json" in text_content:
+                    text_content = text_content.split("```json")[1].split("```")[0].strip()
+                elif "```" in text_content:
+                    text_content = text_content.split("```")[1].split("```")[0].strip()
+                
+                parsed = json.loads(text_content.strip())
+                return {v["criterion_id"]: v["verdict"] for v in parsed["verdicts"]}
         except Exception as e:
-            print(f"   -> [FALLBACK] Judge API call failed: {e}. Using local heuristic judge.")
+            print(f"   -> [FALLBACK] HuggingFace Judge failed: {e}. Using local heuristic judge.")
             return local_heuristic_judge(prompt, pipeline_output, rubric_json)
     else:
         print("   -> [LOCAL] Grading using local offline heuristic judge.")
@@ -502,11 +428,10 @@ async def main():
     
     # Define Run Configurations
     RUN_CONFIGS = [
-        {"name": "gpt-4o-mini alone", "type": "single", "model": "gpt-4o-mini", "inject_context": False},
-        {"name": "gpt-4o alone", "type": "single", "model": "gpt-4o", "inject_context": False},
-        {"name": "gemini-1.5-flash alone", "type": "single", "model": "gemini-1.5-flash", "inject_context": False},
-        {"name": "gpt-5.5 alone", "type": "single", "model": "gpt-5.5", "inject_context": False},
-        {"name": "gpt-5.5 + supplied context", "type": "single", "model": "gpt-5.5", "inject_context": True},
+        {"name": "Llama-3.1-8B alone", "type": "single", "model": "meta-llama/Llama-3.1-8B-Instruct", "inject_context": False},
+        {"name": "Qwen2.5-7B alone", "type": "single", "model": "Qwen/Qwen2.5-7B-Instruct", "inject_context": False},
+        {"name": "Llama-3.1-8B + context", "type": "single", "model": "meta-llama/Llama-3.1-8B-Instruct", "inject_context": True},
+        {"name": "Qwen2.5-7B + context", "type": "single", "model": "Qwen/Qwen2.5-7B-Instruct", "inject_context": True},
         {"name": "--fusion panel", "type": "fusion", "inject_context": False},
         {"name": "Fusion + supplied context", "type": "fusion", "inject_context": True},
     ]
@@ -585,8 +510,8 @@ async def main():
     print("="*96)
     
     # Headers
-    headers = ["Task ID (Domain)", "gpt-4o-mini", "gpt-4o", "gemini-flash", "gpt-5.5", "gpt-5.5+Ctx", "--fusion panel", "Fusion+Context"]
-    row_format = "{:<25} | {:<11} | {:<8} | {:<12} | {:<8} | {:<11} | {:<14} | {:<14}"
+    headers = ["Task ID (Domain)", "Llama-3.1-8B", "Qwen2.5-7B", "Llama-8B+Ctx", "Qwen-7B+Ctx", "--fusion panel", "Fusion+Context"]
+    row_format = "{:<25} | {:<12} | {:<10} | {:<12} | {:<11} | {:<14} | {:<14}"
     print(row_format.format(*headers))
     print("-" * 114)
     

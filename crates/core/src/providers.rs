@@ -87,45 +87,8 @@ impl LLMProvider for OpenAIProvider {
         &self.config
     }
 
-    async fn generate_response(&self, prompt: &str) -> Result<ProviderResult> {
-        let start = Instant::now();
-        let api_key = self.api_key.as_ref()
-            .context("OpenAI API key not found. Set OPENAI_API_KEY environment variable.")?;
-
-        let url = "https://api.openai.com/v1/chat/completions";
-        let body = serde_json::json!({
-            "model": self.config.model_id,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": self.config.max_tokens,
-            "temperature": self.config.temperature
-        });
-
-        let response = self.client.post(url)
-            .bearer_auth(api_key)
-            .json(&body)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let err_text = response.text().await.unwrap_or_default();
-            bail!("OpenAI API error: {}", err_text);
-        }
-
-        let data: serde_json::Value = response.json().await?;
-        let content = data["choices"][0]["message"]["content"]
-            .as_str()
-            .unwrap_or_default()
-            .to_string();
-        let tokens_used = data["usage"]["total_tokens"].as_u64().unwrap_or(0) as usize;
-        let cost = (tokens_used as f64 / 1000.0) * self.config.cost_per_1k_tokens;
-
-        Ok(ProviderResult {
-            content,
-            tokens_used,
-            cost,
-            latency_ms: start.elapsed().as_millis() as f64,
-            answer_type: "FINAL_ANSWER".to_string(),
-        })
+    async fn generate_response(&self, _prompt: &str) -> Result<ProviderResult> {
+        bail!("Paid models (OpenAI) are disabled and removed per system requirements.");
     }
 }
 
@@ -155,49 +118,8 @@ impl LLMProvider for AnthropicProvider {
         &self.config
     }
 
-    async fn generate_response(&self, prompt: &str) -> Result<ProviderResult> {
-        let start = Instant::now();
-        let api_key = self.api_key.as_ref()
-            .context("Anthropic API key not found. Set ANTHROPIC_API_KEY environment variable.")?;
-
-        let url = "https://api.anthropic.com/v1/messages";
-        let body = serde_json::json!({
-            "model": self.config.model_id,
-            "max_tokens": self.config.max_tokens,
-            "temperature": self.config.temperature,
-            "messages": [{"role": "user", "content": prompt}]
-        });
-
-        let response = self.client.post(url)
-            .header("x-api-key", api_key)
-            .header("anthropic-version", "2023-06-01")
-            .json(&body)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let err_text = response.text().await.unwrap_or_default();
-            bail!("Anthropic API error: {}", err_text);
-        }
-
-        let data: serde_json::Value = response.json().await?;
-        let content = data["content"][0]["text"]
-            .as_str()
-            .unwrap_or_default()
-            .to_string();
-
-        let input_tokens = data["usage"]["input_tokens"].as_u64().unwrap_or(0) as usize;
-        let output_tokens = data["usage"]["output_tokens"].as_u64().unwrap_or(0) as usize;
-        let tokens_used = input_tokens + output_tokens;
-        let cost = (tokens_used as f64 / 1000.0) * self.config.cost_per_1k_tokens;
-
-        Ok(ProviderResult {
-            content,
-            tokens_used,
-            cost,
-            latency_ms: start.elapsed().as_millis() as f64,
-            answer_type: "FINAL_ANSWER".to_string(),
-        })
+    async fn generate_response(&self, _prompt: &str) -> Result<ProviderResult> {
+        bail!("Paid models (Anthropic) are disabled and removed per system requirements.");
     }
 }
 
@@ -227,51 +149,8 @@ impl LLMProvider for GeminiProvider {
         &self.config
     }
 
-    async fn generate_response(&self, prompt: &str) -> Result<ProviderResult> {
-        let start = Instant::now();
-        let api_key = self.api_key.as_ref()
-            .context("Gemini API key not found. Set GOOGLE_GEMINI_API_KEY environment variable.")?;
-
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-            self.config.model_id, api_key
-        );
-
-        let body = serde_json::json!({
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "maxOutputTokens": self.config.max_tokens,
-                "temperature": self.config.temperature
-            }
-        });
-
-        let response = self.client.post(&url)
-            .json(&body)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let err_text = response.text().await.unwrap_or_default();
-            bail!("Gemini API error: {}", err_text);
-        }
-
-        let data: serde_json::Value = response.json().await?;
-        let content = data["candidates"][0]["content"]["parts"][0]["text"]
-            .as_str()
-            .unwrap_or_default()
-            .to_string();
-
-        // Estimate tokens
-        let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
-        let cost = (tokens_used as f64 / 1000.0) * self.config.cost_per_1k_tokens;
-
-        Ok(ProviderResult {
-            content,
-            tokens_used,
-            cost,
-            latency_ms: start.elapsed().as_millis() as f64,
-            answer_type: "FINAL_ANSWER".to_string(),
-        })
+    async fn generate_response(&self, _prompt: &str) -> Result<ProviderResult> {
+        bail!("Paid models (Gemini) are disabled and removed per system requirements.");
     }
 }
 

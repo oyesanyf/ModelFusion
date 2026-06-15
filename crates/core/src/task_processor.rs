@@ -49,7 +49,7 @@ impl UniversalTaskProcessor {
             "text-generation".to_string(),
             TaskConfig {
                 description: "Generate text based on a prompt".to_string(),
-                default_model: "gpt-3.5-turbo".to_string(),
+                default_model: "meta-llama/Llama-3.1-8B-Instruct".to_string(),
                 max_tokens: 1000,
                 temperature: 1.0,
             },
@@ -58,7 +58,7 @@ impl UniversalTaskProcessor {
             "text-classification".to_string(),
             TaskConfig {
                 description: "Classify text into categories".to_string(),
-                default_model: "gpt-3.5-turbo".to_string(),
+                default_model: "meta-llama/Llama-3.1-8B-Instruct".to_string(),
                 max_tokens: 200,
                 temperature: 0.1,
             },
@@ -67,7 +67,7 @@ impl UniversalTaskProcessor {
             "summarization".to_string(),
             TaskConfig {
                 description: "Summarize long text".to_string(),
-                default_model: "gpt-3.5-turbo".to_string(),
+                default_model: "meta-llama/Llama-3.1-8B-Instruct".to_string(),
                 max_tokens: 500,
                 temperature: 0.3,
             },
@@ -76,7 +76,7 @@ impl UniversalTaskProcessor {
             "translation".to_string(),
             TaskConfig {
                 description: "Translate text between languages".to_string(),
-                default_model: "gpt-3.5-turbo".to_string(),
+                default_model: "meta-llama/Llama-3.1-8B-Instruct".to_string(),
                 max_tokens: 1000,
                 temperature: 0.3,
             },
@@ -85,7 +85,7 @@ impl UniversalTaskProcessor {
             "question-answering".to_string(),
             TaskConfig {
                 description: "Answer questions based on context".to_string(),
-                default_model: "gpt-3.5-turbo".to_string(),
+                default_model: "meta-llama/Llama-3.1-8B-Instruct".to_string(),
                 max_tokens: 500,
                 temperature: 0.3,
             },
@@ -94,7 +94,7 @@ impl UniversalTaskProcessor {
             "sentiment-analysis".to_string(),
             TaskConfig {
                 description: "Analyze sentiment of text".to_string(),
-                default_model: "gpt-3.5-turbo".to_string(),
+                default_model: "meta-llama/Llama-3.1-8B-Instruct".to_string(),
                 max_tokens: 100,
                 temperature: 0.1,
             },
@@ -103,18 +103,18 @@ impl UniversalTaskProcessor {
             "ner".to_string(),
             TaskConfig {
                 description: "Named Entity Recognition".to_string(),
-                default_model: "gpt-3.5-turbo".to_string(),
+                default_model: "meta-llama/Llama-3.1-8B-Instruct".to_string(),
                 max_tokens: 300,
                 temperature: 0.1,
             },
         );
-
+ 
         // Security Tasks
         task_configs.insert(
             "spam-detection".to_string(),
             TaskConfig {
                 description: "Detect spam content".to_string(),
-                default_model: "gpt-3.5-turbo".to_string(),
+                default_model: "meta-llama/Llama-3.1-8B-Instruct".to_string(),
                 max_tokens: 100,
                 temperature: 0.1,
             },
@@ -123,7 +123,7 @@ impl UniversalTaskProcessor {
             "malware-detection".to_string(),
             TaskConfig {
                 description: "Detect malicious content".to_string(),
-                default_model: "gpt-3.5-turbo".to_string(),
+                default_model: "meta-llama/Llama-3.1-8B-Instruct".to_string(),
                 max_tokens: 200,
                 temperature: 0.1,
             },
@@ -132,12 +132,12 @@ impl UniversalTaskProcessor {
             "pii-detection".to_string(),
             TaskConfig {
                 description: "Detect personally identifiable information".to_string(),
-                default_model: "gpt-3.5-turbo".to_string(),
+                default_model: "meta-llama/Llama-3.1-8B-Instruct".to_string(),
                 max_tokens: 300,
                 temperature: 0.1,
             },
         );
-
+ 
         Self {
             providers: Mutex::new(HashMap::new()),
             task_configs,

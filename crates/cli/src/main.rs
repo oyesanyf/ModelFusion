@@ -473,6 +473,10 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
+    if args.use_openai {
+        anyhow::bail!("Paid models (including OpenAI) have been disabled and removed per system requirements.");
+    }
+
     if args.jupyter {
         println!("🚀 Launching Jupyter Notebook: data_analyst_workflow.ipynb");
         let status = std::process::Command::new("python")
