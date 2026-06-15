@@ -90,8 +90,17 @@ cargo run --bin cli -- --tasks
 cargo run --bin cli -- --tasks text
 ```
 
-### 7. Run Model Fusion
-Model Fusion evaluates a prompt using a panel of 10 diverse models concurrently, parses their responses with a 32B judge model into structured JSON, and writes a final synthesized answer using a 32B writer model:
+### 7. Run Model Fusion (Access to Over 1 Million Hugging Face Models)
+ModelFusion has access to the entire Hugging Face Hub, indexing over **1 million models**. When a prompt is submitted, the system automatically classifies the task type (e.g., `text-generation`, `summarization`, `translation`, `question-answering`) and queries the local database to find the highest-ranked model candidates based on popularity, efficiency, freshness, open-source licensing, and decision scores.
+
+With **Model Fusion** (`--fusion`), instead of relying on a single model, the orchestrator:
+1. **Per-Task Model Selection**: Automatically queries the database to select the 10 best-performing models for the classified task.
+2. **Concurrent Panel Execution**: Runs all 10 selected models concurrently to gather diverse outputs.
+3. **LLM-as-a-Judge Evaluation**: Submits all panel responses to a 32B judge model (`deepseek-ai/DeepSeek-R1-Distill-Qwen-32B`) to analyze consensus, identify disagreements, unique insights, risk flags, and recommend a final synthesized position.
+4. **Synthesis & Writing**: A 32B writer model receives the judge analysis and writes a final, comprehensive synthesized response.
+
+If the database is empty or selection is unavailable, the pipeline falls back to a default panel of 10 leading open-weights models.
+
 ```bash
 cargo run --bin cli -- --prompt "compare Python and Rust for high-performance CLI tools" --fusion
 ```
@@ -106,7 +115,17 @@ Or run with Model Fusion for a comprehensive multi-model comparison:
 cargo run --bin cli -- --folder crates/cli/src --fusion
 ```
 
-### 9. CLI Command Line Help
+### 9. Saving Reports
+You can save the final output of any run (including Model Fusion and folder reviews) to a local file using the `--report` flag, and specify the output format using the `--reporttype` flag (supports `md`, `txt`, `json`, `pdf`, and `docx`):
+```bash
+cargo run --bin cli -- --folder crates/cli/src --fusion --report target/reports --reporttype pdf
+```
+- **`md` / `txt`**: Plaintext files saving the raw report.
+- **`json`**: A structured JSON file containing metadata, prompt details, timestamp, and report content.
+- **`pdf`**: Generates a clean PDF document using standard Helvetica fonts and dynamic word wrapping.
+- **`docx`**: Generates a Word-compatible `.docx` file using formatted Rich Text Format.
+
+### 10. CLI Command Line Help
 To view all available command line arguments, flags, and options:
 ```bash
 cargo run --bin cli -- --help

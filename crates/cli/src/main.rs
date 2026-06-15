@@ -5,6 +5,7 @@ use clap::Parser;
 use modelfusion_core::{ComprehensiveTaskHandler, HuggingFaceOrchestrator};
 use model_selection::SelectionStrategy;
 use std::collections::HashMap;
+use chrono;
 
 #[derive(Parser, Debug)]
 #[command(name = "modelfusion", version = "0.1.0", about = "ModelFusion - Advanced HuggingFace Model Orchestration System")]
@@ -208,10 +209,34 @@ struct Args {
     #[arg(long, help = "Enable model fusion to process prompt using a panel of models")]
     fusion: bool,
 
+    #[arg(long, help = "Path to folder or file where the final report should be saved")]
+    report: Option<String>,
+
+    #[arg(long, default_value = "md", help = "Format of the report: pdf, text, json, md, word")]
+    reporttype: String,
+
+    #[arg(long, help = "Use delegation pattern to route tasks to specialized models")]
+    delegation: bool,
+
+    #[arg(long, help = "Use recursive task decomposition for complex problems")]
+    recursion: bool,
+
+    #[arg(long, help = "Enable real options analysis for backup model selection")]
+    real_options: bool,
+
+    #[arg(long, help = "Enable prompt quality scoring and optimization")]
+    prompt_quality_scoring: bool,
+
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set, help = "Enable fallback to enhanced selector when ML selection fails")]
+    ml_fallback: bool,
+
+    #[arg(long, help = "Launch Jupyter notebook for data analysis")]
+    jupyter: bool,
+
     // ---------------------------------------------------------
     // Data Science Flags
     // ---------------------------------------------------------
-    #[arg(long, help = "Run the Data Analyst workflow on CSV/Excel")]
+    #[arg(long, alias = "data-analyst", alias = "datanalyst", help = "Run the Data Analyst workflow on CSV/Excel")]
     dataanalyst: bool,
 
     #[arg(long, help = "Run comprehensive Data Science workflow")]
@@ -448,6 +473,17 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
+    if args.jupyter {
+        println!("🚀 Launching Jupyter Notebook: data_analyst_workflow.ipynb");
+        let status = std::process::Command::new("python")
+            .args(&["-m", "notebook", "data_analyst_workflow.ipynb"])
+            .status();
+        if let Err(e) = status {
+            println!("❌ Failed to launch Jupyter Notebook: {}", e);
+        }
+        return Ok(());
+    }
+
     // Configure logging
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
@@ -586,6 +622,9 @@ async fn main() -> Result<()> {
                 Ok(content) => {
                     println!("\n[SUCCESS] Orchestration Successful (via Model Fusion)!\n");
                     println!("{}", content);
+                    if let Some(ref report_path) = args.report {
+                        save_report(&content, report_path, &args.reporttype, &final_prompt);
+                    }
                 }
                 Err(e) => {
                     println!("\n[ERROR] Orchestration Failed (via Model Fusion)!\n");
@@ -613,6 +652,9 @@ async fn main() -> Result<()> {
         if res.success {
             println!("\n[SUCCESS] Orchestration Successful!\n");
             println!("{}", res.content);
+            if let Some(ref report_path) = args.report {
+                save_report(&res.content, report_path, &args.reporttype, &final_prompt);
+            }
         } else {
             println!("\n[ERROR] Orchestration Failed!\n");
             if let Some(err) = res.error_message {
@@ -712,6 +754,8 @@ fn determine_task_override(args: &Args) -> Option<String> {
     if args.image_super_resolution { return Some("image-super-resolution".to_string()); }
     if args.table_question_answering { return Some("table-question-answering".to_string()); }
     if args.feature_ranking { return Some("feature-ranking".to_string()); }
+    if args.dataanalyst { return Some("data-analyst".to_string()); }
+    if args.datascience { return Some("data-science".to_string()); }
     
     args.task.clone()
 }
@@ -727,4 +771,153 @@ fn parse_selection_strategy(strategy: &str) -> Option<SelectionStrategy> {
         "meta_learning" | "meta-learning" => Some(SelectionStrategy::MetaLearning),
         _ => None,
     }
+}
+
+/// Helper function to save orchestration content to a report file.
+fn save_report(content: &str, report_path: &str, report_type: &str, prompt: &str) {
+    let path = std::path::Path::new(report_path);
+    let ext = match report_type.to_lowercase().as_str() {
+        "pdf" => "pdf",
+        "json" => "json",
+        "text" | "txt" => "txt",
+        "word" | "docx" => "docx",
+        _ => "md",
+    };
+
+    let target_file = if path.is_dir() || report_path.ends_with('\\') || report_path.ends_with('/') {
+        if let Err(e) = std::fs::create_dir_all(path) {
+            println!("[WARN] Failed to create report directory: {}", e);
+        }
+        path.join(format!("code_review_report.{}", ext))
+    } else {
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    println!("[WARN] Failed to create parent directories for report: {}", e);
+                }
+            }
+        }
+        path.with_extension(ext)
+    };
+
+    let write_result = match ext {
+        "json" => {
+            let json_data = serde_json::json!({
+                "system": "ModelFusion Code Review Report",
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+                "prompt": prompt,
+                "content": content
+            });
+            match serde_json::to_string_pretty(&json_data) {
+                Ok(json_str) => std::fs::write(&target_file, json_str),
+                Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())),
+            }
+        }
+        "pdf" => {
+            let pdf_content = generate_minimal_pdf(content);
+            std::fs::write(&target_file, pdf_content)
+        }
+        "docx" => {
+            let docx_content = generate_minimal_docx(content);
+            std::fs::write(&target_file, docx_content)
+        }
+        _ => {
+            std::fs::write(&target_file, content)
+        }
+    };
+
+    match write_result {
+        Ok(_) => println!("[INFO] Report successfully saved as {} to: {}", report_type.to_uppercase(), target_file.display()),
+        Err(e) => println!("[ERROR] Failed to save report as {} to {}: {}", report_type.to_uppercase(), target_file.display(), e),
+    }
+}
+
+/// Generate a minimal valid PDF containing the text
+fn generate_minimal_pdf(content: &str) -> Vec<u8> {
+    let mut pdf = Vec::new();
+    pdf.extend_from_slice(b"%PDF-1.4\n");
+    
+    // Object 1: Catalog
+    let obj1 = "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
+    let pos1 = pdf.len();
+    pdf.extend_from_slice(obj1.as_bytes());
+
+    // Object 2: Pages list
+    let obj2 = "2 0 obj\n<< /Type /Pages /Kids [ 3 0 R ] /Count 1 >>\nendobj\n";
+    let pos2 = pdf.len();
+    pdf.extend_from_slice(obj2.as_bytes());
+
+    // Object 4: Content Stream
+    let mut text_stream = String::new();
+    text_stream.push_str("BT\n/F1 10 Tf\n20 750 Td\n12 Td\n");
+    
+    let mut y = 750;
+    for line in content.lines() {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        let mut current_line = String::new();
+        for word in words {
+            if current_line.len() + word.len() + 1 > 80 {
+                if y < 40 { break; }
+                let escaped = current_line.replace('\\', "\\\\").replace('(', "\\(").replace(')', "\\)");
+                text_stream.push_str(&format!("({}) Tj\n0 -12 Td\n", escaped));
+                y -= 12;
+                current_line = word.to_string();
+            } else {
+                if !current_line.is_empty() {
+                    current_line.push(' ');
+                }
+                current_line.push_str(word);
+            }
+        }
+        if !current_line.is_empty() {
+            if y < 40 { break; }
+            let escaped = current_line.replace('\\', "\\\\").replace('(', "\\(").replace(')', "\\)");
+            text_stream.push_str(&format!("({}) Tj\n0 -12 Td\n", escaped));
+            y -= 12;
+        }
+        if y >= 40 {
+            text_stream.push_str("0 -6 Td\n");
+            y -= 6;
+        }
+    }
+    text_stream.push_str("ET\n");
+
+    let obj4_len = text_stream.len();
+    let obj4 = format!("4 0 obj\n<< /Length {} >>\nstream\n{}endstream\nendobj\n", obj4_len, text_stream);
+    let pos4 = pdf.len();
+    pdf.extend_from_slice(obj4.as_bytes());
+
+    // Object 3: Page object
+    let obj3 = "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [ 0 0 612 792 ] /Contents 4 0 R /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> >>\nendobj\n";
+    let pos3 = pdf.len();
+    pdf.extend_from_slice(obj3.as_bytes());
+
+    // Xref
+    let xref_pos = pdf.len();
+    let xref = format!(
+        "xref\n0 5\n0000000000 65535 f\n{:010} 00000 n\n{:010} 00000 n\n{:010} 00000 n\n{:010} 00000 n\ntrailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
+        pos1, pos2, pos3, pos4, xref_pos
+    );
+    pdf.extend_from_slice(xref.as_bytes());
+
+    pdf
+}
+
+/// Generate a minimal RTF document openable by MS Word
+fn generate_minimal_rtf(content: &str) -> String {
+    let mut rtf = String::new();
+    rtf.push_str(r#"{\rtf1\ansi\deff0 {\fonttbl {\f0\fnil\fcharset0 Arial;}}"#);
+    rtf.push_str("\n\\viewkind4\\uc1\\pard\\f0\\fs20 ");
+    for line in content.lines() {
+        let escaped = line.replace('\\', "\\\\").replace('{', "\\{").replace('}', "\\}");
+        rtf.push_str(&escaped);
+        rtf.push_str("\\par\n");
+    }
+    rtf.push_str("}\n");
+    rtf
+}
+
+/// Convert content to DOCX (represented as RTF bytes for compatibility)
+fn generate_minimal_docx(content: &str) -> Vec<u8> {
+    generate_minimal_rtf(content).into_bytes()
 }

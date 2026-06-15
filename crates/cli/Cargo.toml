@@ -16,3 +16,4 @@ env_logger      = { workspace = true }
 modelfusion_core = { path = "../core" }
 model_selection = { path = "../model_selection" }
 walkdir         = { workspace = true }
+chrono          = { workspace = true }
