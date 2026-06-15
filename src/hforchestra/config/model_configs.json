@@ -1,0 +1,772 @@
+{
+  "gpt-5-mini": {
+    "name": "gpt-5-mini",
+    "api_provider": "openai",
+    "model_id": "gpt-5-mini",
+    "max_tokens": 2000,
+    "temperature": 1.0,
+    "cost_per_1k_tokens": 0.003,
+    "rate_limit_per_minute": 100,
+    "timeout_seconds": 180
+  },
+  "gpt-3.5-turbo": {
+    "name": "gpt-3.5-turbo",
+    "api_provider": "openai",
+    "model_id": "gpt-3.5-turbo",
+    "max_tokens": 2000,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.002,
+    "rate_limit_per_minute": 100,
+    "timeout_seconds": 180
+  },
+  "openai-community/gpt2": {
+    "name": "openai-community/gpt2",
+    "api_provider": "huggingface_inference",
+    "model_id": "openai-community/gpt2",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "Qwen/Qwen2.5-14B-Instruct": {
+    "name": "Qwen/Qwen2.5-14B-Instruct",
+    "api_provider": "huggingface",
+    "model_id": "Qwen/Qwen2.5-14B-Instruct",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "meta-llama/Llama-3.1-8B-Instruct": {
+    "name": "meta-llama/Llama-3.1-8B-Instruct",
+    "api_provider": "huggingface",
+    "model_id": "meta-llama/Llama-3.1-8B-Instruct",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "distilbert/distilbert-base-uncased-finetuned-sst-2-english": {
+    "name": "distilbert/distilbert-base-uncased-finetuned-sst-2-english",
+    "api_provider": "huggingface",
+    "model_id": "distilbert/distilbert-base-uncased-finetuned-sst-2-english",
+    "max_tokens": 100,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "cardiffnlp/twitter-roberta-base-sentiment-latest": {
+    "name": "cardiffnlp/twitter-roberta-base-sentiment-latest",
+    "api_provider": "huggingface",
+    "model_id": "cardiffnlp/twitter-roberta-base-sentiment-latest",
+    "max_tokens": 100,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "BAAI/bge-reranker-v2-m3": {
+    "name": "BAAI/bge-reranker-v2-m3",
+    "api_provider": "huggingface",
+    "model_id": "BAAI/bge-reranker-v2-m3",
+    "max_tokens": 100,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "deepset/roberta-base-squad2": {
+    "name": "deepset/roberta-base-squad2",
+    "api_provider": "huggingface",
+    "model_id": "deepset/roberta-base-squad2",
+    "max_tokens": 300,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "dmis-lab/biobert-large-cased-v1.1-squad": {
+    "name": "dmis-lab/biobert-large-cased-v1.1-squad",
+    "api_provider": "huggingface",
+    "model_id": "dmis-lab/biobert-large-cased-v1.1-squad",
+    "max_tokens": 300,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 45
+  },
+  "google-bert/bert-large-uncased-whole-word-masking-finetuned-squad": {
+    "name": "google-bert/bert-large-uncased-whole-word-masking-finetuned-squad",
+    "api_provider": "huggingface",
+    "model_id": "google-bert/bert-large-uncased-whole-word-masking-finetuned-squad",
+    "max_tokens": 300,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 45
+  },
+  "facebook/bart-large-cnn": {
+    "name": "facebook/bart-large-cnn",
+    "api_provider": "huggingface",
+    "model_id": "facebook/bart-large-cnn",
+    "max_tokens": 200,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "sshleifer/distilbart-cnn-12-6": {
+    "name": "sshleifer/distilbart-cnn-12-6",
+    "api_provider": "huggingface",
+    "model_id": "sshleifer/distilbart-cnn-12-6",
+    "max_tokens": 200,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "google/pegasus-xsum": {
+    "name": "google/pegasus-xsum",
+    "api_provider": "gemini",
+    "model_id": "google/pegasus-xsum",
+    "max_tokens": 200,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 45
+  },
+  "google-t5/t5-small": {
+    "name": "google-t5/t5-small",
+    "api_provider": "huggingface",
+    "model_id": "google-t5/t5-small",
+    "max_tokens": 200,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "google-t5/t5-base": {
+    "name": "google-t5/t5-base",
+    "api_provider": "huggingface",
+    "model_id": "google-t5/t5-base",
+    "max_tokens": 200,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "google-t5/t5-3b": {
+    "name": "google-t5/t5-3b",
+    "api_provider": "huggingface",
+    "model_id": "google-t5/t5-3b",
+    "max_tokens": 200,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "Falconsai/nsfw_image_detection": {
+    "name": "Falconsai/nsfw_image_detection",
+    "api_provider": "huggingface",
+    "model_id": "Falconsai/nsfw_image_detection",
+    "max_tokens": 50,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "dima806/fairface_age_image_detection": {
+    "name": "dima806/fairface_age_image_detection",
+    "api_provider": "huggingface",
+    "model_id": "dima806/fairface_age_image_detection",
+    "max_tokens": 50,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "timm/mobilenetv3_small_100.lamb_in1k": {
+    "name": "timm/mobilenetv3_small_100.lamb_in1k",
+    "api_provider": "huggingface",
+    "model_id": "timm/mobilenetv3_small_100.lamb_in1k",
+    "max_tokens": 50,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "microsoft/table-transformer-detection": {
+    "name": "microsoft/table-transformer-detection",
+    "api_provider": "huggingface",
+    "model_id": "microsoft/table-transformer-detection",
+    "max_tokens": 100,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "microsoft/table-transformer-structure-recognition-v1.1-all": {
+    "name": "microsoft/table-transformer-structure-recognition-v1.1-all",
+    "api_provider": "huggingface",
+    "model_id": "microsoft/table-transformer-structure-recognition-v1.1-all",
+    "max_tokens": 100,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 45
+  },
+  "hustvl/yolos-small": {
+    "name": "hustvl/yolos-small",
+    "api_provider": "huggingface",
+    "model_id": "hustvl/yolos-small",
+    "max_tokens": 100,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 45
+  },
+  "pyannote/speaker-diarization-3.1": {
+    "name": "pyannote/speaker-diarization-3.1",
+    "api_provider": "huggingface",
+    "model_id": "pyannote/speaker-diarization-3.1",
+    "max_tokens": 200,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "jonatasgrosman/wav2vec2-large-xlsr-53-portuguese": {
+    "name": "jonatasgrosman/wav2vec2-large-xlsr-53-portuguese",
+    "api_provider": "huggingface",
+    "model_id": "jonatasgrosman/wav2vec2-large-xlsr-53-portuguese",
+    "max_tokens": 200,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "jonatasgrosman/wav2vec2-large-xlsr-53-russian": {
+    "name": "jonatasgrosman/wav2vec2-large-xlsr-53-russian",
+    "api_provider": "huggingface",
+    "model_id": "jonatasgrosman/wav2vec2-large-xlsr-53-russian",
+    "max_tokens": 200,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "BAAI/bge-large-en-v1.5": {
+    "name": "BAAI/bge-large-en-v1.5",
+    "api_provider": "huggingface",
+    "model_id": "BAAI/bge-large-en-v1.5",
+    "max_tokens": 100,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "jinaai/jina-embeddings-v3": {
+    "name": "jinaai/jina-embeddings-v3",
+    "api_provider": "huggingface",
+    "model_id": "jinaai/jina-embeddings-v3",
+    "max_tokens": 100,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "intfloat/multilingual-e5-large": {
+    "name": "intfloat/multilingual-e5-large",
+    "api_provider": "huggingface",
+    "model_id": "intfloat/multilingual-e5-large",
+    "max_tokens": 100,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "google-bert/bert-base-uncased": {
+    "name": "google-bert/bert-base-uncased",
+    "api_provider": "huggingface",
+    "model_id": "google-bert/bert-base-uncased",
+    "max_tokens": 50,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "FacebookAI/roberta-large": {
+    "name": "FacebookAI/roberta-large",
+    "api_provider": "huggingface",
+    "model_id": "FacebookAI/roberta-large",
+    "max_tokens": 50,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "FacebookAI/xlm-roberta-base": {
+    "name": "FacebookAI/xlm-roberta-base",
+    "api_provider": "huggingface",
+    "model_id": "FacebookAI/xlm-roberta-base",
+    "max_tokens": 50,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "dslim/bert-base-NER": {
+    "name": "dslim/bert-base-NER",
+    "api_provider": "huggingface",
+    "model_id": "dslim/bert-base-NER",
+    "max_tokens": 100,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "w11wo/indonesian-roberta-base-posp-tagger": {
+    "name": "w11wo/indonesian-roberta-base-posp-tagger",
+    "api_provider": "huggingface",
+    "model_id": "w11wo/indonesian-roberta-base-posp-tagger",
+    "max_tokens": 100,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "dbmdz/bert-large-cased-finetuned-conll03-english": {
+    "name": "dbmdz/bert-large-cased-finetuned-conll03-english",
+    "api_provider": "huggingface",
+    "model_id": "dbmdz/bert-large-cased-finetuned-conll03-english",
+    "max_tokens": 100,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "Qwen/Qwen2.5-Omni-3B": {
+    "name": "Qwen/Qwen2.5-Omni-3B",
+    "api_provider": "huggingface",
+    "model_id": "Qwen/Qwen2.5-Omni-3B",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 45
+  },
+  "m-a-p/MERT-v1-95M": {
+    "name": "m-a-p/MERT-v1-95M",
+    "api_provider": "huggingface",
+    "model_id": "m-a-p/MERT-v1-95M",
+    "max_tokens": 50,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "fixie-ai/ultravox-v0_5-llama-3_2-1b": {
+    "name": "fixie-ai/ultravox-v0_5-llama-3_2-1b",
+    "api_provider": "huggingface",
+    "model_id": "fixie-ai/ultravox-v0_5-llama-3_2-1b",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 45
+  },
+  "nvidia/bigvgan_v2_22khz_80band_256x": {
+    "name": "nvidia/bigvgan_v2_22khz_80band_256x",
+    "api_provider": "huggingface",
+    "model_id": "nvidia/bigvgan_v2_22khz_80band_256x",
+    "max_tokens": 100,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 45
+  },
+  "Intel/zoedepth-nyu-kitti": {
+    "name": "Intel/zoedepth-nyu-kitti",
+    "api_provider": "huggingface",
+    "model_id": "Intel/zoedepth-nyu-kitti",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "impira/layoutlm-invoices": {
+    "name": "impira/layoutlm-invoices",
+    "api_provider": "huggingface",
+    "model_id": "impira/layoutlm-invoices",
+    "max_tokens": 300,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 45
+  },
+  "clefourrier/graphormer-base-pcqm4mv2": {
+    "name": "clefourrier/graphormer-base-pcqm4mv2",
+    "api_provider": "huggingface",
+    "model_id": "clefourrier/graphormer-base-pcqm4mv2",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 20
+  },
+  "google/vit-base-patch16-224-in21k": {
+    "name": "google/vit-base-patch16-224-in21k",
+    "api_provider": "gemini",
+    "model_id": "google/vit-base-patch16-224-in21k",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "CIDAS/clipseg-rd64-refined": {
+    "name": "CIDAS/clipseg-rd64-refined",
+    "api_provider": "huggingface",
+    "model_id": "CIDAS/clipseg-rd64-refined",
+    "max_tokens": 100,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "Qwen/Qwen2.5-VL-7B-Instruct": {
+    "name": "Qwen/Qwen2.5-VL-7B-Instruct",
+    "api_provider": "huggingface",
+    "model_id": "Qwen/Qwen2.5-VL-7B-Instruct",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "microsoft/TRELLIS-image-large": {
+    "name": "microsoft/TRELLIS-image-large",
+    "api_provider": "huggingface",
+    "model_id": "microsoft/TRELLIS-image-large",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "stabilityai/stable-diffusion-xl-refiner-1.0": {
+    "name": "stabilityai/stable-diffusion-xl-refiner-1.0",
+    "api_provider": "huggingface",
+    "model_id": "stabilityai/stable-diffusion-xl-refiner-1.0",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 45
+  },
+  "Salesforce/blip-image-captioning-base": {
+    "name": "Salesforce/blip-image-captioning-base",
+    "api_provider": "huggingface",
+    "model_id": "Salesforce/blip-image-captioning-base",
+    "max_tokens": 200,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "Lightricks/LTX-Video": {
+    "name": "Lightricks/LTX-Video",
+    "api_provider": "huggingface",
+    "model_id": "Lightricks/LTX-Video",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 45
+  },
+  "usyd-community/vitpose-base-simple": {
+    "name": "usyd-community/vitpose-base-simple",
+    "api_provider": "huggingface",
+    "model_id": "usyd-community/vitpose-base-simple",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 30
+  },
+  "facebook/sam2-hiera-large": {
+    "name": "facebook/sam2-hiera-large",
+    "api_provider": "huggingface",
+    "model_id": "facebook/sam2-hiera-large",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 45
+  },
+  "Riiid/kda-roberta-base-race": {
+    "name": "Riiid/kda-roberta-base-race",
+    "api_provider": "huggingface",
+    "model_id": "Riiid/kda-roberta-base-race",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 20
+  },
+  "TrajectoryCrafter/TrajectoryCrafter": {
+    "name": "TrajectoryCrafter/TrajectoryCrafter",
+    "api_provider": "huggingface",
+    "model_id": "TrajectoryCrafter/TrajectoryCrafter",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 30
+  },
+  "edbeeching/decision-transformer-gym-hopper-medium": {
+    "name": "edbeeching/decision-transformer-gym-hopper-medium",
+    "api_provider": "huggingface",
+    "model_id": "edbeeching/decision-transformer-gym-hopper-medium",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 20
+  },
+  "lerobot/smolvla_base": {
+    "name": "lerobot/smolvla_base",
+    "api_provider": "huggingface",
+    "model_id": "lerobot/smolvla_base",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 30
+  },
+  "sentence-transformers/all-MiniLM-L6-v2": {
+    "name": "sentence-transformers/all-MiniLM-L6-v2",
+    "api_provider": "huggingface",
+    "model_id": "sentence-transformers/all-MiniLM-L6-v2",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "google/tapas-base-finetuned-wtq": {
+    "name": "google/tapas-base-finetuned-wtq",
+    "api_provider": "gemini",
+    "model_id": "google/tapas-base-finetuned-wtq",
+    "max_tokens": 200,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 20
+  },
+  "Narrativaai/bloom-560m-finetuned-totto-table-to-text": {
+    "name": "Narrativaai/bloom-560m-finetuned-totto-table-to-text",
+    "api_provider": "huggingface",
+    "model_id": "Narrativaai/bloom-560m-finetuned-totto-table-to-text",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 30
+  },
+  "autogluon/mitra-classifier": {
+    "name": "autogluon/mitra-classifier",
+    "api_provider": "huggingface",
+    "model_id": "autogluon/mitra-classifier",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 30
+  },
+  "autogluon/mitra-regressor": {
+    "name": "autogluon/mitra-regressor",
+    "api_provider": "huggingface",
+    "model_id": "autogluon/mitra-regressor",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 30
+  },
+  "cross-encoder/ms-marco-MiniLM-L6-v2": {
+    "name": "cross-encoder/ms-marco-MiniLM-L6-v2",
+    "api_provider": "huggingface",
+    "model_id": "cross-encoder/ms-marco-MiniLM-L6-v2",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "microsoft/TRELLIS-text-xlarge": {
+    "name": "microsoft/TRELLIS-text-xlarge",
+    "api_provider": "huggingface",
+    "model_id": "microsoft/TRELLIS-text-xlarge",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 30
+  },
+  "facebook/musicgen-medium": {
+    "name": "facebook/musicgen-medium",
+    "api_provider": "huggingface",
+    "model_id": "facebook/musicgen-medium",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "stable-diffusion-v1-5/stable-diffusion-v1-5": {
+    "name": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+    "api_provider": "huggingface",
+    "model_id": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+    "max_tokens": 100,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "coqui/XTTS-v2": {
+    "name": "coqui/XTTS-v2",
+    "api_provider": "huggingface",
+    "model_id": "coqui/XTTS-v2",
+    "max_tokens": 100,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "Wan-AI/Wan2.1-T2V-1.3B-Diffusers": {
+    "name": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
+    "api_provider": "huggingface",
+    "model_id": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 45
+  },
+  "amazon/chronos-t5-small": {
+    "name": "amazon/chronos-t5-small",
+    "api_provider": "huggingface",
+    "model_id": "amazon/chronos-t5-small",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "google/ddpm-ema-celebahq-256": {
+    "name": "google/ddpm-ema-celebahq-256",
+    "api_provider": "gemini",
+    "model_id": "google/ddpm-ema-celebahq-256",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 30
+  },
+  "microsoft/xclip-base-patch32": {
+    "name": "microsoft/xclip-base-patch32",
+    "api_provider": "huggingface",
+    "model_id": "microsoft/xclip-base-patch32",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 45
+  },
+  "chancharikm/qwen2.5-vl-7b-cam-motion-preview": {
+    "name": "chancharikm/qwen2.5-vl-7b-cam-motion-preview",
+    "api_provider": "huggingface",
+    "model_id": "chancharikm/qwen2.5-vl-7b-cam-motion-preview",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 45
+  },
+  "numz/SeedVR2_comfyUI": {
+    "name": "numz/SeedVR2_comfyUI",
+    "api_provider": "huggingface",
+    "model_id": "numz/SeedVR2_comfyUI",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 30
+  },
+  "vidore/colpali-v1.3": {
+    "name": "vidore/colpali-v1.3",
+    "api_provider": "huggingface",
+    "model_id": "vidore/colpali-v1.3",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 45
+  },
+  "internlm/internlm-xcomposer2d5-7b": {
+    "name": "internlm/internlm-xcomposer2d5-7b",
+    "api_provider": "huggingface",
+    "model_id": "internlm/internlm-xcomposer2d5-7b",
+    "max_tokens": 200,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 45
+  },
+  "pyannote/segmentation-3.0": {
+    "name": "pyannote/segmentation-3.0",
+    "api_provider": "huggingface",
+    "model_id": "pyannote/segmentation-3.0",
+    "max_tokens": 50,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "facebook/bart-large-mnli": {
+    "name": "facebook/bart-large-mnli",
+    "api_provider": "huggingface",
+    "model_id": "facebook/bart-large-mnli",
+    "max_tokens": 100,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "openai/clip-vit-base-patch32": {
+    "name": "openai/clip-vit-base-patch32",
+    "api_provider": "openai",
+    "model_id": "openai/clip-vit-base-patch32",
+    "max_tokens": 50,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  },
+  "IDEA-Research/grounding-dino-base": {
+    "name": "IDEA-Research/grounding-dino-base",
+    "api_provider": "huggingface",
+    "model_id": "IDEA-Research/grounding-dino-base",
+    "max_tokens": 500,
+    "temperature": 0.7,
+    "cost_per_1k_tokens": 0.0,
+    "rate_limit_per_minute": 60,
+    "timeout_seconds": 60
+  }
+}

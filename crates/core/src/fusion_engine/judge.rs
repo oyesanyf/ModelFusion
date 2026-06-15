@@ -21,6 +21,7 @@ pub fn build_judge_prompt(user_prompt: &str, answers: &[ModelAnswer]) -> String 
 
     prompt.push_str("### INSTRUCTIONS FOR THE JUDGE:\n");
     prompt.push_str("Compare the assistant responses above. Identify consensus, disagreements, unique insights, blind spots, risk flags, and recommend a final synthesized position.\n");
+    prompt.push_str("CRITICAL QUALITY RULE: Do not automatically select the majority consensus. If a minority response contains significantly more specific evidence, source code alignment, or detailed technical reasoning than the majority consensus, recommend the technically superior minority response.\n");
     prompt.push_str("You MUST return a valid JSON object ONLY. Do not write a markdown introduction or conversational text.\n\n");
     prompt.push_str("### REQUIRED JSON FORMAT:\n");
     prompt.push_str("{\n");
@@ -113,7 +114,8 @@ pub async fn write_final_answer(
 ) -> anyhow::Result<String> {
     let mut writer_prompt = String::new();
     writer_prompt.push_str("Use the judge analysis below to answer the user.\n");
-    writer_prompt.push_str("Prioritize consensus.\n");
+    writer_prompt.push_str("Do not blindly prioritize consensus. If a minority response offers more specific evidence, code snippets, or deeper technical accuracy than the majority agreement, prioritize the technically superior minority view.\n");
+    writer_prompt.push_str("Prioritize accuracy, technical depth, and specific evidence over simple consensus.\n");
     writer_prompt.push_str("Mention uncertainty where models disagreed.\n");
     writer_prompt.push_str("Do not pretend disagreement is resolved.\n\n");
     

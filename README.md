@@ -1,141 +1,34 @@
-# ModelFusion
+HFOrchestra
+===========
 
-ModelFusion is a modular, high-performance Rust port of the **HFOrchestra** AI task orchestration CLI. It evaluates and selects HuggingFace models dynamically from a local SQLite database, routes prompts to various LLM API providers, scans text for adversarial threat patterns, and analyzes Windows executables for malware indicators.
+HFOrchestra provides utilities and scripts to orchestrate Hugging Face model discovery, database population, PE analysis helpers, and related tooling.
 
----
+Installation
+------------
 
-## 🏗️ Crate Architecture
-
-The workspace is structured into several modular crates under the `crates/` directory:
+Install from source or future PyPI releases:
 
 ```
-d:\harfile\ModelFusion\
-├── Cargo.toml            (Workspace Root)
-├── .env.example          (Environment variables template)
-├── config/               (JSON/CSV configuration files copied from Python)
-├── db/                   (SQLite database location)
-├── crates/
-│   ├── cli/              (Main CLI binary - parses flags and handles dispatches)
-│   ├── core/             (Named 'modelfusion_core' - houses LLM providers, orchestrator, and processor)
-│   ├── db/               (SQLite database wrapper, schemas, and stats queries)
-│   ├── task_detection/   (Keyword-based prompt task and language detection)
-│   ├── model_selection/  (Multi-objective scorer and weighted ensemble selectors)
-│   ├── analysis/         (PE executable parser using goblin and malware risk evaluator)
-│   ├── security/         (ATLAS Threat Detector scanning for MITRE ATLAS adversarial TTPs)
-│   ├── monitoring/       (Rolling session quality and adaptive threshold managers)
-│   └── utils/            (Backups, folder scaffolding, and rate limiter utilities)
+pip install hforchestra
 ```
 
----
+Usage
+-----
 
-## ⚙️ Setup Instructions
+Import modules directly or reference scripts:
 
-### Prerequisites
-- [Rust & Cargo](https://rustup.rs/) (Stable toolchain)
-- SQLite (Bundled in the `db` crate dependency)
-
-### Environment Variables
-Copy `.env.example` to `.env` in the root folder and fill in your API credentials:
-```bash
-cp .env.example .env
 ```
-Available environment keys:
-- `OPENAI_API_KEY`: For OpenAI model calls (`gpt-3.5-turbo`, etc.)
-- `ANTHROPIC_API_KEY`: For Anthropic model calls (`claude-3`, etc.)
-- `GOOGLE_GEMINI_API_KEY`: For Google Gemini model calls
-- `HF_TOKEN` / `HUGGINGFACE_API_KEY`: For HuggingFace Inference API calls
-
----
-
-## 🚀 Usage Guide
-
-### 1. Build the Workspace
-Compile all crates in release or dev profile:
-```bash
-cargo build --workspace
+from core.advanced_analytics import analyze_models
 ```
 
-### 2. Populate the Database
-Initializes the database schema and downloads the top 100 model metadata records from the HuggingFace Hub REST API:
-```bash
-cargo run --bin cli -- --update
-```
+Requirements
+------------
 
-### 3. Display Database Statistics
-Query database metrics, model counts by task/tag, and the highest-ranked models:
-```bash
-cargo run --bin cli -- --stats
-```
+See `requirements.txt` for optional development dependencies.
 
-### 4. Run Task Orchestration
-Processes a prompt, automatically detects its task type, searches the database for the best model using multi-objective optimization, and executes the call:
-```bash
-cargo run --bin cli -- --prompt "translate this sentence to spanish"
-```
-You can also force a specific task or request OpenAI processing:
-```bash
-cargo run --bin cli -- --prompt "write a story about a rusty robot" --task text-generation --use-openai
-```
+License
+-------
 
-### 5. Windows Portable Executable (PE) Analysis
-Extracts DOS headers, File headers, Sections, and DLL imports from a binary executable to calculate a malware score and flag potential security risks:
-```bash
-cargo run --bin cli -- --pe-header-extraction --file target/debug/cli.exe
-```
+MIT
 
-### 6. List Tasks
-List available tasks, either as a general summary or filtered by category:
-```bash
-cargo run --bin cli -- --tasks
-cargo run --bin cli -- --tasks text
-```
 
-### 7. Run Model Fusion (Access to Over 1 Million Hugging Face Models)
-ModelFusion has access to the entire Hugging Face Hub, indexing over **1 million models**. When a prompt is submitted, the system automatically classifies the task type (e.g., `text-generation`, `summarization`, `translation`, `question-answering`) and queries the local database to find the highest-ranked model candidates based on popularity, efficiency, freshness, open-source licensing, and decision scores.
-
-With **Model Fusion** (`--fusion`), instead of relying on a single model, the orchestrator:
-1. **Per-Task Model Selection**: Automatically queries the database to select the 10 best-performing models for the classified task.
-2. **Concurrent Panel Execution**: Runs all 10 selected models concurrently to gather diverse outputs.
-3. **LLM-as-a-Judge Evaluation**: Submits all panel responses to a 32B judge model (`deepseek-ai/DeepSeek-R1-Distill-Qwen-32B`) to analyze consensus, identify disagreements, unique insights, risk flags, and recommend a final synthesized position.
-4. **Synthesis & Writing**: A 32B writer model receives the judge analysis and writes a final, comprehensive synthesized response.
-
-If the database is empty or selection is unavailable, the pipeline falls back to a default panel of 10 leading open-weights models.
-
-```bash
-cargo run --bin cli -- --prompt "compare Python and Rust for high-performance CLI tools" --fusion
-```
-
-### 8. Review Code in a Folder
-Recursively reads and aggregates all supported code/text files from a specified folder and passes them for analysis. You can specify a custom prompt or let it execute a default code review prompt:
-```bash
-cargo run --bin cli -- --folder crates/cli/src
-```
-Or run with Model Fusion for a comprehensive multi-model comparison:
-```bash
-cargo run --bin cli -- --folder crates/cli/src --fusion
-```
-
-### 9. Saving Reports
-You can save the final output of any run (including Model Fusion and folder reviews) to a local file using the `--report` flag, and specify the output format using the `--reporttype` flag (supports `md`, `txt`, `json`, `pdf`, and `docx`):
-```bash
-cargo run --bin cli -- --folder crates/cli/src --fusion --report target/reports --reporttype pdf
-```
-- **`md` / `txt`**: Plaintext files saving the raw report.
-- **`json`**: A structured JSON file containing metadata, prompt details, timestamp, and report content.
-- **`pdf`**: Generates a clean PDF document using standard Helvetica fonts and dynamic word wrapping.
-- **`docx`**: Generates a Word-compatible `.docx` file using formatted Rich Text Format.
-
-### 10. CLI Command Line Help
-To view all available command line arguments, flags, and options:
-```bash
-cargo run --bin cli -- --help
-```
-
----
-
-## 🛡️ Security & Innovations
-
-- **Model Fusion Pipeline**: Dynamically queries a panel of 10 concurrent Hugging Face models using the new OpenAI-compatible router at `router.huggingface.co/v1`, handles `reasoning_content` for DeepSeek-R1 distilled models, and performs robust multi-stage analysis and synthesis.
-- **MITRE ATLAS Threat Scanner**: Scans prompts against common adversarial patterns (like prompt injection, evasion of policies, and social engineering) using compiled regex tables.
-- **Multi-Objective Model Scoring**: Norms downloads and likes, blends in model size efficiency, and checks licenses against a list of approved open-source licenses (`mit`, `apache-2.0`, etc.) to choose the best candidate.
-- **Offline Provider Mocks**: If API keys are missing or requests fail, the orchestration system falls back gracefully to a mock answer format, allowing the system to run in offline/isolated environments without crashing.

@@ -1,0 +1,32 @@
+[
+  {
+    "id": "draco_task_1",
+    "domain": "Software Engineering",
+    "problem": "Design a high-concurrency connection pool in Rust that prevents deadlocks.",
+    "answer": "{\"sections\": [{\"name\": \"Concurrency Safety\", \"criteria\": [{\"id\": \"crit_1\", \"weight\": 2.0, \"desc\": \"Uses Mutex or RwLock for synchronization\"}, {\"id\": \"crit_2\", \"weight\": 2.0, \"desc\": \"Avoids nested locks to prevent deadlocks\"}]}, {\"name\": \"Performance & Features\", \"criteria\": [{\"id\": \"crit_3\", \"weight\": 1.5, \"desc\": \"Implements connection reuse/pooling\"}, {\"id\": \"crit_4\", \"weight\": -3.0, \"desc\": \"Contains memory leaks or unclosed sockets\"}]}]}"
+  },
+  {
+    "id": "draco_task_2",
+    "domain": "Computer Security",
+    "problem": "Analyze the security vulnerabilities of a C code snippet parsing ELF headers, and provide mitigations.",
+    "answer": "{\"sections\": [{\"name\": \"Vulnerability Identification\", \"criteria\": [{\"id\": \"crit_5\", \"weight\": 3.0, \"desc\": \"Identifies buffer overflow risks in parsing\"}, {\"id\": \"crit_6\", \"weight\": 2.5, \"desc\": \"Identifies integer underflow/overflow in size checks\"}]}, {\"name\": \"Remediation\", \"criteria\": [{\"id\": \"crit_7\", \"weight\": 2.0, \"desc\": \"Provides corrected safe C code snippet\"}, {\"id\": \"crit_8\", \"weight\": -2.0, \"desc\": \"Mentions invalid mitigations or incorrect APIs\"}]}]}"
+  },
+  {
+    "id": "draco_task_3",
+    "domain": "System Architecture",
+    "problem": "Evaluate the performance trade-offs between REST and gRPC for microservices.",
+    "answer": "{\"sections\": [{\"name\": \"Protocols Comparison\", \"criteria\": [{\"id\": \"crit_9\", \"weight\": 2.0, \"desc\": \"Mentions Protobuf serialization efficiency\"}, {\"id\": \"crit_10\", \"weight\": 2.0, \"desc\": \"Mentions HTTP/2 multiplexing in gRPC\"}, {\"id\": \"crit_11\", \"weight\": -4.0, \"desc\": \"Incorrectly states REST is faster than gRPC\"}]}]}"
+  },
+  {
+    "id": "draco_task_4",
+    "domain": "AI Threat Detection",
+    "problem": "Summarize the key architectural patterns of the ATLAS Threat Detection system.",
+    "answer": "{\"sections\": [{\"name\": \"ATLAS Alignment\", \"criteria\": [{\"id\": \"crit_12\", \"weight\": 2.5, \"desc\": \"Identifies MITRE ATLAS threat tactics\"}, {\"id\": \"crit_13\", \"weight\": 2.0, \"desc\": \"Mentions adversarial model evasion attacks\"}]}, {\"name\": \"Mitigation Techniques\", \"criteria\": [{\"id\": \"crit_14\", \"weight\": 1.5, \"desc\": \"Proposes concrete security controls or logs\"}]}]}"
+  },
+  {
+    "id": "draco_task_5",
+    "domain": "Deep Learning Optimization",
+    "problem": "Explain the SINQ quantization algorithm and its hardware efficiency benefits.",
+    "answer": "{\"sections\": [{\"name\": \"Quantization Mechanics\", \"criteria\": [{\"id\": \"crit_15\", \"weight\": 3.0, \"desc\": \"Explains weight matrix tiling and grouping\"}, {\"id\": \"crit_16\", \"weight\": 2.0, \"desc\": \"Describes bit-width reduction (e.g., 4-bit)\"}, {\"id\": \"crit_17\", \"weight\": -5.0, \"desc\": \"States quantization increases memory usage\"}]}]}"
+  }
+]

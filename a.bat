@@ -1,0 +1,1 @@
+python main.py --hallucination-detection --file c:\testfiles\file.txt --prompt "Analyze this hallucination detection content" --verbose

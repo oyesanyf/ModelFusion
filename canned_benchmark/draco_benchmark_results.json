@@ -1,0 +1,290 @@
+{
+  "benchmark_name": "DRACO Evaluation Suite",
+  "configurations": {
+    "gpt-4o-mini alone": {
+      "tasks": [
+        {
+          "task_id": "draco_task_1",
+          "domain": "Software Engineering",
+          "score": 63.63636363636363,
+          "verdicts": {
+            "crit_1": "MET",
+            "crit_2": "UNMET",
+            "crit_3": "MET",
+            "crit_4": "UNMET"
+          }
+        },
+        {
+          "task_id": "draco_task_2",
+          "domain": "Computer Security",
+          "score": 100.0,
+          "verdicts": {
+            "crit_5": "MET",
+            "crit_6": "MET",
+            "crit_7": "MET",
+            "crit_8": "UNMET"
+          }
+        },
+        {
+          "task_id": "draco_task_3",
+          "domain": "System Architecture",
+          "score": 100.0,
+          "verdicts": {
+            "crit_9": "MET",
+            "crit_10": "MET",
+            "crit_11": "UNMET"
+          }
+        },
+        {
+          "task_id": "draco_task_4",
+          "domain": "AI Threat Detection",
+          "score": 0.0,
+          "verdicts": {
+            "crit_12": "UNMET",
+            "crit_13": "UNMET",
+            "crit_14": "UNMET"
+          }
+        },
+        {
+          "task_id": "draco_task_5",
+          "domain": "Deep Learning Optimization",
+          "score": 0.0,
+          "verdicts": {
+            "crit_15": "UNMET",
+            "crit_16": "UNMET",
+            "crit_17": "UNMET"
+          }
+        }
+      ],
+      "mean_score": 52.72727272727273
+    },
+    "gpt-4o alone": {
+      "tasks": [
+        {
+          "task_id": "draco_task_1",
+          "domain": "Software Engineering",
+          "score": 100.0,
+          "verdicts": {
+            "crit_1": "MET",
+            "crit_2": "MET",
+            "crit_3": "MET",
+            "crit_4": "UNMET"
+          }
+        },
+        {
+          "task_id": "draco_task_2",
+          "domain": "Computer Security",
+          "score": 100.0,
+          "verdicts": {
+            "crit_5": "MET",
+            "crit_6": "MET",
+            "crit_7": "MET",
+            "crit_8": "UNMET"
+          }
+        },
+        {
+          "task_id": "draco_task_3",
+          "domain": "System Architecture",
+          "score": 100.0,
+          "verdicts": {
+            "crit_9": "MET",
+            "crit_10": "MET",
+            "crit_11": "UNMET"
+          }
+        },
+        {
+          "task_id": "draco_task_4",
+          "domain": "AI Threat Detection",
+          "score": 0.0,
+          "verdicts": {
+            "crit_12": "UNMET",
+            "crit_13": "UNMET",
+            "crit_14": "UNMET"
+          }
+        },
+        {
+          "task_id": "draco_task_5",
+          "domain": "Deep Learning Optimization",
+          "score": 40.0,
+          "verdicts": {
+            "crit_15": "UNMET",
+            "crit_16": "MET",
+            "crit_17": "UNMET"
+          }
+        }
+      ],
+      "mean_score": 68.0
+    },
+    "gemini-1.5-flash alone": {
+      "tasks": [
+        {
+          "task_id": "draco_task_1",
+          "domain": "Software Engineering",
+          "score": 0.0,
+          "verdicts": {
+            "crit_1": "UNMET",
+            "crit_2": "UNMET",
+            "crit_3": "UNMET",
+            "crit_4": "UNMET"
+          }
+        },
+        {
+          "task_id": "draco_task_2",
+          "domain": "Computer Security",
+          "score": 0.0,
+          "verdicts": {
+            "crit_5": "UNMET",
+            "crit_6": "UNMET",
+            "crit_7": "UNMET",
+            "crit_8": "UNMET"
+          }
+        },
+        {
+          "task_id": "draco_task_3",
+          "domain": "System Architecture",
+          "score": 0.0,
+          "verdicts": {
+            "crit_9": "UNMET",
+            "crit_10": "UNMET",
+            "crit_11": "UNMET"
+          }
+        },
+        {
+          "task_id": "draco_task_4",
+          "domain": "AI Threat Detection",
+          "score": 0.0,
+          "verdicts": {
+            "crit_12": "UNMET",
+            "crit_13": "UNMET",
+            "crit_14": "UNMET"
+          }
+        },
+        {
+          "task_id": "draco_task_5",
+          "domain": "Deep Learning Optimization",
+          "score": 0.0,
+          "verdicts": {
+            "crit_15": "UNMET",
+            "crit_16": "UNMET",
+            "crit_17": "UNMET"
+          }
+        }
+      ],
+      "mean_score": 0.0
+    },
+    "--fusion panel": {
+      "tasks": [
+        {
+          "task_id": "draco_task_1",
+          "domain": "Software Engineering",
+          "score": 100.0,
+          "verdicts": {
+            "crit_1": "MET",
+            "crit_2": "MET",
+            "crit_3": "MET",
+            "crit_4": "UNMET"
+          }
+        },
+        {
+          "task_id": "draco_task_2",
+          "domain": "Computer Security",
+          "score": 73.33333333333333,
+          "verdicts": {
+            "crit_5": "MET",
+            "crit_6": "MET",
+            "crit_7": "UNMET",
+            "crit_8": "UNMET"
+          }
+        },
+        {
+          "task_id": "draco_task_3",
+          "domain": "System Architecture",
+          "score": 100.0,
+          "verdicts": {
+            "crit_9": "MET",
+            "crit_10": "MET",
+            "crit_11": "UNMET"
+          }
+        },
+        {
+          "task_id": "draco_task_4",
+          "domain": "AI Threat Detection",
+          "score": 0.0,
+          "verdicts": {
+            "crit_12": "UNMET",
+            "crit_13": "UNMET",
+            "crit_14": "UNMET"
+          }
+        },
+        {
+          "task_id": "draco_task_5",
+          "domain": "Deep Learning Optimization",
+          "score": 0.0,
+          "verdicts": {
+            "crit_15": "UNMET",
+            "crit_16": "UNMET",
+            "crit_17": "UNMET"
+          }
+        }
+      ],
+      "mean_score": 54.666666666666664
+    },
+    "Fusion + supplied context": {
+      "tasks": [
+        {
+          "task_id": "draco_task_1",
+          "domain": "Software Engineering",
+          "score": 100.0,
+          "verdicts": {
+            "crit_1": "MET",
+            "crit_2": "MET",
+            "crit_3": "MET",
+            "crit_4": "UNMET"
+          }
+        },
+        {
+          "task_id": "draco_task_2",
+          "domain": "Computer Security",
+          "score": 73.33333333333333,
+          "verdicts": {
+            "crit_5": "MET",
+            "crit_6": "MET",
+            "crit_7": "UNMET",
+            "crit_8": "UNMET"
+          }
+        },
+        {
+          "task_id": "draco_task_3",
+          "domain": "System Architecture",
+          "score": 100.0,
+          "verdicts": {
+            "crit_9": "MET",
+            "crit_10": "MET",
+            "crit_11": "UNMET"
+          }
+        },
+        {
+          "task_id": "draco_task_4",
+          "domain": "AI Threat Detection",
+          "score": 41.66666666666667,
+          "verdicts": {
+            "crit_12": "MET",
+            "crit_13": "UNMET",
+            "crit_14": "UNMET"
+          }
+        },
+        {
+          "task_id": "draco_task_5",
+          "domain": "Deep Learning Optimization",
+          "score": 100.0,
+          "verdicts": {
+            "crit_15": "MET",
+            "crit_16": "MET",
+            "crit_17": "UNMET"
+          }
+        }
+      ],
+      "mean_score": 83.0
+    }
+  }
+}
