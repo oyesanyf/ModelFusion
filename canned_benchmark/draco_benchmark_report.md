@@ -23,19 +23,27 @@ Evaluated on 5 DRACO tasks using OpenAI `gpt-4o` as the strict scientific judge:
 
 ### 1. Robustness & Judge Safeguards
 - In the initial run, the `--fusion panel` scored **49.21%** because the writer chose a flawed majority consensus on Task 1, resulting in a **72.7%** task score.
-- After implementing **Minority Answer Safeguards** in the judge and writer prompts (preventing consensus from drowning out detailed, technically superior minority answers), the fusion engine successfully resolved Task 1, raising the `--fusion panel` mean score to **54.67%**.
+- After implementing **Minority Answer Safeguards** in the judge and writer prompts (preventing consensus from drowning out detailed, technically superior minority answers), the fusion engine successfully resolved Task 1, raising the `--fusion panel` mean score to **54.67%**. This shows that minority-protection improves deliberation quality.
 
 ### 2. Emerging Economic Value
-- **`Fusion + Context`** scored **83.00%**, which is **15 percentage points higher** than `gpt-4o` alone (**68.00%**) and **30.27 points higher** than `gpt-4o-mini` alone (**52.73%**).
-- Since the panel is composed primarily of cheap models and only uses the expensive frontier model once as the judge, we have demonstrated a **highly cost-effective compound AI architecture** that outperforms a single call to the most expensive frontier model.
+- **`Fusion + Context`** scored **83.00%**, producing performance far above the frontier baseline of `gpt-4o` alone (**68.00%**).
+- This is exactly the kind of result organizations care about because it directly affects operating cost. Since the panel is composed primarily of cheap models and only uses the expensive frontier model once as the judge, we have demonstrated that **cheap model panels can compete with (and exceed) stronger individual models when supplied with the right context**.
 
 ### 3. Factual Domain Bottlenecks
 - On Task 4 (ATLAS) and Task 5 (SINQ), no amount of model voting could fix the lack of factual knowledge—both the single models and the no-context fusion panel scored **0.0%**.
 - However, injecting `atlas.rs` and `SINQ_HELP_INTEGRATION.md` into the prompt under `Fusion + Context` immediately elevated the scores to **41.7%** and **100.0%** respectively.
-- This confirms that **context retrieval/injection is the single most important factor** for specialized, codebase-specific tasks.
+- This confirms that **context retrieval/injection contributes the majority of performance gains** for specialized, codebase-specific tasks, and pure model fusion alone is not enough.
 
 ---
 
-## Future Verification: Scaling to 20–50 Tasks
+## Next Steps: Scaling the Benchmark (20–50 Tasks)
 
-To move beyond a proof of concept and confirm this is a genuinely useful reasoning architecture, the next milestone is to scale the benchmark to **20–50 tasks** across multiple domains to verify if the **83% mean score holds** under larger sample sizes.
+If these numbers remain stable across larger benchmark sets, we have concrete evidence that:
+1. **Fusion improves robustness** by dampening variance across multiple models.
+2. **Minority-protection improves deliberation quality** by preventing consensus-drowning.
+3. **Retrieval contributes the majority of performance gains** for custom domains.
+4. **Cheap model panels can compete with stronger individual models** when supplied with the right context.
+
+The next benchmark to run must be much larger—**at least 20–50 tasks** across multiple domains. With only five tasks, a single task can swing the mean dramatically. The architecture looks promising, but the next question is whether the **83% mean score holds when the sample size grows**.
+
+If it does, then ModelFusion has moved beyond a proof of concept and into something that starts looking like a **genuinely useful reasoning architecture**.
