@@ -202,6 +202,9 @@ struct Args {
     #[arg(long, help = "Enable comprehensive analysis mode")]
     full: bool,
 
+    #[arg(long, help = "Enable model fusion to process prompt using a panel of models")]
+    fusion: bool,
+
     // ---------------------------------------------------------
     // Data Science Flags
     // ---------------------------------------------------------
@@ -510,7 +513,7 @@ async fn main() -> Result<()> {
     if args.pe_header_extraction {
         let file_path = args.file.as_deref().unwrap_or("test.exe");
         let prompt = args.prompt.as_deref().unwrap_or("Perform PE analysis");
-        let res = handler.handle_pe_analysis(file_path, prompt);
+        handler.handle_pe_analysis(file_path, prompt);
         return Ok(());
     }
 
@@ -518,6 +521,23 @@ async fn main() -> Result<()> {
     // Orchestration Flow
     // ---------------------------------------------------------
     if let Some(ref prompt) = args.prompt {
+        let is_fusion_needed = args.fusion || modelfusion_core::fusion_engine::classify_prompt(prompt);
+
+        if is_fusion_needed {
+            println!("🤖 Model Fusion is active (explicitly requested or dynamically classified).");
+            match modelfusion_core::fusion_engine::run_fusion(prompt).await {
+                Ok(content) => {
+                    println!("\n✨ Orchestration Successful (via Model Fusion)!\n");
+                    println!("{}", content);
+                }
+                Err(e) => {
+                    println!("\n❌ Orchestration Failed (via Model Fusion)!\n");
+                    println!("Error: {}", e);
+                }
+            }
+            return Ok(());
+        }
+
         let db_path = handler.db_path.clone();
         let orchestrator = HuggingFaceOrchestrator::new(db_path, args.budget, args.enable_ml, args.verbose);
 

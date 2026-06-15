@@ -19,3 +19,4 @@ security        = { path = "../security" }
 monitoring      = { path = "../monitoring" }
 utils           = { path = "../utils" }
 async-trait     = { workspace = true }
+futures         = { workspace = true }

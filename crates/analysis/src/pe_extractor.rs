@@ -186,7 +186,6 @@ impl CompletePEHeaderExtractor {
         let mut entry_point = "0x0".to_string();
         let mut image_base = "0x0".to_string();
         let mut size_of_image = 0u32;
-        let mut subsystem_val = 0u16;
         let mut subsystem = "0x0".to_string();
         let mut subsystem_type = "UNKNOWN".to_string();
 
@@ -194,7 +193,7 @@ impl CompletePEHeaderExtractor {
             entry_point = format!("0x{:X}", opt.standard_fields.address_of_entry_point);
             image_base = format!("0x{:X}", opt.windows_fields.image_base);
             size_of_image = opt.windows_fields.size_of_image;
-            subsystem_val = opt.windows_fields.subsystem;
+            let subsystem_val = opt.windows_fields.subsystem;
             subsystem = format!("0x{:X}", subsystem_val);
             subsystem_type = self.subsystem_types.get(&subsystem_val).cloned().unwrap_or_else(|| "UNKNOWN".to_string());
         }

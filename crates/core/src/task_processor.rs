@@ -1,7 +1,6 @@
 //! Universal task processor.
 
 use crate::providers::{create_provider, LLMProvider, ModelConfig, ProviderResult};
-use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;

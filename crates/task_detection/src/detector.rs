@@ -43,7 +43,7 @@ impl IntelligentTaskDetector {
     /// Detect the most likely task type from a prompt.
     pub fn detect_task_type(&self, prompt: &str) -> TaskDetectionResult {
         // Check cache first
-        if let Ok(mut cache) = self.cache.lock() {
+        if let Ok(cache) = self.cache.lock() {
             if let Some(cached) = cache.get(prompt) {
                 return cached.clone();
             }

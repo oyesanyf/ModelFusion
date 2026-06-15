@@ -7,7 +7,6 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use db::{HuggingFaceModelDatabase, ModelMetrics};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::Path;
 
 /// Different model selection strategies.

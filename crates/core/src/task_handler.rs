@@ -1,9 +1,5 @@
-//! Comprehensive Task Handler.
-
-use crate::orchestrator::HuggingFaceOrchestrator;
-use crate::task_processor::TaskResult;
 use analysis::PEAnalyzer;
-use anyhow::{bail, Context, Result};
+use anyhow::Result;
 use db::{HuggingFaceModelDatabase, ModelMetrics};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -34,6 +30,21 @@ struct HFModelApiResponse {
     last_modified: Option<String>,
     #[serde(rename = "library_name")]
     library_name: Option<String>,
+}
+
+fn parse_next_link(link_val: &str) -> Option<String> {
+    for item in link_val.split(',') {
+        if item.contains("rel=\"next\"") || item.contains("rel=next") {
+            if let Some(start) = item.find('<') {
+                if let Some(end) = item.find('>') {
+                    if start < end {
+                        return Some(item[start + 1..end].to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Handles CLI actions like update, stats, lists, restore, and specialized tasks.
@@ -227,46 +238,6 @@ impl ComprehensiveTaskHandler {
             Err(e) => println!("⚠️ Backup failed: {}, continuing...", e),
         }
 
-        // Query HuggingFace API for models
-        let url = "https://huggingface.co/api/models?limit=100&full=false";
-        let client = reqwest::Client::new();
-        println!("🌍 Fetching top models from HuggingFace Hub API...");
-        
-        let response = match client.get(url).send().await {
-            Err(e) => {
-                return TaskHandlerResult {
-                    success: false,
-                    content: format!("❌ Failed to connect to HuggingFace API: {}", e),
-                    data: None,
-                    error_message: Some(e.to_string()),
-                };
-            }
-            Ok(res) => res,
-        };
-
-        if !response.status().is_success() {
-            return TaskHandlerResult {
-                success: false,
-                content: format!("❌ HuggingFace API returned status: {}", response.status()),
-                data: None,
-                error_message: Some(format!("HTTP {}", response.status())),
-            };
-        }
-
-        let api_models: Vec<HFModelApiResponse> = match response.json().await {
-            Err(e) => {
-                return TaskHandlerResult {
-                    success: false,
-                    content: format!("❌ Failed to parse API JSON: {}", e),
-                    data: None,
-                    error_message: Some(e.to_string()),
-                };
-            }
-            Ok(m) => m,
-        };
-
-        println!("🏗️  Updating database with {} fetched models...", api_models.len());
-        
         let db = match HuggingFaceModelDatabase::new(&self.db_path) {
             Err(e) => {
                 return TaskHandlerResult {
@@ -279,73 +250,156 @@ impl ComprehensiveTaskHandler {
             Ok(d) => d,
         };
 
-        let mut models_to_insert = Vec::new();
-        for m in api_models {
-            let model_id = m.id;
-            let author = m.author.unwrap_or_else(|| "unknown".to_string());
-            let pipeline_tag = m.pipeline_tag.unwrap_or_else(|| "text-generation".to_string());
-            let tags = m.tags.unwrap_or_default();
-            let downloads = m.downloads.unwrap_or(0);
-            let likes = m.likes.unwrap_or(0);
-            let last_modified = m.last_modified.unwrap_or_else(|| "2026-01-01T00:00:00Z".to_string());
-            let library_name = m.library_name.unwrap_or_else(|| "transformers".to_string());
+        // Check if there is a saved resume cursor URL
+        let mut url = match db.get_meta("update_cursor_url") {
+            Ok(Some(saved_url)) => {
+                if !saved_url.is_empty() {
+                    println!("🔄 Resuming database update from saved cursor...");
+                    saved_url
+                } else {
+                    "https://huggingface.co/api/models?limit=1000&full=false".to_string()
+                }
+            }
+            _ => "https://huggingface.co/api/models?limit=1000&full=false".to_string(),
+        };
 
-            // Simple licensing detection from tags
-            let mut license = "unknown".to_string();
-            for t in &tags {
-                if t.starts_with("license:") {
-                    license = t.trim_start_matches("license:").to_string();
+        let client = reqwest::Client::new();
+        println!("🌍 Fetching models from HuggingFace Hub API...");
+        
+        let mut total_upserted = 0;
+        let mut page_num = 1;
+        let token = std::env::var("HF_TOKEN")
+            .or_else(|_| std::env::var("HUGGINGFACE_API_KEY"))
+            .ok();
+
+        loop {
+            println!("📥 Fetching page {} (url: {})...", page_num, url);
+            let mut req = client.get(&url);
+            if let Some(ref t) = token {
+                req = req.bearer_auth(t);
+            }
+
+            let response = match req.send().await {
+                Err(e) => {
+                    println!("❌ Failed to connect to HuggingFace API on page {}: {}", page_num, e);
                     break;
                 }
+                Ok(res) => res,
+            };
+
+            if !response.status().is_success() {
+                println!("❌ HuggingFace API returned status {} on page {}", response.status(), page_num);
+                if response.status() == 429 {
+                    println!("⚠️ Rate limit reached. Stopping pagination to preserve retrieved models.");
+                }
+                break;
             }
 
-            // Heuristics for scoring
-            let popularity_score = (downloads as f64 / 100000.0).min(1.0);
-            let capability_score = if library_name == "transformers" { 0.8 } else { 0.5 };
-            let efficiency_score = 0.7;
-            let decision_score = popularity_score * 0.4 + capability_score * 0.4 + efficiency_score * 0.2;
+            let next_url = if let Some(link_val) = response.headers().get(reqwest::header::LINK) {
+                if let Ok(link_str) = link_val.to_str() {
+                    parse_next_link(link_str)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
 
-            models_to_insert.push(ModelMetrics {
-                model_id,
-                author,
-                pipeline_tag,
-                tags,
-                description: "Imported from HF API".to_string(),
-                downloads,
-                likes,
-                decision_score: decision_score * 10.0, // Scale to 10
-                capability_score: capability_score * 10.0,
-                efficiency_score: efficiency_score * 10.0,
-                popularity_score: popularity_score * 10.0,
-                model_type: "causal-lm".to_string(),
-                library_name,
-                last_modified,
-                license,
-                task_keywords: Vec::new(),
-                architecture: "transformer".to_string(),
-                size_mb: 500.0, // Default estimate
-                language: "en".to_string(),
-            });
-        }
+            let api_models: Vec<HFModelApiResponse> = match response.json().await {
+                Err(e) => {
+                    println!("❌ Failed to parse API JSON on page {}: {}", page_num, e);
+                    break;
+                }
+                Ok(m) => m,
+            };
 
-        match db.upsert_batch(&models_to_insert) {
-            Err(e) => TaskHandlerResult {
-                success: false,
-                content: format!("❌ Failed to write to database: {}", e),
-                data: None,
-                error_message: Some(e.to_string()),
-            },
-            Ok(count) => {
-                let _ = db.set_meta("last_updated", &chrono::Utc::now().to_rfc3339());
-                let out = format!("✨ Database successfully updated! Processed and upserted {} models.", count);
-                println!("{}", out);
-                TaskHandlerResult {
-                    success: true,
-                    content: out,
-                    data: Some(json!({ "upserted_count": count })),
-                    error_message: None,
+            if api_models.is_empty() {
+                break;
+            }
+
+            println!("🏗️  Updating database with {} fetched models from page {}...", api_models.len(), page_num);
+
+            let mut models_to_insert = Vec::new();
+            for m in api_models {
+                let model_id = m.id;
+                let author = m.author.unwrap_or_else(|| "unknown".to_string());
+                let pipeline_tag = m.pipeline_tag.unwrap_or_else(|| "text-generation".to_string());
+                let tags = m.tags.unwrap_or_default();
+                let downloads = m.downloads.unwrap_or(0);
+                let likes = m.likes.unwrap_or(0);
+                let last_modified = m.last_modified.unwrap_or_else(|| "2026-01-01T00:00:00Z".to_string());
+                let library_name = m.library_name.unwrap_or_else(|| "transformers".to_string());
+
+                let mut license = "unknown".to_string();
+                for t in &tags {
+                    if t.starts_with("license:") {
+                        license = t.trim_start_matches("license:").to_string();
+                        break;
+                    }
+                }
+
+                let popularity_score = (downloads as f64 / 100000.0).min(1.0);
+                let capability_score = if library_name == "transformers" { 0.8 } else { 0.5 };
+                let efficiency_score = 0.7;
+                let decision_score = popularity_score * 0.4 + capability_score * 0.4 + efficiency_score * 0.2;
+
+                models_to_insert.push(ModelMetrics {
+                    model_id,
+                    author,
+                    pipeline_tag,
+                    tags,
+                    description: "Imported from HF API".to_string(),
+                    downloads,
+                    likes,
+                    decision_score: decision_score * 10.0, // Scale to 10
+                    capability_score: capability_score * 10.0,
+                    efficiency_score: efficiency_score * 10.0,
+                    popularity_score: popularity_score * 10.0,
+                    model_type: "causal-lm".to_string(),
+                    library_name,
+                    last_modified,
+                    license,
+                    task_keywords: Vec::new(),
+                    architecture: "transformer".to_string(),
+                    size_mb: 500.0, // Default estimate
+                    language: "en".to_string(),
+                });
+            }
+
+            match db.upsert_batch(&models_to_insert) {
+                Err(e) => {
+                    println!("❌ Failed to write to database on page {}: {}", page_num, e);
+                    break;
+                }
+                Ok(count) => {
+                    total_upserted += count;
+                    println!("✨ Page {} completed. Total upserted models: {}", page_num, total_upserted);
+                    // Save resume cursor for next iteration/run
+                    if let Some(ref next) = next_url {
+                        let _ = db.set_meta("update_cursor_url", next);
+                    } else {
+                        let _ = db.set_meta("update_cursor_url", "");
+                    }
                 }
             }
+
+            if let Some(next) = next_url {
+                url = next;
+                page_num += 1;
+            } else {
+                let _ = db.set_meta("update_cursor_url", "");
+                break;
+            }
+        }
+
+        let _ = db.set_meta("last_updated", &chrono::Utc::now().to_rfc3339());
+        let out = format!("✨ Database successfully updated! Processed and upserted {} models.", total_upserted);
+        println!("{}", out);
+        TaskHandlerResult {
+            success: true,
+            content: out,
+            data: Some(json!({ "upserted_count": total_upserted })),
+            error_message: None,
         }
     }
 
@@ -359,6 +413,10 @@ impl ComprehensiveTaskHandler {
             for f in files {
                 let _ = self.folder_manager.safe_delete(&f);
             }
+        }
+        // Reset the update resumption cursor
+        if let Ok(db) = HuggingFaceModelDatabase::new(&self.db_path) {
+            let _ = db.set_meta("update_cursor_url", "");
         }
         TaskHandlerResult {
             success: true,
@@ -453,7 +511,7 @@ impl ComprehensiveTaskHandler {
     }
 
     /// Handle PE file analysis.
-    pub fn handle_pe_analysis(&self, file_path: &str, prompt: &str) -> TaskHandlerResult {
+    pub fn handle_pe_analysis(&self, file_path: &str, _prompt: &str) -> TaskHandlerResult {
         println!("🔍 Starting PE header extraction and malware scan for: {}...", file_path);
         let path = Path::new(file_path);
         let report = self.pe_analyzer.analyze_file(path);

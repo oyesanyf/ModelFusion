@@ -56,6 +56,7 @@ pub fn create_provider(config: ModelConfig) -> Box<dyn LLMProvider> {
         "openai" => Box::new(OpenAIProvider::new(config)),
         "anthropic" => Box::new(AnthropicProvider::new(config)),
         "gemini" => Box::new(GeminiProvider::new(config)),
+        "local" => Box::new(LocalProvider::new(config)),
         _ => Box::new(HuggingFaceProvider::new(config)),
     }
 }
@@ -373,5 +374,87 @@ impl LLMProvider for HuggingFaceProvider {
             latency_ms: start.elapsed().as_millis() as f64,
             answer_type: "MOCK_ANSWER".to_string(),
         })
+    }
+}
+
+// ==========================================
+// Local Provider (Ollama)
+// ==========================================
+pub struct LocalProvider {
+    config: ModelConfig,
+    client: Client,
+}
+
+impl LocalProvider {
+    pub fn new(config: ModelConfig) -> Self {
+        let client = Client::builder()
+            .timeout(Duration::from_secs(config.timeout_seconds))
+            .build()
+            .unwrap_or_default();
+        Self { config, client }
+    }
+}
+
+#[async_trait::async_trait]
+impl LLMProvider for LocalProvider {
+    fn config(&self) -> &ModelConfig {
+        &self.config
+    }
+
+    async fn generate_response(&self, prompt: &str) -> Result<ProviderResult> {
+        let start = Instant::now();
+        let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
+            .unwrap_or_else(|_| "http://localhost:11434".to_string());
+        let url = format!("{}/api/generate", endpoint.trim_end_matches('/'));
+
+        let body = serde_json::json!({
+            "model": self.config.model_id,
+            "prompt": prompt,
+            "stream": false,
+            "options": {
+                "temperature": self.config.temperature
+            }
+        });
+
+        let response = self.client.post(&url)
+            .json(&body)
+            .send()
+            .await;
+
+        match response {
+            Ok(res) => {
+                if res.status().is_success() {
+                    let data: serde_json::Value = res.json().await?;
+                    let content = data["response"].as_str().unwrap_or_default().to_string();
+                    let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
+                    
+                    Ok(ProviderResult {
+                        content,
+                        tokens_used,
+                        cost: 0.0,
+                        latency_ms: start.elapsed().as_millis() as f64,
+                        answer_type: "LOCAL_ANSWER".to_string(),
+                    })
+                } else {
+                    let err_text = res.text().await.unwrap_or_default();
+                    bail!("Local Ollama API error: {}", err_text);
+                }
+            }
+            Err(e) => {
+                log::warn!("Local Ollama API call failed: {}. Falling back to mock local response.", e);
+                let mock_content = format!(
+                    "[Local Fallback for {}] Ollama is not running at {}. Mock response for prompt: \"{}\"",
+                    self.config.model_id, endpoint, prompt
+                );
+                let tokens_used = prompt.split_whitespace().count() + mock_content.split_whitespace().count();
+                Ok(ProviderResult {
+                    content: mock_content,
+                    tokens_used,
+                    cost: 0.0,
+                    latency_ms: start.elapsed().as_millis() as f64,
+                    answer_type: "LOCAL_MOCK_ANSWER".to_string(),
+                })
+            }
+        }
     }
 }
