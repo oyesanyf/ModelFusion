@@ -3,30 +3,175 @@
     "id": "draco_task_1",
     "domain": "Software Engineering",
     "problem": "Design a high-concurrency connection pool in Rust that prevents deadlocks.",
+    "context": "A connection pool manages a cache of database connections. Multiple threads can request and return connections. To prevent deadlocks, the acquire and release operations must follow strict synchronization boundaries, avoiding nested lock acquisitions and circular waits.",
     "answer": "{\"sections\": [{\"name\": \"Concurrency Safety\", \"criteria\": [{\"id\": \"crit_1\", \"weight\": 2.0, \"desc\": \"Uses Mutex or RwLock for synchronization\"}, {\"id\": \"crit_2\", \"weight\": 2.0, \"desc\": \"Avoids nested locks to prevent deadlocks\"}]}, {\"name\": \"Performance & Features\", \"criteria\": [{\"id\": \"crit_3\", \"weight\": 1.5, \"desc\": \"Implements connection reuse/pooling\"}, {\"id\": \"crit_4\", \"weight\": -3.0, \"desc\": \"Contains memory leaks or unclosed sockets\"}]}]}"
   },
   {
     "id": "draco_task_2",
     "domain": "Computer Security",
     "problem": "Analyze the security vulnerabilities of a C code snippet parsing ELF headers, and provide mitigations.",
+    "context": "ELF headers contain metadata about binary files. A typical C parser reads the header size and program headers. Integer overflows in offset validation can result in out-of-bounds reads or writes during execution.",
     "answer": "{\"sections\": [{\"name\": \"Vulnerability Identification\", \"criteria\": [{\"id\": \"crit_5\", \"weight\": 3.0, \"desc\": \"Identifies buffer overflow risks in parsing\"}, {\"id\": \"crit_6\", \"weight\": 2.5, \"desc\": \"Identifies integer underflow/overflow in size checks\"}]}, {\"name\": \"Remediation\", \"criteria\": [{\"id\": \"crit_7\", \"weight\": 2.0, \"desc\": \"Provides corrected safe C code snippet\"}, {\"id\": \"crit_8\", \"weight\": -2.0, \"desc\": \"Mentions invalid mitigations or incorrect APIs\"}]}]}"
   },
   {
     "id": "draco_task_3",
     "domain": "System Architecture",
     "problem": "Evaluate the performance trade-offs between REST and gRPC for microservices.",
+    "context": "REST relies on JSON over HTTP/1.1 or HTTP/2. gRPC uses Protocol Buffers (Protobuf) over HTTP/2. The choice affects payload size, network utilization, serialization time, and service-to-service communication throughput.",
     "answer": "{\"sections\": [{\"name\": \"Protocols Comparison\", \"criteria\": [{\"id\": \"crit_9\", \"weight\": 2.0, \"desc\": \"Mentions Protobuf serialization efficiency\"}, {\"id\": \"crit_10\", \"weight\": 2.0, \"desc\": \"Mentions HTTP/2 multiplexing in gRPC\"}, {\"id\": \"crit_11\", \"weight\": -4.0, \"desc\": \"Incorrectly states REST is faster than gRPC\"}]}]}"
   },
   {
     "id": "draco_task_4",
     "domain": "AI Threat Detection",
     "problem": "Summarize the key architectural patterns of the ATLAS Threat Detection system.",
+    "context": "The MITRE ATLAS matrix describes tactics and techniques for attacking AI systems. Evasion attacks modify inputs to bypass model classification. Detecting these requires continuous monitoring, logging of input perturbations, and anomaly scores.",
     "answer": "{\"sections\": [{\"name\": \"ATLAS Alignment\", \"criteria\": [{\"id\": \"crit_12\", \"weight\": 2.5, \"desc\": \"Identifies MITRE ATLAS threat tactics\"}, {\"id\": \"crit_13\", \"weight\": 2.0, \"desc\": \"Mentions adversarial model evasion attacks\"}]}, {\"name\": \"Mitigation Techniques\", \"criteria\": [{\"id\": \"crit_14\", \"weight\": 1.5, \"desc\": \"Proposes concrete security controls or logs\"}]}]}"
   },
   {
     "id": "draco_task_5",
     "domain": "Deep Learning Optimization",
     "problem": "Explain the SINQ quantization algorithm and its hardware efficiency benefits.",
+    "context": "Quantization reduces neural network memory footprints by representing weights with fewer bits (e.g. 4-bit instead of 32-bit float). SINQ groups matrix weights into smaller tiles to perform hardware-efficient dot products without accuracy drop.",
     "answer": "{\"sections\": [{\"name\": \"Quantization Mechanics\", \"criteria\": [{\"id\": \"crit_15\", \"weight\": 3.0, \"desc\": \"Explains weight matrix tiling and grouping\"}, {\"id\": \"crit_16\", \"weight\": 2.0, \"desc\": \"Describes bit-width reduction (e.g., 4-bit)\"}, {\"id\": \"crit_17\", \"weight\": -5.0, \"desc\": \"States quantization increases memory usage\"}]}]}"
+  },
+  {
+    "id": "draco_task_6",
+    "domain": "Concurrency",
+    "problem": "Explain how a lock-free stack using compare-and-swap (CAS) handles the ABA problem.",
+    "context": "In lock-free structures, threads modify pointers concurrently. The ABA problem occurs when a thread reads address A, thread 2 deletes A, creates B, and re-allocates A, causing thread 1 to perform CAS on A with outdated assumptions. Solution: hazard pointers or double-wide CAS with generational node counters.",
+    "answer": "{\"sections\": [{\"name\": \"ABA Identification & Sol\", \"criteria\": [{\"id\": \"crit_18\", \"weight\": 2.5, \"desc\": \"Explains the ABA pointer reuse sequence\"}, {\"id\": \"crit_19\", \"weight\": 2.5, \"desc\": \"Proposes hazard pointers or generational counters as solutions\"}, {\"id\": \"crit_20\", \"weight\": -2.0, \"desc\": \"Claims standard Mutex is required for CAS operations\"}]}]}"
+  },
+  {
+    "id": "draco_task_7",
+    "domain": "Web Security",
+    "problem": "Explain the mitigation strategies against CSRF and Session Hijacking in OAuth2 flows.",
+    "context": "OAuth2 client applications store access and refresh tokens. CSRF attacks force a user's browser to execute requests. Security measures include using state parameters in auth requests, PKCE (Proof Key for Code Exchange), and HttpOnly cookies.",
+    "answer": "{\"sections\": [{\"name\": \"Mitigation Verification\", \"criteria\": [{\"id\": \"crit_21\", \"weight\": 2.0, \"desc\": \"Recommends state parameter or PKCE\"}, {\"id\": \"crit_22\", \"weight\": 2.0, \"desc\": \"Mentions HttpOnly cookies for session storage\"}, {\"id\": \"crit_23\", \"weight\": -3.0, \"desc\": \"Suggests storing access tokens in localStorage without XSS protection\"}]}]}"
+  },
+  {
+    "id": "draco_task_8",
+    "domain": "Cloud Infrastructure",
+    "problem": "Compare Kubernetes and Docker Swarm for high-availability production workloads.",
+    "context": "Kubernetes offers advanced scheduling, auto-scaling, and self-healing. Docker Swarm provides simpler, native Docker CLI orchestration. Production HA requires multi-master replication, external load balancers, and persistent volume provisioning.",
+    "answer": "{\"sections\": [{\"name\": \"Orchestration comparison\", \"criteria\": [{\"id\": \"crit_24\", \"weight\": 2.0, \"desc\": \"Compares complexity and learning curve differences\"}, {\"id\": \"crit_25\", \"weight\": 2.0, \"desc\": \"Mentions native self-healing or etcd consensus in Kubernetes\"}, {\"id\": \"crit_26\", \"weight\": -2.5, \"desc\": \"Asserts Docker Swarm has native auto-scaling equal to Kubernetes\"}]}]}"
+  },
+  {
+    "id": "draco_task_9",
+    "domain": "Distributed Systems",
+    "problem": "Explain how the Raft consensus algorithm handles leader election safety during network partitions.",
+    "context": "Raft achieves consensus via a single leader. In network partitions, a minority partition cannot commit entries because it lacks a majority quorum. Term numbers prevent stale leaders from overwriting logs once the partition heals.",
+    "answer": "{\"sections\": [{\"name\": \"Raft Partition Mechanics\", \"criteria\": [{\"id\": \"crit_27\", \"weight\": 3.0, \"desc\": \"Explains minority vs majority quorum logic\"}, {\"id\": \"crit_28\", \"weight\": 2.0, \"desc\": \"Mentions term numbers for stale leader resolution\"}, {\"id\": \"crit_29\", \"weight\": -3.0, \"desc\": \"States minority partitions can write and commit entries permanently\"}]}]}"
+  },
+  {
+    "id": "draco_task_10",
+    "domain": "Database Internals",
+    "problem": "Explain the architectural differences and write-amplification characteristics of B-Trees vs LSM-Trees.",
+    "context": "B-Trees update database pages in-place, causing random writes. LSM-Trees append to memory buffers (memtables) and write sequentially to SSTables on disk, which are compacted later. Compaction incurs write-amplification but avoids random writes.",
+    "answer": "{\"sections\": [{\"name\": \"LSM vs B-Tree\", \"criteria\": [{\"id\": \"crit_30\", \"weight\": 2.5, \"desc\": \"Contrasts random write in B-Tree vs sequential append in LSM\"}, {\"id\": \"crit_31\", \"weight\": 2.5, \"desc\": \"Explains how compaction causes write amplification in LSM\"}, {\"id\": \"crit_32\", \"weight\": -2.0, \"desc\": \"Claims B-Tree has higher write throughput than LSM-Tree\"}]}]}"
+  },
+  {
+    "id": "draco_task_11",
+    "domain": "Cryptography",
+    "problem": "Explain how TLS 1.3 optimizes the handshake process compared to TLS 1.2 and protects against replay attacks.",
+    "context": "TLS 1.3 reduces the handshake from two round trips (2-RTT) to one (1-RTT) by combining key exchange with the client hello. 0-RTT session resumption allows immediate data sending but exposes the server to replay attacks if not mitigated with anti-replay caches.",
+    "answer": "{\"sections\": [{\"name\": \"Handshake Optimizations\", \"criteria\": [{\"id\": \"crit_33\", \"weight\": 2.5, \"desc\": \"Explains the 1-RTT handshake improvement\"}, {\"id\": \"crit_34\", \"weight\": 2.5, \"desc\": \"Identifies 0-RTT replay vulnerability and mitigations\"}, {\"id\": \"crit_35\", \"weight\": -3.0, \"desc\": \"Claims TLS 1.3 uses static RSA key exchange for speed\"}]}]}"
+  },
+  {
+    "id": "draco_task_12",
+    "domain": "Deep Learning",
+    "problem": "Describe the mathematical formulation and memory/compute complexity of Multi-Head Self-Attention.",
+    "context": "Self-attention computes Attention(Q, K, V) = softmax(QK^T / sqrt(d_k))V. For sequence length N, computing QK^T results in O(N^2) time complexity and O(N^2) memory complexity due to the attention weight matrix.",
+    "answer": "{\"sections\": [{\"name\": \"Attention Formulation\", \"criteria\": [{\"id\": \"crit_36\", \"weight\": 2.5, \"desc\": \"States correct softmax equation with scaling factor\"}, {\"id\": \"crit_37\", \"weight\": 2.5, \"desc\": \"Identifies O(N^2) quadratic memory complexity\"}, {\"id\": \"crit_38\", \"weight\": -2.0, \"desc\": \"States self-attention scales linearly O(N) with sequence length\"}]}]}"
+  },
+  {
+    "id": "draco_task_13",
+    "domain": "Deep Learning Optimization",
+    "problem": "Explain how FlashAttention avoids materializing the attention matrix in memory.",
+    "context": "FlashAttention tiles inputs into blocks loaded into SRAM (fast cache) and computes softmax incrementally without writing the intermediate N x N attention matrix to HBM (high bandwidth memory). It achieves speedups by optimizing memory bandwidth access.",
+    "answer": "{\"sections\": [{\"name\": \"FlashAttention Mechanics\", \"criteria\": [{\"id\": \"crit_39\", \"weight\": 2.5, \"desc\": \"Mentions SRAM caching and block-based tiling\"}, {\"id\": \"crit_40\", \"weight\": 2.5, \"desc\": \"Explains online softmax computation to avoid writing N x N matrix to HBM\"}, {\"id\": \"crit_41\", \"weight\": -3.0, \"desc\": \"Says FlashAttention runs entirely in floating-point 8-bit quantization\"}]}]}"
+  },
+  {
+    "id": "draco_task_14",
+    "domain": "Web Security",
+    "problem": "Analyze vulnerability risks in raw SQL string interpolation and explain parameterized queries.",
+    "context": "SQL injection happens when untrusted input is directly concatenated into SQL strings. Parameterized queries compile the SQL query template and send variables separately, ensuring data is never parsed as executable SQL commands.",
+    "answer": "{\"sections\": [{\"name\": \"SQL Injection\", \"criteria\": [{\"id\": \"crit_42\", \"weight\": 2.0, \"desc\": \"Explains compilation phase separation in parameterized queries\"}, {\"id\": \"crit_43\", \"weight\": 2.0, \"desc\": \"Identifies concatenation as the root cause of SQL injection\"}, {\"id\": \"crit_44\", \"weight\": -3.0, \"desc\": \"Recommends client-side HTML sanitization as the primary fix for SQL injection\"}]}]}"
+  },
+  {
+    "id": "draco_task_15",
+    "domain": "Network Protocols",
+    "problem": "Compare WebSockets and Server-Sent Events (SSE) for real-time web applications.",
+    "context": "WebSockets support full-duplex bi-directional communication over TCP. SSE provides mono-directional server-to-client streaming over HTTP/1.1 or HTTP/2. SSE supports auto-reconnection and client-side reconnect timeouts natively.",
+    "answer": "{\"sections\": [{\"name\": \"Protocol Trade-offs\", \"criteria\": [{\"id\": \"crit_45\", \"weight\": 2.0, \"desc\": \"Distinguishes bi-directional vs mono-directional stream direction\"}, {\"id\": \"crit_46\", \"weight\": 2.0, \"desc\": \"Mentions native auto-reconnection support in SSE\"}, {\"id\": \"crit_47\", \"weight\": -2.0, \"desc\": \"Claims WebSockets are always faster and consume less battery in all cases\"}]}]}"
+  },
+  {
+    "id": "draco_task_16",
+    "domain": "Distributed Systems",
+    "problem": "Design a distributed Token Bucket rate limiter that maintains consistency across multi-region API gateways.",
+    "context": "A token bucket rate limiter refills tokens at a fixed rate up to a max capacity. Multi-region architectures sync token counts via centralized stores like Redis using Lua scripts for atomicity, or rely on CRDTs (Conflict-free Replicated Data Types) for eventual consistency.",
+    "answer": "{\"sections\": [{\"name\": \"Rate Limiting Design\", \"criteria\": [{\"id\": \"crit_48\", \"weight\": 2.5, \"desc\": \"Describes Token Bucket mechanics (refill rate, capacity)\"}, {\"id\": \"crit_49\", \"weight\": 2.5, \"desc\": \"Proposes Redis Lua scripting or CRDTs for multi-region consistency\"}, {\"id\": \"crit_50\", \"weight\": -3.0, \"desc\": \"Suggests global locks on SQL databases for every API request check\"}]}]}"
+  },
+  {
+    "id": "draco_task_17",
+    "domain": "Blockchain Security",
+    "problem": "Analyze the mechanics of a smart contract reentrancy vulnerability and how to fix it.",
+    "context": "Reentrancy occurs when a smart contract makes an external call to an untrusted contract before updating its state balance. The malicious contract recursively calls the withdraw function to drain funds before the state updates.",
+    "answer": "{\"sections\": [{\"name\": \"Reentrancy Mechanics\", \"criteria\": [{\"id\": \"crit_51\", \"weight\": 3.0, \"desc\": \"Explains call recursion prior to state updates\"}, {\"id\": \"crit_52\", \"weight\": 2.0, \"desc\": \"Proposes 'checks-effects-interactions' pattern or reentrancy guards\"}, {\"id\": \"crit_53\", \"weight\": -3.0, \"desc\": \"States simply using private functions solves reentrancy\"}]}]}"
+  },
+  {
+    "id": "draco_task_18",
+    "domain": "Computer Architecture",
+    "problem": "Explain the states and transition mechanics of the MESI cache coherence protocol.",
+    "context": "MESI maintains consistency between multiple CPU caches using four states: Modified, Exclusive, Shared, and Invalid. Writing to a Shared cache line sends an invalidation signal to other cores, transitioning their states to Invalid.",
+    "answer": "{\"sections\": [{\"name\": \"MESI States & Transitions\", \"criteria\": [{\"id\": \"crit_54\", \"weight\": 2.5, \"desc\": \"Defines Modified, Exclusive, Shared, Invalid states\"}, {\"id\": \"crit_55\", \"weight\": 2.5, \"desc\": \"Explains the transition from Shared to Invalid on write operations\"}, {\"id\": \"crit_56\", \"weight\": -2.0, \"desc\": \"Claims MESI operates at the software kernel scheduler level\"}]}]}"
+  },
+  {
+    "id": "draco_task_19",
+    "domain": "Software Engineering",
+    "problem": "Explain how Git represents commits, trees, and blobs in its object database.",
+    "context": "Git is a content-addressable key-value store. Blobs store file content. Trees represent directories mapping names to blob/tree hashes. Commits reference a root tree, parent commit hashes, author metadata, and commit messages.",
+    "answer": "{\"sections\": [{\"name\": \"Git Object Store\", \"criteria\": [{\"id\": \"crit_57\", \"weight\": 2.0, \"desc\": \"Explains Blobs, Trees, and Commits layout\"}, {\"id\": \"crit_58\", \"weight\": 2.0, \"desc\": \"Mentions SHA-1 / SHA-256 content-addressing\"}, {\"id\": \"crit_59\", \"weight\": -2.0, \"desc\": \"Claims Git commits store files as diffs/patches rather than full copies\"}]}]}"
+  },
+  {
+    "id": "draco_task_20",
+    "domain": "Language Runtimes",
+    "problem": "Compare Reference Counting and Tracing Garbage Collection (Mark-Sweep) resource usage and efficiency.",
+    "context": "Reference counting reclaims memory immediately when count reaches zero but struggles with circular references and incurs overhead on pointer updates. Mark-Sweep tracing easily handles cycles but causes stop-the-world pauses and memory fragmentation.",
+    "answer": "{\"sections\": [{\"name\": \"Garbage Collection\", \"criteria\": [{\"id\": \"crit_60\", \"weight\": 2.5, \"desc\": \"Compares cycle handling capabilities of both methods\"}, {\"id\": \"crit_61\", \"weight\": 2.5, \"desc\": \"Identifies immediate reclaiming vs stop-the-world overhead trade-offs\"}, {\"id\": \"crit_62\", \"weight\": -2.0, \"desc\": \"Claims reference counting requires no runtime memory overhead\"}]}]}"
+  },
+  {
+    "id": "draco_task_21",
+    "domain": "Distributed Systems",
+    "problem": "Explain how consistent hashing limits node reshuffling during scaling in distributed hash tables.",
+    "context": "Consistent hashing maps keys and nodes to a circular hash ring. Adding or removing a node only requires reshuffling K/N keys (where K is keys, N is nodes), avoiding the global reshuffling caused by modulo hash indexing.",
+    "answer": "{\"sections\": [{\"name\": \"Consistent Hashing\", \"criteria\": [{\"id\": \"crit_63\", \"weight\": 3.0, \"desc\": \"Contrasts ring topology reshuffling against modulo hashing reshuffling\"}, {\"id\": \"crit_64\", \"weight\": 2.0, \"desc\": \"Explains virtual nodes usage to balance storage load\"}, {\"id\": \"crit_65\", \"weight\": -2.5, \"desc\": \"Claims consistent hashing eliminates all data replication requirements\"}]}]}"
+  },
+  {
+    "id": "draco_task_22",
+    "domain": "Network Security",
+    "problem": "Explain the security guarantees of DNSSEC and how chain of trust verification is performed.",
+    "context": "DNSSEC signs DNS responses cryptographically to prevent spoofing and poisoning attacks. Verification uses a chain of trust starting from the root anchor, verifying DS (Delegation Signer) records and DNSKEY records down to the target node.",
+    "answer": "{\"sections\": [{\"name\": \"DNSSEC Mechanics\", \"criteria\": [{\"id\": \"crit_66\", \"weight\": 2.5, \"desc\": \"Explains signature verification (RRSIG, DNSKEY)\"}, {\"id\": \"crit_67\", \"weight\": 2.5, \"desc\": \"Describes the DS-record based parent-child chain of trust\"}, {\"id\": \"crit_68\", \"weight\": -3.0, \"desc\": \"Claims DNSSEC encrypts query contents to guarantee privacy\"}]}]}"
+  },
+  {
+    "id": "draco_task_23",
+    "domain": "Operating Systems",
+    "problem": "Explain the performance characteristics of Memory-Mapped Files (mmap) vs standard read/write syscalls.",
+    "context": "mmap maps file regions directly to the process address space, utilizing virtual memory page faults to load data. This bypasses the double-buffer copy from kernel space to user space required by standard read/write system calls.",
+    "answer": "{\"sections\": [{\"name\": \"mmap Internals\", \"criteria\": [{\"id\": \"crit_69\", \"weight\": 2.5, \"desc\": \"Explains virtual memory map and kernel-to-user space zero-copy\"}, {\"id\": \"crit_70\", \"weight\": 2.5, \"desc\": \"Identifies page fault overhead and TLB shootdown risks\"}, {\"id\": \"crit_71\", \"weight\": -2.0, \"desc\": \"Claims standard read/write syscalls run in user space without context switching\"}]}]}"
+  },
+  {
+    "id": "draco_task_24",
+    "domain": "Vector Databases",
+    "problem": "Compare HNSW and IVF-PQ vector indexing structures for approximate nearest neighbor (ANN) search.",
+    "context": "HNSW (Hierarchical Navigable Small World) builds multi-layer proximity graphs, providing fast, accurate searches with high memory requirements. IVF-PQ (Inverted File with Product Quantization) clusters vectors and compresses distances, reducing memory footprints at the cost of recall accuracy.",
+    "answer": "{\"sections\": [{\"name\": \"Vector Indexes\", \"criteria\": [{\"id\": \"crit_72\", \"weight\": 2.5, \"desc\": \"Compares graph-based routing (HNSW) vs cluster-quantize approach (IVF-PQ)\"}, {\"id\": \"crit_73\", \"weight\": 2.5, \"desc\": \"Identifies memory capacity and recall trade-offs for both indexes\"}, {\"id\": \"crit_74\", \"weight\": -3.0, \"desc\": \"Claims product quantization (PQ) increases search accuracy over raw embeddings\"}]}]}"
+  },
+  {
+    "id": "draco_task_25",
+    "domain": "Web Security",
+    "problem": "Analyze cross-site scripting (XSS) vulnerability risks and the role of Content Security Policy (CSP).",
+    "context": "XSS vulnerabilities allow execution of malicious scripts in a user's browser. Content Security Policy (CSP) headers limit script source execution domains and disallow inline script evaluation (unsafe-inline) unless explicitly allowed by hash or nonce tokens.",
+    "answer": "{\"sections\": [{\"name\": \"XSS & CSP Protection\", \"criteria\": [{\"id\": \"crit_75\", \"weight\": 2.5, \"desc\": \"Explains how CSP restricts script origin sources\"}, {\"id\": \"crit_76\", \"weight\": 2.5, \"desc\": \"Identifies danger of unsafe-inline scripts without nonce/hash\"}, {\"id\": \"crit_77\", \"weight\": -3.0, \"desc\": \"Asserts XSS is completely mitigated by client-side HTTPS transport encryption\"}]}]}"
   }
 ]
