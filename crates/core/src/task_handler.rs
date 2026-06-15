@@ -270,6 +270,8 @@ impl ComprehensiveTaskHandler {
         let mut page_num = 1;
         let token = std::env::var("HF_TOKEN")
             .or_else(|_| std::env::var("HUGGINGFACE_API_KEY"))
+            .or_else(|_| std::env::var("HF_API_KEY"))
+            .or_else(|_| std::env::var("HUGGINGFACE_TOKEN"))
             .ok();
 
         loop {

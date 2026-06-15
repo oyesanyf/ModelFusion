@@ -290,8 +290,10 @@ impl HuggingFaceProvider {
             .timeout(Duration::from_secs(config.timeout_seconds))
             .build()
             .unwrap_or_default();
-        let hf_token = std::env::var("HUGGINGFACE_API_KEY")
-            .or_else(|_| std::env::var("HF_TOKEN"))
+        let hf_token = std::env::var("HF_TOKEN")
+            .or_else(|_| std::env::var("HUGGINGFACE_API_KEY"))
+            .or_else(|_| std::env::var("HF_API_KEY"))
+            .or_else(|_| std::env::var("HUGGINGFACE_TOKEN"))
             .ok();
         Self { config, client, hf_token }
     }

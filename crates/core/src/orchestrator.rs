@@ -44,7 +44,10 @@ impl HuggingFaceOrchestrator {
         let openai_ok = std::env::var("OPENAI_API_KEY").is_ok();
         let anthropic_ok = std::env::var("ANTHROPIC_API_KEY").is_ok();
         let gemini_ok = std::env::var("GOOGLE_GEMINI_API_KEY").is_ok();
-        let hf_ok = std::env::var("HUGGINGFACE_API_KEY").is_ok() || std::env::var("HF_TOKEN").is_ok();
+        let hf_ok = std::env::var("HF_TOKEN").is_ok() 
+            || std::env::var("HUGGINGFACE_API_KEY").is_ok()
+            || std::env::var("HF_API_KEY").is_ok()
+            || std::env::var("HUGGINGFACE_TOKEN").is_ok();
 
         println!("OK");
         println!("API Keys Loaded:");
