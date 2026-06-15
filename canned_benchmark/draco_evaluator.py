@@ -725,8 +725,8 @@ async def main():
     # Define Configurations
     RUN_CONFIGS = [
         # --- Ablation Test Suite ---
-        {"name": "Llama-3.1-8B alone", "type": "single", "model": "meta-llama/Llama-3.1-8B-Instruct", "inject_context": False},
-        {"name": "Llama-3.1-8B + Context", "type": "single", "model": "meta-llama/Llama-3.1-8B-Instruct", "inject_context": True},
+        {"name": "Gemma-3-1B alone", "type": "single", "model": "google/gemma-3-1b-it", "inject_context": False},
+        {"name": "Gemma-3-1B + Context", "type": "single", "model": "google/gemma-3-1b-it", "inject_context": True},
         {"name": "--fusion panel", "type": "fusion", "inject_context": False},
         {"name": "Fusion + Context", "type": "fusion", "inject_context": True},
         # --- Baselines & Benchmarks ---
@@ -815,13 +815,13 @@ async def main():
     print("🏆 FINAL DRACO COMPARATIVE RESULTS TABLE")
     print("="*124)
     
-    headers = ["Task ID (Domain)", "Llama-8B", "Qwen-7B", "gpt-4o", "gpt-5.5", "gpt-5.5+Ctx", "--fusion", "Fusion+Ctx"]
+    headers = ["Task ID (Domain)", "Gemma-1B", "Qwen-7B", "gpt-4o", "gpt-5.5", "gpt-5.5+Ctx", "--fusion", "Fusion+Ctx"]
     row_format = "{:<30} | {:<8} | {:<8} | {:<8} | {:<8} | {:<11} | {:<8} | {:<10}"
     print(row_format.format(*headers))
     print("-" * 124)
     
     display_configs = [
-        "Llama-3.1-8B alone",
+        "Gemma-3-1B alone",
         "Qwen2.5-7B alone",
         "gpt-4o alone",
         "gpt-5.5 alone",
@@ -860,7 +860,7 @@ async def main():
     
     # --- RENDER ABLATION TABLE ---
     print("\n" + "="*80)
-    print("🔬 ABLATION TEST RESULTS (Llama-3.1-8B)")
+    print("🔬 ABLATION TEST RESULTS (Gemma-3-1B)")
     print("="*80)
     ablation_headers = ["Ablation Stage", "Mean Score", "API Cost", "Infra Cost"]
     ablation_format = "{:<36} | {:<12} | {:<12} | {:<12}"
@@ -868,8 +868,8 @@ async def main():
     print("-" * 80)
     
     ablation_stages = [
-        ("1. Single Model (No Ctx, No Fusion)", "Llama-3.1-8B alone"),
-        ("2. Context Only (Single + Ctx)", "Llama-3.1-8B + Context"),
+        ("1. Single Model (No Ctx, No Fusion)", "Gemma-3-1B alone"),
+        ("2. Context Only (Single + Ctx)", "Gemma-3-1B + Context"),
         ("3. Fusion Only (No Ctx)", "--fusion panel"),
         ("4. Fusion + Context (Full System)", "Fusion + Context")
     ]
@@ -911,7 +911,7 @@ async def main():
                     rf.write("Single Open-Weights, Zero-API Cost |\n")
             rf.write("\n")
             
-            rf.write("## 🔬 Ablation Test Analysis (Llama-3.1-8B Baseline)\n\n")
+            rf.write("## 🔬 Ablation Test Analysis (Gemma-3-1B Baseline)\n\n")
             rf.write("By separating out the model, context, and fusion layers, we isolate the distinct performance gains of each architectural component:\n\n")
             rf.write("| Ablation Stage | Mean Score | API Cost | Infra Cost | Core Impact |\n")
             rf.write("|---|---|---|---|---|\n")
@@ -931,8 +931,8 @@ async def main():
             
             rf.write("## 🔍 Key Findings & Architectural Value\n\n")
             rf.write("### 1. Does Fusion Beat Cheap Open Models?\n")
-            rf.write(f"- **Yes.** Single model `Llama-3.1-8B` scores **{results_report['configurations']['Llama-3.1-8B alone']['mean_score']:.2f}%** ")
-            rf.write(f"while `Llama-3.1-8B + Context` scores **{results_report['configurations']['Llama-3.1-8B + Context']['mean_score']:.2f}%**.\n")
+            rf.write(f"- **Yes.** Single model `Gemma-3-1B` scores **{results_report['configurations']['Gemma-3-1B alone']['mean_score']:.2f}%** ")
+            rf.write(f"while `Gemma-3-1B + Context` scores **{results_report['configurations']['Gemma-3-1B + Context']['mean_score']:.2f}%**.\n")
             rf.write(f"- Activating ModelFusion consensus without context yields **{results_report['configurations']['--fusion panel']['mean_score']:.2f}%**, ")
             rf.write(f"and with context yields **{results_report['configurations']['Fusion + Context']['mean_score']:.2f}%** (a substantial improvement).\n\n")
             
