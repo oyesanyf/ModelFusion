@@ -15,6 +15,9 @@ struct Args {
     #[arg(long, help = "Path to file for analysis or processing")]
     file: Option<String>,
 
+    #[arg(long, help = "Path to folder for code review or analysis")]
+    folder: Option<String>,
+
     #[arg(long, help = "Prompt for LLM generation or task directive")]
     prompt: Option<String>,
 
@@ -520,12 +523,57 @@ async fn main() -> Result<()> {
     // ---------------------------------------------------------
     // Orchestration Flow
     // ---------------------------------------------------------
-    if let Some(ref prompt) = args.prompt {
-        let is_fusion_needed = args.fusion || modelfusion_core::fusion_engine::classify_prompt(prompt);
+    if args.prompt.is_some() || args.folder.is_some() {
+        let mut final_prompt = args.prompt.clone().unwrap_or_else(|| {
+            "Review the code in this folder, identify any bugs, vulnerabilities, or optimization opportunities, and suggest improvements.".to_string()
+        });
+
+        if let Some(ref folder_path) = args.folder {
+            println!("[FUSION] Reading files from folder: {}", folder_path);
+            let mut folder_content = String::new();
+            
+            for entry in walkdir::WalkDir::new(folder_path)
+                .into_iter()
+                .filter_map(|e| e.ok())
+            {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                        let ext_lower = ext.to_lowercase();
+                        let is_code_file = matches!(
+                            ext_lower.as_str(),
+                            "rs" | "py" | "js" | "ts" | "c" | "cpp" | "h" | "hpp" | "cs" | "go" | "java" | "kt" | "swift" | "rb" | "php" | "sql" | "sh" | "bat" | "ps1" | "toml" | "json" | "yaml" | "yml" | "md" | "txt" | "html" | "css"
+                        );
+                        if is_code_file {
+                            if let Ok(content) = std::fs::read_to_string(path) {
+                                let filename = path.strip_prefix(folder_path).unwrap_or(path).to_string_lossy();
+                                folder_content.push_str(&format!("\n--- FILE: {} ---\n", filename));
+                                if content.len() > 10000 {
+                                    folder_content.push_str(&content[..10000]);
+                                    folder_content.push_str("\n...[TRUNCATED due to size]...\n");
+                                } else {
+                                    folder_content.push_str(&content);
+                                }
+                                folder_content.push_str("\n");
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !folder_content.is_empty() {
+                final_prompt.push_str("\n\n### FOLDER CONTENTS FOR REVIEW:\n");
+                final_prompt.push_str(&folder_content);
+            } else {
+                println!("[WARN] No supported text or code files found in the folder.");
+            }
+        }
+
+        let is_fusion_needed = args.fusion || modelfusion_core::fusion_engine::classify_prompt(&final_prompt);
 
         if is_fusion_needed {
             println!("[FUSION] Model Fusion is active (explicitly requested or dynamically classified).");
-            match modelfusion_core::fusion_engine::run_fusion(prompt).await {
+            match modelfusion_core::fusion_engine::run_fusion(&final_prompt).await {
                 Ok(content) => {
                     println!("\n[SUCCESS] Orchestration Successful (via Model Fusion)!\n");
                     println!("{}", content);
@@ -547,7 +595,7 @@ async fn main() -> Result<()> {
         let options = HashMap::new();
         let res = orchestrator
             .process_task(
-                &prompt,
+                &final_prompt,
                 task_override.as_deref(),
                 None,
                 args.use_openai,

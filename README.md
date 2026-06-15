@@ -96,7 +96,17 @@ Model Fusion evaluates a prompt using a panel of 10 diverse models concurrently,
 cargo run --bin cli -- --prompt "compare Python and Rust for high-performance CLI tools" --fusion
 ```
 
-### 8. CLI Command Line Help
+### 8. Review Code in a Folder
+Recursively reads and aggregates all supported code/text files from a specified folder and passes them for analysis. You can specify a custom prompt or let it execute a default code review prompt:
+```bash
+cargo run --bin cli -- --folder crates/cli/src
+```
+Or run with Model Fusion for a comprehensive multi-model comparison:
+```bash
+cargo run --bin cli -- --folder crates/cli/src --fusion
+```
+
+### 9. CLI Command Line Help
 To view all available command line arguments, flags, and options:
 ```bash
 cargo run --bin cli -- --help
