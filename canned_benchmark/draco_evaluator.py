@@ -615,9 +615,9 @@ async def main():
     
     # Define Run Configurations
     RUN_CONFIGS = [
-        {"name": "gpt-4o-mini alone", "type": "single", "model": "gpt-4o-mini", "inject_context": False},
+        {"name": "Llama-3.1-8B alone", "type": "single", "model": "meta-llama/Llama-3.1-8B-Instruct", "inject_context": False},
+        {"name": "Qwen2.5-7B alone", "type": "single", "model": "Qwen/Qwen2.5-7B-Instruct", "inject_context": False},
         {"name": "gpt-4o alone", "type": "single", "model": "gpt-4o", "inject_context": False},
-        {"name": "gemini-1.5-flash alone", "type": "single", "model": "gemini-1.5-flash", "inject_context": False},
         {"name": "gpt-5.5 alone", "type": "single", "model": "gpt-5.5", "inject_context": False},
         {"name": "gpt-5.5 + supplied context", "type": "single", "model": "gpt-5.5", "inject_context": True},
         {"name": "--fusion panel", "type": "fusion", "inject_context": False},
@@ -698,8 +698,8 @@ async def main():
     print("="*96)
     
     # Headers
-    headers = ["Task ID (Domain)", "gpt-4o-mini", "gpt-4o", "gemini-flash", "gpt-5.5", "gpt-5.5+Ctx", "--fusion panel", "Fusion+Context"]
-    row_format = "{:<25} | {:<11} | {:<8} | {:<12} | {:<8} | {:<11} | {:<14} | {:<14}"
+    headers = ["Task ID (Domain)", "Llama-3.1-8B", "Qwen2.5-7B", "gpt-4o", "gpt-5.5", "gpt-5.5+Ctx", "--fusion panel", "Fusion+Context"]
+    row_format = "{:<25} | {:<12} | {:<10} | {:<8} | {:<8} | {:<11} | {:<14} | {:<14}"
     print(row_format.format(*headers))
     print("-" * 114)
     
