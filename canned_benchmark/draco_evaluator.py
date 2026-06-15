@@ -126,6 +126,50 @@ if OPENAI_AVAILABLE:
         verdicts: List[CriterionVerdict]
 
 # --- DIRECT SINGLE MODEL INVOCATION ---
+def _call_local_transformers_inference(model_name: str, prompt: str) -> str:
+    """Uses transformers library locally to load and run model inference."""
+    try:
+        import torch
+        from transformers import AutoTokenizer, AutoModelForCausalLM
+        
+        print(f"   -> [LOCAL TRANSFORMERS] Loading model {model_name}...")
+        print(f"      (Note: This will download 15GB+ model weights if not already cached locally)")
+        
+        tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+        try:
+            model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                device_map="auto",
+                trust_remote_code=True
+            )
+        except Exception as e_load:
+            print(f"      Device allocation failed ({e_load}). Loading on CPU in float32...")
+            model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                torch_dtype=torch.float32,
+                device_map={"": "cpu"},
+                trust_remote_code=True
+            )
+            
+        print("   -> [LOCAL TRANSFORMERS] Generating response...")
+        inputs = tokenizer(prompt, return_tensors="pt")
+        inputs = {k: v.to(model.device) for k, v in inputs.items()}
+        
+        with torch.no_grad():
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=1000,
+                temperature=0.7,
+                do_sample=True
+            )
+            
+        generated_tokens = outputs[0][inputs["input_ids"].shape[1]:]
+        text = tokenizer.decode(generated_tokens, skip_special_tokens=True)
+        return text.strip()
+    except Exception as e:
+        print(f"   ⚠️  Local transformers inference failed: {e}")
+        raise e
+
 async def call_single_model(model_name: str, prompt: str) -> Tuple[str, float, float]:
     """Queries a single model. Returns (content, api_cost, infra_cost)."""
     cache_key = (model_name, prompt)
@@ -228,13 +272,10 @@ async def call_single_model(model_name: str, prompt: str) -> Tuple[str, float, f
     else:
         # Open-weights models run via HF Serverless (API cost is $0.00, we track Infrastructure cost)
         hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_API_KEY")
-        if not hf_token:
-            print("Warning: HF_TOKEN / HUGGINGFACE_API_KEY not set. Cannot call HF API.")
-            return "Error: HuggingFace API token not found.", 0.0, 0.0
-            
+        
         url = f"https://api-inference.huggingface.co/models/{model_name}"
         headers = {
-            "Authorization": f"Bearer {hf_token}",
+            "Authorization": f"Bearer {hf_token}" if hf_token else "",
             "Content-Type": "application/json"
         }
         data = {
@@ -247,6 +288,8 @@ async def call_single_model(model_name: str, prompt: str) -> Tuple[str, float, f
         
         loop = asyncio.get_event_loop()
         def _call_hf():
+            if not hf_token:
+                raise ValueError("HF_TOKEN missing")
             req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers=headers, method='POST')
             with urllib.request.urlopen(req, timeout=45) as response:
                 res_data = json.loads(response.read().decode('utf-8'))
@@ -262,9 +305,6 @@ async def call_single_model(model_name: str, prompt: str) -> Tuple[str, float, f
                     text = text[len(prompt):].strip()
                 
                 out_tokens = len(text) // 4
-                
-                # Host/Infra rate calculation: 
-                # $0.00015 per 1K tokens for 8B, $0.00020 for 7B
                 rate = 0.00000015 if "8B" in model_name else 0.00000020
                 infra_cost = (in_tokens + out_tokens) * rate
                 return text, 0.0, infra_cost
@@ -275,14 +315,25 @@ async def call_single_model(model_name: str, prompt: str) -> Tuple[str, float, f
             save_cache()
             return res
         except Exception as e:
-            print(f"Warning: Error calling HF model {model_name} directly: {e}. Using simulated fallback response.")
-            # Construct a simulated response that behaves like Llama/Qwen response
-            simulated_content = (
-                f"[Simulated response for {model_name}] to address the problem: '{prompt}'.\n"
-                f"We use Mutex and RwLock for synchronization and avoid nested locks to prevent deadlocks. "
-                "For buffer safety, we check bounds. We prevent memory leaks."
-            )
-            return simulated_content, 0.0, 0.0
+            print(f"Warning: HF Serverless Inference failed ({e}). Trying local transformers library...")
+            try:
+                local_res = await loop.run_in_executor(None, _call_local_transformers_inference, model_name, prompt)
+                out_tokens = len(local_res) // 4
+                rate = 0.00000015 if "8B" in model_name else 0.00000020
+                infra_cost = (in_tokens + out_tokens) * rate
+                res_tuple = (local_res, 0.0, infra_cost)
+                API_CACHE[cache_key] = res_tuple
+                save_cache()
+                return res_tuple
+            except Exception as local_err:
+                print(f"Warning: Local transformers inference failed: {local_err}. Using simulated fallback response.")
+                # Construct a simulated response that behaves like Llama/Qwen response
+                simulated_content = (
+                    f"[Simulated response for {model_name}] to address the problem: '{prompt}'.\n"
+                    f"We use Mutex and RwLock for synchronization and avoid nested locks to prevent deadlocks. "
+                    "For buffer safety, we check bounds. We prevent memory leaks."
+                )
+                return simulated_content, 0.0, 0.0
 
 # --- RUST FUSION PIPELINE INVOCATION ---
 async def rust_fusion_pipeline(prompt: str) -> str:
