@@ -1,0 +1,12 @@
+[package]
+name = "model_selection"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow     = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+log        = { workspace = true }
+chrono     = { workspace = true }
+db         = { path = "../db" }

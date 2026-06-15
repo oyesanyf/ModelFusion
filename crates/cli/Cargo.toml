@@ -1,0 +1,17 @@
+[package]
+name = "cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow          = { workspace = true }
+serde           = { workspace = true }
+serde_json      = { workspace = true }
+tokio           = { workspace = true }
+log             = { workspace = true }
+clap            = { workspace = true }
+colored         = { workspace = true }
+dotenv          = { workspace = true }
+env_logger      = { workspace = true }
+modelfusion_core = { path = "../core" }
+model_selection = { path = "../model_selection" }

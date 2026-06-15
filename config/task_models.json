@@ -1,0 +1,1840 @@
+{
+  "code_analysis": {
+    "code_explanation": {
+      "pipeline": "text-generation",
+      "description": "Explain and analyze code functionality",
+      "supports_file": true,
+      "example_text": "def add(a,b): return a+b",
+      "best_model": "gpt2",
+      "model_author": "openai",
+      "downloads": 14391163,
+      "likes": 5000,
+      "score": 0.9,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "microsoft/DialoGPT-small",
+          "author": "microsoft",
+          "score": 0.6,
+          "downloads": 1901302
+        },
+        {
+          "model_id": "distilgpt2",
+          "author": "huggingface",
+          "score": 0.5,
+          "downloads": 1000000
+        },
+        {
+          "model_id": "gpt-3.5-turbo",
+          "author": "openai",
+          "score": 0.9,
+          "downloads": 1000000
+        }
+      ],
+      "options": {
+        "max_length": 500,
+        "num_return_sequences": 1,
+        "temperature": 0.7
+      },
+      "requires_prompt": true
+    },
+    "code_review": {
+      "pipeline": "text-generation",
+      "description": "Review code for bugs, security issues, and improvements",
+      "supports_file": true,
+      "example_text": "def add(a,b): return a+b",
+      "best_model": "gpt-3.5-turbo",
+      "model_author": "openai",
+      "downloads": 1000000,
+      "likes": 5000,
+      "score": 0.9,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "microsoft/DialoGPT-large",
+          "author": "microsoft",
+          "score": 0.6,
+          "downloads": 1901302
+        },
+        {
+          "model_id": "gpt2",
+          "author": "openai",
+          "score": 0.5,
+          "downloads": 14391163
+        }
+      ],
+      "requires_prompt": true
+    }
+  },
+  "text_processing": {
+    "feature-extraction": {
+      "pipeline": "feature-extraction",
+      "description": "Extract feature embeddings from text",
+      "supports_file": true,
+      "example_text": "def add(a,b): return a+b",
+      "best_model": "BAAI/bge-large-en-v1.5",
+      "model_author": "BAAI",
+      "downloads": 5470967,
+      "likes": 551,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "jinaai/jina-embeddings-v3",
+          "author": "jinaai",
+          "score": 0.5,
+          "downloads": 4505290
+        },
+        {
+          "model_id": "intfloat/multilingual-e5-large",
+          "author": "intfloat",
+          "score": 0.5,
+          "downloads": 3760049
+        },
+        {
+          "model_id": "BAAI/bge-base-en-v1.5",
+          "author": "BAAI",
+          "score": 0.5,
+          "downloads": 3469389
+        }
+      ]
+    },
+    "fill-mask": {
+      "pipeline": "fill-mask",
+      "description": "Fill masked tokens in text",
+      "supports_file": true,
+      "example_text": "Hugging Face is creating a [MASK] tool.",
+      "best_model": "google-bert/bert-base-uncased",
+      "model_author": "google-bert",
+      "downloads": 56209785,
+      "likes": 2361,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "FacebookAI/roberta-large",
+          "author": "FacebookAI",
+          "score": 0.5,
+          "downloads": 12824877
+        },
+        {
+          "model_id": "FacebookAI/xlm-roberta-base",
+          "author": "FacebookAI",
+          "score": 0.5,
+          "downloads": 11443730
+        },
+        {
+          "model_id": "distilbert/distilbert-base-uncased",
+          "author": "distilbert",
+          "score": 0.5,
+          "downloads": 11198478
+        }
+      ]
+    },
+    "question-answering": {
+      "pipeline": "question-answering",
+      "description": "Answer questions based on context",
+      "supports_file": true,
+      "example_text": "Hugging Face Inc. is based in New York.",
+      "best_model": "deepset/roberta-base-squad2",
+      "model_author": "deepset",
+      "downloads": 2587955,
+      "likes": 900,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "dmis-lab/biobert-large-cased-v1.1-squad",
+          "author": "dmis-lab",
+          "score": 0.5,
+          "downloads": 628502
+        },
+        {
+          "model_id": "google-bert/bert-large-uncased-whole-word-masking-finetuned-squad",
+          "author": "google-bert",
+          "score": 0.5,
+          "downloads": 275295
+        },
+        {
+          "model_id": "distilbert/distilbert-base-cased-distilled-squad",
+          "author": "distilbert",
+          "score": 0.5,
+          "downloads": 249271
+        }
+      ],
+      "requires_prompt": true
+    },
+    "summarization": {
+      "pipeline": "summarization",
+      "description": "Summarize long text",
+      "supports_file": true,
+      "example_text": "Hugging Face democratizes access to AI tools and models.",
+      "best_model": "facebook/bart-large-cnn",
+      "model_author": "facebook",
+      "downloads": 4073407,
+      "likes": 1444,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "sshleifer/distilbart-cnn-12-6",
+          "author": "sshleifer",
+          "score": 0.5,
+          "downloads": 1625763
+        },
+        {
+          "model_id": "google/pegasus-xsum",
+          "author": "google",
+          "score": 0.5,
+          "downloads": 129758
+        },
+        {
+          "model_id": "philschmid/bart-large-cnn-samsum",
+          "author": "philschmid",
+          "score": 0.5,
+          "downloads": 109681
+        }
+      ]
+    },
+    "text-classification": {
+      "pipeline": "text-classification",
+      "description": "Classify text into predefined categories",
+      "supports_file": true,
+      "example_text": "I love using Hugging Face models!",
+      "best_model": "distilbert/distilbert-base-uncased-finetuned-sst-2-english",
+      "model_author": "distilbert",
+      "downloads": 3031316,
+      "likes": 801,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "cardiffnlp/twitter-roberta-base-sentiment-latest",
+          "author": "cardiffnlp",
+          "score": 0.5,
+          "downloads": 2999627
+        },
+        {
+          "model_id": "BAAI/bge-reranker-v2-m3",
+          "author": "BAAI",
+          "score": 0.5,
+          "downloads": 2703961
+        },
+        {
+          "model_id": "facebook/roberta-hate-speech-dynabench-r4-target",
+          "author": "facebook",
+          "score": 0.5,
+          "downloads": 1901302
+        }
+      ]
+    },
+    "text-generation": {
+      "pipeline": "text-generation",
+      "description": "Generate text continuations and explanations",
+      "supports_file": true,
+      "example_text": "The future of AI is",
+      "best_model": "gpt-3.5-turbo",
+      "model_author": "openai",
+      "downloads": 1000000,
+      "likes": 5000,
+      "score": 0.9,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "microsoft/DialoGPT-medium",
+          "author": "microsoft",
+          "score": 0.7,
+          "downloads": 1901302
+        },
+        {
+          "model_id": "microsoft/DialoGPT-large",
+          "author": "microsoft",
+          "score": 0.6,
+          "downloads": 1901302
+        },
+        {
+          "model_id": "gpt2",
+          "author": "openai",
+          "score": 0.5,
+          "downloads": 14391163
+        }
+      ],
+      "options": {
+        "max_length": 500,
+        "num_return_sequences": 1,
+        "temperature": 0.7
+      }
+    },
+    "token-classification": {
+      "pipeline": "token-classification",
+      "description": "Extract named entities from text",
+      "supports_file": true,
+      "example_text": "Hugging Face Inc. is based in New York.",
+      "best_model": "dslim/bert-base-NER",
+      "model_author": "dslim",
+      "downloads": 2181634,
+      "likes": 630,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "w11wo/indonesian-roberta-base-posp-tagger",
+          "author": "w11wo",
+          "score": 0.5,
+          "downloads": 1611483
+        },
+        {
+          "model_id": "dbmdz/bert-large-cased-finetuned-conll03-english",
+          "author": "dbmdz",
+          "score": 0.5,
+          "downloads": 1361438
+        },
+        {
+          "model_id": "gilf/french-camembert-postag-model",
+          "author": "gilf",
+          "score": 0.5,
+          "downloads": 1247959
+        }
+      ],
+      "options": {
+        "grouped_entities": true
+      }
+    },
+    "translation": {
+      "pipeline": "translation",
+      "description": "Translate text between languages",
+      "supports_file": true,
+      "example_text": "Hugging Face is an AI company.",
+      "best_model": "google-t5/t5-small",
+      "model_author": "google-t5",
+      "downloads": 3328394,
+      "likes": 471,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "google-t5/t5-base",
+          "author": "google-t5",
+          "score": 0.5,
+          "downloads": 1762843
+        },
+        {
+          "model_id": "google-t5/t5-3b",
+          "author": "google-t5",
+          "score": 0.5,
+          "downloads": 1178146
+        },
+        {
+          "model_id": "Helsinki-NLP/opus-mt-fr-en",
+          "author": "Helsinki-NLP",
+          "score": 0.5,
+          "downloads": 810701
+        }
+      ]
+    },
+    "zero-shot-classification": {
+      "pipeline": "zero-shot-classification",
+      "description": "Classify text without training data",
+      "supports_file": true,
+      "example_text": "This is a tutorial about AI.",
+      "best_model": "facebook/bart-large-mnli",
+      "model_author": "facebook",
+      "downloads": 3943149,
+      "likes": 1446,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+          "author": "MoritzLaurer",
+          "score": 0.5,
+          "downloads": 653333
+        },
+        {
+          "model_id": "sileod/deberta-v3-base-tasksource-nli",
+          "author": "sileod",
+          "score": 0.5,
+          "downloads": 479075
+        },
+        {
+          "model_id": "MoritzLaurer/DeBERTa-v3-large-mnli-fever-anli-ling-wanli",
+          "author": "MoritzLaurer",
+          "score": 0.5,
+          "downloads": 374305
+        }
+      ],
+      "requires_labels": true
+    }
+  },
+  "image_processing": {
+    "depth-estimation": {
+      "pipeline": "depth-estimation",
+      "description": "Perform depth estimation analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "Intel/zoedepth-nyu-kitti",
+      "model_author": "Intel",
+      "downloads": 5424685,
+      "likes": 7,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "Intel/dpt-hybrid-midas",
+          "author": "Intel",
+          "score": 0.5,
+          "downloads": 1749909
+        },
+        {
+          "model_id": "LiheYoung/depth-anything-large-hf",
+          "author": "LiheYoung",
+          "score": 0.5,
+          "downloads": 603464
+        },
+        {
+          "model_id": "depth-anything/Depth-Anything-V2-Small-hf",
+          "author": "depth-anything",
+          "score": 0.5,
+          "downloads": 419547
+        }
+      ],
+      "file_types": [
+        "jpg",
+        "jpeg",
+        "png",
+        "gif",
+        "bmp"
+      ]
+    },
+    "document-question-answering": {
+      "pipeline": "document-question-answering",
+      "description": "Perform document question answering analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "impira/layoutlm-invoices",
+      "model_author": "impira",
+      "downloads": 431748,
+      "likes": 209,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "naver-clova-ix/donut-base-finetuned-docvqa",
+          "author": "naver-clova-ix",
+          "score": 0.5,
+          "downloads": 186188
+        },
+        {
+          "model_id": "fxmarty/tiny-doc-qa-vision-encoder-decoder",
+          "author": "fxmarty",
+          "score": 0.5,
+          "downloads": 86813
+        },
+        {
+          "model_id": "impira/layoutlm-document-qa",
+          "author": "impira",
+          "score": 0.5,
+          "downloads": 14320
+        }
+      ],
+      "file_types": [
+        "jpg",
+        "jpeg",
+        "png",
+        "pdf"
+      ],
+      "requires_prompt": true
+    },
+    "image-classification": {
+      "pipeline": "image-classification",
+      "description": "Perform image classification analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "Falconsai/nsfw_image_detection",
+      "model_author": "Falconsai",
+      "downloads": 111828672,
+      "likes": 745,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "dima806/fairface_age_image_detection",
+          "author": "dima806",
+          "score": 0.5,
+          "downloads": 58262356
+        },
+        {
+          "model_id": "timm/mobilenetv3_small_100.lamb_in1k",
+          "author": "timm",
+          "score": 0.5,
+          "downloads": 57844559
+        },
+        {
+          "model_id": "timm/resnet50.a1_in1k",
+          "author": "timm",
+          "score": 0.5,
+          "downloads": 18059155
+        }
+      ],
+      "file_types": [
+        "jpg",
+        "jpeg",
+        "png",
+        "gif",
+        "bmp"
+      ]
+    },
+    "image-segmentation": {
+      "pipeline": "image-segmentation",
+      "description": "Perform image segmentation analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "CIDAS/clipseg-rd64-refined",
+      "model_author": "CIDAS",
+      "downloads": 2539726,
+      "likes": 127,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "Xenova/segformer-b0-finetuned-ade-512-512",
+          "author": "Xenova",
+          "score": 0.5,
+          "downloads": 1532931
+        },
+        {
+          "model_id": "jonathandinu/face-parsing",
+          "author": "jonathandinu",
+          "score": 0.5,
+          "downloads": 856850
+        },
+        {
+          "model_id": "ZhengPeng7/BiRefNet",
+          "author": "ZhengPeng7",
+          "score": 0.5,
+          "downloads": 782212
+        }
+      ],
+      "file_types": [
+        "jpg",
+        "jpeg",
+        "png",
+        "gif",
+        "bmp"
+      ]
+    },
+    "object-detection": {
+      "pipeline": "object-detection",
+      "description": "Perform object detection analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "microsoft/table-transformer-detection",
+      "model_author": "microsoft",
+      "downloads": 2698921,
+      "likes": 368,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "microsoft/table-transformer-structure-recognition-v1.1-all",
+          "author": "microsoft",
+          "score": 0.5,
+          "downloads": 800681
+        },
+        {
+          "model_id": "hustvl/yolos-small",
+          "author": "hustvl",
+          "score": 0.5,
+          "downloads": 757439
+        },
+        {
+          "model_id": "microsoft/table-transformer-structure-recognition",
+          "author": "microsoft",
+          "score": 0.5,
+          "downloads": 714469
+        }
+      ],
+      "file_types": [
+        "jpg",
+        "jpeg",
+        "png",
+        "gif",
+        "bmp"
+      ]
+    },
+    "visual-question-answering": {
+      "pipeline": "visual-question-answering",
+      "description": "Perform visual question answering analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "internlm/internlm-xcomposer2d5-7b",
+      "model_author": "internlm",
+      "downloads": 470993,
+      "likes": 206,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "Salesforce/blip-vqa-base",
+          "author": "Salesforce",
+          "score": 0.5,
+          "downloads": 410155
+        },
+        {
+          "model_id": "Salesforce/blip-vqa-capfilt-large",
+          "author": "Salesforce",
+          "score": 0.5,
+          "downloads": 95325
+        },
+        {
+          "model_id": "DAMO-NLP-SG/VideoLLaMA3-7B",
+          "author": "DAMO-NLP-SG",
+          "score": 0.5,
+          "downloads": 94133
+        }
+      ],
+      "file_types": [
+        "jpg",
+        "jpeg",
+        "png",
+        "gif",
+        "bmp"
+      ],
+      "requires_prompt": true
+    },
+    "zero-shot-image-classification": {
+      "pipeline": "zero-shot-image-classification",
+      "description": "Perform zero shot image classification analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "openai/clip-vit-base-patch32",
+      "model_author": "openai",
+      "downloads": 17435150,
+      "likes": 732,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "openai/clip-vit-large-patch14",
+          "author": "openai",
+          "score": 0.5,
+          "downloads": 11194501
+        },
+        {
+          "model_id": "openai/clip-vit-large-patch14-336",
+          "author": "openai",
+          "score": 0.5,
+          "downloads": 7518051
+        },
+        {
+          "model_id": "google/siglip2-so400m-patch16-naflex",
+          "author": "google",
+          "score": 0.5,
+          "downloads": 4876810
+        }
+      ],
+      "file_types": [
+        "jpg",
+        "jpeg",
+        "png",
+        "gif",
+        "bmp"
+      ],
+      "requires_labels": true
+    }
+  },
+  "audio_processing": {
+    "audio-classification": {
+      "pipeline": "audio-classification",
+      "description": "Perform audio classification analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "m-a-p/MERT-v1-95M",
+      "model_author": "m-a-p",
+      "downloads": 1189668,
+      "likes": 34,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "speechbrain/emotion-recognition-wav2vec2-IEMOCAP",
+          "author": "speechbrain",
+          "score": 0.5,
+          "downloads": 830596
+        },
+        {
+          "model_id": "MIT/ast-finetuned-audioset-10-10-0.4593",
+          "author": "MIT",
+          "score": 0.5,
+          "downloads": 666419
+        },
+        {
+          "model_id": "audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim",
+          "author": "audeering",
+          "score": 0.5,
+          "downloads": 374473
+        }
+      ],
+      "file_types": [
+        "wav",
+        "mp3",
+        "flac",
+        "m4a"
+      ]
+    },
+    "automatic-speech-recognition": {
+      "pipeline": "automatic-speech-recognition",
+      "description": "Perform automatic speech recognition analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "pyannote/speaker-diarization-3.1",
+      "model_author": "pyannote",
+      "downloads": 17618010,
+      "likes": 1010,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "jonatasgrosman/wav2vec2-large-xlsr-53-portuguese",
+          "author": "jonatasgrosman",
+          "score": 0.5,
+          "downloads": 7026054
+        },
+        {
+          "model_id": "jonatasgrosman/wav2vec2-large-xlsr-53-russian",
+          "author": "jonatasgrosman",
+          "score": 0.5,
+          "downloads": 4139207
+        },
+        {
+          "model_id": "openai/whisper-large-v3",
+          "author": "openai",
+          "score": 0.5,
+          "downloads": 3829283
+        }
+      ],
+      "file_types": [
+        "wav",
+        "mp3",
+        "flac",
+        "m4a"
+      ]
+    }
+  },
+  "video_processing": {
+    "video-classification": {
+      "pipeline": "video-classification",
+      "description": "Perform video classification analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "microsoft/xclip-base-patch32",
+      "model_author": "microsoft",
+      "downloads": 247457,
+      "likes": 96,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "MCG-NJU/videomae-base-finetuned-kinetics",
+          "author": "MCG-NJU",
+          "score": 0.5,
+          "downloads": 194006
+        },
+        {
+          "model_id": "MCG-NJU/videomae-base",
+          "author": "MCG-NJU",
+          "score": 0.5,
+          "downloads": 57883
+        },
+        {
+          "model_id": "facebook/vjepa2-vitl-fpc64-256",
+          "author": "facebook",
+          "score": 0.5,
+          "downloads": 48319
+        }
+      ],
+      "file_types": [
+        "mp4",
+        "avi",
+        "mov",
+        "mkv"
+      ]
+    }
+  },
+  "special_tasks": {
+    "any-to-any": {
+      "pipeline": "any-to-any",
+      "description": "Perform any to any analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "Qwen/Qwen2.5-Omni-3B",
+      "model_author": "Qwen",
+      "downloads": 192879,
+      "likes": 261,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "deepseek-ai/Janus-Pro-7B",
+          "author": "deepseek-ai",
+          "score": 0.5,
+          "downloads": 130686
+        },
+        {
+          "model_id": "Qwen/Qwen2.5-Omni-7B",
+          "author": "Qwen",
+          "score": 0.5,
+          "downloads": 115123
+        },
+        {
+          "model_id": "openbmb/MiniCPM-o-2_6",
+          "author": "openbmb",
+          "score": 0.5,
+          "downloads": 112773
+        }
+      ]
+    },
+    "audio-text-to-text": {
+      "pipeline": "audio-text-to-text",
+      "description": "Perform audio text to text analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "fixie-ai/ultravox-v0_5-llama-3_2-1b",
+      "model_author": "fixie-ai",
+      "downloads": 254722,
+      "likes": 51,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "Qwen/Qwen2-Audio-7B-Instruct",
+          "author": "Qwen",
+          "score": 0.5,
+          "downloads": 112390
+        },
+        {
+          "model_id": "Qwen/Qwen2-Audio-7B",
+          "author": "Qwen",
+          "score": 0.5,
+          "downloads": 98988
+        },
+        {
+          "model_id": "mistralai/Voxtral-Small-24B-2507",
+          "author": "mistralai",
+          "score": 0.5,
+          "downloads": 10959
+        }
+      ]
+    },
+    "audio-to-audio": {
+      "pipeline": "audio-to-audio",
+      "description": "Perform audio to audio analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "nvidia/bigvgan_v2_22khz_80band_256x",
+      "model_author": "nvidia",
+      "downloads": 918148,
+      "likes": 19,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "nvidia/bigvgan_v2_44khz_128band_512x",
+          "author": "nvidia",
+          "score": 0.5,
+          "downloads": 378564
+        },
+        {
+          "model_id": "HKUSTAudio/xcodec2",
+          "author": "HKUSTAudio",
+          "score": 0.5,
+          "downloads": 106333
+        },
+        {
+          "model_id": "JacobLinCool/MP-SENet-DNS",
+          "author": "JacobLinCool",
+          "score": 0.5,
+          "downloads": 36760
+        }
+      ]
+    },
+    "graph-ml": {
+      "pipeline": "graph-ml",
+      "description": "Perform graph ml analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "clefourrier/graphormer-base-pcqm4mv2",
+      "model_author": "clefourrier",
+      "downloads": 2135,
+      "likes": 76,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "ibm-research/materials.pos-egnn",
+          "author": "ibm-research",
+          "score": 0.5,
+          "downloads": 1297
+        },
+        {
+          "model_id": "liuganghuggingface/Llamole-Llama-3.1-8B-Instruct-Adapter",
+          "author": "liuganghuggingface",
+          "score": 0.5,
+          "downloads": 1025
+        },
+        {
+          "model_id": "ecmwf/aifs-single-1.0",
+          "author": "ecmwf",
+          "score": 0.5,
+          "downloads": 266
+        }
+      ]
+    },
+    "image-feature-extraction": {
+      "pipeline": "image-feature-extraction",
+      "description": "Perform image feature extraction analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "google/vit-base-patch16-224-in21k",
+      "model_author": "google",
+      "downloads": 3225055,
+      "likes": 359,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "facebook/dinov2-base",
+          "author": "facebook",
+          "score": 0.5,
+          "downloads": 2303592
+        },
+        {
+          "model_id": "facebook/dinov2-small",
+          "author": "facebook",
+          "score": 0.5,
+          "downloads": 1588137
+        },
+        {
+          "model_id": "timm/vit_base_patch14_dinov2.lvd142m",
+          "author": "timm",
+          "score": 0.5,
+          "downloads": 1208936
+        }
+      ]
+    },
+    "image-text-to-text": {
+      "pipeline": "image-text-to-text",
+      "description": "Perform image text to text analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "Qwen/Qwen2.5-VL-7B-Instruct",
+      "model_author": "Qwen",
+      "downloads": 5820417,
+      "likes": 1095,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "Qwen/Qwen2.5-VL-3B-Instruct",
+          "author": "Qwen",
+          "score": 0.5,
+          "downloads": 4391970
+        },
+        {
+          "model_id": "google/gemma-3-4b-it",
+          "author": "google",
+          "score": 0.5,
+          "downloads": 1641877
+        },
+        {
+          "model_id": "microsoft/Florence-2-large",
+          "author": "microsoft",
+          "score": 0.5,
+          "downloads": 1101252
+        }
+      ]
+    },
+    "image-to-3d": {
+      "pipeline": "image-to-3d",
+      "description": "Perform image to 3d analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "microsoft/TRELLIS-image-large",
+      "model_author": "microsoft",
+      "downloads": 1946668,
+      "likes": 544,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "facebook/VGGT-1B",
+          "author": "facebook",
+          "score": 0.5,
+          "downloads": 268414
+        },
+        {
+          "model_id": "tencent/Hunyuan3D-2",
+          "author": "tencent",
+          "score": 0.5,
+          "downloads": 119843
+        },
+        {
+          "model_id": "stabilityai/stable-point-aware-3d",
+          "author": "stabilityai",
+          "score": 0.5,
+          "downloads": 95896
+        }
+      ]
+    },
+    "image-to-image": {
+      "pipeline": "image-to-image",
+      "description": "Perform image to image analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "stabilityai/stable-diffusion-xl-refiner-1.0",
+      "model_author": "stabilityai",
+      "downloads": 482311,
+      "likes": 1937,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "black-forest-labs/FLUX.1-Kontext-dev",
+          "author": "black-forest-labs",
+          "score": 0.5,
+          "downloads": 327035
+        },
+        {
+          "model_id": "lllyasviel/sd-controlnet-canny",
+          "author": "lllyasviel",
+          "score": 0.5,
+          "downloads": 307359
+        },
+        {
+          "model_id": "Lykon/dreamshaper-8-inpainting",
+          "author": "Lykon",
+          "score": 0.5,
+          "downloads": 269951
+        }
+      ]
+    },
+    "image-to-text": {
+      "pipeline": "image-to-text",
+      "description": "Perform image to text analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "Salesforce/blip-image-captioning-base",
+      "model_author": "Salesforce",
+      "downloads": 1905472,
+      "likes": 763,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "Salesforce/blip-image-captioning-large",
+          "author": "Salesforce",
+          "score": 0.5,
+          "downloads": 1641560
+        },
+        {
+          "model_id": "Bllossom/llama-3.2-Korean-Bllossom-AICA-5B",
+          "author": "Bllossom",
+          "score": 0.5,
+          "downloads": 750004
+        },
+        {
+          "model_id": "nlpconnect/vit-gpt2-image-captioning",
+          "author": "nlpconnect",
+          "score": 0.5,
+          "downloads": 636870
+        }
+      ]
+    },
+    "image-to-video": {
+      "pipeline": "image-to-video",
+      "description": "Perform image to video analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "Lightricks/LTX-Video",
+      "model_author": "Lightricks",
+      "downloads": 562371,
+      "likes": 1843,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "stabilityai/stable-video-diffusion-img2vid-xt",
+          "author": "stabilityai",
+          "score": 0.5,
+          "downloads": 173751
+        },
+        {
+          "model_id": "city96/Wan2.1-I2V-14B-480P-gguf",
+          "author": "city96",
+          "score": 0.5,
+          "downloads": 150025
+        },
+        {
+          "model_id": "QuantStack/Wan2.1_I2V_14B_FusionX-GGUF",
+          "author": "QuantStack",
+          "score": 0.5,
+          "downloads": 75694
+        }
+      ]
+    },
+    "keypoint-detection": {
+      "pipeline": "keypoint-detection",
+      "description": "Perform keypoint detection analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "usyd-community/vitpose-base-simple",
+      "model_author": "usyd-community",
+      "downloads": 46603,
+      "likes": 27,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "usyd-community/vitpose-plus-huge",
+          "author": "usyd-community",
+          "score": 0.5,
+          "downloads": 39450
+        },
+        {
+          "model_id": "usyd-community/vitpose-plus-base",
+          "author": "usyd-community",
+          "score": 0.5,
+          "downloads": 13529
+        },
+        {
+          "model_id": "magic-leap-community/superpoint",
+          "author": "magic-leap-community",
+          "score": 0.5,
+          "downloads": 9993
+        }
+      ]
+    },
+    "mask-generation": {
+      "pipeline": "mask-generation",
+      "description": "Perform mask generation analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "facebook/sam2-hiera-large",
+      "model_author": "facebook",
+      "downloads": 505408,
+      "likes": 90,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "facebook/sam-vit-base",
+          "author": "facebook",
+          "score": 0.5,
+          "downloads": 274975
+        },
+        {
+          "model_id": "facebook/sam-vit-large",
+          "author": "facebook",
+          "score": 0.5,
+          "downloads": 242267
+        },
+        {
+          "model_id": "facebook/sam2-hiera-tiny",
+          "author": "facebook",
+          "score": 0.5,
+          "downloads": 207505
+        }
+      ]
+    },
+    "multiple-choice": {
+      "pipeline": "multiple-choice",
+      "description": "Perform multiple choice analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "Riiid/kda-roberta-base-race",
+      "model_author": "Riiid",
+      "downloads": 455,
+      "likes": 0,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "jonastokoliu/multi_choice_bert-base-uncased_swag_finetune",
+          "author": "jonastokoliu",
+          "score": 0.5,
+          "downloads": 160
+        },
+        {
+          "model_id": "abdou-u/MNLP_M3_quantized_dpo_mcqa_model",
+          "author": "abdou-u",
+          "score": 0.5,
+          "downloads": 144
+        },
+        {
+          "model_id": "LIAMF-USP/roberta-large-finetuned-race",
+          "author": "LIAMF-USP",
+          "score": 0.5,
+          "downloads": 113
+        }
+      ]
+    },
+    "other": {
+      "pipeline": "other",
+      "description": "Perform other analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "TrajectoryCrafter/TrajectoryCrafter",
+      "model_author": "TrajectoryCrafter",
+      "downloads": 23183,
+      "likes": 6,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "infinity1096/UFM-Refine",
+          "author": "infinity1096",
+          "score": 0.5,
+          "downloads": 9494
+        },
+        {
+          "model_id": "infinity1096/UFM-Base",
+          "author": "infinity1096",
+          "score": 0.5,
+          "downloads": 2343
+        },
+        {
+          "model_id": "exdysa/ratchet-test",
+          "author": "exdysa",
+          "score": 0.5,
+          "downloads": 391
+        }
+      ]
+    },
+    "reinforcement-learning": {
+      "pipeline": "reinforcement-learning",
+      "description": "Perform reinforcement learning analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "edbeeching/decision-transformer-gym-hopper-medium",
+      "model_author": "edbeeching",
+      "downloads": 6970,
+      "likes": 7,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "mradermacher/Orsta-7B-i1-GGUF",
+          "author": "mradermacher",
+          "score": 0.5,
+          "downloads": 6424
+        },
+        {
+          "model_id": "mradermacher/SEOcrate-4B_grpo_new_01-i1-GGUF",
+          "author": "mradermacher",
+          "score": 0.5,
+          "downloads": 4839
+        },
+        {
+          "model_id": "ValueFX9507/Tifa-DeepsexV3-14b-GGUF-Q6",
+          "author": "ValueFX9507",
+          "score": 0.5,
+          "downloads": 4742
+        }
+      ]
+    },
+    "robotics": {
+      "pipeline": "robotics",
+      "description": "Perform robotics analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "lerobot/smolvla_base",
+      "model_author": "lerobot",
+      "downloads": 17562,
+      "likes": 221,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "lerobot/pi0",
+          "author": "lerobot",
+          "score": 0.5,
+          "downloads": 12316
+        },
+        {
+          "model_id": "moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10",
+          "author": "moojink",
+          "score": 0.5,
+          "downloads": 5557
+        },
+        {
+          "model_id": "BAAI/RoboBrain2.0-7B",
+          "author": "BAAI",
+          "score": 0.5,
+          "downloads": 4074
+        }
+      ]
+    },
+    "sentence-similarity": {
+      "pipeline": "sentence-similarity",
+      "description": "Perform sentence similarity analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "sentence-transformers/all-MiniLM-L6-v2",
+      "model_author": "sentence-transformers",
+      "downloads": 86273245,
+      "likes": 3725,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "sentence-transformers/all-mpnet-base-v2",
+          "author": "sentence-transformers",
+          "score": 0.5,
+          "downloads": 18586207
+        },
+        {
+          "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+          "author": "sentence-transformers",
+          "score": 0.5,
+          "downloads": 12028273
+        },
+        {
+          "model_id": "BAAI/bge-m3",
+          "author": "BAAI",
+          "score": 0.5,
+          "downloads": 4602324
+        }
+      ]
+    },
+    "table-question-answering": {
+      "pipeline": "table-question-answering",
+      "description": "Perform table question answering analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "google/tapas-base-finetuned-wtq",
+      "model_author": "google",
+      "downloads": 8344,
+      "likes": 229,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "google/tapas-large-finetuned-wtq",
+          "author": "google",
+          "score": 0.5,
+          "downloads": 7838
+        },
+        {
+          "model_id": "microsoft/tapex-large",
+          "author": "microsoft",
+          "score": 0.5,
+          "downloads": 6752
+        },
+        {
+          "model_id": "google/tapas-tiny-finetuned-sqa",
+          "author": "google",
+          "score": 0.5,
+          "downloads": 3182
+        }
+      ],
+      "file_types": [
+        "csv",
+        "json"
+      ]
+    },
+    "table-to-text": {
+      "pipeline": "table-to-text",
+      "description": "Perform table to text analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "Narrativaai/bloom-560m-finetuned-totto-table-to-text",
+      "model_author": "Narrativaai",
+      "downloads": 21436,
+      "likes": 17,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": []
+    },
+    "tabular-classification": {
+      "pipeline": "tabular-classification",
+      "description": "Perform tabular classification analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "autogluon/mitra-classifier",
+      "model_author": "autogluon",
+      "downloads": 92432,
+      "likes": 14,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "autogluon/tabpfn-mix-1.0-classifier",
+          "author": "autogluon",
+          "score": 0.5,
+          "downloads": 65332
+        },
+        {
+          "model_id": "Prior-Labs/TabPFN-v2-clf",
+          "author": "Prior-Labs",
+          "score": 0.5,
+          "downloads": 40671
+        },
+        {
+          "model_id": "alana89/TabSTAR",
+          "author": "alana89",
+          "score": 0.5,
+          "downloads": 18253
+        }
+      ]
+    },
+    "tabular-regression": {
+      "pipeline": "tabular-regression",
+      "description": "Perform tabular regression analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "autogluon/mitra-regressor",
+      "model_author": "autogluon",
+      "downloads": 88952,
+      "likes": 7,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "Prior-Labs/TabPFN-v2-reg",
+          "author": "Prior-Labs",
+          "score": 0.5,
+          "downloads": 84054
+        },
+        {
+          "model_id": "autogluon/tabpfn-mix-1.0-regressor",
+          "author": "autogluon",
+          "score": 0.5,
+          "downloads": 6031
+        }
+      ]
+    },
+    "text-ranking": {
+      "pipeline": "text-ranking",
+      "description": "Perform text ranking analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "cross-encoder/ms-marco-MiniLM-L6-v2",
+      "model_author": "cross-encoder",
+      "downloads": 4629180,
+      "likes": 129,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "cross-encoder/ms-marco-MiniLM-L2-v2",
+          "author": "cross-encoder",
+          "score": 0.5,
+          "downloads": 991629
+        },
+        {
+          "model_id": "cross-encoder/ms-marco-MiniLM-L12-v2",
+          "author": "cross-encoder",
+          "score": 0.5,
+          "downloads": 979335
+        },
+        {
+          "model_id": "cross-encoder/ms-marco-MiniLM-L4-v2",
+          "author": "cross-encoder",
+          "score": 0.5,
+          "downloads": 678581
+        }
+      ]
+    },
+    "text-to-3d": {
+      "pipeline": "text-to-3d",
+      "description": "Perform text to 3d analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "microsoft/TRELLIS-text-xlarge",
+      "model_author": "microsoft",
+      "downloads": 10279,
+      "likes": 25,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "openai/shap-e",
+          "author": "openai",
+          "score": 0.5,
+          "downloads": 5817
+        },
+        {
+          "model_id": "AvaLovelace/BrickGPT",
+          "author": "AvaLovelace",
+          "score": 0.5,
+          "downloads": 2997
+        },
+        {
+          "model_id": "microsoft/TRELLIS-text-large",
+          "author": "microsoft",
+          "score": 0.5,
+          "downloads": 2260
+        }
+      ]
+    },
+    "text-to-audio": {
+      "pipeline": "text-to-audio",
+      "description": "Perform text to audio analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "facebook/musicgen-medium",
+      "model_author": "facebook",
+      "downloads": 1204447,
+      "likes": 130,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "alakxender/mms-tts-div-ft-spk01-m01",
+          "author": "alakxender",
+          "score": 0.5,
+          "downloads": 316873
+        },
+        {
+          "model_id": "alakxender/mms-tts-div-finetuned-md-m01",
+          "author": "alakxender",
+          "score": 0.5,
+          "downloads": 315227
+        },
+        {
+          "model_id": "facebook/musicgen-small",
+          "author": "facebook",
+          "score": 0.5,
+          "downloads": 53670
+        }
+      ]
+    },
+    "text-to-image": {
+      "pipeline": "text-to-image",
+      "description": "Perform text to image analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+      "model_author": "stable-diffusion-v1-5",
+      "downloads": 2678288,
+      "likes": 707,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "stabilityai/stable-diffusion-xl-base-1.0",
+          "author": "stabilityai",
+          "score": 0.5,
+          "downloads": 2448873
+        },
+        {
+          "model_id": "black-forest-labs/FLUX.1-dev",
+          "author": "black-forest-labs",
+          "score": 0.5,
+          "downloads": 1482560
+        },
+        {
+          "model_id": "stabilityai/sd-turbo",
+          "author": "stabilityai",
+          "score": 0.5,
+          "downloads": 1022054
+        }
+      ]
+    },
+    "text-to-speech": {
+      "pipeline": "text-to-speech",
+      "description": "Perform text to speech analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "coqui/XTTS-v2",
+      "model_author": "coqui",
+      "downloads": 2843703,
+      "likes": 2912,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "hexgrad/Kokoro-82M",
+          "author": "hexgrad",
+          "score": 0.5,
+          "downloads": 1943565
+        },
+        {
+          "model_id": "SWivid/F5-TTS",
+          "author": "SWivid",
+          "score": 0.5,
+          "downloads": 934284
+        },
+        {
+          "model_id": "ResembleAI/chatterbox",
+          "author": "ResembleAI",
+          "score": 0.5,
+          "downloads": 880742
+        }
+      ]
+    },
+    "text-to-video": {
+      "pipeline": "text-to-video",
+      "description": "Perform text to video analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
+      "model_author": "Wan-AI",
+      "downloads": 160344,
+      "likes": 80,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "QuantStack/Wan2.2-T2V-A14B-GGUF",
+          "author": "QuantStack",
+          "score": 0.5,
+          "downloads": 90311
+        },
+        {
+          "model_id": "Wan-AI/Wan2.1-T2V-14B",
+          "author": "Wan-AI",
+          "score": 0.5,
+          "downloads": 81620
+        },
+        {
+          "model_id": "city96/Wan2.1-T2V-14B-gguf",
+          "author": "city96",
+          "score": 0.5,
+          "downloads": 76691
+        }
+      ]
+    },
+    "time-series-forecasting": {
+      "pipeline": "time-series-forecasting",
+      "description": "Perform time series forecasting analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "amazon/chronos-t5-small",
+      "model_author": "amazon",
+      "downloads": 38636801,
+      "likes": 117,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "autogluon/chronos-bolt-base",
+          "author": "autogluon",
+          "score": 0.5,
+          "downloads": 5702062
+        },
+        {
+          "model_id": "autogluon/chronos-bolt-small",
+          "author": "autogluon",
+          "score": 0.5,
+          "downloads": 4143694
+        },
+        {
+          "model_id": "amazon/chronos-bolt-small",
+          "author": "amazon",
+          "score": 0.5,
+          "downloads": 1130301
+        }
+      ]
+    },
+    "unconditional-image-generation": {
+      "pipeline": "unconditional-image-generation",
+      "description": "Perform unconditional image generation analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "google/ddpm-ema-celebahq-256",
+      "model_author": "google",
+      "downloads": 15995,
+      "likes": 11,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "google/ddpm-cifar10-32",
+          "author": "google",
+          "score": 0.5,
+          "downloads": 10678
+        },
+        {
+          "model_id": "google/ddpm-celebahq-256",
+          "author": "google",
+          "score": 0.5,
+          "downloads": 5116
+        },
+        {
+          "model_id": "jadechoghari/mar",
+          "author": "jadechoghari",
+          "score": 0.5,
+          "downloads": 4332
+        }
+      ]
+    },
+    "video-text-to-text": {
+      "pipeline": "video-text-to-text",
+      "description": "Perform video text to text analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "chancharikm/qwen2.5-vl-7b-cam-motion-preview",
+      "model_author": "chancharikm",
+      "downloads": 386223,
+      "likes": 11,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "llava-hf/LLaVA-NeXT-Video-7B-hf",
+          "author": "llava-hf",
+          "score": 0.5,
+          "downloads": 69967
+        },
+        {
+          "model_id": "lmms-lab/LLaVA-Video-7B-Qwen2",
+          "author": "lmms-lab",
+          "score": 0.5,
+          "downloads": 54202
+        },
+        {
+          "model_id": "Kwai-Keye/Keye-VL-8B-Preview",
+          "author": "Kwai-Keye",
+          "score": 0.5,
+          "downloads": 44185
+        }
+      ]
+    },
+    "video-to-video": {
+      "pipeline": "video-to-video",
+      "description": "Perform video to video analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "numz/SeedVR2_comfyUI",
+      "model_author": "numz",
+      "downloads": 27089,
+      "likes": 18,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "Lightricks/ltxv-spatial-upscaler-0.9.7",
+          "author": "Lightricks",
+          "score": 0.5,
+          "downloads": 4730
+        },
+        {
+          "model_id": "cerspense/zeroscope_v2_XL",
+          "author": "cerspense",
+          "score": 0.5,
+          "downloads": 1215
+        },
+        {
+          "model_id": "ByteDance-Seed/SeedVR2-3B",
+          "author": "ByteDance-Seed",
+          "score": 0.5,
+          "downloads": 1075
+        }
+      ]
+    },
+    "visual-document-retrieval": {
+      "pipeline": "visual-document-retrieval",
+      "description": "Perform visual document retrieval analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "vidore/colpali-v1.3",
+      "model_author": "vidore",
+      "downloads": 309176,
+      "likes": 63,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "vidore/colqwen2-v1.0",
+          "author": "vidore",
+          "score": 0.5,
+          "downloads": 209262
+        },
+        {
+          "model_id": "jinaai/jina-embeddings-v4",
+          "author": "jinaai",
+          "score": 0.5,
+          "downloads": 107923
+        },
+        {
+          "model_id": "vidore/colqwen2.5-v0.2",
+          "author": "vidore",
+          "score": 0.5,
+          "downloads": 40060
+        }
+      ]
+    },
+    "voice-activity-detection": {
+      "pipeline": "voice-activity-detection",
+      "description": "Perform voice activity detection analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "pyannote/segmentation-3.0",
+      "model_author": "pyannote",
+      "downloads": 19017766,
+      "likes": 541,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "pyannote/segmentation",
+          "author": "pyannote",
+          "score": 0.5,
+          "downloads": 3876260
+        },
+        {
+          "model_id": "pyannote/brouhaha",
+          "author": "pyannote",
+          "score": 0.5,
+          "downloads": 83114
+        },
+        {
+          "model_id": "pipecat-ai/smart-turn-v2",
+          "author": "pipecat-ai",
+          "score": 0.5,
+          "downloads": 10940
+        }
+      ]
+    },
+    "zero-shot-object-detection": {
+      "pipeline": "zero-shot-object-detection",
+      "description": "Perform zero shot object detection analysis",
+      "supports_file": true,
+      "example_text": "Sample text for analysis",
+      "best_model": "IDEA-Research/grounding-dino-base",
+      "model_author": "IDEA-Research",
+      "downloads": 1425841,
+      "likes": 107,
+      "score": 0.5,
+      "last_updated": null,
+      "alternative_models": [
+        {
+          "model_id": "IDEA-Research/grounding-dino-tiny",
+          "author": "IDEA-Research",
+          "score": 0.5,
+          "downloads": 519014
+        },
+        {
+          "model_id": "google/owlv2-base-patch16-ensemble",
+          "author": "google",
+          "score": 0.5,
+          "downloads": 517963
+        },
+        {
+          "model_id": "google/owlv2-large-patch14-ensemble",
+          "author": "google",
+          "score": 0.5,
+          "downloads": 419887
+        }
+      ]
+    }
+  },
+  "_metadata": {
+    "generated_at": "2025-08-03T22:40:24.882505",
+    "total_tasks": 54,
+    "database_path": "db/hf_models.db",
+    "generator_version": "1.0.0",
+    "note": "This file is generated dynamically from the database. Do not edit manually."
+  }
+}

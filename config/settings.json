@@ -1,0 +1,79 @@
+{
+  "audio_processing": {
+    "sample_rate": 16000,
+    "chunk_duration_seconds": 30,
+    "accessible_speech_models": [
+      "openai/whisper-base",
+      "facebook/wav2vec2-base-960h",
+      "microsoft/speecht5_asr"
+    ],
+    "processing_folder": "audio_processing",
+    "cleanup_chunks": true,
+    "default_file_path": "c:\\temp\\audio.mp3"
+  },
+  "image_processing": {
+    "default_image_model": "google/vit-base-patch16-224",
+    "min_model_downloads": 1000,
+    "fallback_models": [
+      "google/vit-base-patch16-224",
+      "microsoft/resnet-50",
+      "facebook/deit-base-distilled-patch16-224"
+    ]
+  },
+  "timeouts": {
+    "global_timeout_seconds": 300,
+    "model_load_timeout_seconds": 180,
+    "download_timeout_seconds": 600,
+    "generation_timeout_seconds": 60,
+    "hf_hub_download_timeout": 300
+  },
+  "model_selection": {
+    "enable_dynamic_selection": true,
+    "prefer_high_download_models": true,
+    "avoid_gated_models": true,
+    "max_models_to_try": 5,
+    "fallback_strategy": "database_then_accessible"
+  },
+  "performance": {
+    "max_concurrent_requests": 10,
+    "request_rate_limit": 100,
+    "cache_size_limit": 1000,
+    "memory_cleanup_interval": 300
+  },
+  "file_processing": {
+    "supported_audio_formats": ["mp3", "wav", "flac", "aac", "ogg", "m4a"],
+    "supported_image_formats": ["jpg", "jpeg", "png", "gif", "bmp", "tiff", "webp"],
+    "supported_video_formats": ["mp4", "avi", "mov", "mkv", "wmv", "flv", "webm"],
+    "max_file_size_mb": 100,
+    "temp_folder_cleanup": true
+  },
+  "api_keys": {
+    "openai_api_key_env": "OPENAI_API_KEY",
+    "gemini_api_key_env": "GEMINI_API_KEY",
+    "hf_token_env": "HF_TOKEN"
+  },
+  "logging": {
+    "log_level": "INFO",
+    "log_to_file": true,
+    "log_folder": "logs",
+    "max_log_file_size_mb": 10,
+    "max_log_files": 5
+  },
+  "security": {
+    "enable_input_validation": true,
+    "max_prompt_length": 10000,
+    "allowed_file_types": ["audio", "image", "video", "text"],
+    "sandbox_mode": false
+  },
+  "experimental": {
+    "enable_novel_ai_features": true,
+    "enable_multimodal_processing": true,
+    "enable_dynamic_optimization": true,
+    "enable_performance_monitoring": true
+  },
+  "folder_structure": {
+    "folders": ["logs", "config", "reports", "db"],
+    "timestamp_format": "%Y%m%d_%H%M%S_%f",
+    "timestamp_milliseconds": 3
+  }
+} 

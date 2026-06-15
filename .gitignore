@@ -1,0 +1,14 @@
+# Rust build artifacts
+target/
+
+# Local database and backup folder
+db/
+backups/
+
+# Local environment variables
+.env
+.env.local
+
+# System logs
+logs/
+*.log
