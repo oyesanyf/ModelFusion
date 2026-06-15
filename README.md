@@ -90,10 +90,23 @@ cargo run --bin cli -- --tasks
 cargo run --bin cli -- --tasks text
 ```
 
+### 7. Run Model Fusion
+Model Fusion evaluates a prompt using a panel of 10 diverse models concurrently, parses their responses with a 32B judge model into structured JSON, and writes a final synthesized answer using a 32B writer model:
+```bash
+cargo run --bin cli -- --prompt "compare Python and Rust for high-performance CLI tools" --fusion
+```
+
+### 8. CLI Command Line Help
+To view all available command line arguments, flags, and options:
+```bash
+cargo run --bin cli -- --help
+```
+
 ---
 
 ## 🛡️ Security & Innovations
 
+- **Model Fusion Pipeline**: Dynamically queries a panel of 10 concurrent Hugging Face models using the new OpenAI-compatible router at `router.huggingface.co/v1`, handles `reasoning_content` for DeepSeek-R1 distilled models, and performs robust multi-stage analysis and synthesis.
 - **MITRE ATLAS Threat Scanner**: Scans prompts against common adversarial patterns (like prompt injection, evasion of policies, and social engineering) using compiled regex tables.
 - **Multi-Objective Model Scoring**: Norms downloads and likes, blends in model size efficiency, and checks licenses against a list of approved open-source licenses (`mit`, `apache-2.0`, etc.) to choose the best candidate.
 - **Offline Provider Mocks**: If API keys are missing or requests fail, the orchestration system falls back gracefully to a mock answer format, allowing the system to run in offline/isolated environments without crashing.

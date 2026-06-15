@@ -26,11 +26,18 @@ pub fn classify_prompt(prompt: &str) -> bool {
 
 /// Run the model fusion pipeline.
 pub async fn run_fusion(prompt: &str) -> anyhow::Result<String> {
-    // Define the 3 panel models (Gemma-2-2b-it and DeepSeek R1 distilled thinking models)
+    // Define the 10 panel models (various open-weights instruction and reasoning models)
     let panel_models = vec![
-        ModelConfig::huggingface("google/gemma-2-2b-it"),
+        ModelConfig::huggingface("meta-llama/Llama-3.1-8B-Instruct"),
+        ModelConfig::huggingface("meta-llama/Meta-Llama-3-8B-Instruct"),
+        ModelConfig::huggingface("Qwen/Qwen2.5-7B-Instruct"),
+        ModelConfig::huggingface("Qwen/Qwen2.5-Coder-7B-Instruct"),
+        ModelConfig::huggingface("Qwen/Qwen2.5-Coder-32B-Instruct"),
         ModelConfig::huggingface("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"),
         ModelConfig::huggingface("deepseek-ai/DeepSeek-R1-Distill-Llama-8B"),
+        ModelConfig::huggingface("deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"),
+        ModelConfig::huggingface("Qwen/QwQ-32B"),
+        ModelConfig::huggingface("CohereLabs/aya-expanse-32b"),
     ];
 
     // Define the judge model (strong reasoning open-weights thinking model)
@@ -39,21 +46,21 @@ pub async fn run_fusion(prompt: &str) -> anyhow::Result<String> {
     // Define the final writer model
     let writer_model = ModelConfig::huggingface("deepseek-ai/DeepSeek-R1-Distill-Qwen-32B");
 
-    println!("🤖 [FUSION] Starting Model Fusion Pipeline...");
-    println!("📋 [FUSION] Step 1: Running Panel of 3 models concurrently...");
+    println!("[FUSION] Starting Model Fusion Pipeline...");
+    println!("[FUSION] Step 1: Running Panel of 10 models concurrently...");
     let panel_answers = run_panel(prompt, panel_models).await?;
     
     for ans in &panel_answers {
-        println!("  • Received response from {}", ans.model_name);
+        println!("  * Received response from {}", ans.model_name);
         if ans.answer.starts_with("MODEL ERROR") {
-            println!("    ⚠️ Warning: {}", ans.answer);
+            println!("    [WARN] Warning: {}", ans.answer);
         }
     }
 
-    println!("⚖️  [FUSION] Step 2: Judging panel responses...");
+    println!("[FUSION] Step 2: Judging panel responses...");
     let judge_json = judge_panel(prompt, &panel_answers, &judge_model).await?;
 
-    println!("✍️  [FUSION] Step 3: Writing final synthesized answer...");
+    println!("[FUSION] Step 3: Writing final synthesized answer...");
     let final_answer = write_final_answer(prompt, &judge_json, &writer_model).await?;
 
     Ok(final_answer)

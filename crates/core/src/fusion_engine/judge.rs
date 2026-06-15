@@ -4,22 +4,34 @@ use crate::fusion_engine::models::call_model;
 pub fn build_judge_prompt(user_prompt: &str, answers: &[ModelAnswer]) -> String {
     let mut prompt = String::new();
 
-    prompt.push_str("You are a judge model. Compare the model responses. Do not write the final answer.\n");
-    prompt.push_str("Return strict JSON with these fields:\n");
-    prompt.push_str("consensus, disagreements, unique_insights, blind_spots, risk_flags, recommended_final_position.\n");
-    prompt.push_str("All fields except 'recommended_final_position' must be arrays of strings.\n");
-    prompt.push_str("Ensure response is valid raw JSON ONLY (no markdown formatting code blocks).\n\n");
+    prompt.push_str("You are an expert judge model evaluating and comparing multiple assistant responses.\n\n");
 
-    prompt.push_str("USER REQUEST:\n");
+    prompt.push_str("### USER REQUEST:\n");
     prompt.push_str(user_prompt);
-    prompt.push_str("\n\nMODEL RESPONSES:\n");
+    prompt.push_str("\n\n");
 
+    prompt.push_str("### ASSISTANT RESPONSES TO EVALUATE:\n");
     for answer in answers {
         prompt.push_str(&format!(
             "\n--- MODEL: {} ---\n{}\n",
             answer.model_name, answer.answer
         ));
     }
+    prompt.push_str("\n");
+
+    prompt.push_str("### INSTRUCTIONS FOR THE JUDGE:\n");
+    prompt.push_str("Compare the assistant responses above. Identify consensus, disagreements, unique insights, blind spots, risk flags, and recommend a final synthesized position.\n");
+    prompt.push_str("You MUST return a valid JSON object ONLY. Do not write a markdown introduction or conversational text.\n\n");
+    prompt.push_str("### REQUIRED JSON FORMAT:\n");
+    prompt.push_str("{\n");
+    prompt.push_str("  \"consensus\": [\"list of points of agreement\"],\n");
+    prompt.push_str("  \"disagreements\": [\"list of points of disagreement\"],\n");
+    prompt.push_str("  \"unique_insights\": [\"list of unique insights from specific models\"],\n");
+    prompt.push_str("  \"blind_spots\": [\"list of potential omissions or errors across models\"],\n");
+    prompt.push_str("  \"risk_flags\": [\"any risk factors or safety flags observed\"],\n");
+    prompt.push_str("  \"recommended_final_position\": \"detailed summary of the recommended final position to answer the user request\"\n");
+    prompt.push_str("}\n\n");
+    prompt.push_str("JSON output:");
 
     prompt
 }
@@ -51,18 +63,36 @@ pub async fn judge_panel(
         }
     };
     
-    // Strip markdown formatting if any
-    let clean_json = response_text
-        .trim()
-        .trim_start_matches("```json")
-        .trim_start_matches("```")
-        .trim_end_matches("```")
-        .trim()
-        .to_string();
+    // Strip <think>...</think> block if present
+    let mut clean_json = if let Some(end_idx) = response_text.find("</think>") {
+        response_text[end_idx + 8..].to_string()
+    } else {
+        response_text.clone()
+    };
+
+    // Trim and strip markdown code blocks
+    clean_json = clean_json.trim().to_string();
+    if clean_json.starts_with("```") {
+        clean_json = clean_json
+            .trim_start_matches("```json")
+            .trim_start_matches("```")
+            .trim_end_matches("```")
+            .trim()
+            .to_string();
+    }
+
+    // Extract content between first '{' and last '}' to handle any surrounding text
+    if let Some(start) = clean_json.find('{') {
+        if let Some(end) = clean_json.rfind('}') {
+            if start < end {
+                clean_json = clean_json[start..=end].to_string();
+            }
+        }
+    }
 
     let analysis: JudgeAnalysis = serde_json::from_str(&clean_json)
         .unwrap_or_else(|e| {
-            log::warn!("Failed to parse judge JSON: {}. Using fallback model summary.", e);
+            log::warn!("Failed to parse judge JSON: {}. Cleaned JSON was: {}. Using fallback model summary.", e, clean_json);
             JudgeAnalysis {
                 consensus: vec!["Fallback: Parse error".to_string()],
                 disagreements: vec![],

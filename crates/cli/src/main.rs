@@ -524,14 +524,14 @@ async fn main() -> Result<()> {
         let is_fusion_needed = args.fusion || modelfusion_core::fusion_engine::classify_prompt(prompt);
 
         if is_fusion_needed {
-            println!("🤖 Model Fusion is active (explicitly requested or dynamically classified).");
+            println!("[FUSION] Model Fusion is active (explicitly requested or dynamically classified).");
             match modelfusion_core::fusion_engine::run_fusion(prompt).await {
                 Ok(content) => {
-                    println!("\n✨ Orchestration Successful (via Model Fusion)!\n");
+                    println!("\n[SUCCESS] Orchestration Successful (via Model Fusion)!\n");
                     println!("{}", content);
                 }
                 Err(e) => {
-                    println!("\n❌ Orchestration Failed (via Model Fusion)!\n");
+                    println!("\n[ERROR] Orchestration Failed (via Model Fusion)!\n");
                     println!("Error: {}", e);
                 }
             }
@@ -558,10 +558,10 @@ async fn main() -> Result<()> {
             .await;
 
         if res.success {
-            println!("\n✨ Orchestration Successful!\n");
+            println!("\n[SUCCESS] Orchestration Successful!\n");
             println!("{}", res.content);
         } else {
-            println!("\n❌ Orchestration Failed!\n");
+            println!("\n[ERROR] Orchestration Failed!\n");
             if let Some(err) = res.error_message {
                 println!("Error: {}", err);
             }
@@ -571,13 +571,13 @@ async fn main() -> Result<()> {
         println!("HFOrchestra - Advanced HuggingFace Model Orchestration System");
         println!("============================================================");
         println!("Available modules:");
-        println!("  🔍 Model Discovery - Find and evaluate HuggingFace models");
-        println!("  🛡️ Security - ATLAS threat detection and monitoring");
-        println!("  📊 Performance - System monitoring and optimization");
-        println!("  🔍 PE Analysis - Malware detection and binary analysis");
-        println!("  🤖 Orchestration - Multi-provider LLM management");
-        println!("  🧠 ML Model Selection - Machine learning-based intelligent selection");
-        println!("  🔧 SINQ Quantization - Model quantization for memory efficiency");
+        println!("  [DISCOVERY] Model Discovery - Find and evaluate HuggingFace models");
+        println!("  [SECURITY]  Security - ATLAS threat detection and monitoring");
+        println!("  [PERF]      Performance - System monitoring and optimization");
+        println!("  [PE]        PE Analysis - Malware detection and binary analysis");
+        println!("  [ORCH]      Orchestration - Multi-provider LLM management");
+        println!("  [ML]        ML Model Selection - Machine learning-based intelligent selection");
+        println!("  [SINQ]      SINQ Quantization - Model quantization for memory efficiency");
         println!("\nUse --help for comprehensive usage information");
     }
 
@@ -587,7 +587,7 @@ async fn main() -> Result<()> {
 /// Print dynamic ensemble information banner as expected by main.py flow.
 fn print_ensemble_info(strategy: &str) {
     println!("============================================================");
-    println!("🤖 Ensemble Model Selection: Active Strategy: {}", strategy);
+    println!("[MODEL] Ensemble Model Selection: Active Strategy: {}", strategy);
     println!("============================================================");
 }
 

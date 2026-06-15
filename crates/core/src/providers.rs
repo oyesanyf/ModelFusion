@@ -308,19 +308,36 @@ impl LLMProvider for HuggingFaceProvider {
     async fn generate_response(&self, prompt: &str) -> Result<ProviderResult> {
         let start = Instant::now();
 
-        // 1. Try Hugging Face Inference API
+        // 1. Try Hugging Face Inference API via new router
         if let Some(token) = &self.hf_token {
-            let url = format!("https://api-inference.huggingface.co/models/{}", self.config.model_id);
+            let url = "https://router.huggingface.co/v1/chat/completions";
+            
+            let mut messages = Vec::new();
+            if prompt.contains("You are an expert judge model") {
+                messages.push(serde_json::json!({
+                    "role": "system",
+                    "content": "You are an expert judge model evaluating and comparing multiple assistant responses. You MUST return a valid JSON object ONLY. Do not write a markdown introduction, explanations, or conversational text. Follow the requested schema exactly."
+                }));
+            } else if prompt.contains("Use the judge analysis below") {
+                messages.push(serde_json::json!({
+                    "role": "system",
+                    "content": "You are a professional synthesizer and writer. Use the judge analysis to write the final answer. Prioritize consensus, mention uncertainty, and do not pretend disagreement is resolved."
+                }));
+            }
+            
+            messages.push(serde_json::json!({
+                "role": "user",
+                "content": prompt
+            }));
+
             let body = serde_json::json!({
-                "inputs": prompt,
-                "parameters": {
-                    "max_new_tokens": self.config.max_tokens,
-                    "temperature": self.config.temperature,
-                    "do_sample": true
-                }
+                "model": self.config.model_id,
+                "messages": messages,
+                "max_tokens": self.config.max_tokens,
+                "temperature": self.config.temperature
             });
 
-            let response = self.client.post(&url)
+            let response = self.client.post(url)
                 .bearer_auth(token)
                 .json(&body)
                 .send()
@@ -333,22 +350,20 @@ impl LLMProvider for HuggingFaceProvider {
                         let data: serde_json::Value = res.json().await?;
                         let mut content = String::new();
 
-                        if let Some(arr) = data.as_array() {
-                            if !arr.is_empty() {
-                                content = arr[0]["generated_text"].as_str().unwrap_or_default().to_string();
-                            }
-                        } else if let Some(obj) = data.as_object() {
-                            content = obj.get("generated_text")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or_default()
-                                .to_string();
-                        } else {
-                            content = data.to_string();
-                        }
+                        if let Some(choice) = data["choices"].get(0) {
+                            if let Some(msg) = choice.get("message") {
+                                let reasoning = msg.get("reasoning_content")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+                                let body_content = msg.get("content")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
 
-                        // Remove input prompt if the model prepended it
-                        if content.starts_with(prompt) {
-                            content = content[prompt.len()..].trim().to_string();
+                                if !reasoning.is_empty() {
+                                    content.push_str(&format!("<think>\n{}\n</think>\n", reasoning));
+                                }
+                                content.push_str(body_content);
+                            }
                         }
 
                         let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
