@@ -55,7 +55,9 @@ pub async fn run_fusion(
                 match selector.select_best_model(&task_name, prompt, strategy, 10) {
                     Ok(res) => {
                         println!("📋 [FUSION] Model selection successful for task '{}' (strategy: {}).", task_name, res.strategy);
-                        for candidate in res.all_candidates {
+                        println!("📋 [FUSION] Selected models for the panel:");
+                        for (i, candidate) in res.all_candidates.iter().enumerate() {
+                            println!("  {}. {} (score: {:.2})", i + 1, candidate.model_id, candidate.final_score);
                             panel_models.push(ModelConfig::huggingface(&candidate.model_id));
                         }
                         if !panel_models.is_empty() {
@@ -74,19 +76,23 @@ pub async fn run_fusion(
     }
 
     if !used_selection {
-        println!("[FUSION] Using default 10 models for panel.");
-        panel_models = vec![
-            ModelConfig::huggingface("meta-llama/Llama-3.1-8B-Instruct"),
-            ModelConfig::huggingface("meta-llama/Meta-Llama-3-8B-Instruct"),
-            ModelConfig::huggingface("Qwen/Qwen2.5-7B-Instruct"),
-            ModelConfig::huggingface("Qwen/Qwen2.5-Coder-7B-Instruct"),
-            ModelConfig::huggingface("Qwen/Qwen2.5-Coder-32B-Instruct"),
-            ModelConfig::huggingface("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"),
-            ModelConfig::huggingface("deepseek-ai/DeepSeek-R1-Distill-Llama-8B"),
-            ModelConfig::huggingface("deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"),
-            ModelConfig::huggingface("Qwen/QwQ-32B"),
-            ModelConfig::huggingface("CohereLabs/aya-expanse-32b"),
+        println!("[FUSION] Using default 10 models for panel:");
+        let defaults = vec![
+            "meta-llama/Llama-3.1-8B-Instruct",
+            "meta-llama/Meta-Llama-3-8B-Instruct",
+            "Qwen/Qwen2.5-7B-Instruct",
+            "Qwen/Qwen2.5-Coder-7B-Instruct",
+            "Qwen/Qwen2.5-Coder-32B-Instruct",
+            "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+            "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+            "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+            "Qwen/QwQ-32B",
+            "CohereLabs/aya-expanse-32b",
         ];
+        for (i, m) in defaults.iter().enumerate() {
+            println!("  {}. {}", i + 1, m);
+            panel_models.push(ModelConfig::huggingface(m));
+        }
     }
 
     // Define the judge model (strong reasoning open-weights thinking model)
