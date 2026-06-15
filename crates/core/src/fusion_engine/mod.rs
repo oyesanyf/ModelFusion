@@ -6,6 +6,9 @@ pub mod judge;
 use schema::ModelConfig;
 use fusion::run_panel;
 use judge::{judge_panel, write_final_answer};
+use model_selection::{EnhancedModelSelector, SelectionStrategy};
+use task_detection::IntelligentTaskDetector;
+use std::path::Path;
 
 /// Simple heuristic classifier to decide if prompt needs fusion.
 pub fn classify_prompt(prompt: &str) -> bool {
@@ -25,20 +28,66 @@ pub fn classify_prompt(prompt: &str) -> bool {
 }
 
 /// Run the model fusion pipeline.
-pub async fn run_fusion(prompt: &str) -> anyhow::Result<String> {
-    // Define the 10 panel models (various open-weights instruction and reasoning models)
-    let panel_models = vec![
-        ModelConfig::huggingface("meta-llama/Llama-3.1-8B-Instruct"),
-        ModelConfig::huggingface("meta-llama/Meta-Llama-3-8B-Instruct"),
-        ModelConfig::huggingface("Qwen/Qwen2.5-7B-Instruct"),
-        ModelConfig::huggingface("Qwen/Qwen2.5-Coder-7B-Instruct"),
-        ModelConfig::huggingface("Qwen/Qwen2.5-Coder-32B-Instruct"),
-        ModelConfig::huggingface("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"),
-        ModelConfig::huggingface("deepseek-ai/DeepSeek-R1-Distill-Llama-8B"),
-        ModelConfig::huggingface("deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"),
-        ModelConfig::huggingface("Qwen/QwQ-32B"),
-        ModelConfig::huggingface("CohereLabs/aya-expanse-32b"),
-    ];
+pub async fn run_fusion(
+    prompt: &str,
+    db_path: Option<&Path>,
+    task_override: Option<&str>,
+    strategy: Option<SelectionStrategy>,
+) -> anyhow::Result<String> {
+    let mut panel_models = Vec::new();
+    let mut used_selection = false;
+
+    if let Some(db_path_ref) = db_path {
+        // Detect task name
+        let task_name = if let Some(t) = task_override {
+            t.to_string()
+        } else {
+            let detector = IntelligentTaskDetector::new();
+            let detection = detector.detect_task_type(prompt);
+            println!("🔍 [FUSION] Detected task: {} (confidence: {:.2})", detection.task_type, detection.confidence);
+            detection.task_type
+        };
+
+        let strategy = strategy.unwrap_or(SelectionStrategy::MultiObjective);
+        
+        match EnhancedModelSelector::new(db_path_ref) {
+            Ok(selector) => {
+                match selector.select_best_model(&task_name, prompt, strategy, 10) {
+                    Ok(res) => {
+                        println!("📋 [FUSION] Model selection successful for task '{}' (strategy: {}).", task_name, res.strategy);
+                        for candidate in res.all_candidates {
+                            panel_models.push(ModelConfig::huggingface(&candidate.model_id));
+                        }
+                        if !panel_models.is_empty() {
+                            used_selection = true;
+                        }
+                    }
+                    Err(e) => {
+                        println!("⚠️ [FUSION] Model selection failed: {}. Falling back to default 10 models.", e);
+                    }
+                }
+            }
+            Err(e) => {
+                println!("⚠️ [FUSION] Could not open database for model selection: {}. Falling back to default 10 models.", e);
+            }
+        }
+    }
+
+    if !used_selection {
+        println!("[FUSION] Using default 10 models for panel.");
+        panel_models = vec![
+            ModelConfig::huggingface("meta-llama/Llama-3.1-8B-Instruct"),
+            ModelConfig::huggingface("meta-llama/Meta-Llama-3-8B-Instruct"),
+            ModelConfig::huggingface("Qwen/Qwen2.5-7B-Instruct"),
+            ModelConfig::huggingface("Qwen/Qwen2.5-Coder-7B-Instruct"),
+            ModelConfig::huggingface("Qwen/Qwen2.5-Coder-32B-Instruct"),
+            ModelConfig::huggingface("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"),
+            ModelConfig::huggingface("deepseek-ai/DeepSeek-R1-Distill-Llama-8B"),
+            ModelConfig::huggingface("deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"),
+            ModelConfig::huggingface("Qwen/QwQ-32B"),
+            ModelConfig::huggingface("CohereLabs/aya-expanse-32b"),
+        ];
+    }
 
     // Define the judge model (strong reasoning open-weights thinking model)
     let judge_model = ModelConfig::huggingface("deepseek-ai/DeepSeek-R1-Distill-Qwen-32B");
@@ -47,7 +96,7 @@ pub async fn run_fusion(prompt: &str) -> anyhow::Result<String> {
     let writer_model = ModelConfig::huggingface("deepseek-ai/DeepSeek-R1-Distill-Qwen-32B");
 
     println!("[FUSION] Starting Model Fusion Pipeline...");
-    println!("[FUSION] Step 1: Running Panel of 10 models concurrently...");
+    println!("[FUSION] Step 1: Running Panel of {} models concurrently...", panel_models.len());
     let panel_answers = run_panel(prompt, panel_models).await?;
     
     for ans in &panel_answers {

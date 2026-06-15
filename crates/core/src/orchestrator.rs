@@ -116,24 +116,31 @@ impl HuggingFaceOrchestrator {
         };
 
         // Determine final model selection
-        let (model_id, selection_info) = if let Some(m) = model_override {
-            (m.to_string(), "forced model".to_string())
+        let mut candidates = Vec::new();
+        let selection_info;
+
+        if let Some(m) = model_override {
+            candidates.push(m.to_string());
+            selection_info = "forced model".to_string();
         } else if use_openai {
             // Default to GPT-3.5-turbo if OpenAI requested
-            ("gpt-3.5-turbo".to_string(), "default openai model".to_string())
+            candidates.push("gpt-3.5-turbo".to_string());
+            selection_info = "default openai model".to_string();
         } else {
             // Use enhanced selection from DB
             match EnhancedModelSelector::new(&self.db_path) {
                 Err(e) => {
                     log::warn!("Could not open database for selection: {}. Using fallback model.", e);
-                    ("gpt2".to_string(), "db error fallback".to_string())
+                    candidates.push("gpt2".to_string());
+                    selection_info = "db error fallback".to_string();
                 }
                 Ok(selector) => {
                     let strategy = selection_strategy.unwrap_or(SelectionStrategy::MultiObjective);
                     match selector.select_best_model(&task_name, prompt, strategy, 10) {
                         Err(e) => {
                             log::warn!("Selection failed: {}. Using fallback model.", e);
-                            ("gpt2".to_string(), "selection failure fallback".to_string())
+                            candidates.push("gpt2".to_string());
+                            selection_info = "selection failure fallback".to_string();
                         }
                         Ok(res) => {
                             if self.verbose {
@@ -142,26 +149,66 @@ impl HuggingFaceOrchestrator {
                                     res.strategy, res.best_model.model_id, res.confidence_score
                                 );
                             }
-                            (res.best_model.model_id, format!("strategy: {}", res.strategy))
+                            candidates = res.all_candidates.into_iter().map(|c| c.model_id).collect();
+                            selection_info = format!("strategy: {}", res.strategy);
                         }
                     }
                 }
             }
-        };
-
-        if self.verbose {
-            println!("🚀 [ORCHESTRATOR] Routing task '{}' to model '{}' ({})", task_name, model_id, selection_info);
         }
 
-        // Execute task
-        let task_result = if let Some(fp) = file_path {
-            self.task_processor
-                .process_file_analysis(Path::new(fp), &task_name, prompt, Some(&model_id), options)
-                .await
-        } else {
-            self.task_processor
-                .process_task(&task_name, prompt, Some(&model_id), None, None, options)
-                .await
+        if candidates.is_empty() {
+            candidates.push("gpt2".to_string());
+        }
+
+        // Execute task (loop through candidates in order of ranking)
+        let mut final_result = None;
+        let mut models_used = Vec::new();
+
+        for model_id in &candidates {
+            if self.verbose {
+                println!("[ORCHESTRATOR] Routing task '{}' to model '{}' ({})", task_name, model_id, selection_info);
+            }
+            models_used.push(model_id.clone());
+
+            let res = if let Some(fp) = file_path {
+                self.task_processor
+                    .process_file_analysis(Path::new(fp), &task_name, prompt, Some(model_id), options.clone())
+                    .await
+            } else {
+                self.task_processor
+                    .process_task(&task_name, prompt, Some(model_id), None, None, options.clone())
+                    .await
+            };
+
+            let is_failure = res.status != "success" 
+                || res.content.starts_with("[Offline Fallback") 
+                || res.content.contains("mock response")
+                || res.content.contains("API request failed");
+
+            if !is_failure {
+                final_result = Some(res);
+                break;
+            } else {
+                log::warn!("⚠️ Model '{}' failed or went offline. Trying next candidate...", model_id);
+            }
+        }
+
+        // If all candidates failed, use the result of the first candidate (which contains the offline fallback output)
+        let task_result = match final_result {
+            Some(res) => res,
+            None => {
+                log::warn!("❌ All candidates failed or went offline. Returning final offline fallback.");
+                if let Some(fp) = file_path {
+                    self.task_processor
+                        .process_file_analysis(Path::new(fp), &task_name, prompt, Some(&candidates[0]), options.clone())
+                        .await
+                } else {
+                    self.task_processor
+                        .process_task(&task_name, prompt, Some(&candidates[0]), None, None, options.clone())
+                        .await
+                }
+            }
         };
 
         // Accumulate statistics
@@ -171,9 +218,8 @@ impl HuggingFaceOrchestrator {
         *cost_lock += task_result.cost;
         *tokens_lock += task_result.tokens_used;
 
-        let success = task_result.status == "success";
+        let success = task_result.status == "success" && !task_result.content.starts_with("[Offline Fallback");
         let content = task_result.content.clone();
-        let model_used = task_result.model_used.clone();
         let err_msg = task_result.error_message.clone();
 
         OrchestrationResult {
@@ -183,7 +229,7 @@ impl HuggingFaceOrchestrator {
             total_cost: *cost_lock,
             total_tokens: *tokens_lock,
             total_latency_ms: start.elapsed().as_millis() as f64,
-            models_used: vec![model_used],
+            models_used,
             error_message: err_msg,
         }
     }

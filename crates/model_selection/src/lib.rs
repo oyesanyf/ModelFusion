@@ -127,8 +127,8 @@ impl EnhancedModelSelector {
             let downloads_norm = if max_downloads > 0.0 { m.downloads as f64 / max_downloads } else { 0.0 };
             let likes_norm = if max_likes > 0.0 { m.likes as f64 / max_likes } else { 0.0 };
             
-            // Normalize decision score (stored as 0.0 to 10.0 or 0.0 to 1.0, let's normalize assuming max is 10.0)
-            let decision_norm = (m.decision_score / 10.0).clamp(0.0, 1.0);
+            // Stored on a 0.0 to 1.0 scale in the database, clamp to be safe
+            let decision_norm = m.decision_score.clamp(0.0, 1.0);
             
             // Efficiency (prefer smaller models, but penalize tiny dummy models)
             let efficiency_val = if m.size_mb > 0.0 {
@@ -149,15 +149,15 @@ impl EnhancedModelSelector {
             match strategy {
                 SelectionStrategy::CrossValidation => {
                     // Slight variation based on meta evaluation
-                    final_score += 0.02 * (m.capability_score / 10.0);
+                    final_score += 0.02 * m.capability_score.clamp(0.0, 1.0);
                 }
                 SelectionStrategy::HyperparameterTuning => {
                     // Optimization stub variation
-                    final_score += 0.01 * (m.efficiency_score / 10.0);
+                    final_score += 0.01 * m.efficiency_score.clamp(0.0, 1.0);
                 }
                 SelectionStrategy::EnsembleMethods => {
                     // Combine decision + capability + popularity
-                    final_score = (final_score + (m.popularity_score / 10.0)) / 2.0;
+                    final_score = (final_score + m.popularity_score.clamp(0.0, 1.0)) / 2.0;
                 }
                 SelectionStrategy::BayesianOptimization => {
                     final_score *= 1.02; // BO scalar boost stub
@@ -237,7 +237,7 @@ impl EnhancedModelSelector {
             .or_else(|_| DateTime::parse_from_str(&m.last_modified, "%Y-%m-%dT%H:%M:%S%.fZ"))
             .map(|dt| {
                 let days = (Utc::now() - dt.with_timezone(&Utc)).num_days();
-                (1.0 - (days as f64 / 365.0)).max(0.1_f64)
+                (1.0 - (days as f64 / 365.0)).clamp(0.1, 1.0)
             })
             .unwrap_or(0.5)
     }
@@ -270,10 +270,10 @@ impl EnsembleModelSelector {
         let mut max_weighted_score = -1.0;
 
         for c in candidates {
-            // Ensemble score = 0.5 * final_score + 0.3 * decision_score/10 + 0.2 * capability_score/10
+            // Ensemble score = 0.5 * final_score + 0.3 * decision_score + 0.2 * capability_score
             let score = c.final_score * 0.5
-                + (c.decision_score / 10.0).clamp(0.0, 1.0) * 0.3
-                + (c.capability_score / 10.0).clamp(0.0, 1.0) * 0.2;
+                + c.decision_score.clamp(0.0, 1.0) * 0.3
+                + c.capability_score.clamp(0.0, 1.0) * 0.2;
 
             if score > max_weighted_score {
                 max_weighted_score = score;

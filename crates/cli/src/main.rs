@@ -569,11 +569,20 @@ async fn main() -> Result<()> {
             }
         }
 
+        let db_path = handler.db_path.clone();
+        let task_override = determine_task_override(&args);
+        let selection_strategy = parse_selection_strategy(&args.selection_strategy);
+
         let is_fusion_needed = args.fusion || modelfusion_core::fusion_engine::classify_prompt(&final_prompt);
 
         if is_fusion_needed {
             println!("[FUSION] Model Fusion is active (explicitly requested or dynamically classified).");
-            match modelfusion_core::fusion_engine::run_fusion(&final_prompt).await {
+            match modelfusion_core::fusion_engine::run_fusion(
+                &final_prompt,
+                Some(&db_path),
+                task_override.as_deref(),
+                selection_strategy,
+            ).await {
                 Ok(content) => {
                     println!("\n[SUCCESS] Orchestration Successful (via Model Fusion)!\n");
                     println!("{}", content);
@@ -586,11 +595,7 @@ async fn main() -> Result<()> {
             return Ok(());
         }
 
-        let db_path = handler.db_path.clone();
         let orchestrator = HuggingFaceOrchestrator::new(db_path, args.budget, args.enable_ml, args.verbose);
-
-        let task_override = determine_task_override(&args);
-        let selection_strategy = parse_selection_strategy(&args.selection_strategy);
 
         let options = HashMap::new();
         let res = orchestrator
