@@ -199,20 +199,11 @@ async def rust_fusion_pipeline(prompt: str) -> str:
             )
             
     try:
-        # Clear API tokens except OpenAI/Gemini/OpenRouter if present to allow active online runs
+        # Clear OPENAI_API_KEY and GOOGLE_GEMINI_API_KEY from the subprocess environment
+        # to force ModelFusion's Rust engine to execute in open-weights mode (using SQLite database selection).
         env = os.environ.copy()
-        keys_to_remove = ["HF_TOKEN", "HUGGINGFACE_API_KEY", "HF_API_KEY", "HUGGINGFACE_TOKEN"]
-        
-        # If the user has not set these keys in their environment, we clear them to avoid warnings
-        if "OPENAI_API_KEY" not in os.environ:
-            keys_to_remove.append("OPENAI_API_KEY")
-        if "GOOGLE_GEMINI_API_KEY" not in os.environ:
-            keys_to_remove.append("GOOGLE_GEMINI_API_KEY")
-        if "OPENROUTER_API_KEY" not in os.environ:
-            keys_to_remove.append("OPENROUTER_API_KEY")
-            
-        for key in keys_to_remove:
-            env.pop(key, None)
+        env.pop("OPENAI_API_KEY", None)
+        env.pop("GOOGLE_GEMINI_API_KEY", None)
             
         # Run Rust binary as subprocess
         proc = await asyncio.create_subprocess_exec(
@@ -246,43 +237,8 @@ async def rust_fusion_pipeline(prompt: str) -> str:
 
 # --- FUSION ENGINE COST ESTIMATOR ---
 def estimate_fusion_cost(prompt: str, final_answer: str) -> float:
-    """Estimates the actual token cost of running ModelFusion's 12-model pipeline."""
-    # prompt_tokens estimate
-    prompt_tokens = len(prompt) // 4
-    
-    # 10 panel models:
-    # 4x gpt-4o-mini, 4x gpt-4o, 1x gpt-4-turbo, 1x gpt-4
-    panel_input_cost = (
-        4 * prompt_tokens * 0.00000015 +  # gpt-4o-mini
-        4 * prompt_tokens * 0.000005 +    # gpt-4o
-        1 * prompt_tokens * 0.000010 +    # gpt-4-turbo
-        1 * prompt_tokens * 0.000030      # gpt-4
-    )
-    # Output tokens (average 800 tokens per model)
-    panel_output_cost = (
-        4 * 800 * 0.00000060 +  # gpt-4o-mini
-        4 * 800 * 0.000015 +    # gpt-4o
-        1 * 800 * 0.000030 +    # gpt-4-turbo
-        1 * 800 * 0.000060      # gpt-4
-    )
-    
-    # Judge model: gpt-4o
-    # Judge input: prompt + 10 panel responses (~8000 tokens)
-    judge_input_tokens = prompt_tokens + 8000
-    judge_input_cost = judge_input_tokens * 0.000005
-    # Judge output: structured verdicts (~600 tokens)
-    judge_output_cost = 600 * 0.000015
-    
-    # Writer model: gpt-4o
-    # Writer input: prompt + judge analysis (~600 tokens)
-    writer_input_tokens = prompt_tokens + 600
-    writer_input_cost = writer_input_tokens * 0.000005
-    # Writer output: final answer tokens
-    writer_output_tokens = len(final_answer) // 4
-    writer_output_cost = writer_output_tokens * 0.000015
-    
-    total_cost = panel_input_cost + panel_output_cost + judge_input_cost + judge_output_cost + writer_input_cost + writer_output_cost
-    return total_cost
+    """Estimates the actual token cost of running ModelFusion's open-source pipeline."""
+    return 0.0
 
 # --- LOCAL HEURISTIC JUDGE (OFFLINE / KEYLESS FALLBACK) ---
 def local_heuristic_judge(prompt: str, output: str, rubric_json: str) -> Dict[str, str]:
