@@ -326,43 +326,62 @@ impl LLMProvider for HuggingFaceProvider {
                 .send()
                 .await;
 
-            if let Ok(res) = response {
-                if res.status().is_success() {
-                    let data: serde_json::Value = res.json().await?;
-                    let mut content = String::new();
+            match response {
+                Ok(res) => {
+                    let status = res.status();
+                    if status.is_success() {
+                        let data: serde_json::Value = res.json().await?;
+                        let mut content = String::new();
 
-                    if let Some(arr) = data.as_array() {
-                        if !arr.is_empty() {
-                            content = arr[0]["generated_text"].as_str().unwrap_or_default().to_string();
+                        if let Some(arr) = data.as_array() {
+                            if !arr.is_empty() {
+                                content = arr[0]["generated_text"].as_str().unwrap_or_default().to_string();
+                            }
+                        } else if let Some(obj) = data.as_object() {
+                            content = obj.get("generated_text")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or_default()
+                                .to_string();
+                        } else {
+                            content = data.to_string();
                         }
-                    } else if let Some(obj) = data.as_object() {
-                        content = obj.get("generated_text")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or_default()
-                            .to_string();
+
+                        // Remove input prompt if the model prepended it
+                        if content.starts_with(prompt) {
+                            content = content[prompt.len()..].trim().to_string();
+                        }
+
+                        let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
+                        return Ok(ProviderResult {
+                            content,
+                            tokens_used,
+                            cost: 0.0,
+                            latency_ms: start.elapsed().as_millis() as f64,
+                            answer_type: "FINAL_ANSWER".to_string(),
+                        });
                     } else {
-                        content = data.to_string();
+                        let err_body = res.text().await.unwrap_or_else(|_| "Unavailable".to_string());
+                        log::warn!(
+                            "HuggingFace Inference API returned status {} for model {}. Details: {}. Using offline fallback.",
+                            status,
+                            self.config.model_id,
+                            err_body
+                        );
                     }
-
-                    // Remove input prompt if the model prepended it
-                    if content.starts_with(prompt) {
-                        content = content[prompt.len()..].trim().to_string();
-                    }
-
-                    let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
-                    return Ok(ProviderResult {
-                        content,
-                        tokens_used,
-                        cost: 0.0,
-                        latency_ms: start.elapsed().as_millis() as f64,
-                        answer_type: "FINAL_ANSWER".to_string(),
-                    });
+                }
+                Err(e) => {
+                    log::warn!(
+                        "HuggingFace Inference API request failed for model {}: {}. Using offline fallback.",
+                        self.config.model_id,
+                        e
+                    );
                 }
             }
+        } else {
+            log::warn!("HuggingFace API token is missing. Using offline fallback.");
         }
 
         // 2. Local fallback / Offline mock
-        log::warn!("HuggingFace Inference API unavailable or token missing. Using offline fallback.");
         let fallback_content = format!(
             "[Offline Fallback for {}] This is a mock response because the HuggingFace API key is missing or the Inference API returned an error. Received prompt: \"{}\"",
             self.config.model_id, prompt
