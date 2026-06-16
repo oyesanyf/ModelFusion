@@ -1,2 +1,0 @@
-[console_scripts]
-hforchestra = hforchestra.cli:console_main

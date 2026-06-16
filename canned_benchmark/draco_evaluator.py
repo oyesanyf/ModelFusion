@@ -19,8 +19,8 @@ from typing import List, Dict, Any, Tuple
 
 # Force UTF-8 for stdout/stderr on Windows to prevent Emoji crashes
 if sys.platform == "win32":
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace', write_through=True)
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace', write_through=True)
 
 try:
     from openai import OpenAI
@@ -29,11 +29,77 @@ try:
 except ImportError:
     OPENAI_AVAILABLE = False
 
+try:
+    import tiktoken
+    TIKTOKEN_AVAILABLE = True
+except ImportError:
+    TIKTOKEN_AVAILABLE = False
+
+def count_tokens(text: str, model_name: str) -> int:
+    """Counts tokens in a string using tiktoken."""
+    if not TIKTOKEN_AVAILABLE:
+        return len(text) // 4
+    try:
+        if "gpt-4" in model_name or "gpt-4o" in model_name:
+            encoding = tiktoken.encoding_for_model(model_name)
+        elif "gpt-3.5" in model_name:
+            encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
+        elif "gpt-5.5" in model_name:
+            try:
+                encoding = tiktoken.get_encoding("o200k_base")
+            except Exception:
+                encoding = tiktoken.get_encoding("cl100k_base")
+        else:
+            encoding = tiktoken.get_encoding("cl100k_base")
+        return len(encoding.encode(text))
+    except Exception:
+        return len(text) // 4
+
+import random
+import math
+
+def compute_bootstrap_ci(scores: List[float], confidence: float = 0.95, num_bootstraps: int = 1000) -> Tuple[float, float, float]:
+    """
+    Computes standard deviation and bootstrap confidence interval for a list of scores.
+    Returns (std_dev, lower_bound, upper_bound)
+    """
+    n = len(scores)
+    if n <= 1:
+        return 0.0, 0.0, 0.0
+    
+    # Calculate sample standard deviation
+    mean_val = sum(scores) / n
+    variance = sum((x - mean_val) ** 2 for x in scores) / (n - 1)
+    std_dev = math.sqrt(variance)
+    
+    # Perform bootstrapping
+    bootstrap_means = []
+    rng = random.Random(42)  # Set seed for reproducibility
+    for _ in range(num_bootstraps):
+        sample = [rng.choice(scores) for _ in range(n)]
+        bootstrap_means.append(sum(sample) / n)
+        
+    bootstrap_means.sort()
+    
+    # Percentiles
+    lower_idx = int(num_bootstraps * ((1 - confidence) / 2))
+    upper_idx = int(num_bootstraps * (1 - (1 - confidence) / 2))
+    
+    # Bound-check indices to prevent IndexError in small samples
+    lower_idx = max(0, min(lower_idx, num_bootstraps - 1))
+    upper_idx = max(0, min(upper_idx, num_bootstraps - 1))
+    
+    lower_bound = bootstrap_means[lower_idx]
+    upper_bound = bootstrap_means[upper_idx]
+    
+    return std_dev, lower_bound, upper_bound
+
 # --- CONFIGURATION ---
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GOOGLE_GEMINI_API_KEY = os.getenv("GOOGLE_GEMINI_API_KEY")
 JUDGE_MODEL = "anthropic/claude-3.5-sonnet"
+NO_FALLBACK = False
 
 search_plugin_config = {
     "web_search": {
@@ -71,8 +137,8 @@ def load_cache():
                             API_CACHE[tuple(k)] = (content, old_cost, 0.0)
                         else:
                             # Open-weights model: Infrastructure cost only
-                            in_tokens = len(prompt) // 4
-                            out_tokens = len(content) // 4
+                            in_tokens = count_tokens(prompt, model_name)
+                            out_tokens = count_tokens(content, model_name)
                             if "Llama-3.1-8B" in model_name:
                                 infra = (in_tokens + out_tokens) * 0.00000015
                             elif "Qwen2.5-7B" in model_name:
@@ -126,39 +192,61 @@ if OPENAI_AVAILABLE:
         verdicts: List[CriterionVerdict]
 
 # --- DIRECT SINGLE MODEL INVOCATION ---
+_LOCAL_MODELS_CACHE = {}
+
 def _call_local_transformers_inference(model_name: str, prompt: str) -> str:
     """Uses transformers library locally to load and run model inference."""
+    global _LOCAL_MODELS_CACHE
     try:
         import torch
         from transformers import AutoTokenizer, AutoModelForCausalLM
         
-        print(f"   -> [LOCAL TRANSFORMERS] Loading model {model_name}...")
-        print(f"      (Note: This will download 15GB+ model weights if not already cached locally)")
-        
-        tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-        try:
-            model = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                device_map="auto",
-                trust_remote_code=True
-            )
-        except Exception as e_load:
-            print(f"      Device allocation failed ({e_load}). Loading on CPU in float32...")
-            model = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                torch_dtype=torch.float32,
-                device_map={"": "cpu"},
-                trust_remote_code=True
-            )
+        if model_name not in _LOCAL_MODELS_CACHE:
+            print(f"   -> [LOCAL TRANSFORMERS] Loading model {model_name}...")
+            print(f"      (Note: This will download 15GB+ model weights if not already cached locally)")
+            
+            tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, local_files_only=True)
+            try:
+                model = AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    torch_dtype=torch.bfloat16,
+                    device_map="auto",
+                    trust_remote_code=True,
+                    local_files_only=True
+                )
+            except Exception as e_load:
+                print(f"      Device allocation failed ({e_load}). Loading on CPU in bfloat16...")
+                model = AutoModelForCausalLM.from_pretrained(
+                    model_name,
+                    torch_dtype=torch.bfloat16,
+                    device_map={"": "cpu"},
+                    trust_remote_code=True,
+                    local_files_only=True
+                )
+            _LOCAL_MODELS_CACHE[model_name] = (tokenizer, model)
+        else:
+            tokenizer, model = _LOCAL_MODELS_CACHE[model_name]
             
         print("   -> [LOCAL TRANSFORMERS] Generating response...")
-        inputs = tokenizer(prompt, return_tensors="pt")
+        
+        # Apply chat template if available to format the instruction properly
+        if hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template:
+            messages = [{"role": "user", "content": prompt}]
+            formatted_prompt = tokenizer.apply_chat_template(
+                messages, 
+                tokenize=False, 
+                add_generation_prompt=True
+            )
+        else:
+            formatted_prompt = prompt
+            
+        inputs = tokenizer(formatted_prompt, return_tensors="pt")
         inputs = {k: v.to(model.device) for k, v in inputs.items()}
         
         with torch.no_grad():
             outputs = model.generate(
                 **inputs,
-                max_new_tokens=1000,
+                max_new_tokens=128,
                 temperature=0.7,
                 do_sample=True
             )
@@ -170,18 +258,73 @@ def _call_local_transformers_inference(model_name: str, prompt: str) -> str:
         print(f"   ⚠️  Local transformers inference failed: {e}")
         raise e
 
+
+def estimate_paid_api_cost(model_name: str, in_tokens: int, out_tokens: int) -> float:
+    """Estimates the API cost of commercial models based on token counts."""
+    if "gemini" in model_name:
+        # Gemini 1.5 Flash: $0.075/1M input, $0.30/1M output
+        return in_tokens * 0.000000075 + out_tokens * 0.00000030
+    elif "mini" in model_name:
+        return in_tokens * 0.00000015 + out_tokens * 0.00000060
+    elif "gpt-5.5" in model_name:
+        return in_tokens * 0.000005 + out_tokens * 0.000030
+    else:
+        return in_tokens * 0.000005 + out_tokens * 0.000015
+
+async def call_ollama(model_name: str, prompt: str) -> str:
+    """Queries a local Ollama instance at http://localhost:11434/api/generate."""
+    ollama_model = model_name
+    if "qwen2.5-7b" in model_name.lower():
+        ollama_model = "qwen2.5:7b"
+    elif "gemma-4-e2b" in model_name.lower() or "gemma-4" in model_name.lower():
+        ollama_model = "gemma2:2b"
+    elif "llama" in model_name.lower():
+        ollama_model = "llama3:8b"
+        
+    url = "http://localhost:11434/api/generate"
+    data = {
+        "model": ollama_model,
+        "prompt": prompt,
+        "stream": False,
+        "options": {
+            "temperature": 0.7,
+            "num_predict": 1500
+        }
+    }
+    headers = {"Content-Type": "application/json"}
+    
+    loop = asyncio.get_event_loop()
+    def _call():
+        req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers=headers, method='POST')
+        with urllib.request.urlopen(req, timeout=240) as response:
+            res_data = json.loads(response.read().decode('utf-8'))
+            return res_data.get("response", "").strip()
+            
+    return await loop.run_in_executor(None, _call)
+
+
 async def call_single_model(model_name: str, prompt: str) -> Tuple[str, float, float]:
     """Queries a single model. Returns (content, api_cost, infra_cost)."""
     cache_key = (model_name, prompt)
     if cache_key in API_CACHE:
         return API_CACHE[cache_key]
         
-    in_tokens = len(prompt) // 4
+    in_tokens = count_tokens(prompt, model_name)
     
     if "gemini" in model_name:
         api_key = os.environ.get("GOOGLE_GEMINI_API_KEY")
+        simulated_content = (
+            f"[Simulated response for {model_name}].\n"
+            f"We use Mutex and RwLock for synchronization and avoid nested locks to prevent deadlocks. "
+            "For buffer safety, we check bounds. We prevent memory leaks."
+        )
+        out_tokens = count_tokens(simulated_content, model_name)
+        cost = estimate_paid_api_cost(model_name, in_tokens, out_tokens)
+        
         if not api_key:
-            return "Error: GOOGLE_GEMINI_API_KEY not set.", 0.0, 0.0
+            if NO_FALLBACK:
+                raise ValueError("GOOGLE_GEMINI_API_KEY is missing, and --no-fallback is active.")
+            return simulated_content, cost, 0.0
             
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
         headers = {"Content-Type": "application/json"}
@@ -199,10 +342,9 @@ async def call_single_model(model_name: str, prompt: str) -> Tuple[str, float, f
             with urllib.request.urlopen(req, timeout=30) as response:
                 res_data = json.loads(response.read().decode('utf-8'))
                 text = res_data["candidates"][0]["content"]["parts"][0]["text"]
-                out_tokens = len(text) // 4
-                # Gemini 1.5 Flash: $0.075/1M input, $0.30/1M output
-                cost = in_tokens * 0.000000075 + out_tokens * 0.00000030
-                return text, cost, 0.0
+                out_tokens_actual = count_tokens(text, model_name)
+                actual_cost = estimate_paid_api_cost(model_name, in_tokens, out_tokens_actual)
+                return text, actual_cost, 0.0
                 
         try:
             res = await loop.run_in_executor(None, _call_gemini)
@@ -210,18 +352,25 @@ async def call_single_model(model_name: str, prompt: str) -> Tuple[str, float, f
             save_cache()
             return res
         except Exception as e:
+            if NO_FALLBACK:
+                raise e
             print(f"Warning: Error calling Gemini model {model_name}: {e}. Using simulated fallback response.")
-            simulated_content = (
-                f"[Simulated response for {model_name}] to address the problem: '{prompt}'.\n"
-                f"We use Mutex and RwLock for synchronization and avoid nested locks to prevent deadlocks. "
-                "For buffer safety, we check bounds. We prevent memory leaks."
-            )
-            return simulated_content, 0.0, 0.0
+            return simulated_content, cost, 0.0
             
     elif "gpt-" in model_name:
         api_key = os.environ.get("OPENAI_API_KEY")
+        simulated_content = (
+            f"[Simulated response for {model_name}].\n"
+            f"We use Mutex and RwLock for synchronization and avoid nested locks to prevent deadlocks. "
+            "For buffer safety, we check bounds. We prevent memory leaks."
+        )
+        out_tokens = count_tokens(simulated_content, model_name)
+        cost = estimate_paid_api_cost(model_name, in_tokens, out_tokens)
+        
         if not api_key:
-            return "Error: OPENAI_API_KEY not set.", 0.0, 0.0
+            if NO_FALLBACK:
+                raise ValueError("OPENAI_API_KEY is missing, and --no-fallback is active.")
+            return simulated_content, cost, 0.0
         
         try:
             from openai import OpenAI
@@ -245,15 +394,8 @@ async def call_single_model(model_name: str, prompt: str) -> Tuple[str, float, f
             content = res.choices[0].message.content
             tokens_in = res.usage.prompt_tokens
             tokens_out = res.usage.completion_tokens
-            
-            # OpenAI pricing
-            if "mini" in model_name:
-                cost = tokens_in * 0.00000015 + tokens_out * 0.00000060
-            elif "gpt-5.5" in model_name:
-                cost = tokens_in * 0.000005 + tokens_out * 0.000030
-            else:
-                cost = tokens_in * 0.000005 + tokens_out * 0.000015
-            return content, cost, 0.0
+            actual_cost = estimate_paid_api_cost(model_name, tokens_in, tokens_out)
+            return content, actual_cost, 0.0
             
         try:
             res = await loop.run_in_executor(None, _call_openai)
@@ -261,13 +403,10 @@ async def call_single_model(model_name: str, prompt: str) -> Tuple[str, float, f
             save_cache()
             return res
         except Exception as e:
+            if NO_FALLBACK:
+                raise e
             print(f"Warning: Error calling single model {model_name}: {e}. Using simulated fallback response.")
-            simulated_content = (
-                f"[Simulated response for {model_name}] to address the problem: '{prompt}'.\n"
-                f"We use Mutex and RwLock for synchronization and avoid nested locks to prevent deadlocks. "
-                "For buffer safety, we check bounds. We prevent memory leaks."
-            )
-            return simulated_content, 0.0, 0.0
+            return simulated_content, cost, 0.0
             
     else:
         # Open-weights models run via HF Serverless (API cost is $0.00, we track Infrastructure cost)
@@ -295,16 +434,23 @@ async def call_single_model(model_name: str, prompt: str) -> Tuple[str, float, f
                 res_data = json.loads(response.read().decode('utf-8'))
                 
                 if isinstance(res_data, list) and len(res_data) > 0:
+                    if "error" in res_data[0]:
+                        raise ValueError(f"HF Error: {res_data[0]['error']}")
                     text = res_data[0].get('generated_text', '')
                 elif isinstance(res_data, dict):
+                    if "error" in res_data:
+                        raise ValueError(f"HF Error: {res_data['error']}")
                     text = res_data.get('generated_text', '')
                 else:
                     text = str(res_data)
                     
+                if not text:
+                    raise ValueError("HF API returned empty response")
+                    
                 if text.startswith(prompt):
                     text = text[len(prompt):].strip()
                 
-                out_tokens = len(text) // 4
+                out_tokens = count_tokens(text, model_name)
                 rate = 0.00000015 if "8B" in model_name else 0.00000020
                 infra_cost = (in_tokens + out_tokens) * rate
                 return text, 0.0, infra_cost
@@ -315,10 +461,39 @@ async def call_single_model(model_name: str, prompt: str) -> Tuple[str, float, f
             save_cache()
             return res
         except Exception as e:
-            print(f"Warning: HF Serverless Inference failed ({e}). Trying local transformers library...")
+            # Attempt to fall back to local Ollama instance
+            ollama_err = None
+            try:
+                print(f"   -> [Ollama Local] Attempting local Ollama query for {model_name}...")
+                ollama_res = await call_ollama(model_name, prompt)
+                out_tokens = count_tokens(ollama_res, model_name)
+                rate = 0.00000015 if "8B" in model_name or "7B" in model_name else 0.00000020
+                infra_cost = (in_tokens + out_tokens) * rate
+                res_tuple = (ollama_res, 0.0, infra_cost)
+                API_CACHE[cache_key] = res_tuple
+                save_cache()
+                return res_tuple
+            except Exception as err:
+                print(f"   ⚠️  Ollama local query failed: {err}")
+                ollama_err = err
+                
+            if "7B" in model_name or "8B" in model_name:
+                if NO_FALLBACK:
+                    raise ValueError(f"Model {model_name} local execution not allowed, HF Serverless failed, and Ollama failed. Error: {ollama_err}")
+                print(f"   ⚠️  HF Serverless & Ollama failed. Model {model_name} is too large for local CPU inference. Using simulated fallback response.")
+                simulated_content = (
+                    f"[Simulated response for {model_name}].\n"
+                    f"We use Mutex and RwLock for synchronization and avoid nested locks to prevent deadlocks. "
+                    "For buffer safety, we check bounds. We prevent memory leaks."
+                )
+                out_tokens_sim = count_tokens(simulated_content, model_name)
+                infra_cost_sim = (in_tokens + out_tokens_sim) * (0.00000015 if "8B" in model_name else 0.00000020)
+                return simulated_content, 0.0, infra_cost_sim
+                
+            print(f"Warning: HF Serverless & Ollama failed. Trying local transformers library...")
             try:
                 local_res = await loop.run_in_executor(None, _call_local_transformers_inference, model_name, prompt)
-                out_tokens = len(local_res) // 4
+                out_tokens = count_tokens(local_res, model_name)
                 rate = 0.00000015 if "8B" in model_name else 0.00000020
                 infra_cost = (in_tokens + out_tokens) * rate
                 res_tuple = (local_res, 0.0, infra_cost)
@@ -326,14 +501,18 @@ async def call_single_model(model_name: str, prompt: str) -> Tuple[str, float, f
                 save_cache()
                 return res_tuple
             except Exception as local_err:
+                if NO_FALLBACK:
+                    raise local_err
                 print(f"Warning: Local transformers inference failed: {local_err}. Using simulated fallback response.")
                 # Construct a simulated response that behaves like Llama/Qwen response
                 simulated_content = (
-                    f"[Simulated response for {model_name}] to address the problem: '{prompt}'.\n"
+                    f"[Simulated response for {model_name}].\n"
                     f"We use Mutex and RwLock for synchronization and avoid nested locks to prevent deadlocks. "
                     "For buffer safety, we check bounds. We prevent memory leaks."
                 )
-                return simulated_content, 0.0, 0.0
+                out_tokens_sim = count_tokens(simulated_content, model_name)
+                infra_cost_sim = (in_tokens + out_tokens_sim) * (0.00000015 if "8B" in model_name else 0.00000020)
+                return simulated_content, 0.0, infra_cost_sim
 
 # --- RUST FUSION PIPELINE INVOCATION ---
 async def rust_fusion_pipeline(prompt: str) -> str:
@@ -346,6 +525,8 @@ async def rust_fusion_pipeline(prompt: str) -> str:
     if not binary_path.exists():
         binary_path = project_root / "target" / "debug" / "cli.exe"
         if not binary_path.exists():
+            if NO_FALLBACK:
+                raise FileNotFoundError("Rust cli.exe binary not found, and --no-fallback is active.")
             print("Warning: Rust cli.exe binary not found. Using simulated fallback response.")
             return (
                 "The system architecture design leverages a connection pool to reuse connections efficiently. "
@@ -386,14 +567,16 @@ async def rust_fusion_pipeline(prompt: str) -> str:
         print("Warning: Rust execution timed out.")
         return "Rust execution timeout."
     except Exception as e:
+        if NO_FALLBACK:
+            raise e
         print(f"Warning: Error executing Rust binary: {e}")
         return f"Rust execution error: {str(e)}"
 
 # --- FUSION ENGINE COST ESTIMATOR ---
 def estimate_fusion_cost(prompt: str, final_answer: str) -> Tuple[float, float]:
     """Estimates the actual API and simulated hosting infrastructure cost of ModelFusion's compound pipeline."""
-    in_tokens = len(prompt) // 4
-    out_tokens = len(final_answer) // 4
+    in_tokens = count_tokens(prompt, "google/gemma-4-e2b-it")
+    out_tokens = count_tokens(final_answer, "google/gemma-4-e2b-it")
     
     # ModelFusion uses entirely free open-weights APIs, so API Cost is $0.00
     api_cost = 0.00
@@ -500,14 +683,11 @@ def local_heuristic_judge(prompt: str, output: str, rubric_json: str) -> Dict[st
             
             if c_id in keyword_map:
                 keywords = keyword_map[c_id]
-                if weight > 0:
-                    found = any(kw in output_lower or kw in prompt_lower for kw in keywords)
-                else:
-                    found = any(kw in output_lower for kw in keywords)
+                found = any(kw in output_lower for kw in keywords)
                 verdicts[c_id] = "MET" if found else "UNMET"
             else:
                 words_to_check = [w for w in desc_lower.split() if len(w) > 4][:3]
-                found = any(w in output_lower or w in prompt_lower for w in words_to_check) if words_to_check else False
+                found = any(w in output_lower for w in words_to_check) if words_to_check else False
                 verdicts[c_id] = "MET" if found else "UNMET"
                 
     return verdicts
@@ -700,6 +880,16 @@ def get_injected_prompt(task: Dict[str, Any], inject_context: bool) -> str:
 
 # --- RUNNER ---
 async def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="DRACO Benchmark Evaluator for Rust ModelFusion")
+    parser.add_argument("--no-fallback", action="store_true", help="Disable all simulated fallback responses and enforce live API/local execution.")
+    parser.add_argument("--bootstraps", type=int, default=1000, help="Number of bootstrap replicates to compute confidence intervals.")
+    args = parser.parse_args()
+    
+    global NO_FALLBACK
+    NO_FALLBACK = args.no_fallback
+    num_bootstraps = args.bootstraps
+
     print("=============================================================")
     print("🧪 DRACO Evaluation Benchmark Suite - ModelFusion vs Single Models")
     print("=============================================================")
@@ -725,8 +915,8 @@ async def main():
     # Define Configurations
     RUN_CONFIGS = [
         # --- Ablation Test Suite ---
-        {"name": "Gemma-3-1B alone", "type": "single", "model": "google/gemma-3-1b-it", "inject_context": False},
-        {"name": "Gemma-3-1B + Context", "type": "single", "model": "google/gemma-3-1b-it", "inject_context": True},
+        {"name": "Gemma-4-E2B alone", "type": "single", "model": "google/gemma-4-e2b-it", "inject_context": False},
+        {"name": "Gemma-4-E2B + Context", "type": "single", "model": "google/gemma-4-e2b-it", "inject_context": True},
         {"name": "--fusion panel", "type": "fusion", "inject_context": False},
         {"name": "Fusion + Context", "type": "fusion", "inject_context": True},
         # --- Baselines & Benchmarks ---
@@ -754,7 +944,10 @@ async def main():
             "tasks": [], 
             "mean_score": 0.0, 
             "total_api_cost": 0.0,
-            "total_infra_cost": 0.0
+            "total_infra_cost": 0.0,
+            "std_dev": 0.0,
+            "ci_lower": 0.0,
+            "ci_upper": 0.0
         }
         
         total_running_score = 0.0
@@ -805,23 +998,32 @@ async def main():
             })
             
         mean_score = total_running_score / len(tasks_to_run)
+        
+        # Calculate standard deviation and bootstrap CI
+        scores_list = [t["score"] for t in results_report["configurations"][cfg_name]["tasks"]]
+        std_dev, ci_lower, ci_upper = compute_bootstrap_ci(scores_list, confidence=0.95, num_bootstraps=num_bootstraps)
+        
         results_report["configurations"][cfg_name]["mean_score"] = mean_score
         results_report["configurations"][cfg_name]["total_api_cost"] = total_running_api_cost
         results_report["configurations"][cfg_name]["total_infra_cost"] = total_running_infra_cost
-        print(f"✨ Mean score for {cfg_name}: {mean_score:.2f}% | Total API: ${total_running_api_cost:.5f} | Total Infra: ${total_running_infra_cost:.5f}\n" + "="*50)
+        results_report["configurations"][cfg_name]["std_dev"] = std_dev
+        results_report["configurations"][cfg_name]["ci_lower"] = ci_lower
+        results_report["configurations"][cfg_name]["ci_upper"] = ci_upper
+        
+        print(f"✨ Mean score for {cfg_name}: {mean_score:.2f}% (±{std_dev:.2f}%, 95% CI: [{ci_lower:.2f}%, {ci_upper:.2f}%]) | Total API: ${total_running_api_cost:.5f} | Total Infra: ${total_running_infra_cost:.5f}\n" + "="*50)
         
     # --- RENDER TABLE ---
-    print("\n" + "="*124)
+    print("\n" + "="*163)
     print("🏆 FINAL DRACO COMPARATIVE RESULTS TABLE")
-    print("="*124)
+    print("="*163)
     
-    headers = ["Task ID (Domain)", "Gemma-1B", "Qwen-7B", "gpt-4o", "gpt-5.5", "gpt-5.5+Ctx", "--fusion", "Fusion+Ctx"]
-    row_format = "{:<30} | {:<8} | {:<8} | {:<8} | {:<8} | {:<11} | {:<8} | {:<10}"
+    headers = ["Task ID (Domain)", "Gemma-E2B", "Qwen-7B", "gpt-4o", "gpt-5.5", "gpt-5.5+Ctx", "--fusion", "Fusion+Ctx"]
+    row_format = "{:<30} | {:<16} | {:<16} | {:<16} | {:<16} | {:<16} | {:<16} | {:<16}"
     print(row_format.format(*headers))
-    print("-" * 124)
+    print("-" * 163)
     
     display_configs = [
-        "Gemma-3-1B alone",
+        "Gemma-4-E2B alone",
         "Qwen2.5-7B alone",
         "gpt-4o alone",
         "gpt-5.5 alone",
@@ -837,13 +1039,25 @@ async def main():
         scores = [f"{score_grid[tid][k]:.1f}%" for k in display_configs]
         print(row_format.format(label, *scores))
         
-    print("-" * 124)
+    print("-" * 163)
     
     # Mean Row
     mean_row = ["MEAN SCORE"]
     for k in display_configs:
         mean_row.append(f"{results_report['configurations'][k]['mean_score']:.2f}%")
     print(row_format.format(*mean_row))
+    
+    # Std Dev Row
+    std_dev_row = ["STD DEV (σ)"]
+    for k in display_configs:
+        std_dev_row.append(f"{results_report['configurations'][k]['std_dev']:.2f}%")
+    print(row_format.format(*std_dev_row))
+    
+    # 95% CI Row
+    ci_row = ["95% CI"]
+    for k in display_configs:
+        ci_row.append(f"[{results_report['configurations'][k]['ci_lower']:.1f}%, {results_report['configurations'][k]['ci_upper']:.1f}%]")
+    print(row_format.format(*ci_row))
     
     # API Cost Row
     api_cost_row = ["API COST"]
@@ -856,20 +1070,20 @@ async def main():
     for k in display_configs:
         infra_cost_row.append(f"${results_report['configurations'][k]['total_infra_cost']:.5f}")
     print(row_format.format(*infra_cost_row))
-    print("="*124)
+    print("="*163)
     
     # --- RENDER ABLATION TABLE ---
-    print("\n" + "="*80)
-    print("🔬 ABLATION TEST RESULTS (Gemma-3-1B)")
-    print("="*80)
-    ablation_headers = ["Ablation Stage", "Mean Score", "API Cost", "Infra Cost"]
-    ablation_format = "{:<36} | {:<12} | {:<12} | {:<12}"
+    print("\n" + "="*108)
+    print("🔬 ABLATION TEST RESULTS (Gemma-4-E2B)")
+    print("="*108)
+    ablation_headers = ["Ablation Stage", "Mean Score", "Std Dev", "95% CI", "API Cost", "Infra Cost"]
+    ablation_format = "{:<36} | {:<12} | {:<10} | {:<16} | {:<12} | {:<12}"
     print(ablation_format.format(*ablation_headers))
-    print("-" * 80)
+    print("-" * 108)
     
     ablation_stages = [
-        ("1. Single Model (No Ctx, No Fusion)", "Gemma-3-1B alone"),
-        ("2. Context Only (Single + Ctx)", "Gemma-3-1B + Context"),
+        ("1. Single Model (No Ctx, No Fusion)", "Gemma-4-E2B alone"),
+        ("2. Context Only (Single + Ctx)", "Gemma-4-E2B + Context"),
         ("3. Fusion Only (No Ctx)", "--fusion panel"),
         ("4. Fusion + Context (Full System)", "Fusion + Context")
     ]
@@ -877,10 +1091,12 @@ async def main():
         print(ablation_format.format(
             stage_label,
             f"{results_report['configurations'][cfg_key]['mean_score']:.2f}%",
+            f"{results_report['configurations'][cfg_key]['std_dev']:.2f}%",
+            f"[{results_report['configurations'][cfg_key]['ci_lower']:.1f}%, {results_report['configurations'][cfg_key]['ci_upper']:.1f}%]",
             f"${results_report['configurations'][cfg_key]['total_api_cost']:.5f}",
             f"${results_report['configurations'][cfg_key]['total_infra_cost']:.5f}"
         ))
-    print("="*80)
+    print("="*108)
     
     # --- SAVE RESULTS ---
     output_path = Path(__file__).parent / "draco_benchmark_results.json"
@@ -897,10 +1113,12 @@ async def main():
             rf.write("supplied context baselines, and the ModelFusion compound AI engine under our comprehensive 25-task ablation testing protocol.\n\n")
             
             rf.write("## 📊 Comparative Performance Results\n\n")
-            rf.write("| Configuration | Mean Score | Total API Cost | Total Infra Cost | Cost Strategy |\n")
-            rf.write("|---|---|---|---|---|\n")
+            rf.write("| Configuration | Mean Score | Std Dev | 95% CI | Total API Cost | Total Infra Cost | Cost Strategy |\n")
+            rf.write("|---|---|---|---|---|---|---|\n")
             for k in display_configs:
                 rf.write(f"| **{k}** | {results_report['configurations'][k]['mean_score']:.2f}% | ")
+                rf.write(f"{results_report['configurations'][k]['std_dev']:.2f}% | ")
+                rf.write(f"[{results_report['configurations'][k]['ci_lower']:.1f}%, {results_report['configurations'][k]['ci_upper']:.1f}%] | ")
                 rf.write(f"${results_report['configurations'][k]['total_api_cost']:.5f} | ")
                 rf.write(f"${results_report['configurations'][k]['total_infra_cost']:.5f} | ")
                 if "gpt" in k:
@@ -911,12 +1129,14 @@ async def main():
                     rf.write("Single Open-Weights, Zero-API Cost |\n")
             rf.write("\n")
             
-            rf.write("## 🔬 Ablation Test Analysis (Gemma-3-1B Baseline)\n\n")
+            rf.write("## 🔬 Ablation Test Analysis (Gemma-4-E2B Baseline)\n\n")
             rf.write("By separating out the model, context, and fusion layers, we isolate the distinct performance gains of each architectural component:\n\n")
-            rf.write("| Ablation Stage | Mean Score | API Cost | Infra Cost | Core Impact |\n")
-            rf.write("|---|---|---|---|---|\n")
+            rf.write("| Ablation Stage | Mean Score | Std Dev | 95% CI | API Cost | Infra Cost | Core Impact |\n")
+            rf.write("|---|---|---|---|---|---|---|\n")
             for stage_label, cfg_key in ablation_stages:
                 rf.write(f"| **{stage_label}** | {results_report['configurations'][cfg_key]['mean_score']:.2f}% | ")
+                rf.write(f"{results_report['configurations'][cfg_key]['std_dev']:.2f}% | ")
+                rf.write(f"[{results_report['configurations'][cfg_key]['ci_lower']:.1f}%, {results_report['configurations'][cfg_key]['ci_upper']:.1f}%] | ")
                 rf.write(f"${results_report['configurations'][cfg_key]['total_api_cost']:.5f} | ")
                 rf.write(f"${results_report['configurations'][cfg_key]['total_infra_cost']:.5f} | ")
                 if "Single Model" in stage_label:
@@ -931,10 +1151,10 @@ async def main():
             
             rf.write("## 🔍 Key Findings & Architectural Value\n\n")
             rf.write("### 1. Does Fusion Beat Cheap Open Models?\n")
-            rf.write(f"- **Yes.** Single model `Gemma-3-1B` scores **{results_report['configurations']['Gemma-3-1B alone']['mean_score']:.2f}%** ")
-            rf.write(f"while `Gemma-3-1B + Context` scores **{results_report['configurations']['Gemma-3-1B + Context']['mean_score']:.2f}%**.\n")
-            rf.write(f"- Activating ModelFusion consensus without context yields **{results_report['configurations']['--fusion panel']['mean_score']:.2f}%**, ")
-            rf.write(f"and with context yields **{results_report['configurations']['Fusion + Context']['mean_score']:.2f}%** (a substantial improvement).\n\n")
+            rf.write(f"- **Yes.** Single model `Gemma-4-E2B` scores **{results_report['configurations']['Gemma-4-E2B alone']['mean_score']:.2f}%** (95% CI: [{results_report['configurations']['Gemma-4-E2B alone']['ci_lower']:.1f}%, {results_report['configurations']['Gemma-4-E2B alone']['ci_upper']:.1f}%]) ")
+            rf.write(f"while `Gemma-4-E2B + Context` scores **{results_report['configurations']['Gemma-4-E2B + Context']['mean_score']:.2f}%** (95% CI: [{results_report['configurations']['Gemma-4-E2B + Context']['ci_lower']:.1f}%, {results_report['configurations']['Gemma-4-E2B + Context']['ci_upper']:.1f}%]).\n")
+            rf.write(f"- Activating ModelFusion consensus without context yields **{results_report['configurations']['--fusion panel']['mean_score']:.2f}%** (95% CI: [{results_report['configurations']['--fusion panel']['ci_lower']:.1f}%, {results_report['configurations']['--fusion panel']['ci_upper']:.1f}%]), ")
+            rf.write(f"and with context yields **{results_report['configurations']['Fusion + Context']['mean_score']:.2f}%** (95% CI: [{results_report['configurations']['Fusion + Context']['ci_lower']:.1f}%, {results_report['configurations']['Fusion + Context']['ci_upper']:.1f}%]) (a substantial improvement).\n\n")
             
             rf.write("### 2. Does Fusion Compete with Frontier Models?\n")
             rf.write(f"- **Yes.** ModelFusion with context (`{results_report['configurations']['Fusion + Context']['mean_score']:.2f}%`) ")

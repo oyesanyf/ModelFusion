@@ -1,9 +1,0 @@
-{
-  "provider": "openai",
-  "model_id": "gpt-3.5-turbo",
-  "api_key_env": "OPENAI_API_KEY",
-  "fence_output": true,
-  "use_schema_constraints": false,
-  "disable_gemini": true,
-  "enabled": false
-}
