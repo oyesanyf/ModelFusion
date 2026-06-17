@@ -281,7 +281,7 @@ async def call_ollama(model_name: str, prompt: str) -> str:
     elif "llama" in model_name.lower():
         ollama_model = "llama3:8b"
     elif "glm-5.2" in model_name.lower() or "glm" in model_name.lower():
-        ollama_model = "glm-5.2"
+        ollama_model = "glm-5.2:cloud"
         
     url = "http://localhost:11434/api/generate"
     data = {
