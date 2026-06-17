@@ -69,11 +69,16 @@ ModelFusion is built on a highly modular Rust and Python workspace:
 
 ---
 
-## 📊 Scientific Publication & Results
+## 📄 Scientific Publication: "Beyond Model Scale"
 
 Our research paper, *"Beyond Model Scale: Open-Weight Compound Intelligence Through Retrieval-Augmented Consensus Deliberation"*, evaluates ModelFusion using the rigorous **DRACO Evaluation Suite** (25 technical tasks across Software Engineering, Cryptography, Security, and Distributed Systems).
 
-### Overall Benchmark Metrics (with 95% Confidence Intervals)
+### Related Work & OpenRouter Fusion
+OpenRouter recently introduced "Fusion," a tool designed to synthesize outputs from a panel of multiple AI models to surpass individual frontier models on complex deep research tasks.
+*   **Mechanism**: Submitted prompts are dispatched in parallel to participant models (equipped with web search/fetch) before a judge model compiles points of consensus and contradictions into a final response.
+*   **Draco Benchmark Validation**: In evaluations, a fused combination of Fable 5 and GPT-5.5 scored **69.0%**, outperforming Fable 5's standalone score of 65.3%. A budget panel consisting of Gemini 3 Flash, Kimi K2.6, and DeepSeek V4 Pro scored **64.7%**, beating standalone models like GPT-5.5 and Claude Opus 4.8 at half the operational cost.
+
+### Overall Benchmark Metrics (DRACO Suite with 95% Confidence Intervals)
 
 | Configuration | Mean Score | Std Dev ($\sigma$) | 95% Confidence Interval | API Operating Cost | Local Infra Cost | Profile |
 |:---|:---:|:---:|:---:|:---:|:---:|:---|
@@ -88,15 +93,63 @@ Our research paper, *"Beyond Model Scale: Open-Weight Compound Intelligence Thro
 
 ---
 
-## 🔬 Key Scientific Discoveries
+## 🔬 Component Ablation Analysis
+
+The ablation study shows that retrieval and consensus do not behave as simple independent add-ons.
+
+```
+Base model (Gemma-4-E2B)    [38.73%]
+       |
+       +--> Add Context Only  [47.20%] (Gains: +8.47 points)
+       |
+       +--> Add Fusion Only   [26.47%] (Loss: -12.26 points)
+       |
+       +--> ModelFusion (Full) [80.30%] (Synergy Gain: +41.57 points)
+```
 
 > [!IMPORTANT]
 > **The Deliberation / Retrieval Synergy (Interaction Effect)**
 > Consensus deliberation without grounding performs worse than a standalone base model (**26.47% vs. 38.73%**). Without source context, multi-model panels merely amplify assumptions. However, when grounded with RAG context, ModelFusion scores **80.30%** (a **+53.83%** absolute jump). This demonstrates a strong **nonlinear interaction effect** where retrieval and deliberation become highly synergistic.
 
-> [!TIP]
-> **Comparable Performance at 15x Lower Costs**
-> ModelFusion (80.30%) achieves performance statistically comparable to GPT-4o (83.60%) with overlapping 95% confidence intervals, while running entirely on open-weights. Compared to GPT-5.5 + Context, ModelFusion achieves **81.6% of its accuracy at ~15x better cost efficiency** (1034.8 score-per-dollar vs 69.4 score-per-dollar).
+---
+
+## 💰 Operational Cost Analysis
+
+ModelFusion trades commercial API charges for a predictable local infrastructure cost. 
+*   **Infrastructure Efficiency**: ModelFusion costs **\$0.07760** and achieves **80.30%** accuracy, while GPT-4o costs **\$0.24908** and achieves **83.60%**.
+*   **Resource Tradeoff**: ModelFusion reaches **96.1%** of GPT-4o's measured score while reducing run cost by **68.8%** relative to GPT-4o.
+*   **Cost-per-Value Performance**: Compared to GPT-5.5 + Context, ModelFusion achieves **81.6%** of its accuracy at **~15x better cost efficiency** (1034.8 score-per-dollar vs 69.4 score-per-dollar).
+
+---
+
+## 📊 Sub-Domain and Task-Level Behavior
+
+ModelFusion's average score evaluated across 20 technical sub-domains demonstrates strong technical capabilities:
+
+| Sub-Domain / Task | Average Score (%) | Description |
+|:---|:---:|:---|
+| **Vector Databases** | 100.0% | Embedding search indexes & similarity scoring. |
+| **System Architecture** | 100.0% | Distributed design and service modularization. |
+| **Network Protocols** | 100.0% | Low-level transport layer handshake logic. |
+| **AI Threat Detection** | 100.0% | Adversarial prompt and jailbreak scanning. |
+| **Network Security** | 100.0% | TLS handshake parameters & threat analysis. |
+| **Deep Learning** | 100.0% | Neural network layer parameter backpropagation. |
+| **Language Runtimes** | 100.0% | Garbage collection mechanisms and JIT compilers. |
+| **Computer Architecture**| 100.0% | CPU instruction caches and register states. |
+| **Computer Security** | 100.0% | Vulnerability exploits and defense frameworks. |
+| **Cryptography** | 100.0% | Encryption keys and secure key exchanges. |
+| **Database Internals** | 100.0% | WAL logs, index queries, and transaction isolation. |
+| **Software Engineering** | 75.0% | Object-oriented systems and concurrency bugs. |
+| **Deep Learning Optimization**| 75.0% | Kernel optimizations and mixed precision. |
+| **Web Security** | 66.7% | CORS, CSRF, and SQL Injection vector auditing. |
+| **Distributed Systems** | 66.7% | Raft consensus logs and replica syncs. |
+| **Blockchain Security** | 60.0% | Smart contract vulnerabilities. |
+| **Concurrency** | 60.0% | Deadlock detection and locking mechanisms. |
+| **Operating Systems** | 50.0% | Thread schedulers, page faults, and virtual memory. |
+| **Cloud Infrastructure** | 37.5% | Kubernetes configurations and orchestration. |
+
+### Limitations & Heatmap Insights
+*   **Task 21 Miss**: The task-level heatmap exposes where the compound system succeeds and fails. While ModelFusion improves many weak cases, Task 21 (focusing on distributed storage sync) remains a complete miss, demonstrating that consensus still relies on high-quality retrieval and correct evidence use.
 
 ---
 
