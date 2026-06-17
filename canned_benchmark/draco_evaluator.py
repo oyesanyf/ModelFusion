@@ -280,6 +280,8 @@ async def call_ollama(model_name: str, prompt: str) -> str:
         ollama_model = "gemma2:2b"
     elif "llama" in model_name.lower():
         ollama_model = "llama3:8b"
+    elif "glm-5.2" in model_name.lower() or "glm" in model_name.lower():
+        ollama_model = "glm-5.2"
         
     url = "http://localhost:11434/api/generate"
     data = {
@@ -477,7 +479,7 @@ async def call_single_model(model_name: str, prompt: str) -> Tuple[str, float, f
                 print(f"   ⚠️  Ollama local query failed: {err}")
                 ollama_err = err
                 
-            if "7B" in model_name or "8B" in model_name:
+            if "7B" in model_name or "8B" in model_name or "GLM-5.2" in model_name:
                 if NO_FALLBACK:
                     raise ValueError(f"Model {model_name} local execution not allowed, HF Serverless failed, and Ollama failed. Error: {ollama_err}")
                 print(f"   ⚠️  HF Serverless & Ollama failed. Model {model_name} is too large for local CPU inference. Using simulated fallback response.")
@@ -921,6 +923,8 @@ async def main():
         {"name": "Fusion + Context", "type": "fusion", "inject_context": True},
         # --- Baselines & Benchmarks ---
         {"name": "Qwen2.5-7B alone", "type": "single", "model": "Qwen/Qwen2.5-7B-Instruct", "inject_context": False},
+        {"name": "GLM-5.2 alone", "type": "single", "model": "zai-org/GLM-5.2", "inject_context": False},
+        {"name": "GLM-5.2 + Context", "type": "single", "model": "zai-org/GLM-5.2", "inject_context": True},
         {"name": "gpt-4o alone", "type": "single", "model": "gpt-4o", "inject_context": False},
         {"name": "gpt-5.5 alone", "type": "single", "model": "gpt-5.5", "inject_context": False},
         {"name": "gpt-5.5 + Context", "type": "single", "model": "gpt-5.5", "inject_context": True},
@@ -1017,14 +1021,16 @@ async def main():
     print("🏆 FINAL DRACO COMPARATIVE RESULTS TABLE")
     print("="*163)
     
-    headers = ["Task ID (Domain)", "Gemma-E2B", "Qwen-7B", "gpt-4o", "gpt-5.5", "gpt-5.5+Ctx", "--fusion", "Fusion+Ctx"]
-    row_format = "{:<30} | {:<16} | {:<16} | {:<16} | {:<16} | {:<16} | {:<16} | {:<16}"
+    headers = ["Task ID (Domain)", "Gemma-E2B", "Qwen-7B", "GLM-5.2", "GLM-5.2+Ctx", "gpt-4o", "gpt-5.5", "gpt-5.5+Ctx", "--fusion", "Fusion+Ctx"]
+    row_format = "{:<30} | {:<12} | {:<12} | {:<12} | {:<14} | {:<12} | {:<12} | {:<14} | {:<12} | {:<12}"
     print(row_format.format(*headers))
     print("-" * 163)
     
     display_configs = [
         "Gemma-4-E2B alone",
         "Qwen2.5-7B alone",
+        "GLM-5.2 alone",
+        "GLM-5.2 + Context",
         "gpt-4o alone",
         "gpt-5.5 alone",
         "gpt-5.5 + Context",
