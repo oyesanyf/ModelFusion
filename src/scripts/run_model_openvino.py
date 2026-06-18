@@ -6,6 +6,7 @@ import logging
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 logging.getLogger("transformers").setLevel(logging.ERROR)
 
+
 def detect_best_device(core):
     """Auto-detect the best OpenVINO device based on available hardware."""
     available = core.available_devices
@@ -14,7 +15,7 @@ def detect_best_device(core):
     # Detect system resources
     import multiprocessing
     cpu_cores = multiprocessing.cpu_count()
-    
+
     ram_gb = 0
     try:
         import psutil
@@ -27,7 +28,6 @@ def detect_best_device(core):
     # Device priority: GPU > AUTO > CPU
     # Note: OpenVINO GPU = Intel GPU (iGPU/dGPU), not NVIDIA
     if "GPU" in available:
-        # Check GPU properties
         try:
             gpu_name = core.get_property("GPU", "FULL_DEVICE_NAME")
             print(f"[OPENVINO] 🎮 Intel GPU detected: {gpu_name}", file=sys.stderr)
@@ -42,34 +42,31 @@ def detect_best_device(core):
         return "CPU"
 
 
-def get_compile_config(device, core):
+def get_compile_config(device):
     """Get optimal compile configuration based on device and system resources."""
     import openvino.properties as props
     import openvino.properties.hint as hints
-    
+
     config = {}
 
     if device == "CPU":
         import multiprocessing
         cpu_cores = multiprocessing.cpu_count()
 
-        # Use latency mode for single-request LLM inference
         config[hints.performance_mode()] = hints.PerformanceMode.LATENCY
 
-        # Set inference threads based on available cores
         if cpu_cores >= 16:
-            config[props.inference_num_threads()] = cpu_cores - 2  # Leave 2 cores for OS
+            config[props.inference_num_threads()] = cpu_cores - 2
         elif cpu_cores >= 8:
             config[props.inference_num_threads()] = cpu_cores - 1
-        # else: let OpenVINO decide
 
-        # Enable CPU-specific optimizations
         try:
-            config[props.streams.num()] = 1  # Single stream for lowest latency
+            config[props.streams.num()] = 1
         except Exception:
             pass
 
-        print(f"[OPENVINO] CPU config: latency mode, {config.get(props.inference_num_threads(), 'auto')} threads", file=sys.stderr)
+        threads = config.get(props.inference_num_threads(), 'auto')
+        print(f"[OPENVINO] CPU config: latency mode, {threads} threads", file=sys.stderr)
 
     elif device == "GPU":
         config[hints.performance_mode()] = hints.PerformanceMode.LATENCY
@@ -102,13 +99,12 @@ def main():
     try:
         from transformers import AutoModelForCausalLM, AutoTokenizer
         import torch
+        import numpy as np
     except ImportError:
         print("ERROR: transformers/torch not installed.", file=sys.stderr)
         sys.exit(1)
 
     core = ov.Core()
-
-    # Auto-detect best device
     device = detect_best_device(core)
 
     print(f"[OPENVINO] Loading model {model_id} → target device: {device}", file=sys.stderr)
@@ -122,16 +118,6 @@ def main():
     inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, max_length=2048)
     input_ids = inputs["input_ids"]
 
-    # Load model with transformers in float32 (needed for OpenVINO conversion)
-    print(f"[OPENVINO] Loading PyTorch model for conversion...", file=sys.stderr)
-    pt_model = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        torch_dtype=torch.float32,
-        trust_remote_code=True,
-        low_cpu_mem_usage=True,
-    )
-    pt_model.eval()
-
     # Cache directory for converted OpenVINO IR models (per device)
     cache_dir = os.path.join(
         os.path.expanduser("~"), ".cache", "modelfusion_ov",
@@ -143,36 +129,88 @@ def main():
         print(f"[OPENVINO] Loading cached IR model from {cache_dir}", file=sys.stderr)
         ov_model = core.read_model(ov_model_path)
     else:
-        print(f"[OPENVINO] Converting model to OpenVINO IR format (one-time)...", file=sys.stderr)
-        example_input = {
-            "input_ids": input_ids,
-            "attention_mask": inputs["attention_mask"],
-        }
-        ov_model = ov.convert_model(pt_model, example_input=example_input)
+        print(f"[OPENVINO] Loading PyTorch model for conversion...", file=sys.stderr)
+        pt_model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            torch_dtype=torch.float32,
+            trust_remote_code=True,
+            low_cpu_mem_usage=True,
+        )
+        pt_model.eval()
 
-        # Save for future use
+        print(f"[OPENVINO] Converting model to OpenVINO IR format (one-time)...", file=sys.stderr)
+
+        # Wrap the model to return only logits (OpenVINO can't trace DynamicCache)
+        class LogitsOnlyWrapper(torch.nn.Module):
+            def __init__(self, model):
+                super().__init__()
+                self.model = model
+
+            def forward(self, input_ids, attention_mask):
+                with torch.no_grad():
+                    outputs = self.model(
+                        input_ids=input_ids,
+                        attention_mask=attention_mask,
+                        use_cache=False,  # Disable DynamicCache
+                    )
+                    return outputs.logits
+
+        wrapper = LogitsOnlyWrapper(pt_model)
+        wrapper.eval()
+
+        # Convert via ONNX export path for maximum compatibility
+        try:
+            # Try torch.export first (modern path)
+            print(f"[OPENVINO] Trying torch.export conversion...", file=sys.stderr)
+            example_input = (input_ids, inputs["attention_mask"])
+            ov_model = ov.convert_model(wrapper, example_input=example_input)
+        except Exception as e1:
+            print(f"[OPENVINO] torch.export failed ({e1.__class__.__name__}), trying ONNX export...", file=sys.stderr)
+            # Fallback: export to ONNX first, then load with OpenVINO
+            onnx_path = os.path.join(cache_dir, "model.onnx")
+            os.makedirs(cache_dir, exist_ok=True)
+            torch.onnx.export(
+                wrapper,
+                (input_ids, inputs["attention_mask"]),
+                onnx_path,
+                input_names=["input_ids", "attention_mask"],
+                output_names=["logits"],
+                dynamic_axes={
+                    "input_ids": {0: "batch", 1: "seq_len"},
+                    "attention_mask": {0: "batch", 1: "seq_len"},
+                    "logits": {0: "batch", 1: "seq_len"},
+                },
+                opset_version=17,
+            )
+            print(f"[OPENVINO] ONNX export complete, converting to IR...", file=sys.stderr)
+            ov_model = core.read_model(onnx_path)
+            # Clean up ONNX file after conversion
+            try:
+                os.remove(onnx_path)
+            except OSError:
+                pass
+
+        # Save IR for future use
         os.makedirs(cache_dir, exist_ok=True)
         ov.save_model(ov_model, ov_model_path)
         print(f"[OPENVINO] Model cached at {cache_dir}", file=sys.stderr)
 
+        # Free PyTorch model
+        del pt_model, wrapper
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        import gc; gc.collect()
+
     # Compile with device-optimized configuration
-    compile_config = get_compile_config(device, core)
+    compile_config = get_compile_config(device)
     print(f"[OPENVINO] Compiling model for {device}...", file=sys.stderr)
     compiled_model = core.compile_model(ov_model, device, compile_config)
-
-    # Free PyTorch model to save memory
-    del pt_model
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    import gc; gc.collect()
 
     print(f"[OPENVINO] Generating on {device} (max_tokens={max_tokens}, temp={temperature})...", file=sys.stderr)
 
     # Autoregressive generation loop
     generated_ids = input_ids.numpy().tolist()[0]
     attention_mask = inputs["attention_mask"].numpy().tolist()[0]
-
-    import numpy as np
 
     for step in range(max_tokens):
         input_array = np.array([generated_ids], dtype=np.int64)
@@ -188,15 +226,12 @@ def main():
             next_token_logits = next_token_logits / temperature
 
         if temperature > 0.0:
-            # Sample from distribution
             probs = np.exp(next_token_logits - np.max(next_token_logits))
             probs = probs / probs.sum()
             next_token_id = int(np.random.choice(len(probs), p=probs))
         else:
-            # Greedy
             next_token_id = int(np.argmax(next_token_logits))
 
-        # Check for EOS
         if next_token_id == tokenizer.eos_token_id:
             break
 
@@ -208,6 +243,7 @@ def main():
     generated_text = tokenizer.decode(new_tokens, skip_special_tokens=True)
 
     print(generated_text)
+
 
 if __name__ == "__main__":
     main()
