@@ -209,6 +209,15 @@ struct Args {
     #[arg(long, help = "Enable model fusion to process prompt using a panel of models")]
     fusion: bool,
 
+    #[arg(long, default_value = "10", help = "Number of models to run in the fusion panel")]
+    fusion_models: usize,
+
+    #[arg(long, help = "Automatically generate context using a thinking DeepSeek model")]
+    context_auto: bool,
+
+    #[arg(long, help = "Provide custom context or context prompt for generation")]
+    context: Option<String>,
+
     #[arg(long, help = "Path to folder or file where the final report should be saved")]
     report: Option<String>,
 
@@ -617,17 +626,69 @@ async fn main() -> Result<()> {
 
         if is_fusion_needed {
             println!("[FUSION] Model Fusion is active (explicitly requested or dynamically classified).");
+            std::env::set_var("MODELFUSION_NO_SIMULATION", "true");
+            std::env::set_var("MODELFUSION_USE_TRANSFORMERS", "true");
+
+            let final_prompt_orig = final_prompt.clone();
+            let mut context_to_pass = None;
+            if args.context_auto || args.context.as_ref().map_or(false, |c| !c.trim().is_empty()) {
+                println!("🧠 [FUSION] Generating context locally using transformers (deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B)...");
+                let context_prompt = if let Some(ref ctx_arg) = args.context {
+                    if !ctx_arg.trim().is_empty() {
+                        format!(
+                            "You are an expert technical researcher. Generate a detailed, highly accurate background context, key technical definitions, and relevant factual constraints to help answer the user prompt below, focusing specifically on this guide/instruction: \"{}\"\n\nUser Prompt: {}\n\nProvide ONLY the generated context. Do not include introductory or concluding conversational text.",
+                            ctx_arg, final_prompt_orig
+                        )
+                    } else {
+                        format!(
+                            "You are an expert technical researcher. Generate a detailed, highly accurate background context, key technical definitions, and relevant factual constraints to help answer the user prompt below.\n\nUser Prompt: {}\n\nProvide ONLY the generated context. Do not include introductory or concluding conversational text.",
+                            final_prompt_orig
+                        )
+                    }
+                } else {
+                    format!(
+                        "You are an expert technical researcher. Generate a detailed, highly accurate background context, key technical definitions, and relevant factual constraints to help answer the user prompt below.\n\nUser Prompt: {}\n\nProvide ONLY the generated context. Do not include introductory or concluding conversational text.",
+                        final_prompt_orig
+                    )
+                };
+
+                let deepseek_model = modelfusion_core::fusion_engine::schema::ModelConfig::huggingface("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B");
+                match modelfusion_core::fusion_engine::models::call_model(&deepseek_model, &context_prompt).await {
+                    Ok(ctx) => {
+                        println!("✅ [FUSION] Context generated successfully. Injecting into prompt.");
+                        let mut clean_ctx = if let Some(end_idx) = ctx.find("</think>") {
+                            ctx[end_idx + 8..].to_string()
+                        } else {
+                            ctx.clone()
+                        };
+                        clean_ctx = clean_ctx.trim().to_string();
+                        context_to_pass = Some(clean_ctx);
+                    }
+                    Err(e) => {
+                        println!("❌ [FUSION] Failed to generate context: {}", e);
+                        return Err(anyhow::anyhow!("Failed to generate context using DeepSeek cheap thinking model: {}", e));
+                    }
+                }
+            }
+
             match modelfusion_core::fusion_engine::run_fusion(
-                &final_prompt,
+                &final_prompt_orig,
+                context_to_pass.as_deref(),
                 Some(&db_path),
                 task_override.as_deref(),
                 selection_strategy,
+                Some(args.fusion_models),
             ).await {
                 Ok(content) => {
                     println!("\n[SUCCESS] Orchestration Successful (via Model Fusion)!\n");
                     println!("{}", content);
                     if let Some(ref report_path) = args.report {
-                        save_report(&content, report_path, &args.reporttype, &final_prompt);
+                        let final_prompt_for_report = if let Some(ref ctx) = context_to_pass {
+                            format!("{}\n\n### CONTEXT:\n{}", final_prompt_orig, ctx)
+                        } else {
+                            final_prompt_orig.clone()
+                        };
+                        save_report(&content, report_path, &args.reporttype, &final_prompt_for_report);
                     }
                 }
                 Err(e) => {

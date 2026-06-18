@@ -1,6 +1,7 @@
+#![allow(dead_code)]
 //! LLM providers implementation.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
@@ -187,9 +188,65 @@ impl LLMProvider for HuggingFaceProvider {
     async fn generate_response(&self, prompt: &str) -> Result<ProviderResult> {
         let start = Instant::now();
 
-        // 1. Try Hugging Face Inference API via new router
+        if std::env::var("MODELFUSION_USE_TRANSFORMERS").is_ok() {
+            log::info!("[TRANSFORMERS] Executing model {} locally via Python transformers...", self.config.model_id);
+            let script_path = if let Ok(mut exe_path) = std::env::current_exe() {
+                exe_path.pop();
+                let mut check_dir = exe_path.clone();
+                let mut found_path = None;
+                for _ in 0..5 {
+                    let script = check_dir.join("src/scripts/run_model_transformers.py");
+                    if script.exists() {
+                        found_path = Some(script.to_string_lossy().into_owned());
+                        break;
+                    }
+                    if !check_dir.pop() {
+                        break;
+                    }
+                }
+                found_path.unwrap_or_else(|| "src/scripts/run_model_transformers.py".to_string())
+            } else {
+                "src/scripts/run_model_transformers.py".to_string()
+            };
+
+            let output = tokio::process::Command::new("python")
+                .arg(&script_path)
+                .arg(&self.config.model_id)
+                .arg(prompt)
+                .arg(self.config.max_tokens.to_string())
+                .arg(self.config.temperature.to_string())
+                .output()
+                .await;
+
+            match output {
+                Ok(out) => {
+                    if out.status.success() {
+                        let content = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                        let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
+                        return Ok(ProviderResult {
+                            content,
+                            tokens_used,
+                            cost: 0.0,
+                            latency_ms: start.elapsed().as_millis() as f64,
+                            answer_type: "LOCAL_TRANSFORMERS_ANSWER".to_string(),
+                        });
+                    } else {
+                        let err_msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                        bail!("Local transformers execution failed for model {}: {}", self.config.model_id, err_msg);
+                    }
+                }
+                Err(e) => {
+                    bail!("Failed to start python script for local transformers execution: {}", e);
+                }
+            }
+        }
+
+        // 1. Try Hugging Face Serverless Inference API
         if let Some(token) = &self.hf_token {
-            let url = "https://router.huggingface.co/v1/chat/completions";
+            let url = format!(
+                "https://api-inference.huggingface.co/models/{}/v1/chat/completions",
+                self.config.model_id
+            );
             
             let mut messages = Vec::new();
             if prompt.contains("You are an expert judge model") {
@@ -216,7 +273,7 @@ impl LLMProvider for HuggingFaceProvider {
                 "temperature": self.config.temperature
             });
 
-            let response = self.client.post(url)
+            let response = self.client.post(&url)
                 .bearer_auth(token)
                 .json(&body)
                 .send()
@@ -255,6 +312,9 @@ impl LLMProvider for HuggingFaceProvider {
                         });
                     } else {
                         let err_body = res.text().await.unwrap_or_else(|_| "Unavailable".to_string());
+                        if std::env::var("MODELFUSION_NO_SIMULATION").is_ok() {
+                            bail!("HuggingFace Inference API returned status {} for model {}. Details: {}", status, self.config.model_id, err_body);
+                        }
                         log::warn!(
                             "HuggingFace Inference API returned status {} for model {}. Details: {}. Using offline fallback.",
                             status,
@@ -264,6 +324,9 @@ impl LLMProvider for HuggingFaceProvider {
                     }
                 }
                 Err(e) => {
+                    if std::env::var("MODELFUSION_NO_SIMULATION").is_ok() {
+                        bail!("HuggingFace Inference API request failed for model {}: {}", self.config.model_id, e);
+                    }
                     log::warn!(
                         "HuggingFace Inference API request failed for model {}: {}. Using offline fallback.",
                         self.config.model_id,
@@ -272,6 +335,9 @@ impl LLMProvider for HuggingFaceProvider {
                 }
             }
         } else {
+            if std::env::var("MODELFUSION_NO_SIMULATION").is_ok() {
+                bail!("HuggingFace API token is missing.");
+            }
             log::warn!("HuggingFace API token is missing. Using offline fallback.");
         }
 
@@ -356,6 +422,9 @@ impl LLMProvider for LocalProvider {
                 }
             }
             Err(e) => {
+                if std::env::var("MODELFUSION_NO_SIMULATION").is_ok() {
+                    bail!("Local Ollama API call failed for model {}: {}", self.config.model_id, e);
+                }
                 log::warn!("Local Ollama API call failed: {}. Falling back to mock local response.", e);
                 let mock_content = format!(
                     "[Local Fallback for {}] Ollama is not running at {}. Mock response for prompt: \"{}\"",

@@ -32,14 +32,16 @@ use anyhow::Context;
 /// Run the model fusion pipeline.
 pub async fn run_fusion(
     prompt: &str,
+    context: Option<&str>,
     db_path: Option<&Path>,
     task_override: Option<&str>,
     strategy: Option<SelectionStrategy>,
+    max_candidates: Option<usize>,
 ) -> anyhow::Result<String> {
     let db_path_ref = db_path.context("[FUSION] Database path is required and cannot be bypassed.")?;
-
-    // Detect task name
-    let task_name = if let Some(t) = task_override {
+ 
+    // Detect task name on the original prompt
+    let detected_task = if let Some(t) = task_override {
         t.to_string()
     } else {
         let detector = IntelligentTaskDetector::new();
@@ -53,14 +55,17 @@ pub async fn run_fusion(
     let selector = EnhancedModelSelector::new(db_path_ref)
         .context("⚠️ [FUSION] Failed to open database for model selection.")?;
         
-    let res = selector.select_best_model(&task_name, prompt, strategy, 10)
+    let max_candidates = max_candidates.unwrap_or(10);
+    // We always use text-generation models for the fusion panel, judge, and writer to ensure chat compatibility.
+    let panel_task = "text-generation";
+    let res = selector.select_best_model(panel_task, prompt, strategy, max_candidates)
         .context("⚠️ [FUSION] Model selection failed from database.")?;
         
     if res.all_candidates.is_empty() {
-        return Err(anyhow::anyhow!("⚠️ [FUSION] No candidates found in database for task '{}'.", task_name));
+        return Err(anyhow::anyhow!("⚠️ [FUSION] No candidates found in database for task '{}'.", panel_task));
     }
     
-    println!("📋 [FUSION] Model selection successful for task '{}' (strategy: {}).", task_name, res.strategy);
+    println!("📋 [FUSION] Model selection successful (detected task: '{}', selected strategy: {}).", detected_task, res.strategy);
     println!("📋 [FUSION] Selected models for the panel:");
     let mut panel_models = Vec::new();
     for (i, candidate) in res.all_candidates.iter().enumerate() {
@@ -80,9 +85,15 @@ pub async fn run_fusion(
     let writer_model = ModelConfig::huggingface(&writer_res.best_model.model_id);
     println!("✍️ [FUSION] Selected writer model from database: {}", writer_res.best_model.model_id);
 
+    let prompt_with_context = if let Some(ctx) = context {
+        format!("{}\n\n### CONTEXT:\n{}", prompt, ctx)
+    } else {
+        prompt.to_string()
+    };
+
     println!("[FUSION] Starting Model Fusion Pipeline...");
     println!("[FUSION] Step 1: Running Panel of {} models concurrently...", panel_models.len());
-    let panel_answers = run_panel(prompt, panel_models).await?;
+    let panel_answers = run_panel(&prompt_with_context, panel_models).await?;
     
     for ans in &panel_answers {
         println!("  * Received response from {}", ans.model_name);
@@ -92,10 +103,10 @@ pub async fn run_fusion(
     }
 
     println!("[FUSION] Step 2: Judging panel responses...");
-    let judge_json = judge_panel(prompt, &panel_answers, &judge_model).await?;
+    let judge_json = judge_panel(&prompt_with_context, &panel_answers, &judge_model).await?;
 
     println!("[FUSION] Step 3: Writing final synthesized answer...");
-    let final_answer = write_final_answer(prompt, &judge_json, &writer_model).await?;
+    let final_answer = write_final_answer(&prompt_with_context, &judge_json, &writer_model).await?;
 
     Ok(final_answer)
 }

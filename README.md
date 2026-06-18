@@ -156,19 +156,43 @@ ModelFusion's average score evaluated across 20 technical sub-domains demonstrat
 ## 🚀 Getting Started
 
 ### Prerequisites
-*   Python 3.10+
-*   [Ollama](https://ollama.com/) (installed and running locally)
-*   Pull the models used by the evaluator and selector:
-    ```powershell
-    ollama pull qwen2.5:7b
-    ollama pull gemma2:2b
-    ```
+*   Rust 1.70+ and Cargo
+*   Python 3.10+ with `transformers`, `torch`, and `accelerate` installed
+*   (Optional) [Ollama](https://ollama.com/) for local model serving
 
 ### Running the CLI
-To run ModelFusion's consensus deliberation panel directly on a query:
+
+**Basic fusion query** (10 panel models by default, runs locally via `transformers`):
 ```powershell
 cargo run --release --package cli -- --fusion --prompt "Design a high-concurrency connection pool in Rust."
 ```
+
+**With auto-generated context** (uses DeepSeek-R1-Distill-Qwen-1.5B to generate background context):
+```powershell
+cargo run --release --package cli -- --fusion --context-auto --prompt "What is a deadlock and how can it be prevented?"
+```
+
+**With custom context guidance**:
+```powershell
+cargo run --release --package cli -- --fusion --context "Focus on Rust async patterns" --prompt "Compare tokio vs async-std"
+```
+
+**Custom panel size** (e.g., 3 models instead of the default 10):
+```powershell
+cargo run --release --package cli -- --fusion --fusion-models 3 --context-auto --prompt "Explain CAP theorem"
+```
+
+### Fusion CLI Flags Reference
+
+| Flag | Default | Description |
+|:---|:---:|:---|
+| `--fusion` | off | Enable multi-model consensus deliberation pipeline |
+| `--fusion-models <N>` | `10` | Number of models to run concurrently in the panel |
+| `--context-auto` | off | Auto-generate background context via DeepSeek-R1-Distill-Qwen-1.5B |
+| `--context <STRING>` | none | Provide custom context guidance for context generation |
+
+> [!NOTE]
+> When `--fusion` is active, all models (panel, judge, writer, and context generator) are executed **locally** using the Python `transformers` library. Models are downloaded to your HuggingFace cache on first use.
 
 ### Running the Draco Benchmark
 To execute the DRACO evaluation benchmark offline with strict verification (no simulated fallbacks) and compute confidence intervals across 1,000 bootstrap replicates:

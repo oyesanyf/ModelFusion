@@ -47,6 +47,9 @@ pub async fn judge_panel(
     let response_text = match call_model(judge_model, &judge_prompt).await {
         Ok(text) => text,
         Err(e) => {
+            if std::env::var("MODELFUSION_NO_SIMULATION").is_ok() {
+                return Err(anyhow::anyhow!("Judge model call failed: {}", e));
+            }
             log::warn!("Judge model call failed: {}. Falling back to local offline mock judge.", e);
             let mut summary = String::new();
             summary.push_str("[Offline Mock Judge Summary]\n");
@@ -132,6 +135,9 @@ pub async fn write_final_answer(
     match call_model(writer_model, &writer_prompt).await {
         Ok(ans) => Ok(ans),
         Err(e) => {
+            if std::env::var("MODELFUSION_NO_SIMULATION").is_ok() {
+                return Err(anyhow::anyhow!("Writer model call failed: {}", e));
+            }
             log::warn!("Writer model call failed: {}. Returning raw judge recommended position.", e);
             Ok(format!(
                 "[Offline Synth Writer Fallback]\n\n{}\n\n(Note: Writer model failed with error: {})",

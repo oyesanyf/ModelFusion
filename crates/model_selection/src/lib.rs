@@ -106,19 +106,33 @@ impl EnhancedModelSelector {
         // Map task name to database tags
         let pipeline_tag = self.map_task_to_tag(task_name);
         
-        // Load candidates from the DB
-        let db_models = self.db.get_by_task(&pipeline_tag, max_candidates)?;
+        // Load candidates from the DB (load a larger set to allow filtering)
+        let db_models = self.db.get_by_task(&pipeline_tag, 100)?;
 
         if db_models.is_empty() {
             anyhow::bail!("No models found in database for pipeline tag: {}", pipeline_tag);
         }
 
+        let no_simulation = std::env::var("MODELFUSION_NO_SIMULATION").is_ok();
+
+        let mut filtered_models = Vec::new();
+        for m in db_models {
+            if no_simulation && is_fictional_or_non_chat(&m.model_id) {
+                continue;
+            }
+            filtered_models.push(m);
+        }
+
+        if filtered_models.is_empty() {
+            anyhow::bail!("No real chat models found in database for task '{}' after filtering.", task_name);
+        }
+
         // Calculate max downloads & likes for normalization
-        let max_downloads = db_models.iter().map(|m| m.downloads).max().unwrap_or(1) as f64;
-        let max_likes = db_models.iter().map(|m| m.likes).max().unwrap_or(1) as f64;
+        let max_downloads = filtered_models.iter().map(|m| m.downloads).max().unwrap_or(1) as f64;
+        let max_likes = filtered_models.iter().map(|m| m.likes).max().unwrap_or(1) as f64;
 
         let mut candidates = Vec::new();
-        for m in &db_models {
+        for m in &filtered_models {
             let freshness = self.calculate_freshness(m);
             let license_val = self.evaluate_license(m);
 
@@ -191,6 +205,10 @@ impl EnhancedModelSelector {
 
         // Sort candidates by final score descending
         candidates.sort_by(|a, b| b.final_score.partial_cmp(&a.final_score).unwrap());
+
+        if candidates.len() > max_candidates {
+            candidates.truncate(max_candidates);
+        }
 
         let best_model = candidates[0].clone();
         let optimization_time_ms = start_time.elapsed().as_millis() as u64;
@@ -283,4 +301,38 @@ impl EnsembleModelSelector {
 
         best.cloned()
     }
+}
+
+fn is_fictional_or_non_chat(model_id: &str) -> bool {
+    let lower = model_id.to_lowercase();
+    
+    // Fictional models in the db
+    if lower.contains("gemma-4")
+        || lower.contains("qwen3")
+        || lower.contains("gpt-5.5")
+        || lower.contains("glm-5.2")
+        || lower.contains("gpt-oss")
+    {
+        return true;
+    }
+    
+    // Non-chat models in the db under text-generation or QA
+    if lower.contains("electra")
+        || lower.contains("colbert")
+        || lower.contains("gpt2")
+        || lower.contains("contriever")
+        || lower.contains("opt-125m")
+        || lower.contains("roberta")
+        || lower.contains("bert")
+        || lower.contains("deberta")
+        || lower.contains("splinter")
+        || lower.contains("koelectra")
+        || lower.contains("yolos")
+        || lower.contains("transformer")
+        || lower.contains("detr")
+    {
+        return true;
+    }
+    
+    false
 }
