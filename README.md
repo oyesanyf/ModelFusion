@@ -182,17 +182,92 @@ cargo run --release --package cli -- --fusion --context "Focus on Rust async pat
 cargo run --release --package cli -- --fusion --fusion-models 3 --context-auto --prompt "Explain CAP theorem"
 ```
 
+**Using Ollama** (runs models via local Ollama instead of Python transformers):
+```powershell
+cargo run --release --package cli -- --fusion --ollama --context-auto --prompt "What is a deadlock?"
+```
+
 ### Fusion CLI Flags Reference
 
 | Flag | Default | Description |
 |:---|:---:|:---|
 | `--fusion` | off | Enable multi-model consensus deliberation pipeline |
-| `--fusion-models <N>` | `10` | Number of models to run concurrently in the panel |
+| `--fusion-models <N>` | `10` | Number of models (or temperature samples) to run in the panel |
+| `--fusion-mode <MODE>` | `multi-model` | Execution mode: `multi-model` (N different models) or `multi-sample` (1 model, N temperature samples — much faster locally) |
+| `--ollama` | off | Use local Ollama for model execution (auto-starts `ollama serve` if not running) |
+| `--openvino` | off | Use OpenVINO for optimized CPU inference (requires: `pip install -U openvino`) |
 | `--context-auto` | off | Auto-generate background context via DeepSeek-R1-Distill-Qwen-1.5B |
 | `--context <STRING>` | none | Provide custom context guidance for context generation |
+| `--report <PATH>` | none | Save the final fusion report to a file or directory |
+
+### Execution Backends
+
+ModelFusion supports three local execution backends. If no backend flag is specified, it defaults to Python `transformers`:
+
+| Backend | Flag | Precision | 7B Model Memory | Best For |
+|:---|:---:|:---:|:---:|:---|
+| **Ollama** | `--ollama` | Q4_0 | ~5.0 GB | GPU inference via Vulkan/CUDA, fastest for repeated runs |
+| **OpenVINO** | `--openvino` | FP32→IR | ~4.2 GB | Optimized CPU inference (Intel/AMD), 2-3× faster than transformers |
+| **Transformers** | *(default)* | FP16 | ~16.8 GB | Direct HuggingFace model loading, widest compatibility |
+
+### Fusion Execution Modes
+
+| Mode | Flag | What It Does | Speed | Best For |
+|:---|:---:|:---|:---:|:---|
+| **Multi-Model** | `--fusion-mode multi-model` | Runs N different models, each providing a unique perspective | Slower (N model loads) | Maximum diversity and quality |
+| **Multi-Sample** | `--fusion-mode multi-sample` | Loads 1 best model, samples N times with varied temperatures (T=0.3→1.1) | **5-10× faster** | Fast local execution with good diversity |
+
+### Dynamic Resource Management
+
+ModelFusion dynamically adapts to your hardware at runtime:
+
+* **Memory Detection**: Scans available RAM (via PowerShell) and GPU VRAM (via `nvidia-smi`) on every run.
+* **Model Filtering**: Only selects models that fit within 70% of available memory. If fewer than N models fit, the panel is **automatically reduced** with a clear warning.
+* **GPU Routing**: Small models (≤ VRAM budget) run on 🎮 GPU; larger models fall back to 💻 CPU (RAM).
+* **Sequential Execution**: Ollama and OpenVINO backends run models one at a time to avoid OOM crashes. Transformers can batch based on memory budget.
+* **Runtime Fallback**: If a model fails during execution (OOM, timeout, API error), the system automatically substitutes the next-best model from a pre-built fallback pool and **logs the failure reason**.
+* **Ollama Auto-Start**: If `--ollama` is specified but Ollama is not running, ModelFusion automatically starts `ollama serve` and waits up to 30 seconds for it to be ready.
 
 > [!NOTE]
-> When `--fusion` is active, all models (panel, judge, writer, and context generator) are executed **locally** using the Python `transformers` library. Models are downloaded to your HuggingFace cache on first use.
+> ModelFusion's local SQLite database indexes **over 1.49 million open-weight models** across **56 task types** from the Hugging Face Hub. When `--fusion` is active, the system dynamically selects the best-fit models for your specific task from this entire catalog, filtered by your hardware's available memory and GPU capacity — giving every user access to a massive pool of open-weight intelligence regardless of their hardware.
+
+### Usage Examples
+
+**Fast local fusion** (1 model, 10 temperature samples via Ollama — recommended for most local setups):
+```powershell
+cli.exe --fusion --ollama --fusion-mode multi-sample --context-auto --prompt "Design a high-concurrency connection pool in Rust."
+```
+
+**Quality fusion** (10 different models via Ollama):
+```powershell
+cli.exe --fusion --ollama --context-auto --prompt "What is a deadlock and how can it be prevented?"
+```
+
+**OpenVINO optimized CPU** (no GPU needed):
+```powershell
+cli.exe --fusion --openvino --fusion-mode multi-sample --prompt "Explain CAP theorem"
+```
+
+**Custom panel size** (e.g., 5 models):
+```powershell
+cli.exe --fusion --ollama --fusion-models 5 --context-auto --prompt "Compare tokio vs async-std"
+```
+
+**Default transformers backend** (FP16, widest compatibility):
+```powershell
+cli.exe --fusion --context-auto --prompt "What are the tradeoffs of microservices?"
+```
+
+### Pre-installing Ollama Models
+To pre-install the models commonly selected by the `--fusion --ollama` panel:
+```powershell
+ollama pull qwen2.5:7b
+ollama pull qwen2.5:3b
+ollama pull qwen2.5:1.5b
+ollama pull llama3.1
+ollama pull llama3.2:1b
+ollama pull deepseek-r1:1.5b
+```
 
 ### Running the Draco Benchmark
 To execute the DRACO evaluation benchmark offline with strict verification (no simulated fallbacks) and compute confidence intervals across 1,000 bootstrap replicates:

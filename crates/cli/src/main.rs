@@ -212,6 +212,15 @@ struct Args {
     #[arg(long, default_value = "10", help = "Number of models to run in the fusion panel")]
     fusion_models: usize,
 
+    #[arg(long, default_value = "multi-model", help = "Fusion execution mode: 'multi-model' (N different models) or 'multi-sample' (1 model, N temperature samples — much faster locally)")]
+    fusion_mode: String,
+
+    #[arg(long, help = "Use local Ollama for fusion model execution instead of Python transformers")]
+    ollama: bool,
+
+    #[arg(long, help = "Use OpenVINO for optimized CPU inference (requires: pip install -U openvino optimum-intel)")]
+    openvino: bool,
+
     #[arg(long, help = "Automatically generate context using a thinking DeepSeek model")]
     context_auto: bool,
 
@@ -627,12 +636,45 @@ async fn main() -> Result<()> {
         if is_fusion_needed {
             println!("[FUSION] Model Fusion is active (explicitly requested or dynamically classified).");
             std::env::set_var("MODELFUSION_NO_SIMULATION", "true");
-            std::env::set_var("MODELFUSION_USE_TRANSFORMERS", "true");
+            if args.ollama {
+                // Ensure Ollama is running — auto-start if needed
+                println!("🦙 [FUSION] Ensuring Ollama is running...");
+                match model_selection::memory::ensure_ollama_running() {
+                    Ok(()) => {
+                        println!("✅ [FUSION] Ollama is ready.");
+                        std::env::set_var("MODELFUSION_USE_OLLAMA", "true");
+                    }
+                    Err(e) => {
+                        return Err(anyhow::anyhow!("❌ [FUSION] {}", e));
+                    }
+                }
+            } else if args.openvino {
+                // Verify OpenVINO Python package is installed
+                println!("🔷 [FUSION] Checking OpenVINO installation...");
+                let check = std::process::Command::new("python")
+                    .args(["-c", "import openvino; print('OK')"])
+                    .output();
+                match check {
+                    Ok(out) if out.status.success() => {
+                        println!("✅ [FUSION] OpenVINO is installed.");
+                        std::env::set_var("MODELFUSION_USE_OPENVINO", "true");
+                        println!("🔷 [FUSION] Using OpenVINO for optimized CPU inference.");
+                    }
+                    _ => {
+                        return Err(anyhow::anyhow!(
+                            "❌ [FUSION] OpenVINO not installed.\n\n  Install with: pip install -U openvino\n\n  This provides optimized CPU inference, 2-3× faster than transformers."
+                        ));
+                    }
+                }
+            } else {
+                std::env::set_var("MODELFUSION_USE_TRANSFORMERS", "true");
+                println!("🐍 [FUSION] Using local Python transformers for model execution.");
+            }
 
             let final_prompt_orig = final_prompt.clone();
             let mut context_to_pass = None;
             if args.context_auto || args.context.as_ref().map_or(false, |c| !c.trim().is_empty()) {
-                println!("🧠 [FUSION] Generating context locally using transformers (deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B)...");
+                println!("🧠 [FUSION] Generating context locally (deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B)...");
                 let context_prompt = if let Some(ref ctx_arg) = args.context {
                     if !ctx_arg.trim().is_empty() {
                         format!(
@@ -678,6 +720,7 @@ async fn main() -> Result<()> {
                 task_override.as_deref(),
                 selection_strategy,
                 Some(args.fusion_models),
+                &args.fusion_mode,
             ).await {
                 Ok(content) => {
                     println!("\n[SUCCESS] Orchestration Successful (via Model Fusion)!\n");

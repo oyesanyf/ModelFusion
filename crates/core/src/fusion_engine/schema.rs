@@ -15,6 +15,7 @@ pub struct ModelConfig {
     pub provider: Provider,
     pub endpoint: String,
     pub api_key_env: Option<String>,
+    pub temperature: Option<f32>,
 }
 
 impl ModelConfig {
@@ -24,6 +25,7 @@ impl ModelConfig {
             provider: Provider::OpenAI,
             endpoint: model_id.to_string(),
             api_key_env: Some("OPENAI_API_KEY".to_string()),
+            temperature: None,
         }
     }
 
@@ -33,6 +35,7 @@ impl ModelConfig {
             provider: Provider::Anthropic,
             endpoint: model_id.to_string(),
             api_key_env: Some("ANTHROPIC_API_KEY".to_string()),
+            temperature: None,
         }
     }
 
@@ -42,6 +45,7 @@ impl ModelConfig {
             provider: Provider::Google,
             endpoint: model_id.to_string(),
             api_key_env: Some("GOOGLE_GEMINI_API_KEY".to_string()),
+            temperature: None,
         }
     }
 
@@ -51,6 +55,7 @@ impl ModelConfig {
             provider: Provider::Local,
             endpoint: model_id.to_string(),
             api_key_env: None,
+            temperature: None,
         }
     }
 
@@ -60,6 +65,18 @@ impl ModelConfig {
             provider: Provider::HuggingFace,
             endpoint: model_id.to_string(),
             api_key_env: Some("HF_TOKEN".to_string()),
+            temperature: None,
+        }
+    }
+
+    /// Create a HuggingFace config with a specific temperature for multi-sample mode.
+    pub fn huggingface_with_temp(model_id: &str, temp: f32, sample_idx: usize) -> Self {
+        Self {
+            name: format!("HuggingFace: {} (sample #{}, T={:.1})", model_id, sample_idx, temp),
+            provider: Provider::HuggingFace,
+            endpoint: model_id.to_string(),
+            api_key_env: Some("HF_TOKEN".to_string()),
+            temperature: Some(temp),
         }
     }
 }

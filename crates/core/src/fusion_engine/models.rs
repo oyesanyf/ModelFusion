@@ -15,7 +15,7 @@ pub async fn call_model(model: &ModelConfig, prompt: &str) -> anyhow::Result<Str
         api_provider: core_provider_str.to_string(),
         model_id: model.endpoint.clone(),
         max_tokens: 1500,
-        temperature: 0.7,
+        temperature: model.temperature.unwrap_or(0.7) as f64,
         cost_per_1k_tokens: 0.0,
         rate_limit_per_minute: 60,
         timeout_seconds: 30,

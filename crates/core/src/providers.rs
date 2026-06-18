@@ -188,6 +188,128 @@ impl LLMProvider for HuggingFaceProvider {
     async fn generate_response(&self, prompt: &str) -> Result<ProviderResult> {
         let start = Instant::now();
 
+        // Ollama local execution path
+        if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+            let ollama_model = map_hf_to_ollama(&self.config.model_id);
+            log::info!("[OLLAMA] Executing model {} (ollama: {}) locally...", self.config.model_id, ollama_model);
+
+            let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
+                .unwrap_or_else(|_| "http://localhost:11434".to_string());
+            let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
+
+            let mut messages = Vec::new();
+            if prompt.contains("You are an expert judge model") {
+                messages.push(serde_json::json!({
+                    "role": "system",
+                    "content": "You are an expert judge model. Return a valid JSON object ONLY."
+                }));
+            } else if prompt.contains("Use the judge analysis below") {
+                messages.push(serde_json::json!({
+                    "role": "system",
+                    "content": "You are a professional synthesizer. Write a comprehensive final answer."
+                }));
+            }
+            messages.push(serde_json::json!({
+                "role": "user",
+                "content": prompt
+            }));
+
+            let body = serde_json::json!({
+                "model": ollama_model,
+                "messages": messages,
+                "stream": false,
+                "options": {
+                    "temperature": self.config.temperature,
+                    "num_predict": self.config.max_tokens
+                }
+            });
+
+            let response = self.client.post(&url)
+                .json(&body)
+                .send()
+                .await;
+
+            match response {
+                Ok(res) => {
+                    if res.status().is_success() {
+                        let data: serde_json::Value = res.json().await?;
+                        let content = data["message"]["content"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_string();
+                        let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
+                        return Ok(ProviderResult {
+                            content,
+                            tokens_used,
+                            cost: 0.0,
+                            latency_ms: start.elapsed().as_millis() as f64,
+                            answer_type: "OLLAMA_ANSWER".to_string(),
+                        });
+                    } else {
+                        let err_text = res.text().await.unwrap_or_default();
+                        bail!("Ollama API error for model '{}': {}", ollama_model, err_text);
+                    }
+                }
+                Err(e) => {
+                    bail!("Ollama API call failed for model '{}': {}. Is Ollama running?", ollama_model, e);
+                }
+            }
+        }
+
+        // OpenVINO backend: optimized CPU inference via optimum-intel
+        if std::env::var("MODELFUSION_USE_OPENVINO").is_ok() {
+            log::info!("[OPENVINO] Executing model {} locally via OpenVINO (optimum-intel)...", self.config.model_id);
+            let script_path = if let Ok(mut exe_path) = std::env::current_exe() {
+                exe_path.pop();
+                let mut check_dir = exe_path.clone();
+                let mut found_path = None;
+                for _ in 0..5 {
+                    let script = check_dir.join("src/scripts/run_model_openvino.py");
+                    if script.exists() {
+                        found_path = Some(script.to_string_lossy().into_owned());
+                        break;
+                    }
+                    if !check_dir.pop() {
+                        break;
+                    }
+                }
+                found_path.unwrap_or_else(|| "src/scripts/run_model_openvino.py".to_string())
+            } else {
+                "src/scripts/run_model_openvino.py".to_string()
+            };
+
+            let output = tokio::process::Command::new("python")
+                .arg(&script_path)
+                .arg(&self.config.model_id)
+                .arg(prompt)
+                .arg(self.config.max_tokens.to_string())
+                .arg(self.config.temperature.to_string())
+                .output()
+                .await;
+
+            match output {
+                Ok(out) => {
+                    if out.status.success() {
+                        let content = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                        let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
+                        return Ok(ProviderResult {
+                            content,
+                            tokens_used,
+                            cost: 0.0,
+                            latency_ms: start.elapsed().as_millis() as f64,
+                            answer_type: "OPENVINO_ANSWER".to_string(),
+                        });
+                    } else {
+                        let err_msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                        bail!("OpenVINO execution failed for model {}: {}", self.config.model_id, err_msg);
+                    }
+                }
+                Err(e) => {
+                    bail!("Failed to start OpenVINO python script: {}", e);
+                }
+            }
+        }
+
         if std::env::var("MODELFUSION_USE_TRANSFORMERS").is_ok() {
             log::info!("[TRANSFORMERS] Executing model {} locally via Python transformers...", self.config.model_id);
             let script_path = if let Ok(mut exe_path) = std::env::current_exe() {
@@ -209,12 +331,35 @@ impl LLMProvider for HuggingFaceProvider {
                 "src/scripts/run_model_transformers.py".to_string()
             };
 
+            // Detect system memory and determine best device for this model
+            let device_arg = {
+                use std::process::Command as StdCommand;
+                // Quick GPU VRAM check
+                let gpu_free_gb = StdCommand::new("nvidia-smi")
+                    .args(["--query-gpu=memory.free", "--format=csv,noheader,nounits"])
+                    .output()
+                    .ok()
+                    .and_then(|o| String::from_utf8(o.stdout).ok())
+                    .and_then(|s| s.trim().parse::<f64>().ok())
+                    .map(|mb| mb / 1024.0)
+                    .unwrap_or(0.0);
+                
+                if gpu_free_gb > 1.0 {
+                    log::info!("[TRANSFORMERS] GPU detected with {:.1} GB free VRAM, using CUDA", gpu_free_gb);
+                    "cuda"
+                } else {
+                    log::info!("[TRANSFORMERS] No usable GPU, using CPU");
+                    "cpu"
+                }
+            };
+
             let output = tokio::process::Command::new("python")
                 .arg(&script_path)
                 .arg(&self.config.model_id)
                 .arg(prompt)
                 .arg(self.config.max_tokens.to_string())
                 .arg(self.config.temperature.to_string())
+                .arg(device_arg)
                 .output()
                 .await;
 
@@ -441,4 +586,101 @@ impl LLMProvider for LocalProvider {
             }
         }
     }
+}
+
+/// Maps HuggingFace model IDs to their Ollama equivalents.
+pub fn map_hf_to_ollama(hf_model_id: &str) -> String {
+    let id = hf_model_id.to_lowercase();
+    match id.as_str() {
+        // Qwen family
+        _ if id.contains("qwen2.5") && id.contains("72b") => "qwen2.5:72b".to_string(),
+        _ if id.contains("qwen2.5") && id.contains("32b") => "qwen2.5:32b".to_string(),
+        _ if id.contains("qwen2.5") && id.contains("14b") => "qwen2.5:14b".to_string(),
+        _ if id.contains("qwen2.5") && id.contains("7b") => "qwen2.5:7b".to_string(),
+        _ if id.contains("qwen2.5") && id.contains("3b") => "qwen2.5:3b".to_string(),
+        _ if id.contains("qwen2.5") && id.contains("1.5b") => "qwen2.5:1.5b".to_string(),
+        _ if id.contains("qwen2.5") && id.contains("0.5b") => "qwen2.5:0.5b".to_string(),
+        _ if id.contains("qwen2.5-coder") && id.contains("7b") => "qwen2.5-coder:7b".to_string(),
+        _ if id.contains("qwen3") && id.contains("8b") => "qwen3:8b".to_string(),
+        _ if id.contains("qwen3") && id.contains("4b") => "qwen3:4b".to_string(),
+        _ if id.contains("qwen3") && id.contains("1.7b") => "qwen3:1.7b".to_string(),
+        _ if id.contains("qwen3") && id.contains("0.6b") => "qwen3:0.6b".to_string(),
+
+        // Llama family
+        _ if id.contains("llama-3.1") && id.contains("70b") => "llama3.1:70b".to_string(),
+        _ if id.contains("llama-3.1") && id.contains("8b") => "llama3.1".to_string(),
+        _ if id.contains("llama-3.2") && id.contains("3b") => "llama3.2:3b".to_string(),
+        _ if id.contains("llama-3.2") && id.contains("1b") => "llama3.2:1b".to_string(),
+        _ if id.contains("llama-3.3") && id.contains("70b") => "llama3.3:70b".to_string(),
+
+        // DeepSeek family
+        _ if id.contains("deepseek-r1-distill") && id.contains("qwen-1.5b") => "deepseek-r1:1.5b".to_string(),
+        _ if id.contains("deepseek-r1-distill") && id.contains("qwen-7b") => "deepseek-r1:7b".to_string(),
+        _ if id.contains("deepseek-r1-distill") && id.contains("qwen-14b") => "deepseek-r1:14b".to_string(),
+        _ if id.contains("deepseek-r1-distill") && id.contains("qwen-32b") => "deepseek-r1:32b".to_string(),
+        _ if id.contains("deepseek-r1-distill") && id.contains("llama-8b") => "deepseek-r1:8b".to_string(),
+        _ if id.contains("deepseek-r1-distill") && id.contains("llama-70b") => "deepseek-r1:70b".to_string(),
+
+        // Gemma family
+        _ if id.contains("gemma-2") && id.contains("2b") => "gemma2:2b".to_string(),
+        _ if id.contains("gemma-2") && id.contains("9b") => "gemma2:9b".to_string(),
+        _ if id.contains("gemma-2") && id.contains("27b") => "gemma2:27b".to_string(),
+        _ if id.contains("gemma-3") && id.contains("4b") => "gemma3:4b".to_string(),
+        _ if id.contains("gemma-3") && id.contains("12b") => "gemma3:12b".to_string(),
+        _ if id.contains("gemma-3") && id.contains("27b") => "gemma3:27b".to_string(),
+
+        // Phi family
+        _ if id.contains("phi-3") && id.contains("mini") => "phi3:mini".to_string(),
+        _ if id.contains("phi-4") && id.contains("mini") => "phi4-mini".to_string(),
+
+        // Mistral family
+        _ if id.contains("mistral") && id.contains("7b") => "mistral:7b".to_string(),
+        _ if id.contains("mixtral") && id.contains("8x7b") => "mixtral:8x7b".to_string(),
+
+        // Fallback: strip org prefix, lowercase, replace slashes
+        _ => {
+            let name = hf_model_id
+                .split('/')
+                .last()
+                .unwrap_or(hf_model_id)
+                .to_lowercase()
+                .replace(' ', "-");
+            name
+        }
+    }
+}
+
+/// List of HuggingFace model ID substrings that are known to have Ollama equivalents
+/// and are small enough to run locally.
+pub const OLLAMA_COMPATIBLE_MODELS: &[&str] = &[
+    "Qwen2.5-7B-Instruct",
+    "Qwen2.5-3B-Instruct",
+    "Qwen2.5-1.5B-Instruct",
+    "Qwen2.5-0.5B-Instruct",
+    "Qwen2.5-14B-Instruct",
+    "Qwen2.5-Coder-7B-Instruct",
+    "Qwen3-8B",
+    "Qwen3-4B",
+    "Qwen3-1.7B",
+    "Llama-3.1-8B-Instruct",
+    "Llama-3.2-3B-Instruct",
+    "Llama-3.2-1B-Instruct",
+    "DeepSeek-R1-Distill-Qwen-1.5B",
+    "DeepSeek-R1-Distill-Qwen-7B",
+    "DeepSeek-R1-Distill-Qwen-14B",
+    "DeepSeek-R1-Distill-Qwen-32B",
+    "DeepSeek-R1-Distill-Llama-8B",
+    "gemma-2-2b-it",
+    "gemma-2-9b-it",
+    "gemma-3-4b-it",
+    "gemma-3-12b-it",
+    "Phi-3-mini-4k-instruct",
+    "Phi-4-mini-instruct",
+    "Mistral-7B-Instruct",
+    "Mixtral-8x7B-Instruct",
+];
+
+/// Returns true if a model ID is known to be available in Ollama.
+pub fn is_ollama_compatible(model_id: &str) -> bool {
+    OLLAMA_COMPATIBLE_MODELS.iter().any(|m| model_id.contains(m))
 }
