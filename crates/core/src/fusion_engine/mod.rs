@@ -29,6 +29,24 @@ pub fn classify_prompt(prompt: &str) -> bool {
 
 use anyhow::Context;
 
+/// Return all model IDs from the database, ordered by decision_score.
+/// Used by `--prepare-all-models` to batch-convert models.
+pub fn get_all_model_ids(db_path: &Path) -> Vec<String> {
+    match db::HuggingFaceModelDatabase::new(db_path) {
+        Ok(db) => db.get_all_model_ids().unwrap_or_default(),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Return model IDs under a size threshold (in MB), ordered by decision_score.
+/// Used by `--update` + `--prepare-all-models` to only convert small fast models.
+pub fn get_small_model_ids(db_path: &Path, max_size_mb: f64) -> Vec<String> {
+    match db::HuggingFaceModelDatabase::new(db_path) {
+        Ok(db) => db.get_small_model_ids(max_size_mb).unwrap_or_default(),
+        Err(_) => Vec::new(),
+    }
+}
+
 /// Run the model fusion pipeline.
 pub async fn run_fusion(
     prompt: &str,

@@ -218,8 +218,23 @@ struct Args {
     #[arg(long, help = "Use local Ollama for fusion model execution instead of Python transformers")]
     ollama: bool,
 
-    #[arg(long, help = "Use OpenVINO for optimized CPU inference (requires: pip install -U openvino optimum-intel)")]
+    #[arg(long, help = "Use OpenVINO for optimized CPU inference (requires: pip install -U openvino-genai or openvino)")]
     openvino: bool,
+
+    #[arg(long, help = "Use vLLM for high-throughput GPU inference (Linux only, requires: pip install vllm)")]
+    vllm: bool,
+
+    #[arg(long, help = "Pre-convert a HuggingFace model to OpenVINO IR format (requires: pip install optimum-intel[openvino])")]
+    prepare_model: Option<String>,
+
+    #[arg(long, help = "Pre-convert ALL eligible models from database to OpenVINO IR (batch)")]
+    prepare_all_models: bool,
+
+    #[arg(long, default_value = "int8", help = "Weight format for OpenVINO export: fp16, int8, int4")]
+    weight_format: String,
+
+    #[arg(long, default_value = "ov_models", help = "Directory for cached OpenVINO IR models")]
+    ov_model_dir: String,
 
     #[arg(long, help = "Automatically generate context using a thinking DeepSeek model")]
     context_auto: bool,
@@ -484,12 +499,25 @@ struct Args {
     feature_ranking: bool,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
+    // Spawn the async runtime on a thread with 8 MB stack to avoid
+    // stack overflow in debug builds (the Args struct has 80+ fields).
+    let builder = std::thread::Builder::new().stack_size(8 * 1024 * 1024);
+    let handler = builder.spawn(|| {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to build Tokio runtime")
+            .block_on(run())
+    }).expect("Failed to spawn main thread");
+    handler.join().unwrap()
+}
+
+async fn run() -> Result<()> {
     // Load .env variables
     dotenv::dotenv().ok();
 
-    let args = Args::parse();
+    let args = Box::new(Args::parse());
 
     if args.use_openai {
         anyhow::bail!("Paid models (including OpenAI) have been disabled and removed per system requirements.");
@@ -532,6 +560,88 @@ async fn main() -> Result<()> {
     if args.update {
         let res = handler.handle_update_database().await;
         println!("{}", res.content);
+
+        // Auto-prepare models after update if requested
+        if args.prepare_all_models {
+            println!("\n🔷 [OPENVINO] Auto-preparing small models after database update...");
+            println!("📂 Output directory: {}", args.ov_model_dir);
+            println!("📏 Filtering: models ≤ 6000 MB (~3B params) only\n");
+
+            let script_path = {
+                let mut found = None;
+                if let Ok(mut exe_path) = std::env::current_exe() {
+                    exe_path.pop();
+                    let mut check_dir = exe_path.clone();
+                    for _ in 0..5 {
+                        let script = check_dir.join("src/scripts/prepare_model_openvino.py");
+                        if script.exists() {
+                            found = Some(script.to_string_lossy().into_owned());
+                            break;
+                        }
+                        if !check_dir.pop() { break; }
+                    }
+                }
+                found.unwrap_or_else(|| "src/scripts/prepare_model_openvino.py".to_string())
+            };
+
+            let db_path = handler.db_path.clone();
+            // 6000 MB ≈ models up to ~3B params (fp16), keeps prep time ~30 min
+            let models = modelfusion_core::fusion_engine::get_small_model_ids(&db_path, 6000.0);
+
+            if models.is_empty() {
+                println!("⚠️  No small models found in database.");
+            } else {
+                println!("📋 Found {} models under 3B params to prepare.\n", models.len());
+
+                let mut success_count = 0;
+                let mut skip_count = 0;
+                let mut fail_count = 0;
+                let total = models.len();
+
+                for (i, model_id) in models.iter().enumerate() {
+                    println!("[{}/{}] {}", i + 1, total, model_id);
+                    let result = std::process::Command::new("python")
+                        .arg(&script_path)
+                        .arg(model_id)
+                        .arg(&args.ov_model_dir)
+                        .arg(&args.weight_format)
+                        .output();
+
+                    match result {
+                        Ok(out) => {
+                            let stderr_msg = String::from_utf8_lossy(&out.stderr);
+                            if out.status.success() {
+                                if stderr_msg.contains("already exists") || stderr_msg.contains("Skipping") {
+                                    println!("  ⏭️  Already cached");
+                                    skip_count += 1;
+                                } else {
+                                    println!("  ✅ Converted");
+                                    success_count += 1;
+                                }
+                            } else {
+                                let err_preview: String = stderr_msg.chars().take(150).collect();
+                                println!("  ❌ {}", err_preview);
+                                fail_count += 1;
+                            }
+                        }
+                        Err(e) => {
+                            println!("  ❌ Script error: {}", e);
+                            fail_count += 1;
+                        }
+                    }
+                }
+
+                println!("\n====================================");
+                println!("📊 Auto-Prepare Summary");
+                println!("====================================");
+                println!("  ✅ Converted: {}", success_count);
+                println!("  ⏭️  Cached:    {}", skip_count);
+                println!("  ❌ Failed:    {}", fail_count);
+                println!("  📦 Total:     {}", total);
+                println!("====================================");
+            }
+        }
+
         return Ok(());
     }
 
@@ -576,6 +686,116 @@ async fn main() -> Result<()> {
         let prompt = args.prompt.as_deref().unwrap_or("Perform PE analysis");
         handler.handle_pe_analysis(file_path, prompt);
         return Ok(());
+    }
+
+    // ---------------------------------------------------------
+    // OpenVINO Model Preparation
+    // ---------------------------------------------------------
+    if args.prepare_model.is_some() || args.prepare_all_models {
+        let script_path = {
+            let mut found = None;
+            if let Ok(mut exe_path) = std::env::current_exe() {
+                exe_path.pop();
+                let mut check_dir = exe_path.clone();
+                for _ in 0..5 {
+                    let script = check_dir.join("src/scripts/prepare_model_openvino.py");
+                    if script.exists() {
+                        found = Some(script.to_string_lossy().into_owned());
+                        break;
+                    }
+                    if !check_dir.pop() { break; }
+                }
+            }
+            found.unwrap_or_else(|| "src/scripts/prepare_model_openvino.py".to_string())
+        };
+
+        if let Some(ref model_id) = args.prepare_model {
+            // Single model preparation
+            println!("🔷 [OPENVINO] Preparing model: {} (format: {})", model_id, args.weight_format);
+            let status = std::process::Command::new("python")
+                .arg(&script_path)
+                .arg(model_id)
+                .arg(&args.ov_model_dir)
+                .arg(&args.weight_format)
+                .status();
+            match status {
+                Ok(s) if s.success() => {
+                    println!("✅ [OPENVINO] Model prepared successfully.");
+                }
+                Ok(s) => {
+                    return Err(anyhow::anyhow!("❌ Model preparation failed (exit code: {:?})", s.code()));
+                }
+                Err(e) => {
+                    return Err(anyhow::anyhow!("❌ Failed to run preparation script: {}", e));
+                }
+            }
+            return Ok(());
+        }
+
+        if args.prepare_all_models {
+            // Batch preparation: query database for all eligible models
+            println!("🔷 [OPENVINO] Batch preparing all eligible models (format: {})...", args.weight_format);
+            println!("📂 [OPENVINO] Output directory: {}", args.ov_model_dir);
+
+            // Get all models from the database
+            let db_path = handler.db_path.clone();
+            let models = modelfusion_core::fusion_engine::get_all_model_ids(&db_path);
+
+            if models.is_empty() {
+                println!("❌ No models found in database. Run with --update first.");
+                return Ok(());
+            }
+
+            println!("📋 [OPENVINO] Found {} models in database.", models.len());
+
+            let mut success_count = 0;
+            let mut skip_count = 0;
+            let mut fail_count = 0;
+            let total = models.len();
+
+            for (i, model_id) in models.iter().enumerate() {
+                println!("\n[{}/{}] Processing: {}", i + 1, total, model_id);
+                let result = std::process::Command::new("python")
+                    .arg(&script_path)
+                    .arg(model_id)
+                    .arg(&args.ov_model_dir)
+                    .arg(&args.weight_format)
+                    .output();
+
+                match result {
+                    Ok(out) => {
+                        let stderr_msg = String::from_utf8_lossy(&out.stderr);
+                        if out.status.success() {
+                            if stderr_msg.contains("already exists") || stderr_msg.contains("Skipping") {
+                                println!("  ⏭️  Skipped (already cached)");
+                                skip_count += 1;
+                            } else {
+                                println!("  ✅ Converted successfully");
+                                success_count += 1;
+                            }
+                        } else {
+                            let err_preview: String = stderr_msg.chars().take(200).collect();
+                            println!("  ❌ Failed: {}", err_preview);
+                            fail_count += 1;
+                        }
+                    }
+                    Err(e) => {
+                        println!("  ❌ Script error: {}", e);
+                        fail_count += 1;
+                    }
+                }
+            }
+
+            println!("\n====================================");
+            println!("📊 Batch Preparation Summary");
+            println!("====================================");
+            println!("  ✅ Converted: {}", success_count);
+            println!("  ⏭️  Skipped:   {}", skip_count);
+            println!("  ❌ Failed:    {}", fail_count);
+            println!("  📦 Total:     {}", total);
+            println!("====================================");
+            return Ok(());
+        }
     }
 
     // ---------------------------------------------------------
@@ -633,43 +853,84 @@ async fn main() -> Result<()> {
 
         let is_fusion_needed = args.fusion || modelfusion_core::fusion_engine::classify_prompt(&final_prompt);
 
+        // ---- Backend selection (applies to ALL execution paths) ----
+        if args.vllm {
+            if std::env::consts::OS != "linux" {
+                return Err(anyhow::anyhow!(
+                    "❌ vLLM is only supported on Linux.\n\n  On Windows, use:\n    --openvino  (optimized CPU/iGPU inference)\n    --ollama    (local Ollama models)"
+                ));
+            }
+            println!("⚡ Checking vLLM installation...");
+            let check = std::process::Command::new("python3")
+                .args(["-c", "import vllm; print('OK')"])
+                .output();
+            match check {
+                Ok(out) if out.status.success() => {
+                    println!("✅ vLLM is installed.");
+                    std::env::set_var("MODELFUSION_USE_VLLM", "true");
+                    println!("⚡ Using vLLM for high-throughput GPU inference.");
+                }
+                _ => {
+                    return Err(anyhow::anyhow!(
+                        "❌ vLLM not installed.\n\n  Install with: pip install vllm\n\n  Requires Linux with CUDA GPU."
+                    ));
+                }
+            }
+        } else if args.ollama {
+            println!("🦙 Ensuring Ollama is running...");
+            match model_selection::memory::ensure_ollama_running() {
+                Ok(()) => {
+                    println!("✅ Ollama is ready.");
+                    std::env::set_var("MODELFUSION_USE_OLLAMA", "true");
+                }
+                Err(e) => {
+                    return Err(anyhow::anyhow!("❌ {}", e));
+                }
+            }
+        } else if args.openvino {
+            println!("🔷 Checking OpenVINO installation...");
+            // Try openvino_genai first (best performance)
+            let genai_check = std::process::Command::new("python")
+                .args(["-c", "import openvino_genai; print('OK')"])
+                .output();
+            match genai_check {
+                Ok(out) if out.status.success() => {
+                    println!("✅ OpenVINO GenAI is installed.");
+                    std::env::set_var("MODELFUSION_USE_OPENVINO", "true");
+                    std::env::set_var("MODELFUSION_OV_MODEL_DIR", &args.ov_model_dir);
+                    std::env::set_var("MODELFUSION_OV_WEIGHT_FORMAT", &args.weight_format);
+                    println!("🔷 Using OpenVINO GenAI for optimized cross-platform inference.");
+                }
+                _ => {
+                    // Fallback: check for classic openvino
+                    let fallback_check = std::process::Command::new("python")
+                        .args(["-c", "import openvino; print('OK')"])
+                        .output();
+                    match fallback_check {
+                        Ok(out) if out.status.success() => {
+                            println!("✅ OpenVINO (classic) is installed.");
+                            std::env::set_var("MODELFUSION_USE_OPENVINO", "true");
+                            std::env::set_var("MODELFUSION_OV_MODEL_DIR", &args.ov_model_dir);
+                            std::env::set_var("MODELFUSION_OV_WEIGHT_FORMAT", &args.weight_format);
+                            println!("🔷 Using OpenVINO for optimized CPU inference.");
+                            println!("💡 Upgrade for better performance: pip install openvino-genai");
+                        }
+                        _ => {
+                            return Err(anyhow::anyhow!(
+                                "❌ OpenVINO not installed.\n\n  Install with: pip install -U openvino-genai\n  Or classic:   pip install -U openvino"
+                            ));
+                        }
+                    }
+                }
+            }
+        } else {
+            std::env::set_var("MODELFUSION_USE_TRANSFORMERS", "true");
+            println!("🐍 Using local Python transformers for model execution.");
+        }
+
         if is_fusion_needed {
             println!("[FUSION] Model Fusion is active (explicitly requested or dynamically classified).");
             std::env::set_var("MODELFUSION_NO_SIMULATION", "true");
-            if args.ollama {
-                // Ensure Ollama is running — auto-start if needed
-                println!("🦙 [FUSION] Ensuring Ollama is running...");
-                match model_selection::memory::ensure_ollama_running() {
-                    Ok(()) => {
-                        println!("✅ [FUSION] Ollama is ready.");
-                        std::env::set_var("MODELFUSION_USE_OLLAMA", "true");
-                    }
-                    Err(e) => {
-                        return Err(anyhow::anyhow!("❌ [FUSION] {}", e));
-                    }
-                }
-            } else if args.openvino {
-                // Verify OpenVINO Python package is installed
-                println!("🔷 [FUSION] Checking OpenVINO installation...");
-                let check = std::process::Command::new("python")
-                    .args(["-c", "import openvino; print('OK')"])
-                    .output();
-                match check {
-                    Ok(out) if out.status.success() => {
-                        println!("✅ [FUSION] OpenVINO is installed.");
-                        std::env::set_var("MODELFUSION_USE_OPENVINO", "true");
-                        println!("🔷 [FUSION] Using OpenVINO for optimized CPU inference.");
-                    }
-                    _ => {
-                        return Err(anyhow::anyhow!(
-                            "❌ [FUSION] OpenVINO not installed.\n\n  Install with: pip install -U openvino\n\n  This provides optimized CPU inference, 2-3× faster than transformers."
-                        ));
-                    }
-                }
-            } else {
-                std::env::set_var("MODELFUSION_USE_TRANSFORMERS", "true");
-                println!("🐍 [FUSION] Using local Python transformers for model execution.");
-            }
 
             let final_prompt_orig = final_prompt.clone();
             let mut context_to_pass = None;
