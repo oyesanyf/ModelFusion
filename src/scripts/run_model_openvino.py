@@ -179,19 +179,72 @@ def main():
     cached_path = find_cached_model(model_id, ov_model_dir)
     if cached_path:
         try:
-            load_and_infer_optimum(cached_path, prompt, max_tokens, temperature)
-            return
+            import subprocess as _sp
+            probe = _sp.run(
+                [sys.executable, "-c", "from optimum.intel import OVModelForCausalLM; print('OK')"],
+                capture_output=True, text=True, timeout=30
+            )
+            if probe.returncode == 0 and "OK" in probe.stdout:
+                load_and_infer_optimum(cached_path, prompt, max_tokens, temperature)
+                return
+            else:
+                print(f"[OPENVINO] optimum-intel crashed on probe, using classic path for cached model...", file=sys.stderr)
         except Exception as e:
             print(f"[OPENVINO] Failed to load cached model ({e}), trying other paths...", file=sys.stderr)
 
-    # Priority 2: Auto-convert via optimum-intel (slow first time, cached after)
+    # Priority 2: Auto-convert via optimum-cli subprocess (segfault-safe for Python 3.14+)
     try:
-        from optimum.intel import OVModelForCausalLM
-        converted_path = auto_convert_and_cache(model_id, ov_model_dir, weight_format)
-        load_and_infer_optimum(converted_path, prompt, max_tokens, temperature)
-        return
-    except ImportError:
-        print(f"[OPENVINO] optimum-intel not installed, trying other backends...", file=sys.stderr)
+        import subprocess as _sp
+        # First, check if optimum-intel is importable without crashing
+        probe = _sp.run(
+            [sys.executable, "-c", "from optimum.intel import OVModelForCausalLM; print('OK')"],
+            capture_output=True, text=True, timeout=30
+        )
+        if probe.returncode == 0 and "OK" in probe.stdout:
+            # Safe to use optimum-intel — try auto-convert via subprocess
+            safe_name = model_id.split("/")[-1].lower().replace(" ", "-")
+            output_path = os.path.join(ov_model_dir, f"{safe_name}-{weight_format}")
+
+            if not os.path.isdir(output_path) or not os.path.isfile(os.path.join(output_path, "openvino_model.xml")):
+                print(f"[OPENVINO] Auto-converting {model_id} to {weight_format} via optimum-cli...", file=sys.stderr)
+                os.makedirs(ov_model_dir, exist_ok=True)
+
+                export_cmd = [
+                    sys.executable, "-m", "optimum.exporters.openvino",
+                    "--model", model_id,
+                    "--weight-format", weight_format,
+                    "--trust-remote-code",
+                    output_path
+                ]
+                export_result = _sp.run(export_cmd, capture_output=True, text=True, timeout=600)
+                if export_result.returncode != 0:
+                    print(f"[OPENVINO] optimum-cli export failed: {export_result.stderr[:200]}", file=sys.stderr)
+                    raise RuntimeError("Export failed")
+                print(f"[OPENVINO] Model cached at {output_path}", file=sys.stderr)
+
+            # Now load the cached model via optimum-intel for inference
+            from optimum.intel import OVModelForCausalLM
+            from transformers import AutoTokenizer, pipeline as hf_pipeline
+
+            print(f"[OPENVINO] Loading cached model from {output_path}", file=sys.stderr)
+            model = OVModelForCausalLM.from_pretrained(output_path, trust_remote_code=True)
+            tokenizer = AutoTokenizer.from_pretrained(output_path, trust_remote_code=True)
+            if tokenizer.pad_token_id is None:
+                tokenizer.pad_token_id = tokenizer.eos_token_id
+
+            pipe = hf_pipeline("text-generation", model=model, tokenizer=tokenizer)
+            outputs = pipe(
+                prompt,
+                max_new_tokens=max_tokens,
+                temperature=temperature if temperature > 0.0 else None,
+                do_sample=temperature > 0.0,
+                pad_token_id=tokenizer.eos_token_id,
+                return_full_text=False,
+            )
+            print(outputs[0]["generated_text"])
+            return
+        else:
+            print(f"[OPENVINO] optimum-intel not compatible with Python {sys.version.split()[0]}, skipping...", file=sys.stderr)
     except Exception as e:
         print(f"[OPENVINO] Auto-convert failed ({e}), trying other backends...", file=sys.stderr)
 
