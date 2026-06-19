@@ -6,6 +6,24 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
+/// Locate a Python script relative to the executable, searching up to 5 parent directories.
+fn find_script(relative_path: &str) -> String {
+    if let Ok(mut exe_path) = std::env::current_exe() {
+        exe_path.pop();
+        let mut check_dir = exe_path.clone();
+        for _ in 0..5 {
+            let script = check_dir.join(relative_path);
+            if script.exists() {
+                return script.to_string_lossy().into_owned();
+            }
+            if !check_dir.pop() {
+                break;
+            }
+        }
+    }
+    relative_path.to_string()
+}
+
 /// Configuration for an LLM model.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelConfig {
@@ -256,27 +274,51 @@ impl LLMProvider for HuggingFaceProvider {
             }
         }
 
-        // OpenVINO backend: optimized CPU inference via optimum-intel
-        if std::env::var("MODELFUSION_USE_OPENVINO").is_ok() {
-            log::info!("[OPENVINO] Executing model {} locally via OpenVINO (optimum-intel)...", self.config.model_id);
-            let script_path = if let Ok(mut exe_path) = std::env::current_exe() {
-                exe_path.pop();
-                let mut check_dir = exe_path.clone();
-                let mut found_path = None;
-                for _ in 0..5 {
-                    let script = check_dir.join("src/scripts/run_model_openvino.py");
-                    if script.exists() {
-                        found_path = Some(script.to_string_lossy().into_owned());
-                        break;
-                    }
-                    if !check_dir.pop() {
-                        break;
+        // vLLM backend: high-throughput GPU inference (Linux only)
+        if std::env::var("MODELFUSION_USE_VLLM").is_ok() {
+            log::info!("[VLLM] Executing model {} via vLLM...", self.config.model_id);
+            let script_path = find_script("src/scripts/run_model_vllm.py");
+
+            let output = tokio::process::Command::new("python3")
+                .arg(&script_path)
+                .arg(&self.config.model_id)
+                .arg(prompt)
+                .arg(self.config.max_tokens.to_string())
+                .arg(self.config.temperature.to_string())
+                .output()
+                .await;
+
+            match output {
+                Ok(out) => {
+                    if out.status.success() {
+                        let content = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                        let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
+                        return Ok(ProviderResult {
+                            content,
+                            tokens_used,
+                            cost: 0.0,
+                            latency_ms: start.elapsed().as_millis() as f64,
+                            answer_type: "VLLM_ANSWER".to_string(),
+                        });
+                    } else {
+                        let err_msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                        bail!("vLLM execution failed for model {}: {}", self.config.model_id, err_msg);
                     }
                 }
-                found_path.unwrap_or_else(|| "src/scripts/run_model_openvino.py".to_string())
-            } else {
-                "src/scripts/run_model_openvino.py".to_string()
-            };
+                Err(e) => {
+                    bail!("Failed to start vLLM python script: {}", e);
+                }
+            }
+        }
+
+        // OpenVINO backend: optimized CPU/iGPU inference via openvino-genai or classic openvino
+        if std::env::var("MODELFUSION_USE_OPENVINO").is_ok() {
+            log::info!("[OPENVINO] Executing model {} locally via OpenVINO...", self.config.model_id);
+            let script_path = find_script("src/scripts/run_model_openvino.py");
+            let ov_model_dir = std::env::var("MODELFUSION_OV_MODEL_DIR")
+                .unwrap_or_else(|_| "ov_models".to_string());
+            let weight_format = std::env::var("MODELFUSION_OV_WEIGHT_FORMAT")
+                .unwrap_or_else(|_| "int8".to_string());
 
             let output = tokio::process::Command::new("python")
                 .arg(&script_path)
@@ -284,6 +326,8 @@ impl LLMProvider for HuggingFaceProvider {
                 .arg(prompt)
                 .arg(self.config.max_tokens.to_string())
                 .arg(self.config.temperature.to_string())
+                .arg(&ov_model_dir)
+                .arg(&weight_format)
                 .output()
                 .await;
 
@@ -310,26 +354,10 @@ impl LLMProvider for HuggingFaceProvider {
             }
         }
 
+        // Transformers backend: local model execution via HuggingFace transformers
         if std::env::var("MODELFUSION_USE_TRANSFORMERS").is_ok() {
             log::info!("[TRANSFORMERS] Executing model {} locally via Python transformers...", self.config.model_id);
-            let script_path = if let Ok(mut exe_path) = std::env::current_exe() {
-                exe_path.pop();
-                let mut check_dir = exe_path.clone();
-                let mut found_path = None;
-                for _ in 0..5 {
-                    let script = check_dir.join("src/scripts/run_model_transformers.py");
-                    if script.exists() {
-                        found_path = Some(script.to_string_lossy().into_owned());
-                        break;
-                    }
-                    if !check_dir.pop() {
-                        break;
-                    }
-                }
-                found_path.unwrap_or_else(|| "src/scripts/run_model_transformers.py".to_string())
-            } else {
-                "src/scripts/run_model_transformers.py".to_string()
-            };
+            let script_path = find_script("src/scripts/run_model_transformers.py");
 
             // Detect system memory and determine best device for this model
             let device_arg = {

@@ -1,9 +1,19 @@
 import sys
 import os
 import logging
+import platform
 
-# Suppress warnings
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
+current_os = platform.system()
+
+# Platform-specific environment settings
+if current_os == "Linux":
+    os.environ["OV_CPU_BIND_TYPE"] = "NUMA"
+    os.environ["TOKENIZERS_PARALLELISM"] = "true"
+elif current_os == "Windows":
+    os.environ["OV_CPU_BIND_TYPE"] = "THREAD"
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+else:
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
 logging.getLogger("transformers").setLevel(logging.ERROR)
 
 
@@ -80,6 +90,79 @@ def get_compile_config(device):
     return config
 
 
+def find_cached_model(model_id, ov_model_dir="ov_models"):
+    """Check if a pre-converted OpenVINO IR model exists for this HF model ID."""
+    safe_name = model_id.split("/")[-1].lower().replace(" ", "-")
+    if os.path.isdir(ov_model_dir):
+        for entry in sorted(os.listdir(ov_model_dir)):
+            if entry.startswith(safe_name):
+                model_path = os.path.join(ov_model_dir, entry)
+                # Check for optimum-intel exported model
+                if os.path.isfile(os.path.join(model_path, "openvino_model.xml")):
+                    return model_path
+                # Check for classic IR model  
+                if os.path.isfile(os.path.join(model_path, "model.xml")):
+                    return model_path
+    return None
+
+
+def auto_convert_and_cache(model_id, ov_model_dir, weight_format="int8"):
+    """Convert HF model to OpenVINO IR using optimum-intel, save to cache."""
+    from optimum.intel import OVModelForCausalLM
+    from transformers import AutoTokenizer
+    
+    safe_name = model_id.split("/")[-1].lower().replace(" ", "-")
+    output_path = os.path.join(ov_model_dir, f"{safe_name}-{weight_format}")
+    os.makedirs(output_path, exist_ok=True)
+    
+    print(f"[OPENVINO] Auto-converting {model_id} to {weight_format}...", file=sys.stderr)
+    
+    kwargs = {"export": True, "trust_remote_code": True}
+    if weight_format == "int8":
+        kwargs["load_in_8bit"] = True
+    elif weight_format == "int4":
+        kwargs["load_in_4bit"] = True
+    
+    model = OVModelForCausalLM.from_pretrained(model_id, **kwargs)
+    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    
+    model.save_pretrained(output_path)
+    tokenizer.save_pretrained(output_path)
+    print(f"[OPENVINO] Model cached at {output_path}", file=sys.stderr)
+    
+    return output_path
+
+
+def load_and_infer_optimum(model_path, prompt, max_tokens, temperature):
+    """Load a pre-converted OpenVINO model via optimum-intel and run inference."""
+    from optimum.intel import OVModelForCausalLM
+    from transformers import AutoTokenizer, pipeline as hf_pipeline
+    
+    print(f"[OPENVINO] Loading cached model from {model_path}", file=sys.stderr)
+    model = OVModelForCausalLM.from_pretrained(model_path, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token_id = tokenizer.eos_token_id
+    
+    pipe = hf_pipeline(
+        "text-generation",
+        model=model,
+        tokenizer=tokenizer,
+    )
+    
+    outputs = pipe(
+        prompt,
+        max_new_tokens=max_tokens,
+        temperature=temperature if temperature > 0.0 else None,
+        do_sample=temperature > 0.0,
+        pad_token_id=tokenizer.eos_token_id,
+        return_full_text=False,
+    )
+    
+    print(outputs[0]["generated_text"])
+
+
 def main():
     if len(sys.argv) < 3:
         print("ERROR: Missing arguments. Usage: python run_model_openvino.py <model_id> <prompt> [max_tokens] [temperature]", file=sys.stderr)
@@ -89,6 +172,57 @@ def main():
     prompt = sys.argv[2]
     max_tokens = int(sys.argv[3]) if len(sys.argv) > 3 else 500
     temperature = float(sys.argv[4]) if len(sys.argv) > 4 else 0.7
+    ov_model_dir = sys.argv[5] if len(sys.argv) > 5 else "ov_models"
+    weight_format = sys.argv[6] if len(sys.argv) > 6 else "int8"
+
+    # Priority 1: Check for pre-converted cached model (fastest)
+    cached_path = find_cached_model(model_id, ov_model_dir)
+    if cached_path:
+        try:
+            load_and_infer_optimum(cached_path, prompt, max_tokens, temperature)
+            return
+        except Exception as e:
+            print(f"[OPENVINO] Failed to load cached model ({e}), trying other paths...", file=sys.stderr)
+
+    # Priority 2: Auto-convert via optimum-intel (slow first time, cached after)
+    try:
+        from optimum.intel import OVModelForCausalLM
+        converted_path = auto_convert_and_cache(model_id, ov_model_dir, weight_format)
+        load_and_infer_optimum(converted_path, prompt, max_tokens, temperature)
+        return
+    except ImportError:
+        print(f"[OPENVINO] optimum-intel not installed, trying other backends...", file=sys.stderr)
+    except Exception as e:
+        print(f"[OPENVINO] Auto-convert failed ({e}), trying other backends...", file=sys.stderr)
+
+    # Try openvino_genai fast path first
+    try:
+        import openvino_genai as ov_genai
+        print(f"[OPENVINO-GENAI] Using openvino_genai LLMPipeline for {model_id}", file=sys.stderr)
+
+        device_config = {
+            "PERFORMANCE_HINT": "THROUGHPUT",
+            "CACHE_DIR": os.path.join(os.path.expanduser("~"), ".cache", "modelfusion_ov_genai"),
+            "KV_CACHE_PRECISION": "u8"
+        }
+
+        pipe = ov_genai.LLMPipeline(model_id, "CPU", device_config)
+        config = ov_genai.GenerationConfig()
+        config.max_new_tokens = max_tokens
+        config.do_sample = temperature > 0.0
+        if temperature > 0.0:
+            config.temperature = temperature
+
+        print(f"[OPENVINO-GENAI] Generating on {current_os} (max_tokens={max_tokens}, temp={temperature})...", file=sys.stderr)
+        output = pipe.generate(prompt, config)
+        print(output)
+        return  # Exit early, skip fallback
+    except ImportError:
+        print(f"[OPENVINO] openvino_genai not installed, using classic OpenVINO pipeline", file=sys.stderr)
+    except Exception as e:
+        print(f"[OPENVINO-GENAI] GenAI pipeline failed ({e}), falling back to classic OpenVINO", file=sys.stderr)
+
+    # --- Classic OpenVINO fallback path ---
 
     try:
         import openvino as ov
