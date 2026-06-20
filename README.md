@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python Version" />
   <img src="https://img.shields.io/badge/SQLite-3-003B57?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite Version" />
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge" alt="License" />
-  <img src="https://img.shields.io/badge/Hugging%20Face-1.49M%2B%20Models-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black" alt="HuggingFace Models" />
+  <img src="https://img.shields.io/badge/Hugging%20Face-2M%2B%20Models-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black" alt="HuggingFace Models" />
 </p>
 
 ---
@@ -28,22 +28,22 @@ ModelFusion is an open-weight compound intelligence system designed to achieve f
 graph TD
     A[User Prompt / Task] --> B[Intelligent Task Detector]
     B -->|Classifies Task Tag| C[Enhanced Model Selector]
-    D[(SQLite Model DB: 1.49M+ Models)] -->|Ranks & Filters| C
+    D[(SQLite Model DB: 2M+ Models)] -->|Ranks & Filters| C
     C -->|Selects Top 10 Models| E[Step 1: Concurrent Panel Generation]
     E --> F[Step 2: LLM-as-a-Judge Evaluation]
     F --> G[Step 3: Synthesis & Final Writing]
     G --> H[Synthesized Final Answer]
 ```
 
-### 1. The Hugging Face Model Database (1.49M+ Models)
-ModelFusion leverages a local SQLite database (`hf_models.db`) indexing **over 1.49 million model entries** fetched directly from the Hugging Face Hub. 
+### 1. The Hugging Face Model Database (2M+ Models)
+ModelFusion leverages a local SQLite database (`hf_models.db`) indexing **over 2 million model entries** fetched directly from the Hugging Face Hub. 
 *   For each model, it stores metadata including downloads, likes, model sizes, licensing, freshness, and capability metrics.
 *   This allows local model routing to be fully grounded in actual Hugging Face ecosystem statistics rather than hardcoded heuristics.
 
 ### 2. Intelligent Routing & Classification
 When a user submits a prompt, ModelFusion automatically routes it to the optimal models:
 *   **Intelligent Task Detector**: Classifies the prompt's task type (e.g., `text-generation`, `question-answering`, `text-classification`, `summarization`, `translation`) by analyzing syntactic and semantic features.
-*   **Enhanced Model Selector**: Performs a multi-objective optimization query over the 1.49M+ models database, normalizing downloads, popularity, model size, license openness, and performance metrics. It dynamically retrieves the **top 10 candidate models** matching the task classification to form the consensus panel.
+*   **Enhanced Model Selector**: Performs a multi-objective optimization query over the 2M+ models database, normalizing downloads, popularity, model size, license openness, and performance metrics. It dynamically retrieves the **top 10 candidate models** matching the task classification to form the consensus panel.
 
 ### 3. Multi-Model Consensus Deliberation (`--fusion`)
 When `--fusion` is active, the engine coordinates a three-step deliberation pipeline:
@@ -229,7 +229,7 @@ ModelFusion dynamically adapts to your hardware at runtime:
 * **Ollama Auto-Start**: If `--ollama` is specified but Ollama is not running, ModelFusion automatically starts `ollama serve` and waits up to 30 seconds for it to be ready.
 
 > [!NOTE]
-> ModelFusion's local SQLite database indexes **over 1.49 million open-weight models** across **56 task types** from the Hugging Face Hub. When `--fusion` is active, the system dynamically selects the best-fit models for your specific task from this entire catalog, filtered by your hardware's available memory and GPU capacity — giving every user access to a massive pool of open-weight intelligence regardless of their hardware.
+> ModelFusion's local SQLite database indexes **over 2 million open-weight models** across **56 task types** from the Hugging Face Hub. When `--fusion` is active, the system dynamically selects the best-fit models for your specific task from this entire catalog, filtered by your hardware's available memory and GPU capacity — giving every user access to a massive pool of open-weight intelligence regardless of their hardware.
 
 ### Usage Examples
 
