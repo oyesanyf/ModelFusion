@@ -361,24 +361,19 @@ impl LLMProvider for HuggingFaceProvider {
 
             // Detect system memory and determine best device for this model
             let device_arg = {
-                use std::process::Command as StdCommand;
-                // Quick GPU VRAM check
-                let gpu_free_gb = StdCommand::new("nvidia-smi")
-                    .args(["--query-gpu=memory.free", "--format=csv,noheader,nounits"])
-                    .output()
-                    .ok()
-                    .and_then(|o| String::from_utf8(o.stdout).ok())
-                    .and_then(|s| s.trim().parse::<f64>().ok())
-                    .map(|mb| mb / 1024.0)
-                    .unwrap_or(0.0);
-                
-                if gpu_free_gb > 1.0 {
-                    log::info!("[TRANSFORMERS] GPU detected with {:.1} GB free VRAM, using CUDA", gpu_free_gb);
-                    "cuda"
-                } else {
-                    log::info!("[TRANSFORMERS] No usable GPU, using CPU");
-                    "cpu"
-                }
+                let sys_mem = model_selection::memory::SystemMemory::detect();
+                let estimated_params_b = model_selection::memory::estimate_params_billions(&self.config.model_id).unwrap_or(0.0);
+                let estimated_memory_gb = model_selection::memory::estimate_runtime_memory_gb(estimated_params_b, model_selection::memory::Backend::Transformers);
+                let device = sys_mem.best_device_for_model(estimated_memory_gb);
+                log::info!(
+                    "[TRANSFORMERS] Model {} estimated memory: {:.2} GB. Chosen device based on memory budget (VRAM free: {:.2} GB, budget: {:.2} GB): {}",
+                    self.config.model_id,
+                    estimated_memory_gb,
+                    sys_mem.gpu_vram_free_gb,
+                    sys_mem.gpu_budget_gb(),
+                    device
+                );
+                device.to_string()
             };
 
             let output = tokio::process::Command::new("python")

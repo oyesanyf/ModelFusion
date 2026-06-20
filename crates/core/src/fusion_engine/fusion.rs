@@ -69,41 +69,14 @@ pub async fn run_panel(
 /// For Ollama: Ollama manages its own memory, but we still batch to avoid
 /// overwhelming the server. For Transformers: each model loads into RAM/VRAM.
 fn calculate_batch_size(models: &[ModelConfig]) -> usize {
-    use model_selection::memory::{SystemMemory, Backend, estimate_params_billions, estimate_runtime_memory_gb};
-
-    let sys_mem = SystemMemory::detect();
-    let backend = if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
-        Backend::Ollama
-    } else if std::env::var("MODELFUSION_USE_OPENVINO").is_ok() {
-        Backend::OpenVINO
-    } else {
-        Backend::Transformers
-    };
-
-    // For Ollama and OpenVINO: run strictly sequential.
-    // Ollama: concurrent requests crash the server (but keeps model warm between calls).
-    // OpenVINO: each model loads fully into memory, sequential avoids OOM.
-    if backend == Backend::Ollama || backend == Backend::OpenVINO {
-        return 1;
+    // Check if the user has explicitly requested a batch size override
+    if let Ok(val) = std::env::var("MODELFUSION_BATCH_SIZE") {
+        if let Ok(parsed) = val.parse::<usize>() {
+            return parsed.max(1).min(models.len());
+        }
     }
 
-    // For Transformers: calculate how many models fit simultaneously
-    let budget = sys_mem.model_budget_gb();
-    if models.is_empty() || budget <= 0.0 {
-        return 1;
-    }
-
-    // Find the largest model's memory requirement (worst case)
-    let max_model_mem = models.iter()
-        .filter_map(|m| estimate_params_billions(&m.endpoint))
-        .map(|params| estimate_runtime_memory_gb(params, backend))
-        .fold(0.0_f64, f64::max);
-
-    if max_model_mem <= 0.0 {
-        return 1; // Unknown sizes, play it safe
-    }
-
-    // How many of the largest model fit in the budget?
-    let batch = (budget / max_model_mem).floor() as usize;
-    batch.max(1).min(models.len()) // At least 1, at most all models
+    // Default to sequential (batch size = 1) for all local execution backends
+    // to prevent GPU timeout driver crashes (Windows TDR), OOM, and extreme system lag.
+    1
 }
