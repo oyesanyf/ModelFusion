@@ -194,13 +194,20 @@ impl EnhancedModelSelector {
             let confidence = (final_score * 1.2).clamp(0.1, 1.0);
 
             // Estimate parameter count and runtime memory
-            let backend = if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+            let mut backend = if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
                 Backend::Ollama
             } else if std::env::var("MODELFUSION_USE_OPENVINO").is_ok() {
                 Backend::OpenVINO
             } else {
                 Backend::Transformers
             };
+
+            // If using OpenVINO, but the model has not been pre-converted/cached yet,
+            // we must budget for the heavy conversion step (which loads the full PyTorch model).
+            if backend == Backend::OpenVINO && !memory::is_openvino_model_cached(&m.model_id) {
+                backend = Backend::Transformers;
+            }
+
             let estimated_params_b = estimate_params_billions(&m.model_id).unwrap_or(0.0);
             let estimated_memory_gb = if estimated_params_b > 0.0 {
                 estimate_runtime_memory_gb(estimated_params_b, backend)

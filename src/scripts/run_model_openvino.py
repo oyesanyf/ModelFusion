@@ -319,7 +319,7 @@ def main():
         print(f"[OPENVINO] Loading PyTorch model for conversion...", file=sys.stderr)
         pt_model = AutoModelForCausalLM.from_pretrained(
             model_id,
-            torch_dtype=torch.float32,
+            torch_dtype="auto",
             trust_remote_code=True,
             low_cpu_mem_usage=True,
         )

@@ -64,12 +64,16 @@ impl SystemMemory {
 
     /// GPU VRAM budget (with safety margin).
     pub fn gpu_budget_gb(&self) -> f64 {
-        self.gpu_vram_free_gb * SAFETY_FACTOR
+        // Subtract a 1.5 GB base VRAM buffer for the OS display and CUDA execution contexts,
+        // then allocate a safety fraction (70%) of the remaining free memory.
+        ((self.gpu_vram_free_gb - 1.5) * SAFETY_FACTOR).max(0.0)
     }
 
     /// CPU RAM budget (with safety margin).
     pub fn ram_budget_gb(&self) -> f64 {
-        self.free_ram_gb * SAFETY_FACTOR
+        // Subtract a 3.0 GB base memory buffer for the python/pytorch runtime execution context overhead,
+        // then allocate a safety fraction (70%) of the remaining free memory.
+        ((self.free_ram_gb - 3.0) * SAFETY_FACTOR).max(0.0)
     }
 
     /// Maximum memory budget for a single model — uses GPU if available, otherwise RAM.
@@ -339,6 +343,52 @@ pub fn ensure_ollama_running() -> Result<(), String> {
     }
 
     Err("Ollama failed to start within 30 seconds. Please start it manually with 'ollama serve'.".to_string())
+}
+
+/// Check if an OpenVINO model is cached/pre-converted on disk.
+pub fn is_openvino_model_cached(model_id: &str) -> bool {
+    let safe_name = model_id.split('/').last().unwrap_or(model_id).to_lowercase().replace(' ', "-");
+    
+    // Check in local 'ov_models' directory
+    let ov_model_dir = std::path::Path::new("ov_models");
+    if ov_model_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(ov_model_dir) {
+            for entry in entries.flatten() {
+                if let Ok(name) = entry.file_name().into_string() {
+                    if name.starts_with(&safe_name) {
+                        let path = entry.path();
+                        if path.join("openvino_model.xml").exists() || path.join("model.xml").exists() {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Check in system home directory cache (~/.cache/modelfusion_ov/)
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .ok();
+        
+    if let Some(home_path) = home {
+        let cache_dir = std::path::Path::new(&home_path)
+            .join(".cache")
+            .join("modelfusion_ov")
+            .join(model_id.replace('/', "_"));
+            
+        if cache_dir.is_dir() {
+            if let Ok(devices) = std::fs::read_dir(cache_dir) {
+                for device_entry in devices.flatten() {
+                    if device_entry.path().join("model.xml").exists() {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    
+    false
 }
 
 #[cfg(test)]
