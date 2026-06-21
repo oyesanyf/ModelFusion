@@ -1,16 +1,16 @@
-# Custom AI-Powered IDE Project (Code-OSS Fork)
+# Aether IDE — Custom AI-Powered Code-OSS Fork
 
-This folder contains the codebase and configuration for building our custom AI-powered IDE based on VS Code (Code - OSS).
+Aether is an open-weights compound intelligence IDE built upon the open-source core of VS Code (Code - OSS).
 
 ## 🚀 High-Level Roadmap & Architecture
 
 ### 1. Core Repository Setup
-* **Clone/Fork:** Core engine from the `microsoft/vscode` GitHub repository.
-* **Dependencies:** Manage dependencies using Yarn (v1).
+* **Repository:** Custom fork of the `microsoft/vscode` repository.
+* **Dependencies:** Managed via Yarn (v1).
 * **Local Compilation:** Execute `yarn watch` to compile the codebase and run it using `./scripts/code.sh` (Unix) or `.\scripts\code.bat` (Windows).
 
 ### 2. Branding & UI Customization
-* **Branding:** Modify `product.json` to change the application name, publisher, themes, and branding assets.
+* **Branding:** Modify `product.json` to change the application name to "Aether", publisher, and branding assets.
 * **Package Config:** Update `package.json` to manage custom builds.
 * **Workbench UI:** Edit components in `src/vs/workbench` to inject custom sidebars, AI panels, or inline ghost-text.
 
@@ -30,7 +30,6 @@ This folder contains the codebase and configuration for building our custom AI-p
 
 ---
 
-## 🛠️ Next Steps
-
-1. **Setup Initial Build Scripts:** Script files to automate repository cloning, dependency installation, and local compilation.
-2. **Design AI Context Architecture:** Formulate the architecture for code parsing, embedding generation, and LLM communication.
+## 📁 Project Directory Structure
+* `setup_aether.ps1` — Automation script to clone VS Code, install dependencies, apply branding, and initialize compilation.
+* `README.md` — Project roadmap and instructions.
