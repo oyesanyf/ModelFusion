@@ -6,8 +6,8 @@ Aether is an open-weights compound intelligence IDE built upon the open-source c
 
 ### 1. Core Repository Setup
 * **Repository:** Custom fork of the `microsoft/vscode` repository.
-* **Dependencies:** Managed via Yarn (v1).
-* **Local Compilation:** Execute `yarn watch` to compile the codebase and run it using `./scripts/code.sh` (Unix) or `.\scripts\code.bat` (Windows).
+* **Dependencies:** Managed via npm.
+* **Local Compilation:** Execute `npm run watch` to compile the codebase and run it using `./scripts/code.sh` (Unix) or `.\scripts\code.bat` (Windows).
 
 ### 2. Branding & UI Customization
 * **Branding:** Modify `product.json` to change the application name to "Aether", publisher, and branding assets.
