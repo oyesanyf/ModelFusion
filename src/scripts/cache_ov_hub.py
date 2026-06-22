@@ -116,10 +116,26 @@ def get_hf_model_size_gb(model_id: str) -> float | None:
         return None
 
 
-def download_model(model_id: str, ov_model_dir: str) -> tuple[bool, str]:
+def dir_size_gb(path: str) -> float:
+    """Return the actual disk usage of a directory in GB."""
+    total = 0
+    try:
+        for root, _, files in os.walk(path):
+            for f in files:
+                try:
+                    total += os.path.getsize(os.path.join(root, f))
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return total / (1024 ** 3)
+
+
+def download_model(model_id: str, ov_model_dir: str, max_size_gb: float) -> tuple[bool, str]:
     """
     Download model from HuggingFace Hub to ov_model_dir.
     Returns (success, local_path_or_error_message).
+    After download, validates actual size <= max_size_gb and cleans up if too large.
     """
     try:
         from huggingface_hub import snapshot_download
@@ -132,14 +148,21 @@ def download_model(model_id: str, ov_model_dir: str) -> tuple[bool, str]:
             ignore_patterns=["*.msgpack", "*.h5", "flax_model*", "tf_model*",
                              "*.ot", "*.pt", "*.pth", "tokenizer.model"],
         )
+
+        # Check actual downloaded size — DB estimates are often wrong
+        actual_gb = dir_size_gb(path)
+        if actual_gb > max_size_gb:
+            shutil.rmtree(path, ignore_errors=True)
+            return False, f"Actual size {actual_gb:.1f} GB exceeds {max_size_gb} GB cap — deleted"
+
         if has_ov_model_files(path):
             return True, path
         else:
-            # No .xml found — might be vision/audio model, clean up
             shutil.rmtree(path, ignore_errors=True)
-            return False, f"No .xml OV model files found — likely not a text-gen model, cleaned up"
+            return False, "No .xml OV model files found — not a text-gen model, cleaned up"
     except Exception as e:
         return False, str(e)
+
 
 
 def main():
@@ -239,7 +262,7 @@ def main():
             continue
 
         print(f"  [DOWN] {prefix} — {available:.1f} GB free", flush=True)
-        ok, msg = download_model(model_id, ov_model_dir)
+        ok, msg = download_model(model_id, ov_model_dir, max_size_gb)
         if ok:
             print(f"  [OK]   Saved to {msg}")
             success_count += 1
