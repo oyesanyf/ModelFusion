@@ -4,6 +4,10 @@
 //! runtime memory to filter out models that cannot run on the current hardware.
 
 use std::process::Command;
+use std::sync::OnceLock;
+
+/// Process-level cache so hardware probes only run once per CLI invocation.
+static SYSTEM_MEMORY_CACHE: OnceLock<SystemMemory> = OnceLock::new();
 
 /// Detected system memory resources.
 #[derive(Debug, Clone)]
@@ -44,17 +48,20 @@ impl std::fmt::Display for Device {
 
 impl SystemMemory {
     /// Dynamically detect available system resources.
+    /// Results are cached for the lifetime of the process so hardware is only
+    /// probed once per CLI invocation even if called from multiple select_best_model() calls.
     pub fn detect() -> Self {
-        let (total_ram_gb, free_ram_gb) = detect_ram();
-        let (gpu_name, gpu_vram_total_gb, gpu_vram_free_gb) = detect_gpu();
-
-        SystemMemory {
-            total_ram_gb,
-            free_ram_gb,
-            gpu_name,
-            gpu_vram_total_gb,
-            gpu_vram_free_gb,
-        }
+        SYSTEM_MEMORY_CACHE.get_or_init(|| {
+            let (total_ram_gb, free_ram_gb) = detect_ram();
+            let (gpu_name, gpu_vram_total_gb, gpu_vram_free_gb) = detect_gpu();
+            SystemMemory {
+                total_ram_gb,
+                free_ram_gb,
+                gpu_name,
+                gpu_vram_total_gb,
+                gpu_vram_free_gb,
+            }
+        }).clone()
     }
 
     /// Whether a usable GPU is detected.
@@ -106,27 +113,34 @@ impl SystemMemory {
     }
 }
 
-/// Detect total and free system RAM (Windows).
+/// Detect total and free system RAM.
+/// Uses a single PowerShell call to avoid the 2–4 second startup cost of
+/// spawning two separate PowerShell processes.
 fn detect_ram() -> (f64, f64) {
-    // Total RAM
-    let total = Command::new("powershell")
-        .args(["-NoProfile", "-Command", "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB"])
+    // One powershell call: output "<total_gb>|<free_gb>" on a single line.
+    let output = Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "$os = Get-CimInstance Win32_OperatingSystem; \
+             $cs = Get-CimInstance Win32_ComputerSystem; \
+             Write-Output (($cs.TotalPhysicalMemory / 1GB).ToString('F2') + '|' + ($os.FreePhysicalMemory / 1048576).ToString('F2'))",
+        ])
         .output()
         .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .and_then(|s| s.trim().parse::<f64>().ok())
-        .unwrap_or(8.0); // Conservative fallback
+        .and_then(|o| String::from_utf8(o.stdout).ok());
 
-    // Free RAM (FreePhysicalMemory is in KB)
-    let free = Command::new("powershell")
-        .args(["-NoProfile", "-Command", "(Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1048576"])
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .and_then(|s| s.trim().parse::<f64>().ok())
-        .unwrap_or(4.0); // Conservative fallback
+    if let Some(line) = output {
+        let parts: Vec<&str> = line.trim().split('|').collect();
+        if parts.len() == 2 {
+            let total = parts[0].parse::<f64>().unwrap_or(8.0);
+            let free  = parts[1].parse::<f64>().unwrap_or(4.0);
+            return (total, free);
+        }
+    }
 
-    (total, free)
+    // Conservative fallbacks if PowerShell fails
+    (8.0, 4.0)
 }
 
 /// Detect GPU name and VRAM via nvidia-smi.
@@ -181,6 +195,11 @@ pub fn estimate_params_billions(model_id: &str) -> Option<f64> {
         ("bloom-560m", 0.56),
         ("bloom-1b7", 1.7),
         ("bloom-7b1", 7.1),
+        ("GLM-4.7-Flash", 30.0),
+        ("GLM-5-FP8", 744.0),
+        ("GLM-5", 744.0),
+        ("GLM-5.1", 744.0),
+        ("GLM-5.2", 744.0),
     ];
 
     // Check hardcoded known models first (must check before regex to avoid false matches)
@@ -347,15 +366,23 @@ pub fn ensure_ollama_running() -> Result<(), String> {
 
 /// Check if an OpenVINO model is cached/pre-converted on disk.
 pub fn is_openvino_model_cached(model_id: &str) -> bool {
+    // Build a lowercase search key from just the model name (after the org prefix).
+    // e.g. "Qwen/Qwen2.5-7B-Instruct" → "qwen2.5-7b-instruct"
     let safe_name = model_id.split('/').last().unwrap_or(model_id).to_lowercase().replace(' ', "-");
-    
-    // Check in local 'ov_models' directory
+
+    // Check in local 'ov_models' directory.
+    // Matches both:
+    //   - Direct naming: "qwen2.5-7b-instruct-ov"  (starts_with safe_name)
+    //   - OV Hub naming: "OpenVINO--Qwen2.5-7B-Instruct-int4-ov" (case-insensitive contains)
     let ov_model_dir = std::path::Path::new("ov_models");
     if ov_model_dir.is_dir() {
         if let Ok(entries) = std::fs::read_dir(ov_model_dir) {
             for entry in entries.flatten() {
                 if let Ok(name) = entry.file_name().into_string() {
-                    if name.starts_with(&safe_name) {
+                    let name_lower = name.to_lowercase();
+                    let is_match = name_lower.starts_with(&safe_name)
+                        || name_lower.contains(&safe_name);
+                    if is_match {
                         let path = entry.path();
                         if path.join("openvino_model.xml").exists() || path.join("model.xml").exists() {
                             return true;
@@ -405,6 +432,9 @@ mod tests {
         assert_eq!(estimate_params_billions("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"), Some(1.5));
         assert_eq!(estimate_params_billions("facebook/opt-125m"), Some(0.125));
         assert_eq!(estimate_params_billions("Qwen/Qwen3-0.6B"), Some(0.6));
+        assert_eq!(estimate_params_billions("zai-org/GLM-4.7-Flash"), Some(30.0));
+        assert_eq!(estimate_params_billions("zai-org/GLM-5-FP8"), Some(744.0));
+        assert_eq!(estimate_params_billions("zai-org/GLM-5.2"), Some(744.0));
     }
 
     #[test]

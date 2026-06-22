@@ -195,7 +195,10 @@ cargo run --release --package cli -- --fusion --ollama --context-auto --prompt "
 | `--fusion-models <N>` | `10` | Number of models (or temperature samples) to run in the panel |
 | `--fusion-mode <MODE>` | `multi-model` | Execution mode: `multi-model` (N different models) or `multi-sample` (1 model, N temperature samples — much faster locally) |
 | `--ollama` | off | Use local Ollama for model execution (auto-starts `ollama serve` if not running) |
-| `--openvino` | off | Use OpenVINO for optimized CPU inference (requires: `pip install -U openvino`) |
+| `--openvino` | off | Use OpenVINO for optimized CPU inference (requires: `pip install -U openvino-genai`) |
+| `--ov-model-dir <DIR>` | `ov_models` | Directory where pre-converted OpenVINO IR models are stored and loaded from |
+| `--weight-format <FMT>` | `int8` | Weight format for OpenVINO export: `fp16`, `int8`, `int4` |
+| `--prepare-all-models` | off | Download all pre-converted OV Hub models + locally convert small HF models (use with `--update`) |
 | `--context-auto` | off | Auto-generate background context via DeepSeek-R1-Distill-Qwen-1.5B |
 | `--context <STRING>` | none | Provide custom context guidance for context generation |
 | `--report <PATH>` | none | Save the final fusion report to a file or directory |
@@ -207,7 +210,8 @@ ModelFusion supports three local execution backends. If no backend flag is speci
 | Backend | Flag | Precision | 7B Model Memory | Best For |
 |:---|:---:|:---:|:---:|:---|
 | **Ollama** | `--ollama` | Q4_0 | ~5.0 GB | GPU inference via Vulkan/CUDA, fastest for repeated runs |
-| **OpenVINO** | `--openvino` | FP32→IR | ~4.2 GB | Optimized CPU inference (Intel/AMD), 2-3× faster than transformers |
+| **OpenVINO (cached)** | `--openvino` | INT4 | ~4.2 GB | Fastest CPU inference — loads pre-converted models in seconds |
+| **OpenVINO (fresh)** | `--openvino` | INT4 | ~4.2 GB | Downloads pre-converted INT4 model from OpenVINO Hub on first run |
 | **Transformers** | *(default)* | FP16 | ~16.8 GB | Direct HuggingFace model loading, widest compatibility |
 
 ### Fusion Execution Modes
@@ -243,9 +247,9 @@ cli.exe --fusion --ollama --fusion-mode multi-sample --context-auto --prompt "De
 cli.exe --fusion --ollama --context-auto --prompt "What is a deadlock and how can it be prevented?"
 ```
 
-**OpenVINO optimized CPU** (no GPU needed):
+**OpenVINO optimized CPU** (cached INT4 models, no GPU needed):
 ```powershell
-cli.exe --fusion --openvino --fusion-mode multi-sample --prompt "Explain CAP theorem"
+cli.exe --fusion --openvino --fusion-models 3 --fusion-mode multi-model --prompt "Explain CAP theorem"
 ```
 
 **Custom panel size** (e.g., 5 models):
@@ -267,6 +271,69 @@ ollama pull qwen2.5:1.5b
 ollama pull llama3.1
 ollama pull llama3.2:1b
 ollama pull deepseek-r1:1.5b
+```
+
+---
+
+### 🔷 OpenVINO Model Caching
+
+The OpenVINO backend delivers the fastest local CPU inference by loading **pre-converted INT4 quantized models** directly from disk. The full setup workflow is:
+
+#### Step 1 — Sync the database and cache all pre-converted models
+```powershell
+$env:PYTHONUTF8="1"
+cli.exe --update --prepare-all-models --ov-model-dir ov_models
+```
+
+What this does:
+- **`--update`**: Fetches 480,000+ models from the HuggingFace Hub into the local SQLite database, then syncs **149 pre-converted OpenVINO Hub models** (`library_name = openvino`, tagged `int4`/`int8`) into the DB with accurate size estimates and high efficiency scores.
+- **`--prepare-all-models`**: Two-step caching process:
+  1. **Step 1 (fast)** — Downloads all pre-converted `OpenVINO/` org models (INT4, ~0.5–4 GB each) using `huggingface_hub.snapshot_download`. No local GPU or conversion needed.
+  2. **Step 2 (local)** — Locally converts small HuggingFace models (≤1.5B params) to OpenVINO IR format using `ov.convert_model()` for any model not available pre-converted.
+- **`--ov-model-dir ov_models`**: All cached models are stored under `./ov_models/`.
+
+> [!NOTE]
+> `PYTHONUTF8=1` is required on Windows to avoid emoji encoding errors in the PowerShell console.
+
+#### Step 2 — Run fusion with cached OpenVINO models
+```powershell
+cli.exe --fusion --openvino --fusion-models 3 --fusion-mode multi-model --ov-model-dir ov_models --prompt "Your prompt here"
+```
+
+The model selector automatically:
+- **Detects cached models** in `ov_models/` and boosts their score by `+0.15`
+- **Penalises uncached large models** (>3B params) by `−0.40` when `--openvino` is active
+- **Loads from disk instantly** using `openvino_genai.LLMPipeline(local_path, "CPU")` — no download or conversion on inference
+
+#### How model resolution works at inference time
+
+```
+Priority 1 → Local ov_models/ cache          ← instant, always checked first
+Priority 2 → OpenVINO Hub download           ← ~30 sec, pre-converted INT4
+Priority 3 → Manual torch → OV conversion    ← fallback, any model
+```
+
+#### OV Hub model registry
+
+The following HuggingFace models have verified pre-converted versions on the [OpenVINO org](https://huggingface.co/OpenVINO):
+
+| HuggingFace Model | OV Hub (INT4) | Size |
+|:---|:---|:---:|
+| `Qwen/Qwen2.5-1.5B-Instruct` | `OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov` | ~750 MB |
+| `Qwen/Qwen2.5-7B-Instruct` | `OpenVINO/Qwen2.5-7B-Instruct-int4-ov` | ~4.2 GB |
+| `microsoft/Phi-3-mini-4k-instruct` | `OpenVINO/Phi-3-mini-4k-instruct-int4-ov` | ~2.2 GB |
+| `TinyLlama/TinyLlama-1.1B-Chat-v1.0` | `OpenVINO/TinyLlama-1.1B-Chat-v1.0-int4-ov` | ~600 MB |
+| `mistralai/Mistral-7B-Instruct-v0.2` | `OpenVINO/Mistral-7B-Instruct-v0.2-int4-ov` | ~4.1 GB |
+| `google/gemma-2b-it` | `OpenVINO/gemma-2b-it-int4-ov` | ~1.3 GB |
+
+> See [`src/scripts/run_model_openvino.py`](src/scripts/run_model_openvino.py) for the full registry and [`src/scripts/cache_ov_hub.py`](src/scripts/cache_ov_hub.py) for the standalone download script.
+
+#### Running cache_ov_hub.py standalone
+To download only OV Hub models without running `--update`:
+```powershell
+$env:PYTHONUTF8="1"
+# Download all OV Hub models ≤ 5 GB:
+python src/scripts/cache_ov_hub.py ov_models db/hf_models.db 5
 ```
 
 ### Running the Draco Benchmark

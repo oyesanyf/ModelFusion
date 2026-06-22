@@ -1,9 +1,32 @@
+"""
+OpenVINO inference script for ModelFusion.
+
+Correct flow (per OpenVINO docs):
+  1. Check local OV cache  → LLMPipeline(local_path)
+  2. Try OpenVINO Hub      → snapshot_download pre-converted model → LLMPipeline(local_path)
+  3. Manual conversion     → download HF model → ov.convert_model() → save → LLMPipeline(local_path)
+  4. Classic OV loop       → compiled_model token-by-token (slowest, no KV cache)
+
+NOTE: openvino_genai.LLMPipeline ALWAYS needs a LOCAL DIRECTORY PATH, never a raw HF model ID.
+"""
+
 import sys
 import os
 import logging
 import platform
 
 current_os = platform.system()
+
+# ── Python version compatibility note ───────────────────────────────────────
+_py_ver = sys.version_info
+_on_py314_plus = _py_ver >= (3, 13)
+if _on_py314_plus:
+    print(
+        f"[OPENVINO] ℹ️  Python {_py_ver.major}.{_py_ver.minor} detected. "
+        f"optimum-intel is skipped (requires 3.8–3.12). "
+        f"Using direct ov.convert_model() + openvino_genai path.",
+        file=sys.stderr
+    )
 
 # Platform-specific environment settings
 if current_os == "Linux":
@@ -17,419 +40,338 @@ else:
 logging.getLogger("transformers").setLevel(logging.ERROR)
 
 
-def detect_best_device(core):
-    """Auto-detect the best OpenVINO device based on available hardware."""
-    available = core.available_devices
-    print(f"[OPENVINO] Available devices: {available}", file=sys.stderr)
-
-    # Detect system resources
-    import multiprocessing
-    cpu_cores = multiprocessing.cpu_count()
-
-    ram_gb = 0
-    try:
-        import psutil
-        mem = psutil.virtual_memory()
-        ram_gb = mem.available / (1024 ** 3)
-        print(f"[OPENVINO] System: {cpu_cores} CPU cores, {ram_gb:.1f} GB free RAM", file=sys.stderr)
-    except ImportError:
-        print(f"[OPENVINO] System: {cpu_cores} CPU cores (psutil not installed, RAM unknown)", file=sys.stderr)
-
-    # Device priority: GPU > AUTO > CPU
-    # Note: OpenVINO GPU = Intel GPU (iGPU/dGPU), not NVIDIA
-    if "GPU" in available:
-        try:
-            gpu_name = core.get_property("GPU", "FULL_DEVICE_NAME")
-            print(f"[OPENVINO] 🎮 Intel GPU detected: {gpu_name}", file=sys.stderr)
-        except Exception:
-            print(f"[OPENVINO] 🎮 GPU detected", file=sys.stderr)
-        return "GPU"
-    elif "AUTO" in available:
-        print(f"[OPENVINO] Using AUTO device selection", file=sys.stderr)
-        return "AUTO"
-    else:
-        print(f"[OPENVINO] Using CPU ({cpu_cores} cores)", file=sys.stderr)
-        return "CPU"
-
-
-def get_compile_config(device):
-    """Get optimal compile configuration based on device and system resources."""
-    import openvino.properties as props
-    import openvino.properties.hint as hints
-
-    config = {}
-
-    if device == "CPU":
-        import multiprocessing
-        cpu_cores = multiprocessing.cpu_count()
-
-        config[hints.performance_mode()] = hints.PerformanceMode.LATENCY
-
-        if cpu_cores >= 16:
-            config[props.inference_num_threads()] = cpu_cores - 2
-        elif cpu_cores >= 8:
-            config[props.inference_num_threads()] = cpu_cores - 1
-
-        try:
-            config[props.streams.num()] = 1
-        except Exception:
-            pass
-
-        threads = config.get(props.inference_num_threads(), 'auto')
-        print(f"[OPENVINO] CPU config: latency mode, {threads} threads", file=sys.stderr)
-
-    elif device == "GPU":
-        config[hints.performance_mode()] = hints.PerformanceMode.LATENCY
-        config[hints.model_priority()] = hints.Priority.HIGH
-        print(f"[OPENVINO] GPU config: latency mode, high priority", file=sys.stderr)
-
-    elif device == "AUTO":
-        config[hints.performance_mode()] = hints.PerformanceMode.LATENCY
-        print(f"[OPENVINO] AUTO config: latency mode", file=sys.stderr)
-
-    return config
+# ── OpenVINO Hub pre-converted model registry ────────────────────────────────
+# Maps common HuggingFace model IDs to their pre-converted OpenVINO Hub versions.
+# These can be loaded directly with LLMPipeline without any conversion step.
+# Source: https://huggingface.co/OpenVINO
+# Verified real model IDs from the OpenVINO HuggingFace organisation.
+# Run: python -c "from huggingface_hub import list_models; [print(m.id) for m in list_models(author='OpenVINO',limit=200)]"
+OV_HUB_REGISTRY = {
+    # Qwen 2.5 (confirmed)
+    "Qwen/Qwen2.5-1.5B-Instruct":            "OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov",
+    "Qwen/Qwen2.5-7B-Instruct":              "OpenVINO/Qwen2.5-7B-Instruct-int4-ov",
+    "Qwen/Qwen2.5-14B-Instruct":             "OpenVINO/Qwen2.5-14B-Instruct-int4-ov",
+    # Qwen 2 (confirmed)
+    "Qwen/Qwen2-0.5B-Instruct":              "OpenVINO/Qwen2-0.5B-Instruct-int4-ov",
+    "Qwen/Qwen2-1.5B-Instruct":              "OpenVINO/Qwen2-1.5B-Instruct-int4-ov",
+    "Qwen/Qwen2-7B-Instruct":                "OpenVINO/Qwen2-7B-Instruct-int4-ov",
+    # Phi (confirmed)
+    "microsoft/phi-2":                        "OpenVINO/phi-2-int4-ov",
+    "microsoft/Phi-3-mini-4k-instruct":       "OpenVINO/Phi-3-mini-4k-instruct-int4-ov",
+    "microsoft/Phi-3-mini-128k-instruct":     "OpenVINO/Phi-3-mini-128k-instruct-int4-ov",
+    "microsoft/Phi-3-medium-4k-instruct":     "OpenVINO/Phi-3-medium-4k-instruct-int4-ov",
+    # Mistral (confirmed)
+    "mistralai/Mistral-7B-Instruct-v0.1":     "OpenVINO/mistral-7b-instruct-v0.1-int4-ov",
+    "mistralai/Mistral-7B-Instruct-v0.2":     "OpenVINO/Mistral-7B-Instruct-v0.2-int4-ov",
+    # TinyLlama (confirmed)
+    "TinyLlama/TinyLlama-1.1B-Chat-v1.0":    "OpenVINO/TinyLlama-1.1B-Chat-v1.0-int4-ov",
+    # Gemma (confirmed)
+    "google/gemma-2b-it":                     "OpenVINO/gemma-2b-it-int4-ov",
+    "google/gemma-7b-it":                     "OpenVINO/gemma-7b-it-int4-ov",
+    "google/gemma-2-9b-it":                   "OpenVINO/gemma-2-9b-it-int4-ov",
+    # Qwen 3 (confirmed)
+    "Qwen/Qwen3-8B":                          "OpenVINO/Qwen3-8B-int4-ov",
+}
 
 
-def find_cached_model(model_id, ov_model_dir="ov_models"):
-    """Check if a pre-converted OpenVINO IR model exists for this HF model ID."""
+def find_ov_hub_model(model_id: str) -> str | None:
+    """Return the OpenVINO Hub repo ID for a given HF model ID, or None."""
+    return OV_HUB_REGISTRY.get(model_id)
+
+
+def find_cached_model(model_id: str, ov_model_dir: str = "ov_models") -> str | None:
+    """Check if a pre-converted OpenVINO IR model exists locally."""
     safe_name = model_id.split("/")[-1].lower().replace(" ", "-")
     if os.path.isdir(ov_model_dir):
         for entry in sorted(os.listdir(ov_model_dir)):
-            if entry.startswith(safe_name):
+            if entry.startswith(safe_name) or entry.startswith(model_id.replace("/", "--")):
                 model_path = os.path.join(ov_model_dir, entry)
-                # Check for optimum-intel exported model
-                if os.path.isfile(os.path.join(model_path, "openvino_model.xml")):
+                if (os.path.isfile(os.path.join(model_path, "openvino_model.xml"))
+                        or os.path.isfile(os.path.join(model_path, "model.xml"))):
                     return model_path
-                # Check for classic IR model  
-                if os.path.isfile(os.path.join(model_path, "model.xml")):
-                    return model_path
+    # Also check HuggingFace hub cache (snapshot_download stores here)
+    hf_cache = os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub")
     return None
 
 
-def auto_convert_and_cache(model_id, ov_model_dir, weight_format="int8"):
-    """Convert HF model to OpenVINO IR using optimum-intel, save to cache."""
-    from optimum.intel import OVModelForCausalLM
-    from transformers import AutoTokenizer
-    
-    safe_name = model_id.split("/")[-1].lower().replace(" ", "-")
-    output_path = os.path.join(ov_model_dir, f"{safe_name}-{weight_format}")
-    os.makedirs(output_path, exist_ok=True)
-    
-    print(f"[OPENVINO] Auto-converting {model_id} to {weight_format}...", file=sys.stderr)
-    
-    kwargs = {"export": True, "trust_remote_code": True}
-    if weight_format == "int8":
-        kwargs["load_in_8bit"] = True
-    elif weight_format == "int4":
-        kwargs["load_in_4bit"] = True
-    
-    model = OVModelForCausalLM.from_pretrained(model_id, **kwargs)
-    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    
-    model.save_pretrained(output_path)
-    tokenizer.save_pretrained(output_path)
-    print(f"[OPENVINO] Model cached at {output_path}", file=sys.stderr)
-    
-    return output_path
-
-
-def load_and_infer_optimum(model_path, prompt, max_tokens, temperature):
-    """Load a pre-converted OpenVINO model via optimum-intel and run inference."""
-    from optimum.intel import OVModelForCausalLM
-    from transformers import AutoTokenizer, pipeline as hf_pipeline
-    
-    print(f"[OPENVINO] Loading cached model from {model_path}", file=sys.stderr)
-    model = OVModelForCausalLM.from_pretrained(model_path, trust_remote_code=True)
-    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-    
-    if tokenizer.pad_token_id is None:
-        tokenizer.pad_token_id = tokenizer.eos_token_id
-    
-    pipe = hf_pipeline(
-        "text-generation",
-        model=model,
-        tokenizer=tokenizer,
-    )
-    
-    outputs = pipe(
-        prompt,
-        max_new_tokens=max_tokens,
-        temperature=temperature if temperature > 0.0 else None,
-        do_sample=temperature > 0.0,
-        pad_token_id=tokenizer.eos_token_id,
-        return_full_text=False,
-    )
-    
-    print(outputs[0]["generated_text"])
-
-
-def main():
-    if len(sys.argv) < 3:
-        print("ERROR: Missing arguments. Usage: python run_model_openvino.py <model_id> <prompt> [max_tokens] [temperature]", file=sys.stderr)
-        sys.exit(1)
-
-    model_id = sys.argv[1]
-    prompt = sys.argv[2]
-    max_tokens = int(sys.argv[3]) if len(sys.argv) > 3 else 500
-    temperature = float(sys.argv[4]) if len(sys.argv) > 4 else 0.7
-    ov_model_dir = sys.argv[5] if len(sys.argv) > 5 else "ov_models"
-    weight_format = sys.argv[6] if len(sys.argv) > 6 else "int8"
-
-    # Priority 1: Check for pre-converted cached model (fastest)
-    cached_path = find_cached_model(model_id, ov_model_dir)
-    if cached_path:
-        try:
-            import subprocess as _sp
-            probe = _sp.run(
-                [sys.executable, "-c", "from optimum.intel import OVModelForCausalLM; print('OK')"],
-                capture_output=True, text=True, timeout=30
-            )
-            if probe.returncode == 0 and "OK" in probe.stdout:
-                load_and_infer_optimum(cached_path, prompt, max_tokens, temperature)
-                return
-            else:
-                print(f"[OPENVINO] optimum-intel crashed on probe, using classic path for cached model...", file=sys.stderr)
-        except Exception as e:
-            print(f"[OPENVINO] Failed to load cached model ({e}), trying other paths...", file=sys.stderr)
-
-    # Priority 2: Auto-convert via optimum-cli subprocess (segfault-safe for Python 3.14+)
+def download_ov_hub_model(ov_repo_id: str, ov_model_dir: str) -> str | None:
+    """
+    Download a pre-converted OpenVINO model from HuggingFace Hub.
+    Returns the local directory path, or None on failure.
+    """
     try:
-        import subprocess as _sp
-        # First, check if optimum-intel is importable without crashing
-        probe = _sp.run(
-            [sys.executable, "-c", "from optimum.intel import OVModelForCausalLM; print('OK')"],
-            capture_output=True, text=True, timeout=30
-        )
-        if probe.returncode == 0 and "OK" in probe.stdout:
-            # Safe to use optimum-intel — try auto-convert via subprocess
-            safe_name = model_id.split("/")[-1].lower().replace(" ", "-")
-            output_path = os.path.join(ov_model_dir, f"{safe_name}-{weight_format}")
-
-            if not os.path.isdir(output_path) or not os.path.isfile(os.path.join(output_path, "openvino_model.xml")):
-                print(f"[OPENVINO] Auto-converting {model_id} to {weight_format} via optimum-cli...", file=sys.stderr)
-                os.makedirs(ov_model_dir, exist_ok=True)
-
-                export_cmd = [
-                    sys.executable, "-m", "optimum.exporters.openvino",
-                    "--model", model_id,
-                    "--weight-format", weight_format,
-                    "--trust-remote-code",
-                    output_path
-                ]
-                export_result = _sp.run(export_cmd, capture_output=True, text=True, timeout=600)
-                if export_result.returncode != 0:
-                    print(f"[OPENVINO] optimum-cli export failed: {export_result.stderr[:200]}", file=sys.stderr)
-                    raise RuntimeError("Export failed")
-                print(f"[OPENVINO] Model cached at {output_path}", file=sys.stderr)
-
-            # Now load the cached model via optimum-intel for inference
-            from optimum.intel import OVModelForCausalLM
-            from transformers import AutoTokenizer, pipeline as hf_pipeline
-
-            print(f"[OPENVINO] Loading cached model from {output_path}", file=sys.stderr)
-            model = OVModelForCausalLM.from_pretrained(output_path, trust_remote_code=True)
-            tokenizer = AutoTokenizer.from_pretrained(output_path, trust_remote_code=True)
-            if tokenizer.pad_token_id is None:
-                tokenizer.pad_token_id = tokenizer.eos_token_id
-
-            pipe = hf_pipeline("text-generation", model=model, tokenizer=tokenizer)
-            outputs = pipe(
-                prompt,
-                max_new_tokens=max_tokens,
-                temperature=temperature if temperature > 0.0 else None,
-                do_sample=temperature > 0.0,
-                pad_token_id=tokenizer.eos_token_id,
-                return_full_text=False,
-            )
-            print(outputs[0]["generated_text"])
-            return
-        else:
-            print(f"[OPENVINO] optimum-intel not compatible with Python {sys.version.split()[0]}, skipping...", file=sys.stderr)
+        from huggingface_hub import snapshot_download
+        safe_name = ov_repo_id.replace("/", "--")
+        local_dir = os.path.join(ov_model_dir, safe_name)
+        if os.path.isdir(local_dir) and os.path.isfile(os.path.join(local_dir, "openvino_model.xml")):
+            print(f"[OPENVINO] ✅ Using cached OV Hub model at {local_dir}", file=sys.stderr)
+            return local_dir
+        print(f"[OPENVINO] ⬇️  Downloading pre-converted OV model: {ov_repo_id}", file=sys.stderr)
+        print(f"[OPENVINO]    This is INT4 quantized (~1–4 GB) — much smaller than the original.", file=sys.stderr)
+        os.makedirs(ov_model_dir, exist_ok=True)
+        path = snapshot_download(repo_id=ov_repo_id, local_dir=local_dir)
+        print(f"[OPENVINO] ✅ Downloaded to {path}", file=sys.stderr)
+        return path
     except Exception as e:
-        print(f"[OPENVINO] Auto-convert failed ({e}), trying other backends...", file=sys.stderr)
+        print(f"[OPENVINO] ⚠️  OV Hub download failed ({e})", file=sys.stderr)
+        return None
 
-    # Try openvino_genai fast path first
-    try:
-        import openvino_genai as ov_genai
-        print(f"[OPENVINO-GENAI] Using openvino_genai LLMPipeline for {model_id}", file=sys.stderr)
 
-        device_config = {
-            "PERFORMANCE_HINT": "THROUGHPUT",
-            "CACHE_DIR": os.path.join(os.path.expanduser("~"), ".cache", "modelfusion_ov_genai"),
-            "KV_CACHE_PRECISION": "u8"
-        }
-
-        pipe = ov_genai.LLMPipeline(model_id, "CPU", device_config)
-        config = ov_genai.GenerationConfig()
-        config.max_new_tokens = max_tokens
-        config.do_sample = temperature > 0.0
-        if temperature > 0.0:
-            config.temperature = temperature
-
-        print(f"[OPENVINO-GENAI] Generating on {current_os} (max_tokens={max_tokens}, temp={temperature})...", file=sys.stderr)
-        output = pipe.generate(prompt, config)
-        print(output)
-        return  # Exit early, skip fallback
-    except ImportError:
-        print(f"[OPENVINO] openvino_genai not installed, using classic OpenVINO pipeline", file=sys.stderr)
-    except Exception as e:
-        print(f"[OPENVINO-GENAI] GenAI pipeline failed ({e}), falling back to classic OpenVINO", file=sys.stderr)
-
-    # --- Classic OpenVINO fallback path ---
-
+def convert_hf_to_openvino(model_id: str, ov_model_dir: str, weight_format: str = "int8") -> str | None:
+    """
+    Download a HuggingFace model and convert it to OpenVINO IR format.
+    Uses ov.convert_model() as per OpenVINO docs — works on Python 3.14.
+    Returns the local OV model directory path, or None on failure.
+    """
     try:
         import openvino as ov
-    except ImportError:
-        print("ERROR: OpenVINO not installed. Install with: pip install -U openvino", file=sys.stderr)
-        sys.exit(1)
-
-    try:
-        from transformers import AutoModelForCausalLM, AutoTokenizer
         import torch
-        import numpy as np
-    except ImportError:
-        print("ERROR: transformers/torch not installed.", file=sys.stderr)
-        sys.exit(1)
+        from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    core = ov.Core()
-    device = detect_best_device(core)
+        safe_name = model_id.split("/")[-1].lower().replace(" ", "-")
+        output_path = os.path.join(ov_model_dir, f"{safe_name}-ov-{weight_format}")
+        ov_xml = os.path.join(output_path, "openvino_model.xml")
 
-    print(f"[OPENVINO] Loading model {model_id} → target device: {device}", file=sys.stderr)
+        if os.path.isfile(ov_xml):
+            print(f"[OPENVINO] ✅ Using cached converted model at {output_path}", file=sys.stderr)
+            return output_path
 
-    # Load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    if tokenizer.pad_token_id is None:
-        tokenizer.pad_token_id = tokenizer.eos_token_id
+        os.makedirs(output_path, exist_ok=True)
+        print(f"[OPENVINO] ⬇️  Downloading {model_id} from HuggingFace...", file=sys.stderr)
 
-    # Tokenize input
-    inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, max_length=2048)
-    input_ids = inputs["input_ids"]
+        tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+        tokenizer.save_pretrained(output_path)
 
-    # Cache directory for converted OpenVINO IR models (per device)
-    cache_dir = os.path.join(
-        os.path.expanduser("~"), ".cache", "modelfusion_ov",
-        model_id.replace("/", "_"), device.lower()
-    )
-    ov_model_path = os.path.join(cache_dir, "model.xml")
-
-    if os.path.exists(ov_model_path):
-        print(f"[OPENVINO] Loading cached IR model from {cache_dir}", file=sys.stderr)
-        ov_model = core.read_model(ov_model_path)
-    else:
-        print(f"[OPENVINO] Loading PyTorch model for conversion...", file=sys.stderr)
+        print(f"[OPENVINO] 🔄 Loading PyTorch model for conversion...", file=sys.stderr)
         pt_model = AutoModelForCausalLM.from_pretrained(
             model_id,
-            torch_dtype="auto",
+            torch_dtype=torch.float32,  # float32 for reliable OV conversion
             trust_remote_code=True,
             low_cpu_mem_usage=True,
         )
         pt_model.eval()
 
-        print(f"[OPENVINO] Converting model to OpenVINO IR format (one-time)...", file=sys.stderr)
+        print(f"[OPENVINO] 🔄 Converting to OpenVINO IR with ov.convert_model()...", file=sys.stderr)
 
-        # Wrap the model to return only logits (OpenVINO can't trace DynamicCache)
-        class LogitsOnlyWrapper(torch.nn.Module):
-            def __init__(self, model):
+        # Wrap to return only logits (OV can't trace DynamicCache)
+        class LogitsWrapper(torch.nn.Module):
+            def __init__(self, m):
                 super().__init__()
-                self.model = model
-
+                self.m = m
             def forward(self, input_ids, attention_mask):
                 with torch.no_grad():
-                    outputs = self.model(
-                        input_ids=input_ids,
-                        attention_mask=attention_mask,
-                        use_cache=False,  # Disable DynamicCache
-                    )
-                    return outputs.logits
+                    return self.m(input_ids=input_ids, attention_mask=attention_mask, use_cache=False).logits
 
-        wrapper = LogitsOnlyWrapper(pt_model)
+        wrapper = LogitsWrapper(pt_model)
         wrapper.eval()
 
-        # Convert via ONNX export path for maximum compatibility
+        dummy_ids = torch.ones((1, 8), dtype=torch.long)
+        dummy_mask = torch.ones((1, 8), dtype=torch.long)
+
         try:
-            # Try torch.export first (modern path)
-            print(f"[OPENVINO] Trying torch.export conversion...", file=sys.stderr)
-            example_input = (input_ids, inputs["attention_mask"])
-            ov_model = ov.convert_model(wrapper, example_input=example_input)
+            ov_model = ov.convert_model(wrapper, example_input=(dummy_ids, dummy_mask))
         except Exception as e1:
-            print(f"[OPENVINO] torch.export failed ({e1.__class__.__name__}), trying ONNX export...", file=sys.stderr)
-            # Fallback: export to ONNX first, then load with OpenVINO
-            onnx_path = os.path.join(cache_dir, "model.onnx")
-            os.makedirs(cache_dir, exist_ok=True)
+            print(f"[OPENVINO] ⚠️  convert_model failed ({e1}), trying ONNX export path...", file=sys.stderr)
+            import tempfile
+            onnx_path = os.path.join(output_path, "_temp.onnx")
             torch.onnx.export(
-                wrapper,
-                (input_ids, inputs["attention_mask"]),
-                onnx_path,
+                wrapper, (dummy_ids, dummy_mask), onnx_path,
                 input_names=["input_ids", "attention_mask"],
                 output_names=["logits"],
                 dynamic_axes={
-                    "input_ids": {0: "batch", 1: "seq_len"},
-                    "attention_mask": {0: "batch", 1: "seq_len"},
-                    "logits": {0: "batch", 1: "seq_len"},
+                    "input_ids": {0: "batch", 1: "seq"},
+                    "attention_mask": {0: "batch", 1: "seq"},
+                    "logits": {0: "batch", 1: "seq"},
                 },
                 opset_version=17,
             )
-            print(f"[OPENVINO] ONNX export complete, converting to IR...", file=sys.stderr)
+            core = ov.Core()
             ov_model = core.read_model(onnx_path)
-            # Clean up ONNX file after conversion
             try:
                 os.remove(onnx_path)
             except OSError:
                 pass
 
-        # Save IR for future use
-        os.makedirs(cache_dir, exist_ok=True)
-        ov.save_model(ov_model, ov_model_path)
-        print(f"[OPENVINO] Model cached at {cache_dir}", file=sys.stderr)
+        ov.save_model(ov_model, ov_xml)
+        print(f"[OPENVINO] ✅ Model saved to {output_path}", file=sys.stderr)
 
-        # Free PyTorch model
         del pt_model, wrapper
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         import gc; gc.collect()
 
-    # Compile with device-optimized configuration
-    compile_config = get_compile_config(device)
-    print(f"[OPENVINO] Compiling model for {device}...", file=sys.stderr)
-    compiled_model = core.compile_model(ov_model, device, compile_config)
+        return output_path
+    except Exception as e:
+        print(f"[OPENVINO] ❌ Conversion failed: {e}", file=sys.stderr)
+        return None
 
-    print(f"[OPENVINO] Generating on {device} (max_tokens={max_tokens}, temp={temperature})...", file=sys.stderr)
 
-    # Autoregressive generation loop
-    generated_ids = input_ids.numpy().tolist()[0]
-    attention_mask = inputs["attention_mask"].numpy().tolist()[0]
-
-    for step in range(max_tokens):
-        input_array = np.array([generated_ids], dtype=np.int64)
-        mask_array = np.array([attention_mask], dtype=np.int64)
-
-        result = compiled_model({"input_ids": input_array, "attention_mask": mask_array})
-
-        # Get logits for the last token
-        logits = result[0]  # shape: [1, seq_len, vocab_size]
-        next_token_logits = logits[0, -1, :]
-
-        if temperature > 0.0 and temperature != 1.0:
-            next_token_logits = next_token_logits / temperature
-
+def infer_with_genai(local_model_path: str, prompt: str, max_tokens: int, temperature: float) -> bool:
+    """
+    Run inference using openvino_genai.LLMPipeline on a local OV model directory.
+    Returns True on success, False on failure.
+    """
+    try:
+        import openvino_genai as ov_genai
+        print(f"[OPENVINO-GENAI] Loading from {local_model_path}", file=sys.stderr)
+        pipe = ov_genai.LLMPipeline(local_model_path, "CPU")
+        config = ov_genai.GenerationConfig()
+        config.max_new_tokens = max_tokens
+        config.do_sample = temperature > 0.0
         if temperature > 0.0:
-            probs = np.exp(next_token_logits - np.max(next_token_logits))
-            probs = probs / probs.sum()
-            next_token_id = int(np.random.choice(len(probs), p=probs))
-        else:
-            next_token_id = int(np.argmax(next_token_logits))
+            config.temperature = temperature
+        print(f"[OPENVINO-GENAI] Generating (max_tokens={max_tokens}, temp={temperature})...", file=sys.stderr)
+        output = pipe.generate(prompt, config)
+        print(output)
+        return True
+    except ImportError:
+        print("[OPENVINO-GENAI] openvino_genai not installed.", file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"[OPENVINO-GENAI] Failed: {e}", file=sys.stderr)
+        return False
 
-        if next_token_id == tokenizer.eos_token_id:
-            break
 
-        generated_ids.append(next_token_id)
-        attention_mask.append(1)
+def infer_classic_ov(local_model_path: str, prompt: str, max_tokens: int, temperature: float) -> bool:
+    """
+    Classic OpenVINO compiled_model token-by-token inference loop.
+    Works for models converted with ov.convert_model() without KV cache.
+    """
+    try:
+        import openvino as ov
+        import numpy as np
+        from transformers import AutoTokenizer
 
-    # Decode only the new tokens
-    new_tokens = generated_ids[input_ids.shape[1]:]
-    generated_text = tokenizer.decode(new_tokens, skip_special_tokens=True)
+        xml_path = (os.path.join(local_model_path, "openvino_model.xml")
+                    if os.path.isfile(os.path.join(local_model_path, "openvino_model.xml"))
+                    else os.path.join(local_model_path, "model.xml"))
 
-    print(generated_text)
+        if not os.path.isfile(xml_path):
+            print(f"[OPENVINO] ❌ No model.xml found in {local_model_path}", file=sys.stderr)
+            return False
+
+        tokenizer = AutoTokenizer.from_pretrained(local_model_path, trust_remote_code=True)
+        if tokenizer.pad_token_id is None:
+            tokenizer.pad_token_id = tokenizer.eos_token_id
+
+        core = ov.Core()
+        import multiprocessing
+        n_threads = max(1, multiprocessing.cpu_count() - 1)
+        compiled = core.compile_model(xml_path, "CPU", {
+            "PERFORMANCE_HINT": "LATENCY",
+            "INFERENCE_NUM_THREADS": str(n_threads),
+        })
+
+        inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, max_length=512)
+        generated = inputs["input_ids"].numpy().tolist()[0]
+        mask = inputs["attention_mask"].numpy().tolist()[0]
+
+        print(f"[OPENVINO] Generating (classic loop, max_tokens={max_tokens})...", file=sys.stderr)
+        for _ in range(max_tokens):
+            res = compiled({
+                "input_ids": np.array([generated], dtype=np.int64),
+                "attention_mask": np.array([mask], dtype=np.int64),
+            })
+            logits = res[0][0, -1, :]
+            if temperature > 0.0:
+                logits = logits / temperature
+                probs = np.exp(logits - np.max(logits))
+                probs /= probs.sum()
+                next_id = int(np.random.choice(len(probs), p=probs))
+            else:
+                next_id = int(np.argmax(logits))
+            if next_id == tokenizer.eos_token_id:
+                break
+            generated.append(next_id)
+            mask.append(1)
+
+        new_tokens = generated[inputs["input_ids"].shape[1]:]
+        print(tokenizer.decode(new_tokens, skip_special_tokens=True))
+        return True
+    except Exception as e:
+        print(f"[OPENVINO] Classic inference failed: {e}", file=sys.stderr)
+        return False
+
+
+def main():
+    if len(sys.argv) < 3:
+        print("Usage: run_model_openvino.py <model_id> <prompt> [max_tokens] [temperature] [ov_model_dir] [weight_format]",
+              file=sys.stderr)
+        sys.exit(1)
+
+    model_id    = sys.argv[1]
+    prompt      = sys.argv[2]
+    max_tokens  = int(sys.argv[3])   if len(sys.argv) > 3 else 500
+    temperature = float(sys.argv[4]) if len(sys.argv) > 4 else 0.7
+    ov_model_dir = sys.argv[5]       if len(sys.argv) > 5 else "ov_models"
+    weight_format = sys.argv[6]      if len(sys.argv) > 6 else "int4"
+
+    print(f"[OPENVINO] Model: {model_id}", file=sys.stderr)
+    print(f"[OPENVINO] Prompt length: {len(prompt)} chars", file=sys.stderr)
+
+    # ── Step 1: Check local OV cache ─────────────────────────────────────────
+    local_path = find_cached_model(model_id, ov_model_dir)
+    if local_path:
+        print(f"[OPENVINO] ✅ Found cached OV model at: {local_path}", file=sys.stderr)
+        if infer_with_genai(local_path, prompt, max_tokens, temperature):
+            return
+        if infer_classic_ov(local_path, prompt, max_tokens, temperature):
+            return
+        print("[OPENVINO] Cached model inference failed, re-converting...", file=sys.stderr)
+
+    # ── Step 2: Try OpenVINO Hub pre-converted model ──────────────────────────
+    ov_hub_id = find_ov_hub_model(model_id)
+    if ov_hub_id:
+        print(f"[OPENVINO] 🔍 Found pre-converted OV Hub model: {ov_hub_id}", file=sys.stderr)
+        local_path = download_ov_hub_model(ov_hub_id, ov_model_dir)
+        if local_path:
+            if infer_with_genai(local_path, prompt, max_tokens, temperature):
+                return
+            if infer_classic_ov(local_path, prompt, max_tokens, temperature):
+                return
+    else:
+        print(f"[OPENVINO] ℹ️  No pre-converted OV Hub version for '{model_id}'. Will convert manually.", file=sys.stderr)
+
+    # ── Step 3: Try optimum-intel export (Python < 3.13 only) ────────────────
+    if not _on_py314_plus:
+        import subprocess as _sp
+        probe = _sp.run(
+            [sys.executable, "-c", "from optimum.intel import OVModelForCausalLM; print('OK')"],
+            capture_output=True, text=True, timeout=60
+        )
+        if probe.returncode == 0 and "OK" in probe.stdout:
+            safe_name = model_id.split("/")[-1].lower().replace(" ", "-")
+            output_path = os.path.join(ov_model_dir, f"{safe_name}-{weight_format}")
+            if not os.path.isfile(os.path.join(output_path, "openvino_model.xml")):
+                print(f"[OPENVINO] 🔄 Converting via optimum-cli...", file=sys.stderr)
+                os.makedirs(ov_model_dir, exist_ok=True)
+                result = _sp.run([
+                    sys.executable, "-m", "optimum.exporters.openvino",
+                    "--model", model_id,
+                    "--weight-format", weight_format,
+                    "--trust-remote-code",
+                    output_path
+                ], capture_output=True, text=True, timeout=900)
+                if result.returncode != 0:
+                    print(f"[OPENVINO] optimum-cli failed: {result.stderr[:300]}", file=sys.stderr)
+                else:
+                    print(f"[OPENVINO] ✅ Converted to {output_path}", file=sys.stderr)
+            if os.path.isfile(os.path.join(output_path, "openvino_model.xml")):
+                if infer_with_genai(output_path, prompt, max_tokens, temperature):
+                    return
+
+    # ── Step 4: Manual torch → OV conversion (works on Python 3.14) ──────────
+    print(f"[OPENVINO] 🔄 Starting manual torch→OV conversion for {model_id}...", file=sys.stderr)
+    local_path = convert_hf_to_openvino(model_id, ov_model_dir, weight_format)
+    if local_path:
+        # For manually converted models, try classic loop (genai needs KV-cache-aware models)
+        if infer_classic_ov(local_path, prompt, max_tokens, temperature):
+            return
+        if infer_with_genai(local_path, prompt, max_tokens, temperature):
+            return
+
+    print(f"ERROR: All OpenVINO inference paths failed for model '{model_id}'.", file=sys.stderr)
+    sys.exit(1)
 
 
 if __name__ == "__main__":

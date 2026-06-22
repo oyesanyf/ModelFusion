@@ -397,16 +397,156 @@ impl ComprehensiveTaskHandler {
         let _ = db.set_meta("last_updated", &chrono::Utc::now().to_rfc3339());
         let out = format!("✨ Database successfully updated! Processed and upserted {} models.", total_upserted);
         println!("{}", out);
+
+        // ── OpenVINO Hub sync ────────────────────────────────────────────────
+        // Fetch all pre-converted models from the OpenVINO HuggingFace org and
+        // upsert them into the database so the model selector can find and prefer them.
+        println!("\n🔷 [OPENVINO] Syncing pre-converted models from OpenVINO HuggingFace org...");
+        let ov_url = "https://huggingface.co/api/models?author=OpenVINO&limit=200&full=false";
+        let mut ov_req = client.get(ov_url);
+        if let Some(ref t) = token {
+            ov_req = ov_req.bearer_auth(t);
+        }
+        match ov_req.send().await {
+            Ok(res) if res.status().is_success() => {
+                match res.json::<Vec<HFModelApiResponse>>().await {
+                    Ok(ov_models) => {
+                        println!("📦 Found {} models in OpenVINO org.", ov_models.len());
+                        let mut ov_to_insert = Vec::new();
+                        for m in ov_models {
+                            // Only include LLM / text-generation models (skip vision, audio, etc.)
+                            let pipeline = m.pipeline_tag.clone().unwrap_or_default();
+                            let tags = m.tags.clone().unwrap_or_default();
+                            let is_llm = pipeline == "text-generation"
+                                || pipeline.is_empty()
+                                || tags.iter().any(|t| {
+                                    matches!(t.as_str(), "text-generation" | "causal-lm" | "llm")
+                                });
+                            if !is_llm {
+                                continue;
+                            }
+
+                            let model_id = m.id.clone();
+
+                            // Estimate size from quantization suffix in model name
+                            // e.g. "Qwen2.5-1.5B-Instruct-int4-ov" → 1.5B × 0.5 bytes/param ≈ 750 MB
+                            let name_lower = model_id.to_lowercase();
+                            let weight_mb: f64 = if name_lower.contains("int4") {
+                                // INT4: 0.5 bytes/param — extract param count from name
+                                Self::estimate_mb_from_name(&model_id, 0.5)
+                            } else if name_lower.contains("int8") {
+                                Self::estimate_mb_from_name(&model_id, 1.0)
+                            } else {
+                                // fp16
+                                Self::estimate_mb_from_name(&model_id, 2.0)
+                            };
+
+                            // High efficiency/decision score: already quantized, ready to run
+                            let downloads = m.downloads.unwrap_or(0);
+                            let likes = m.likes.unwrap_or(0);
+                            let popularity = (downloads as f64 / 50_000.0).min(1.0);
+                            let efficiency_score = 0.95; // pre-quantized INT4/INT8
+                            let capability_score = 0.80;
+                            let decision_score = popularity * 0.3 + capability_score * 0.4 + efficiency_score * 0.3;
+
+                            let mut all_tags = tags.clone();
+                            all_tags.push("openvino".to_string());
+                            all_tags.push("pre-converted".to_string());
+                            all_tags.push("quantized".to_string());
+
+                            ov_to_insert.push(ModelMetrics {
+                                model_id: model_id.clone(),
+                                author: "OpenVINO".to_string(),
+                                pipeline_tag: "text-generation".to_string(),
+                                tags: all_tags,
+                                description: "Pre-converted OpenVINO INT4/INT8 model — ready for immediate inference.".to_string(),
+                                downloads,
+                                likes,
+                                decision_score: decision_score * 10.0,
+                                capability_score: capability_score * 10.0,
+                                efficiency_score: efficiency_score * 10.0,
+                                popularity_score: popularity * 10.0,
+                                model_type: "causal-lm".to_string(),
+                                library_name: "openvino".to_string(),
+                                last_modified: m.last_modified.unwrap_or_else(|| "2026-01-01T00:00:00Z".to_string()),
+                                license: {
+                                    let mut lic = "apache-2.0".to_string();
+                                    for t in m.tags.unwrap_or_default() {
+                                        if t.starts_with("license:") {
+                                            lic = t.trim_start_matches("license:").to_string();
+                                            break;
+                                        }
+                                    }
+                                    lic
+                                },
+                                task_keywords: vec!["text-generation".to_string(), "openvino".to_string()],
+                                architecture: "transformer".to_string(),
+                                size_mb: weight_mb,
+                                language: "en".to_string(),
+                            });
+                        }
+                        let ov_count = ov_to_insert.len();
+                        match db.upsert_batch(&ov_to_insert) {
+                            Ok(n) => println!("✅ [OPENVINO] Synced {} pre-converted OV models into database ({} LLMs found).", n, ov_count),
+                            Err(e) => println!("⚠️ [OPENVINO] Failed to upsert OV Hub models: {}", e),
+                        }
+                    }
+                    Err(e) => println!("⚠️ [OPENVINO] Failed to parse OV Hub API response: {}", e),
+                }
+            }
+            Ok(res) => println!("⚠️ [OPENVINO] OV Hub API returned status {}", res.status()),
+            Err(e) => println!("⚠️ [OPENVINO] Failed to fetch OV Hub models: {}", e),
+        }
+        println!("🔷 [OPENVINO] Hub sync complete.\n");
+
         TaskHandlerResult {
             success: true,
             content: out,
             data: Some(json!({ "upserted_count": total_upserted })),
             error_message: None,
         }
+
+    }
+
+    /// Estimate model weight size in MB from the model ID name.
+    /// Looks for patterns like "1.5B", "7B", "14B" and multiplies by bytes_per_param × 1000.
+    fn estimate_mb_from_name(model_id: &str, bytes_per_param: f64) -> f64 {
+        let name = model_id.split('/').last().unwrap_or(model_id).to_lowercase();
+        let chars: Vec<char> = name.chars().collect();
+        let len = chars.len();
+        let mut i = 0;
+        while i < len {
+            if chars[i].is_ascii_digit() {
+                let start = i;
+                while i < len && (chars[i].is_ascii_digit() || chars[i] == '.') {
+                    i += 1;
+                }
+                if i < len && chars[i] == 'b' {
+                    let num_str: String = chars[start..i].iter().collect();
+                    if let Ok(params_b) = num_str.parse::<f64>() {
+                        if params_b > 0.0 && params_b < 2000.0 {
+                            // params_b billion params × bytes_per_param × 1024 MB/GB
+                            return (params_b * bytes_per_param * 1024.0).max(50.0);
+                        }
+                    }
+                }
+                if i < len && chars[i] == 'm' {
+                    let num_str: String = chars[start..i].iter().collect();
+                    if let Ok(params_m) = num_str.parse::<f64>() {
+                        if params_m > 10.0 && params_m < 10_000.0 {
+                            return (params_m / 1000.0 * bytes_per_param * 1024.0).max(50.0);
+                        }
+                    }
+                }
+            }
+            i += 1;
+        }
+        500.0 // default fallback
     }
 
     /// Clear cache logic.
     pub fn handle_clear_cache(&self) -> TaskHandlerResult {
+
         println!("🧹 Clearing system logs and temp files...");
         // In simple rust cache clear, we can delete files under base/logs or similar
         let logs_dir = self.base_dir.join("logs");

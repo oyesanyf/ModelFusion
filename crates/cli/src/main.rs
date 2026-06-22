@@ -563,35 +563,54 @@ async fn run() -> Result<()> {
 
         // Auto-prepare models after update if requested
         if args.prepare_all_models {
-            println!("\n🔷 [OPENVINO] Auto-preparing small models after database update...");
+            println!("\n🔷 [OPENVINO] Auto-caching all OpenVINO models after database update...");
             println!("📂 Output directory: {}", args.ov_model_dir);
-            println!("📏 Filtering: models ≤ 6000 MB (~3B params) only\n");
 
-            let script_path = {
-                let mut found = None;
+            // Helper: find a script by searching up from the exe directory
+            let find_script = |script_name: &str| -> String {
                 if let Ok(mut exe_path) = std::env::current_exe() {
                     exe_path.pop();
                     let mut check_dir = exe_path.clone();
                     for _ in 0..5 {
-                        let script = check_dir.join("src/scripts/prepare_model_openvino.py");
+                        let script = check_dir.join(format!("src/scripts/{}", script_name));
                         if script.exists() {
-                            found = Some(script.to_string_lossy().into_owned());
-                            break;
+                            return script.to_string_lossy().into_owned();
                         }
                         if !check_dir.pop() { break; }
                     }
                 }
-                found.unwrap_or_else(|| "src/scripts/prepare_model_openvino.py".to_string())
+                format!("src/scripts/{}", script_name)
             };
 
+            // ── Step 1: Download all OV Hub pre-converted models (fast) ─────────
+            println!("\n📦 Step 1: Downloading pre-converted OV Hub models (INT4, no local conversion)...");
+            let hub_script = find_script("cache_ov_hub.py");
+            let db_path_str = handler.db_path.to_string_lossy().to_string();
+            let hub_result = std::process::Command::new("python")
+                .arg(&hub_script)
+                .arg(&args.ov_model_dir)
+                .arg(&db_path_str)
+                .arg("16")  // max 16 GB per model — skip huge ones
+                .status();
+            match hub_result {
+                Ok(status) if status.success() => println!("✅ OV Hub cache complete."),
+                Ok(_) => println!("⚠️  OV Hub cache script exited with errors (check output above)."),
+                Err(e) => println!("⚠️  Could not run cache_ov_hub.py: {}", e),
+            }
+
+            // ── Step 2: Local conversion for remaining small non-OV models ───────
+            println!("\n🔄 Step 2: Converting remaining small HuggingFace models locally...");
+            println!("📏 Filtering: models ≤ 3000 MB (~1.5B params fp16) for fast conversion\n");
+
+            let prepare_script = find_script("prepare_model_openvino.py");
             let db_path = handler.db_path.clone();
-            // 6000 MB ≈ models up to ~3B params (fp16), keeps prep time ~30 min
-            let models = modelfusion_core::fusion_engine::get_small_model_ids(&db_path, 6000.0);
+            // 3000 MB ≈ 1.5B params — keeps local conversion under 10 min each
+            let models = modelfusion_core::fusion_engine::get_small_model_ids(&db_path, 3000.0);
 
             if models.is_empty() {
-                println!("⚠️  No small models found in database.");
+                println!("⚠️  No small models found in database for local conversion.");
             } else {
-                println!("📋 Found {} models under 3B params to prepare.\n", models.len());
+                println!("📋 Found {} models under 1.5B params for local conversion.\n", models.len());
 
                 let mut success_count = 0;
                 let mut skip_count = 0;
@@ -601,7 +620,7 @@ async fn run() -> Result<()> {
                 for (i, model_id) in models.iter().enumerate() {
                     println!("[{}/{}] {}", i + 1, total, model_id);
                     let result = std::process::Command::new("python")
-                        .arg(&script_path)
+                        .arg(&prepare_script)
                         .arg(model_id)
                         .arg(&args.ov_model_dir)
                         .arg(&args.weight_format)
@@ -632,7 +651,7 @@ async fn run() -> Result<()> {
                 }
 
                 println!("\n====================================");
-                println!("📊 Auto-Prepare Summary");
+                println!("📊 Local Conversion Summary");
                 println!("====================================");
                 println!("  ✅ Converted: {}", success_count);
                 println!("  ⏭️  Cached:    {}", skip_count);
@@ -641,6 +660,7 @@ async fn run() -> Result<()> {
                 println!("====================================");
             }
         }
+
 
         return Ok(());
     }
