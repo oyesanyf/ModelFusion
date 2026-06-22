@@ -590,7 +590,7 @@ async fn run() -> Result<()> {
                 .arg(&hub_script)
                 .arg(&args.ov_model_dir)
                 .arg(&db_path_str)
-                .arg("16")  // max 16 GB per model — skip huge ones
+                .arg("4")  // max 4 GB per model — avoids huge fp16/MoE models
                 .status();
             match hub_result {
                 Ok(status) if status.success() => println!("✅ OV Hub cache complete."),
