@@ -134,14 +134,44 @@ def dir_size_gb(path: str) -> float:
 def download_model(model_id: str, ov_model_dir: str, max_size_gb: float) -> tuple[bool, str]:
     """
     Download model from HuggingFace Hub to ov_model_dir.
+    Shows live MB progress every 30 seconds so you can see it's not stuck.
     Returns (success, local_path_or_error_message).
-    After download, validates actual size <= max_size_gb and cleans up if too large.
     """
+    import threading, time
+
+    safe_name = model_id.replace("/", "--")
+    local_dir = os.path.join(ov_model_dir, safe_name)
+    os.makedirs(local_dir, exist_ok=True)
+
+    # ── Background progress monitor ───────────────────────────────────────────
+    stop_monitor = threading.Event()
+
+    def monitor():
+        last_size = 0.0
+        last_time = time.time()
+        interval   = 30  # seconds between updates
+        while not stop_monitor.wait(interval):
+            now      = time.time()
+            size_gb  = dir_size_gb(local_dir)
+            size_mb  = size_gb * 1024
+            delta_mb = (size_gb - last_size) * 1024
+            elapsed  = now - last_time
+            speed    = delta_mb / elapsed if elapsed > 0 else 0
+            print(
+                f"         ↳ {size_mb:7.1f} MB downloaded"
+                f"  (+{delta_mb:.1f} MB in {interval}s"
+                f"  ≈ {speed:.1f} MB/s)",
+                flush=True,
+            )
+            last_size = size_gb
+            last_time = now
+
+    t = threading.Thread(target=monitor, daemon=True)
+    t.start()
+    # ─────────────────────────────────────────────────────────────────────────
+
     try:
         from huggingface_hub import snapshot_download
-        safe_name = model_id.replace("/", "--")
-        local_dir = os.path.join(ov_model_dir, safe_name)
-        os.makedirs(ov_model_dir, exist_ok=True)
         path = snapshot_download(
             repo_id=model_id,
             local_dir=local_dir,
@@ -149,8 +179,12 @@ def download_model(model_id: str, ov_model_dir: str, max_size_gb: float) -> tupl
                              "*.ot", "*.pt", "*.pth", "tokenizer.model"],
         )
 
-        # Check actual downloaded size — DB estimates are often wrong
+        stop_monitor.set()
+        t.join(timeout=2)
+
+        # Validate actual size against cap
         actual_gb = dir_size_gb(path)
+        print(f"         ↳ Final size: {actual_gb:.2f} GB", flush=True)
         if actual_gb > max_size_gb:
             shutil.rmtree(path, ignore_errors=True)
             return False, f"Actual size {actual_gb:.1f} GB exceeds {max_size_gb} GB cap — deleted"
@@ -160,7 +194,10 @@ def download_model(model_id: str, ov_model_dir: str, max_size_gb: float) -> tupl
         else:
             shutil.rmtree(path, ignore_errors=True)
             return False, "No .xml OV model files found — not a text-gen model, cleaned up"
+
     except Exception as e:
+        stop_monitor.set()
+        t.join(timeout=2)
         return False, str(e)
 
 
