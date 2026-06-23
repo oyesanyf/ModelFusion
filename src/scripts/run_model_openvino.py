@@ -79,18 +79,35 @@ def find_ov_hub_model(model_id: str) -> str | None:
     return OV_HUB_REGISTRY.get(model_id)
 
 
+def has_ov_xml(directory: str) -> bool:
+    """Return True if directory contains any OpenVINO .xml model file."""
+    try:
+        return any(f.endswith(".xml") for f in os.listdir(directory))
+    except OSError:
+        return False
+
+
 def find_cached_model(model_id: str, ov_model_dir: str = "ov_models") -> str | None:
-    """Check if a pre-converted OpenVINO IR model exists locally."""
-    safe_name = model_id.split("/")[-1].lower().replace(" ", "-")
+    """
+    Check if a pre-converted OpenVINO IR model exists locally.
+    Matches case-insensitively so that:
+      - "Qwen/Qwen2.5-7B-Instruct" matches "OpenVINO--Qwen2.5-7B-Instruct-int4-ov"
+      - "Qwen/Qwen2.5-7B-Instruct" matches "CelesteImperia--Qwen2.5-7B-Instruct-OpenVINO-INT4"
+    """
+    # Make absolute so relative "ov_models" resolves correctly regardless of CWD
+    ov_model_dir = os.path.abspath(ov_model_dir)
+    safe_name = model_id.split("/")[-1].lower().replace(" ", "-")  # e.g. "qwen2.5-7b-instruct"
+    exact_dir  = model_id.replace("/", "--")                        # e.g. "OpenVINO--Qwen2.5-7B-Instruct-int4-ov"
+
     if os.path.isdir(ov_model_dir):
         for entry in sorted(os.listdir(ov_model_dir)):
-            if entry.startswith(safe_name) or entry.startswith(model_id.replace("/", "--")):
+            entry_lower = entry.lower()
+            # Match if the model name appears anywhere in the directory name (case-insensitive)
+            if safe_name in entry_lower or entry.startswith(exact_dir):
                 model_path = os.path.join(ov_model_dir, entry)
-                if (os.path.isfile(os.path.join(model_path, "openvino_model.xml"))
-                        or os.path.isfile(os.path.join(model_path, "model.xml"))):
+                if os.path.isdir(model_path) and has_ov_xml(model_path):
+                    print(f"[OPENVINO] Found cached model: {model_path}", file=sys.stderr)
                     return model_path
-    # Also check HuggingFace hub cache (snapshot_download stores here)
-    hf_cache = os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub")
     return None
 
 
@@ -99,22 +116,24 @@ def download_ov_hub_model(ov_repo_id: str, ov_model_dir: str) -> str | None:
     Download a pre-converted OpenVINO model from HuggingFace Hub.
     Returns the local directory path, or None on failure.
     """
+    ov_model_dir = os.path.abspath(ov_model_dir)
     try:
         from huggingface_hub import snapshot_download
         safe_name = ov_repo_id.replace("/", "--")
         local_dir = os.path.join(ov_model_dir, safe_name)
-        if os.path.isdir(local_dir) and os.path.isfile(os.path.join(local_dir, "openvino_model.xml")):
-            print(f"[OPENVINO] ✅ Using cached OV Hub model at {local_dir}", file=sys.stderr)
+        if os.path.isdir(local_dir) and has_ov_xml(local_dir):
+            print(f"[OPENVINO] Using cached OV Hub model at {local_dir}", file=sys.stderr)
             return local_dir
-        print(f"[OPENVINO] ⬇️  Downloading pre-converted OV model: {ov_repo_id}", file=sys.stderr)
-        print(f"[OPENVINO]    This is INT4 quantized (~1–4 GB) — much smaller than the original.", file=sys.stderr)
+        print(f"[OPENVINO] Downloading pre-converted OV model: {ov_repo_id}", file=sys.stderr)
+        print(f"[OPENVINO]    This is INT4 quantized (~1-4 GB) -- much smaller than the original.", file=sys.stderr)
         os.makedirs(ov_model_dir, exist_ok=True)
         path = snapshot_download(repo_id=ov_repo_id, local_dir=local_dir)
-        print(f"[OPENVINO] ✅ Downloaded to {path}", file=sys.stderr)
+        print(f"[OPENVINO] Downloaded to {path}", file=sys.stderr)
         return path
     except Exception as e:
-        print(f"[OPENVINO] ⚠️  OV Hub download failed ({e})", file=sys.stderr)
+        print(f"[OPENVINO] OV Hub download failed ({e})", file=sys.stderr)
         return None
+
 
 
 def convert_hf_to_openvino(model_id: str, ov_model_dir: str, weight_format: str = "int8") -> str | None:
