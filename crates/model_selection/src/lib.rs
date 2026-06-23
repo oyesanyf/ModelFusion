@@ -204,11 +204,32 @@ impl EnhancedModelSelector {
 
             // If using OpenVINO, but the model has not been pre-converted/cached yet,
             // we must budget for the heavy conversion step (which loads the full PyTorch model).
-            if backend == Backend::OpenVINO && !memory::is_openvino_model_cached(&m.model_id) {
+            let is_openvino = backend == Backend::OpenVINO;
+            let is_cached = is_openvino && memory::is_openvino_model_cached(&m.model_id);
+            if is_openvino && !is_cached {
                 backend = Backend::Transformers;
             }
 
             let estimated_params_b = estimate_params_billions(&m.model_id).unwrap_or(0.0);
+
+            // OpenVINO-aware scoring adjustment:
+            // On first run, uncached models must be downloaded + converted (slow).
+            // Strongly prefer ≤3B models which convert in ~2 min vs. ~15 min for 7B+.
+            // Once cached, restore full scoring — conversion cost is already paid.
+            if is_openvino {
+                if is_cached {
+                    // Cached model: small bonus to keep it ranked above uncached equivalents
+                    final_score = (final_score + 0.15).min(1.0);
+                } else if estimated_params_b > 3.0 {
+                    // Uncached large model: heavy penalty — download+convert would take 10-15+ min
+                    final_score = (final_score - 0.4).max(0.0);
+                    log::debug!(
+                        "[OPENVINO] Penalising uncached {:.1}B model '{}' (score {:.2} → {:.2})",
+                        estimated_params_b, m.model_id, final_score + 0.4, final_score
+                    );
+                }
+                // ≤3B uncached: no penalty — they convert fast (~2 min), keep normal score
+            }
             let estimated_memory_gb = if estimated_params_b > 0.0 {
                 estimate_runtime_memory_gb(estimated_params_b, backend)
             } else {

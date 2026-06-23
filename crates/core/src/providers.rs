@@ -279,17 +279,21 @@ impl LLMProvider for HuggingFaceProvider {
             log::info!("[VLLM] Executing model {} via vLLM...", self.config.model_id);
             let script_path = find_script("src/scripts/run_model_vllm.py");
 
-            let output = tokio::process::Command::new("python3")
-                .arg(&script_path)
-                .arg(&self.config.model_id)
-                .arg(prompt)
-                .arg(self.config.max_tokens.to_string())
-                .arg(self.config.temperature.to_string())
-                .output()
-                .await;
+            let timeout_duration = std::time::Duration::from_secs(self.config.timeout_seconds.max(300));
+            let output = tokio::time::timeout(
+                timeout_duration,
+                tokio::process::Command::new("python3")
+                    .arg(&script_path)
+                    .arg(&self.config.model_id)
+                    .arg(prompt)
+                    .arg(self.config.max_tokens.to_string())
+                    .arg(self.config.temperature.to_string())
+                    .kill_on_drop(true)
+                    .output()
+            ).await;
 
             match output {
-                Ok(out) => {
+                Ok(Ok(out)) => {
                     if out.status.success() {
                         let content = String::from_utf8_lossy(&out.stdout).trim().to_string();
                         let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
@@ -305,8 +309,11 @@ impl LLMProvider for HuggingFaceProvider {
                         bail!("vLLM execution failed for model {}: {}", self.config.model_id, err_msg);
                     }
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     bail!("Failed to start vLLM python script: {}", e);
+                }
+                Err(_) => {
+                    bail!("vLLM execution timed out after {} seconds for model {}", timeout_duration.as_secs(), self.config.model_id);
                 }
             }
         }
@@ -320,19 +327,26 @@ impl LLMProvider for HuggingFaceProvider {
             let weight_format = std::env::var("MODELFUSION_OV_WEIGHT_FORMAT")
                 .unwrap_or_else(|_| "int8".to_string());
 
-            let output = tokio::process::Command::new("python")
-                .arg(&script_path)
-                .arg(&self.config.model_id)
-                .arg(prompt)
-                .arg(self.config.max_tokens.to_string())
-                .arg(self.config.temperature.to_string())
-                .arg(&ov_model_dir)
-                .arg(&weight_format)
-                .output()
-                .await;
+            // OpenVINO requires download + convert + compile + inference — up to 15 min for first run.
+            // The inner Python script already has a 600s export timeout; we need to be larger than that.
+            let timeout_duration = std::time::Duration::from_secs(self.config.timeout_seconds.max(900));
+            log::info!("[OPENVINO] Timeout set to {} seconds (first run may take up to 15 minutes for model download + conversion)", timeout_duration.as_secs());
+            let output = tokio::time::timeout(
+                timeout_duration,
+                tokio::process::Command::new("python")
+                    .arg(&script_path)
+                    .arg(&self.config.model_id)
+                    .arg(prompt)
+                    .arg(self.config.max_tokens.to_string())
+                    .arg(self.config.temperature.to_string())
+                    .arg(&ov_model_dir)
+                    .arg(&weight_format)
+                    .kill_on_drop(true)
+                    .output()
+            ).await;
 
             match output {
-                Ok(out) => {
+                Ok(Ok(out)) => {
                     if out.status.success() {
                         let content = String::from_utf8_lossy(&out.stdout).trim().to_string();
                         let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
@@ -348,8 +362,11 @@ impl LLMProvider for HuggingFaceProvider {
                         bail!("OpenVINO execution failed for model {}: {}", self.config.model_id, err_msg);
                     }
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     bail!("Failed to start OpenVINO python script: {}", e);
+                }
+                Err(_) => {
+                    bail!("OpenVINO execution timed out after {} seconds for model {}", timeout_duration.as_secs(), self.config.model_id);
                 }
             }
         }
@@ -376,18 +393,22 @@ impl LLMProvider for HuggingFaceProvider {
                 device.to_string()
             };
 
-            let output = tokio::process::Command::new("python")
-                .arg(&script_path)
-                .arg(&self.config.model_id)
-                .arg(prompt)
-                .arg(self.config.max_tokens.to_string())
-                .arg(self.config.temperature.to_string())
-                .arg(device_arg)
-                .output()
-                .await;
+            let timeout_duration = std::time::Duration::from_secs(self.config.timeout_seconds.max(300));
+            let output = tokio::time::timeout(
+                timeout_duration,
+                tokio::process::Command::new("python")
+                    .arg(&script_path)
+                    .arg(&self.config.model_id)
+                    .arg(prompt)
+                    .arg(self.config.max_tokens.to_string())
+                    .arg(self.config.temperature.to_string())
+                    .arg(device_arg)
+                    .kill_on_drop(true)
+                    .output()
+            ).await;
 
             match output {
-                Ok(out) => {
+                Ok(Ok(out)) => {
                     if out.status.success() {
                         let content = String::from_utf8_lossy(&out.stdout).trim().to_string();
                         let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
@@ -403,8 +424,11 @@ impl LLMProvider for HuggingFaceProvider {
                         bail!("Local transformers execution failed for model {}: {}", self.config.model_id, err_msg);
                     }
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     bail!("Failed to start python script for local transformers execution: {}", e);
+                }
+                Err(_) => {
+                    bail!("Local transformers execution timed out after {} seconds for model {}", timeout_duration.as_secs(), self.config.model_id);
                 }
             }
         }

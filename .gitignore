@@ -12,3 +12,6 @@ backups/
 # System logs
 logs/
 *.log
+
+ov_models/
+IDE/
