@@ -497,6 +497,9 @@ struct Args {
 
     #[arg(long)]
     feature_ranking: bool,
+
+    #[arg(long, help = "Custom SQLite database path for ModelFusion")]
+    db_path: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -541,7 +544,7 @@ async fn run() -> Result<()> {
     print_ensemble_info(&args.selection_strategy);
 
     // Initialize the comprehensive task handler
-    let handler = ComprehensiveTaskHandler::new(None)?;
+    let handler = ComprehensiveTaskHandler::new(args.db_path.as_deref())?;
     handler.ensure_database_exists()?;
 
     // Dispatch system commands first
