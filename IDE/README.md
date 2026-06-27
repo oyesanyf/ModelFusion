@@ -66,7 +66,7 @@ The routing layer models the decision as a reinforcement learning problem:
   - $A_0$: Single local model execution.
   - $A_1$: Model Fusion panel execution.
 - **Epsilon-Greedy Exploration ($\epsilon = 0.15$)**:
-  - With probability $1 - \epsilon$, the router selects the best performing arm based on running average rewards: $A^* = \operatorname{argmax}_a Q(C, a)$.
+  - With probability $1 - \epsilon$, the router selects the best performing arm based on running average rewards: $A^* = \arg\max_a Q(C, a)$.
   - With probability $\epsilon$, it randomly explores one of the two arms.
 - **Online Updates**:
   - Counts and average rewards are loaded and updated in `db/bandit_state.json`.
