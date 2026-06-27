@@ -500,6 +500,15 @@ struct Args {
 
     #[arg(long, help = "Custom SQLite database path for ModelFusion")]
     db_path: Option<String>,
+
+    #[arg(long, help = "Run as HTTP API server")]
+    server: bool,
+
+    #[arg(long, default_value = "5000", help = "Port to run HTTP server on")]
+    port: u16,
+
+    #[arg(long, help = "Run as MCP stdio server")]
+    mcp: bool,
 }
 
 fn main() -> Result<()> {
@@ -541,11 +550,23 @@ async fn run() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     // Print ensemble information mock as expected by main.py flow
-    print_ensemble_info(&args.selection_strategy);
+    if !args.mcp {
+        print_ensemble_info(&args.selection_strategy);
+    }
 
     // Initialize the comprehensive task handler
     let handler = ComprehensiveTaskHandler::new(args.db_path.as_deref())?;
     handler.ensure_database_exists()?;
+
+    if args.mcp {
+        run_mcp_server(args.db_path.clone()).await?;
+        return Ok(());
+    }
+
+    if args.server {
+        run_server(args.port, args.db_path.clone()).await?;
+        return Ok(());
+    }
 
     // Dispatch system commands first
     if args.stats {
@@ -1313,3 +1334,679 @@ fn generate_minimal_rtf(content: &str) -> String {
 fn generate_minimal_docx(content: &str) -> Vec<u8> {
     generate_minimal_rtf(content).into_bytes()
 }
+
+async fn run_server(port: u16, db_path: Option<String>) -> Result<()> {
+    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
+    println!("ModelFusion API server running on http://127.0.0.1:{}", port);
+    
+    let db_path_opt = db_path.clone();
+
+    loop {
+        let (mut socket, _) = match listener.accept().await {
+            Ok(val) => val,
+            Err(_) => continue,
+        };
+        let db_path_clone = db_path_opt.clone();
+        tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let mut request_data = Vec::new();
+            let mut buf = [0; 8192];
+            let mut body_start = 0;
+            let mut content_length = 0;
+
+            loop {
+                let n = match socket.read(&mut buf).await {
+                    Ok(n) if n > 0 => n,
+                    _ => break,
+                };
+                request_data.extend_from_slice(&buf[..n]);
+
+                // Try to find the end of headers
+                if body_start == 0 {
+                    if let Some(pos) = find_subsequence(&request_data, b"\r\n\r\n") {
+                        body_start = pos + 4;
+                        // Parse Content-Length
+                        let headers_str = String::from_utf8_lossy(&request_data[..pos]);
+                        for line in headers_str.lines() {
+                            if line.to_lowercase().starts_with("content-length:") {
+                                if let Some(val) = line.split(':').nth(1) {
+                                    content_length = val.trim().parse::<usize>().unwrap_or(0);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if body_start > 0 && request_data.len() >= body_start + content_length {
+                    break;
+                }
+                if request_data.len() > 65536 { // 64KB limit for sanity
+                    break;
+                }
+            }
+
+            if body_start == 0 {
+                return;
+            }
+
+            let body = &request_data[body_start..body_start + content_length];
+            let request_json: serde_json::Value = match serde_json::from_slice(body) {
+                Ok(v) => v,
+                Err(_) => {
+                    let response = "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"error\":\"Invalid JSON\"}";
+                    let _ = socket.write_all(response.as_bytes()).await;
+                    return;
+                }
+            };
+
+            let prompt = request_json["prompt"].as_str().unwrap_or("").to_string();
+            let strategy = request_json["selection_strategy"].as_str().unwrap_or("multi_objective").to_string();
+            let fusion_mode = request_json["fusion_mode"].as_str().unwrap_or("multi-model").to_string();
+            let fusion_models = request_json["fusion_models"].as_u64().unwrap_or(10) as usize;
+            let openvino = request_json["openvino"].as_bool().unwrap_or(false);
+            let gpu = request_json["gpu"].as_bool().unwrap_or(false);
+            let cpu = request_json["cpu"].as_bool().unwrap_or(false);
+
+            if gpu { std::env::set_var("MODELFUSION_USE_OLLAMA", "true"); }
+            else { std::env::remove_var("MODELFUSION_USE_OLLAMA"); }
+
+            if openvino { std::env::set_var("MODELFUSION_USE_OPENVINO", "true"); }
+            else { std::env::remove_var("MODELFUSION_USE_OPENVINO"); }
+
+            if cpu { std::env::set_var("MODELFUSION_USE_TRANSFORMERS", "true"); }
+            else { std::env::remove_var("MODELFUSION_USE_TRANSFORMERS"); }
+
+            let db_path_str = db_path_clone.unwrap_or_else(|| "db/hf_models.db".to_string());
+            let db_path_val = std::path::Path::new(&db_path_str);
+
+            let result_content = match modelfusion_core::fusion_engine::run_fusion(
+                &prompt,
+                None,
+                Some(db_path_val),
+                None,
+                parse_selection_strategy(&strategy),
+                Some(fusion_models),
+                &fusion_mode,
+            ).await {
+                Ok(content) => content,
+                Err(e) => format!("Error: {}", e),
+            };
+
+            let response_json = serde_json::json!({
+                "content": result_content
+            });
+
+            let response_body = serde_json::to_string(&response_json).unwrap();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                response_body.len(),
+                response_body
+            );
+
+            let _ = socket.write_all(response.as_bytes()).await;
+            let _ = socket.flush().await;
+        });
+    }
+}
+
+fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|window| window == needle)
+}
+
+async fn run_cli_subcommand(cmd_args: &[String], db_path: &std::path::Path) -> String {
+    let mut args = cmd_args.to_vec();
+    if !args.iter().any(|a| a == "--db-path") {
+        args.push("--db-path".to_string());
+        args.push(db_path.to_string_lossy().to_string());
+    }
+
+    if let Ok(exe_path) = std::env::current_exe() {
+        let output = tokio::process::Command::new(exe_path)
+            .args(&args)
+            .output()
+            .await;
+
+        match output {
+            Ok(out) => {
+                let stdout_str = String::from_utf8_lossy(&out.stdout).to_string();
+                let stderr_str = String::from_utf8_lossy(&out.stderr).to_string();
+                if out.status.success() {
+                    stdout_str
+                } else {
+                    format!("Error running ModelFusion CLI:\nExit code: {}\nStdout: {}\nStderr: {}", out.status, stdout_str, stderr_str)
+                }
+            }
+            Err(e) => format!("Failed to run ModelFusion CLI process: {}", e),
+        }
+    } else {
+        "Failed to resolve current executable path".to_string()
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+struct BanditState {
+    // For each context (0 = Simple, 1 = Coding / Complicated):
+    // We store the pull count and average reward for each arm (0 = Single model, 1 = Fusion model).
+    counts: [[u32; 2]; 2],
+    values: [[f64; 2]; 2],
+}
+
+impl Default for BanditState {
+    fn default() -> Self {
+        Self {
+            counts: [[0; 2]; 2],
+            values: [[0.5; 2]; 2], // Prior reward values initialized to 0.5
+        }
+    }
+}
+
+fn load_bandit_state(db_dir: &std::path::Path) -> BanditState {
+    let path = db_dir.join("bandit_state.json");
+    if path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if let Ok(state) = serde_json::from_str(&content) {
+                return state;
+            }
+        }
+    }
+    BanditState::default()
+}
+
+fn save_bandit_state(db_dir: &std::path::Path, state: &BanditState) {
+    let path = db_dir.join("bandit_state.json");
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(content) = serde_json::to_string_pretty(state) {
+        let _ = std::fs::write(path, content);
+    }
+}
+
+// Lightweight Linear Congruential Generator (LCG) for Epsilon-Greedy selection without rand dependency
+struct Lcg {
+    state: u64,
+}
+
+impl Lcg {
+    fn new() -> Self {
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64;
+        Self { state: seed }
+    }
+
+    fn next_u32(&mut self) -> u32 {
+        self.state = self.state.wrapping_mul(6364136223846793005).wrapping_add(1);
+        (self.state >> 32) as u32
+    }
+
+    fn gen_f64(&mut self) -> f64 {
+        (self.next_u32() as f64) / (u32::MAX as f64)
+    }
+
+    fn gen_bool(&mut self, p: f64) -> bool {
+        self.gen_f64() < p
+    }
+
+    fn gen_range(&mut self, min: usize, max: usize) -> usize {
+        let diff = max - min;
+        min + (self.next_u32() as usize % diff)
+    }
+}
+
+fn detect_if_coding_or_complicated(prompt: &str) -> bool {
+    let lower = prompt.to_lowercase();
+    
+    // Check coding keywords
+    let coding_keywords = [
+        "code", "write a", "function", "class", "struct", "impl", "def", "fn ", 
+        "import ", "public ", "private ", "async ", "await", "compile", "compiler",
+        "debug", "error", "refactor", "run ", "test", "javascript", "typescript",
+        "python", "rust", " c++", " java ", "go ", "html", "css"
+    ];
+    for kw in &coding_keywords {
+        if lower.contains(kw) {
+            return true;
+        }
+    }
+
+    // Check coding structural symbols
+    let coding_symbols = ['{', '}', '[', ']', '(', ')', ';', '=', '+', '-', '*', '/'];
+    let mut symbol_count = 0;
+    for c in prompt.chars() {
+        if coding_symbols.contains(&c) {
+            symbol_count += 1;
+        }
+    }
+    if symbol_count > 6 {
+        return true;
+    }
+
+    // Check complexity (length)
+    if prompt.len() > 150 {
+        return true;
+    }
+
+    // Check complexity query words
+    let complexity_keywords = [
+        "explain", "how does", "how to", "why did", "optimize", "architecture",
+        "design", "performance", "analyze", "review", "evaluate"
+    ];
+    for kw in &complexity_keywords {
+        if lower.contains(kw) {
+            return true;
+        }
+    }
+
+    false
+}
+
+async fn route_and_execute(
+    prompt: &str,
+    db_path: &std::path::Path,
+    custom_args: &[String],
+) -> (String, usize, usize) {
+    let is_coding = detect_if_coding_or_complicated(prompt);
+    let context = if is_coding { 1 } else { 0 };
+
+    let db_dir = db_path.parent().unwrap_or_else(|| std::path::Path::new("db"));
+    let mut state = load_bandit_state(db_dir);
+
+    // Multi-Armed Bandit Epsilon-Greedy choice
+    let epsilon = 0.15;
+    let mut lcg = Lcg::new();
+
+    let arm = if lcg.gen_bool(epsilon) {
+        // Explore
+        lcg.gen_range(0, 2)
+    } else {
+        // Exploit
+        let vals = state.values[context];
+        if vals[0] >= vals[1] {
+            0
+        } else {
+            1
+        }
+    };
+
+    eprintln!(
+        "🎯 [BANDIT] Prompt: \"{}\" | Context: {} (Coding/Complex: {}) | Selected Arm: {} (0=Single, 1=Fusion)",
+        prompt.chars().take(40).collect::<String>(),
+        context,
+        is_coding,
+        arm
+    );
+
+    let mut cmd_args = custom_args.to_vec();
+    if !cmd_args.iter().any(|a| a == "--prompt") {
+        cmd_args.push("--prompt".to_string());
+        cmd_args.push(prompt.to_string());
+    }
+
+    if arm == 1 {
+        if !cmd_args.iter().any(|a| a == "--fusion") {
+            cmd_args.push("--fusion".to_string());
+        }
+    } else {
+        cmd_args.retain(|a| a != "--fusion");
+    }
+
+    let result_text = run_cli_subcommand(&cmd_args, db_path).await;
+
+    // Automatic rewards computation based on success of subcommand
+    let reward = if result_text.contains("Error:") || result_text.contains("[ERROR]") {
+        0.0
+    } else {
+        0.8
+    };
+
+    // Update running average
+    let count = state.counts[context][arm];
+    let val = state.values[context][arm];
+    state.counts[context][arm] += 1;
+    state.values[context][arm] = val + (reward - val) / (count + 1) as f64;
+    save_bandit_state(db_dir, &state);
+
+    (result_text, context, arm)
+}
+
+async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    
+    let handler = ComprehensiveTaskHandler::new(db_path.as_deref())?;
+    handler.ensure_database_exists()?;
+    let db_path_resolved = handler.db_path.clone();
+
+    let stdin = tokio::io::stdin();
+    let mut reader = BufReader::new(stdin).lines();
+    let mut stdout = tokio::io::stdout();
+
+    while let Some(line) = reader.next_line().await? {
+        let request: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let method = request["method"].as_str().unwrap_or("");
+        let id = request["id"].clone();
+
+        if method == "initialize" {
+            let response = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {
+                        "tools": {}
+                    },
+                    "serverInfo": {
+                        "name": "ModelFusion MCP Server",
+                        "version": "0.1.0"
+                    }
+                }
+            });
+            let response_str = serde_json::to_string(&response)? + "\n";
+            stdout.write_all(response_str.as_bytes()).await?;
+            stdout.flush().await?;
+        } else if method == "notifications/initialized" {
+            // No response required
+        } else if method == "tools/list" {
+            let response = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "tools": [
+                        {
+                            "name": "execute",
+                            "description": "Execute the ModelFusion CLI with any combination of flags. Supported flags:\n\
+                                            - INPUT: --file <path> (analyze file), --folder <path> (review directory), --prompt <text> (prompt/instruction)\n\
+                                            - BACKENDS: --fusion (run panel of models), --fusion-models <N> (panel size), --fusion-mode <multi-model|multi-sample>, --ollama (use Ollama), --openvino (use OpenVINO optimized CPU/GPU), --vllm (use vLLM)\n\
+                                            - HARDWARE: --gpu (force GPU/CUDA), --cpu (force CPU-only)\n\
+                                            - BUDGET: --budget <float> (cost limit, default: 10.0)\n\
+                                            - OPTIMIZATION: --selection-strategy <multi_objective|latency|accuracy|cost|performance>\n\
+                                            - AGENT MODES: --delegation (multi-agent routing), --recursion (deconstruct tasks), --chain-of-thought (enable CoT), --real-options (enable real options analysis)\n\
+                                            - SYSTEM COMMANDS: --stats (show model counts), --tasks (list modalities), --update (pull latest HF registry), --clearcache (clear weights cache), --pe-header-extraction (Windows PE metadata/malware scan)\n\
+                                            - WORKFLOWS: --dataanalyst (run CSV/Excel analytics), --datascience (run comprehensive data science flow)",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "args": {
+                                        "type": "array",
+                                        "items": { "type": "string" },
+                                        "description": "Array of command-line arguments (e.g., ['--file', 'main.rs', '--prompt', 'analyze code', '--openvino'])"
+                                    }
+                                },
+                                "required": ["args"]
+                            }
+                        },
+                        {
+                            "name": "orchestrate",
+                            "description": "Run the ModelFusion orchestration system on a text prompt to select the best local or remote models and perform the task.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "prompt": { "type": "string", "description": "The main prompt or task description" },
+                                    "budget": { "type": "number", "description": "Budget limit for LLM execution (default: 10.0)" },
+                                    "selection_strategy": { "type": "string", "description": "Model selection strategy (default: 'multi_objective')" },
+                                    "fusion_mode": { "type": "string", "description": "Fusion mode (default: 'multi-model')" },
+                                    "task_override": { "type": "string", "description": "Force a specific task type" },
+                                    "gpu": { "type": "boolean", "description": "Force GPU usage" },
+                                    "cpu": { "type": "boolean", "description": "Force CPU usage" }
+                                },
+                                "required": ["prompt"]
+                            }
+                        },
+                        {
+                            "name": "analyze_file",
+                            "description": "Analyze or process a specific file path using ModelFusion.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "file": { "type": "string", "description": "Absolute path to the file to analyze" },
+                                    "prompt": { "type": "string", "description": "Instructions or query about the file" },
+                                    "budget": { "type": "number", "description": "Budget limit (default: 10.0)" },
+                                    "gpu": { "type": "boolean", "description": "Force GPU usage" },
+                                    "cpu": { "type": "boolean", "description": "Force CPU usage" }
+                                },
+                                "required": ["file", "prompt"]
+                            }
+                        },
+                        {
+                            "name": "analyze_folder",
+                            "description": "Analyze or review a directory (folder) path using ModelFusion.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "folder": { "type": "string", "description": "Absolute path to the folder to analyze" },
+                                    "prompt": { "type": "string", "description": "Instructions or query about the folder" },
+                                    "budget": { "type": "number", "description": "Budget limit (default: 10.0)" },
+                                    "gpu": { "type": "boolean", "description": "Force GPU usage" },
+                                    "cpu": { "type": "boolean", "description": "Force CPU usage" }
+                                },
+                                "required": ["folder", "prompt"]
+                            }
+                        },
+                        {
+                            "name": "pe_header_extraction",
+                            "description": "Extract PE header information and perform PE analysis on a Windows executable.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "file": { "type": "string", "description": "Absolute path to the Windows PE executable file" },
+                                    "prompt": { "type": "string", "description": "Analysis prompt or instructions (default: 'Perform PE analysis')" }
+                                },
+                                "required": ["file"]
+                            }
+                        },
+                        {
+                            "name": "get_database_stats",
+                            "description": "Get database status and model categorization statistics.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {}
+                            }
+                        },
+                        {
+                            "name": "list_tasks",
+                            "description": "List available models and tasks.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "category": { "type": "string", "description": "Category filter (e.g., audio, image, text, all)" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "update_database",
+                            "description": "Update the HuggingFace models database.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {}
+                            }
+                        },
+                        {
+                            "name": "clear_cache",
+                            "description": "Clear all cached data.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {}
+                            }
+                        },
+                        {
+                            "name": "get_decision_stats",
+                            "description": "Get model decision-making statistics.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {}
+                            }
+                        },
+                        {
+                            "name": "report_bandit_feedback",
+                            "description": "Provide user feedback on the quality of the last model execution to update the bandit rewards.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "context": { "type": "integer", "description": "The context ID of the query (0=Simple, 1=Complex/Coding)" },
+                                    "arm": { "type": "integer", "description": "The arm ID selected (0=Single, 1=Fusion)" },
+                                    "reward": { "type": "number", "description": "Feedback score (e.g., 1.0 for thumbs-up/success, 0.0 for thumbs-down/poor quality)" }
+                                },
+                                "required": ["context", "arm", "reward"]
+                            }
+                        }
+                    ]
+                }
+            });
+            let response_str = serde_json::to_string(&response)? + "\n";
+            stdout.write_all(response_str.as_bytes()).await?;
+            stdout.flush().await?;
+        } else if method == "tools/call" {
+            let params = &request["params"];
+            let name = params["name"].as_str().unwrap_or("");
+            let arguments = &params["arguments"];
+
+            let result_text = match name {
+                "execute" => {
+                    let args_val = arguments["args"].as_array();
+                    if let Some(args_arr) = args_val {
+                        let mut cmd_args = Vec::new();
+                        for arg in args_arr {
+                            if let Some(s) = arg.as_str() {
+                                cmd_args.push(s.to_string());
+                            }
+                        }
+                        run_cli_subcommand(&cmd_args, &db_path_resolved).await
+                    } else {
+                        "Error: Invalid or missing 'args' parameter".to_string()
+                    }
+                }
+                "orchestrate" => {
+                    let prompt = arguments["prompt"].as_str().unwrap_or("").to_string();
+                    let mut cmd_args = vec!["--prompt".to_string(), prompt.clone()];
+                    
+                    if let Some(budget) = arguments["budget"].as_f64() {
+                        cmd_args.push("--budget".to_string());
+                        cmd_args.push(budget.to_string());
+                    }
+                    if let Some(strategy) = arguments["selection_strategy"].as_str() {
+                        cmd_args.push("--selection-strategy".to_string());
+                        cmd_args.push(strategy.to_string());
+                    }
+                    if let Some(fusion_mode) = arguments["fusion_mode"].as_str() {
+                        cmd_args.push("--fusion-mode".to_string());
+                        cmd_args.push(fusion_mode.to_string());
+                    }
+                    if let Some(task_override) = arguments["task_override"].as_str() {
+                        cmd_args.push("--task".to_string());
+                        cmd_args.push(task_override.to_string());
+                    }
+                    if arguments["gpu"].as_bool().unwrap_or(false) {
+                        cmd_args.push("--gpu".to_string());
+                    }
+                    if arguments["cpu"].as_bool().unwrap_or(false) {
+                        cmd_args.push("--cpu".to_string());
+                    }
+                    
+                    let (result, _context, _arm) = route_and_execute(&prompt, &db_path_resolved, &cmd_args).await;
+                    result
+                }
+                "analyze_file" => {
+                    let file = arguments["file"].as_str().unwrap_or("").to_string();
+                    let prompt = arguments["prompt"].as_str().unwrap_or("").to_string();
+                    let mut cmd_args = vec!["--file".to_string(), file, "--prompt".to_string(), prompt];
+                    if arguments["gpu"].as_bool().unwrap_or(false) {
+                        cmd_args.push("--gpu".to_string());
+                    }
+                    if arguments["cpu"].as_bool().unwrap_or(false) {
+                        cmd_args.push("--cpu".to_string());
+                    }
+                    run_cli_subcommand(&cmd_args, &db_path_resolved).await
+                }
+                "analyze_folder" => {
+                    let folder = arguments["folder"].as_str().unwrap_or("").to_string();
+                    let prompt = arguments["prompt"].as_str().unwrap_or("").to_string();
+                    let mut cmd_args = vec!["--folder".to_string(), folder, "--prompt".to_string(), prompt];
+                    run_cli_subcommand(&cmd_args, &db_path_resolved).await
+                }
+                "pe_header_extraction" => {
+                    let file = arguments["file"].as_str().unwrap_or("").to_string();
+                    let prompt = arguments["prompt"].as_str().unwrap_or("Perform PE analysis");
+                    let cmd_args = vec![
+                        "--pe-header-extraction".to_string(),
+                        "--file".to_string(),
+                        file,
+                        "--prompt".to_string(),
+                        prompt.to_string(),
+                    ];
+                    run_cli_subcommand(&cmd_args, &db_path_resolved).await
+                }
+                "get_database_stats" => {
+                    run_cli_subcommand(&["--stats".to_string()], &db_path_resolved).await
+                }
+                "list_tasks" => {
+                    let category = arguments["category"].as_str().unwrap_or("all");
+                    run_cli_subcommand(&["--tasks".to_string(), category.to_string()], &db_path_resolved).await
+                }
+                "update_database" => {
+                    run_cli_subcommand(&["--update".to_string()], &db_path_resolved).await
+                }
+                "clear_cache" => {
+                    run_cli_subcommand(&["--clearcache".to_string()], &db_path_resolved).await
+                }
+                "get_decision_stats" => {
+                    run_cli_subcommand(&["--decision-stats".to_string()], &db_path_resolved).await
+                }
+                "report_bandit_feedback" => {
+                    let context = arguments["context"].as_u64().unwrap_or(0) as usize;
+                    let arm = arguments["arm"].as_u64().unwrap_or(0) as usize;
+                    let reward = arguments["reward"].as_f64().unwrap_or(0.5);
+
+                    if context < 2 && arm < 2 {
+                        let db_dir = db_path_resolved.parent().unwrap_or_else(|| std::path::Path::new("db"));
+                        let mut state = load_bandit_state(db_dir);
+                        let count = state.counts[context][arm];
+                        let val = state.values[context][arm];
+                        state.counts[context][arm] += 1;
+                        state.values[context][arm] = val + (reward - val) / (count + 1) as f64;
+                        save_bandit_state(db_dir, &state);
+                        format!("Successfully updated bandit feedback for context {}, arm {} to reward {}. New value: {:.4}", context, arm, reward, state.values[context][arm])
+                    } else {
+                        "Error: Invalid context or arm index".to_string()
+                    }
+                }
+                _ => format!("Error: Unknown tool {}", name),
+            };
+
+            let response = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": result_text
+                        }
+                    ]
+                }
+            });
+            let response_str = serde_json::to_string(&response)? + "\n";
+            stdout.write_all(response_str.as_bytes()).await?;
+            stdout.flush().await?;
+        } else {
+            let response = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {
+                    "code": -32601,
+                    "message": format!("Method not found: {}", method)
+                }
+            });
+            let response_str = serde_json::to_string(&response)? + "\n";
+            stdout.write_all(response_str.as_bytes()).await?;
+            stdout.flush().await?;
+        }
+    }
+
+    Ok(())
+}
+

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "modelfusion": {
+      "command": "d:\\harfile\\ModelFusion\\target\\debug\\cli.exe",
+      "args": ["--mcp", "--db-path", "d:\\harfile\\ModelFusion\\db\\hf_models.db"],
+      "env": {}
+    }
+  }
+}
