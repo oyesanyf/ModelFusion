@@ -7,6 +7,48 @@ use model_selection::SelectionStrategy;
 use std::collections::HashMap;
 use chrono;
 
+fn ensure_python_packages() {
+    println!("🔷 Checking Python multimodal dependencies...");
+    
+    let py_check = std::process::Command::new("python")
+        .arg("-c")
+        .arg("import sys; print(sys.version)")
+        .output();
+        
+    if py_check.is_err() {
+        println!("⚠️ [WARNING] 'python' command not found. Please install Python to run local models.");
+        return;
+    }
+
+    let check = std::process::Command::new("python")
+        .arg("-c")
+        .arg("import torch, transformers, accelerate, PIL, soundfile, librosa, pypdf; print('OK')")
+        .output();
+
+    let needs_install = match check {
+        Ok(out) => !out.status.success(),
+        Err(_) => true,
+    };
+
+    if needs_install {
+        println!("📥 [AUTO-INSTALL] Installing/updating missing local Python dependencies (this may take a few minutes)...");
+        let install_status = std::process::Command::new("python")
+            .args(["-m", "pip", "install", "torch", "transformers", "accelerate", "pillow", "soundfile", "librosa", "pypdf", "--quiet"])
+            .status();
+            
+        match install_status {
+            Ok(status) if status.success() => {
+                println!("✅ [AUTO-INSTALL] Dependencies installed successfully!");
+            }
+            _ => {
+                println!("⚠️ [AUTO-INSTALL] Automatic installation failed. Please run manually: pip install torch transformers accelerate pillow soundfile librosa pypdf");
+            }
+        }
+    } else {
+        println!("✅ Local Python multimodal dependencies are fully satisfied.");
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "modelfusion", version = "0.1.0", about = "ModelFusion - Advanced HuggingFace Model Orchestration System")]
 struct Args {
@@ -970,6 +1012,7 @@ async fn run() -> Result<()> {
         } else {
             std::env::set_var("MODELFUSION_USE_TRANSFORMERS", "true");
             println!("🐍 Using local Python transformers for model execution.");
+            ensure_python_packages();
         }
 
         if is_fusion_needed {
@@ -1380,7 +1423,7 @@ async fn run_server(port: u16, db_path: Option<String>) -> Result<()> {
                 if body_start > 0 && request_data.len() >= body_start + content_length {
                     break;
                 }
-                if request_data.len() > 65536 { // 64KB limit for sanity
+                if request_data.len() > 10485760 { // 10MB limit for multimodal payloads
                     break;
                 }
             }

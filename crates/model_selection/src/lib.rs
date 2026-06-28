@@ -230,6 +230,28 @@ impl EnhancedModelSelector {
                 }
                 // ≤3B uncached: no penalty — they convert fast (~2 min), keep normal score
             }
+
+            // Hardware suitability scoring adjustment:
+            let sys_mem = SystemMemory::detect();
+            let suitability = memory::evaluate_hardware_suitability(
+                estimated_params_b,
+                backend,
+                &sys_mem,
+            );
+
+            // Filter out models that do not meet minimum requirements immediately
+            if suitability == memory::SuitabilityResult::Inadequate {
+                log::debug!("Skipping candidate '{}' due to inadequate hardware resources", m.model_id);
+                continue;
+            }
+
+            // Apply suitability boosts and penalties
+            if suitability == memory::SuitabilityResult::Adequate {
+                final_score = (final_score + 0.15).min(1.0);
+            } else if suitability == memory::SuitabilityResult::Minimum {
+                final_score = (final_score - 0.20).max(0.0);
+            }
+
             let estimated_memory_gb = if estimated_params_b > 0.0 {
                 estimate_runtime_memory_gb(estimated_params_b, backend)
             } else {
@@ -281,30 +303,27 @@ impl EnhancedModelSelector {
 
         let before_count = candidates.len();
         candidates.retain(|c| {
-            if c.estimated_params_b == 0.0 {
-                // Unknown size — keep models under 5GB disk size as a safe guess
-                if c.size_mb > 0.0 && c.size_mb > 5000.0 {
-                    println!("  ❌ {} — SKIPPED (unknown params, disk size {:.0} MB exceeds safe limit)", c.model_id, c.size_mb);
-                    return false;
-                }
-                return true;
-            }
-            if c.estimated_memory_gb <= budget {
+            let suitability = memory::evaluate_hardware_suitability(
+                c.estimated_params_b,
+                if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() { Backend::Ollama } else if std::env::var("MODELFUSION_USE_OPENVINO").is_ok() { Backend::OpenVINO } else { Backend::Transformers },
+                &sys_mem,
+            );
+            
+            if suitability == memory::SuitabilityResult::Inadequate {
+                println!("  ❌ {} ({:.1}B params) — SKIPPED (Inadequate hardware)", c.model_id, c.estimated_params_b);
+                false
+            } else {
                 let device = sys_mem.best_device_for_model(c.estimated_memory_gb);
                 let device_icon = if device == memory::Device::Gpu { "🎮 GPU" } else { "💻 CPU" };
-                println!("  ✅ {} ({:.1}B params, ~{:.1} GB) — {} {}",
-                    c.model_id, c.estimated_params_b, c.estimated_memory_gb, device_icon,
-                    if device == memory::Device::Gpu { "(fits in VRAM)" } else { "(RAM)" });
+                let suitability_str = if suitability == memory::SuitabilityResult::Adequate { "Adequate" } else { "Minimum specs" };
+                println!("  ✅ {} ({:.1}B params, ~{:.1} GB) — {} [Suitability: {}]",
+                    c.model_id, c.estimated_params_b, c.estimated_memory_gb, device_icon, suitability_str);
                 true
-            } else {
-                println!("  ❌ {} ({:.1}B params, ~{:.1} GB) — SKIPPED (exceeds {:.1} GB budget)",
-                    c.model_id, c.estimated_params_b, c.estimated_memory_gb, budget);
-                false
             }
         });
         if candidates.len() < before_count {
-            println!("📋 [MEMORY] Filtered: {} → {} models fit in {:.1} GB RAM budget",
-                before_count, candidates.len(), budget);
+            println!("📋 [HARDWARE] Filtered: {} → {} models fit system requirements",
+                before_count, candidates.len());
         }
 
         if candidates.is_empty() {

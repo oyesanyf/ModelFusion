@@ -5,6 +5,7 @@
 
 use std::process::Command;
 use std::sync::OnceLock;
+use sysinfo::System;
 
 /// Process-level cache so hardware probes only run once per CLI invocation.
 static SYSTEM_MEMORY_CACHE: OnceLock<SystemMemory> = OnceLock::new();
@@ -14,6 +15,7 @@ static SYSTEM_MEMORY_CACHE: OnceLock<SystemMemory> = OnceLock::new();
 pub struct SystemMemory {
     pub total_ram_gb: f64,
     pub free_ram_gb: f64,
+    pub cpu_cores: usize,
     pub gpu_name: Option<String>,
     pub gpu_vram_total_gb: f64,
     pub gpu_vram_free_gb: f64,
@@ -46,17 +48,42 @@ impl std::fmt::Display for Device {
     }
 }
 
+/// Dynamic and static hardware requirements mapping.
+#[derive(Debug, Clone)]
+pub struct HardwareRequirements {
+    pub min_ram_gb: f64,
+    pub adequate_ram_gb: f64,
+    pub min_vram_gb: f64,
+    pub adequate_vram_gb: f64,
+    pub min_cpu_cores: usize,
+    pub adequate_cpu_cores: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SuitabilityResult {
+    Inadequate, // Fails minimum specs (filter out)
+    Minimum,    // Meets minimum, but not adequate (penalize)
+    Adequate,   // Fully adequate (bonus)
+}
+
 impl SystemMemory {
     /// Dynamically detect available system resources.
     /// Results are cached for the lifetime of the process so hardware is only
     /// probed once per CLI invocation even if called from multiple select_best_model() calls.
     pub fn detect() -> Self {
         SYSTEM_MEMORY_CACHE.get_or_init(|| {
-            let (total_ram_gb, free_ram_gb) = detect_ram();
+            let mut sys = System::new_all();
+            sys.refresh_all();
+
+            let total_ram_gb = sys.total_memory() as f64 / 1_073_741_824.0;
+            let free_ram_gb = sys.free_memory() as f64 / 1_073_741_824.0;
+            let cpu_cores = sys.physical_core_count().unwrap_or_else(|| sys.cpus().len()).max(1);
+
             let (gpu_name, gpu_vram_total_gb, gpu_vram_free_gb) = detect_gpu();
             SystemMemory {
                 total_ram_gb,
                 free_ram_gb,
+                cpu_cores,
                 gpu_name,
                 gpu_vram_total_gb,
                 gpu_vram_free_gb,
@@ -102,6 +129,7 @@ impl SystemMemory {
 
     /// Print a summary of detected resources.
     pub fn print_summary(&self) {
+        println!("💾 [HARDWARE] CPU Cores: {} physical/logical", self.cpu_cores);
         println!("💾 [MEMORY] System RAM: {:.1} GB total, {:.1} GB free (budget: {:.1} GB per model)",
             self.total_ram_gb, self.free_ram_gb, self.ram_budget_gb());
         if let Some(ref gpu) = self.gpu_name {
@@ -113,34 +141,68 @@ impl SystemMemory {
     }
 }
 
-/// Detect total and free system RAM.
-/// Uses a single PowerShell call to avoid the 2–4 second startup cost of
-/// spawning two separate PowerShell processes.
-fn detect_ram() -> (f64, f64) {
-    // One powershell call: output "<total_gb>|<free_gb>" on a single line.
-    let output = Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-Command",
-            "$os = Get-CimInstance Win32_OperatingSystem; \
-             $cs = Get-CimInstance Win32_ComputerSystem; \
-             Write-Output (($cs.TotalPhysicalMemory / 1GB).ToString('F2') + '|' + ($os.FreePhysicalMemory / 1048576).ToString('F2'))",
-        ])
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok());
+/// Calculate hardware requirements dynamically based on model size and backend.
+pub fn get_requirements_for_model(params_b: f64, backend: Backend) -> HardwareRequirements {
+    let runtime_memory = estimate_runtime_memory_gb(params_b, backend);
+    
+    let min_ram_gb = runtime_memory;
+    let adequate_ram_gb = runtime_memory * 1.30;
 
-    if let Some(line) = output {
-        let parts: Vec<&str> = line.trim().split('|').collect();
-        if parts.len() == 2 {
-            let total = parts[0].parse::<f64>().unwrap_or(8.0);
-            let free  = parts[1].parse::<f64>().unwrap_or(4.0);
-            return (total, free);
-        }
+    let (min_vram_gb, adequate_vram_gb) = if backend == Backend::Transformers {
+        (runtime_memory, runtime_memory * 1.30)
+    } else {
+        (0.0, 0.0)
+    };
+
+    let (min_cpu_cores, adequate_cpu_cores) = if params_b <= 3.0 {
+        (2, 4)
+    } else if params_b <= 8.0 {
+        (4, 6)
+    } else {
+        (6, 8)
+    };
+
+    HardwareRequirements {
+        min_ram_gb,
+        adequate_ram_gb,
+        min_vram_gb,
+        adequate_vram_gb,
+        min_cpu_cores,
+        adequate_cpu_cores,
+    }
+}
+
+/// Evaluate whether system hardware matches Minimum and Adequate requirements.
+pub fn evaluate_hardware_suitability(
+    params_b: f64,
+    backend: Backend,
+    sys: &SystemMemory,
+) -> SuitabilityResult {
+    if params_b == 0.0 {
+        return SuitabilityResult::Adequate;
     }
 
-    // Conservative fallbacks if PowerShell fails
-    (8.0, 4.0)
+    let reqs = get_requirements_for_model(params_b, backend);
+
+    // 1. Check minimum requirements
+    let has_min_memory = sys.total_ram_gb >= reqs.min_ram_gb 
+        || (sys.gpu_name.is_some() && sys.gpu_vram_total_gb >= reqs.min_vram_gb);
+    let has_min_cores = sys.cpu_cores >= reqs.min_cpu_cores;
+
+    if !has_min_memory || !has_min_cores {
+        return SuitabilityResult::Inadequate;
+    }
+
+    // 2. Check adequacy requirements
+    let has_adequate_memory = sys.model_budget_gb() >= reqs.adequate_ram_gb
+        || (sys.gpu_name.is_some() && sys.gpu_budget_gb() >= reqs.adequate_vram_gb);
+    let has_adequate_cores = sys.cpu_cores >= reqs.adequate_cpu_cores;
+
+    if has_adequate_memory && has_adequate_cores {
+        SuitabilityResult::Adequate
+    } else {
+        SuitabilityResult::Minimum
+    }
 }
 
 /// Detect GPU name and VRAM via nvidia-smi.

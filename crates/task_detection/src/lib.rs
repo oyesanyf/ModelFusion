@@ -8,5 +8,7 @@
 pub mod detector;
 pub mod keywords;
 pub mod language;
+pub mod vsm;
 
 pub use detector::{IntelligentTaskDetector, TaskDetectionResult};
+pub use vsm::TermVector;

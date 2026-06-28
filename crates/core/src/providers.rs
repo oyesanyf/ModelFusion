@@ -440,22 +440,43 @@ impl LLMProvider for HuggingFaceProvider {
                 self.config.model_id
             );
             
+            let (clean_prompt, images, _audio) = extract_media_from_prompt(prompt);
+
             let mut messages = Vec::new();
-            if prompt.contains("You are an expert judge model") {
+            if clean_prompt.contains("You are an expert judge model") {
                 messages.push(serde_json::json!({
                     "role": "system",
                     "content": "You are an expert judge model evaluating and comparing multiple assistant responses. You MUST return a valid JSON object ONLY. Do not write a markdown introduction, explanations, or conversational text. Follow the requested schema exactly."
                 }));
-            } else if prompt.contains("Use the judge analysis below") {
+            } else if clean_prompt.contains("Use the judge analysis below") {
                 messages.push(serde_json::json!({
                     "role": "system",
                     "content": "You are a professional synthesizer and writer. Use the judge analysis to write the final answer. Prioritize consensus, mention uncertainty, and do not pretend disagreement is resolved."
                 }));
             }
             
+            let user_content = if images.is_empty() {
+                serde_json::json!(prompt)
+            } else {
+                let mut content_parts = Vec::new();
+                content_parts.push(serde_json::json!({
+                    "type": "text",
+                    "text": clean_prompt
+                }));
+                for img_b64 in &images {
+                    content_parts.push(serde_json::json!({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": format!("data:image/png;base64,{}", img_b64)
+                        }
+                    }));
+                }
+                serde_json::json!(content_parts)
+            };
+
             messages.push(serde_json::json!({
                 "role": "user",
-                "content": prompt
+                "content": user_content
             }));
 
             let body = serde_json::json!({
@@ -580,14 +601,20 @@ impl LLMProvider for LocalProvider {
             .unwrap_or_else(|_| "http://localhost:11434".to_string());
         let url = format!("{}/api/generate", endpoint.trim_end_matches('/'));
 
-        let body = serde_json::json!({
+        let (clean_prompt, images, _audio) = extract_media_from_prompt(prompt);
+
+        let mut body = serde_json::json!({
             "model": self.config.model_id,
-            "prompt": prompt,
+            "prompt": clean_prompt,
             "stream": false,
             "options": {
                 "temperature": self.config.temperature
             }
         });
+
+        if !images.is_empty() {
+            body["images"] = serde_json::json!(images);
+        }
 
         let response = self.client.post(&url)
             .json(&body)
@@ -730,4 +757,77 @@ pub const OLLAMA_COMPATIBLE_MODELS: &[&str] = &[
 /// Returns true if a model ID is known to be available in Ollama.
 pub fn is_ollama_compatible(model_id: &str) -> bool {
     OLLAMA_COMPATIBLE_MODELS.iter().any(|m| model_id.contains(m))
+}
+
+pub fn extract_media_from_prompt(prompt: &str) -> (String, Vec<String>, Vec<String>) {
+    let mut clean_prompt = String::new();
+    let mut images = Vec::new();
+    let mut audio_clips = Vec::new();
+    
+    let mut current_pos = 0;
+    while current_pos < prompt.len() {
+        let remaining_str = &prompt[current_pos..];
+        let img_start = remaining_str.find("[IMAGE:");
+        let aud_start = remaining_str.find("[AUDIO:");
+        
+        match (img_start, aud_start) {
+            (Some(i_idx), Some(a_idx)) => {
+                if i_idx < a_idx {
+                    // Process image first
+                    let abs_start = current_pos + i_idx;
+                    clean_prompt.push_str(&prompt[current_pos..abs_start]);
+                    let remaining = &prompt[abs_start + 7..];
+                    if let Some(end_idx) = remaining.find(']') {
+                        images.push(remaining[..end_idx].to_string());
+                        current_pos = abs_start + 7 + end_idx + 1;
+                    } else {
+                        clean_prompt.push_str(&prompt[abs_start..]);
+                        current_pos = prompt.len();
+                    }
+                } else {
+                    // Process audio first
+                    let abs_start = current_pos + a_idx;
+                    clean_prompt.push_str(&prompt[current_pos..abs_start]);
+                    let remaining = &prompt[abs_start + 7..];
+                    if let Some(end_idx) = remaining.find(']') {
+                        audio_clips.push(remaining[..end_idx].to_string());
+                        current_pos = abs_start + 7 + end_idx + 1;
+                    } else {
+                        clean_prompt.push_str(&prompt[abs_start..]);
+                        current_pos = prompt.len();
+                    }
+                }
+            }
+            (Some(i_idx), None) => {
+                let abs_start = current_pos + i_idx;
+                clean_prompt.push_str(&prompt[current_pos..abs_start]);
+                let remaining = &prompt[abs_start + 7..];
+                if let Some(end_idx) = remaining.find(']') {
+                    images.push(remaining[..end_idx].to_string());
+                    current_pos = abs_start + 7 + end_idx + 1;
+                } else {
+                    clean_prompt.push_str(&prompt[abs_start..]);
+                    current_pos = prompt.len();
+                }
+            }
+            (None, Some(a_idx)) => {
+                let abs_start = current_pos + a_idx;
+                clean_prompt.push_str(&prompt[current_pos..abs_start]);
+                let remaining = &prompt[abs_start + 7..];
+                if let Some(end_idx) = remaining.find(']') {
+                    audio_clips.push(remaining[..end_idx].to_string());
+                    current_pos = abs_start + 7 + end_idx + 1;
+                } else {
+                    clean_prompt.push_str(&prompt[abs_start..]);
+                    current_pos = prompt.len();
+                }
+            }
+            (None, None) => {
+                clean_prompt.push_str(remaining_str);
+                break;
+            }
+        }
+    }
+    
+    (clean_prompt, images, audio_clips)
 }
