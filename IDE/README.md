@@ -59,7 +59,7 @@ To enable cloning, pushing, pulling, and querying private repositories on GitHub
 
 ---
 
-## 💾 Hardware Requirements & Suitability Evaluation
+## 💾 System & Hardware Requirements
 
 Aether features a pure-Rust hardware detection system powered by the `sysinfo` crate and `nvidia-smi` to prevent Out-Of-Memory (OOM) crashes and select models optimal for your device.
 
