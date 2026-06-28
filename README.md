@@ -189,6 +189,9 @@ cargo run --release --package cli -- --fusion --ollama --context-auto --prompt "
 
 ### Fusion CLI Flags Reference
 
+> [!TIP]
+> This table lists the primary flags. For a complete manual detailing all 100+ command-line options, including ML-based routing, SINQ quantization, advanced agent workflows, LLM evaluations, and custom task routing flags, please see our dedicated [CLI Reference Manual](docs/CLI_REFERENCE.md).
+
 | Flag | Default | Description |
 |:---|:---:|:---|
 | `--fusion` | off | Enable multi-model consensus deliberation pipeline |
