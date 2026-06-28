@@ -62,6 +62,19 @@ The ModelFusion binary `cli.exe` (located in the IDE `bin` directory) supports c
 * `--gpu`: Requests CUDA/GPU execution for local transformers.
 * `--cpu`: Forces CPU fallback for local transformers.
 
+### 📡 Database Synchronization Telemetry Logging (`--update`)
+When running database sync operations (via the `--update` flag or the `update_database` MCP tool), the console outputs paginated telemetry feedback. It requests models in batches of 1,000 using cursor-based pagination and upserts them into the SQLite database.
+
+**Progress Log Output Structure:**
+```text
+📥 Fetching page 50 (url: https://huggingface.co/api/models?limit=1000&full=false&cursor=eyIkb3IiOlt7InRyZW5kaW5nU2NvcmUiOjAsIl9pZCI6eyIkZ3QiOiI2MjkwNDkzNTQ3ZDVkNDkzN2E2ODQ1NzYifX0seyJ0cmVuZGluZ1Njb3JlIjp7IiRsdCI6MH19LHsidHJlbmRpbmdTY29yZSI6bnVsbH1dfQ%3D%3D)...
+🏗️  Updating database with 1000 fetched models from page 50...
+✨ Page 50 completed. Total upserted models: 50000
+📥 Fetching page 51 (url: https://huggingface.co/api/models?limit=1000&full=false&cursor=eyIkb3IiOlt7InRyZW5kaW5nU2NvcmUiOjAsIl9pZCI6eyIkZ3QiOiI2Mjk3Y2Q3YjlkM2RlN2IzMmZjZjE3ZjEifX0seyJ0cmVuZGluZ1Njb3JlIjp7IiRsdCI6MH19LHsidHJlbmRpbmdTY29yZSI6bnVsbH1dfQ%3D%3D)...
+🏗️  Updating database with 1000 fetched models from page 51...
+✨ Page 51 completed. Total upserted models: 51000
+```
+
 ### Deactivated or Unsupported CLI Flags in Aether IDE
 * `--use-openai`: **Disabled / Stripped in the IDE core**. Aether strictly forbids and blocks connections to proprietary registries (OpenAI, Anthropic, Gemini) to guarantee local privacy.
 * `--vllm`: **Linux-only**. Cannot be used on Windows IDE installations.
