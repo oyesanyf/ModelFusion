@@ -48,6 +48,9 @@ This mathematical cleanup prevents feature inflation and guarantees category def
 
 The ModelFusion binary `cli.exe` (located in the IDE `bin` directory) supports command-line flags. Please note the differences between flags that are active inside the IDE and those that are only for standalone CLI use:
 
+> [!IMPORTANT]
+> **Functional Architecture:** In ModelFusion, **all flags function as executable commands/functions**. The CLI parser maps each flag directly to an underlying handler function in the execution engine. Specifying a flag acts as an instruction to execute that specific capability function rather than just setting configuration state.
+
 ### Supported CLI Flags in the IDE
 * `--server`: Starts the persistent HTTP API server that the IDE connects to.
 * `--port <port>`: Configures the HTTP port for the server (the IDE extension expects this to be `5000`).

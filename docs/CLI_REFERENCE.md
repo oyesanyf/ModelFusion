@@ -2,6 +2,9 @@
 
 This document provides a comprehensive reference of all command-line interface (CLI) capabilities, subcommands, and flags available in ModelFusion (`cli.exe` or `cargo run --package cli`).
 
+> [!IMPORTANT]
+> **Functional Architecture:** In ModelFusion, **all flags function as commands/functions**. The CLI parser maps each flag directly to an underlying handler function in the execution engine. Specifying a flag acts as an instruction to execute that specific capability function rather than just setting configuration state.
+
 ---
 
 ## 📖 Table of Contents
