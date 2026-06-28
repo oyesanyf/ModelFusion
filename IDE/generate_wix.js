@@ -82,36 +82,36 @@ function generateWix(srcDir, outputFile) {
 
     const wxsContent = `<?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="Aether IDE" Manufacturer="Aether Team" Version="1.126.0" UpgradeCode="d77b7e06-80ba-4137-bcf4-654b95ccebc5">
+  <Package Name="HugOS IDE" Manufacturer="HugOS Team" Version="1.126.0" UpgradeCode="d77b7e06-80ba-4137-bcf4-654b95ccebc5">
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
 
     <MediaTemplate EmbedCab="yes" />
 
-    <Icon Id="AetherIcon.ico" SourceFile="D:\\harfile\\ModelFusion\\IDE\\aether.ico" />
+    <Icon Id="HugOSIcon.ico" SourceFile="D:\\harfile\\ModelFusion\\IDE\\hugos.ico" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="Aether IDE">
+      <Directory Id="INSTALLFOLDER" Name="HugOS IDE">
 ${directoryTreeXml}
       </Directory>
     </StandardDirectory>
 
     <StandardDirectory Id="ProgramMenuFolder">
-      <Directory Id="ApplicationProgramsFolder" Name="Aether IDE" />
+      <Directory Id="ApplicationProgramsFolder" Name="HugOS IDE" />
     </StandardDirectory>
     <StandardDirectory Id="DesktopFolder" />
 
     <DirectoryRef Id="ApplicationProgramsFolder">
       <Component Id="ApplicationShortcut" Guid="*">
-        <Shortcut Id="ApplicationStartMenuShortcut" Name="Aether IDE" Target="[INSTALLFOLDER]Aether.exe" Directory="ApplicationProgramsFolder" WorkingDirectory="INSTALLFOLDER" Icon="AetherIcon.ico" />
+        <Shortcut Id="ApplicationStartMenuShortcut" Name="HugOS IDE" Target="[INSTALLFOLDER]HugOS.exe" Directory="ApplicationProgramsFolder" WorkingDirectory="INSTALLFOLDER" Icon="HugOSIcon.ico" />
         <RemoveFolder Id="CleanUpShortcuts" On="uninstall" />
-        <RegistryValue Root="HKCU" Key="Software\\AetherTeam\\AetherIDE" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+        <RegistryValue Root="HKCU" Key="Software\\HugOSTeam\\HugOSIDE" Name="installed" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </DirectoryRef>
 
     <DirectoryRef Id="DesktopFolder">
       <Component Id="ApplicationShortcutDesktop" Guid="*">
-        <Shortcut Id="ApplicationDesktopShortcut" Name="Aether IDE" Target="[INSTALLFOLDER]Aether.exe" Directory="DesktopFolder" WorkingDirectory="INSTALLFOLDER" Icon="AetherIcon.ico" />
-        <RegistryValue Root="HKCU" Key="Software\\AetherTeam\\AetherIDE" Name="desktop_shortcut" Type="integer" Value="1" KeyPath="yes" />
+        <Shortcut Id="ApplicationDesktopShortcut" Name="HugOS IDE" Target="[INSTALLFOLDER]HugOS.exe" Directory="DesktopFolder" WorkingDirectory="INSTALLFOLDER" Icon="HugOSIcon.ico" />
+        <RegistryValue Root="HKCU" Key="Software\\HugOSTeam\\HugOSIDE" Name="desktop_shortcut" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </DirectoryRef>
 

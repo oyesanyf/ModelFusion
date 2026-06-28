@@ -1,13 +1,13 @@
-# Aether IDE Signed MSI Packaging Script
+# HugOS IDE Signed MSI Packaging Script
 # This script compiles, copies cli.exe, signs all binaries, generates a WiX manifest, and builds/signs the final MSI.
 
 $PSScriptRoot = Split-Path -Parent -Path $MyInvocation.MyCommand.Definition
 $vsCodePackDir = Join-Path (Split-Path $PSScriptRoot -Parent) "IDE\VSCode-win32-x64"
-$pfxPath = Join-Path $PSScriptRoot "aether-signing-cert.pfx"
-$password = "AetherPassword123!"
+$pfxPath = Join-Path $PSScriptRoot "hugos-signing-cert.pfx"
+$password = "HugOSPassword123!"
 
 Write-Host "--------------------------------------------------------" -ForegroundColor Green
-Write-Host "[START] Starting Aether IDE Signed MSI Packaging Process" -ForegroundColor Green
+Write-Host "[START] Starting HugOS IDE Signed MSI Packaging Process" -ForegroundColor Green
 Write-Host "--------------------------------------------------------" -ForegroundColor Green
 
 # 1. Verify VSCode-win32-x64 directory exists
@@ -37,7 +37,7 @@ Write-Host "[OK] Using signtool at: $signtoolPath" -ForegroundColor Green
 if (-not (Test-Path $pfxPath)) {
     Write-Host "[INFO] Creating a self-signed code signing certificate..." -ForegroundColor Yellow
     
-    $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=Aether IDE" -FriendlyName "Aether Code Signing" -CertStoreLocation "Cert:\CurrentUser\My"
+    $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=HugOS IDE" -FriendlyName "HugOS Code Signing" -CertStoreLocation "Cert:\CurrentUser\My"
     $pwdSecure = ConvertTo-SecureString $password -AsPlainText -Force
     Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pwdSecure
     
@@ -93,7 +93,7 @@ Write-Host "[OK] Signed $count files inside the packaging directory." -Foregroun
 
 # 6. Generate the WiX source manifest (.wxs)
 Write-Host "[INFO] Generating WiX source manifest (.wxs)..." -ForegroundColor Yellow
-$wxsPath = Join-Path $PSScriptRoot "Aether.wxs"
+$wxsPath = Join-Path $PSScriptRoot "HugOS.wxs"
 node (Join-Path $PSScriptRoot "generate_wix.js") $vsCodePackDir $wxsPath
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] Failed to run generate_wix.js." -ForegroundColor Red
@@ -103,7 +103,7 @@ Write-Host "[OK] WiX source generated at $wxsPath" -ForegroundColor Green
 
 # 7. Compile the MSI using WiX Toolset v7
 Write-Host "[INFO] Compiling MSI using WiX Toolset v7..." -ForegroundColor Yellow
-$msiPath = Join-Path $PSScriptRoot "Aether.msi"
+$msiPath = Join-Path $PSScriptRoot "HugOS.msi"
 if (Test-Path $msiPath) {
     Remove-Item -Path $msiPath -Force
 }

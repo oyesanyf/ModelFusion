@@ -5,7 +5,7 @@ use std::thread;
 use std::time::Duration;
 
 fn main() {
-    println!("🚀 Aether IDE Launcher starting...");
+    println!("🚀 HugOS IDE Launcher starting...");
 
     // Get directory of the executable
     let current_dir = match env::current_exe() {
@@ -52,7 +52,7 @@ fn main() {
     }
 
     // Start watch process in a separate console window on Windows
-    println!("[BUILD] Starting Aether IDE build watch loop in a separate window...");
+    println!("[BUILD] Starting HugOS IDE build watch loop in a separate window...");
     
     let watch_status = Command::new("cmd")
         .args(&[
@@ -60,7 +60,7 @@ fn main() {
             "start",
             "cmd.exe",
             "/k",
-            "title Aether IDE Build Watch && npm run watch"
+            "title HugOS IDE Build Watch && npm run watch"
         ])
         .current_dir(&vscode_dir)
         .status();
@@ -90,7 +90,7 @@ fn main() {
         println!("[OK] Compilation finished successfully.");
     }
 
-    println!("[RUN] Launching Aether IDE...");
+    println!("[RUN] Launching HugOS IDE...");
     
     // Run code.bat
     let code_bat = vscode_dir.join("scripts").join("code.bat");
@@ -101,8 +101,8 @@ fn main() {
         .status();
 
     match status {
-        Ok(s) if s.success() => println!("[OK] Aether IDE finished running."),
-        Ok(s) => eprintln!("[INFO] Aether IDE exited with status: {}", s),
+        Ok(s) if s.success() => println!("[OK] HugOS IDE finished running."),
+        Ok(s) => eprintln!("[INFO] HugOS IDE exited with status: {}", s),
         Err(e) => eprintln!("[ERROR] Failed to run code.bat: {}", e),
     }
 }

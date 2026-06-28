@@ -14,10 +14,10 @@ logs/
 *.log
 
 ov_models/
-IDE/Aether.msi
+IDE/HugOS.msi
 IDE/VSCode-win32-x64/
 IDE/vscode/
-IDE/aether.exe
+IDE/hugos.exe
 IDE/bin/
-IDE/Aether.wixpdb
-IDE/Aether.wxs
+IDE/HugOS.wixpdb
+IDE/HugOS.wxs

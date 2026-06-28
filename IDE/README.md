@@ -1,22 +1,22 @@
-# Aether IDE — Custom AI-Powered Code-OSS Fork
+# HugOS IDE — Custom AI-Powered Code-OSS Fork
 
-Aether is an advanced, open-weights compound intelligence IDE built upon the open-source core of VS Code (Code - OSS). 
+HugOS is an advanced, open-weights compound intelligence IDE built upon the open-source core of VS Code (Code - OSS). 
 
-Unlike standard editors that rely on proprietary cloud APIs, Aether is built from the ground up for native local orchestration, running ModelFusion as a built-in, un-uninstallable Model Context Protocol (MCP) server.
+Unlike standard editors that rely on proprietary cloud APIs, HugOS is built from the ground up for native local orchestration, running ModelFusion as a built-in, un-uninstallable Model Context Protocol (MCP) server.
 
-![Aether System Dashboard](./aether_system_dashboard.png)
+![HugOS System Dashboard](./aether_system_dashboard.png)
 
 ---
 
 ## 🏗️ Architecture & Integration
 
-Aether disables and strips out all proprietary and paid model registries (such as OpenAI, Anthropic, and Gemini) and strictly restricts the MCP registry to **only allow the ModelFusion local MCP server**. All other MCP server registrations are dynamically filtered out at the core workbench registry layer.
+HugOS disables and strips out all proprietary and paid model registries (such as OpenAI, Anthropic, and Gemini) and strictly restricts the MCP registry to **only allow the ModelFusion local MCP server**. All other MCP server registrations are dynamically filtered out at the core workbench registry layer.
 
 ### Integration Flow
 ```mermaid
 graph TD
-    User[User in Aether Chat] -->|Natural Language Query| Agent[Aether Chat Agent / Thinking Model]
-    Agent -->|Intelligent Tool Selection| Host[Aether Native MCP Host]
+    User[User in HugOS Chat] -->|Natural Language Query| Agent[HugOS Chat Agent / Thinking Model]
+    Agent -->|Intelligent Tool Selection| Host[HugOS Native MCP Host]
     Host -->|JSON-RPC over Stdio| Server[ModelFusion MCP Server / cli.exe]
     
     subgraph ModelFusion Local Daemon
@@ -37,20 +37,20 @@ graph TD
 ## 🛠️ Setup & Installation Instructions
 
 ### 1. Production Installation via MSI
-Aether IDE packages all system files, local configuration, and a **prepopulated SQLite database** inside the `Aether.msi` installer.
-* **Installer Path:** Go to [Aether.msi](file:///d:/harfile/ModelFusion/IDE/Aether.msi) and double-click the file to start the installation wizard.
-* **Clean Reinstallation:** If you are updating an existing installation or experiencing file locks, choose the **Remove** option on the installation screen to cleanly uninstall the old files first, and then run `Aether.msi` again.
+HugOS IDE packages all system files, local configuration, and a **prepopulated SQLite database** inside the `HugOS.msi` installer.
+* **Installer Path:** Go to [HugOS.msi](file:///d:/harfile/ModelFusion/IDE/HugOS.msi) and double-click the file to start the installation wizard.
+* **Clean Reinstallation:** If you are updating an existing installation or experiencing file locks, choose the **Remove** option on the installation screen to cleanly uninstall the old files first, and then run `HugOS.msi` again.
 
 ### 2. Resolving File Locks
 If the installation or update freezes, verify that no old instances are running in the background. Run this PowerShell command to kill hung editor processes:
 ```powershell
-Stop-Process -Name Aether -Force
+Stop-Process -Name HugOS -Force
 ```
 
 ### 3. Local Directory Locations
-* **Installation folder:** `C:\Program Files\Aether IDE`
-* **Prepopulated database:** `C:\Program Files\Aether IDE\db\hf_models.db` (Wix automatically deploys this 478 MB database containing 200,000+ Hugging Face models so you don't have to populate the database from scratch).
-* **Developer Build executable:** [Aether.exe](file:///d:/harfile/ModelFusion/IDE/VSCode-win32-x64/Aether.exe) (directly runnable as a portable application).
+* **Installation folder:** `C:\Program Files\HugOS IDE`
+* **Prepopulated database:** `C:\Program Files\HugOS IDE\db\hf_models.db` (Wix automatically deploys this 478 MB database containing 200,000+ Hugging Face models so you don't have to populate the database from scratch).
+* **Developer Build executable:** [HugOS.exe](file:///d:/harfile/ModelFusion/IDE/VSCode-win32-x64/HugOS.exe) (directly runnable as a portable application).
 
 ### 4. GitHub Account Login Setup
 To enable cloning, pushing, pulling, and querying private repositories on GitHub:
@@ -61,7 +61,7 @@ To enable cloning, pushing, pulling, and querying private repositories on GitHub
 
 ## 💾 System & Hardware Requirements
 
-Aether features a pure-Rust hardware detection system powered by the `sysinfo` crate and `nvidia-smi` to prevent Out-Of-Memory (OOM) crashes and select models optimal for your device.
+HugOS features a pure-Rust hardware detection system powered by the `sysinfo` crate and `nvidia-smi` to prevent Out-Of-Memory (OOM) crashes and select models optimal for your device.
 
 ### 1. Detected Hardware Metrics
 * **System RAM:** Captured using pure-Rust `sysinfo::System`.
@@ -107,7 +107,7 @@ ModelFusion supports multiple high-performance execution backends depending on y
 
 ## 📸 Multimodal Task Processing (Images, Voice & PDFs)
 
-Aether categorizes task queries by modality: `text`, `security`, `legal`, `domain`, `image`, and `audio`. The IDE features **native local multimodal processing** directly through its Python execution pipeline, completely bypassing the need for any external container manager or Ollama installation.
+HugOS categorizes task queries by modality: `text`, `security`, `legal`, `domain`, `image`, and `audio`. The IDE features **native local multimodal processing** directly through its Python execution pipeline, completely bypassing the need for any external container manager or Ollama installation.
 
 ### How it Works:
 * **IDE Capture:** The editor's chat UI allows dragging and dropping images, voice notes, or documents. Binary parts are serialized to base64 and wrapped in custom tags (e.g. `[IMAGE:base64_data]` or `[AUDIO:base64_data]`) inside the text prompt.
@@ -132,7 +132,7 @@ pip install torch transformers accelerate pillow soundfile librosa pypdf
 
 ## 🤖 Intent Classification & Decision Routing
 
-Aether features a hybrid task detector in [detector.rs](file:///d:/harfile/ModelFusion/crates/task_detection/src/detector.rs) combining exact regex keyword patterns and a Term-Frequency Vector Space Model (VSM).
+HugOS features a hybrid task detector in [detector.rs](file:///d:/harfile/ModelFusion/crates/task_detection/src/detector.rs) combining exact regex keyword patterns and a Term-Frequency Vector Space Model (VSM).
 
 ### 1. Prompt Embedding and VSM Classification
 1. **Tokenizer & Stop-Word Filter:** The prompt text is cleaned, lower-cased, and stripped of non-alphanumeric noise. Common English stop-words (e.g. `the`, `is`, `a`) are removed.
@@ -164,10 +164,10 @@ The ModelFusion binary `cli.exe` (located in the IDE `bin` directory) supports c
 * **`--gpu`**: Requests CUDA/GPU execution for local transformers.
 * **`--cpu`**: Forces CPU fallback for local transformers.
 
-### Deactivated or Unsupported CLI Flags in Aether IDE
-* **`--use-openai`**: **Disabled / Stripped** in the IDE core. Aether strictly forbids and blocks connections to proprietary registries (OpenAI, Anthropic, Gemini) to guarantee local privacy.
+### Deactivated or Unsupported CLI Flags in HugOS IDE
+* **`--use-openai`**: **Disabled / Stripped** in the IDE core. HugOS strictly forbids and blocks connections to proprietary registries (OpenAI, Anthropic, Gemini) to guarantee local privacy.
 * **`--vllm`**: **Linux-only.** Cannot be used on Windows IDE installations.
-* **`--config` / `--api-keys`**: Managed automatically by the Aether extension and user settings; manually overriding these via CLI flags is unsupported inside the IDE environment.
+* **`--config` / `--api-keys`**: Managed automatically by the HugOS extension and user settings; manually overriding these via CLI flags is unsupported inside the IDE environment.
 * **`--save-model` / `--load-model` / `--ml-retrain`**: CLI-only tools for developer experimentation; these will not work inside the IDE's read-only production environment.
 
 ---

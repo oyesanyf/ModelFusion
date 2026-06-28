@@ -22,7 +22,7 @@ ModelFusion is an open-weight compound intelligence system designed to achieve f
 
 ### 📚 Documentation Links
 *   [CLI Reference Manual](docs/CLI_REFERENCE.md) — Comprehensive guide for all 100+ commands, subcommands, and flags.
-*   [Aether IDE Integration Manual](docs/AETHER_IDE_MANUAL.md) — Details local multimodal processing, intent classifier centroids, and IDE specific CLI/MCP configurations.
+*   [HugOS IDE Integration Manual](docs/AETHER_IDE_MANUAL.md) — Details local multimodal processing, intent classifier centroids, and IDE specific CLI/MCP configurations.
 
 ---
 
