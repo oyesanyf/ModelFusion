@@ -82,14 +82,14 @@ function generateWix(srcDir, outputFile) {
 
     const wxsContent = `<?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="HugOS IDE" Manufacturer="HugOS Team" Version="1.126.0" UpgradeCode="d77b7e06-80ba-4137-bcf4-654b95ccebc5">
+  <Package Name="HugOS IDE" Manufacturer="HugOS Team" Version="1.126.0" UpgradeCode="d77b7e06-80ba-4137-bcf4-654b95ccebc5" Scope="perUser">
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
 
     <MediaTemplate EmbedCab="yes" />
 
     <Icon Id="HugOSIcon.ico" SourceFile="D:\\harfile\\ModelFusion\\IDE\\hugos.ico" />
 
-    <StandardDirectory Id="ProgramFiles64Folder">
+    <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="INSTALLFOLDER" Name="HugOS IDE">
 ${directoryTreeXml}
       </Directory>
