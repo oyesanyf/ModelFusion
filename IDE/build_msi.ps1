@@ -62,6 +62,21 @@ $cliDestPath = Join-Path $cliDestDir "cli.exe"
 Copy-Item -Path $cliSrcPath -Destination $cliDestPath -Force
 Write-Host "[OK] Copied ModelFusion CLI to: $cliDestPath" -ForegroundColor Green
 
+# 4.5 Copy Pre-populated HF Models Database (hf_models.db) into the packaged folder
+$dbSrcPath = Join-Path (Split-Path $PSScriptRoot -Parent) "db\hf_models.db"
+if (Test-Path $dbSrcPath) {
+    $dbDestDir = Join-Path $vsCodePackDir "db"
+    if (-not (Test-Path $dbDestDir)) {
+        New-Item -ItemType Directory -Force -Path $dbDestDir | Out-Null
+    }
+    $dbDestPath = Join-Path $dbDestDir "hf_models.db"
+    Write-Host "[INFO] Copying pre-populated models database to installer package (this may take a few seconds)..." -ForegroundColor Yellow
+    Copy-Item -Path $dbSrcPath -Destination $dbDestPath -Force
+    Write-Host "[OK] Copied ModelFusion Database to: $dbDestPath" -ForegroundColor Green
+} else {
+    Write-Host "[WARNING] Pre-populated database not found at $dbSrcPath. Packaging without pre-populated DB." -ForegroundColor Yellow
+}
+
 # 5. Sign the binaries
 Write-Host "[INFO] Signing executables, DLLs, and native modules inside packaged folder..." -ForegroundColor Yellow
 $filesToSign = Get-ChildItem -Path $vsCodePackDir -Include *.exe, *.dll, *.node -Recurse | Select-Object -ExpandProperty FullName
