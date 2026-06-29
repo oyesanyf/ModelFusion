@@ -1408,8 +1408,14 @@ async fn run_server(port: u16, db_path: Option<String>) -> Result<()> {
                 if body_start == 0 {
                     if let Some(pos) = find_subsequence(&request_data, b"\r\n\r\n") {
                         body_start = pos + 4;
-                        // Parse Content-Length
                         let headers_str = String::from_utf8_lossy(&request_data[..pos]);
+                        let first_line = headers_str.lines().next().unwrap_or("");
+                        if first_line.starts_with("GET /health") || first_line.contains("/health") {
+                            let response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"status\":\"ok\"}";
+                            let _ = socket.write_all(response.as_bytes()).await;
+                            return;
+                        }
+                        // Parse Content-Length
                         for line in headers_str.lines() {
                             if line.to_lowercase().starts_with("content-length:") {
                                 if let Some(val) = line.split(':').nth(1) {
