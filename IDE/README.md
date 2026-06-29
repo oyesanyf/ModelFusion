@@ -4,7 +4,7 @@ HugOS is an advanced, open-weights compound intelligence IDE built upon the open
 
 Unlike standard editors that rely on proprietary cloud APIs, HugOS is built from the ground up for native local orchestration, running ModelFusion as a built-in, un-uninstallable Model Context Protocol (MCP) server.
 
-![HugOS System Dashboard](./aether_system_dashboard.png)
+![HugOS System Dashboard](./hugos_system_dashboard.png)
 
 ---
 
