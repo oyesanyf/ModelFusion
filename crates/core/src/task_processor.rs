@@ -30,7 +30,7 @@ pub struct TaskConfig {
 
 /// Universal processor for all AI tasks.
 pub struct UniversalTaskProcessor {
-    providers: Mutex<HashMap<String, Box<dyn LLMProvider>>>,
+    providers: Mutex<HashMap<String, std::sync::Arc<dyn LLMProvider>>>,
     task_configs: HashMap<String, TaskConfig>,
 }
 
@@ -158,6 +158,7 @@ impl UniversalTaskProcessor {
         let normalized_task = task_name.trim().to_lowercase().replace('_', "-");
         let lookup_name = match normalized_task.as_str() {
             "text-analysis" | "text_analysis" => "text-classification",
+            "code-analysis" | "code_analysis" => "text-generation",
             other => other,
         };
 
@@ -178,25 +179,27 @@ impl UniversalTaskProcessor {
 
         let final_model_id = model_id.unwrap_or(&task_config.default_model).to_string();
 
-        let mut providers = self.providers.lock().unwrap();
-        let provider = if let Some(p) = providers.get(&final_model_id) {
-            p
-        } else {
-            let api_provider = self.determine_api_provider(&final_model_id);
-            let cost_per_1k = self.get_cost_for_model(&final_model_id);
-            let config = ModelConfig {
-                name: final_model_id.clone(),
-                api_provider,
-                model_id: final_model_id.clone(),
-                max_tokens: max_tokens_override.unwrap_or(task_config.max_tokens),
-                temperature: temperature_override.unwrap_or(task_config.temperature),
-                cost_per_1k_tokens: cost_per_1k,
-                rate_limit_per_minute: 100,
-                timeout_seconds: 30,
-            };
-            let p = create_provider(config);
-            providers.insert(final_model_id.clone(), p);
-            providers.get(&final_model_id).unwrap()
+        let provider = {
+            let mut providers = self.providers.lock().unwrap();
+            if let Some(p) = providers.get(&final_model_id) {
+                p.clone()
+            } else {
+                let api_provider = self.determine_api_provider(&final_model_id);
+                let cost_per_1k = self.get_cost_for_model(&final_model_id);
+                let config = ModelConfig {
+                    name: final_model_id.clone(),
+                    api_provider,
+                    model_id: final_model_id.clone(),
+                    max_tokens: max_tokens_override.unwrap_or(task_config.max_tokens),
+                    temperature: temperature_override.unwrap_or(task_config.temperature),
+                    cost_per_1k_tokens: cost_per_1k,
+                    rate_limit_per_minute: 100,
+                    timeout_seconds: 30,
+                };
+                let p: std::sync::Arc<dyn LLMProvider> = std::sync::Arc::from(create_provider(config));
+                providers.insert(final_model_id.clone(), p.clone());
+                p
+            }
         };
 
         let formatted_prompt = self.format_prompt_for_task(lookup_name, prompt, &options);

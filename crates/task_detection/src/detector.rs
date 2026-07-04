@@ -147,6 +147,26 @@ impl IntelligentTaskDetector {
             }
         }
 
+        if best_task == "question-answering" {
+            let prompt_lower = prompt.to_lowercase();
+            if !prompt_lower.contains("context") && !prompt_lower.contains("passage") && !prompt_lower.contains("text:") {
+                let is_code = prompt_lower.contains("code")
+                    || prompt_lower.contains("python")
+                    || prompt_lower.contains("class")
+                    || prompt_lower.contains("function")
+                    || prompt_lower.contains("rust")
+                    || prompt_lower.contains("bug")
+                    || prompt_lower.contains("error")
+                    || prompt_lower.contains("program")
+                    || prompt_lower.contains("script");
+                if is_code {
+                    best_task = "code-analysis".to_string();
+                } else {
+                    best_task = "text-generation".to_string();
+                }
+            }
+        }
+
         // Detect language
         let detected_language = detect_language(prompt);
 

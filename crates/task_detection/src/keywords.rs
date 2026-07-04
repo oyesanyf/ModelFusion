@@ -41,7 +41,8 @@ pub fn get_task_patterns() -> &'static HashMap<String, Vec<Regex>> {
                 "question-answering",
                 vec![
                     "answer", "question", "what is", "how to", "why",
-                    "explain", "describe", "define", "tell me",
+                    "explain", "describe", "define", "tell me", "what", "how",
+                    "who", "when", "where", "which", "compare", "vs", "versus", "difference",
                 ],
             ),
             (

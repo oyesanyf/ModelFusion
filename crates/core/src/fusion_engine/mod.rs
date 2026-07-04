@@ -56,6 +56,7 @@ pub async fn run_fusion(
     strategy: Option<SelectionStrategy>,
     max_candidates: Option<usize>,
     fusion_mode: &str,
+    forced_model: Option<&str>,
 ) -> anyhow::Result<String> {
     let db_path_ref = db_path.context("[FUSION] Database path is required and cannot be bypassed.")?;
  
@@ -82,7 +83,27 @@ pub async fn run_fusion(
     // For multi-model mode: select N different models
     let panel_task = "text-generation";
 
-    let (panel_models, fallback_pool) = if is_multi_sample {
+    let (panel_models, fallback_pool) = if let Some(model_id) = forced_model {
+        println!("⚡ [FUSION] Forced model override active: using {}", model_id);
+        if is_multi_sample {
+            println!("⚡ [FUSION] Multi-sample mode: using 1 model with {} temperature variations", max_candidates);
+            // Generate evenly spaced temperatures from 0.3 to 1.1
+            let temps: Vec<f32> = (0..max_candidates)
+                .map(|i| 0.3 + (i as f32) * (0.8 / (max_candidates as f32 - 1.0).max(1.0)))
+                .collect();
+
+            let models: Vec<ModelConfig> = temps.iter().enumerate()
+                .map(|(i, &t)| {
+                    println!("  {}. Sample #{} (T={:.2})", i + 1, i + 1, t);
+                    ModelConfig::huggingface_with_temp(model_id, t, i + 1)
+                })
+                .collect();
+            (models, vec![])
+        } else {
+            let models = vec![ModelConfig::huggingface(model_id)];
+            (models, vec![])
+        }
+    } else if is_multi_sample {
         // Multi-sample: 1 model, N temperature variations — much faster for local execution
         let res = selector.select_best_model(panel_task, prompt, strategy, 3)
             .context("⚠️ [FUSION] Model selection failed from database.")?;
@@ -152,17 +173,25 @@ pub async fn run_fusion(
         (models, fallback)
     };
 
-    // Define the judge model from the database (best text-generation model)
-    let judge_res = selector.select_best_model("text-generation", "judge evaluation", strategy, 1)
-        .context("⚠️ [FUSION] Failed to select judge model from database.")?;
-    let judge_model = ModelConfig::huggingface(&judge_res.best_model.model_id);
-    println!("⚖️ [FUSION] Selected judge model from database: {}", judge_res.best_model.model_id);
+    // Define the judge model
+    let judge_model = if let Some(model_id) = forced_model {
+        ModelConfig::huggingface(model_id)
+    } else {
+        let judge_res = selector.select_best_model("text-generation", "judge evaluation", strategy, 1)
+            .context("⚠️ [FUSION] Failed to select judge model from database.")?;
+        ModelConfig::huggingface(&judge_res.best_model.model_id)
+    };
+    println!("⚖️ [FUSION] Selected judge model: {}", judge_model.name);
 
-    // Define the final writer model from the database (best text-generation model)
-    let writer_res = selector.select_best_model("text-generation", "final synthesis writing", strategy, 1)
-        .context("⚠️ [FUSION] Failed to select writer model from database.")?;
-    let writer_model = ModelConfig::huggingface(&writer_res.best_model.model_id);
-    println!("✍️ [FUSION] Selected writer model from database: {}", writer_res.best_model.model_id);
+    // Define the final writer model
+    let writer_model = if let Some(model_id) = forced_model {
+        ModelConfig::huggingface(model_id)
+    } else {
+        let writer_res = selector.select_best_model("text-generation", "final synthesis writing", strategy, 1)
+            .context("⚠️ [FUSION] Failed to select writer model from database.")?;
+        ModelConfig::huggingface(&writer_res.best_model.model_id)
+    };
+    println!("✍️ [FUSION] Selected writer model: {}", writer_model.name);
 
     let prompt_with_context = if let Some(ctx) = context {
         format!("{}\n\n### CONTEXT:\n{}", prompt, ctx)

@@ -146,7 +146,7 @@ impl ComprehensiveTaskHandler {
         );
 
         let content = match task_type {
-            Some(t) => {
+            Some(t) if t != "all" => {
                 if let Some(list) = tasks.get(t) {
                     let mut out = format!("📋 Available {} tasks:\n", t);
                     for item in list {
@@ -157,7 +157,7 @@ impl ComprehensiveTaskHandler {
                     format!("Unknown task category: {}. Available: text, security, legal, domain, image, audio", t)
                 }
             }
-            None => {
+            _ => {
                 let mut out = "📋 Available task categories:\n".to_string();
                 for (cat, list) in &tasks {
                     out.push_str(&format!("  🔤 {}: {} tasks\n", cat, list.len()));

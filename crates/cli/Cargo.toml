@@ -15,5 +15,6 @@ dotenv          = { workspace = true }
 env_logger      = { workspace = true }
 modelfusion_core = { path = "../core" }
 model_selection = { path = "../model_selection" }
+db              = { path = "../db" }
 walkdir         = { workspace = true }
 chrono          = { workspace = true }

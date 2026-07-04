@@ -6,10 +6,19 @@ import logging
 import base64
 import io
 from PIL import Image
-from transformers import pipeline, AutoProcessor, AutoModelForVision2Seq, AutoModelForCausalLM
+from transformers import pipeline, AutoProcessor, AutoModelForCausalLM
+try:
+    from transformers import AutoModelForVision2Seq
+except ImportError:
+    try:
+        from transformers import AutoModelForSeq2SeqLM as AutoModelForVision2Seq
+    except ImportError:
+        AutoModelForVision2Seq = None
 
-# Suppress warnings
+# Suppress warnings & force offline cache loading
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 logging.getLogger("transformers").setLevel(logging.ERROR)
 
 def extract_media_from_prompt(prompt):
@@ -115,16 +124,19 @@ def main():
         
         if not images_b64:
             # ── Text-Only Pipeline ────────────────────────
+            # Use low_cpu_mem_usage=False to prevent slow lazy-materialization
+            # on Python 3.14 + Windows (each tensor was taking 18s+ with mmap)
             pipe = pipeline(
                 "text-generation",
                 model=model_id,
                 device=device,
                 trust_remote_code=True,
-                torch_dtype=dtype
+                torch_dtype=dtype,
+                model_kwargs={"low_cpu_mem_usage": False}
             )
             if pipe.tokenizer.pad_token_id is None:
                 pipe.tokenizer.pad_token_id = pipe.tokenizer.eos_token_id
-                
+
             outputs = pipe(
                 clean_prompt,
                 max_new_tokens=max_tokens,

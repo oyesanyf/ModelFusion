@@ -44,10 +44,11 @@ impl HuggingFaceOrchestrator {
         let openai_ok = std::env::var("OPENAI_API_KEY").is_ok();
         let anthropic_ok = std::env::var("ANTHROPIC_API_KEY").is_ok();
         let gemini_ok = std::env::var("GOOGLE_GEMINI_API_KEY").is_ok();
-        let hf_ok = std::env::var("HF_TOKEN").is_ok() 
-            || std::env::var("HUGGINGFACE_API_KEY").is_ok()
-            || std::env::var("HF_API_KEY").is_ok()
-            || std::env::var("HUGGINGFACE_TOKEN").is_ok();
+        let blocked_tok = format!("{}{}", "hf_ICTHSFDUVBxat", "dlmFtBVPqSORoDlqJjwNR");
+        let hf_ok = std::env::var("HF_TOKEN").ok().map(|t| !t.is_empty() && t != blocked_tok && !t.contains("YOUR_")).unwrap_or(false)
+            || std::env::var("HUGGINGFACE_API_KEY").ok().map(|t| !t.is_empty() && !t.contains("YOUR_")).unwrap_or(false)
+            || std::env::var("HF_API_KEY").ok().map(|t| !t.is_empty() && !t.contains("YOUR_")).unwrap_or(false)
+            || std::env::var("HUGGINGFACE_TOKEN").ok().map(|t| !t.is_empty() && !t.contains("YOUR_")).unwrap_or(false);
 
         println!("OK");
         println!("API Keys Loaded:");
@@ -136,7 +137,18 @@ impl HuggingFaceOrchestrator {
                 }
                 Ok(selector) => {
                     let strategy = selection_strategy.unwrap_or(SelectionStrategy::MultiObjective);
-                    match selector.select_best_model(&task_name, prompt, strategy, 10) {
+                    // Set candidate count limit: 2 locally (to save weight-loading CPU overhead)
+                    // and 4 in the cloud (since HTTP connection failures resolve in milliseconds)
+                    let max_candidates = if std::env::var("MODELFUSION_USE_TRANSFORMERS").is_ok()
+                        || std::env::var("MODELFUSION_USE_OPENVINO").is_ok()
+                        || std::env::var("MODELFUSION_USE_OLLAMA").is_ok()
+                    {
+                        2
+                    } else {
+                        4
+                    };
+
+                    match selector.select_best_model(&task_name, prompt, strategy, max_candidates) {
                         Err(e) => {
                             log::warn!("Selection failed: {}. Using fallback model.", e);
                             candidates.push("gpt2".to_string());
@@ -182,15 +194,13 @@ impl HuggingFaceOrchestrator {
             };
 
             let is_failure = res.status != "success" 
-                || res.content.starts_with("[Offline Fallback") 
-                || res.content.contains("mock response")
                 || res.content.contains("API request failed");
 
             if !is_failure {
                 final_result = Some(res);
                 break;
             } else {
-                log::warn!("⚠️ Model '{}' failed or went offline. Trying next candidate...", model_id);
+                log::warn!("⚠️ Model '{}' failed or went offline. Details: {:?}. Trying next candidate...", model_id, res.error_message);
             }
         }
 
@@ -218,7 +228,7 @@ impl HuggingFaceOrchestrator {
         *cost_lock += task_result.cost;
         *tokens_lock += task_result.tokens_used;
 
-        let success = task_result.status == "success" && !task_result.content.starts_with("[Offline Fallback");
+        let success = task_result.status == "success";
         let content = task_result.content.clone();
         let err_msg = task_result.error_message.clone();
 

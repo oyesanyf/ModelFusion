@@ -98,9 +98,8 @@ impl SystemMemory {
 
     /// GPU VRAM budget (with safety margin).
     pub fn gpu_budget_gb(&self) -> f64 {
-        // Subtract a 1.5 GB base VRAM buffer for the OS display and CUDA execution contexts,
-        // then allocate a safety fraction (70%) of the remaining free memory.
-        ((self.gpu_vram_free_gb - 1.5) * SAFETY_FACTOR).max(0.0)
+        // Allow utilizing up to 85% of actual free VRAM, leaving a 15% safety margin
+        (self.gpu_vram_free_gb * 0.85).max(0.0)
     }
 
     /// CPU RAM budget (with safety margin).
@@ -120,7 +119,11 @@ impl SystemMemory {
     /// Determine the best device for a model of the given estimated memory size.
     /// Prefers GPU when the model fits in VRAM.
     pub fn best_device_for_model(&self, model_memory_gb: f64) -> Device {
-        if self.has_usable_gpu() && model_memory_gb <= self.gpu_budget_gb() {
+        if std::env::var("MODELFUSION_FORCE_GPU").is_ok() {
+            Device::Gpu
+        } else if std::env::var("MODELFUSION_FORCE_CPU").is_ok() {
+            Device::Cpu
+        } else if self.has_usable_gpu() && model_memory_gb <= self.gpu_budget_gb() {
             Device::Gpu
         } else {
             Device::Cpu
@@ -480,9 +483,41 @@ pub fn is_openvino_model_cached(model_id: &str) -> bool {
     false
 }
 
+/// Check if a HuggingFace transformers model is cached/downloaded in the local HF hub cache.
+pub fn is_transformers_model_cached(model_id: &str) -> bool {
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .ok();
+        
+    if let Some(home_path) = home {
+        let folder_name = format!("models--{}", model_id.replace('/', "--"));
+        let cache_path = std::path::Path::new(&home_path)
+            .join(".cache")
+            .join("huggingface")
+            .join("hub")
+            .join(folder_name);
+        
+        if cache_path.is_dir() {
+            // Check if there are snapshots or lock files indicating complete/partial download
+            let snapshots = cache_path.join("snapshots");
+            if snapshots.is_dir() {
+                if let Ok(mut entries) = std::fs::read_dir(snapshots) {
+                    if entries.next().is_some() {
+                        return true;
+                    }
+                }
+            }
+            return true;
+        }
+    }
+    false
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::SelectionStrategy;
 
     #[test]
     fn test_param_extraction() {
@@ -494,6 +529,34 @@ mod tests {
         assert_eq!(estimate_params_billions("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"), Some(1.5));
         assert_eq!(estimate_params_billions("facebook/opt-125m"), Some(0.125));
         assert_eq!(estimate_params_billions("Qwen/Qwen3-0.6B"), Some(0.6));
+    }
+
+    #[test]
+    fn test_transformers_cache() {
+        // Since we know apple/OpenELM-1_1B-Instruct is cached on this system, this test should pass
+        let is_cached = is_transformers_model_cached("apple/OpenELM-1_1B-Instruct");
+        println!("apple/OpenELM-1_1B-Instruct cached: {}", is_cached);
+        assert!(is_cached);
+    }
+
+    #[test]
+    fn test_print_model_scores() {
+        let selector = crate::EnhancedModelSelector::new("../../db/hf_models.db").unwrap();
+        let res = selector.select_best_model("text-generation", "compare python vs rust", SelectionStrategy::MultiObjective, 10).unwrap();
+        println!("Best model: {}", res.best_model.model_id);
+        for (idx, candidate) in res.all_candidates.iter().enumerate() {
+            println!(
+                "{}. {} - Final Score: {:.4} (params: {:.2}B, cached: {})",
+                idx + 1,
+                candidate.model_id,
+                candidate.final_score,
+                candidate.estimated_params_b,
+                is_transformers_model_cached(&candidate.model_id)
+            );
+        }
+    }
+    #[test]
+    fn test_param_extraction_additional() {
         assert_eq!(estimate_params_billions("zai-org/GLM-4.7-Flash"), Some(30.0));
         assert_eq!(estimate_params_billions("zai-org/GLM-5-FP8"), Some(744.0));
         assert_eq!(estimate_params_billions("zai-org/GLM-5.2"), Some(744.0));

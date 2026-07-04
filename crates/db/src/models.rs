@@ -268,6 +268,22 @@ impl HuggingFaceModelDatabase {
         let rows = stmt.query_map(params![max_size_mb], |row| row.get::<_, String>(0))?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
+
+    /// Return top overall models sorted by decision score
+    pub fn get_top_overall(&self, limit: usize) -> Result<Vec<ModelMetrics>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            r#"SELECT model_id, author, pipeline_tag, tags, description,
+                      downloads, likes, decision_score, capability_score,
+                      efficiency_score, popularity_score, model_type, library_name,
+                      last_modified, license, task_keywords, architecture, size_mb, language
+               FROM models
+               ORDER BY decision_score DESC, downloads DESC
+               LIMIT ?1"#,
+        )?;
+        let rows = stmt.query_map(params![limit as i64], row_to_model)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────

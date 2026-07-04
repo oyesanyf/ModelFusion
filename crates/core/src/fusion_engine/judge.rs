@@ -44,28 +44,7 @@ pub async fn judge_panel(
 ) -> anyhow::Result<JudgeAnalysis> {
     let judge_prompt = build_judge_prompt(prompt, answers);
     
-    let response_text = match call_model(judge_model, &judge_prompt).await {
-        Ok(text) => text,
-        Err(e) => {
-            if std::env::var("MODELFUSION_NO_SIMULATION").is_ok() {
-                return Err(anyhow::anyhow!("Judge model call failed: {}", e));
-            }
-            log::warn!("Judge model call failed: {}. Falling back to local offline mock judge.", e);
-            let mut summary = String::new();
-            summary.push_str("[Offline Mock Judge Summary]\n");
-            for ans in answers {
-                summary.push_str(&format!("- {}: {}\n", ans.model_name, ans.answer));
-            }
-            return Ok(JudgeAnalysis {
-                consensus: vec!["Offline mode: no active API keys found".to_string()],
-                disagreements: vec![],
-                unique_insights: vec![],
-                blind_spots: vec![],
-                risk_flags: vec![],
-                recommended_final_position: summary,
-            });
-        }
-    };
+    let response_text = call_model(judge_model, &judge_prompt).await?;
     
     // Strip <think>...</think> block if present
     let mut clean_json = if let Some(end_idx) = response_text.find("</think>") {
@@ -132,17 +111,6 @@ pub async fn write_final_answer(
     writer_prompt.push_str(&format!("Risk Flags: {:?}\n", judge_json.risk_flags));
     writer_prompt.push_str(&format!("Recommended Position: {}\n", judge_json.recommended_final_position));
 
-    match call_model(writer_model, &writer_prompt).await {
-        Ok(ans) => Ok(ans),
-        Err(e) => {
-            if std::env::var("MODELFUSION_NO_SIMULATION").is_ok() {
-                return Err(anyhow::anyhow!("Writer model call failed: {}", e));
-            }
-            log::warn!("Writer model call failed: {}. Returning raw judge recommended position.", e);
-            Ok(format!(
-                "[Offline Synth Writer Fallback]\n\n{}\n\n(Note: Writer model failed with error: {})",
-                judge_json.recommended_final_position, e
-            ))
-        }
-    }
+    let ans = call_model(writer_model, &writer_prompt).await?;
+    Ok(ans)
 }

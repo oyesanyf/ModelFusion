@@ -119,7 +119,16 @@ impl EnhancedModelSelector {
             anyhow::bail!("No models found in database for pipeline tag: {}", pipeline_tag);
         }
 
-        let no_simulation = std::env::var("MODELFUSION_NO_SIMULATION").is_ok();
+        let has_token = std::env::var("HF_TOKEN").is_ok()
+            || std::env::var("HUGGINGFACE_API_KEY").is_ok()
+            || std::env::var("HF_API_KEY").is_ok()
+            || std::env::var("HUGGINGFACE_TOKEN").is_ok();
+
+        let no_simulation = std::env::var("MODELFUSION_NO_SIMULATION").is_ok()
+            || std::env::var("MODELFUSION_USE_TRANSFORMERS").is_ok()
+            || std::env::var("MODELFUSION_USE_OPENVINO").is_ok()
+            || std::env::var("MODELFUSION_USE_OLLAMA").is_ok()
+            || has_token;
 
         let mut filtered_models = Vec::new();
         for m in db_models {
@@ -231,16 +240,46 @@ impl EnhancedModelSelector {
                 // ≤3B uncached: no penalty — they convert fast (~2 min), keep normal score
             }
 
+            let is_local = std::env::var("MODELFUSION_USE_TRANSFORMERS").is_ok()
+                || std::env::var("MODELFUSION_USE_OPENVINO").is_ok()
+                || std::env::var("MODELFUSION_USE_OLLAMA").is_ok()
+                || std::env::var("MODELFUSION_USE_ONNX").is_ok();
+
+            // Local Transformers cache-aware scoring:
+            // If the model is already downloaded in local HuggingFace cache, prioritize it.
+            // If not, penalize it to avoid unnecessary slow model downloads.
+            let is_transformers = backend == Backend::Transformers;
+            if is_local && is_transformers {
+                let is_tf_cached = memory::is_transformers_model_cached(&m.model_id);
+                if is_tf_cached {
+                    // Boost cached models to keep them on top of uncached ones
+                    final_score = (final_score + 0.35).min(1.0);
+                    log::debug!("[TRANSFORMERS] Boosting cached model '{}' (score +0.35)", m.model_id);
+                } else {
+                    // Penalize uncached models to avoid downloading on slow connections
+                    final_score = (final_score - 0.45).max(0.0);
+                    log::debug!(
+                        "[TRANSFORMERS] Penalising uncached model '{}' (score {:.2} → {:.2})",
+                        m.model_id, final_score + 0.45, final_score
+                    );
+                }
+            }
+
+
             // Hardware suitability scoring adjustment:
-            let sys_mem = SystemMemory::detect();
-            let suitability = memory::evaluate_hardware_suitability(
-                estimated_params_b,
-                backend,
-                &sys_mem,
-            );
+            let suitability = if is_local {
+                let sys_mem = SystemMemory::detect();
+                memory::evaluate_hardware_suitability(
+                    estimated_params_b,
+                    backend,
+                    &sys_mem,
+                )
+            } else {
+                memory::SuitabilityResult::Adequate
+            };
 
             // Filter out models that do not meet minimum requirements immediately
-            if suitability == memory::SuitabilityResult::Inadequate {
+            if is_local && suitability == memory::SuitabilityResult::Inadequate {
                 log::debug!("Skipping candidate '{}' due to inadequate hardware resources", m.model_id);
                 continue;
             }
@@ -296,38 +335,51 @@ impl EnhancedModelSelector {
             candidates.retain(|c| ollama_models.iter().any(|m| c.model_id.contains(m)));
         }
 
-        // Dynamic memory-aware filtering: detect system resources and exclude models that won't fit
-        let sys_mem = SystemMemory::detect();
-        sys_mem.print_summary();
-        let budget = sys_mem.model_budget_gb();
+        let is_local = std::env::var("MODELFUSION_USE_TRANSFORMERS").is_ok()
+            || std::env::var("MODELFUSION_USE_OPENVINO").is_ok()
+            || std::env::var("MODELFUSION_USE_OLLAMA").is_ok()
+            || std::env::var("MODELFUSION_USE_ONNX").is_ok();
 
-        let before_count = candidates.len();
-        candidates.retain(|c| {
-            let suitability = memory::evaluate_hardware_suitability(
-                c.estimated_params_b,
-                if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() { Backend::Ollama } else if std::env::var("MODELFUSION_USE_OPENVINO").is_ok() { Backend::OpenVINO } else { Backend::Transformers },
-                &sys_mem,
-            );
-            
-            if suitability == memory::SuitabilityResult::Inadequate {
-                println!("  ❌ {} ({:.1}B params) — SKIPPED (Inadequate hardware)", c.model_id, c.estimated_params_b);
-                false
-            } else {
-                let device = sys_mem.best_device_for_model(c.estimated_memory_gb);
-                let device_icon = if device == memory::Device::Gpu { "🎮 GPU" } else { "💻 CPU" };
-                let suitability_str = if suitability == memory::SuitabilityResult::Adequate { "Adequate" } else { "Minimum specs" };
-                println!("  ✅ {} ({:.1}B params, ~{:.1} GB) — {} [Suitability: {}]",
-                    c.model_id, c.estimated_params_b, c.estimated_memory_gb, device_icon, suitability_str);
-                true
+        if is_local {
+            // Dynamic memory-aware filtering: detect system resources and exclude models that won't fit
+            let sys_mem = SystemMemory::detect();
+            sys_mem.print_summary();
+            let budget = sys_mem.model_budget_gb();
+
+            let before_count = candidates.len();
+            candidates.retain(|c| {
+                let suitability = memory::evaluate_hardware_suitability(
+                    c.estimated_params_b,
+                    if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() { Backend::Ollama } else if std::env::var("MODELFUSION_USE_OPENVINO").is_ok() { Backend::OpenVINO } else { Backend::Transformers },
+                    &sys_mem,
+                );
+                
+                if suitability == memory::SuitabilityResult::Inadequate {
+                    println!("  ❌ {} ({:.1}B params) — SKIPPED (Inadequate hardware)", c.model_id, c.estimated_params_b);
+                    false
+                } else {
+                    let device = sys_mem.best_device_for_model(c.estimated_memory_gb);
+                    let device_icon = if device == memory::Device::Gpu { "🎮 GPU" } else { "💻 CPU" };
+                    let suitability_str = if suitability == memory::SuitabilityResult::Adequate { "Adequate" } else { "Minimum specs" };
+                    println!("  ✅ {} ({:.1}B params, ~{:.1} GB) — {} [Suitability: {}]",
+                        c.model_id, c.estimated_params_b, c.estimated_memory_gb, device_icon, suitability_str);
+                    true
+                }
+            });
+            if candidates.len() < before_count {
+                println!("📋 [HARDWARE] Filtered: {} → {} models fit system requirements",
+                    before_count, candidates.len());
             }
-        });
-        if candidates.len() < before_count {
-            println!("📋 [HARDWARE] Filtered: {} → {} models fit system requirements",
-                before_count, candidates.len());
-        }
 
-        if candidates.is_empty() {
-            anyhow::bail!("No models fit within available system memory ({:.1} GB). Try closing other applications to free RAM.", budget);
+            if candidates.is_empty() {
+                anyhow::bail!("No models fit within available system memory ({:.1} GB). Try closing other applications to free RAM.", budget);
+            }
+        } else {
+            // Cloud execution: print candidate list cleanly without local hardware filters
+            println!("🌐 [CLOUD] Cloud Model Candidates:");
+            for c in &candidates {
+                println!("  ✅ {} ({:.1}B params) — Remote Serverless Inference", c.model_id, c.estimated_params_b);
+            }
         }
 
         if candidates.len() > max_candidates {
@@ -454,6 +506,10 @@ fn is_fictional_or_non_chat(model_id: &str) -> bool {
         || lower.contains("yolos")
         || lower.contains("transformer")
         || lower.contains("detr")
+        || lower.contains("tiny-")
+        || lower.contains("trl-internal-testing")
+        || lower.contains("tiny-random")
+        || lower.contains("dummy")
     {
         return true;
     }

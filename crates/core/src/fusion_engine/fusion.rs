@@ -8,7 +8,8 @@ pub async fn run_panel(
 ) -> anyhow::Result<Vec<ModelAnswer>> {
     let is_local = std::env::var("MODELFUSION_USE_TRANSFORMERS").is_ok()
         || std::env::var("MODELFUSION_USE_OLLAMA").is_ok()
-        || std::env::var("MODELFUSION_USE_OPENVINO").is_ok();
+        || std::env::var("MODELFUSION_USE_OPENVINO").is_ok()
+        || std::env::var("MODELFUSION_USE_ONNX").is_ok();
 
     if is_local {
         // Batched execution for local backends: run as many models concurrently

@@ -28,7 +28,9 @@ if _on_py314_plus:
         file=sys.stderr
     )
 
-# Platform-specific environment settings
+# Platform-specific environment settings & force offline cache loading
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 if current_os == "Linux":
     os.environ["OV_CPU_BIND_TYPE"] = "NUMA"
     os.environ["TOKENIZERS_PARALLELISM"] = "true"
@@ -233,7 +235,8 @@ def infer_with_genai(local_model_path: str, prompt: str, max_tokens: int, temper
     try:
         import openvino_genai as ov_genai
         print(f"[OPENVINO-GENAI] Loading from {local_model_path}", file=sys.stderr)
-        pipe = ov_genai.LLMPipeline(local_model_path, "CPU")
+        device = "GPU" if os.environ.get("MODELFUSION_FORCE_GPU") == "true" else "CPU"
+        pipe = ov_genai.LLMPipeline(local_model_path, device)
         config = ov_genai.GenerationConfig()
         config.max_new_tokens = max_tokens
         config.do_sample = temperature > 0.0
@@ -276,7 +279,8 @@ def infer_classic_ov(local_model_path: str, prompt: str, max_tokens: int, temper
         core = ov.Core()
         import multiprocessing
         n_threads = max(1, multiprocessing.cpu_count() - 1)
-        compiled = core.compile_model(xml_path, "CPU", {
+        device = "GPU" if os.environ.get("MODELFUSION_FORCE_GPU") == "true" else "CPU"
+        compiled = core.compile_model(xml_path, device, {
             "PERFORMANCE_HINT": "LATENCY",
             "INFERENCE_NUM_THREADS": str(n_threads),
         })
