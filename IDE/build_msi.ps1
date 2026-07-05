@@ -76,7 +76,16 @@ if (Test-Path $dbSrcPath) {
 } else {
     Write-Host "[WARNING] Pre-populated database not found at $dbSrcPath. Packaging without pre-populated DB." -ForegroundColor Yellow
 }
-
+# 4.6 Copy Python helper scripts into the packaged folder
+$scriptsSrcPath = Join-Path (Split-Path $PSScriptRoot -Parent) "src\scripts"
+if (Test-Path $scriptsSrcPath) {
+    $scriptsDestDir = Join-Path $vsCodePackDir "src\scripts"
+    if (-not (Test-Path $scriptsDestDir)) {
+        New-Item -ItemType Directory -Force -Path $scriptsDestDir | Out-Null
+    }
+    Write-Host "[INFO] Copying python helper scripts to installer package..." -ForegroundColor Yellow
+    Copy-Item -Path "$scriptsSrcPath\*" -Destination $scriptsDestDir -Force -Recurse
+    Write-Host "[OK] Copied python helper scripts to: $scriptsDestDir" -ForegroundColor Green
 }
 
 # 4.7 Ensure conpty.dll and OpenConsole.exe are copied to node-pty build folder
