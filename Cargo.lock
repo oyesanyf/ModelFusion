@@ -244,6 +244,7 @@ dependencies = [
  "log",
  "model_selection",
  "modelfusion_core",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",

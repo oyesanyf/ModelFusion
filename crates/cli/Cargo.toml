@@ -18,3 +18,5 @@ model_selection = { path = "../model_selection" }
 db              = { path = "../db" }
 walkdir         = { workspace = true }
 chrono          = { workspace = true }
+reqwest         = { workspace = true }
+

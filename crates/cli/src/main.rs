@@ -540,6 +540,15 @@ async fn run() -> Result<()> {
 
     let args = Box::new(Args::parse());
 
+    // Auto-start Ollama if it is not running
+    if args.prompt.is_some() || args.query.is_some() || args.server || args.mcp {
+        let _ = model_selection::memory::ensure_ollama_running();
+    }
+
+    if args.verbose || args.debug {
+        std::env::set_var("MODELFUSION_VERBOSE", "true");
+    }
+
     if args.gpu {
         std::env::set_var("MODELFUSION_FORCE_GPU", "true");
     }
@@ -920,6 +929,13 @@ async fn run() -> Result<()> {
                 "Review the code in this folder, identify any bugs, vulnerabilities, or optimization opportunities, and suggest improvements.".to_string()
             });
 
+        // Initialize mutable hardware/fusion flags and parse slash commands from prompt
+        let mut gpu = args.gpu;
+        let mut cpu = args.cpu;
+        let mut openvino = args.openvino;
+        let mut fusion = args.fusion;
+        parse_slash_commands_in_prompt(&mut final_prompt, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
+
         if let Some(ref folder_path) = args.folder {
             println!("[FUSION] Reading files from folder: {}", folder_path);
             let mut folder_content = String::new();
@@ -965,7 +981,55 @@ async fn run() -> Result<()> {
         let task_override = determine_task_override(&args);
         let selection_strategy = parse_selection_strategy(&args.selection_strategy);
 
-        let is_fusion_needed = args.fusion;
+        let mut is_fusion_needed = fusion;
+        let mut bandit_context = 0;
+        let mut bandit_arm = 0;
+        let mut run_bandit_learning = false;
+
+        if !is_fusion_needed && !args.mcp && !args.server {
+            run_bandit_learning = true;
+            let complexity_str = llm_classify_complexity(&final_prompt).await;
+            println!("🦙 [ROUTER] Prompt classified complexity: {}", complexity_str);
+            bandit_context = match complexity_str.as_str() {
+                "simple_general" => 0,
+                "simple_coding" => 1,
+                "complex_general" => 2,
+                "complex_coding" => 3,
+                _ => {
+                    let is_coding = detect_if_coding_or_complicated(&final_prompt);
+                    if is_coding { 1 } else { 0 }
+                }
+            };
+            let db_dir = db_path.parent().unwrap_or_else(|| std::path::Path::new("db"));
+            let mut state = load_bandit_state(db_dir);
+            let epsilon = 0.15;
+            let mut lcg = Lcg::new();
+            bandit_arm = if lcg.gen_bool(epsilon) {
+                lcg.gen_range(0, 2)
+            } else {
+                let vals = state.values[bandit_context];
+                if vals[0] >= vals[1] { 0 } else { 1 }
+            };
+            
+            // Override arm choice using the small model LLM router decision
+            if let Some(decision) = llm_route(&final_prompt).await {
+                println!("🎯 [ROUTER] LLM Router decision: fusion={}, strategy={}, use_gpu={}, use_cpu={}, task={}",
+                    decision.fusion, decision.selection_strategy, decision.use_gpu, decision.use_cpu, decision.detected_task);
+                bandit_arm = if decision.fusion { 1 } else { 0 };
+            }
+            
+            // Force arm choice to 0 (single model) if the complexity layer classified it as simple!
+            if bandit_context == 0 || bandit_context == 1 {
+                if bandit_arm == 1 {
+                    println!("💡 [ROUTER] Complexity layer classified task as simple. Overriding fusion selection to single model.");
+                    bandit_arm = 0;
+                }
+            }
+            
+            is_fusion_needed = bandit_arm == 1;
+            println!("🎯 [BANDIT] Selected Arm: {} (0=Single, 1=Fusion) for context: {}", bandit_arm, complexity_str);
+        }
+
 
         // ---- Backend selection (applies to ALL execution paths) ----
         if args.vllm {
@@ -990,7 +1054,7 @@ async fn run() -> Result<()> {
                     ));
                 }
             }
-        } else if args.ollama {
+        } else if args.ollama || std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
             println!("🦙 Ensuring Ollama is running...");
             match model_selection::memory::ensure_ollama_running() {
                 Ok(()) => {
@@ -1001,7 +1065,7 @@ async fn run() -> Result<()> {
                     return Err(anyhow::anyhow!("❌ {}", e));
                 }
             }
-        } else if args.openvino {
+        } else if openvino {
             println!("🔷 Checking OpenVINO installation...");
             // Try openvino_genai first (best performance)
             let genai_check = std::process::Command::new("python")
@@ -1061,7 +1125,7 @@ async fn run() -> Result<()> {
                 || std::env::var("HF_API_KEY").ok().map(|t| !t.is_empty() && !t.contains("YOUR_")).unwrap_or(false)
                 || std::env::var("HUGGINGFACE_TOKEN").ok().map(|t| !t.is_empty() && !t.contains("YOUR_")).unwrap_or(false);
 
-            if has_hf_token && !args.cpu {
+            if has_hf_token && !cpu {
                 println!("🌐 Using HuggingFace Serverless Inference API for remote cloud execution.");
             } else {
                 std::env::set_var("MODELFUSION_USE_TRANSFORMERS", "true");
@@ -1135,16 +1199,34 @@ async fn run() -> Result<()> {
                         };
                         save_report(&content, report_path, &args.reporttype, &final_prompt_for_report);
                     }
+                    if run_bandit_learning {
+                        let db_dir = db_path.parent().unwrap_or_else(|| std::path::Path::new("db"));
+                        let mut state = load_bandit_state(db_dir);
+                        let count = state.counts[bandit_context][bandit_arm];
+                        let val = state.values[bandit_context][bandit_arm];
+                        state.counts[bandit_context][bandit_arm] += 1;
+                        state.values[bandit_context][bandit_arm] = val + (0.8 - val) / (count + 1) as f64;
+                        save_bandit_state(db_dir, &state);
+                    }
                 }
                 Err(e) => {
                     println!("\n[ERROR] Orchestration Failed (via Model Fusion)!\n");
                     println!("Error: {}", e);
+                    if run_bandit_learning {
+                        let db_dir = db_path.parent().unwrap_or_else(|| std::path::Path::new("db"));
+                        let mut state = load_bandit_state(db_dir);
+                        let count = state.counts[bandit_context][bandit_arm];
+                        let val = state.values[bandit_context][bandit_arm];
+                        state.counts[bandit_context][bandit_arm] += 1;
+                        state.values[bandit_context][bandit_arm] = val + (0.0 - val) / (count + 1) as f64;
+                        save_bandit_state(db_dir, &state);
+                    }
                 }
             }
             return Ok(());
         }
 
-        let orchestrator = HuggingFaceOrchestrator::new(db_path, args.budget, args.enable_ml, args.verbose);
+        let orchestrator = HuggingFaceOrchestrator::new(db_path.clone(), args.budget, args.enable_ml, args.verbose);
 
         let options = HashMap::new();
         let res = orchestrator
@@ -1165,10 +1247,28 @@ async fn run() -> Result<()> {
             if let Some(ref report_path) = args.report {
                 save_report(&res.content, report_path, &args.reporttype, &final_prompt);
             }
+            if run_bandit_learning {
+                let db_dir = db_path.parent().unwrap_or_else(|| std::path::Path::new("db"));
+                let mut state = load_bandit_state(db_dir);
+                let count = state.counts[bandit_context][bandit_arm];
+                let val = state.values[bandit_context][bandit_arm];
+                state.counts[bandit_context][bandit_arm] += 1;
+                state.values[bandit_context][bandit_arm] = val + (0.8 - val) / (count + 1) as f64;
+                save_bandit_state(db_dir, &state);
+            }
         } else {
             println!("\n[ERROR] Orchestration Failed!\n");
             if let Some(err) = res.error_message {
                 println!("Error: {}", err);
+            }
+            if run_bandit_learning {
+                let db_dir = db_path.parent().unwrap_or_else(|| std::path::Path::new("db"));
+                let mut state = load_bandit_state(db_dir);
+                let count = state.counts[bandit_context][bandit_arm];
+                let val = state.values[bandit_context][bandit_arm];
+                state.counts[bandit_context][bandit_arm] += 1;
+                state.values[bandit_context][bandit_arm] = val + (0.0 - val) / (count + 1) as f64;
+                save_bandit_state(db_dir, &state);
             }
         }
     } else {
@@ -1427,10 +1527,190 @@ fn generate_minimal_rtf(content: &str) -> String {
     rtf
 }
 
-/// Convert content to DOCX (represented as RTF bytes for compatibility)
 fn generate_minimal_docx(content: &str) -> Vec<u8> {
     generate_minimal_rtf(content).into_bytes()
 }
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+struct RouterDecision {
+    fusion: bool,
+    selection_strategy: String,
+    use_gpu: bool,
+    use_cpu: bool,
+    detected_task: String,
+}
+
+async fn llm_route(prompt: &str) -> Option<RouterDecision> {
+    let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
+        .unwrap_or_else(|_| "http://localhost:11434".to_string());
+    
+    let client = reqwest::Client::new();
+    let tags_url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
+    
+    let model_list = match client.get(&tags_url).send().await {
+        Ok(res) => {
+            if res.status().is_success() {
+                res.json::<serde_json::Value>().await.ok()
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+    
+    let mut router_model = "qwen2.5:0.5b".to_string();
+    if let Some(list) = model_list {
+        if let Some(models) = list["models"].as_array() {
+            let names: Vec<String> = models.iter()
+                .filter_map(|m| m["name"].as_str().map(|s| s.to_string()))
+                .collect();
+            if names.iter().any(|n| n.contains("0.5b")) {
+                router_model = names.iter().find(|n| n.contains("0.5b")).unwrap().clone();
+            } else if names.iter().any(|n| n.contains("1b")) {
+                router_model = names.iter().find(|n| n.contains("1b")).unwrap().clone();
+            } else if names.iter().any(|n| n.contains("1.5b")) {
+                router_model = names.iter().find(|n| n.contains("1.5b")).unwrap().clone();
+            } else if names.iter().any(|n| n.contains("3b")) {
+                router_model = names.iter().find(|n| n.contains("3b")).unwrap().clone();
+            } else if !names.is_empty() {
+                router_model = names[0].clone();
+            }
+        }
+    }
+    
+    println!("🦙 [ROUTER] Using model '{}' for dynamic orchestration/routing decision", router_model);
+    
+    let system_prompt = "You are the ModelFusion Intelligent Router. Analyze the user prompt and decide the best execution flags.
+Available options:
+- fusion: true (if the prompt is complex, requires comparison, code review, or multi-perspective synthesis), false (if it's a simple factual question, single task, or basic query).
+- selection_strategy: \"multi_objective\" (default), \"weighted_voting\", \"cost_efficient\", \"fastest\".
+- use_gpu: true (if GPU acceleration is helpful), false otherwise.
+- use_cpu: true (if CPU is preferred), false otherwise.
+- detected_task: the category of the task (e.g. \"text-generation\", \"code-generation\", \"pe-header-extraction\").
+
+Respond ONLY with a valid JSON object matching this schema:
+{\"fusion\": bool, \"selection_strategy\": \"multi_objective\"|\"weighted_voting\"|\"cost_efficient\"|\"fastest\", \"use_gpu\": bool, \"use_cpu\": bool, \"detected_task\": string}";
+
+    let body = serde_json::json!({
+        "model": router_model,
+        "messages": [
+            { "role": "system", "content": system_prompt },
+            { "role": "user", "content": prompt }
+        ],
+        "stream": false,
+        "format": "json",
+        "options": {
+            "temperature": 0.0,
+            "num_predict": 128
+        }
+    });
+    
+    let chat_url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
+    match client.post(&chat_url).json(&body).send().await {
+        Ok(res) => {
+            if res.status().is_success() {
+                if let Ok(data) = res.json::<serde_json::Value>().await {
+                    if let Some(content) = data["message"]["content"].as_str() {
+                        println!("🦙 [ROUTER] Raw decision: {}", content);
+                        if let Ok(decision) = serde_json::from_str::<RouterDecision>(content) {
+                            return Some(decision);
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    None
+}
+
+async fn llm_classify_complexity(prompt: &str) -> String {
+    let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
+        .unwrap_or_else(|_| "http://localhost:11434".to_string());
+    
+    let client = reqwest::Client::new();
+    let tags_url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
+    
+    let model_list = match client.get(&tags_url).send().await {
+        Ok(res) => {
+            if res.status().is_success() {
+                res.json::<serde_json::Value>().await.ok()
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+    
+    let mut classifier_model = "qwen2.5:0.5b".to_string();
+    if let Some(list) = model_list {
+        if let Some(models) = list["models"].as_array() {
+            let names: Vec<String> = models.iter()
+                .filter_map(|m| m["name"].as_str().map(|s| s.to_string()))
+                .collect();
+            if names.iter().any(|n| n.contains("deepseek-r1")) {
+                classifier_model = names.iter().find(|n| n.contains("deepseek-r1")).unwrap().clone();
+            } else if names.iter().any(|n| n.contains("llama3.2")) {
+                classifier_model = names.iter().find(|n| n.contains("llama3.2")).unwrap().clone();
+            } else if names.iter().any(|n| n.contains("qwen2.5")) {
+                classifier_model = names.iter().find(|n| n.contains("qwen2.5")).unwrap().clone();
+            } else if !names.is_empty() {
+                classifier_model = names[0].clone();
+            }
+        }
+    }
+    
+    println!("🦙 [ROUTER] Using model '{}' for dynamic complexity classification", classifier_model);
+    
+    let system_prompt = "You are the ModelFusion Task Complexity Classifier. Analyze the user prompt and classify it into one of the following 4 categories:
+- \"simple_general\" (factual queries, simple questions, basic text requests)
+- \"simple_coding\" (single function code generation, syntax questions, simple regex)
+- \"complex_general\" (essay writing, comparative analyses, multi-perspective synthesis, open-ended discussions)
+- \"complex_coding\" (architectural review, multi-file analysis, debugging complex issues, refactoring projects)
+
+Respond ONLY with a valid JSON object matching this schema:
+{\"complexity\": \"simple_general\"|\"simple_coding\"|\"complex_general\"|\"complex_coding\"}";
+
+    let body = serde_json::json!({
+        "model": classifier_model,
+        "messages": [
+            { "role": "system", "content": system_prompt },
+            { "role": "user", "content": prompt }
+        ],
+        "stream": false,
+        "format": "json",
+        "options": {
+            "temperature": 0.0,
+            "num_predict": 128
+        }
+    });
+    
+    let chat_url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
+    if let Ok(res) = client.post(&chat_url).json(&body).send().await {
+        if res.status().is_success() {
+            if let Ok(data) = res.json::<serde_json::Value>().await {
+                if let Some(content) = data["message"]["content"].as_str() {
+                    let clean_json = if let Some(idx) = content.rfind("}") {
+                        if let Some(start_idx) = content.find("{") {
+                            &content[start_idx..=idx]
+                        } else {
+                            content
+                        }
+                    } else {
+                        content
+                    };
+                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(clean_json) {
+                        if let Some(complexity) = parsed["complexity"].as_str() {
+                            return complexity.to_string();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    "simple_general".to_string()
+}
+
 
 async fn run_server(port: u16, db_path: Option<String>) -> Result<()> {
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
@@ -1512,15 +1792,37 @@ async fn run_server(port: u16, db_path: Option<String>) -> Result<()> {
 
             let result_content = match request_path.as_str() {
                 "/orchestrate" => {
-                    let prompt = request_json["prompt"].as_str().unwrap_or("").to_string();
-                    let strategy = request_json["selection_strategy"].as_str().unwrap_or("multi_objective").to_string();
+                    let mut prompt = request_json["prompt"].as_str().unwrap_or("").to_string();
+                    let mut strategy = request_json["selection_strategy"].as_str().unwrap_or("multi_objective").to_string();
                     let fusion_mode = request_json["fusion_mode"].as_str().unwrap_or("multi-model").to_string();
                     let fusion_models = request_json["fusion_models"].as_u64().unwrap_or(10) as usize;
                     let budget = request_json["budget"].as_f64().unwrap_or(10.0);
-                    let openvino = request_json["openvino"].as_bool().unwrap_or(false);
-                    let gpu = request_json["gpu"].as_bool().unwrap_or(false);
-                    let cpu = request_json["cpu"].as_bool().unwrap_or(false);
-                    let fusion = request_json["fusion"].as_bool().unwrap_or(false);
+                    let mut openvino = request_json["openvino"].as_bool().unwrap_or(false);
+                    let mut gpu = request_json["gpu"].as_bool().unwrap_or(false);
+                    let mut cpu = request_json["cpu"].as_bool().unwrap_or(false);
+                    let mut fusion = request_json["fusion"].as_bool().unwrap_or(false);
+
+                    // Parse slash commands from incoming prompt
+                    parse_slash_commands_in_prompt(&mut prompt, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
+
+                    let start_time = std::time::Instant::now();
+                    println!("[SERVER] >>> Received /orchestrate request.");
+                    println!("[SERVER] Prompt: \"{}\"", prompt.chars().take(80).collect::<String>());
+
+                    // Query the small model router for dynamic orchestration decision
+                    if let Some(decision) = llm_route(&prompt).await {
+                        println!("🎯 [SERVER] LLM Router decision: fusion={}, strategy={}, use_gpu={}, use_cpu={}, task={}",
+                            decision.fusion, decision.selection_strategy, decision.use_gpu, decision.use_cpu, decision.detected_task);
+                        fusion = decision.fusion;
+                        strategy = decision.selection_strategy;
+                        gpu = decision.use_gpu;
+                        cpu = decision.use_cpu;
+                    } else {
+                        println!("⚠️ [SERVER] LLM Router offline or failed. Falling back to default/heuristic options.");
+                    }
+
+                    println!("[SERVER] Options: fusion={}, strategy={}, budget={}, gpu={}, cpu={}, openvino={}", fusion, strategy, budget, gpu, cpu, openvino);
+
 
                     if gpu {
                         std::env::set_var("MODELFUSION_USE_OLLAMA", "true");
@@ -1544,7 +1846,13 @@ async fn run_server(port: u16, db_path: Option<String>) -> Result<()> {
                         std::env::remove_var("MODELFUSION_FORCE_CPU");
                     }
 
-                    if fusion {
+                    // Classify prompt to see if fusion is actually needed
+                    let prompt_needs_fusion = fusion && modelfusion_core::fusion_engine::classify_prompt(&prompt);
+                    if fusion && !prompt_needs_fusion {
+                        println!("[SERVER] Prompt classified as simple. Bypassing fusion engine to run single model orchestrator.");
+                    }
+
+                    let content = if prompt_needs_fusion {
                         match modelfusion_core::fusion_engine::run_fusion(
                             &prompt,
                             None,
@@ -1577,7 +1885,10 @@ async fn run_server(port: u16, db_path: Option<String>) -> Result<()> {
                         } else {
                             res.error_message.unwrap_or_else(|| "Orchestration failed".to_string())
                         }
-                    }
+                    };
+
+                    println!("[SERVER] <<< Completed /orchestrate request in {}ms.", start_time.elapsed().as_millis());
+                    content
                 }
                 "/stats" => {
                     run_cli_subcommand(&["--stats".to_string()], db_path_val).await
@@ -1710,17 +2021,18 @@ async fn run_cli_subcommand(cmd_args: &[String], db_path: &std::path::Path) -> S
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 struct BanditState {
-    // For each context (0 = Simple, 1 = Coding / Complicated):
+    // For each context:
+    // 0 = Simple General, 1 = Simple Coding, 2 = Complex General, 3 = Complex Coding
     // We store the pull count and average reward for each arm (0 = Single model, 1 = Fusion model).
-    counts: [[u32; 2]; 2],
-    values: [[f64; 2]; 2],
+    counts: [[u32; 2]; 4],
+    values: [[f64; 2]; 4],
 }
 
 impl Default for BanditState {
     fn default() -> Self {
         Self {
-            counts: [[0; 2]; 2],
-            values: [[0.5; 2]; 2], // Prior reward values initialized to 0.5
+            counts: [[0; 2]; 4],
+            values: [[0.5; 2]; 4], // Prior reward values initialized to 0.5
         }
     }
 }
@@ -1832,8 +2144,19 @@ async fn route_and_execute(
     db_path: &std::path::Path,
     custom_args: &[String],
 ) -> (String, usize, usize) {
-    let is_coding = detect_if_coding_or_complicated(prompt);
-    let context = if is_coding { 1 } else { 0 };
+    let complexity_str = llm_classify_complexity(prompt).await;
+    println!("🦙 [ROUTER] Prompt classified complexity: {}", complexity_str);
+    
+    let context = match complexity_str.as_str() {
+        "simple_general" => 0,
+        "simple_coding" => 1,
+        "complex_general" => 2,
+        "complex_coding" => 3,
+        _ => {
+            let is_coding = detect_if_coding_or_complicated(prompt);
+            if is_coding { 1 } else { 0 }
+        }
+    };
 
     let db_dir = db_path.parent().unwrap_or_else(|| std::path::Path::new("db"));
     let mut state = load_bandit_state(db_dir);
@@ -1842,7 +2165,7 @@ async fn route_and_execute(
     let epsilon = 0.15;
     let mut lcg = Lcg::new();
 
-    let arm = if lcg.gen_bool(epsilon) {
+    let mut arm = if lcg.gen_bool(epsilon) {
         // Explore
         lcg.gen_range(0, 2)
     } else {
@@ -1855,11 +2178,34 @@ async fn route_and_execute(
         }
     };
 
+    // Override arm choice using the small model LLM router decision
+    if let Some(decision) = llm_route(prompt).await {
+        println!("🎯 [ROUTER] LLM Router decision: fusion={}, strategy={}, use_gpu={}, use_cpu={}, task={}",
+            decision.fusion, decision.selection_strategy, decision.use_gpu, decision.use_cpu, decision.detected_task);
+        arm = if decision.fusion { 1 } else { 0 };
+    } else {
+        // Fallback to simple heuristic classification
+        if !modelfusion_core::fusion_engine::classify_prompt(prompt) {
+            if arm == 1 {
+                eprintln!("💡 [ROUTER] Prompt classified as simple. Overriding bandit selection to single model (Bypassing Fusion).");
+                arm = 0;
+            }
+        }
+    }
+
+    // Force arm choice to 0 (single model) if the complexity layer classified it as simple!
+    if context == 0 || context == 1 {
+        if arm == 1 {
+            println!("💡 [ROUTER] Complexity layer classified task as simple. Overriding fusion selection to single model.");
+            arm = 0;
+        }
+    }
+
     eprintln!(
-        "🎯 [BANDIT] Prompt: \"{}\" | Context: {} (Coding/Complex: {}) | Selected Arm: {} (0=Single, 1=Fusion)",
+        "🎯 [BANDIT] Prompt: \"{}\" | Context: {} ({}) | Selected Arm: {} (0=Single, 1=Fusion)",
         prompt.chars().take(40).collect::<String>(),
         context,
-        is_coding,
+        complexity_str,
         arm
     );
 
@@ -2307,5 +2653,447 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn parse_slash_commands_in_prompt(
+    prompt: &mut String,
+    gpu: &mut bool,
+    cpu: &mut bool,
+    openvino: &mut bool,
+    fusion: &mut bool,
+) {
+    let parse_line = |line: &str| -> Option<(String, String)> {
+        let trimmed = line.trim();
+        let command_str = if trimmed.starts_with("User: ") {
+            trimmed["User: ".len()..].trim()
+        } else if trimmed.starts_with("System: ") {
+            trimmed["System: ".len()..].trim()
+        } else {
+            trimmed
+        };
+        
+        if command_str.starts_with('/') {
+            let mut parts = command_str.splitn(2, ' ');
+            if let Some(cmd) = parts.next() {
+                let rest = parts.next().unwrap_or("").trim().to_string();
+                return Some((cmd.to_lowercase(), rest));
+            }
+        }
+        None
+    };
+
+    let mut detected_cmd = None;
+    let mut cleaned_rest = String::new();
+
+    // Check single line
+    if let Some((cmd, rest)) = parse_line(prompt) {
+        detected_cmd = Some(cmd);
+        cleaned_rest = rest;
+    } else if prompt.contains("User: ") {
+        // Multi-turn transcript: check the last user line
+        let lines: Vec<&str> = prompt.lines().collect();
+        for i in (0..lines.len()).rev() {
+            let line = lines[i];
+            if line.trim().starts_with("User: ") {
+                if let Some((cmd, rest)) = parse_line(line) {
+                    detected_cmd = Some(cmd);
+                    cleaned_rest = rest;
+                }
+                break;
+            }
+        }
+    }
+
+    if let Some(cmd) = detected_cmd {
+        println!("💡 [ROUTER] Detected Slash Command: {}", cmd);
+        
+        // Helper to extract first argument and actual prompt
+        let get_arg = |r: &str| -> (String, String) {
+            let mut parts = r.splitn(2, ' ');
+            let arg = parts.next().unwrap_or("").trim().to_string();
+            let actual = parts.next().unwrap_or("").trim().to_string();
+            (arg, actual)
+        };
+
+        let mut actual_prompt = cleaned_rest.clone();
+
+        match cmd.as_str() {
+            "/file" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_FILE", &val);
+                actual_prompt = act;
+            }
+            "/folder" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_FOLDER", &val);
+                actual_prompt = act;
+            }
+            "/task" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_TASK_OVERRIDE", &val);
+                actual_prompt = act;
+            }
+            "/budget" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_BUDGET", &val);
+                actual_prompt = act;
+            }
+            "/config" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_CONFIG", &val);
+                actual_prompt = act;
+            }
+            "/selection-strategy" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_SELECTION_STRATEGY", &val);
+                actual_prompt = act;
+            }
+            "/language" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_LANGUAGE", &val);
+                actual_prompt = act;
+            }
+            "/api-keys" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_API_KEYS", &val);
+                actual_prompt = act;
+            }
+            "/load-model" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_LOAD_MODEL", &val);
+                actual_prompt = act;
+            }
+            "/ml-ensemble-method" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_ML_ENSEMBLE_METHOD", &val);
+                actual_prompt = act;
+            }
+            "/ml-confidence-threshold" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_ML_CONFIDENCE_THRESHOLD", &val);
+                actual_prompt = act;
+            }
+            "/ml-cleanup" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_ML_CLEANUP", &val);
+                actual_prompt = act;
+            }
+            "/sinq-nbits" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_SINQ_NBITS", &val);
+                actual_prompt = act;
+            }
+            "/sinq-group-size" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_SINQ_GROUP_SIZE", &val);
+                actual_prompt = act;
+            }
+            "/sinq-tiling-mode" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_SINQ_TILING_MODE", &val);
+                actual_prompt = act;
+            }
+            "/sinq-method" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_SINQ_METHOD", &val);
+                actual_prompt = act;
+            }
+            "/innovation-level" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_INNOVATION_LEVEL", &val);
+                actual_prompt = act;
+            }
+            "/add-documents" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_ADD_DOCUMENTS", &val);
+                actual_prompt = act;
+            }
+            "/search-query" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_SEARCH_QUERY", &val);
+                actual_prompt = act;
+            }
+            "/top-k" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_TOP_K", &val);
+                actual_prompt = act;
+            }
+            "/tasks" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_TASKS_FILTER", &val);
+                actual_prompt = act;
+            }
+            "/model-ranking" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_MODEL_RANKING_FILTER", &val);
+                actual_prompt = act;
+            }
+            "/fusion-models" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_FUSION_MODELS", &val);
+                actual_prompt = act;
+            }
+            "/fusion-mode" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_FUSION_MODE", &val);
+                actual_prompt = act;
+            }
+            "/model" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_MODEL", &val);
+                actual_prompt = act;
+            }
+            "/prepare-model" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_PREPARE_MODEL", &val);
+                actual_prompt = act;
+            }
+            "/weight-format" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_WEIGHT_FORMAT", &val);
+                actual_prompt = act;
+            }
+            "/ov-model-dir" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_OV_MODEL_DIR", &val);
+                actual_prompt = act;
+            }
+            "/context" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_CONTEXT", &val);
+                actual_prompt = act;
+            }
+            "/report" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_REPORT", &val);
+                actual_prompt = act;
+            }
+            "/reporttype" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_REPORTTYPE", &val);
+                actual_prompt = act;
+            }
+            "/ml-fallback" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_ML_FALLBACK", &val);
+                actual_prompt = act;
+            }
+            "/db-path" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_DB_PATH", &val);
+                actual_prompt = act;
+            }
+            "/port" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                std::env::set_var("MODELFUSION_PORT", &val);
+                actual_prompt = act;
+            }
+            
+            // Boolean flags
+            "/cot" | "/chain-of-thought" => {
+                std::env::set_var("MODELFUSION_CHAIN_OF_THOUGHT", "true");
+            }
+            "/enable-ml" => {
+                std::env::set_var("MODELFUSION_ENABLE_ML", "true");
+            }
+            "/use-openai" => {
+                std::env::set_var("MODELFUSION_USE_OPENAI", "true");
+            }
+            "/verbose" => {
+                std::env::set_var("MODELFUSION_VERBOSE", "true");
+            }
+            "/debug" => {
+                std::env::set_var("MODELFUSION_DEBUG", "true");
+            }
+            "/gpu" => {
+                *gpu = true;
+                std::env::set_var("MODELFUSION_FORCE_GPU", "true");
+            }
+            "/cpu" => {
+                *cpu = true;
+                std::env::set_var("MODELFUSION_FORCE_CPU", "true");
+            }
+            "/save-model" => {
+                std::env::set_var("MODELFUSION_SAVE_MODEL", "true");
+            }
+            "/enable-ml-selection" => {
+                std::env::set_var("MODELFUSION_ENABLE_ML_SELECTION", "true");
+            }
+            "/ml-learning" => {
+                std::env::set_var("MODELFUSION_ML_LEARNING", "true");
+            }
+            "/ml-analytics" => {
+                std::env::set_var("MODELFUSION_ML_ANALYTICS", "true");
+            }
+            "/ml-retrain" => {
+                std::env::set_var("MODELFUSION_ML_RETRAIN", "true");
+            }
+            "/sinq" => {
+                std::env::set_var("MODELFUSION_SINQ", "true");
+            }
+            "/innovate" | "/innovation" | "/enable-innovations" => {
+                std::env::set_var("MODELFUSION_INNOVATE", "true");
+            }
+            "/optimize" | "/workflow" | "/workflow-optimization" => {
+                std::env::set_var("MODELFUSION_WORKFLOW_OPTIMIZE", "true");
+            }
+            "/semantic-analysis" => {
+                std::env::set_var("MODELFUSION_SEMANTIC_ANALYSIS", "true");
+            }
+            "/temporal-tracking" => {
+                std::env::set_var("MODELFUSION_TEMPORAL_TRACKING", "true");
+            }
+            "/predict" | "/predictive" | "/predictive-mode" => {
+                std::env::set_var("MODELFUSION_PREDICT", "true");
+            }
+            "/enable-hyde" => {
+                std::env::set_var("MODELFUSION_ENABLE_HYDE", "true");
+            }
+            "/use-hyde" => {
+                std::env::set_var("MODELFUSION_USE_HYDE", "true");
+            }
+            "/hyde-variants" => {
+                std::env::set_var("MODELFUSION_HYDE_VARIANTS", "true");
+            }
+            "/demo-hyde" => {
+                std::env::set_var("MODELFUSION_DEMO_HYDE", "true");
+            }
+            "/stats" => {
+                std::env::set_var("MODELFUSION_STATS", "true");
+            }
+            "/update" => {
+                std::env::set_var("MODELFUSION_UPDATE", "true");
+            }
+            "/restore" => {
+                std::env::set_var("MODELFUSION_RESTORE", "true");
+            }
+            "/decision-stats" => {
+                std::env::set_var("MODELFUSION_DECISION_STATS", "true");
+            }
+            "/novel-ai-stats" => {
+                std::env::set_var("MODELFUSION_NOVEL_AI_STATS", "true");
+            }
+            "/performance-stats" => {
+                std::env::set_var("MODELFUSION_PERFORMANCE_STATS", "true");
+            }
+            "/cache-stats" => {
+                std::env::set_var("MODELFUSION_CACHE_STATS", "true");
+            }
+            "/clearcache" => {
+                std::env::set_var("MODELFUSION_CLEARCACHE", "true");
+            }
+            "/analytics-demo" => {
+                std::env::set_var("MODELFUSION_ANALYTICS_DEMO", "true");
+            }
+            "/model-recommendations" => {
+                std::env::set_var("MODELFUSION_MODEL_RECOMMENDATIONS", "true");
+            }
+            "/full" => {
+                std::env::set_var("MODELFUSION_FULL", "true");
+            }
+            "/fusion" => {
+                *fusion = true;
+                std::env::set_var("MODELFUSION_FUSION", "true");
+            }
+            "/ollama" => {
+                std::env::set_var("MODELFUSION_USE_OLLAMA", "true");
+            }
+            "/openvino" => {
+                *openvino = true;
+                std::env::set_var("MODELFUSION_USE_OPENVINO", "true");
+            }
+            "/onnx" => {
+                std::env::set_var("MODELFUSION_USE_ONNX", "true");
+            }
+            "/vllm" => {
+                std::env::set_var("MODELFUSION_USE_VLLM", "true");
+            }
+            "/prepare-all-models" => {
+                std::env::set_var("MODELFUSION_PREPARE_ALL_MODELS", "true");
+            }
+            "/context-auto" => {
+                std::env::set_var("MODELFUSION_CONTEXT_AUTO", "true");
+            }
+            "/delegation" | "/delegate" => {
+                std::env::set_var("MODELFUSION_DELEGATION", "true");
+            }
+            "/recursion" | "/recurse" => {
+                std::env::set_var("MODELFUSION_RECURSION", "true");
+            }
+            "/real-options" | "/realoptions" => {
+                std::env::set_var("MODELFUSION_REAL_OPTIONS", "true");
+            }
+            "/prompt-quality-scoring" => {
+                std::env::set_var("MODELFUSION_PROMPT_QUALITY_SCORING", "true");
+            }
+            "/jupyter" => {
+                std::env::set_var("MODELFUSION_JUPYTER", "true");
+            }
+            "/dataanalyst" => {
+                std::env::set_var("MODELFUSION_DATAANALYST", "true");
+            }
+            "/datascience" => {
+                std::env::set_var("MODELFUSION_DATASCIENCE", "true");
+            }
+            "/export-pdf" => {
+                std::env::set_var("MODELFUSION_EXPORT_PDF", "true");
+            }
+            "/score" => {
+                std::env::set_var("MODELFUSION_SCORE", "true");
+            }
+            "/judge" => {
+                std::env::set_var("MODELFUSION_JUDGE", "true");
+            }
+            "/plan" => {
+                std::env::set_var("MODELFUSION_PLAN", "true");
+            }
+            "/pe-header-extraction" => {
+                std::env::set_var("MODELFUSION_PE_HEADER_EXTRACTION", "true");
+            }
+            "/sentiment" => {
+                std::env::set_var("MODELFUSION_SENTIMENT", "true");
+            }
+            "/question" => {
+                std::env::set_var("MODELFUSION_QUESTION", "true");
+            }
+            "/ner" => {
+                std::env::set_var("MODELFUSION_NER", "true");
+            }
+            "/summary" => {
+                std::env::set_var("MODELFUSION_SUMMARY", "true");
+            }
+            "/server" => {
+                std::env::set_var("MODELFUSION_SERVER", "true");
+            }
+            "/mcp" => {
+                std::env::set_var("MODELFUSION_MCP", "true");
+            }
+
+            // Task overrides
+            other => {
+                if other.starts_with('/') {
+                    let task_name = other[1..].to_string();
+                    std::env::set_var("MODELFUSION_TASK_OVERRIDE", &task_name);
+                }
+            }
+        }
+
+        // Apply back the cleaned prompt text
+        if prompt.contains("User: ") {
+            let lines: Vec<&str> = prompt.lines().collect();
+            for i in (0..lines.len()).rev() {
+                let line = lines[i];
+                if line.trim().starts_with("User: ") {
+                    let mut new_lines = lines.clone();
+                    let new_line = format!("User: {}", actual_prompt);
+                    new_lines[i] = &new_line;
+                    *prompt = new_lines.join("\n");
+                    break;
+                }
+            }
+        } else {
+            *prompt = actual_prompt;
+        }
+    }
 }
 

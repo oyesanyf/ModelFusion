@@ -200,16 +200,22 @@ impl EnhancedModelSelector {
                 SelectionStrategy::MultiObjective => {}
             }
 
+            // Promote models cached in Ollama to ensure instant local response
+            if memory::is_ollama_model_cached(&m.model_id) {
+                final_score += 10.0;
+            }
+
             let confidence = (final_score * 1.2).clamp(0.1, 1.0);
 
             // Estimate parameter count and runtime memory
-            let mut backend = if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+            let mut backend = if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || memory::is_ollama_model_cached(&m.model_id) {
                 Backend::Ollama
             } else if std::env::var("MODELFUSION_USE_OPENVINO").is_ok() {
                 Backend::OpenVINO
             } else {
                 Backend::Transformers
             };
+
 
             // If using OpenVINO, but the model has not been pre-converted/cached yet,
             // we must budget for the heavy conversion step (which loads the full PyTorch model).
@@ -340,33 +346,40 @@ impl EnhancedModelSelector {
             || std::env::var("MODELFUSION_USE_OLLAMA").is_ok()
             || std::env::var("MODELFUSION_USE_ONNX").is_ok();
 
+        let verbose = std::env::var("MODELFUSION_VERBOSE").is_ok();
         if is_local {
             // Dynamic memory-aware filtering: detect system resources and exclude models that won't fit
             let sys_mem = SystemMemory::detect();
-            sys_mem.print_summary();
+            if verbose {
+                sys_mem.print_summary();
+            }
             let budget = sys_mem.model_budget_gb();
 
             let before_count = candidates.len();
             candidates.retain(|c| {
                 let suitability = memory::evaluate_hardware_suitability(
                     c.estimated_params_b,
-                    if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() { Backend::Ollama } else if std::env::var("MODELFUSION_USE_OPENVINO").is_ok() { Backend::OpenVINO } else { Backend::Transformers },
+                    if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || memory::is_ollama_model_cached(&c.model_id) { Backend::Ollama } else if std::env::var("MODELFUSION_USE_OPENVINO").is_ok() { Backend::OpenVINO } else { Backend::Transformers },
                     &sys_mem,
                 );
                 
                 if suitability == memory::SuitabilityResult::Inadequate {
-                    println!("  ❌ {} ({:.1}B params) — SKIPPED (Inadequate hardware)", c.model_id, c.estimated_params_b);
+                    if verbose {
+                        println!("  ❌ {} ({:.1}B params) — SKIPPED (Inadequate hardware)", c.model_id, c.estimated_params_b);
+                    }
                     false
                 } else {
                     let device = sys_mem.best_device_for_model(c.estimated_memory_gb);
                     let device_icon = if device == memory::Device::Gpu { "🎮 GPU" } else { "💻 CPU" };
                     let suitability_str = if suitability == memory::SuitabilityResult::Adequate { "Adequate" } else { "Minimum specs" };
-                    println!("  ✅ {} ({:.1}B params, ~{:.1} GB) — {} [Suitability: {}]",
-                        c.model_id, c.estimated_params_b, c.estimated_memory_gb, device_icon, suitability_str);
+                    if verbose {
+                        println!("  ✅ {} ({:.1}B params, ~{:.1} GB) — {} [Suitability: {}]",
+                            c.model_id, c.estimated_params_b, c.estimated_memory_gb, device_icon, suitability_str);
+                    }
                     true
                 }
             });
-            if candidates.len() < before_count {
+            if verbose && candidates.len() < before_count {
                 println!("📋 [HARDWARE] Filtered: {} → {} models fit system requirements",
                     before_count, candidates.len());
             }
@@ -376,9 +389,11 @@ impl EnhancedModelSelector {
             }
         } else {
             // Cloud execution: print candidate list cleanly without local hardware filters
-            println!("🌐 [CLOUD] Cloud Model Candidates:");
-            for c in &candidates {
-                println!("  ✅ {} ({:.1}B params) — Remote Serverless Inference", c.model_id, c.estimated_params_b);
+            if verbose {
+                println!("🌐 [CLOUD] Cloud Model Candidates:");
+                for c in &candidates {
+                    println!("  ✅ {} ({:.1}B params) — Remote Serverless Inference", c.model_id, c.estimated_params_b);
+                }
             }
         }
 

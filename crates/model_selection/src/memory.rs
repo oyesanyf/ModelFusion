@@ -513,6 +513,43 @@ pub fn is_transformers_model_cached(model_id: &str) -> bool {
     false
 }
 
+fn map_hf_to_ollama(hf_model_id: &str) -> String {
+    let id = hf_model_id.to_lowercase();
+    if id.contains("qwen2") && id.contains("72b") { "qwen2.5:72b".to_string() }
+    else if id.contains("qwen2") && id.contains("32b") { "qwen2.5:32b".to_string() }
+    else if id.contains("qwen2") && id.contains("14b") { "qwen2.5:14b".to_string() }
+    else if id.contains("qwen2") && id.contains("7b") { "qwen2.5:7b".to_string() }
+    else if id.contains("qwen2") && id.contains("3b") { "qwen2.5:3b".to_string() }
+    else if id.contains("qwen2") && id.contains("1.5b") { "qwen2.5:1.5b".to_string() }
+    else if id.contains("qwen2") && id.contains("0.5b") { "qwen2.5:0.5b".to_string() }
+    else if id.contains("llama-3.1") && id.contains("8b") { "llama3.1".to_string() }
+    else if id.contains("llama-3.2") && id.contains("3b") { "llama3.2:3b".to_string() }
+    else if id.contains("llama-3.2") && id.contains("1b") { "llama3.2:1b".to_string() }
+    else if id.contains("deepseek-r1-distill") && id.contains("qwen-1.5b") { "deepseek-r1:1.5b".to_string() }
+    else if id.contains("gemma-2") && id.contains("2b") { "gemma2:2b".to_string() }
+    else { hf_model_id.to_string() }
+}
+
+/// Check if the model is cached/downloaded in Ollama.
+pub fn is_ollama_model_cached(model_id: &str) -> bool {
+    let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
+        .unwrap_or_else(|_| "http://localhost:11434".to_string());
+        
+    let result = Command::new("curl")
+        .args(["-s", &format!("{}/api/tags", endpoint)])
+        .output();
+        
+    let stdout_str = match result {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
+        _ => return false,
+    };
+    
+    let target = map_hf_to_ollama(model_id).to_lowercase();
+    
+    stdout_str.to_lowercase().contains(&target)
+}
+
+
 
 #[cfg(test)]
 mod tests {

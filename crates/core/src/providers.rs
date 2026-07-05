@@ -270,12 +270,24 @@ impl LLMProvider for HuggingFaceProvider {
         let start = Instant::now();
 
         // Ollama local execution path
-        if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
-            let ollama_model = map_hf_to_ollama(&self.config.model_id);
-            log::info!("[OLLAMA] Executing model {} (ollama: {}) locally...", self.config.model_id, ollama_model);
+        let ollama_model = map_hf_to_ollama(&self.config.model_id);
+        let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
+            .unwrap_or_else(|_| "http://localhost:11434".to_string());
+        
+        let use_ollama = std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || {
+            if let Ok(out) = std::process::Command::new("curl")
+                .args(["-s", &format!("{}/api/tags", endpoint)])
+                .output()
+            {
+                let stdout = String::from_utf8_lossy(&out.stdout).to_lowercase();
+                stdout.contains(&ollama_model.to_lowercase())
+            } else {
+                false
+            }
+        };
 
-            let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
-                .unwrap_or_else(|_| "http://localhost:11434".to_string());
+        if use_ollama {
+            log::info!("[OLLAMA] Executing model {} (ollama: {}) locally...", self.config.model_id, ollama_model);
             let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
 
             let mut messages = Vec::new();
@@ -305,7 +317,11 @@ impl LLMProvider for HuggingFaceProvider {
                 }
             });
 
-            let response = self.client.post(&url)
+            let ollama_client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(300))
+                .build()
+                .unwrap_or_default();
+            let response = ollama_client.post(&url)
                 .json(&body)
                 .send()
                 .await;
@@ -833,13 +849,13 @@ pub fn map_hf_to_ollama(hf_model_id: &str) -> String {
     let id = hf_model_id.to_lowercase();
     match id.as_str() {
         // Qwen family
-        _ if id.contains("qwen2.5") && id.contains("72b") => "qwen2.5:72b".to_string(),
-        _ if id.contains("qwen2.5") && id.contains("32b") => "qwen2.5:32b".to_string(),
-        _ if id.contains("qwen2.5") && id.contains("14b") => "qwen2.5:14b".to_string(),
-        _ if id.contains("qwen2.5") && id.contains("7b") => "qwen2.5:7b".to_string(),
-        _ if id.contains("qwen2.5") && id.contains("3b") => "qwen2.5:3b".to_string(),
-        _ if id.contains("qwen2.5") && id.contains("1.5b") => "qwen2.5:1.5b".to_string(),
-        _ if id.contains("qwen2.5") && id.contains("0.5b") => "qwen2.5:0.5b".to_string(),
+        _ if id.contains("qwen2") && id.contains("72b") => "qwen2.5:72b".to_string(),
+        _ if id.contains("qwen2") && id.contains("32b") => "qwen2.5:32b".to_string(),
+        _ if id.contains("qwen2") && id.contains("14b") => "qwen2.5:14b".to_string(),
+        _ if id.contains("qwen2") && id.contains("7b") => "qwen2.5:7b".to_string(),
+        _ if id.contains("qwen2") && id.contains("3b") => "qwen2.5:3b".to_string(),
+        _ if id.contains("qwen2") && id.contains("1.5b") => "qwen2.5:1.5b".to_string(),
+        _ if id.contains("qwen2") && id.contains("0.5b") => "qwen2.5:0.5b".to_string(),
         _ if id.contains("qwen2.5-coder") && id.contains("7b") => "qwen2.5-coder:7b".to_string(),
         _ if id.contains("qwen3") && id.contains("8b") => "qwen3:8b".to_string(),
         _ if id.contains("qwen3") && id.contains("4b") => "qwen3:4b".to_string(),
