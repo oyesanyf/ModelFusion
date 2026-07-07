@@ -1544,7 +1544,14 @@ async fn llm_route(prompt: &str) -> Option<RouterDecision> {
     let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
         .unwrap_or_else(|_| "http://localhost:11434".to_string());
     
-    let client = reqwest::Client::new();
+    // Use a short timeout so Ollama probes fail fast when Ollama is not running.
+    // Without this, reqwest uses the OS TCP timeout (~30s) — called twice — adding
+    // 60+ seconds of blocking delay before any actual inference begins.
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(2))
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
     let tags_url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
     
     let model_list = match client.get(&tags_url).send().await {
