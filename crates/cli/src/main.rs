@@ -5,7 +5,40 @@ use clap::Parser;
 use modelfusion_core::{ComprehensiveTaskHandler, HuggingFaceOrchestrator};
 use model_selection::SelectionStrategy;
 use std::collections::HashMap;
+use std::sync::{Arc, OnceLock};
+use tokio::sync::Semaphore;
 use chrono;
+
+// ---------------------------------------------------------------------------
+// Global inference semaphore
+// ---------------------------------------------------------------------------
+// Limits the number of concurrent model inferences across the API server,
+// CLI spawns (if they call into the same process), and MCP server.
+// The permit count is derived from available RAM at startup:
+//   < 8 GB  → 1 concurrent inference
+//   8–16 GB → 2 concurrent inferences
+//   > 16 GB → 4 concurrent inferences
+// Each waiter queues until a slot is free — no request is dropped.
+static INFERENCE_SEM: OnceLock<Arc<Semaphore>> = OnceLock::new();
+
+fn inference_sem() -> Arc<Semaphore> {
+    INFERENCE_SEM.get_or_init(|| {
+        let permits = available_inference_slots();
+        println!("[SEMAPHORE] Inference pool: {} concurrent slot(s)", permits);
+        Arc::new(Semaphore::new(permits))
+    }).clone()
+}
+
+/// Choose the inference slot count based on available system RAM.
+fn available_inference_slots() -> usize {
+    // sysinfo is already a workspace dependency.
+    let mut sys = sysinfo::System::new();
+    sys.refresh_memory();
+    let ram_gb = sys.total_memory() / 1_073_741_824; // bytes → GiB
+    if ram_gb >= 32 { 4 }
+    else if ram_gb >= 16 { 2 }
+    else { 1 }
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "modelfusion", version = "0.1.0", about = "ModelFusion - Advanced HuggingFace Model Orchestration System")]
@@ -521,12 +554,18 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    // Spawn the async runtime on a thread with 8 MB stack to avoid
-    // stack overflow in debug builds (the Args struct has 80+ fields).
+    // Initialise the inference semaphore before the runtime starts so that
+    // the slot count is printed once at startup.
+    let _ = inference_sem();
+
+    // Use a multi-threaded Tokio runtime so that the API server, MCP server,
+    // and CLI inference tasks can all run on separate OS threads concurrently.
+    // A dedicated 8 MB stack is used to avoid overflow with the large Args struct.
     let builder = std::thread::Builder::new().stack_size(8 * 1024 * 1024);
     let handler = builder.spawn(|| {
-        tokio::runtime::Builder::new_current_thread()
+        tokio::runtime::Builder::new_multi_thread()
             .enable_all()
+            .worker_threads(std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4))
             .build()
             .expect("Failed to build Tokio runtime")
             .block_on(run())
@@ -1815,6 +1854,19 @@ async fn run_server(port: u16, db_path: Option<String>) -> Result<()> {
                     let start_time = std::time::Instant::now();
                     println!("[SERVER] >>> Received /orchestrate request.");
                     println!("[SERVER] Prompt: \"{}\"", prompt.chars().take(80).collect::<String>());
+
+                    // Acquire an inference slot. If all slots are busy the request
+                    // queues here — no timeout, no drop — until a slot is released.
+                    let sem = inference_sem();
+                    let _permit = match sem.acquire().await {
+                        Ok(p) => p,
+                        Err(_) => {
+                            let resp = "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"error\":\"Inference pool closed\"}";
+                            let _ = socket.write_all(resp.as_bytes()).await;
+                            return;
+                        }
+                    };
+                    println!("[SEMAPHORE] Acquired inference slot.");
 
                     // Query the small model router for dynamic orchestration decision
                     if let Some(decision) = llm_route(&prompt).await {
