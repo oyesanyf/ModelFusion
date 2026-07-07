@@ -346,10 +346,17 @@ impl LLMProvider for HuggingFaceProvider {
                 }
             });
 
-            let ollama_client = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(300))
-                .build()
-                .unwrap_or_default();
+            static REQ_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+            let ollama_client = REQ_CLIENT.get_or_init(|| {
+                reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(300))
+                    .pool_idle_timeout(std::time::Duration::from_secs(120))
+                    .pool_max_idle_per_host(5)
+                    .tcp_keepalive(Some(std::time::Duration::from_secs(60)))
+                    .build()
+                    .unwrap_or_default()
+            });
+
             let response = ollama_client.post(&url)
                 .json(&body)
                 .send()

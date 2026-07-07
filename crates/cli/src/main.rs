@@ -1586,11 +1586,14 @@ async fn llm_route(prompt: &str) -> Option<RouterDecision> {
     // Use a short timeout so Ollama probes fail fast when Ollama is not running.
     // Without this, reqwest uses the OS TCP timeout (~30s) — called twice — adding
     // 60+ seconds of blocking delay before any actual inference begins.
-    let client = reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(2))
-        .timeout(std::time::Duration::from_secs(2))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new());
+    static PROBE_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    let client = PROBE_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(2))
+            .timeout(std::time::Duration::from_secs(2))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    });
     let tags_url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
     
     let model_list = match client.get(&tags_url).send().await {
@@ -1877,7 +1880,8 @@ async fn run_server(port: u16, db_path: Option<String>) -> Result<()> {
                         gpu = decision.use_gpu;
                         cpu = decision.use_cpu;
                     } else {
-                        println!("⚠️ [SERVER] LLM Router offline or failed. Falling back to default/heuristic options.");
+                        println!("⚠️ [SERVER] LLM Router offline or failed. Falling back to default/heuristic options (enabling GPU for speed).");
+                        gpu = !cpu; // Default to GPU unless CPU was explicitly forced
                     }
 
                     println!("[SERVER] Options: fusion={}, strategy={}, budget={}, gpu={}, cpu={}, openvino={}", fusion, strategy, budget, gpu, cpu, openvino);
