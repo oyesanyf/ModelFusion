@@ -274,17 +274,46 @@ impl LLMProvider for HuggingFaceProvider {
         let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
             .unwrap_or_else(|_| "http://localhost:11434".to_string());
         
-        let use_ollama = std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || {
-            if let Ok(out) = std::process::Command::new("curl")
-                .args(["-s", &format!("{}/api/tags", endpoint)])
-                .output()
-            {
-                let stdout = String::from_utf8_lossy(&out.stdout).to_lowercase();
-                stdout.contains(&ollama_model.to_lowercase())
+        // Ensure Ollama is running before checking/executing
+        let _ = model_selection::memory::ensure_ollama_running();
+
+        let mut use_ollama = std::env::var("MODELFUSION_USE_OLLAMA").is_ok();
+        let mut model_is_cached = false;
+        
+        if let Ok(out) = std::process::Command::new("curl")
+            .args(["-s", &format!("{}/api/tags", endpoint)])
+            .output()
+        {
+            let stdout = String::from_utf8_lossy(&out.stdout).to_lowercase();
+            model_is_cached = stdout.contains(&ollama_model.to_lowercase());
+        }
+
+        if use_ollama || model_is_cached {
+            if !model_is_cached {
+                // Model is not locally cached — try to pull it
+                log::info!("🦙 [OLLAMA] Model '{}' not found locally. Attempting to pull...", ollama_model);
+                println!("🦙 [OLLAMA] Pulling model '{}' (this may take a moment)...", ollama_model);
+                
+                let pull_status = std::process::Command::new("ollama")
+                    .args(["pull", &ollama_model])
+                    .status();
+
+                match pull_status {
+                    Ok(status) if status.success() => {
+                        log::info!("🦙 [OLLAMA] Successfully pulled model '{}'.", ollama_model);
+                        use_ollama = true;
+                    }
+                    _ => {
+                        log::warn!("⚠️ [OLLAMA] Failed to pull model '{}'. Skipping Ollama and falling back to next provider...", ollama_model);
+                        println!("⚠️ [OLLAMA] Failed to pull model '{}'. Falling back to next available backend...", ollama_model);
+                        use_ollama = false;
+                    }
+                }
             } else {
-                false
+                use_ollama = true;
             }
-        };
+        }
+
 
         if use_ollama {
             log::info!("[OLLAMA] Executing model {} (ollama: {}) locally...", self.config.model_id, ollama_model);
