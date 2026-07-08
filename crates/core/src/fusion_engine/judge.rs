@@ -95,7 +95,8 @@ pub async fn write_final_answer(
     writer_model: &ModelConfig,
 ) -> anyhow::Result<String> {
     let mut writer_prompt = String::new();
-    writer_prompt.push_str("Use the judge analysis below to answer the user.\n");
+    writer_prompt.push_str("You are the final writer in a multi-model consensus pipeline. Your task is to output the final, direct response to the USER REQUEST based on the JUDGE ANALYSIS.\n");
+    writer_prompt.push_str("CRITICAL INSTRUCTION: Respond DIRECTLY to the user request. Do NOT output any meta-commentary, introspective thoughts, or explanations about the judge, the models, the deliberation process, or how you formulated your answer (e.g., do NOT start with 'Based on the judge analysis...', 'The panel agrees...', or similar meta-text). Just output the direct, clean answer as if you were answering the user yourself.\n");
     writer_prompt.push_str("Do not blindly prioritize consensus. If a minority response offers more specific evidence, code snippets, or deeper technical accuracy than the majority agreement, prioritize the technically superior minority view.\n");
     writer_prompt.push_str("Prioritize accuracy, technical depth, and specific evidence over simple consensus.\n");
     writer_prompt.push_str("Mention uncertainty where models disagreed.\n");
