@@ -162,7 +162,18 @@ ModelFusion's average score evaluated across 20 technical sub-domains demonstrat
 ### Prerequisites
 *   Rust 1.70+ and Cargo
 *   Python 3.10+ with `transformers`, `torch`, and `accelerate` installed
-*   (Optional) [Ollama](https://ollama.com/) for local model serving
+*   **Ollama (Highly Recommended for GPU Speed):**
+    1. Download and install Ollama from [ollama.com](https://ollama.com/).
+    2. Once installed, start Ollama (ensure it is running in your taskbar).
+    3. Pull the required models:
+       ```powershell
+       # The main text generation and coding model
+       ollama pull qwen2.5:7b
+       # The ultra-fast 0.5B model used for dynamic routing decisions
+       ollama pull qwen2.5:0.5b
+       ```
+    4. Ollama will automatically detect and utilize your NVIDIA GPU (WDDM/CUDA) or AMD GPU (ROCm) for high-performance, low-latency local inference.
+
 
 ### Running the CLI
 
