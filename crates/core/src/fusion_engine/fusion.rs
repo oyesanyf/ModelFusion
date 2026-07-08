@@ -77,7 +77,21 @@ fn calculate_batch_size(models: &[ModelConfig]) -> usize {
         }
     }
 
-    // Default to sequential (batch size = 1) for all local execution backends
-    // to prevent GPU timeout driver crashes (Windows TDR), OOM, and extreme system lag.
+    // Dynamic batch size based on GPU VRAM detected at runtime:
+    // A quantized 7B model takes ~4.5 GB of VRAM.
+    //   - VRAM >= 20 GB (e.g. RTX 3090/4090) -> Run up to 4 models concurrently
+    //   - VRAM >= 11 GB (e.g. RTX 3080/4070) -> Run up to 2 models concurrently
+    //   - VRAM < 11 GB (e.g. GTX 1060/4060)  -> Run sequentially (1 at a time) to prevent crash
+    let sys = model_selection::memory::SystemMemory::detect();
+    if sys.gpu_name.is_some() {
+        let free_vram = sys.gpu_vram_free_gb;
+        if free_vram >= 20.0 {
+            return 4.min(models.len());
+        } else if free_vram >= 11.0 {
+            return 2.min(models.len());
+        }
+    }
+
+    // Default to sequential for safety
     1
 }
