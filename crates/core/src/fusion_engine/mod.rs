@@ -14,12 +14,11 @@ use std::path::Path;
 pub fn classify_prompt(prompt: &str) -> bool {
     let lower = prompt.to_lowercase();
 
-    // Bypass internal VS Code system, welcome, handshake, and title generation prompts.
+    // Bypass internal VS Code system welcome, handshake, and title generation prompts.
     // These are structurally long but do not benefit from consensus deliberation.
     if lower.contains("ultra-compact titles")
         || lower.contains("crafting ultra-compact titles")
         || lower.contains("github copilot by stating")
-        || lower.contains("expert ai programming assistant")
         || lower.contains("confirm that you are github copilot")
         || lower.contains("confirm that i am github copilot")
     {
