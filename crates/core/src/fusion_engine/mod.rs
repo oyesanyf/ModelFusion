@@ -2,6 +2,7 @@ pub mod schema;
 pub mod models;
 pub mod fusion;
 pub mod judge;
+pub mod skeletonizer;
 
 use schema::ModelConfig;
 use fusion::run_panel;
@@ -208,7 +209,21 @@ pub async fn run_fusion(
     let prompt_with_context = if let Some(ctx) = context {
         format!("{}\n\n### CONTEXT:\n{}", prompt, ctx)
     } else {
-        prompt.to_string()
+        let lower_prompt = prompt.to_lowercase();
+        let has_workspace_keywords = lower_prompt.contains("workspace") 
+            || lower_prompt.contains("whole folder") 
+            || lower_prompt.contains("all files") 
+            || lower_prompt.contains("in this project")
+            || lower_prompt.contains("in the project");
+
+        if has_workspace_keywords {
+            println!("📂 [FUSION] Workspace keywords detected. Compiling codebase skeleton map...");
+            let skeletonizer = skeletonizer::WorkspaceSkeletonizer::new();
+            let map = skeletonizer.build_skeleton_map(Path::new("d:\\harfile\\ModelFusion"), 12000);
+            format!("{}\n\n{}", prompt, map)
+        } else {
+            prompt.to_string()
+        }
     };
 
     println!("[FUSION] Starting Model Fusion Pipeline...");
