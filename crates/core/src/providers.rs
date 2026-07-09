@@ -349,6 +349,7 @@ impl LLMProvider for HuggingFaceProvider {
             static REQ_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
             let ollama_client = REQ_CLIENT.get_or_init(|| {
                 reqwest::Client::builder()
+                    .connect_timeout(std::time::Duration::from_secs(3))
                     .timeout(std::time::Duration::from_secs(300))
                     .pool_idle_timeout(std::time::Duration::from_secs(120))
                     .pool_max_idle_per_host(5)
@@ -800,6 +801,7 @@ pub struct LocalProvider {
 impl LocalProvider {
     pub fn new(config: ModelConfig) -> Self {
         let client = Client::builder()
+            .connect_timeout(Duration::from_secs(3))
             .timeout(Duration::from_secs(config.timeout_seconds))
             .build()
             .unwrap_or_default();

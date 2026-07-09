@@ -173,8 +173,10 @@ for ($i = 0; $i -lt 3; $i++) {
 
 if ($signedMsi) {
     Write-Host "[OK] Signed final MSI installer successfully!" -ForegroundColor Green
-    & $signtoolPath verify /pa $msiPath
+    Write-Host "[INFO] Verifying signature (warnings/errors are expected for self-signed certificates)..." -ForegroundColor Yellow
+    & $signtoolPath verify /pa $msiPath 2>&1 | Out-String | Write-Host
     Write-Host "[SUCCESS] Process complete. MSI installer generated at: $msiPath" -ForegroundColor Green
+    Exit 0
 } else {
     Write-Host "[ERROR] Failed to sign final MSI installer." -ForegroundColor Red
     Exit 1

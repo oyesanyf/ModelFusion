@@ -10,18 +10,17 @@ pub async fn run_panel(
         || std::env::var("MODELFUSION_USE_OLLAMA").is_ok()
         || std::env::var("MODELFUSION_USE_OPENVINO").is_ok()
         || std::env::var("MODELFUSION_USE_ONNX").is_ok();
-
     if is_local {
         // Batched execution for local backends: run as many models concurrently
         // as can fit in available memory, then move to the next batch.
         let batch_size = calculate_batch_size(&models);
-        println!("  [PANEL] Running {} models in batches of {} (memory-optimized)", models.len(), batch_size);
+        eprintln!("  [PANEL] Running {} models in batches of {} (memory-optimized)", models.len(), batch_size);
 
         let mut all_results = Vec::with_capacity(models.len());
         for (batch_idx, batch) in models.chunks(batch_size).enumerate() {
             let batch_num = batch_idx + 1;
             let total_batches = (models.len() + batch_size - 1) / batch_size;
-            println!("  [BATCH {}/{}] Running {} models concurrently...", batch_num, total_batches, batch.len());
+            eprintln!("  [BATCH {}/{}] Running {} models concurrently...", batch_num, total_batches, batch.len());
 
             if batch.len() == 1 {
                 // Single model — run directly, no spawn overhead

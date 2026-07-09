@@ -36,8 +36,24 @@ pub fn classify_prompt(prompt: &str) -> bool {
             return true;
         }
     }
-    // Check word count
-    prompt.split_whitespace().count() > 20
+
+    // Strip standard IDE system instruction headers to get the true user query word count
+    let mut clean_prompt = lower;
+    let system_headers = vec![
+        "you are an expert ai programming assistant, working with a user in the vs code editor.",
+        "you are an expert ai programming assistant, working with a user in the vs code editor",
+        "you are an expert ai programming assistant, working with a user in the vs code window.",
+        "you are an expert ai programming assistant, working with a user in the vs code window",
+        "you are an expert ai programming assistant",
+    ];
+    for header in system_headers {
+        if clean_prompt.starts_with(header) {
+            clean_prompt = clean_prompt.replacen(header, "", 1);
+        }
+    }
+
+    // Check word count (needs > 35 words in the actual user prompt)
+    clean_prompt.split_whitespace().count() > 35
 }
 
 use anyhow::Context;
@@ -79,7 +95,7 @@ pub async fn run_fusion(
     } else {
         let detector = IntelligentTaskDetector::new();
         let detection = detector.detect_task_type(prompt);
-        println!("🔍 [FUSION] Detected task: {} (confidence: {:.2})", detection.task_type, detection.confidence);
+        eprintln!("🔍 [FUSION] Detected task: {} (confidence: {:.2})", detection.task_type, detection.confidence);
         detection.task_type
     };
 
@@ -97,9 +113,9 @@ pub async fn run_fusion(
     let panel_task = "text-generation";
 
     let (panel_models, fallback_pool) = if let Some(model_id) = forced_model {
-        println!("⚡ [FUSION] Forced model override active: using {}", model_id);
+        eprintln!("⚡ [FUSION] Forced model override active: using {}", model_id);
         if is_multi_sample {
-            println!("⚡ [FUSION] Multi-sample mode: using 1 model with {} temperature variations", max_candidates);
+            eprintln!("⚡ [FUSION] Multi-sample mode: using 1 model with {} temperature variations", max_candidates);
             // Generate evenly spaced temperatures from 0.3 to 1.1
             let temps: Vec<f32> = (0..max_candidates)
                 .map(|i| 0.3 + (i as f32) * (0.8 / (max_candidates as f32 - 1.0).max(1.0)))
@@ -107,7 +123,7 @@ pub async fn run_fusion(
 
             let models: Vec<ModelConfig> = temps.iter().enumerate()
                 .map(|(i, &t)| {
-                    println!("  {}. Sample #{} (T={:.2})", i + 1, i + 1, t);
+                    eprintln!("  {}. Sample #{} (T={:.2})", i + 1, i + 1, t);
                     ModelConfig::huggingface_with_temp(model_id, t, i + 1)
                 })
                 .collect();
@@ -126,10 +142,10 @@ pub async fn run_fusion(
         }
 
         let best = &res.best_model;
-        println!("⚡ [FUSION] Multi-sample mode: using 1 model with {} temperature variations", max_candidates);
-        println!("📋 [FUSION] Selected model: {} (score: {:.2})", best.model_id, best.final_score);
+        eprintln!("⚡ [FUSION] Multi-sample mode: using 1 model with {} temperature variations", max_candidates);
+        eprintln!("📋 [FUSION] Selected model: {} (score: {:.2})", best.model_id, best.final_score);
         if best.estimated_params_b > 0.0 {
-            println!("   ~{:.1}B params, ~{:.1} GB RAM", best.estimated_params_b, best.estimated_memory_gb);
+            eprintln!("   ~{:.1}B params, ~{:.1} GB RAM", best.estimated_params_b, best.estimated_memory_gb);
         }
 
         // Generate evenly spaced temperatures from 0.3 to 1.1
@@ -139,7 +155,7 @@ pub async fn run_fusion(
 
         let models: Vec<ModelConfig> = temps.iter().enumerate()
             .map(|(i, &t)| {
-                println!("  {}. Sample #{} (T={:.2})", i + 1, i + 1, t);
+                eprintln!("  {}. Sample #{} (T={:.2})", i + 1, i + 1, t);
                 ModelConfig::huggingface_with_temp(&best.model_id, t, i + 1)
             })
             .collect();
@@ -161,23 +177,23 @@ pub async fn run_fusion(
         let fallback: Vec<_> = res.all_candidates.iter().skip(max_candidates).cloned().collect();
 
         if primary.len() < max_candidates {
-            println!("⚠️ [FUSION] Requested {} panel models, but only {} fit in available memory. Automatically reduced panel size.",
+            eprintln!("⚠️ [FUSION] Requested {} panel models, but only {} fit in available memory. Automatically reduced panel size.",
                 max_candidates, primary.len());
         }
 
-        println!("📋 [FUSION] Model selection successful (detected task: '{}', selected strategy: {}).", detected_task, res.strategy);
-        println!("📋 [FUSION] Primary panel ({}/{} models):", primary.len(), max_candidates);
+        eprintln!("📋 [FUSION] Model selection successful (detected task: '{}', selected strategy: {}).", detected_task, res.strategy);
+        eprintln!("📋 [FUSION] Primary panel ({}/{} models):", primary.len(), max_candidates);
         for (i, candidate) in primary.iter().enumerate() {
             if candidate.estimated_params_b > 0.0 {
-                println!("  {}. {} (score: {:.2}, ~{:.1}B params, ~{:.1} GB RAM)",
+                eprintln!("  {}. {} (score: {:.2}, ~{:.1}B params, ~{:.1} GB RAM)",
                     i + 1, candidate.model_id, candidate.final_score,
                     candidate.estimated_params_b, candidate.estimated_memory_gb);
             } else {
-                println!("  {}. {} (score: {:.2})", i + 1, candidate.model_id, candidate.final_score);
+                eprintln!("  {}. {} (score: {:.2})", i + 1, candidate.model_id, candidate.final_score);
             }
         }
         if !fallback.is_empty() {
-            println!("📋 [FUSION] Fallback pool: {} additional models available", fallback.len());
+            eprintln!("📋 [FUSION] Fallback pool: {} additional models available", fallback.len());
         }
 
         let models: Vec<ModelConfig> = primary.iter()
@@ -194,7 +210,7 @@ pub async fn run_fusion(
             .context("⚠️ [FUSION] Failed to select judge model from database.")?;
         ModelConfig::huggingface(&judge_res.best_model.model_id)
     };
-    println!("⚖️ [FUSION] Selected judge model: {}", judge_model.name);
+    eprintln!("⚖️ [FUSION] Selected judge model: {}", judge_model.name);
 
     // Define the final writer model
     let writer_model = if let Some(model_id) = forced_model {
@@ -204,7 +220,7 @@ pub async fn run_fusion(
             .context("⚠️ [FUSION] Failed to select writer model from database.")?;
         ModelConfig::huggingface(&writer_res.best_model.model_id)
     };
-    println!("✍️ [FUSION] Selected writer model: {}", writer_model.name);
+    eprintln!("✍️ [FUSION] Selected writer model: {}", writer_model.name);
 
     let prompt_with_context = if let Some(ctx) = context {
         format!("{}\n\n### CONTEXT:\n{}", prompt, ctx)
@@ -217,7 +233,7 @@ pub async fn run_fusion(
             || lower_prompt.contains("in the project");
 
         if has_workspace_keywords {
-            println!("📂 [FUSION] Workspace keywords detected. Compiling codebase skeleton map...");
+            eprintln!("📂 [FUSION] Workspace keywords detected. Compiling codebase skeleton map...");
             let skeletonizer = skeletonizer::WorkspaceSkeletonizer::new();
             let map = skeletonizer.build_skeleton_map(Path::new("d:\\harfile\\ModelFusion"), 12000);
             format!("{}\n\n{}", prompt, map)
@@ -226,9 +242,9 @@ pub async fn run_fusion(
         }
     };
 
-    println!("[FUSION] Starting Model Fusion Pipeline...");
+    eprintln!("[FUSION] Starting Model Fusion Pipeline...");
     let mode_label = if is_multi_sample { "samples" } else { "models" };
-    println!("[FUSION] Step 1: Running Panel of {} {} ...", panel_models.len(), mode_label);
+    eprintln!("[FUSION] Step 1: Running Panel of {} {} ...", panel_models.len(), mode_label);
     let mut panel_answers = run_panel(&prompt_with_context, panel_models.clone()).await?;
     
     // Dynamic fallback: replace failed models with fallback candidates
@@ -256,8 +272,8 @@ pub async fn run_fusion(
                 } else {
                     error_reason.to_string()
                 };
-                println!("  ❌ [FAILED] '{}' — Reason: {}", panel_answers[*idx].model_name, short_reason);
-                println!("  🔄 [FALLBACK] Replacing with '{}'", fallback_candidate.model_id);
+                eprintln!("  ❌ [FAILED] '{}' — Reason: {}", panel_answers[*idx].model_name, short_reason);
+                eprintln!("  🔄 [FALLBACK] Replacing with '{}'", fallback_candidate.model_id);
                 let fallback_config = ModelConfig::huggingface(&fallback_candidate.model_id);
                 let replacement_answers = run_panel(&prompt_with_context, vec![fallback_config]).await?;
                 if let Some(replacement) = replacement_answers.into_iter().next() {
@@ -277,24 +293,24 @@ pub async fn run_fusion(
     }
 
     for ans in &panel_answers {
-        println!("  * Received response from {}", ans.model_name);
+        eprintln!("  * Received response from {}", ans.model_name);
         if ans.answer.starts_with("MODEL ERROR") {
-            println!("    [WARN] Warning: {}", ans.answer);
+            eprintln!("    [WARN] Warning: {}", ans.answer);
         }
     }
 
     // Count successful responses
     let success_count = panel_answers.iter().filter(|a| !a.answer.starts_with("MODEL ERROR")).count();
-    println!("[FUSION] Panel complete: {}/{} models responded successfully.", success_count, panel_answers.len());
+    eprintln!("[FUSION] Panel complete: {}/{} models responded successfully.", success_count, panel_answers.len());
 
     if success_count == 0 {
         return Err(anyhow::anyhow!("⚠️ [FUSION] All panel models failed. No responses to judge."));
     }
 
-    println!("[FUSION] Step 2: Judging panel responses...");
+    eprintln!("[FUSION] Step 2: Judging panel responses...");
     let judge_json = judge_panel(&prompt_with_context, &panel_answers, &judge_model).await?;
 
-    println!("[FUSION] Step 3: Writing final synthesized answer...");
+    eprintln!("[FUSION] Step 3: Writing final synthesized answer...");
     let final_answer = write_final_answer(&prompt_with_context, &judge_json, &writer_model).await?;
 
     Ok(final_answer)
