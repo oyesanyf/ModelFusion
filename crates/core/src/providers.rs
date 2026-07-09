@@ -277,18 +277,10 @@ impl LLMProvider for HuggingFaceProvider {
         // Ensure Ollama is running before checking/executing
         let _ = model_selection::memory::ensure_ollama_running();
 
-        let mut use_ollama = std::env::var("MODELFUSION_USE_OLLAMA").is_ok();
-        let mut model_is_cached = false;
-        
-        if let Ok(out) = std::process::Command::new("curl")
-            .args(["-s", &format!("{}/api/tags", endpoint)])
-            .output()
-        {
-            let stdout = String::from_utf8_lossy(&out.stdout).to_lowercase();
-            model_is_cached = stdout.contains(&ollama_model.to_lowercase());
-        }
+        let mut use_ollama = false;
+        let model_is_cached = false;
 
-        if use_ollama || model_is_cached {
+        if false {
             if !model_is_cached {
                 // Model is not locally cached — try to pull it
                 log::info!("🦙 [OLLAMA] Model '{}' not found locally. Attempting to pull...", ollama_model);

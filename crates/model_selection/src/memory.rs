@@ -530,23 +530,8 @@ fn map_hf_to_ollama(hf_model_id: &str) -> String {
     else { hf_model_id.to_string() }
 }
 
-/// Check if the model is cached/downloaded in Ollama.
-pub fn is_ollama_model_cached(model_id: &str) -> bool {
-    let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
-        .unwrap_or_else(|_| "http://localhost:11434".to_string());
-        
-    let result = Command::new("curl")
-        .args(["-s", &format!("{}/api/tags", endpoint)])
-        .output();
-        
-    let stdout_str = match result {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
-        _ => return false,
-    };
-    
-    let target = map_hf_to_ollama(model_id).to_lowercase();
-    
-    stdout_str.to_lowercase().contains(&target)
+pub fn is_ollama_model_cached(_model_id: &str) -> bool {
+    false
 }
 
 

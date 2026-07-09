@@ -40,10 +40,6 @@ impl HuggingFaceOrchestrator {
         let db_path = db_path.as_ref().to_path_buf();
         let task_processor = UniversalTaskProcessor::new();
 
-        // Print API key status to console as expected by CLI output
-        let openai_ok = std::env::var("OPENAI_API_KEY").is_ok();
-        let anthropic_ok = std::env::var("ANTHROPIC_API_KEY").is_ok();
-        let gemini_ok = std::env::var("GOOGLE_GEMINI_API_KEY").is_ok();
         let blocked_tok = format!("{}{}", "hf_ICTHSFDUVBxat", "dlmFtBVPqSORoDlqJjwNR");
         let hf_ok = std::env::var("HF_TOKEN").ok().map(|t| !t.is_empty() && t != blocked_tok && !t.contains("YOUR_")).unwrap_or(false)
             || std::env::var("HUGGINGFACE_API_KEY").ok().map(|t| !t.is_empty() && !t.contains("YOUR_")).unwrap_or(false)
@@ -53,10 +49,7 @@ impl HuggingFaceOrchestrator {
         println!("OK");
         println!("API Keys Loaded:");
         println!(
-            "   openai: {}, anthropic: {}, gemini: {}, huggingface: {}",
-            if openai_ok { "[LOADED]" } else { "[MISSING]" },
-            if anthropic_ok { "[LOADED]" } else { "[MISSING]" },
-            if gemini_ok { "[LOADED]" } else { "[MISSING]" },
+            "   openai: [DISABLED], anthropic: [DISABLED], gemini: [DISABLED], huggingface: {}",
             if hf_ok { "[LOADED]" } else { "[MISSING]" }
         );
 
