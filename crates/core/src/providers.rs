@@ -765,19 +765,22 @@ impl LLMProvider for HuggingFaceProvider {
                         let err_body = res.text().await.unwrap_or_else(|_| "Unavailable".to_string());
                         eprintln!("⚠️ [REMOTE FAILURE] HuggingFace API returned status {} for model {}. Details: {}. Falling back to local offline execution...", status, self.config.model_id, err_body);
                         std::env::set_var("MODELFUSION_USE_TRANSFORMERS", "1");
-                        let local_provider = LocalProvider::new(self.config.clone());
+                        let local_provider = HuggingFaceProvider::new(self.config.clone());
                         return local_provider.generate_response(prompt).await;
                     }
                 }
                 Err(e) => {
                     eprintln!("⚠️ [CONNECTION ERROR] HuggingFace API is unreachable for model {}: {}. Falling back to local offline execution...", self.config.model_id, e);
                     std::env::set_var("MODELFUSION_USE_TRANSFORMERS", "1");
-                    let local_provider = LocalProvider::new(self.config.clone());
+                    let local_provider = HuggingFaceProvider::new(self.config.clone());
                     return local_provider.generate_response(prompt).await;
                 }
             }
         } else {
-            bail!("HuggingFace API token is missing. Please set HF_TOKEN in your .env file or environment.");
+            eprintln!("⚠️ [TOKEN MISSING] HuggingFace API token is missing. Falling back to local offline execution...");
+            std::env::set_var("MODELFUSION_USE_TRANSFORMERS", "1");
+            let local_provider = HuggingFaceProvider::new(self.config.clone());
+            return local_provider.generate_response(prompt).await;
         }
     }
 }
