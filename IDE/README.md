@@ -36,23 +36,37 @@ graph TD
 
 ## 🛠️ Setup & Installation Instructions
 
-### 1. Production Installation via MSI
+### 1. System & Hardware Requirements
+* **Operating System:** Windows 10 or Windows 11 (64-bit).
+* **Memory (RAM):** 
+  * *Minimum:* 8 GB RAM (runs models up to 3B parameters).
+  * *Recommended:* 16 GB or higher (required for models > 8B parameters and multi-model Fusion).
+* **Graphics (GPU):** NVIDIA RTX/GTX GPU, AMD Radeon, or Intel Arc. Integrates automatically to accelerate local inference via OpenVINO or local Transformers.
+
+### 2. Environment Variables & `.env` Configuration
+To run Hugging Face models using the serverless Inference API (the default fallback when running models that aren't cached locally), you **must provide a Hugging Face API Token (`HF_TOKEN`)**:
+1. Create a file named `.env` in the root of your opened workspace directory.
+2. Add your token inside the `.env` file like this:
+   ```env
+   HF_TOKEN=your_hugging_face_token_here
+   ```
+3. When HugOS launches, the IDE automatically detects the `.env` file in your workspace, parses it, and safely injects the token into the ModelFusion server process's environment. **No tokens are ever stored inside the global IDE configuration, keeping them 100% private to your workspace.**
+
+### 3. Production Installation via MSI
 HugOS IDE packages all system files, local configuration, and a **prepopulated SQLite database** inside the `HugOS.msi` installer.
-* **Installer Path:** Go to [HugOS.msi](file:///d:/harfile/ModelFusion/IDE/HugOS.msi) and double-click the file to start the installation wizard.
-* **Clean Reinstallation:** If you are updating an existing installation or experiencing file locks, choose the **Remove** option on the installation screen to cleanly uninstall the old files first, and then run `HugOS.msi` again.
+* **Installer Page:** Download `HugOS.msi` directly from the [GitHub Releases BETA-01 Page](https://github.com/oyesanyf/ModelFusion/releases/tag/BETA-01).
+* **Install Command:** Run the following command in PowerShell to install silently/passively:
+  ```powershell
+  msiexec /i "HugOS.msi" /qb
+  ```
+* **Auto-Upgrades:** The installer automatically detects, cleanly uninstalls, and upgrades older versions when running new MSI builds.
 
-### 2. Resolving File Locks
-If the installation or update freezes, verify that no old instances are running in the background. Run this PowerShell command to kill hung editor processes:
-```powershell
-Stop-Process -Name HugOS -Force
-```
+### 4. Automatic Spec Auto-Configuration
+Upon launch, the IDE scans your system's hardware (logical CPU threads, physical RAM, free memory, and GPU description using Windows Registry query `reg.exe` for sub-10ms latency). 
+* The system's specifications are passed to a local "thinking" resource manager or rule-based heuristic.
+* It automatically configures the local backend (defaults to `openvino` for local Hugging Face models), GPU/CPU device routing, parameter size budget, and whether multi-model `fusion` is enabled (unlocked only on systems with >= 16GB RAM and dedicated GPUs).
 
-### 3. Local Directory Locations
-* **Installation folder:** `C:\Program Files\HugOS IDE`
-* **Prepopulated database:** `C:\Program Files\HugOS IDE\db\hf_models.db` (Wix automatically deploys this 478 MB database containing 200,000+ Hugging Face models so you don't have to populate the database from scratch).
-* **Developer Build executable:** [HugOS.exe](file:///d:/harfile/ModelFusion/IDE/VSCode-win32-x64/HugOS.exe) (directly runnable as a portable application).
-
-### 4. GitHub Account Login Setup
+### 5. GitHub Account Login Setup
 To enable cloning, pushing, pulling, and querying private repositories on GitHub:
 1. Click the **Accounts** icon (the profile silhouette in the bottom-left corner of the status bar).
 2. Click **Sign in to GitHub** and follow the browser authorization prompts.
