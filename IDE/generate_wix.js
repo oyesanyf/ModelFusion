@@ -80,9 +80,19 @@ function generateWix(srcDir, outputFile) {
     }
     componentsXml += '    </ComponentGroup>';
 
+    let buildNumber = 0;
+    const buildNumPath = path.join(__dirname, '.build_number');
+    try {
+        buildNumber = parseInt(fs.readFileSync(buildNumPath, 'utf-8').trim(), 10);
+    } catch (e) {}
+    buildNumber++;
+    fs.writeFileSync(buildNumPath, buildNumber.toString(), 'utf-8');
+
+    const version = `1.126.${buildNumber}`;
+
     const wxsContent = `<?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="HugOS IDE" Manufacturer="HugOS Team" Version="1.126.0" UpgradeCode="d77b7e06-80ba-4137-bcf4-654b95ccebc5" Scope="perUser">
+  <Package Name="HugOS IDE" Manufacturer="HugOS Team" Version="${version}" UpgradeCode="d77b7e06-80ba-4137-bcf4-654b95ccebc5" Scope="perUser">
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
 
     <MediaTemplate EmbedCab="yes" />
