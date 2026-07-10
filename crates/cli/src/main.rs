@@ -97,6 +97,9 @@ struct Args {
     #[arg(long, help = "JSON file containing API keys")]
     api_keys: Option<String>,
 
+    #[arg(long, help = "Print detected system resource specifications in JSON format")]
+    sys_info: bool,
+
     #[arg(long, help = "Save trained ML models")]
     save_model: bool,
 
@@ -578,6 +581,31 @@ async fn run() -> Result<()> {
     dotenv::dotenv().ok();
 
     let args = Box::new(Args::parse());
+
+    if args.sys_info {
+        let sys_mem = model_selection::memory::SystemMemory::detect();
+        let mut disks = sysinfo::Disks::new_with_refreshed_list();
+        let free_disk_gb = if let Some(disk) = disks.iter().find(|d| d.mount_point() == std::path::Path::new("C:\\") || d.mount_point() == std::path::Path::new("/")) {
+            disk.available_space() as f64 / 1_073_741_824.0
+        } else if let Some(disk) = disks.first() {
+            disk.available_space() as f64 / 1_073_741_824.0
+        } else {
+            0.0
+        };
+
+        let info = serde_json::json!({
+            "cpu": sys_mem.gpu_name.is_none(),
+            "cores": sys_mem.cpu_cores,
+            "total_ram": sys_mem.total_ram_gb,
+            "free_ram": sys_mem.free_ram_gb,
+            "gpu": sys_mem.gpu_name.clone().unwrap_or_else(|| "None".to_string()),
+            "gpu_vram_total": sys_mem.gpu_vram_total_gb,
+            "gpu_vram_free": sys_mem.gpu_vram_free_gb,
+            "free_disk": free_disk_gb,
+        });
+        println!("{}", serde_json::to_string(&info).unwrap_or_else(|_| "{}".to_string()));
+        return Ok(());
+    }
 
     // Auto-start Ollama if it is not running
     if args.prompt.is_some() || args.query.is_some() || args.server || args.mcp {
@@ -1570,20 +1598,112 @@ fn generate_minimal_docx(content: &str) -> Vec<u8> {
     generate_minimal_rtf(content).into_bytes()
 }
 
+fn default_strategy() -> String {
+    "multi_objective".to_string()
+}
+
+fn default_task() -> String {
+    "text-generation".to_string()
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
 struct RouterDecision {
+    #[serde(default)]
     fusion: bool,
+    #[serde(default = "default_strategy")]
     selection_strategy: String,
+    #[serde(default)]
     use_gpu: bool,
+    #[serde(default)]
     use_cpu: bool,
+    #[serde(default = "default_task")]
     detected_task: String,
 }
 
-async fn llm_route(_prompt: &str) -> Option<RouterDecision> {
+async fn query_hf_router(system_prompt: &str, user_prompt: &str) -> Option<String> {
+    let token = std::env::var("HF_TOKEN").ok()?;
+    if token.is_empty() {
+        return None;
+    }
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .connect_timeout(std::time::Duration::from_secs(2))
+        .build()
+        .ok()?;
+    let url = "https://api-inference.huggingface.co/models/Qwen/Qwen2.5-1.5B-Instruct";
+    
+    let prompt_format = format!("<|im_start|>system\n{}<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n", system_prompt, user_prompt);
+    let body = serde_json::json!({
+        "inputs": prompt_format,
+        "parameters": {
+            "max_new_tokens": 128,
+            "temperature": 0.1,
+            "return_full_text": false
+        }
+    });
+
+    if let Ok(res) = client.post(url)
+        .header("Authorization", format!("Bearer {}", token))
+        .json(&body)
+        .send()
+        .await 
+    {
+        if res.status().is_success() {
+            if let Ok(data) = res.json::<serde_json::Value>().await {
+                let text = if let Some(arr) = data.as_array() {
+                    arr[0]["generated_text"].as_str().unwrap_or("")
+                } else {
+                    data["generated_text"].as_str().unwrap_or("")
+                };
+                if let Some(start) = text.find('{') {
+                    if let Some(end) = text.rfind('}') {
+                        return Some(text[start..=end].to_string());
+                    }
+                }
+            }
+        }
+    }
     None
 }
 
-async fn llm_classify_complexity(_prompt: &str) -> String {
+async fn llm_route(prompt: &str) -> Option<RouterDecision> {
+    let system_prompt = "You are the ModelFusion Intelligent Router. Analyze the user prompt and decide the best execution flags.
+Available options:
+- fusion: true (if the prompt is complex, requires comparison, code review, or multi-perspective synthesis), false (if it's a simple factual question, single task, or basic query).
+- selection_strategy: \"multi_objective\" (default), \"weighted_voting\", \"cost_efficient\", \"fastest\".
+- use_gpu: true (if GPU acceleration is helpful), false otherwise.
+- use_cpu: true (if CPU is preferred), false otherwise.
+- detected_task: the category of the task (e.g. \"text-generation\", \"code-generation\").
+
+Respond ONLY with a valid JSON object matching this schema:
+{\"fusion\": bool, \"selection_strategy\": \"multi_objective\"|\"weighted_voting\"|\"cost_efficient\"|\"fastest\", \"use_gpu\": bool, \"use_cpu\": bool, \"detected_task\": string}";
+
+    if let Some(json_str) = query_hf_router(system_prompt, prompt).await {
+        println!("🦙 [ROUTER] Raw decision: {}", json_str);
+        if let Ok(decision) = serde_json::from_str::<RouterDecision>(&json_str) {
+            return Some(decision);
+        }
+    }
+    None
+}
+
+async fn llm_classify_complexity(prompt: &str) -> String {
+    let system_prompt = "You are the ModelFusion Task Complexity Classifier. Analyze the user prompt and classify it into one of the following 4 categories:
+- \"simple_general\" (factual queries, simple questions, basic text requests)
+- \"simple_coding\" (single function code generation, syntax questions, simple regex)
+- \"complex_general\" (essay writing, comparative analyses, multi-perspective synthesis, open-ended discussions)
+- \"complex_coding\" (architectural review, multi-file analysis, debugging complex issues, refactoring projects)
+
+Respond ONLY with a valid JSON object matching this schema:
+{\"complexity\": \"simple_general\"|\"simple_coding\"|\"complex_general\"|\"complex_coding\"}";
+
+    if let Some(json_str) = query_hf_router(system_prompt, prompt).await {
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json_str) {
+            if let Some(complexity) = parsed["complexity"].as_str() {
+                return complexity.to_string();
+            }
+        }
+    }
     "simple_general".to_string()
 }
 

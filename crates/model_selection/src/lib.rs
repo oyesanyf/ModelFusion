@@ -151,6 +151,20 @@ impl EnhancedModelSelector {
             let freshness = self.calculate_freshness(m);
             let license_val = self.evaluate_license(m);
 
+            let mut backend = if std::env::var("MODELFUSION_USE_OPENVINO").is_ok() {
+                Backend::OpenVINO
+            } else {
+                Backend::Transformers
+            };
+
+            // If using OpenVINO, but the model has not been pre-converted/cached yet,
+            // we must budget for the heavy conversion step (which loads the full PyTorch model).
+            let is_openvino = backend == Backend::OpenVINO;
+            let is_cached = is_openvino && memory::is_openvino_model_cached(&m.model_id);
+            if is_openvino && !is_cached {
+                backend = Backend::Transformers;
+            }
+
             // Weights for multi-objective scoring
             // downloads (0.3) + likes (0.2) + decision_score (0.2) + freshness (0.1) + license (0.1) + efficiency (0.1)
             let downloads_norm = if max_downloads > 0.0 { m.downloads as f64 / max_downloads } else { 0.0 };
@@ -197,7 +211,30 @@ impl EnhancedModelSelector {
                         final_score += 0.05;
                     }
                 }
-                SelectionStrategy::MultiObjective => {}
+                SelectionStrategy::MultiObjective => {
+                    // Sophisticated multi-objective optimization:
+                    // Competing objectives: Accuracy vs Latency vs Memory constraints.
+                    // Calculate capability/accuracy reward:
+                    let accuracy_obj = m.capability_score.clamp(0.0, 1.0);
+                    
+                    // Calculate latency/speed reward:
+                    let speed_obj = m.efficiency_score.clamp(0.0, 1.0);
+                    
+                    // Calculate memory compliance safety reward:
+                    let memory = memory::SystemMemory::detect();
+                    let estimated_params_b = estimate_params_billions(&m.model_id).unwrap_or(7.0);
+                    let runtime_mem = estimate_runtime_memory_gb(estimated_params_b, backend);
+                    let memory_obj = if runtime_mem <= memory.gpu_budget_gb() {
+                        1.0 // High compliance (runs fully on fast GPU)
+                    } else if runtime_mem <= memory.ram_budget_gb() {
+                        0.5 // Medium compliance (runs on CPU)
+                    } else {
+                        0.1 // Low compliance (potential paging/thrashing)
+                    };
+                    
+                    // Scalar weighting: 40% Accuracy, 30% Speed, 30% Memory Safety
+                    final_score = accuracy_obj * 0.4 + speed_obj * 0.3 + memory_obj * 0.3;
+                }
             }
 
             // Promote models cached in Ollama to ensure instant local response
@@ -206,22 +243,6 @@ impl EnhancedModelSelector {
             }
 
             let confidence = (final_score * 1.2).clamp(0.1, 1.0);
-
-            // Estimate parameter count and runtime memory
-            let mut backend = if std::env::var("MODELFUSION_USE_OPENVINO").is_ok() {
-                Backend::OpenVINO
-            } else {
-                Backend::Transformers
-            };
-
-
-            // If using OpenVINO, but the model has not been pre-converted/cached yet,
-            // we must budget for the heavy conversion step (which loads the full PyTorch model).
-            let is_openvino = backend == Backend::OpenVINO;
-            let is_cached = is_openvino && memory::is_openvino_model_cached(&m.model_id);
-            if is_openvino && !is_cached {
-                backend = Backend::Transformers;
-            }
 
             let estimated_params_b = estimate_params_billions(&m.model_id).unwrap_or(0.0);
 
