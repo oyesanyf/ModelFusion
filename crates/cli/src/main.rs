@@ -557,6 +557,34 @@ struct Args {
 }
 
 fn main() -> Result<()> {
+    // Parse arguments on the main thread first, before starting runtime or semaphore
+    let args = Args::parse();
+
+    if args.sys_info {
+        let sys_mem = model_selection::memory::SystemMemory::detect();
+        let mut disks = sysinfo::Disks::new_with_refreshed_list();
+        let free_disk_gb = if let Some(disk) = disks.iter().find(|d| d.mount_point() == std::path::Path::new("C:\\") || d.mount_point() == std::path::Path::new("/")) {
+            disk.available_space() as f64 / 1_073_741_824.0
+        } else if let Some(disk) = disks.first() {
+            disk.available_space() as f64 / 1_073_741_824.0
+        } else {
+            0.0
+        };
+
+        let info = serde_json::json!({
+            "cpu": sys_mem.gpu_name.is_none(),
+            "cores": sys_mem.cpu_cores,
+            "total_ram": sys_mem.total_ram_gb,
+            "free_ram": sys_mem.free_ram_gb,
+            "gpu": sys_mem.gpu_name.clone().unwrap_or_else(|| "None".to_string()),
+            "gpu_vram_total": sys_mem.gpu_vram_total_gb,
+            "gpu_vram_free": sys_mem.gpu_vram_free_gb,
+            "free_disk": free_disk_gb,
+        });
+        println!("{}", serde_json::to_string(&info).unwrap_or_else(|_| "{}".to_string()));
+        return Ok(());
+    }
+
     // Initialise the inference semaphore before the runtime starts so that
     // the slot count is printed once at startup.
     let _ = inference_sem();
@@ -565,22 +593,22 @@ fn main() -> Result<()> {
     // and CLI inference tasks can all run on separate OS threads concurrently.
     // A dedicated 8 MB stack is used to avoid overflow with the large Args struct.
     let builder = std::thread::Builder::new().stack_size(8 * 1024 * 1024);
-    let handler = builder.spawn(|| {
+    let handler = builder.spawn(move || {
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .worker_threads(std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4))
             .build()
             .expect("Failed to build Tokio runtime")
-            .block_on(run())
+            .block_on(run(args))
     }).expect("Failed to spawn main thread");
     handler.join().unwrap()
 }
 
-async fn run() -> Result<()> {
+async fn run(args: Args) -> Result<()> {
     // Load .env variables
     dotenv::dotenv().ok();
 
-    let args = Box::new(Args::parse());
+    let args = Box::new(args);
 
     if args.sys_info {
         let sys_mem = model_selection::memory::SystemMemory::detect();
