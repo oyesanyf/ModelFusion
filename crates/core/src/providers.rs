@@ -258,6 +258,206 @@ impl HuggingFaceProvider {
             });
         Self { config, client, hf_token }
     }
+
+    async fn execute_openvino(&self, prompt: &str, start: &Instant) -> Result<ProviderResult> {
+        let script_path = find_script("src/scripts/run_model_openvino.py");
+        let ov_model_dir = std::env::var("MODELFUSION_OV_MODEL_DIR")
+            .unwrap_or_else(|_| "ov_models".to_string());
+        let weight_format = std::env::var("MODELFUSION_OV_WEIGHT_FORMAT")
+            .unwrap_or_else(|_| "int8".to_string());
+
+        let timeout_duration = std::time::Duration::from_secs(self.config.timeout_seconds.max(900));
+        let output = tokio::time::timeout(
+            timeout_duration,
+            tokio::process::Command::new("python")
+                .env("PYTHONIOENCODING", "utf-8")
+                .arg(&script_path)
+                .arg(&self.config.model_id)
+                .arg(prompt)
+                .arg(self.config.max_tokens.to_string())
+                .arg(self.config.temperature.to_string())
+                .arg(&ov_model_dir)
+                .arg(&weight_format)
+                .kill_on_drop(true)
+                .output()
+        ).await;
+
+        match output {
+            Ok(Ok(out)) => {
+                if out.status.success() {
+                    let content = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
+                    Ok(ProviderResult {
+                        content,
+                        tokens_used,
+                        cost: 0.0,
+                        latency_ms: start.elapsed().as_millis() as f64,
+                        answer_type: "OPENVINO_ANSWER".to_string(),
+                    })
+                } else {
+                    let err_msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                    bail!("OpenVINO execution failed: {}", err_msg);
+                }
+            }
+            Ok(Err(e)) => bail!("Failed to start OpenVINO script: {}", e),
+            Err(_) => bail!("OpenVINO execution timed out after {} seconds", timeout_duration.as_secs()),
+        }
+    }
+
+    async fn execute_onnx(&self, prompt: &str, start: &Instant) -> Result<ProviderResult> {
+        ensure_python_packages();
+        let script_path = find_script("src/scripts/run_model_onnx.py");
+        let device_arg = {
+            let sys_mem = model_selection::memory::SystemMemory::detect();
+            let estimated_params_b = model_selection::memory::estimate_params_billions(&self.config.model_id).unwrap_or(0.0);
+            let estimated_memory_gb = model_selection::memory::estimate_runtime_memory_gb(estimated_params_b, model_selection::memory::Backend::Transformers);
+            let device = sys_mem.best_device_for_model(estimated_memory_gb);
+            device.to_string()
+        };
+
+        let timeout_duration = std::time::Duration::from_secs(self.config.timeout_seconds.max(600));
+        let output = tokio::time::timeout(
+            timeout_duration,
+            tokio::process::Command::new("python")
+                .env("PYTHONIOENCODING", "utf-8")
+                .arg(&script_path)
+                .arg(&self.config.model_id)
+                .arg(prompt)
+                .arg(self.config.max_tokens.to_string())
+                .arg(self.config.temperature.to_string())
+                .arg(device_arg)
+                .kill_on_drop(true)
+                .output()
+        ).await;
+
+        match output {
+            Ok(Ok(out)) => {
+                if out.status.success() {
+                    let content = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
+                    Ok(ProviderResult {
+                        content,
+                        tokens_used,
+                        cost: 0.0,
+                        latency_ms: start.elapsed().as_millis() as f64,
+                        answer_type: "ONNX_ANSWER".to_string(),
+                    })
+                } else {
+                    let err_msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                    bail!("ONNX execution failed: {}", err_msg);
+                }
+            }
+            Ok(Err(e)) => bail!("Failed to start ONNX script: {}", e),
+            Err(_) => bail!("ONNX execution timed out after {} seconds", timeout_duration.as_secs()),
+        }
+    }
+
+    async fn execute_transformers(&self, prompt: &str, start: &Instant) -> Result<ProviderResult> {
+        ensure_python_packages();
+        let script_path = find_script("src/scripts/run_model_transformers.py");
+        let device_arg = {
+            let sys_mem = model_selection::memory::SystemMemory::detect();
+            let estimated_params_b = model_selection::memory::estimate_params_billions(&self.config.model_id).unwrap_or(0.0);
+            let estimated_memory_gb = model_selection::memory::estimate_runtime_memory_gb(estimated_params_b, model_selection::memory::Backend::Transformers);
+            let device = sys_mem.best_device_for_model(estimated_memory_gb);
+            device.to_string()
+        };
+
+        let timeout_duration = std::time::Duration::from_secs(self.config.timeout_seconds.max(300));
+        let output = tokio::time::timeout(
+            timeout_duration,
+            tokio::process::Command::new("python")
+                .env("PYTHONIOENCODING", "utf-8")
+                .arg(&script_path)
+                .arg(&self.config.model_id)
+                .arg(prompt)
+                .arg(self.config.max_tokens.to_string())
+                .arg(self.config.temperature.to_string())
+                .arg(device_arg)
+                .kill_on_drop(true)
+                .output()
+        ).await;
+
+        match output {
+            Ok(Ok(out)) => {
+                if out.status.success() {
+                    let content = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
+                    Ok(ProviderResult {
+                        content,
+                        tokens_used,
+                        cost: 0.0,
+                        latency_ms: start.elapsed().as_millis() as f64,
+                        answer_type: "LOCAL_TRANSFORMERS_ANSWER".to_string(),
+                    })
+                } else {
+                    let err_msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                    bail!("Transformers execution failed: {}", err_msg);
+                }
+            }
+            Ok(Err(e)) => bail!("Failed to start Transformers script: {}", e),
+            Err(_) => bail!("Transformers execution timed out after {} seconds", timeout_duration.as_secs()),
+        }
+    }
+
+    async fn execute_ollama(&self, prompt: &str, start: &Instant) -> Result<ProviderResult> {
+        let ollama_model = map_hf_to_ollama(&self.config.model_id);
+        let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
+            .unwrap_or_else(|_| "http://localhost:11434".to_string());
+        
+        let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
+        let mut messages = Vec::new();
+        if prompt.contains("You are an expert judge model") {
+            messages.push(serde_json::json!({
+                "role": "system",
+                "content": "You are an expert judge model. Return a valid JSON object ONLY."
+            }));
+        } else if prompt.contains("Use the judge analysis below") {
+            messages.push(serde_json::json!({
+                "role": "system",
+                "content": "You are a professional synthesizer. Write a comprehensive final answer."
+            }));
+        }
+        messages.push(serde_json::json!({
+            "role": "user",
+            "content": prompt
+        }));
+
+        let body = serde_json::json!({
+            "model": ollama_model,
+            "messages": messages,
+            "stream": false,
+            "options": {
+                "temperature": self.config.temperature,
+                "num_predict": self.config.max_tokens
+            }
+        });
+
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(3))
+            .timeout(std::time::Duration::from_secs(300))
+            .build()?;
+
+        let res = client.post(&url).json(&body).send().await?;
+        if res.status().is_success() {
+            let data: serde_json::Value = res.json().await?;
+            let content = data["message"]["content"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string();
+            let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
+            Ok(ProviderResult {
+                content,
+                tokens_used,
+                cost: 0.0,
+                latency_ms: start.elapsed().as_millis() as f64,
+                answer_type: "OLLAMA_ANSWER".to_string(),
+            })
+        } else {
+            let err_text = res.text().await.unwrap_or_default();
+            bail!("Ollama error: {}", err_text);
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -269,343 +469,69 @@ impl LLMProvider for HuggingFaceProvider {
     async fn generate_response(&self, prompt: &str) -> Result<ProviderResult> {
         let start = Instant::now();
 
-        // Ollama local execution path
-        let ollama_model = map_hf_to_ollama(&self.config.model_id);
-        let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
-            .unwrap_or_else(|_| "http://localhost:11434".to_string());
-        
-        // Ensure Ollama is running before checking/executing
-        let _ = model_selection::memory::ensure_ollama_running();
+        // If any of the local backend environment variables are set, or if we are executing a local fallback
+        let is_local = std::env::var("MODELFUSION_USE_OPENVINO").is_ok()
+            || std::env::var("MODELFUSION_USE_ONNX").is_ok()
+            || std::env::var("MODELFUSION_USE_TRANSFORMERS").is_ok()
+            || std::env::var("MODELFUSION_USE_OLLAMA").is_ok();
 
-        let mut use_ollama = false;
-        let model_is_cached = false;
+        if is_local {
+            let mut errors = Vec::new();
 
-        if false {
-            if !model_is_cached {
-                // Model is not locally cached — try to pull it
-                log::info!("🦙 [OLLAMA] Model '{}' not found locally. Attempting to pull...", ollama_model);
-                println!("🦙 [OLLAMA] Pulling model '{}' (this may take a moment)...", ollama_model);
-                
-                let pull_status = std::process::Command::new("ollama")
-                    .args(["pull", &ollama_model])
-                    .status();
-
-                match pull_status {
-                    Ok(status) if status.success() => {
-                        log::info!("🦙 [OLLAMA] Successfully pulled model '{}'.", ollama_model);
-                        use_ollama = true;
-                    }
-                    _ => {
-                        log::warn!("⚠️ [OLLAMA] Failed to pull model '{}'. Skipping Ollama and falling back to next provider...", ollama_model);
-                        println!("⚠️ [OLLAMA] Failed to pull model '{}'. Falling back to next available backend...", ollama_model);
-                        use_ollama = false;
+            // 1. Try OpenVINO first
+            if std::env::var("MODELFUSION_USE_OPENVINO").is_ok() {
+                match self.execute_openvino(prompt, &start).await {
+                    Ok(res) => return Ok(res),
+                    Err(e) => {
+                        let err_msg = format!("OpenVINO failed: {}", e);
+                        log::warn!("⚠️ {}", err_msg);
+                        errors.push(err_msg);
                     }
                 }
-            } else {
-                use_ollama = true;
             }
-        }
 
-
-        if use_ollama {
-            log::info!("[OLLAMA] Executing model {} (ollama: {}) locally...", self.config.model_id, ollama_model);
-            let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
-
-            let mut messages = Vec::new();
-            if prompt.contains("You are an expert judge model") {
-                messages.push(serde_json::json!({
-                    "role": "system",
-                    "content": "You are an expert judge model. Return a valid JSON object ONLY."
-                }));
-            } else if prompt.contains("Use the judge analysis below") {
-                messages.push(serde_json::json!({
-                    "role": "system",
-                    "content": "You are a professional synthesizer. Write a comprehensive final answer."
-                }));
-            }
-            messages.push(serde_json::json!({
-                "role": "user",
-                "content": prompt
-            }));
-
-            let body = serde_json::json!({
-                "model": ollama_model,
-                "messages": messages,
-                "stream": false,
-                "options": {
-                    "temperature": self.config.temperature,
-                    "num_predict": self.config.max_tokens
-                }
-            });
-
-            static REQ_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
-            let ollama_client = REQ_CLIENT.get_or_init(|| {
-                reqwest::Client::builder()
-                    .connect_timeout(std::time::Duration::from_secs(3))
-                    .timeout(std::time::Duration::from_secs(300))
-                    .pool_idle_timeout(std::time::Duration::from_secs(120))
-                    .pool_max_idle_per_host(5)
-                    .tcp_keepalive(Some(std::time::Duration::from_secs(60)))
-                    .build()
-                    .unwrap_or_default()
-            });
-
-            let response = ollama_client.post(&url)
-                .json(&body)
-                .send()
-                .await;
-
-            match response {
-                Ok(res) => {
-                    if res.status().is_success() {
-                        let data: serde_json::Value = res.json().await?;
-                        let content = data["message"]["content"]
-                            .as_str()
-                            .unwrap_or_default()
-                            .to_string();
-                        let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
-                        return Ok(ProviderResult {
-                            content,
-                            tokens_used,
-                            cost: 0.0,
-                            latency_ms: start.elapsed().as_millis() as f64,
-                            answer_type: "OLLAMA_ANSWER".to_string(),
-                        });
-                    } else {
-                        let err_text = res.text().await.unwrap_or_default();
-                        bail!("Ollama API error for model '{}': {}", ollama_model, err_text);
+            // 2. Try ONNX Runtime next
+            if std::env::var("MODELFUSION_USE_ONNX").is_ok() || std::env::var("MODELFUSION_USE_OPENVINO").is_ok() {
+                match self.execute_onnx(prompt, &start).await {
+                    Ok(res) => return Ok(res),
+                    Err(e) => {
+                        let err_msg = format!("ONNX Runtime failed: {}", e);
+                        log::warn!("⚠️ {}", err_msg);
+                        errors.push(err_msg);
                     }
                 }
+            }
+
+            // 3. Try Python Transformers next
+            if std::env::var("MODELFUSION_USE_TRANSFORMERS").is_ok() 
+                || std::env::var("MODELFUSION_USE_OPENVINO").is_ok() 
+                || std::env::var("MODELFUSION_USE_ONNX").is_ok() 
+            {
+                match self.execute_transformers(prompt, &start).await {
+                    Ok(res) => return Ok(res),
+                    Err(e) => {
+                        let err_msg = format!("Python Transformers failed: {}", e);
+                        log::warn!("⚠️ {}", err_msg);
+                        errors.push(err_msg);
+                    }
+                }
+            }
+
+            // 4. Try Ollama final fallback
+            match self.execute_ollama(prompt, &start).await {
+                Ok(res) => return Ok(res),
                 Err(e) => {
-                    bail!("Ollama API call failed for model '{}': {}. Is Ollama running?", ollama_model, e);
+                    let err_msg = format!("Ollama failed: {}", e);
+                    log::warn!("⚠️ {}", err_msg);
+                    errors.push(err_msg);
                 }
             }
-        }
 
-        // vLLM backend: high-throughput GPU inference (Linux only)
-        if std::env::var("MODELFUSION_USE_VLLM").is_ok() {
-            log::info!("[VLLM] Executing model {} via vLLM...", self.config.model_id);
-            let script_path = find_script("src/scripts/run_model_vllm.py");
-
-            let timeout_duration = std::time::Duration::from_secs(self.config.timeout_seconds.max(300));
-            let output = tokio::time::timeout(
-                timeout_duration,
-                tokio::process::Command::new("python3")
-                    .arg(&script_path)
-                    .arg(&self.config.model_id)
-                    .arg(prompt)
-                    .arg(self.config.max_tokens.to_string())
-                    .arg(self.config.temperature.to_string())
-                    .kill_on_drop(true)
-                    .output()
-            ).await;
-
-            match output {
-                Ok(Ok(out)) => {
-                    if out.status.success() {
-                        let content = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                        let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
-                        return Ok(ProviderResult {
-                            content,
-                            tokens_used,
-                            cost: 0.0,
-                            latency_ms: start.elapsed().as_millis() as f64,
-                            answer_type: "VLLM_ANSWER".to_string(),
-                        });
-                    } else {
-                        let err_msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
-                        bail!("vLLM execution failed for model {}: {}", self.config.model_id, err_msg);
-                    }
-                }
-                Ok(Err(e)) => {
-                    bail!("Failed to start vLLM python script: {}", e);
-                }
-                Err(_) => {
-                    bail!("vLLM execution timed out after {} seconds for model {}", timeout_duration.as_secs(), self.config.model_id);
-                }
-            }
-        }
-
-        // OpenVINO backend: optimized CPU/iGPU inference via openvino-genai or classic openvino
-        if std::env::var("MODELFUSION_USE_OPENVINO").is_ok() {
-            log::info!("[OPENVINO] Executing model {} locally via OpenVINO...", self.config.model_id);
-            let script_path = find_script("src/scripts/run_model_openvino.py");
-            let ov_model_dir = std::env::var("MODELFUSION_OV_MODEL_DIR")
-                .unwrap_or_else(|_| "ov_models".to_string());
-            let weight_format = std::env::var("MODELFUSION_OV_WEIGHT_FORMAT")
-                .unwrap_or_else(|_| "int8".to_string());
-
-            // OpenVINO requires download + convert + compile + inference — up to 15 min for first run.
-            // The inner Python script already has a 600s export timeout; we need to be larger than that.
-            let timeout_duration = std::time::Duration::from_secs(self.config.timeout_seconds.max(900));
-            log::info!("[OPENVINO] Timeout set to {} seconds (first run may take up to 15 minutes for model download + conversion)", timeout_duration.as_secs());
-            let output = tokio::time::timeout(
-                timeout_duration,
-                tokio::process::Command::new("python")
-                    .env("PYTHONIOENCODING", "utf-8")
-                    .arg(&script_path)
-                    .arg(&self.config.model_id)
-                    .arg(prompt)
-                    .arg(self.config.max_tokens.to_string())
-                    .arg(self.config.temperature.to_string())
-                    .arg(&ov_model_dir)
-                    .arg(&weight_format)
-                    .kill_on_drop(true)
-                    .output()
-            ).await;
-
-            match output {
-                Ok(Ok(out)) => {
-                    if out.status.success() {
-                        let content = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                        let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
-                        return Ok(ProviderResult {
-                            content,
-                            tokens_used,
-                            cost: 0.0,
-                            latency_ms: start.elapsed().as_millis() as f64,
-                            answer_type: "OPENVINO_ANSWER".to_string(),
-                        });
-                    } else {
-                        let err_msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
-                        bail!("OpenVINO execution failed for model {}: {}", self.config.model_id, err_msg);
-                    }
-                }
-                Ok(Err(e)) => {
-                    bail!("Failed to start OpenVINO python script: {}", e);
-                }
-                Err(_) => {
-                    bail!("OpenVINO execution timed out after {} seconds for model {}", timeout_duration.as_secs(), self.config.model_id);
-                }
-            }
-        }
-
-        // ONNX Runtime backend: local model execution via ONNX Runtime using optimum
-        if std::env::var("MODELFUSION_USE_ONNX").is_ok() {
-            ensure_python_packages();
-            log::info!("[ONNX] Executing model {} locally via ONNX Runtime...", self.config.model_id);
-            let script_path = find_script("src/scripts/run_model_onnx.py");
-
-            // Detect system memory and determine best device
-            let device_arg = {
-                let sys_mem = model_selection::memory::SystemMemory::detect();
-                let estimated_params_b = model_selection::memory::estimate_params_billions(&self.config.model_id).unwrap_or(0.0);
-                let estimated_memory_gb = model_selection::memory::estimate_runtime_memory_gb(estimated_params_b, model_selection::memory::Backend::Transformers);
-                let device = sys_mem.best_device_for_model(estimated_memory_gb);
-                log::info!(
-                    "[ONNX] Model {} estimated memory: {:.2} GB. Chosen device based on memory budget (VRAM free: {:.2} GB, budget: {:.2} GB): {}",
-                    self.config.model_id,
-                    estimated_memory_gb,
-                    sys_mem.gpu_vram_free_gb,
-                    sys_mem.gpu_budget_gb(),
-                    device
-                );
-                device.to_string()
-            };
-
-            let timeout_duration = std::time::Duration::from_secs(self.config.timeout_seconds.max(600));
-            let output = tokio::time::timeout(
-                timeout_duration,
-                tokio::process::Command::new("python")
-                    .env("PYTHONIOENCODING", "utf-8")
-                    .arg(&script_path)
-                    .arg(&self.config.model_id)
-                    .arg(prompt)
-                    .arg(self.config.max_tokens.to_string())
-                    .arg(self.config.temperature.to_string())
-                    .arg(device_arg)
-                    .kill_on_drop(true)
-                    .output()
-            ).await;
-
-            match output {
-                Ok(Ok(out)) => {
-                    if out.status.success() {
-                        let content = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                        let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
-                        return Ok(ProviderResult {
-                            content,
-                            tokens_used,
-                            cost: 0.0,
-                            latency_ms: start.elapsed().as_millis() as f64,
-                            answer_type: "ONNX_ANSWER".to_string(),
-                        });
-                    } else {
-                        let err_msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
-                        bail!("ONNX execution failed for model {}: {}", self.config.model_id, err_msg);
-                    }
-                }
-                Ok(Err(e)) => {
-                    bail!("Failed to start ONNX python script: {}", e);
-                }
-                Err(_) => {
-                    bail!("ONNX execution timed out after {} seconds for model {}", timeout_duration.as_secs(), self.config.model_id);
-                }
-            }
-        }
-
-        // Transformers backend: local model execution via HuggingFace transformers
-        if std::env::var("MODELFUSION_USE_TRANSFORMERS").is_ok() {
-            ensure_python_packages();
-            log::info!("[TRANSFORMERS] Executing model {} locally via Python transformers...", self.config.model_id);
-            let script_path = find_script("src/scripts/run_model_transformers.py");
-
-            // Detect system memory and determine best device for this model
-            let device_arg = {
-                let sys_mem = model_selection::memory::SystemMemory::detect();
-                let estimated_params_b = model_selection::memory::estimate_params_billions(&self.config.model_id).unwrap_or(0.0);
-                let estimated_memory_gb = model_selection::memory::estimate_runtime_memory_gb(estimated_params_b, model_selection::memory::Backend::Transformers);
-                let device = sys_mem.best_device_for_model(estimated_memory_gb);
-                log::info!(
-                    "[TRANSFORMERS] Model {} estimated memory: {:.2} GB. Chosen device based on memory budget (VRAM free: {:.2} GB, budget: {:.2} GB): {}",
-                    self.config.model_id,
-                    estimated_memory_gb,
-                    sys_mem.gpu_vram_free_gb,
-                    sys_mem.gpu_budget_gb(),
-                    device
-                );
-                device.to_string()
-            };
-
-            let timeout_duration = std::time::Duration::from_secs(self.config.timeout_seconds.max(300));
-            let output = tokio::time::timeout(
-                timeout_duration,
-                tokio::process::Command::new("python")
-                    .env("PYTHONIOENCODING", "utf-8")
-                    .arg(&script_path)
-                    .arg(&self.config.model_id)
-                    .arg(prompt)
-                    .arg(self.config.max_tokens.to_string())
-                    .arg(self.config.temperature.to_string())
-                    .arg(device_arg)
-                    .kill_on_drop(true)
-                    .output()
-            ).await;
-
-            match output {
-                Ok(Ok(out)) => {
-                    if out.status.success() {
-                        let content = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                        let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
-                        return Ok(ProviderResult {
-                            content,
-                            tokens_used,
-                            cost: 0.0,
-                            latency_ms: start.elapsed().as_millis() as f64,
-                            answer_type: "LOCAL_TRANSFORMERS_ANSWER".to_string(),
-                        });
-                    } else {
-                        let err_msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
-                        bail!("Local transformers execution failed for model {}: {}", self.config.model_id, err_msg);
-                    }
-                }
-                Ok(Err(e)) => {
-                    bail!("Failed to start python script for local transformers execution: {}", e);
-                }
-                Err(_) => {
-                    bail!("Local transformers execution timed out after {} seconds for model {}", timeout_duration.as_secs(), self.config.model_id);
-                }
-            }
+            bail!(
+                "All local backends failed for model {}. Execution errors: {:?}",
+                self.config.model_id,
+                errors
+            );
         }
 
         // 1. Try Hugging Face Serverless Inference API
