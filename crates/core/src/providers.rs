@@ -253,8 +253,7 @@ impl HuggingFaceProvider {
             .or_else(|_| std::env::var("HUGGINGFACE_TOKEN"))
             .ok()
             .filter(|t| {
-                let blocked_tok = format!("{}{}", "hf_ICTHSFDUVBxat", "dlmFtBVPqSORoDlqJjwNR");
-                !t.is_empty() && t != &blocked_tok && !t.contains("YOUR_")
+                !t.is_empty() && !t.contains("YOUR_")
             });
         Self { config, client, hf_token }
     }

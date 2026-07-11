@@ -1032,7 +1032,7 @@ async fn run(args: Args) -> Result<()> {
         parse_slash_commands_in_prompt(&mut final_prompt, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
 
         if let Some(ref folder_path) = args.folder {
-            println!("[FUSION] Reading files from folder: {}", folder_path);
+            eprintln!("[FUSION] Reading files from folder: {}", folder_path);
             let mut folder_content = String::new();
             
             for entry in walkdir::WalkDir::new(folder_path)
@@ -1084,7 +1084,7 @@ async fn run(args: Args) -> Result<()> {
         if !is_fusion_needed && !args.mcp && !args.server {
             run_bandit_learning = true;
             let complexity_str = llm_classify_complexity(&final_prompt).await;
-            println!("🦙 [ROUTER] Prompt classified complexity: {}", complexity_str);
+            eprintln!("🦙 [ROUTER] Prompt classified complexity: {}", complexity_str);
             bandit_context = match complexity_str.as_str() {
                 "simple_general" => 0,
                 "simple_coding" => 1,
@@ -1108,7 +1108,7 @@ async fn run(args: Args) -> Result<()> {
             
             // Override arm choice using the small model LLM router decision
             if let Some(decision) = llm_route(&final_prompt).await {
-                println!("🎯 [ROUTER] LLM Router decision: fusion={}, strategy={}, use_gpu={}, use_cpu={}, task={}",
+                eprintln!("🎯 [ROUTER] LLM Router decision: fusion={}, strategy={}, use_gpu={}, use_cpu={}, task={}",
                     decision.fusion, decision.selection_strategy, decision.use_gpu, decision.use_cpu, decision.detected_task);
                 bandit_arm = if decision.fusion { 1 } else { 0 };
             }
@@ -1116,15 +1116,17 @@ async fn run(args: Args) -> Result<()> {
             // Force arm choice to 0 (single model) if the complexity layer classified it as simple!
             if bandit_context == 0 || bandit_context == 1 {
                 if bandit_arm == 1 {
-                    println!("💡 [ROUTER] Complexity layer classified task as simple. Overriding fusion selection to single model.");
+                    eprintln!("💡 [ROUTER] Complexity layer classified task as simple. Overriding fusion selection to single model.");
                     bandit_arm = 0;
                 }
             }
             
             is_fusion_needed = bandit_arm == 1;
-            println!("🎯 [BANDIT] Selected Arm: {} (0=Single, 1=Fusion) for context: {}", bandit_arm, complexity_str);
+            eprintln!("🎯 [BANDIT] Selected Arm: {} (0=Single, 1=Fusion) for context: {}", bandit_arm, complexity_str);
         }
 
+        // Acquire cross-process lock to prevent duplicate runs freezing the system
+        let _file_lock = acquire_cross_process_lock()?;
 
         // ---- Backend selection (applies to ALL execution paths) ----
         if args.vllm {
@@ -1214,8 +1216,7 @@ async fn run(args: Args) -> Result<()> {
                 }
             }
         } else {
-            let blocked_tok = format!("{}{}", "hf_ICTHSFDUVBxat", "dlmFtBVPqSORoDlqJjwNR");
-            let has_hf_token = std::env::var("HF_TOKEN").ok().map(|t| !t.is_empty() && t != blocked_tok && !t.contains("YOUR_")).unwrap_or(false)
+            let has_hf_token = std::env::var("HF_TOKEN").ok().map(|t| !t.is_empty() && !t.contains("YOUR_")).unwrap_or(false)
                 || std::env::var("HUGGINGFACE_API_KEY").ok().map(|t| !t.is_empty() && !t.contains("YOUR_")).unwrap_or(false)
                 || std::env::var("HF_API_KEY").ok().map(|t| !t.is_empty() && !t.contains("YOUR_")).unwrap_or(false)
                 || std::env::var("HUGGINGFACE_TOKEN").ok().map(|t| !t.is_empty() && !t.contains("YOUR_")).unwrap_or(false);
@@ -1386,9 +1387,9 @@ async fn run(args: Args) -> Result<()> {
 
 /// Print dynamic ensemble information banner as expected by main.py flow.
 fn print_ensemble_info(strategy: &str) {
-    println!("============================================================");
-    println!("[MODEL] Ensemble Model Selection: Active Strategy: {}", strategy);
-    println!("============================================================");
+    eprintln!("============================================================");
+    eprintln!("[MODEL] Ensemble Model Selection: Active Strategy: {}", strategy);
+    eprintln!("============================================================");
 }
 
 /// Map active task command line flags to a task name string override.
@@ -1648,17 +1649,71 @@ struct RouterDecision {
     detected_task: String,
 }
 
-async fn query_hf_router(system_prompt: &str, user_prompt: &str) -> Option<String> {
-    let token = std::env::var("HF_TOKEN").ok()?;
-    if token.is_empty() {
+async fn query_local_router(system_prompt: &str, user_prompt: &str) -> Option<String> {
+    let script_path = "src/scripts/run_model_transformers.py";
+    if !std::path::Path::new(script_path).exists() {
+        eprintln!("⚠️ [LOCAL ROUTER] Script not found at: {}", script_path);
         return None;
     }
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(3))
-        .connect_timeout(std::time::Duration::from_secs(2))
-        .build()
+    
+    let prompt_format = format!("<|im_start|>system\n{}<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n", system_prompt, user_prompt);
+    
+    let out = tokio::process::Command::new("python")
+        .arg(script_path)
+        .arg("Qwen/Qwen2.5-1.5B-Instruct")
+        .arg(&prompt_format)
+        .arg("128")
+        .arg("0.1")
+        .arg("cpu") // Force CPU for light local routing
+        .output()
+        .await
         .ok()?;
-    let url = "https://api-inference.huggingface.co/models/Qwen/Qwen2.5-1.5B-Instruct";
+        
+    if out.status.success() {
+        let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if let Some(start) = text.find('{') {
+            if let Some(end) = text.rfind('}') {
+                let json_str = text[start..=end].to_string();
+                println!("🦙 [LOCAL ROUTER] Decision: {}", json_str);
+                return Some(json_str);
+            }
+        }
+        eprintln!("⚠️ [LOCAL ROUTER] Local output did not contain valid JSON block: {}", text);
+    } else {
+        let err_msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        eprintln!("⚠️ [LOCAL ROUTER] Failed: {}", err_msg);
+    }
+    None
+}
+
+async fn query_hf_router(system_prompt: &str, user_prompt: &str) -> Option<String> {
+    let token = std::env::var("HF_TOKEN")
+        .or_else(|_| std::env::var("HUGGINGFACE_API_KEY"))
+        .or_else(|_| std::env::var("HF_API_KEY"))
+        .or_else(|_| std::env::var("HUGGINGFACE_TOKEN"))
+        .ok();
+    
+    if token.is_none() {
+        eprintln!("⚠️ [ROUTER] No Hugging Face token found in environment variables (HF_TOKEN, HUGGINGFACE_API_KEY, HF_API_KEY, HUGGINGFACE_TOKEN).");
+        return query_local_router(system_prompt, user_prompt).await;
+    }
+    let token = token.unwrap();
+    if token.is_empty() {
+        eprintln!("⚠️ [ROUTER] Hugging Face token is empty.");
+        return query_local_router(system_prompt, user_prompt).await;
+    }
+    
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .build() {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("⚠️ [ROUTER] Failed to build reqwest client: {}", e);
+                return query_local_router(system_prompt, user_prompt).await;
+            }
+        };
+    let url = "https://router.huggingface.co/hf-inference/models/Qwen/Qwen2.5-7B-Instruct";
     
     let prompt_format = format!("<|im_start|>system\n{}<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n", system_prompt, user_prompt);
     let body = serde_json::json!({
@@ -1667,31 +1722,51 @@ async fn query_hf_router(system_prompt: &str, user_prompt: &str) -> Option<Strin
             "max_new_tokens": 128,
             "temperature": 0.1,
             "return_full_text": false
+        },
+        "options": {
+            "wait_for_model": true
         }
     });
 
-    if let Ok(res) = client.post(url)
+    match client.post(url)
         .header("Authorization", format!("Bearer {}", token))
         .json(&body)
         .send()
         .await 
     {
-        if res.status().is_success() {
-            if let Ok(data) = res.json::<serde_json::Value>().await {
-                let text = if let Some(arr) = data.as_array() {
-                    arr[0]["generated_text"].as_str().unwrap_or("")
-                } else {
-                    data["generated_text"].as_str().unwrap_or("")
-                };
-                if let Some(start) = text.find('{') {
-                    if let Some(end) = text.rfind('}') {
-                        return Some(text[start..=end].to_string());
+        Ok(res) => {
+            let status = res.status();
+            if status.is_success() {
+                match res.json::<serde_json::Value>().await {
+                    Ok(data) => {
+                        let text = if let Some(arr) = data.as_array() {
+                            arr[0]["generated_text"].as_str().unwrap_or("")
+                        } else {
+                            data["generated_text"].as_str().unwrap_or("")
+                        };
+                        if let Some(start) = text.find('{') {
+                            if let Some(end) = text.rfind('}') {
+                                return Some(text[start..=end].to_string());
+                            }
+                        }
+                        eprintln!("⚠️ [ROUTER] Response JSON did not contain a valid JSON block: {}", text);
+                    }
+                    Err(e) => {
+                        eprintln!("⚠️ [ROUTER] Failed to parse response JSON: {}", e);
                     }
                 }
+            } else {
+                let error_text = res.text().await.unwrap_or_default();
+                eprintln!("⚠️ [ROUTER] API request failed with status {}: {}", status, error_text);
             }
         }
+        Err(e) => {
+            eprintln!("⚠️ [ROUTER] Network request failed: {}", e);
+        }
     }
-    None
+    
+    eprintln!("🔄 [ROUTER] Remote API failed. Falling back to local offline router query...");
+    query_local_router(system_prompt, user_prompt).await
 }
 
 async fn llm_route(prompt: &str) -> Option<RouterDecision> {
@@ -1845,6 +1920,25 @@ async fn run_server(port: u16, db_path: Option<String>) -> Result<()> {
                     };
                     eprintln!("[SEMAPHORE] Acquired inference slot.");
 
+                    // Acquire cross-process lock to prevent system freeze from parallel cli.exe calls
+                    let _file_lock = match acquire_cross_process_lock() {
+                        Ok(l) => l,
+                        Err(e) => {
+                            let resp = format!("HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{{\"error\":\"{}\"}}", e);
+                            let _ = socket.write_all(resp.as_bytes()).await;
+                            return;
+                        }
+                    };
+
+                    // Split socket to monitor client disconnection in parallel with execution
+                    let (mut read_half, mut write_half) = tokio::io::split(socket);
+                    
+                    let client_disconnect = async {
+                        let mut buf = [0; 1];
+                        // If the client closes the socket, read will return 0 or Err
+                        let _ = read_half.read(&mut buf).await;
+                    };
+
                     // Query the small model router for dynamic orchestration decision
                     if let Some(decision) = llm_route(&prompt).await {
                         eprintln!("🎯 [SERVER] LLM Router decision: fusion={}, strategy={}, use_gpu={}, use_cpu={}, task={}",
@@ -1889,43 +1983,63 @@ async fn run_server(port: u16, db_path: Option<String>) -> Result<()> {
                         eprintln!("[SERVER] Prompt classified as simple. Bypassing fusion engine to run single model orchestrator.");
                     }
 
-                    let content = if prompt_needs_fusion {
-                        match modelfusion_core::fusion_engine::run_fusion(
-                            &prompt,
-                            None,
-                            Some(db_path_val),
-                            None,
-                            parse_selection_strategy(&strategy),
-                            Some(fusion_models),
-                            &fusion_mode,
-                            None,
-                        ).await {
-                            Ok(content) => content,
-                            Err(e) => format!("Error: {}", e),
-                        }
-                    } else {
-                        let orchestrator = HuggingFaceOrchestrator::new(db_path_val.to_path_buf(), budget, false, false);
-                        let options = std::collections::HashMap::new();
-                        let res = orchestrator
-                            .process_task(
+                    let inference_future = async {
+                        if prompt_needs_fusion {
+                            match modelfusion_core::fusion_engine::run_fusion(
                                 &prompt,
                                 None,
-                                None,
-                                false,
+                                Some(db_path_val),
                                 None,
                                 parse_selection_strategy(&strategy),
-                                options,
-                            )
-                            .await;
-                        if res.success {
-                            res.content
+                                Some(fusion_models),
+                                &fusion_mode,
+                                None,
+                            ).await {
+                                Ok(content) => content,
+                                Err(e) => format!("Error: {}", e),
+                            }
                         } else {
-                            res.error_message.unwrap_or_else(|| "Orchestration failed".to_string())
+                            let orchestrator = HuggingFaceOrchestrator::new(db_path_val.to_path_buf(), budget, false, false);
+                            let options = std::collections::HashMap::new();
+                            let res = orchestrator
+                                .process_task(
+                                    &prompt,
+                                    None,
+                                    None,
+                                    false,
+                                    None,
+                                    parse_selection_strategy(&strategy),
+                                    options,
+                                )
+                                .await;
+                            if res.success {
+                                res.content
+                            } else {
+                                res.error_message.unwrap_or_else(|| "Orchestration failed".to_string())
+                            }
                         }
                     };
 
+                    let content = tokio::select! {
+                        _ = client_disconnect => {
+                            eprintln!("[SERVER] 🛑 Client disconnected during /orchestrate execution. Cancelling inference.");
+                            return; // Returns immediately, dropping permit and _file_lock!
+                        }
+                        res = inference_future => res
+                    };
+
                     eprintln!("[SERVER] <<< Completed /orchestrate request in {}ms.", start_time.elapsed().as_millis());
-                    content
+                    let response_json = serde_json::json!({
+                        "content": content
+                    });
+                    let response_str = response_json.to_string();
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        response_str.len(),
+                        response_str
+                    );
+                    let _ = write_half.write_all(response.as_bytes()).await;
+                    return;
                 }
                 "/stats" => {
                     run_cli_subcommand(&["--stats".to_string()], db_path_val).await
@@ -2742,7 +2856,7 @@ pub fn parse_slash_commands_in_prompt(
     }
 
     if let Some(cmd) = detected_cmd {
-        println!("💡 [ROUTER] Detected Slash Command: {}", cmd);
+        eprintln!("💡 [ROUTER] Detected Slash Command: {}", cmd);
         
         // Helper to extract first argument and actual prompt
         let get_arg = |r: &str| -> (String, String) {
@@ -3130,6 +3244,34 @@ pub fn parse_slash_commands_in_prompt(
             }
         } else {
             *prompt = actual_prompt;
+        }
+    }
+}
+
+fn acquire_cross_process_lock() -> Result<std::fs::File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    
+    let user_profile = std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\Users\\oyesa".to_string());
+    let lock_dir = std::path::Path::new(&user_profile).join(".hugos-ide");
+    let _ = std::fs::create_dir_all(&lock_dir);
+    let lock_path = lock_dir.join(".inference.lock");
+
+    // Loop and try to acquire the lock
+    let start_time = std::time::Instant::now();
+    loop {
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .share_mode(0) // Exclusive access, lock out other processes
+            .open(&lock_path)
+        {
+            Ok(file) => return Ok(file),
+            Err(e) => {
+                if start_time.elapsed().as_secs() > 600 {
+                    anyhow::bail!("Failed to acquire cross-process inference lock after 10 minutes: {}", e);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
         }
     }
 }

@@ -8,7 +8,6 @@ from transformers import AutoTokenizer
 # Suppress HuggingFace and Python warnings completely to prevent PowerShell stderr intercept
 warnings.filterwarnings("ignore")
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 logging.getLogger("transformers").setLevel(logging.ERROR)
 
@@ -48,6 +47,7 @@ def main():
         provider_used = "CPUExecutionProvider"
 
         if has_cache:
+            os.environ["HF_HUB_OFFLINE"] = "1"
             print(f"[ONNX] ✅ Using cached converted model at {cache_dir}")
             tokenizer = AutoTokenizer.from_pretrained(cache_dir)
             if device_arg == "cuda" and torch.cuda.is_available():
@@ -76,6 +76,7 @@ def main():
                 )
                 provider_used = "CPUExecutionProvider"
         else:
+            os.environ["HF_HUB_OFFLINE"] = "0"
             print(f"[ONNX] 🔄 Exporting model {model_id} to ONNX format (first-time export)...")
             tokenizer = AutoTokenizer.from_pretrained(model_id)
             if device_arg == "cuda" and torch.cuda.is_available():

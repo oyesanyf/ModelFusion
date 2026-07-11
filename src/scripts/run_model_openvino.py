@@ -29,7 +29,6 @@ if _on_py314_plus:
     )
 
 # Platform-specific environment settings & force offline cache loading
-os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 if current_os == "Linux":
     os.environ["OV_CPU_BIND_TYPE"] = "NUMA"
@@ -276,6 +275,19 @@ def infer_classic_ov(local_model_path: str, prompt: str, max_tokens: int, temper
         if tokenizer.pad_token_id is None:
             tokenizer.pad_token_id = tokenizer.eos_token_id
 
+        # Apply chat template if available
+        try:
+            if hasattr(tokenizer, "chat_template") and tokenizer.chat_template:
+                formatted_prompt = tokenizer.apply_chat_template(
+                    [{"role": "user", "content": prompt}],
+                    tokenize=False,
+                    add_generation_prompt=True
+                )
+            else:
+                formatted_prompt = prompt
+        except Exception:
+            formatted_prompt = prompt
+
         core = ov.Core()
         import multiprocessing
         n_threads = max(1, multiprocessing.cpu_count() - 1)
@@ -285,7 +297,7 @@ def infer_classic_ov(local_model_path: str, prompt: str, max_tokens: int, temper
             "INFERENCE_NUM_THREADS": str(n_threads),
         })
 
-        inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, max_length=512)
+        inputs = tokenizer(formatted_prompt, return_tensors="pt", padding=True, truncation=True, max_length=512)
         generated = inputs["input_ids"].numpy().tolist()[0]
         mask = inputs["attention_mask"].numpy().tolist()[0]
 
@@ -335,12 +347,15 @@ def main():
     # ── Step 1: Check local OV cache ─────────────────────────────────────────
     local_path = find_cached_model(model_id, ov_model_dir)
     if local_path:
+        os.environ["HF_HUB_OFFLINE"] = "1"
         print(f"[OPENVINO] ✅ Found cached OV model at: {local_path}", file=sys.stderr)
         if infer_with_genai(local_path, prompt, max_tokens, temperature):
             return
         if infer_classic_ov(local_path, prompt, max_tokens, temperature):
             return
         print("[OPENVINO] Cached model inference failed, re-converting...", file=sys.stderr)
+    else:
+        os.environ["HF_HUB_OFFLINE"] = "0"
 
     # ── Step 2: Try OpenVINO Hub pre-converted model ──────────────────────────
     ov_hub_id = find_ov_hub_model(model_id)

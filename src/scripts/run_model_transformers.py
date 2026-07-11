@@ -17,7 +17,6 @@ except ImportError:
 
 # Suppress warnings & force offline cache loading
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 logging.getLogger("transformers").setLevel(logging.ERROR)
 
@@ -60,6 +59,17 @@ def extract_media_from_prompt(prompt):
         clean_prompt += prompt[current_pos:]
     return clean_prompt, images, audio_clips
 
+def is_model_cached(model_id: str) -> bool:
+    if os.path.isdir(model_id):
+        return True
+    safe_name = f"models--{model_id.replace('/', '--')}"
+    cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub", safe_name)
+    if os.path.isdir(cache_dir):
+        snapshots_dir = os.path.join(cache_dir, "snapshots")
+        if os.path.isdir(snapshots_dir) and os.listdir(snapshots_dir):
+            return True
+    return False
+
 def main():
     if len(sys.argv) < 3:
         print("ERROR: Missing arguments. Usage: python run_model_transformers.py <model_id> <prompt> [max_tokens] [temperature] [device]", file=sys.stderr)
@@ -70,6 +80,11 @@ def main():
     max_tokens = int(sys.argv[3]) if len(sys.argv) > 3 else 500
     temperature = float(sys.argv[4]) if len(sys.argv) > 4 else 0.7
     device_arg = sys.argv[5] if len(sys.argv) > 5 else "auto"
+    
+    if is_model_cached(model_id):
+        os.environ["HF_HUB_OFFLINE"] = "1"
+    else:
+        os.environ["HF_HUB_OFFLINE"] = "0"
     
     try:
         # Determine device and dtype
@@ -137,8 +152,21 @@ def main():
             if pipe.tokenizer.pad_token_id is None:
                 pipe.tokenizer.pad_token_id = pipe.tokenizer.eos_token_id
 
+            # Apply chat template if available
+            try:
+                if hasattr(pipe.tokenizer, "chat_template") and pipe.tokenizer.chat_template:
+                    formatted_prompt = pipe.tokenizer.apply_chat_template(
+                        [{"role": "user", "content": clean_prompt}],
+                        tokenize=False,
+                        add_generation_prompt=True
+                    )
+                else:
+                    formatted_prompt = clean_prompt
+            except Exception:
+                formatted_prompt = clean_prompt
+
             outputs = pipe(
-                clean_prompt,
+                formatted_prompt,
                 max_new_tokens=max_tokens,
                 temperature=temperature,
                 do_sample=True if temperature > 0.0 else False,
@@ -176,7 +204,25 @@ def main():
             model = model.to("cuda")
 
         # Format inputs for vision models
-        inputs = processor(text=clean_prompt, images=pil_images, return_tensors="pt")
+        try:
+            if hasattr(processor, "apply_chat_template"):
+                formatted_prompt = processor.apply_chat_template(
+                    [{"role": "user", "content": [{"type": "image"}, {"type": "text", "text": clean_prompt}]}],
+                    tokenize=False,
+                    add_generation_prompt=True
+                )
+            elif hasattr(processor, "tokenizer") and hasattr(processor.tokenizer, "chat_template") and processor.tokenizer.chat_template:
+                formatted_prompt = processor.tokenizer.apply_chat_template(
+                    [{"role": "user", "content": clean_prompt}],
+                    tokenize=False,
+                    add_generation_prompt=True
+                )
+            else:
+                formatted_prompt = clean_prompt
+        except Exception:
+            formatted_prompt = clean_prompt
+
+        inputs = processor(text=formatted_prompt, images=pil_images, return_tensors="pt")
         if device_str == "cuda":
             inputs = {k: v.to("cuda") for k, v in inputs.items()}
             

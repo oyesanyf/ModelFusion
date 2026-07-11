@@ -40,8 +40,7 @@ impl HuggingFaceOrchestrator {
         let db_path = db_path.as_ref().to_path_buf();
         let task_processor = UniversalTaskProcessor::new();
 
-        let blocked_tok = format!("{}{}", "hf_ICTHSFDUVBxat", "dlmFtBVPqSORoDlqJjwNR");
-        let hf_ok = std::env::var("HF_TOKEN").ok().map(|t| !t.is_empty() && t != blocked_tok && !t.contains("YOUR_")).unwrap_or(false)
+        let hf_ok = std::env::var("HF_TOKEN").ok().map(|t| !t.is_empty() && !t.contains("YOUR_")).unwrap_or(false)
             || std::env::var("HUGGINGFACE_API_KEY").ok().map(|t| !t.is_empty() && !t.contains("YOUR_")).unwrap_or(false)
             || std::env::var("HF_API_KEY").ok().map(|t| !t.is_empty() && !t.contains("YOUR_")).unwrap_or(false)
             || std::env::var("HUGGINGFACE_TOKEN").ok().map(|t| !t.is_empty() && !t.contains("YOUR_")).unwrap_or(false);
