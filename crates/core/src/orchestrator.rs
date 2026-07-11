@@ -46,9 +46,9 @@ impl HuggingFaceOrchestrator {
             || std::env::var("HF_API_KEY").ok().map(|t| !t.is_empty() && !t.contains("YOUR_")).unwrap_or(false)
             || std::env::var("HUGGINGFACE_TOKEN").ok().map(|t| !t.is_empty() && !t.contains("YOUR_")).unwrap_or(false);
 
-        println!("OK");
-        println!("API Keys Loaded:");
-        println!(
+        eprintln!("OK");
+        eprintln!("API Keys Loaded:");
+        eprintln!(
             "   openai: [DISABLED], anthropic: [DISABLED], gemini: [DISABLED], huggingface: {}",
             if hf_ok { "[LOADED]" } else { "[MISSING]" }
         );

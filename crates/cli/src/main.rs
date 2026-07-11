@@ -24,7 +24,7 @@ static INFERENCE_SEM: OnceLock<Arc<Semaphore>> = OnceLock::new();
 fn inference_sem() -> Arc<Semaphore> {
     INFERENCE_SEM.get_or_init(|| {
         let permits = available_inference_slots();
-        println!("[SEMAPHORE] Inference pool: {} concurrent slot(s)", permits);
+        eprintln!("[SEMAPHORE] Inference pool: {} concurrent slot(s)", permits);
         Arc::new(Semaphore::new(permits))
     }).clone()
 }
@@ -1829,8 +1829,8 @@ async fn run_server(port: u16, db_path: Option<String>) -> Result<()> {
                     parse_slash_commands_in_prompt(&mut prompt, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
 
                     let start_time = std::time::Instant::now();
-                    println!("[SERVER] >>> Received /orchestrate request.");
-                    println!("[SERVER] Prompt: \"{}\"", prompt.chars().take(80).collect::<String>());
+                    eprintln!("[SERVER] >>> Received /orchestrate request.");
+                    eprintln!("[SERVER] Prompt: \"{}\"", prompt.chars().take(80).collect::<String>());
 
                     // Acquire an inference slot. If all slots are busy the request
                     // queues here — no timeout, no drop — until a slot is released.
@@ -1843,22 +1843,22 @@ async fn run_server(port: u16, db_path: Option<String>) -> Result<()> {
                             return;
                         }
                     };
-                    println!("[SEMAPHORE] Acquired inference slot.");
+                    eprintln!("[SEMAPHORE] Acquired inference slot.");
 
                     // Query the small model router for dynamic orchestration decision
                     if let Some(decision) = llm_route(&prompt).await {
-                        println!("🎯 [SERVER] LLM Router decision: fusion={}, strategy={}, use_gpu={}, use_cpu={}, task={}",
+                        eprintln!("🎯 [SERVER] LLM Router decision: fusion={}, strategy={}, use_gpu={}, use_cpu={}, task={}",
                             decision.fusion, decision.selection_strategy, decision.use_gpu, decision.use_cpu, decision.detected_task);
                         fusion = decision.fusion;
                         strategy = decision.selection_strategy;
                         gpu = decision.use_gpu;
                         cpu = decision.use_cpu;
                     } else {
-                        println!("⚠️ [SERVER] LLM Router offline or failed. Falling back to default/heuristic options (enabling GPU for speed).");
+                        eprintln!("⚠️ [SERVER] LLM Router offline or failed. Falling back to default/heuristic options (enabling GPU for speed).");
                         gpu = !cpu; // Default to GPU unless CPU was explicitly forced
                     }
 
-                    println!("[SERVER] Options: fusion={}, strategy={}, budget={}, gpu={}, cpu={}, openvino={}", fusion, strategy, budget, gpu, cpu, openvino);
+                    eprintln!("[SERVER] Options: fusion={}, strategy={}, budget={}, gpu={}, cpu={}, openvino={}", fusion, strategy, budget, gpu, cpu, openvino);
 
 
                     if gpu {
@@ -1886,7 +1886,7 @@ async fn run_server(port: u16, db_path: Option<String>) -> Result<()> {
                     // Classify prompt to see if fusion is actually needed
                     let prompt_needs_fusion = fusion && modelfusion_core::fusion_engine::classify_prompt(&prompt);
                     if fusion && !prompt_needs_fusion {
-                        println!("[SERVER] Prompt classified as simple. Bypassing fusion engine to run single model orchestrator.");
+                        eprintln!("[SERVER] Prompt classified as simple. Bypassing fusion engine to run single model orchestrator.");
                     }
 
                     let content = if prompt_needs_fusion {
@@ -1924,7 +1924,7 @@ async fn run_server(port: u16, db_path: Option<String>) -> Result<()> {
                         }
                     };
 
-                    println!("[SERVER] <<< Completed /orchestrate request in {}ms.", start_time.elapsed().as_millis());
+                    eprintln!("[SERVER] <<< Completed /orchestrate request in {}ms.", start_time.elapsed().as_millis());
                     content
                 }
                 "/stats" => {
@@ -2182,7 +2182,7 @@ async fn route_and_execute(
     custom_args: &[String],
 ) -> (String, usize, usize) {
     let complexity_str = llm_classify_complexity(prompt).await;
-    println!("🦙 [ROUTER] Prompt classified complexity: {}", complexity_str);
+    eprintln!("🦙 [ROUTER] Prompt classified complexity: {}", complexity_str);
     
     let context = match complexity_str.as_str() {
         "simple_general" => 0,
@@ -2217,7 +2217,7 @@ async fn route_and_execute(
 
     // Override arm choice using the small model LLM router decision
     if let Some(decision) = llm_route(prompt).await {
-        println!("🎯 [ROUTER] LLM Router decision: fusion={}, strategy={}, use_gpu={}, use_cpu={}, task={}",
+        eprintln!("🎯 [ROUTER] LLM Router decision: fusion={}, strategy={}, use_gpu={}, use_cpu={}, task={}",
             decision.fusion, decision.selection_strategy, decision.use_gpu, decision.use_cpu, decision.detected_task);
         arm = if decision.fusion { 1 } else { 0 };
     } else {
@@ -2233,7 +2233,7 @@ async fn route_and_execute(
     // Force arm choice to 0 (single model) if the complexity layer classified it as simple!
     if context == 0 || context == 1 {
         if arm == 1 {
-            println!("💡 [ROUTER] Complexity layer classified task as simple. Overriding fusion selection to single model.");
+            eprintln!("💡 [ROUTER] Complexity layer classified task as simple. Overriding fusion selection to single model.");
             arm = 0;
         }
     }
