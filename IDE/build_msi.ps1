@@ -100,6 +100,25 @@ if (Test-Path $conptySrcFolder) {
     Write-Host "[OK] Copied conpty binaries to: $conptyDestDir" -ForegroundColor Green
 }
 
+# 4.8 Bundle starter OpenVINO model for offline-ready experience
+$ovModelName = "OpenVINO--Qwen2.5-1.5B-Instruct-int4-ov"
+$ovSrcPath = Join-Path $env:USERPROFILE ".hugos-ide\ov_models\$ovModelName"
+if (Test-Path $ovSrcPath) {
+    $ovDestDir = Join-Path $vsCodePackDir "ov_models\$ovModelName"
+    if (-not (Test-Path $ovDestDir)) {
+        New-Item -ItemType Directory -Force -Path $ovDestDir | Out-Null
+    }
+    Write-Host "[INFO] Bundling starter OpenVINO model ($ovModelName) into installer..." -ForegroundColor Yellow
+    # Copy only the essential model files (skip .metadata and cache files)
+    Get-ChildItem -Path $ovSrcPath -File | Where-Object { $_.Name -notlike "*.metadata" -and $_.Name -ne "CACHEDIR.TAG" -and $_.Name -ne ".gitignore" } | ForEach-Object {
+        Copy-Item -Path $_.FullName -Destination $ovDestDir -Force
+    }
+    $modelSize = [math]::Round((Get-ChildItem $ovDestDir -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1MB, 1)
+    Write-Host "[OK] Bundled starter model ($modelSize MB) to: $ovDestDir" -ForegroundColor Green
+} else {
+    Write-Host "[WARNING] Starter OpenVINO model not found at $ovSrcPath. Packaging without bundled model." -ForegroundColor Yellow
+}
+
 # 5. Sign the binaries
 Write-Host "[INFO] Signing executables, DLLs, and native modules inside packaged folder..." -ForegroundColor Yellow
 $filesToSign = Get-ChildItem -Path $vsCodePackDir -Include *.exe, *.dll, *.node -Recurse | Select-Object -ExpandProperty FullName
