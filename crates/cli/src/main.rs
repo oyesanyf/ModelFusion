@@ -633,11 +633,37 @@ fn main() -> Result<()> {
             rt.spawn(async move {
                 loop {
                     eprintln!("[Background] Running OpenVINO model downloader...");
-                    let _ = std::process::Command::new("python")
-                        .arg("src/scripts/getvino.py")
+                    // Resolve getvino.py: try multiple locations for installed and dev builds
+                    let exe_dir = std::env::current_exe()
+                        .ok()
+                        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+                        .unwrap_or_else(|| std::path::PathBuf::from("."));
+                    
+                    let candidates = vec![
+                        // Installed layout: bin/cli.exe -> ../src/scripts/getvino.py
+                        exe_dir.join("..").join("src").join("scripts").join("getvino.py"),
+                        // Dev layout: target/release/cli.exe -> ../../src/scripts/getvino.py
+                        exe_dir.join("..").join("..").join("src").join("scripts").join("getvino.py"),
+                        // CWD fallback
+                        std::path::PathBuf::from("src").join("scripts").join("getvino.py"),
+                    ];
+                    
+                    let script_path = candidates.iter()
+                        .find(|p| p.exists())
+                        .cloned()
+                        .unwrap_or_else(|| candidates[0].clone());
+                    
+                    eprintln!("[Background] Script path: {:?} (exists: {})", script_path, script_path.exists());
+                    let result = std::process::Command::new("python")
+                        .arg(&script_path)
                         .arg(&ov_dir)
+                        .arg("all")
                         .spawn()
                         .and_then(|mut child| child.wait());
+                    match result {
+                        Ok(status) => eprintln!("[Background] getvino.py exited with: {}", status),
+                        Err(e) => eprintln!("[Background] Failed to run getvino.py: {}", e),
+                    }
                     // Run once every 24 hours
                     tokio::time::sleep(tokio::time::Duration::from_secs(24 * 3600)).await;
                 }
