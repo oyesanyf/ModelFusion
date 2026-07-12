@@ -151,7 +151,9 @@ impl EnhancedModelSelector {
             let freshness = self.calculate_freshness(m);
             let license_val = self.evaluate_license(m);
 
-            let mut backend = if std::env::var("MODELFUSION_USE_OPENVINO").is_ok() {
+            let mut backend = if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || memory::is_ollama_model_cached(&m.model_id) {
+                Backend::Ollama
+            } else if std::env::var("MODELFUSION_USE_OPENVINO").is_ok() {
                 Backend::OpenVINO
             } else {
                 Backend::Transformers
@@ -378,7 +380,7 @@ impl EnhancedModelSelector {
             candidates.retain(|c| {
                 let suitability = memory::evaluate_hardware_suitability(
                     c.estimated_params_b,
-                    if std::env::var("MODELFUSION_USE_OPENVINO").is_ok() { Backend::OpenVINO } else { Backend::Transformers },
+                    if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || memory::is_ollama_model_cached(&c.model_id) { Backend::Ollama } else if std::env::var("MODELFUSION_USE_OPENVINO").is_ok() { Backend::OpenVINO } else { Backend::Transformers },
                     &sys_mem,
                 );
                 

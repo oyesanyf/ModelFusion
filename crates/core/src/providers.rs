@@ -477,7 +477,17 @@ impl LLMProvider for HuggingFaceProvider {
         if is_local {
             let mut errors = Vec::new();
 
-            // 1. Try OpenVINO first
+            // 1. Try Ollama first (fastest local provider)
+            match self.execute_ollama(prompt, &start).await {
+                Ok(res) => return Ok(res),
+                Err(e) => {
+                    let err_msg = format!("Ollama failed: {}", e);
+                    log::warn!("⚠️ {}", err_msg);
+                    errors.push(err_msg);
+                }
+            }
+
+            // 2. Try OpenVINO next
             if std::env::var("MODELFUSION_USE_OPENVINO").is_ok() {
                 match self.execute_openvino(prompt, &start).await {
                     Ok(res) => return Ok(res),
@@ -489,7 +499,7 @@ impl LLMProvider for HuggingFaceProvider {
                 }
             }
 
-            // 2. Try ONNX Runtime next
+            // 3. Try ONNX Runtime next
             if std::env::var("MODELFUSION_USE_ONNX").is_ok() || std::env::var("MODELFUSION_USE_OPENVINO").is_ok() {
                 match self.execute_onnx(prompt, &start).await {
                     Ok(res) => return Ok(res),
@@ -501,7 +511,7 @@ impl LLMProvider for HuggingFaceProvider {
                 }
             }
 
-            // 3. Try Python Transformers next
+            // 4. Try Python Transformers next
             if std::env::var("MODELFUSION_USE_TRANSFORMERS").is_ok() 
                 || std::env::var("MODELFUSION_USE_OPENVINO").is_ok() 
                 || std::env::var("MODELFUSION_USE_ONNX").is_ok() 
@@ -513,16 +523,6 @@ impl LLMProvider for HuggingFaceProvider {
                         log::warn!("⚠️ {}", err_msg);
                         errors.push(err_msg);
                     }
-                }
-            }
-
-            // 4. Try Ollama final fallback
-            match self.execute_ollama(prompt, &start).await {
-                Ok(res) => return Ok(res),
-                Err(e) => {
-                    let err_msg = format!("Ollama failed: {}", e);
-                    log::warn!("⚠️ {}", err_msg);
-                    errors.push(err_msg);
                 }
             }
 

@@ -397,8 +397,40 @@ pub fn ensure_ollama_running() -> Result<(), String> {
         return Ok(());
     }
 
+    // Check if Ollama is installed in PATH
+    let check_installed = Command::new("cmd")
+        .args(["/C", "where", "ollama"])
+        .output();
+
+    let is_installed = match check_installed {
+        Ok(output) => output.status.success(),
+        Err(_) => false,
+    };
+
+    if !is_installed {
+        eprintln!("🦙 [OLLAMA] Ollama is not installed. Downloading and installing silently (this may take a minute)...");
+        let install_result = Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                "Invoke-WebRequest -Uri 'https://ollama.com/download/OllamaSetup.exe' -OutFile \"$env:TEMP\\OllamaSetup.exe\"; Start-Process -FilePath \"$env:TEMP\\OllamaSetup.exe\" -ArgumentList '/SILENT' -Wait"
+            ])
+            .status();
+        
+        match install_result {
+            Ok(status) if status.success() => {
+                eprintln!("🦙 [OLLAMA] Installation complete!");
+                // Give it a moment to update environment variables/PATH internally
+                std::thread::sleep(std::time::Duration::from_secs(3));
+            }
+            _ => {
+                return Err("Failed to install Ollama automatically. Please download it from https://ollama.com".to_string());
+            }
+        }
+    }
+
     // Not running — start it
-    println!("🦙 [OLLAMA] Ollama is not running. Starting 'ollama serve' automatically...");
+    eprintln!("🦙 [OLLAMA] Ollama is not running. Starting 'ollama serve' automatically...");
 
     // Launch ollama serve as a background process
     let start_result = Command::new("cmd")
@@ -407,7 +439,7 @@ pub fn ensure_ollama_running() -> Result<(), String> {
 
     match start_result {
         Ok(_) => {
-            println!("🦙 [OLLAMA] Started 'ollama serve'. Waiting for it to be ready...");
+            eprintln!("🦙 [OLLAMA] Started 'ollama serve'. Waiting for it to be ready...");
         }
         Err(e) => {
             return Err(format!("Failed to start 'ollama serve': {}. Is Ollama installed?", e));
@@ -418,11 +450,11 @@ pub fn ensure_ollama_running() -> Result<(), String> {
     for i in 0..30 {
         std::thread::sleep(std::time::Duration::from_secs(1));
         if is_ollama_responding(&endpoint) {
-            println!("🦙 [OLLAMA] Ollama is ready! (took {}s)", i + 1);
+            eprintln!("🦙 [OLLAMA] Ollama is ready! (took {}s)", i + 1);
             return Ok(());
         }
         if (i + 1) % 5 == 0 {
-            println!("🦙 [OLLAMA] Still waiting... ({}s)", i + 1);
+            eprintln!("🦙 [OLLAMA] Still waiting... ({}s)", i + 1);
         }
     }
 
@@ -530,8 +562,23 @@ fn map_hf_to_ollama(hf_model_id: &str) -> String {
     else { hf_model_id.to_string() }
 }
 
-pub fn is_ollama_model_cached(_model_id: &str) -> bool {
-    false
+/// Check if the model is cached/downloaded in Ollama.
+pub fn is_ollama_model_cached(model_id: &str) -> bool {
+    let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
+        .unwrap_or_else(|_| "http://localhost:11434".to_string());
+        
+    let result = std::process::Command::new("curl")
+        .args(["-s", &format!("{}/api/tags", endpoint)])
+        .output();
+        
+    let stdout_str = match result {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
+        _ => return false,
+    };
+    
+    let target = map_hf_to_ollama(model_id).to_lowercase();
+    
+    stdout_str.to_lowercase().contains(&target)
 }
 
 

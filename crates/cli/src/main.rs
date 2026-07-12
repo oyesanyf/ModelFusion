@@ -549,6 +549,9 @@ struct Args {
     #[arg(long, help = "Run as HTTP API server")]
     server: bool,
 
+    #[arg(long, help = "Enable parsing of slash commands from prompt")]
+    enable_slash_commands: bool,
+
     #[arg(long, default_value = "5000", help = "Port to run HTTP server on")]
     port: u16,
 
@@ -684,7 +687,7 @@ async fn run(args: Args) -> Result<()> {
     }
 
     if args.server {
-        run_server(args.port, args.db_path.clone()).await?;
+        run_server(args.port, args.db_path.clone(), args.enable_slash_commands).await?;
         return Ok(());
     }
 
@@ -1029,7 +1032,9 @@ async fn run(args: Args) -> Result<()> {
         let mut cpu = args.cpu;
         let mut openvino = args.openvino;
         let mut fusion = args.fusion;
-        parse_slash_commands_in_prompt(&mut final_prompt, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
+        if args.enable_slash_commands {
+            parse_slash_commands_in_prompt(&mut final_prompt, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
+        }
 
         if let Some(ref folder_path) = args.folder {
             eprintln!("[FUSION] Reading files from folder: {}", folder_path);
@@ -1081,7 +1086,7 @@ async fn run(args: Args) -> Result<()> {
         let mut bandit_arm = 0;
         let mut run_bandit_learning = false;
 
-        if !is_fusion_needed && !args.mcp && !args.server {
+        if !is_fusion_needed && !args.mcp && !args.server && !args.ollama && !args.openvino {
             run_bandit_learning = true;
             let complexity_str = llm_classify_complexity(&final_prompt).await;
             eprintln!("🦙 [ROUTER] Prompt classified complexity: {}", complexity_str);
@@ -1285,7 +1290,7 @@ async fn run(args: Args) -> Result<()> {
                 args.model.as_deref(),
             ).await {
                 Ok(content) => {
-                    println!("\n[SUCCESS] Orchestration Successful (via Model Fusion)!\n");
+                    eprintln!("\n[SUCCESS] Orchestration Successful (via Model Fusion)!\n");
                     println!("{}", content);
                     if let Some(ref report_path) = args.report {
                         let final_prompt_for_report = if let Some(ref ctx) = context_to_pass {
@@ -1810,7 +1815,7 @@ Respond ONLY with a valid JSON object matching this schema:
     "simple_general".to_string()
 }
 
-async fn run_server(port: u16, db_path: Option<String>) -> Result<()> {
+async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: bool) -> Result<()> {
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
     println!("ModelFusion API server running on http://127.0.0.1:{}", port);
     
@@ -1822,6 +1827,7 @@ async fn run_server(port: u16, db_path: Option<String>) -> Result<()> {
             Err(_) => continue,
         };
         let db_path_clone = db_path_opt.clone();
+        let slash_enabled = enable_slash_commands;
         tokio::spawn(async move {
             use tokio::io::{AsyncReadExt, AsyncWriteExt};
             let mut request_data = Vec::new();
@@ -1900,8 +1906,10 @@ async fn run_server(port: u16, db_path: Option<String>) -> Result<()> {
                     let mut cpu = request_json["cpu"].as_bool().unwrap_or(false);
                     let mut fusion = request_json["fusion"].as_bool().unwrap_or(false);
 
-                    // Parse slash commands from incoming prompt
-                    parse_slash_commands_in_prompt(&mut prompt, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
+                    if slash_enabled {
+                        // Parse slash commands from incoming prompt
+                        parse_slash_commands_in_prompt(&mut prompt, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
+                    }
 
                     let start_time = std::time::Instant::now();
                     eprintln!("[SERVER] >>> Received /orchestrate request.");
@@ -1939,51 +1947,60 @@ async fn run_server(port: u16, db_path: Option<String>) -> Result<()> {
                         let _ = read_half.read(&mut buf).await;
                     };
 
-                    // Query the small model router for dynamic orchestration decision
-                    if let Some(decision) = llm_route(&prompt).await {
-                        eprintln!("🎯 [SERVER] LLM Router decision: fusion={}, strategy={}, use_gpu={}, use_cpu={}, task={}",
-                            decision.fusion, decision.selection_strategy, decision.use_gpu, decision.use_cpu, decision.detected_task);
-                        fusion = decision.fusion;
-                        strategy = decision.selection_strategy;
-                        gpu = decision.use_gpu;
-                        cpu = decision.use_cpu;
-                    } else {
-                        eprintln!("⚠️ [SERVER] LLM Router offline or failed. Falling back to default/heuristic options (enabling GPU for speed).");
-                        gpu = !cpu; // Default to GPU unless CPU was explicitly forced
-                    }
+                    let headers = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\n\r\n";
+                    let _ = write_half.write_all(headers.as_bytes()).await;
 
-                    eprintln!("[SERVER] Options: fusion={}, strategy={}, budget={}, gpu={}, cpu={}, openvino={}", fusion, strategy, budget, gpu, cpu, openvino);
+                    let mut full_process = Box::pin(async {
+                        // Query the small model router for dynamic orchestration decision
+                        if !openvino && !gpu && !cpu {
+                            if let Some(decision) = llm_route(&prompt).await {
+                                eprintln!("🎯 [SERVER] LLM Router decision: fusion={}, strategy={}, use_gpu={}, use_cpu={}, task={}",
+                                    decision.fusion, decision.selection_strategy, decision.use_gpu, decision.use_cpu, decision.detected_task);
+                                fusion = decision.fusion;
+                                strategy = decision.selection_strategy;
+                                gpu = decision.use_gpu;
+                                cpu = decision.use_cpu;
+                            } else {
+                                eprintln!("⚠️ [SERVER] LLM Router offline or failed. Falling back to default/heuristic options (enabling GPU for speed).");
+                                gpu = !cpu; // Default to GPU unless CPU was explicitly forced
+                            }
+                        } else {
+                            eprintln!("🎯 [SERVER] Explicit backend requested, skipping LLM router.");
+                        }
+
+                        eprintln!("[SERVER] Options: fusion={}, strategy={}, budget={}, gpu={}, cpu={}, openvino={}", fusion, strategy, budget, gpu, cpu, openvino);
 
 
-                    if gpu {
-                        std::env::set_var("MODELFUSION_USE_OLLAMA", "true");
-                        std::env::set_var("MODELFUSION_FORCE_GPU", "true");
-                    } else {
-                        std::env::remove_var("MODELFUSION_USE_OLLAMA");
-                        std::env::remove_var("MODELFUSION_FORCE_GPU");
-                    }
+                        if gpu {
+                            std::env::set_var("MODELFUSION_USE_OLLAMA", "true");
+                            std::env::set_var("MODELFUSION_FORCE_GPU", "true");
+                            fusion = false; // Disable fusion if explicit backend is requested
+                        } else {
+                            std::env::remove_var("MODELFUSION_USE_OLLAMA");
+                            std::env::remove_var("MODELFUSION_FORCE_GPU");
+                        }
 
-                    if openvino {
-                        std::env::set_var("MODELFUSION_USE_OPENVINO", "true");
-                    } else {
-                        std::env::remove_var("MODELFUSION_USE_OPENVINO");
-                    }
+                        if openvino {
+                            std::env::set_var("MODELFUSION_USE_OPENVINO", "true");
+                            fusion = false; // Disable fusion if explicit backend is requested
+                        } else {
+                            std::env::remove_var("MODELFUSION_USE_OPENVINO");
+                        }
 
-                    if cpu {
-                        std::env::set_var("MODELFUSION_USE_TRANSFORMERS", "true");
-                        std::env::set_var("MODELFUSION_FORCE_CPU", "true");
-                    } else {
-                        std::env::remove_var("MODELFUSION_USE_TRANSFORMERS");
-                        std::env::remove_var("MODELFUSION_FORCE_CPU");
-                    }
+                        if cpu {
+                            std::env::set_var("MODELFUSION_USE_TRANSFORMERS", "true");
+                            std::env::set_var("MODELFUSION_FORCE_CPU", "true");
+                        } else {
+                            std::env::remove_var("MODELFUSION_USE_TRANSFORMERS");
+                            std::env::remove_var("MODELFUSION_FORCE_CPU");
+                        }
 
-                    // Classify prompt to see if fusion is actually needed
-                    let prompt_needs_fusion = fusion && modelfusion_core::fusion_engine::classify_prompt(&prompt);
-                    if fusion && !prompt_needs_fusion {
-                        eprintln!("[SERVER] Prompt classified as simple. Bypassing fusion engine to run single model orchestrator.");
-                    }
+                        // Classify prompt to see if fusion is actually needed
+                        let prompt_needs_fusion = fusion && modelfusion_core::fusion_engine::classify_prompt(&prompt);
+                        if fusion && !prompt_needs_fusion {
+                            eprintln!("[SERVER] Prompt classified as simple. Bypassing fusion engine to run single model orchestrator.");
+                        }
 
-                    let inference_future = async {
                         if prompt_needs_fusion {
                             match modelfusion_core::fusion_engine::run_fusion(
                                 &prompt,
@@ -2018,27 +2035,46 @@ async fn run_server(port: u16, db_path: Option<String>) -> Result<()> {
                                 res.error_message.unwrap_or_else(|| "Orchestration failed".to_string())
                             }
                         }
+                    });
+
+                    let mut client_disconnected = false;
+                    tokio::pin!(client_disconnect);
+
+                    let content = loop {
+                        tokio::select! {
+                            res = &mut full_process => {
+                                break res;
+                            }
+                            _ = tokio::time::sleep(std::time::Duration::from_secs(5)) => {
+                                // Send a space as a keep-alive chunk
+                                let chunk = "1\r\n \r\n";
+                                if write_half.write_all(chunk.as_bytes()).await.is_err() {
+                                    eprintln!("[SERVER] 🛑 Client disconnected during /orchestrate execution. Cancelling inference.");
+                                    client_disconnected = true;
+                                    break String::new();
+                                }
+                            }
+                            _ = &mut client_disconnect => {
+                                eprintln!("[SERVER] 🛑 Client disconnected during /orchestrate execution. Cancelling inference.");
+                                client_disconnected = true;
+                                break String::new();
+                            }
+                        }
                     };
 
-                    let content = tokio::select! {
-                        _ = client_disconnect => {
-                            eprintln!("[SERVER] 🛑 Client disconnected during /orchestrate execution. Cancelling inference.");
-                            return; // Returns immediately, dropping permit and _file_lock!
-                        }
-                        res = inference_future => res
-                    };
+                    if client_disconnected {
+                        return;
+                    }
 
                     eprintln!("[SERVER] <<< Completed /orchestrate request in {}ms.", start_time.elapsed().as_millis());
                     let response_json = serde_json::json!({
                         "content": content
                     });
                     let response_str = response_json.to_string();
-                    let response = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                        response_str.len(),
-                        response_str
-                    );
-                    let _ = write_half.write_all(response.as_bytes()).await;
+                    let chunk_size = format!("{:x}\r\n", response_str.len());
+                    let _ = write_half.write_all(chunk_size.as_bytes()).await;
+                    let _ = write_half.write_all(response_str.as_bytes()).await;
+                    let _ = write_half.write_all(b"\r\n0\r\n\r\n").await;
                     return;
                 }
                 "/stats" => {

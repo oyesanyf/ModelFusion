@@ -235,7 +235,12 @@ def infer_with_genai(local_model_path: str, prompt: str, max_tokens: int, temper
         import openvino_genai as ov_genai
         print(f"[OPENVINO-GENAI] Loading from {local_model_path}", file=sys.stderr)
         device = "GPU" if os.environ.get("MODELFUSION_FORCE_GPU") == "true" else "CPU"
-        pipe = ov_genai.LLMPipeline(local_model_path, device)
+        import multiprocessing
+        n_threads = multiprocessing.cpu_count()
+        pipe = ov_genai.LLMPipeline(local_model_path, device, **{
+            "PERFORMANCE_HINT": "LATENCY",
+            "INFERENCE_NUM_THREADS": str(n_threads)
+        })
         config = ov_genai.GenerationConfig()
         config.max_new_tokens = max_tokens
         config.do_sample = temperature > 0.0
