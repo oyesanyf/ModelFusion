@@ -362,7 +362,184 @@ python canned_benchmark/draco_evaluator.py --no-fallback --bootstraps 1000
 
 ---
 
+## 🖥️ HugOS IDE
+
+HugOS IDE is a fully integrated development environment built on VS Code, with ModelFusion's multi-model orchestration engine embedded directly into the editor. It provides a local-first, privacy-respecting AI coding assistant that runs entirely on your machine.
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Download-HugOS%20IDE%20v2.1.0--beta-blue?style=for-the-badge&logo=windows&logoColor=white" alt="Download" />
+</p>
+
+### 📥 Installation
+
+1. **Download** the latest MSI from [GitHub Releases](https://github.com/oyesanyf/ModelFusion/releases)
+2. **Run** `HugOS.msi` — installs to `C:\Program Files\HugOS IDE\`
+3. **Install Ollama** from [ollama.com](https://ollama.com/) for local GPU inference
+4. **Pull a model**:
+   ```powershell
+   ollama pull qwen2.5:1.5b    # Fast path (simple questions, ~2s)
+   ollama pull qwen2.5:7b      # Quality path (complex coding, ~7s)
+   ```
+5. **Launch** HugOS IDE — the ModelFusion server starts automatically on port 5000
+
+### ⚡ Adaptive Inference Pipeline
+
+HugOS IDE uses an intelligent routing system that adapts to each question:
+
+```
+User Message → Complexity Gate → Route Decision
+                    │
+         ┌──────────┴──────────┐
+         ▼                     ▼
+    Simple Question       Complex Coding
+    (< 200 chars,         (> 200 chars,
+     no code keywords)     code keywords)
+         │                     │
+         ▼                     ▼
+   ⚡ Fast Path           🧠 Heavy Pipeline
+   qwen2.5:1.5b          Full Orchestrator
+   ~3 seconds             ~7 seconds
+   8 concurrent slots     2 concurrent slots
+```
+
+#### Dynamic System Prompts
+
+The fast path automatically selects the best system prompt based on what you're asking:
+
+| Domain | Trigger Keywords | Temperature |
+|:-------|:----------------|:----------:|
+| **Coding** | code, function, python, rust, javascript, sql, api, git... | 0.5 |
+| **Math** | math, equation, integral, theorem, algebra, proof... | 0.3 |
+| **Data Science** | dataset, ML, pytorch, sklearn, regression, neural net... | 0.5 |
+| **Security** | hack, CVE, malware, PE header, reverse engineer, forensic... | 0.5 |
+| **NLP** | sentiment, tokenize, translate, embedding, NER... | 0.5 |
+| **DevOps** | kubernetes, terraform, AWS, CI/CD, pipeline, nginx... | 0.5 |
+| **Databases** | postgres, redis, schema, query, migration, ORM... | 0.5 |
+| **Networking** | TCP, DNS, firewall, SSL/TLS, protocol, socket... | 0.5 |
+| **Writing** | essay, poem, email, resume, blog, article... | 0.8 |
+| **Science** | physics, chemistry, biology, quantum, DNA, atom... | 0.3 |
+| **Finance** | invest, stock, crypto, tax, revenue, accounting... | 0.3 |
+| **Education** | explain, what is, how does, difference between... | 0.3 |
+| **History/Geography** | capital, country, president, empire, population... | 0.3 |
+| **Health** | symptom, vitamin, exercise, nutrition, disease... | 0.3 |
+| **General** | *everything else* | 0.3 |
+
+### 🔧 Slash Commands
+
+Type `/` in the chat to see all available commands. These are powered by `.prompt.md` files in `.github/prompts/`.
+
+#### Inference Backends
+| Command | Description |
+|:--------|:-----------|
+| `/gpu` | Force GPU-accelerated inference |
+| `/cpu` | Force CPU-only inference |
+| `/ollama` | Use local Ollama models |
+| `/openvino` | Use Intel OpenVINO optimized inference |
+| `/onnx` | Use ONNX Runtime |
+| `/vllm` | Use vLLM high-throughput inference (Linux) |
+
+#### Orchestration & Analysis
+| Command | Description |
+|:--------|:-----------|
+| `/fusion` | Enable multi-model fusion |
+| `/model <id>` | Select a specific model |
+| `/budget <N>` | Set execution budget (0-10) |
+| `/evolve` | Evolve code using OpenEvolve optimization |
+| `/security` | Run security analysis with MITRE ATT&CK |
+| `/plan` | Generate execution plan before running |
+| `/score` | Score response quality |
+| `/judge` | LLM-as-judge evaluation |
+
+#### Data Science & NLP
+| Command | Description |
+|:--------|:-----------|
+| `/jupyter` | Launch Jupyter notebook mode |
+| `/dataanalyst` | Data analyst mode for CSV/Excel |
+| `/datascience` | ML training pipeline |
+| `/sentiment` | Sentiment analysis |
+| `/ner` | Named entity recognition |
+| `/summary` | Text/code summarization |
+| `/pe-header-extraction` | Windows PE binary analysis |
+
+#### Configuration
+| Command | Description |
+|:--------|:-----------|
+| `/context <text>` | Add custom context |
+| `/context-auto` | Auto-detect workspace context |
+| `/cot` | Enable chain-of-thought reasoning |
+| `/verbose` | Show detailed logs |
+| `/debug` | Full diagnostic output |
+| `/stats` | Inference performance metrics |
+| `/update` | Update model database |
+| `/clearcache` | Clear inference cache |
+
+### ⚙️ IDE Settings
+
+Configure via **Settings** → search `hugos.modelfusion`:
+
+| Setting | Default | Description |
+|:--------|:--------|:-----------|
+| `hugos.modelfusion.budget` | `1` | Inference budget (higher = more thorough) |
+| `hugos.modelfusion.selectionStrategy` | `multi_objective` | Model selection algorithm |
+| `hugos.modelfusion.device` | `auto` | Force `cpu` or `gpu` |
+| `hugos.modelfusion.fusion` | `false` | Enable multi-model fusion by default |
+| `hugos.modelfusion.fusionModels` | `3` | Number of models in fusion panel |
+| `hugos.modelfusion.fusionMode` | `multi-model` | `multi-model` or `multi-sample` |
+| `hugos.modelfusion.localBackend` | `openvino` | Default local backend |
+| `hugos.modelfusion.ovModelDir` | `~/.hugos-ide/ov_models` | OpenVINO model cache directory |
+| `hugos.modelfusion.getvino` | `false` | Background OpenVINO model downloads (24h cycle) |
+| `hugos.modelfusion.dbPath` | `~/.hugos-ide/db/hf_models.db` | Model database path |
+
+### 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│                  HugOS IDE                       │
+│  ┌────────────┐  ┌──────────────────────────┐   │
+│  │  Chat UI   │  │  ModelFusion Extension    │   │
+│  │  (Panel)   │──│  modelFusionProvider.ts   │   │
+│  └────────────┘  └──────────┬───────────────┘   │
+│                             │ HTTP :5000         │
+│  ┌──────────────────────────▼───────────────┐   │
+│  │          cli.exe (Rust Server)            │   │
+│  │  ┌─────────────┐  ┌──────────────────┐   │   │
+│  │  │ Fast Path   │  │ Heavy Pipeline   │   │   │
+│  │  │ qwen2.5:1.5b│  │ Full Orchestrator│   │   │
+│  │  │ 8 slots     │  │ 2 slots          │   │   │
+│  │  └──────┬──────┘  └────────┬─────────┘   │   │
+│  │         │                  │              │   │
+│  │         ▼                  ▼              │   │
+│  │  ┌────────────┐  ┌──────────────────┐    │   │
+│  │  │   Ollama   │  │  HuggingFace API │    │   │
+│  │  │  (Local)   │  │  / OpenVINO      │    │   │
+│  │  └────────────┘  └──────────────────┘    │   │
+│  └──────────────────────────────────────────┘   │
+│                                                  │
+│  ┌──────────────┐  ┌─────────────────────────┐  │
+│  │  MCP Server  │  │  SQLite DB (2M+ models) │  │
+│  │  (Tools)     │  │  hf_models.db           │  │
+│  └──────────────┘  └─────────────────────────┘  │
+└─────────────────────────────────────────────────┘
+```
+
+### 🔌 MCP Integration
+
+HugOS IDE includes a built-in MCP (Model Context Protocol) server exposing tools:
+
+| Tool | Description |
+|:-----|:-----------|
+| `quick_answer` | Fast Q&A via the 1.5b model |
+| `run_modelfusion` | Full orchestration pipeline |
+| `analyze_file` | File analysis with context |
+| `search_models` | Search 2M+ model database |
+| `system_info` | Hardware detection (RAM, GPU, disk) |
+
+Access via `cli.exe --mcp` or through any MCP-compatible client.
+
+---
+
 ## 📄 References & Citation
 For more information, please consult the complete research paper: 
 *   Draft PDF: `Beyond Model Scale: Open-Weight Compound Intelligence Through Retrieval-Augmented Consensus Deliberation`
 *   OpenRouter announcement: [Fusion Announcement](https://openrouter.ai/blog/announcements/fusion-beats-frontier/)
+
