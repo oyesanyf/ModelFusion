@@ -1,3 +1,4 @@
+#![recursion_limit = "512"]
 //! CLI Entry Point for ModelFusion.
 
 use anyhow::Result;
@@ -23,21 +24,41 @@ static INFERENCE_SEM: OnceLock<Arc<Semaphore>> = OnceLock::new();
 
 fn inference_sem() -> Arc<Semaphore> {
     INFERENCE_SEM.get_or_init(|| {
-        let permits = available_inference_slots();
-        eprintln!("[SEMAPHORE] Inference pool: {} concurrent slot(s)", permits);
+        let permits = heavy_inference_slots();
+        eprintln!("[SEMAPHORE] Heavy pipeline pool: {} slot(s)", permits);
         Arc::new(Semaphore::new(permits))
     }).clone()
 }
 
-/// Choose the inference slot count based on available system RAM.
-fn available_inference_slots() -> usize {
-    // sysinfo is already a workspace dependency.
+static FAST_SEM: OnceLock<Arc<Semaphore>> = OnceLock::new();
+
+fn fast_inference_sem() -> Arc<Semaphore> {
+    FAST_SEM.get_or_init(|| {
+        let permits = fast_inference_slots();
+        eprintln!("[SEMAPHORE] Fast path pool: {} slot(s)", permits);
+        Arc::new(Semaphore::new(permits))
+    }).clone()
+}
+
+/// Heavy pipeline slots — limited by RAM since orchestrator loads models
+fn heavy_inference_slots() -> usize {
     let mut sys = sysinfo::System::new();
     sys.refresh_memory();
-    let ram_gb = sys.total_memory() / 1_073_741_824; // bytes → GiB
+    let ram_gb = sys.total_memory() / 1_073_741_824;
     if ram_gb >= 32 { 4 }
     else if ram_gb >= 16 { 2 }
     else { 1 }
+}
+
+/// Fast path slots — generous since Ollama 1.5b is lightweight (~1GB)
+/// and Ollama handles its own GPU/memory concurrency internally
+fn fast_inference_slots() -> usize {
+    let mut sys = sysinfo::System::new();
+    sys.refresh_memory();
+    let ram_gb = sys.total_memory() / 1_073_741_824;
+    if ram_gb >= 32 { 16 }
+    else if ram_gb >= 16 { 8 }
+    else { 4 }
 }
 
 #[derive(Parser, Debug)]
@@ -298,6 +319,9 @@ struct Args {
 
     #[arg(long, help = "Use recursive task decomposition for complex problems")]
     recursion: bool,
+
+    #[arg(long, help = "Periodically get OpenVINO preconfigured models in the background")]
+    getvino: bool,
 
     #[arg(long, help = "Enable real options analysis for backup model selection")]
     real_options: bool,
@@ -597,12 +621,30 @@ fn main() -> Result<()> {
     // A dedicated 8 MB stack is used to avoid overflow with the large Args struct.
     let builder = std::thread::Builder::new().stack_size(8 * 1024 * 1024);
     let handler = builder.spawn(move || {
-        tokio::runtime::Builder::new_multi_thread()
+        let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .worker_threads(std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4))
             .build()
-            .expect("Failed to build Tokio runtime")
-            .block_on(run(args))
+            .expect("Failed to build Tokio runtime");
+
+        // Spawn getvino background thread if requested
+        if args.getvino {
+            let ov_dir = args.ov_model_dir.clone();
+            rt.spawn(async move {
+                loop {
+                    eprintln!("[Background] Running OpenVINO model downloader...");
+                    let _ = std::process::Command::new("python")
+                        .arg("src/scripts/getvino.py")
+                        .arg(&ov_dir)
+                        .spawn()
+                        .and_then(|mut child| child.wait());
+                    // Run once every 24 hours
+                    tokio::time::sleep(tokio::time::Duration::from_secs(24 * 3600)).await;
+                }
+            });
+        }
+        
+        rt.block_on(run(args))
     }).expect("Failed to spawn main thread");
     handler.join().unwrap()
 }
@@ -1140,15 +1182,15 @@ async fn run(args: Args) -> Result<()> {
                     "❌ vLLM is only supported on Linux.\n\n  On Windows, use:\n    --openvino  (optimized CPU/iGPU inference)\n    --ollama    (local Ollama models)"
                 ));
             }
-            println!("⚡ Checking vLLM installation...");
+            eprintln!("🔍 Checking vLLM installation...");
             let check = std::process::Command::new("python3")
                 .args(["-c", "import vllm; print('OK')"])
                 .output();
             match check {
                 Ok(out) if out.status.success() => {
-                    println!("✅ vLLM is installed.");
+                    eprintln!("✅ vLLM is installed.");
                     std::env::set_var("MODELFUSION_USE_VLLM", "true");
-                    println!("⚡ Using vLLM for high-throughput GPU inference.");
+                    eprintln!("🚀 Using vLLM for high-throughput GPU inference.");
                 }
                 _ => {
                     return Err(anyhow::anyhow!(
@@ -1157,10 +1199,10 @@ async fn run(args: Args) -> Result<()> {
                 }
             }
         } else if args.ollama || std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
-            println!("🦙 Ensuring Ollama is running...");
+            eprintln!("🦙🔍 Ensuring Ollama is running...");
             match model_selection::memory::ensure_ollama_running() {
                 Ok(()) => {
-                    println!("✅ Ollama is ready.");
+                    eprintln!("✅ Ollama is ready.");
                     std::env::set_var("MODELFUSION_USE_OLLAMA", "true");
                 }
                 Err(e) => {
@@ -1168,18 +1210,18 @@ async fn run(args: Args) -> Result<()> {
                 }
             }
         } else if openvino {
-            println!("🔷 Checking OpenVINO installation...");
+            eprintln!("🔍🔷 Checking OpenVINO installation...");
             // Try openvino_genai first (best performance)
             let genai_check = std::process::Command::new("python")
                 .args(["-c", "import openvino_genai; print('OK')"])
                 .output();
             match genai_check {
                 Ok(out) if out.status.success() => {
-                    println!("✅ OpenVINO GenAI is installed.");
+                    eprintln!("✅ OpenVINO GenAI is installed.");
                     std::env::set_var("MODELFUSION_USE_OPENVINO", "true");
                     std::env::set_var("MODELFUSION_OV_MODEL_DIR", &args.ov_model_dir);
                     std::env::set_var("MODELFUSION_OV_WEIGHT_FORMAT", &args.weight_format);
-                    println!("🔷 Using OpenVINO GenAI for optimized cross-platform inference.");
+                    eprintln!("🔷🚀 Using OpenVINO GenAI for optimized cross-platform inference.");
                 }
                 _ => {
                     // Fallback: check for classic openvino
@@ -1188,12 +1230,12 @@ async fn run(args: Args) -> Result<()> {
                         .output();
                     match fallback_check {
                         Ok(out) if out.status.success() => {
-                            println!("✅ OpenVINO (classic) is installed.");
+                            eprintln!("✅ OpenVINO (classic) is installed.");
                             std::env::set_var("MODELFUSION_USE_OPENVINO", "true");
                             std::env::set_var("MODELFUSION_OV_MODEL_DIR", &args.ov_model_dir);
                             std::env::set_var("MODELFUSION_OV_WEIGHT_FORMAT", &args.weight_format);
-                            println!("🔷 Using OpenVINO for optimized CPU inference.");
-                            println!("💡 Upgrade for better performance: pip install openvino-genai");
+                            eprintln!("🔷🚀 Using OpenVINO for optimized CPU inference.");
+                            eprintln!("🔷🔄 Upgrade for better performance: pip install openvino-genai");
                         }
                         _ => {
                             return Err(anyhow::anyhow!(
@@ -1204,15 +1246,15 @@ async fn run(args: Args) -> Result<()> {
                 }
             }
         } else if args.onnx {
-            println!("🔷 Checking ONNX Runtime installation...");
+            eprintln!("🔍🟣 Checking ONNX Runtime installation...");
             let onnx_check = std::process::Command::new("python")
                 .args(["-c", "import optimum.onnxruntime; print('OK')"])
                 .output();
             match onnx_check {
                 Ok(out) if out.status.success() => {
-                    println!("✅ ONNX Runtime (optimum) is installed.");
+                    eprintln!("✅ ONNX Runtime (optimum) is installed.");
                     std::env::set_var("MODELFUSION_USE_ONNX", "true");
-                    println!("🔷 Using ONNX Runtime for optimized cross-platform inference.");
+                    eprintln!("🟣🚀 Using ONNX Runtime for optimized cross-platform inference.");
                 }
                 _ => {
                     return Err(anyhow::anyhow!(
@@ -1227,20 +1269,20 @@ async fn run(args: Args) -> Result<()> {
                 || std::env::var("HUGGINGFACE_TOKEN").ok().map(|t| !t.is_empty() && !t.contains("YOUR_")).unwrap_or(false);
 
             if has_hf_token && !cpu {
-                println!("🌐 Using HuggingFace Serverless Inference API for remote cloud execution.");
+                eprintln!("🌐 Using HuggingFace Serverless Inference API for remote cloud execution.");
             } else {
                 std::env::set_var("MODELFUSION_USE_TRANSFORMERS", "true");
             }
         }
 
         if is_fusion_needed {
-            println!("[FUSION] Model Fusion is active.");
+            eprintln!("[FUSION] Model Fusion is active.");
             std::env::set_var("MODELFUSION_NO_SIMULATION", "true");
 
             let final_prompt_orig = final_prompt.clone();
             let mut context_to_pass = None;
             if args.context_auto || args.context.as_ref().map_or(false, |c| !c.trim().is_empty()) {
-                println!("🧠 [FUSION] Generating context locally (deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B)...");
+                eprintln!("🧪 [FUSION] Generating context locally (deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B)...");
                 let context_prompt = if let Some(ref ctx_arg) = args.context {
                     if !ctx_arg.trim().is_empty() {
                         format!(
@@ -1263,7 +1305,7 @@ async fn run(args: Args) -> Result<()> {
                 let deepseek_model = modelfusion_core::fusion_engine::schema::ModelConfig::huggingface("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B");
                 match modelfusion_core::fusion_engine::models::call_model(&deepseek_model, &context_prompt).await {
                     Ok(ctx) => {
-                        println!("✅ [FUSION] Context generated successfully. Injecting into prompt.");
+                        eprintln!("✅ [FUSION] Context generated successfully. Injecting into prompt.");
                         let mut clean_ctx = if let Some(end_idx) = ctx.find("</think>") {
                             ctx[end_idx + 8..].to_string()
                         } else {
@@ -1273,7 +1315,7 @@ async fn run(args: Args) -> Result<()> {
                         context_to_pass = Some(clean_ctx);
                     }
                     Err(e) => {
-                        println!("❌ [FUSION] Failed to generate context: {}", e);
+                        eprintln!("⚠️ [FUSION] Failed to generate context: {}", e);
                         return Err(anyhow::anyhow!("Failed to generate context using DeepSeek cheap thinking model: {}", e));
                     }
                 }
@@ -1311,8 +1353,8 @@ async fn run(args: Args) -> Result<()> {
                     }
                 }
                 Err(e) => {
-                    println!("\n[ERROR] Orchestration Failed (via Model Fusion)!\n");
-                    println!("Error: {}", e);
+                    eprintln!("\n[ERROR] Orchestration Failed (via Model Fusion)!\n");
+                    eprintln!("Error: {}", e);
                     if run_bandit_learning {
                         let db_dir = db_path.parent().unwrap_or_else(|| std::path::Path::new("db"));
                         let mut state = load_bandit_state(db_dir);
@@ -1343,7 +1385,7 @@ async fn run(args: Args) -> Result<()> {
             .await;
 
         if res.success {
-            println!("\n[SUCCESS] Orchestration Successful!\n");
+            eprintln!("\n[SUCCESS] Orchestration Successful!\n");
             println!("{}", res.content);
             if let Some(ref report_path) = args.report {
                 save_report(&res.content, report_path, &args.reporttype, &final_prompt);
@@ -1358,9 +1400,9 @@ async fn run(args: Args) -> Result<()> {
                 save_bandit_state(db_dir, &state);
             }
         } else {
-            println!("\n[ERROR] Orchestration Failed!\n");
+            eprintln!("\n[ERROR] Orchestration Failed!\n");
             if let Some(err) = res.error_message {
-                println!("Error: {}", err);
+                eprintln!("Error: {}", err);
             }
             if run_bandit_learning {
                 let db_dir = db_path.parent().unwrap_or_else(|| std::path::Path::new("db"));
@@ -1655,6 +1697,81 @@ struct RouterDecision {
 }
 
 async fn query_local_router(system_prompt: &str, user_prompt: &str) -> Option<String> {
+    // 1. First attempt: Query local Ollama if running
+    let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
+        .unwrap_or_else(|_| "http://localhost:11434".to_string());
+    
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .connect_timeout(std::time::Duration::from_secs(2))
+        .build()
+        .ok();
+
+    if let Some(ref client) = client {
+        // Try models in order of preference
+        let candidates = vec![
+            "qwen2.5:1.5b",
+            "qwen2.5:7b-instruct",
+            "qwen2.5:3b",
+            "llama3.2:3b",
+            "llama3.2:1b",
+            "deepseek-r1:1.5b",
+            "phi4-mini:latest"
+        ];
+        
+        // Find which model is actually cached in Ollama first (to avoid downloading/triggering large model pulls)
+        let list_url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
+        let mut available_models = std::collections::HashSet::new();
+        if let Ok(res) = client.get(&list_url).send().await {
+            if res.status().is_success() {
+                if let Ok(parsed) = res.json::<serde_json::Value>().await {
+                    if let Some(models_arr) = parsed["models"].as_array() {
+                        for m in models_arr {
+                            if let Some(name) = m["name"].as_str() {
+                                available_models.insert(name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Find the first matching candidate that is available in Ollama
+        let model_to_use = candidates.iter().find(|&&c| {
+            available_models.contains(c) || available_models.contains(&format!("{}:latest", c))
+        });
+
+        if let Some(&model_name) = model_to_use {
+            eprintln!("[LOCAL ROUTER] Found cached Ollama model: {}. Querying via Ollama...", model_name);
+            let gen_url = format!("{}/api/generate", endpoint.trim_end_matches('/'));
+            let prompt_format = format!("<|im_start|>system\n{}<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n", system_prompt, user_prompt);
+            let body = serde_json::json!({
+                "model": model_name,
+                "prompt": prompt_format,
+                "stream": false,
+                "options": {
+                    "temperature": 0.1
+                }
+            });
+            if let Ok(res) = client.post(&gen_url).json(&body).send().await {
+                if res.status().is_success() {
+                    if let Ok(data) = res.json::<serde_json::Value>().await {
+                        if let Some(text) = data["response"].as_str() {
+                            if let Some(start) = text.find('{') {
+                                if let Some(end) = text.rfind('}') {
+                                    let json_str = text[start..=end].to_string();
+                                    eprintln!("🦙 [LOCAL ROUTER] Ollama Decision: {}", json_str);
+                                    return Some(json_str);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Second attempt/Fallback: Use local python script (cpu/transformers)
     let script_path = "src/scripts/run_model_transformers.py";
     if !std::path::Path::new(script_path).exists() {
         eprintln!("⚠️ [LOCAL ROUTER] Script not found at: {}", script_path);
@@ -1679,7 +1796,7 @@ async fn query_local_router(system_prompt: &str, user_prompt: &str) -> Option<St
         if let Some(start) = text.find('{') {
             if let Some(end) = text.rfind('}') {
                 let json_str = text[start..=end].to_string();
-                println!("🦙 [LOCAL ROUTER] Decision: {}", json_str);
+                eprintln!("🦙 [LOCAL ROUTER] Python Decision: {}", json_str);
                 return Some(json_str);
             }
         }
@@ -1691,6 +1808,7 @@ async fn query_local_router(system_prompt: &str, user_prompt: &str) -> Option<St
     None
 }
 
+#[allow(dead_code)]
 async fn query_hf_router(system_prompt: &str, user_prompt: &str) -> Option<String> {
     let token = std::env::var("HF_TOKEN")
         .or_else(|_| std::env::var("HUGGINGFACE_API_KEY"))
@@ -1786,8 +1904,8 @@ Available options:
 Respond ONLY with a valid JSON object matching this schema:
 {\"fusion\": bool, \"selection_strategy\": \"multi_objective\"|\"weighted_voting\"|\"cost_efficient\"|\"fastest\", \"use_gpu\": bool, \"use_cpu\": bool, \"detected_task\": string}";
 
-    if let Some(json_str) = query_hf_router(system_prompt, prompt).await {
-        println!("🦙 [ROUTER] Raw decision: {}", json_str);
+    if let Some(json_str) = query_local_router(system_prompt, prompt).await {
+        eprintln!("🦙 [ROUTER] Raw decision: {}", json_str);
         if let Ok(decision) = serde_json::from_str::<RouterDecision>(&json_str) {
             return Some(decision);
         }
@@ -1805,7 +1923,7 @@ async fn llm_classify_complexity(prompt: &str) -> String {
 Respond ONLY with a valid JSON object matching this schema:
 {\"complexity\": \"simple_general\"|\"simple_coding\"|\"complex_general\"|\"complex_coding\"}";
 
-    if let Some(json_str) = query_hf_router(system_prompt, prompt).await {
+    if let Some(json_str) = query_local_router(system_prompt, prompt).await {
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json_str) {
             if let Some(complexity) = parsed["complexity"].as_str() {
                 return complexity.to_string();
@@ -1904,6 +2022,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     let mut openvino = request_json["openvino"].as_bool().unwrap_or(false);
                     let mut gpu = request_json["gpu"].as_bool().unwrap_or(false);
                     let mut cpu = request_json["cpu"].as_bool().unwrap_or(false);
+                    let mut ollama = request_json["ollama"].as_bool().unwrap_or(false);
                     let mut fusion = request_json["fusion"].as_bool().unwrap_or(false);
 
                     if slash_enabled {
@@ -1918,25 +2037,21 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     // Acquire an inference slot. If all slots are busy the request
                     // queues here — no timeout, no drop — until a slot is released.
                     let sem = inference_sem();
-                    let _permit = match sem.acquire().await {
+                    // Adaptive semaphore: acquire fast pool first (high concurrency)
+                    // Heavy pipeline will acquire its own semaphore if needed
+                    let fast_sem = fast_inference_sem();
+                    let _fast_permit = match fast_sem.acquire().await {
                         Ok(p) => p,
                         Err(_) => {
-                            let resp = "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"error\":\"Inference pool closed\"}";
+                            let resp = "HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"error\":\"Fast inference pool closed\"}";
                             let _ = socket.write_all(resp.as_bytes()).await;
                             return;
                         }
                     };
-                    eprintln!("[SEMAPHORE] Acquired inference slot.");
+                    eprintln!("[SEMAPHORE] Acquired fast inference slot.");
 
-                    // Acquire cross-process lock to prevent system freeze from parallel cli.exe calls
-                    let _file_lock = match acquire_cross_process_lock() {
-                        Ok(l) => l,
-                        Err(e) => {
-                            let resp = format!("HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{{\"error\":\"{}\"}}", e);
-                            let _ = socket.write_all(resp.as_bytes()).await;
-                            return;
-                        }
-                    };
+                    // Cross-process lock is acquired ONLY for heavy pipeline (inside complexity gate)
+                    // Fast path skips it — Ollama handles its own concurrency
 
                     // Split socket to monitor client disconnection in parallel with execution
                     let (mut read_half, mut write_half) = tokio::io::split(socket);
@@ -1951,8 +2066,263 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     let _ = write_half.write_all(headers.as_bytes()).await;
 
                     let mut full_process = Box::pin(async {
+                        // FAST PATH: When ollama=true AND the prompt is simple/short,
+                        // skip orchestration and call Ollama directly for ~2-3s response.
+                        // Complex/coding tasks bypass this and use the full pipeline.
+                        
+                        // Extract actual user message to check complexity
+                        let user_msg_for_check = if prompt.to_lowercase().starts_with("system:") {
+                            let lower = prompt.to_lowercase();
+                            if let Some(pos) = lower.find("\nuser:").or_else(|| lower.find("\nhuman:")) {
+                                prompt.get(pos..).and_then(|s| s.find(':').map(|p| &prompt[pos+p+1..])).unwrap_or(&prompt).trim().to_string()
+                            } else if let Some(pos) = prompt.find("\n\n") {
+                                prompt.get(pos+2..).unwrap_or(&prompt).trim().to_string()
+                            } else { prompt.clone() }
+                        } else { prompt.clone() };
+                        
+                        let is_complex = user_msg_for_check.len() > 300
+                            || {
+                                let lower = user_msg_for_check.to_lowercase();
+                                lower.contains("implement") || lower.contains("refactor") 
+                                || lower.contains("debug") || lower.contains("write a function")
+                                || lower.contains("create a") || lower.contains("build a")
+                                || lower.contains("fix this") || lower.contains("code review")
+                                || lower.contains("analyze this code") || lower.contains("```")
+                                || lower.contains("class ") || lower.contains("def ")
+                                || lower.contains("function") || lower.contains("struct ")
+                            };
+                        
+                        if ollama && !is_complex {
+                            // Simple question → fast path with 1.5b
+                            let ollama_model = if budget <= 0.5 {
+                                "qwen2.5:0.5b"
+                            } else {
+                                "qwen2.5:1.5b"
+                            };
+
+                            let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
+                                .unwrap_or_else(|_| "http://localhost:11434".to_string());
+                            let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
+
+                            // Parse out system vs user message from IDE's combined format
+                            // Format: "System: <system prompt>\n\nUser: <actual question>"
+                            // or: "System: <system prompt>\n\n<actual question>"  
+                            let (sys_msg, user_msg) = if prompt.starts_with("System:") || prompt.starts_with("system:") {
+                                // Find where user content starts
+                                let lower = prompt.to_lowercase();
+                                if let Some(user_pos) = lower.find("\nuser:").or_else(|| lower.find("\nhuman:")) {
+                                    let sys = prompt[7..user_pos].trim().to_string();
+                                    let usr_start = prompt[user_pos..].find(':').map(|p| user_pos + p + 1).unwrap_or(user_pos);
+                                    let usr = prompt[usr_start..].trim().to_string();
+                                    (Some(sys), usr)
+                                } else if let Some(double_nl) = prompt.find("\n\n") {
+                                    // System prompt ends at double newline, rest is user content
+                                    let sys = prompt[7..double_nl].trim().to_string();
+                                    let usr = prompt[double_nl+2..].trim().to_string();
+                                    if usr.is_empty() {
+                                        (None, prompt.clone())
+                                    } else {
+                                        (Some(sys), usr)
+                                    }
+                                } else {
+                                    (None, prompt.clone())
+                                }
+                            } else {
+                                (None, prompt.clone())
+                            };
+
+                            // Use shorter num_predict for simple questions
+                            let user_len = user_msg.len();
+                            let num_predict: u32 = if user_len < 100 { 256 } else if user_len < 500 { 512 } else { 1024 };
+
+                            // Dynamic system prompt: one prompt per tool/domain category
+                            let lower_user = user_msg.to_lowercase();
+                            let fast_sys = if lower_user.contains("code") || lower_user.contains("function") 
+                                || lower_user.contains("bug") || lower_user.contains("error")
+                                || lower_user.contains("compile") || lower_user.contains("syntax")
+                                || lower_user.contains("python") || lower_user.contains("rust")
+                                || lower_user.contains("javascript") || lower_user.contains("java ")
+                                || lower_user.contains("c++") || lower_user.contains("html")
+                                || lower_user.contains("css") || lower_user.contains("sql")
+                                || lower_user.contains("api") || lower_user.contains("git ")
+                                || lower_user.contains("regex") || lower_user.contains("algorithm")
+                                || lower_user.contains("typescript") || lower_user.contains("golang")
+                                || lower_user.contains("swift") || lower_user.contains("kotlin")
+                                || lower_user.contains("docker") || lower_user.contains("class ") {
+                                "You are an expert programming assistant. Give clear, correct code examples with explanations. Use markdown code blocks."
+                            // Math & Statistics
+                            } else if lower_user.contains("math") || lower_user.contains("calcul")
+                                || lower_user.contains("equation") || lower_user.contains("formula")
+                                || lower_user.contains("integral") || lower_user.contains("derivative")
+                                || lower_user.contains("probability") || lower_user.contains("statistic")
+                                || lower_user.contains("algebra") || lower_user.contains("geometry")
+                                || lower_user.contains("theorem") || lower_user.contains("proof") {
+                                "You are a math expert. Show step-by-step solutions. Use clear notation and explain each step."
+                            // Data Science & ML
+                            } else if lower_user.contains("dataset") || lower_user.contains("data science")
+                                || lower_user.contains("machine learning") || lower_user.contains("neural net")
+                                || lower_user.contains("model training") || lower_user.contains("pandas")
+                                || lower_user.contains("numpy") || lower_user.contains("tensorflow")
+                                || lower_user.contains("pytorch") || lower_user.contains("sklearn")
+                                || lower_user.contains("regression") || lower_user.contains("classification")
+                                || lower_user.contains("clustering") || lower_user.contains("deep learning") {
+                                "You are a data science and ML expert. Provide practical advice, code snippets, and best practices for data analysis and model building."
+                            // Security & PE Analysis
+                            } else if lower_user.contains("security") || lower_user.contains("hack")
+                                || lower_user.contains("vulnerab") || lower_user.contains("malware")
+                                || lower_user.contains("exploit") || lower_user.contains("cve")
+                                || lower_user.contains("binary") || lower_user.contains("pe header")
+                                || lower_user.contains("reverse engineer") || lower_user.contains("disassembl")
+                                || lower_user.contains("forensic") || lower_user.contains("incident response")
+                                || lower_user.contains("pentest") || lower_user.contains("threat") {
+                                "You are a cybersecurity and binary analysis expert. Provide accurate, responsible security analysis. Cover MITRE ATT&CK when relevant."
+                            // NLP & Text Processing
+                            } else if lower_user.contains("nlp") || lower_user.contains("natural language")
+                                || lower_user.contains("sentiment") || lower_user.contains("tokeniz")
+                                || lower_user.contains("embedding") || lower_user.contains("text classification")
+                                || lower_user.contains("named entity") || lower_user.contains("summariz")
+                                || lower_user.contains("translate") || lower_user.contains("translat") {
+                                "You are an NLP and language processing expert. Explain techniques, provide code examples, and suggest appropriate models and approaches."
+                            // DevOps & Infrastructure
+                            } else if lower_user.contains("deploy") || lower_user.contains("kubernetes")
+                                || lower_user.contains("ci/cd") || lower_user.contains("pipeline")
+                                || lower_user.contains("terraform") || lower_user.contains("ansible")
+                                || lower_user.contains("aws") || lower_user.contains("azure")
+                                || lower_user.contains("gcp") || lower_user.contains("nginx")
+                                || lower_user.contains("linux") || lower_user.contains("server config") {
+                                "You are a DevOps and cloud infrastructure expert. Give practical, production-ready configurations and deployment advice."
+                            // Databases
+                            } else if lower_user.contains("database") || lower_user.contains("mysql")
+                                || lower_user.contains("postgres") || lower_user.contains("mongodb")
+                                || lower_user.contains("redis") || lower_user.contains("query")
+                                || lower_user.contains("schema") || lower_user.contains("index")
+                                || lower_user.contains("migration") || lower_user.contains("orm") {
+                                "You are a database expert. Provide optimized queries, schema designs, and performance tuning advice."
+                            // Networking
+                            } else if lower_user.contains("network") || lower_user.contains("tcp")
+                                || lower_user.contains("http") || lower_user.contains("dns")
+                                || lower_user.contains("firewall") || lower_user.contains("vpn")
+                                || lower_user.contains("ssl") || lower_user.contains("tls")
+                                || lower_user.contains("protocol") || lower_user.contains("socket") {
+                                "You are a networking expert. Explain protocols, troubleshoot connectivity, and provide clear technical guidance."
+                            // Writing & Creative
+                            } else if lower_user.contains("write") || lower_user.contains("essay")
+                                || lower_user.contains("poem") || lower_user.contains("story")
+                                || lower_user.contains("letter") || lower_user.contains("email")
+                                || lower_user.contains("blog") || lower_user.contains("article")
+                                || lower_user.contains("resume") || lower_user.contains("cover letter") {
+                                "You are a skilled writer and editor. Write clearly, creatively, and with proper structure. Match the requested tone and format."
+                            // Science
+                            } else if lower_user.contains("physics") || lower_user.contains("chemistry")
+                                || lower_user.contains("biology") || lower_user.contains("quantum")
+                                || lower_user.contains("molecule") || lower_user.contains("atom")
+                                || lower_user.contains("evolution") || lower_user.contains("cell")
+                                || lower_user.contains("dna") || lower_user.contains("experiment") {
+                                "You are a science expert. Explain scientific concepts accurately with real-world examples and current research."
+                            // Finance & Business
+                            } else if lower_user.contains("finance") || lower_user.contains("invest")
+                                || lower_user.contains("stock") || lower_user.contains("market")
+                                || lower_user.contains("budget") || lower_user.contains("accounting")
+                                || lower_user.contains("tax") || lower_user.contains("crypto")
+                                || lower_user.contains("revenue") || lower_user.contains("profit") {
+                                "You are a finance and business expert. Provide clear financial analysis, investment concepts, and business strategy advice."
+                            // Education & Explanation
+                            } else if lower_user.contains("explain") || lower_user.contains("how does")
+                                || lower_user.contains("what is") || lower_user.contains("why does")
+                                || lower_user.contains("difference between") || lower_user.contains("teach")
+                                || lower_user.contains("learn") || lower_user.contains("tutorial") {
+                                "You are a knowledgeable tutor. Explain concepts clearly and concisely with practical examples."
+                            // History & Geography
+                            } else if lower_user.contains("history") || lower_user.contains("capital")
+                                || lower_user.contains("country") || lower_user.contains("war")
+                                || lower_user.contains("president") || lower_user.contains("king")
+                                || lower_user.contains("empire") || lower_user.contains("civilization")
+                                || lower_user.contains("geography") || lower_user.contains("population") {
+                                "You are a history and geography expert. Provide accurate facts, dates, and context."
+                            // Health & Medicine (general info only)
+                            } else if lower_user.contains("health") || lower_user.contains("medical")
+                                || lower_user.contains("symptom") || lower_user.contains("disease")
+                                || lower_user.contains("vitamin") || lower_user.contains("exercise")
+                                || lower_user.contains("nutrition") || lower_user.contains("diet") {
+                                "You are a health information assistant. Provide general health information. Always recommend consulting a medical professional for specific advice."
+                            } else {
+                                "You are a helpful, knowledgeable AI assistant. Answer concisely and accurately."
+                            };
+                            
+                            eprintln!("[SERVER] 🎭 Dynamic prompt: {:?}", &fast_sys[..fast_sys.len().min(60)]);
+                            let messages = serde_json::json!([
+                                {"role": "system", "content": fast_sys},
+                                {"role": "user", "content": &user_msg}
+                            ]);
+
+                            // Dynamic temperature: low for facts, higher for creative
+                            let temperature: f32 = if fast_sys.contains("history") || fast_sys.contains("geography")
+                                || fast_sys.contains("science") || fast_sys.contains("math")
+                                || fast_sys.contains("health") || fast_sys.contains("finance")
+                                || fast_sys.contains("tutor") || fast_sys.contains("helpful") {
+                                0.3  // Factual accuracy
+                            } else if fast_sys.contains("writer") || fast_sys.contains("creative") {
+                                0.8  // Creative freedom
+                            } else {
+                                0.5  // Balanced
+                            };
+
+                            let body = serde_json::json!({
+                                "model": ollama_model,
+                                "messages": messages,
+                                "stream": false,
+                                "options": {
+                                    "temperature": temperature,
+                                    "num_predict": num_predict
+                                }
+                            });
+
+                            eprintln!("[SERVER] ⚡ Ollama fast path: model={}, user_len={}, sys_len={}, num_predict={}", 
+                                ollama_model, user_msg.len(), 
+                                sys_msg.as_ref().map(|s| s.len()).unwrap_or(0), num_predict);
+
+                            let client = reqwest::Client::builder()
+                                .connect_timeout(std::time::Duration::from_secs(3))
+                                .timeout(std::time::Duration::from_secs(120))
+                                .build()
+                                .unwrap();
+
+                            match client.post(&url).json(&body).send().await {
+                                Ok(res) if res.status().is_success() => {
+                                    let data: serde_json::Value = res.json().await.unwrap_or_default();
+                                    let content = data["message"]["content"]
+                                        .as_str()
+                                        .unwrap_or("No response from model.")
+                                        .to_string();
+                                    eprintln!("[SERVER] ⚡ Ollama fast path complete: {} chars", content.len());
+                                    return content;
+                                }
+                                Ok(res) => {
+                                    let err = res.text().await.unwrap_or_default();
+                                    eprintln!("[SERVER] ⚠️ Ollama fast path HTTP error: {}. Falling back to orchestrator.", err);
+                                }
+                                Err(e) => {
+                                    eprintln!("[SERVER] ⚠️ Ollama fast path failed: {}. Falling back to orchestrator.", e);
+                                }
+                            }
+                            // If fast path fails, fall through to full orchestrator below
+                            std::env::set_var("MODELFUSION_USE_OLLAMA", "true");
+                            fusion = false;
+                            gpu = true;
+                        } else if is_complex {
+                            // Complex/coding task → skip fast path, use full pipeline
+                            // Acquire heavy semaphore to rate-limit resource-intensive pipeline
+                            let heavy_sem = inference_sem();
+                            let _heavy_permit = heavy_sem.acquire().await;
+                            // Acquire cross-process lock (blocking) via spawn_blocking to not freeze tokio
+                            let _file_lock = tokio::task::spawn_blocking(acquire_cross_process_lock)
+                                .await
+                                .ok();
+                            eprintln!("[SERVER] 🧠 Complex prompt detected (len={}). Acquired heavy slot + file lock. Full pipeline.", user_msg_for_check.len());
+                        }
+
                         // Query the small model router for dynamic orchestration decision
-                        if !openvino && !gpu && !cpu {
+                        if !openvino && !gpu && !cpu && !ollama {
                             if let Some(decision) = llm_route(&prompt).await {
                                 eprintln!("🎯 [SERVER] LLM Router decision: fusion={}, strategy={}, use_gpu={}, use_cpu={}, task={}",
                                     decision.fusion, decision.selection_strategy, decision.use_gpu, decision.use_cpu, decision.detected_task);
@@ -1968,13 +2338,13 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             eprintln!("🎯 [SERVER] Explicit backend requested, skipping LLM router.");
                         }
 
-                        eprintln!("[SERVER] Options: fusion={}, strategy={}, budget={}, gpu={}, cpu={}, openvino={}", fusion, strategy, budget, gpu, cpu, openvino);
+                        eprintln!("[SERVER] Options: fusion={}, strategy={}, budget={}, gpu={}, cpu={}, openvino={}, ollama={}", fusion, strategy, budget, gpu, cpu, openvino, ollama);
 
 
-                        if gpu {
+                        if ollama || (gpu && !openvino) {
                             std::env::set_var("MODELFUSION_USE_OLLAMA", "true");
                             std::env::set_var("MODELFUSION_FORCE_GPU", "true");
-                            fusion = false; // Disable fusion if explicit backend is requested
+                            fusion = false;
                         } else {
                             std::env::remove_var("MODELFUSION_USE_OLLAMA");
                             std::env::remove_var("MODELFUSION_FORCE_GPU");
@@ -1995,15 +2365,20 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             std::env::remove_var("MODELFUSION_FORCE_CPU");
                         }
 
+                        // Strip IDE's restrictive system prompt before orchestrator
+                        // The orchestrator/models have their own prompting — the IDE's
+                        // "programming assistant" system prompt causes refusals for non-coding Qs
+                        let clean_prompt = user_msg_for_check.clone();
+
                         // Classify prompt to see if fusion is actually needed
-                        let prompt_needs_fusion = fusion && modelfusion_core::fusion_engine::classify_prompt(&prompt);
+                        let prompt_needs_fusion = fusion && modelfusion_core::fusion_engine::classify_prompt(&clean_prompt);
                         if fusion && !prompt_needs_fusion {
                             eprintln!("[SERVER] Prompt classified as simple. Bypassing fusion engine to run single model orchestrator.");
                         }
 
                         if prompt_needs_fusion {
                             match modelfusion_core::fusion_engine::run_fusion(
-                                &prompt,
+                                &clean_prompt,
                                 None,
                                 Some(db_path_val),
                                 None,
@@ -2020,7 +2395,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             let options = std::collections::HashMap::new();
                             let res = orchestrator
                                 .process_task(
-                                    &prompt,
+                                    &clean_prompt,
                                     None,
                                     None,
                                     false,
@@ -2477,194 +2852,330 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                     "tools": [
                         {
                             "name": "execute",
-                            "description": "Execute the ModelFusion CLI with any combination of flags. Supported flags:\n\
-                                            - INPUT: --file <path> (analyze file), --folder <path> (review directory), --prompt <text> (prompt/instruction)\n\
-                                            - BACKENDS: --fusion (run panel of models), --fusion-models <N> (panel size), --fusion-mode <multi-model|multi-sample>, --ollama (use Ollama), --openvino (use OpenVINO optimized CPU/GPU), --vllm (use vLLM)\n\
-                                            - HARDWARE: --gpu (force GPU/CUDA), --cpu (force CPU-only)\n\
-                                            - BUDGET: --budget <float> (cost limit, default: 10.0)\n\
-                                            - OPTIMIZATION: --selection-strategy <multi_objective|latency|accuracy|cost|performance>\n\
-                                            - AGENT MODES: --delegation (multi-agent routing), --recursion (deconstruct tasks), --chain-of-thought (enable CoT), --real-options (enable real options analysis)\n\
-                                            - SYSTEM COMMANDS: --stats (show model counts), --tasks (list modalities), --update (pull latest HF registry), --clearcache (clear weights cache), --pe-header-extraction (Windows PE metadata/malware scan)\n\
-                                            - WORKFLOWS: --dataanalyst (run CSV/Excel analytics), --datascience (run comprehensive data science flow)",
+                            "description": "Execute the ModelFusion CLI with ANY combination of flags. This is the universal tool — use it when no specialized tool fits. Supported flags: --file <path>, --folder <path>, --prompt <text>, --task <task_name>, --budget <float>, --chain-of-thought, --gpu, --cpu, --ollama, --openvino, --onnx, --vllm, --model <model_id>, --fusion, --fusion-models <N>, --fusion-mode <multi-model|multi-sample>, --selection-strategy <strategy>, --delegation, --recursion, --context-auto, --context <text>, --verbose, --debug, --language <lang>, --full, --score, --judge, --plan, --enable-innovations, --workflow-optimization, --semantic-analysis, --temporal-tracking, --predictive-mode, --innovation-level <N>, --real-options, --prompt-quality-scoring, --enable-ml, --enable-ml-selection, --ml-learning, --ml-ensemble-method <method>, --ml-confidence-threshold <float>, --ml-fallback <true|false>, --enable-slash-commands",
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {
                                     "args": {
                                         "type": "array",
                                         "items": { "type": "string" },
-                                        "description": "Array of command-line arguments (e.g., ['--file', 'main.rs', '--prompt', 'analyze code', '--openvino'])"
+                                        "description": "Array of CLI arguments (e.g., ['--prompt', 'explain recursion', '--ollama', '--gpu'])"
                                     }
                                 },
                                 "required": ["args"]
                             }
                         },
                         {
-                            "name": "orchestrate",
-                            "description": "Run the ModelFusion orchestration system on a text prompt to select the best local or remote models and perform the task.",
+                            "name": "quick_answer",
+                            "description": "Fast direct answer for general knowledge questions (non-coding). Calls Ollama directly, bypassing orchestration for ~2-3 second responses. Use for: geography, history, math, science, trivia, definitions, translations, general knowledge.",
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {
-                                    "prompt": { "type": "string", "description": "The main prompt or task description" },
-                                    "budget": { "type": "number", "description": "Budget limit for LLM execution (default: 10.0)" },
-                                    "selection_strategy": { "type": "string", "description": "Model selection strategy (default: 'multi_objective')" },
-                                    "fusion_mode": { "type": "string", "description": "Fusion mode (default: 'multi-model')" },
-                                    "task_override": { "type": "string", "description": "Force a specific task type" },
-                                    "gpu": { "type": "boolean", "description": "Force GPU usage" },
-                                    "cpu": { "type": "boolean", "description": "Force CPU usage" },
-                                    "fusion": { "type": "boolean", "description": "Enable Model Fusion panel execution" }
+                                    "question": { "type": "string", "description": "The question to answer" },
+                                    "model": { "type": "string", "description": "Ollama model (default: qwen2.5:3b). Options: qwen2.5:0.5b, qwen2.5:1.5b, qwen2.5:3b, qwen2.5:7b, llama3.2:3b" }
+                                },
+                                "required": ["question"]
+                            }
+                        },
+                        {
+                            "name": "orchestrate",
+                            "description": "Run the full ModelFusion orchestration pipeline: task detection → model selection → execution. Best for coding questions, complex analysis, and tasks that benefit from intelligent model routing.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "prompt": { "type": "string", "description": "The prompt or task description" },
+                                    "budget": { "type": "number", "description": "Model size limit in billions (1=tiny, 3=balanced, 7=quality)" },
+                                    "selection_strategy": { "type": "string", "description": "Strategy: multi_objective, latency, accuracy, cost, performance" },
+                                    "task_override": { "type": "string", "description": "Force task type (text-generation, code-analysis, summarization, etc.)" },
+                                    "gpu": { "type": "boolean" },
+                                    "cpu": { "type": "boolean" },
+                                    "fusion": { "type": "boolean", "description": "Use panel of models for higher quality" },
+                                    "chain_of_thought": { "type": "boolean", "description": "Enable step-by-step reasoning" },
+                                    "delegation": { "type": "boolean", "description": "Multi-agent task routing" },
+                                    "recursion": { "type": "boolean", "description": "Recursive task decomposition" }
                                 },
                                 "required": ["prompt"]
                             }
                         },
                         {
                             "name": "analyze_file",
-                            "description": "Analyze or process a specific file path using ModelFusion.",
+                            "description": "Analyze, review, or process a specific file using ModelFusion. Supports code review, vulnerability scanning, summarization, and custom analysis.",
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {
-                                    "file": { "type": "string", "description": "Absolute path to the file to analyze" },
-                                    "prompt": { "type": "string", "description": "Instructions or query about the file" },
-                                    "budget": { "type": "number", "description": "Budget limit (default: 10.0)" },
-                                    "gpu": { "type": "boolean", "description": "Force GPU usage" },
-                                    "cpu": { "type": "boolean", "description": "Force CPU usage" }
+                                    "file": { "type": "string", "description": "Absolute path to file" },
+                                    "prompt": { "type": "string", "description": "Analysis instructions" },
+                                    "budget": { "type": "number" },
+                                    "gpu": { "type": "boolean" },
+                                    "full": { "type": "boolean", "description": "Enable comprehensive analysis" }
                                 },
                                 "required": ["file", "prompt"]
                             }
                         },
                         {
                             "name": "analyze_folder",
-                            "description": "Analyze or review a directory (folder) path using ModelFusion.",
+                            "description": "Analyze or review an entire directory/project using ModelFusion. Supports code review, architecture analysis, and project-wide scanning.",
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {
-                                    "folder": { "type": "string", "description": "Absolute path to the folder to analyze" },
-                                    "prompt": { "type": "string", "description": "Instructions or query about the folder" },
-                                    "budget": { "type": "number", "description": "Budget limit (default: 10.0)" },
-                                    "gpu": { "type": "boolean", "description": "Force GPU usage" },
-                                    "cpu": { "type": "boolean", "description": "Force CPU usage" }
+                                    "folder": { "type": "string", "description": "Absolute path to folder" },
+                                    "prompt": { "type": "string", "description": "Analysis instructions" },
+                                    "budget": { "type": "number" },
+                                    "gpu": { "type": "boolean" },
+                                    "full": { "type": "boolean" }
                                 },
                                 "required": ["folder", "prompt"]
                             }
                         },
                         {
-                            "name": "pe_header_extraction",
-                            "description": "Extract PE header information and perform PE analysis on a Windows executable.",
+                            "name": "nlp_task",
+                            "description": "Run specialized NLP tasks: sentiment-analysis, text-classification, summarization, translation, question-answering, ner (named entity recognition), emotion-detection, sarcasm-detection, paraphrase-generation, grammar-correction, language-detection, reading-level-assessment, anonymization, coreference-resolution, fill-mask, feature-extraction, sentence-similarity, zero-shot-classification, stance-detection, bias-detection.",
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {
-                                    "file": { "type": "string", "description": "Absolute path to the Windows PE executable file" },
-                                    "prompt": { "type": "string", "description": "Analysis prompt or instructions (default: 'Perform PE analysis')" }
+                                    "task": { "type": "string", "description": "NLP task name (e.g., 'sentiment-analysis', 'translation', 'summarization', 'ner', 'emotion-detection')" },
+                                    "text": { "type": "string", "description": "Input text to process" },
+                                    "language": { "type": "string", "description": "Target language for translation (default: en)" },
+                                    "gpu": { "type": "boolean" }
+                                },
+                                "required": ["task", "text"]
+                            }
+                        },
+                        {
+                            "name": "security_analysis",
+                            "description": "Run security-focused NLP analysis: spam-detection, malware-text-detection, phishing-detection, pii-detection (personally identifiable information), hate-speech-detection, cyberbullying-detection, fake-news-detection, hallucination-detection, generation-groundedness, code-vulnerability-detection.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "task": { "type": "string", "description": "Security task (e.g., 'spam-detection', 'pii-detection', 'phishing-detection', 'code-vulnerability-detection')" },
+                                    "text": { "type": "string", "description": "Text or code to analyze" },
+                                    "file": { "type": "string", "description": "Optional file path to scan" },
+                                    "gpu": { "type": "boolean" }
+                                },
+                                "required": ["task", "text"]
+                            }
+                        },
+                        {
+                            "name": "code_task",
+                            "description": "Run code-specific AI tasks: code-vulnerability-detection, code-summary-generation, code-clone-detection, text-generation (for code), causal-language-modeling. Also supports --plan for AI-powered planning and --judge for LLM-as-a-Judge evaluation.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "task": { "type": "string", "description": "Code task (e.g., 'code-vulnerability-detection', 'code-summary-generation', 'code-clone-detection')" },
+                                    "text": { "type": "string", "description": "Code or description" },
+                                    "file": { "type": "string", "description": "Optional source file path" },
+                                    "plan": { "type": "boolean", "description": "Enable AI planning mode" },
+                                    "judge": { "type": "boolean", "description": "Enable LLM-as-a-Judge evaluation" },
+                                    "score": { "type": "boolean", "description": "Enable response scoring" },
+                                    "gpu": { "type": "boolean" }
+                                },
+                                "required": ["task", "text"]
+                            }
+                        },
+                        {
+                            "name": "domain_task",
+                            "description": "Run domain-specific NLP: legal-judgment-classification, contract-clause-classification, case-outcome-prediction, financial-ner, financial-sentiment-analysis, legal-ner, biomedical-ner, chemical-reaction-ner, scientific-abstract-summarization, citation-intent-classification, table-question-answering, feature-ranking.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "task": { "type": "string", "description": "Domain task (e.g., 'financial-sentiment-analysis', 'legal-ner', 'biomedical-ner', 'contract-clause-classification')" },
+                                    "text": { "type": "string", "description": "Text to analyze" },
+                                    "gpu": { "type": "boolean" }
+                                },
+                                "required": ["task", "text"]
+                            }
+                        },
+                        {
+                            "name": "multimodal_task",
+                            "description": "Run image, audio, and video AI tasks: image-classification, object-detection, image-segmentation, visual-question-answering, document-question-answering, zero-shot-image-classification, depth-estimation, image-feature-extraction, image-super-resolution, text-to-image, automatic-speech-recognition, audio-classification, voice-activity-detection, emotion-recognition, video-classification, text-to-speech.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "task": { "type": "string", "description": "Multimodal task (e.g., 'image-classification', 'object-detection', 'automatic-speech-recognition')" },
+                                    "file": { "type": "string", "description": "Path to image/audio/video file" },
+                                    "prompt": { "type": "string", "description": "Question or instruction for the task" },
+                                    "gpu": { "type": "boolean" }
+                                },
+                                "required": ["task"]
+                            }
+                        },
+                        {
+                            "name": "semantic_search",
+                            "description": "Semantic search with HyDE (Hypothetical Document Embeddings). Add documents to the index, then search with natural language queries. Supports interactive question refinement and multiple HyDE variants.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "action": { "type": "string", "description": "'search' to query, 'add' to index documents, 'demo' to run demo" },
+                                    "query": { "type": "string", "description": "Search query (for 'search' action)" },
+                                    "documents_path": { "type": "string", "description": "Path to documents to add (for 'add' action)" },
+                                    "top_k": { "type": "integer", "description": "Number of results (default: 5)" },
+                                    "use_hyde": { "type": "boolean", "description": "Use interactive HyDE refinement" },
+                                    "hyde_variants": { "type": "boolean", "description": "Generate multiple HyDE variants" }
+                                },
+                                "required": ["action"]
+                            }
+                        },
+                        {
+                            "name": "data_science",
+                            "description": "Run data science workflows on CSV/Excel files. Supports: full data analyst workflow, comprehensive data science flow, Jupyter notebook launch, and PDF report export.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "mode": { "type": "string", "description": "'analyst' for data analyst, 'science' for full data science, 'jupyter' for notebook" },
+                                    "file": { "type": "string", "description": "Path to CSV/Excel file" },
+                                    "prompt": { "type": "string", "description": "Analysis instructions" },
+                                    "export_pdf": { "type": "boolean", "description": "Export results as PDF" }
+                                },
+                                "required": ["mode"]
+                            }
+                        },
+                        {
+                            "name": "pe_header_extraction",
+                            "description": "Extract PE header information and perform security analysis on Windows executables (.exe, .dll).",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "file": { "type": "string", "description": "Absolute path to the PE executable" },
+                                    "prompt": { "type": "string", "description": "Analysis instructions (default: 'Perform PE analysis')" }
                                 },
                                 "required": ["file"]
                             }
                         },
                         {
-                            "name": "get_database_stats",
-                            "description": "Get database status and model categorization statistics.",
+                            "name": "model_management",
+                            "description": "Manage AI models: prepare/convert models to OpenVINO IR format, set weight format (fp16/int8/int4), configure SINQ quantization, save/load ML models.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "action": { "type": "string", "description": "'prepare' to convert model, 'prepare-all' to batch convert, 'sinq' to quantize" },
+                                    "model_id": { "type": "string", "description": "HuggingFace model ID to prepare" },
+                                    "weight_format": { "type": "string", "description": "fp16, int8, or int4 (default: int8)" },
+                                    "sinq_nbits": { "type": "integer", "description": "SINQ bit-width (default: 4)" },
+                                    "sinq_group_size": { "type": "integer", "description": "SINQ group size (default: 64)" }
+                                },
+                                "required": ["action"]
+                            }
+                        },
+                        {
+                            "name": "reporting",
+                            "description": "Generate analysis reports in various formats: PDF, markdown, text, JSON, or Word.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "prompt": { "type": "string", "description": "Report content/analysis instructions" },
+                                    "file": { "type": "string", "description": "File or folder to analyze for the report" },
+                                    "output_path": { "type": "string", "description": "Where to save the report" },
+                                    "format": { "type": "string", "description": "Report format: pdf, md, text, json, word (default: md)" }
+                                },
+                                "required": ["prompt", "output_path"]
+                            }
+                        },
+                        {
+                            "name": "ml_management",
+                            "description": "Manage the ML-based model selection system: retrain models, clean up old training data, view analytics, configure ensemble methods.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "action": { "type": "string", "description": "'retrain' to force retrain, 'cleanup' to clean old data, 'analytics' to view stats" },
+                                    "cleanup_days": { "type": "integer", "description": "For cleanup: delete data older than N days" }
+                                },
+                                "required": ["action"]
+                            }
+                        },
+                        {
+                            "name": "get_system_info",
+                            "description": "Get detected system hardware specifications: CPU, RAM, GPU, disk space.",
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {}
                             }
                         },
                         {
+                            "name": "get_database_stats",
+                            "description": "Get database status and model categorization statistics.",
+                            "inputSchema": { "type": "object", "properties": {} }
+                        },
+                        {
                             "name": "list_tasks",
-                            "description": "List available models and tasks.",
+                            "description": "List available models and tasks. Filter by: audio, image, text, all.",
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {
-                                    "category": { "type": "string", "description": "Category filter (e.g., audio, image, text, all)" }
+                                    "category": { "type": "string", "description": "Category filter (audio, image, text, all)" }
                                 }
                             }
                         },
                         {
                             "name": "update_database",
-                            "description": "Update the HuggingFace models database.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {}
-                            }
+                            "description": "Update the HuggingFace models database with latest models.",
+                            "inputSchema": { "type": "object", "properties": {} }
+                        },
+                        {
+                            "name": "restore_backup",
+                            "description": "Restore config and database from backups.",
+                            "inputSchema": { "type": "object", "properties": {} }
                         },
                         {
                             "name": "clear_cache",
-                            "description": "Clear all cached data.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {}
-                            }
+                            "description": "Clear all cached model data and weights.",
+                            "inputSchema": { "type": "object", "properties": {} }
                         },
                         {
                             "name": "get_decision_stats",
-                            "description": "Get model decision-making statistics.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {}
-                            }
-                        },
-                        {
-                            "name": "report_bandit_feedback",
-                            "description": "Provide user feedback on the quality of the last model execution to update the bandit rewards.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "context": { "type": "integer", "description": "The context ID of the query (0=Simple, 1=Complex/Coding)" },
-                                    "arm": { "type": "integer", "description": "The arm ID selected (0=Single, 1=Fusion)" },
-                                    "reward": { "type": "number", "description": "Feedback score (e.g., 1.0 for thumbs-up/success, 0.0 for thumbs-down/poor quality)" }
-                                },
-                                "required": ["context", "arm", "reward"]
-                            }
+                            "description": "Get model decision-making statistics and selection history.",
+                            "inputSchema": { "type": "object", "properties": {} }
                         },
                         {
                             "name": "get_novel_ai_stats",
-                            "description": "Get novel AI modules list.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {}
-                            }
+                            "description": "Get novel AI component statistics and module list.",
+                            "inputSchema": { "type": "object", "properties": {} }
                         },
                         {
                             "name": "get_performance_stats",
                             "description": "Get model performance metrics and latency statistics.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {}
-                            }
+                            "inputSchema": { "type": "object", "properties": {} }
                         },
                         {
                             "name": "get_cache_stats",
-                            "description": "Get model cache status and database health info.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {}
-                            }
+                            "description": "Get model cache status, sizes, and database health info.",
+                            "inputSchema": { "type": "object", "properties": {} }
                         },
                         {
                             "name": "get_model_recommendations",
-                            "description": "Get recommended models based on overall decision score.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {}
-                            }
+                            "description": "Get personalized model recommendations based on decision scores.",
+                            "inputSchema": { "type": "object", "properties": {} }
                         },
                         {
                             "name": "get_model_ranking",
-                            "description": "Get models ranked for a specific task category (e.g., text-generation).",
+                            "description": "Get models ranked for a specific task category.",
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {
-                                    "category": { "type": "string", "description": "The task category to rank (e.g., text-generation, summarization)" }
+                                    "category": { "type": "string", "description": "Task category (e.g., text-generation, summarization, code-vulnerability-detection)" }
                                 },
                                 "required": ["category"]
                             }
                         },
                         {
                             "name": "get_ml_analytics",
-                            "description": "Get machine learning selection and performance analytics.",
+                            "description": "Get ML model selection and performance analytics.",
+                            "inputSchema": { "type": "object", "properties": {} }
+                        },
+                        {
+                            "name": "report_bandit_feedback",
+                            "description": "Provide feedback on model quality to update bandit rewards for improved future selection.",
                             "inputSchema": {
                                 "type": "object",
-                                "properties": {}
+                                "properties": {
+                                    "context": { "type": "integer", "description": "Context ID (0=Simple, 1=Complex/Coding)" },
+                                    "arm": { "type": "integer", "description": "Arm ID (0=Single, 1=Fusion)" },
+                                    "reward": { "type": "number", "description": "Score: 1.0=good, 0.0=poor" }
+                                },
+                                "required": ["context", "arm", "reward"]
                             }
                         }
                     ]
+
                 }
             });
             let response_str = serde_json::to_string(&response)? + "\n";
@@ -2719,6 +3230,19 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                     if arguments["fusion"].as_bool().unwrap_or(false) {
                         cmd_args.push("--fusion".to_string());
                     }
+                    if arguments["chain_of_thought"].as_bool().unwrap_or(false) {
+                        cmd_args.push("--chain-of-thought".to_string());
+                    }
+                    if arguments["delegation"].as_bool().unwrap_or(false) {
+                        cmd_args.push("--delegation".to_string());
+                    }
+                    if arguments["recursion"].as_bool().unwrap_or(false) {
+                        cmd_args.push("--recursion".to_string());
+                    }
+                    // Always forward ollama flag if set in environment
+                    if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                        cmd_args.push("--ollama".to_string());
+                    }
                     
                     let (result, _context, _arm) = route_and_execute(&prompt, &db_path_resolved, &cmd_args).await;
                     result
@@ -2733,12 +3257,156 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                     if arguments["cpu"].as_bool().unwrap_or(false) {
                         cmd_args.push("--cpu".to_string());
                     }
+                    if arguments["full"].as_bool().unwrap_or(false) {
+                        cmd_args.push("--full".to_string());
+                    }
                     run_cli_subcommand(&cmd_args, &db_path_resolved).await
                 }
                 "analyze_folder" => {
                     let folder = arguments["folder"].as_str().unwrap_or("").to_string();
                     let prompt = arguments["prompt"].as_str().unwrap_or("").to_string();
                     let mut cmd_args = vec!["--folder".to_string(), folder, "--prompt".to_string(), prompt];
+                    if arguments["full"].as_bool().unwrap_or(false) {
+                        cmd_args.push("--full".to_string());
+                    }
+                    run_cli_subcommand(&cmd_args, &db_path_resolved).await
+                }
+                "nlp_task" => {
+                    let task = arguments["task"].as_str().unwrap_or("text-classification").to_string();
+                    let text = arguments["text"].as_str().unwrap_or("").to_string();
+                    let mut cmd_args = vec![
+                        format!("--{}", task),
+                        "--prompt".to_string(), text,
+                    ];
+                    if let Some(lang) = arguments["language"].as_str() {
+                        cmd_args.push("--language".to_string());
+                        cmd_args.push(lang.to_string());
+                    }
+                    if arguments["gpu"].as_bool().unwrap_or(false) {
+                        cmd_args.push("--gpu".to_string());
+                    }
+                    run_cli_subcommand(&cmd_args, &db_path_resolved).await
+                }
+                "security_analysis" => {
+                    let task = arguments["task"].as_str().unwrap_or("spam-detection").to_string();
+                    let text = arguments["text"].as_str().unwrap_or("").to_string();
+                    let mut cmd_args = vec![
+                        format!("--{}", task),
+                        "--prompt".to_string(), text,
+                    ];
+                    if let Some(file) = arguments["file"].as_str() {
+                        cmd_args.push("--file".to_string());
+                        cmd_args.push(file.to_string());
+                    }
+                    if arguments["gpu"].as_bool().unwrap_or(false) {
+                        cmd_args.push("--gpu".to_string());
+                    }
+                    run_cli_subcommand(&cmd_args, &db_path_resolved).await
+                }
+                "code_task" => {
+                    let task = arguments["task"].as_str().unwrap_or("code-summary-generation").to_string();
+                    let text = arguments["text"].as_str().unwrap_or("").to_string();
+                    let mut cmd_args = vec![
+                        format!("--{}", task),
+                        "--prompt".to_string(), text,
+                    ];
+                    if let Some(file) = arguments["file"].as_str() {
+                        cmd_args.push("--file".to_string());
+                        cmd_args.push(file.to_string());
+                    }
+                    if arguments["plan"].as_bool().unwrap_or(false) {
+                        cmd_args.push("--plan".to_string());
+                    }
+                    if arguments["judge"].as_bool().unwrap_or(false) {
+                        cmd_args.push("--judge".to_string());
+                    }
+                    if arguments["score"].as_bool().unwrap_or(false) {
+                        cmd_args.push("--score".to_string());
+                    }
+                    if arguments["gpu"].as_bool().unwrap_or(false) {
+                        cmd_args.push("--gpu".to_string());
+                    }
+                    run_cli_subcommand(&cmd_args, &db_path_resolved).await
+                }
+                "domain_task" => {
+                    let task = arguments["task"].as_str().unwrap_or("financial-sentiment-analysis").to_string();
+                    let text = arguments["text"].as_str().unwrap_or("").to_string();
+                    let mut cmd_args = vec![
+                        format!("--{}", task),
+                        "--prompt".to_string(), text,
+                    ];
+                    if arguments["gpu"].as_bool().unwrap_or(false) {
+                        cmd_args.push("--gpu".to_string());
+                    }
+                    run_cli_subcommand(&cmd_args, &db_path_resolved).await
+                }
+                "multimodal_task" => {
+                    let task = arguments["task"].as_str().unwrap_or("image-classification").to_string();
+                    let mut cmd_args = vec![format!("--{}", task)];
+                    if let Some(file) = arguments["file"].as_str() {
+                        cmd_args.push("--file".to_string());
+                        cmd_args.push(file.to_string());
+                    }
+                    if let Some(prompt) = arguments["prompt"].as_str() {
+                        cmd_args.push("--prompt".to_string());
+                        cmd_args.push(prompt.to_string());
+                    }
+                    if arguments["gpu"].as_bool().unwrap_or(false) {
+                        cmd_args.push("--gpu".to_string());
+                    }
+                    run_cli_subcommand(&cmd_args, &db_path_resolved).await
+                }
+                "semantic_search" => {
+                    let action = arguments["action"].as_str().unwrap_or("search");
+                    let mut cmd_args = vec!["--enable-hyde".to_string()];
+                    match action {
+                        "add" => {
+                            if let Some(docs) = arguments["documents_path"].as_str() {
+                                cmd_args.push("--add-documents".to_string());
+                                cmd_args.push(docs.to_string());
+                            }
+                        }
+                        "demo" => {
+                            cmd_args.push("--demo-hyde".to_string());
+                        }
+                        _ => {
+                            if let Some(query) = arguments["query"].as_str() {
+                                cmd_args.push("--search-query".to_string());
+                                cmd_args.push(query.to_string());
+                            }
+                            if let Some(k) = arguments["top_k"].as_u64() {
+                                cmd_args.push("--top-k".to_string());
+                                cmd_args.push(k.to_string());
+                            }
+                            if arguments["use_hyde"].as_bool().unwrap_or(false) {
+                                cmd_args.push("--use-hyde".to_string());
+                            }
+                            if arguments["hyde_variants"].as_bool().unwrap_or(false) {
+                                cmd_args.push("--hyde-variants".to_string());
+                            }
+                        }
+                    }
+                    run_cli_subcommand(&cmd_args, &db_path_resolved).await
+                }
+                "data_science" => {
+                    let mode = arguments["mode"].as_str().unwrap_or("analyst");
+                    let mut cmd_args = Vec::new();
+                    match mode {
+                        "science" => cmd_args.push("--datascience".to_string()),
+                        "jupyter" => cmd_args.push("--jupyter".to_string()),
+                        _ => cmd_args.push("--dataanalyst".to_string()),
+                    }
+                    if let Some(file) = arguments["file"].as_str() {
+                        cmd_args.push("--file".to_string());
+                        cmd_args.push(file.to_string());
+                    }
+                    if let Some(prompt) = arguments["prompt"].as_str() {
+                        cmd_args.push("--prompt".to_string());
+                        cmd_args.push(prompt.to_string());
+                    }
+                    if arguments["export_pdf"].as_bool().unwrap_or(false) {
+                        cmd_args.push("--export-pdf".to_string());
+                    }
                     run_cli_subcommand(&cmd_args, &db_path_resolved).await
                 }
                 "pe_header_extraction" => {
@@ -2746,12 +3414,73 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                     let prompt = arguments["prompt"].as_str().unwrap_or("Perform PE analysis");
                     let cmd_args = vec![
                         "--pe-header-extraction".to_string(),
-                        "--file".to_string(),
-                        file,
-                        "--prompt".to_string(),
-                        prompt.to_string(),
+                        "--file".to_string(), file,
+                        "--prompt".to_string(), prompt.to_string(),
                     ];
                     run_cli_subcommand(&cmd_args, &db_path_resolved).await
+                }
+                "model_management" => {
+                    let action = arguments["action"].as_str().unwrap_or("prepare");
+                    let mut cmd_args = Vec::new();
+                    match action {
+                        "prepare-all" => {
+                            cmd_args.push("--prepare-all-models".to_string());
+                        }
+                        "sinq" => {
+                            cmd_args.push("--sinq".to_string());
+                            if let Some(nbits) = arguments["sinq_nbits"].as_u64() {
+                                cmd_args.push("--sinq-nbits".to_string());
+                                cmd_args.push(nbits.to_string());
+                            }
+                            if let Some(gs) = arguments["sinq_group_size"].as_u64() {
+                                cmd_args.push("--sinq-group-size".to_string());
+                                cmd_args.push(gs.to_string());
+                            }
+                        }
+                        _ => {
+                            if let Some(model_id) = arguments["model_id"].as_str() {
+                                cmd_args.push("--prepare-model".to_string());
+                                cmd_args.push(model_id.to_string());
+                            }
+                        }
+                    }
+                    if let Some(wf) = arguments["weight_format"].as_str() {
+                        cmd_args.push("--weight-format".to_string());
+                        cmd_args.push(wf.to_string());
+                    }
+                    run_cli_subcommand(&cmd_args, &db_path_resolved).await
+                }
+                "reporting" => {
+                    let prompt = arguments["prompt"].as_str().unwrap_or("").to_string();
+                    let output = arguments["output_path"].as_str().unwrap_or("./report").to_string();
+                    let format = arguments["format"].as_str().unwrap_or("md").to_string();
+                    let mut cmd_args = vec![
+                        "--prompt".to_string(), prompt,
+                        "--report".to_string(), output,
+                        "--reporttype".to_string(), format,
+                    ];
+                    if let Some(file) = arguments["file"].as_str() {
+                        cmd_args.push("--file".to_string());
+                        cmd_args.push(file.to_string());
+                    }
+                    run_cli_subcommand(&cmd_args, &db_path_resolved).await
+                }
+                "ml_management" => {
+                    let action = arguments["action"].as_str().unwrap_or("analytics");
+                    match action {
+                        "retrain" => run_cli_subcommand(&["--ml-retrain".to_string()], &db_path_resolved).await,
+                        "cleanup" => {
+                            let days = arguments["cleanup_days"].as_u64().unwrap_or(30);
+                            run_cli_subcommand(&["--ml-cleanup".to_string(), days.to_string()], &db_path_resolved).await
+                        }
+                        _ => run_cli_subcommand(&["--ml-analytics".to_string()], &db_path_resolved).await,
+                    }
+                }
+                "get_system_info" => {
+                    run_cli_subcommand(&["--sys-info".to_string()], &db_path_resolved).await
+                }
+                "restore_backup" => {
+                    run_cli_subcommand(&["--restore".to_string()], &db_path_resolved).await
                 }
                 "get_database_stats" => {
                     run_cli_subcommand(&["--stats".to_string()], &db_path_resolved).await
@@ -2787,6 +3516,36 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                 }
                 "get_ml_analytics" => {
                     run_cli_subcommand(&["--ml-analytics".to_string()], &db_path_resolved).await
+                }
+                "quick_answer" => {
+                    let question = arguments["question"].as_str().unwrap_or("").to_string();
+                    let model = arguments["model"].as_str().unwrap_or("qwen2.5:3b").to_string();
+                    
+                    let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
+                        .unwrap_or_else(|_| "http://localhost:11434".to_string());
+                    let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
+                    
+                    let body = serde_json::json!({
+                        "model": model,
+                        "messages": [{"role": "user", "content": &question}],
+                        "stream": false,
+                        "options": { "temperature": 0.7, "num_predict": 1024 }
+                    });
+                    
+                    let client = reqwest::Client::builder()
+                        .connect_timeout(std::time::Duration::from_secs(3))
+                        .timeout(std::time::Duration::from_secs(120))
+                        .build()
+                        .unwrap();
+                    
+                    match client.post(&url).json(&body).send().await {
+                        Ok(res) if res.status().is_success() => {
+                            let data: serde_json::Value = res.json().await.unwrap_or_default();
+                            data["message"]["content"].as_str().unwrap_or("No response").to_string()
+                        }
+                        Ok(res) => format!("Ollama error: {}", res.text().await.unwrap_or_default()),
+                        Err(e) => format!("Ollama connection failed: {}. Is Ollama running?", e),
+                    }
                 }
                 "report_bandit_feedback" => {
                     let context = arguments["context"].as_u64().unwrap_or(0) as usize;

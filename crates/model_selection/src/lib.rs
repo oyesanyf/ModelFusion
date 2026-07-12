@@ -101,6 +101,7 @@ impl EnhancedModelSelector {
         prompt: &str,
         strategy: SelectionStrategy,
         max_candidates: usize,
+        max_model_params_b: Option<f64>,
     ) -> Result<SelectionResult> {
         let start_time = std::time::Instant::now();
         log::info!(
@@ -134,6 +135,14 @@ impl EnhancedModelSelector {
         for m in db_models {
             if no_simulation && is_fictional_or_non_chat(&m.model_id) {
                 continue;
+            }
+            // Filter by user budget (model size limit)
+            if let Some(max_params) = max_model_params_b {
+                let est = estimate_params_billions(&m.model_id).unwrap_or(0.0);
+                if est > 0.0 && est > max_params + 1.0 {
+                    // Allow +1B slack (e.g. budget=1 allows up to 2B models)
+                    continue;
+                }
             }
             filtered_models.push(m);
         }

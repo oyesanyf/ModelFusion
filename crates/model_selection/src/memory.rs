@@ -563,23 +563,45 @@ fn map_hf_to_ollama(hf_model_id: &str) -> String {
 }
 
 /// Check if the model is cached/downloaded in Ollama.
-pub fn is_ollama_model_cached(model_id: &str) -> bool {
-    let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
-        .unwrap_or_else(|_| "http://localhost:11434".to_string());
-        
-    let result = std::process::Command::new("curl")
-        .args(["-s", &format!("{}/api/tags", endpoint)])
-        .output();
-        
-    let stdout_str = match result {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
-        _ => return false,
-    };
-    
-    let target = map_hf_to_ollama(model_id).to_lowercase();
-    
-    stdout_str.to_lowercase().contains(&target)
+/// Cached Ollama model list — queried once, reused for the lifetime of the process.
+/// This avoids spawning a `curl` subprocess for every single candidate model.
+static OLLAMA_CACHED_TAGS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+
+fn get_ollama_cached_models() -> &'static Vec<String> {
+    OLLAMA_CACHED_TAGS.get_or_init(|| {
+        let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
+            .unwrap_or_else(|_| "http://localhost:11434".to_string());
+
+        let result = std::process::Command::new("curl")
+            .args(["-s", &format!("{}/api/tags", endpoint)])
+            .output();
+
+        let stdout_str = match result {
+            Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
+            _ => return Vec::new(),
+        };
+
+        // Parse model names from JSON response
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout_str) {
+            if let Some(models) = json["models"].as_array() {
+                return models
+                    .iter()
+                    .filter_map(|m| m["name"].as_str().map(|s| s.to_lowercase()))
+                    .collect();
+            }
+        }
+
+        // Fallback: simple string matching
+        vec![stdout_str.to_lowercase()]
+    })
 }
+
+pub fn is_ollama_model_cached(model_id: &str) -> bool {
+    let target = map_hf_to_ollama(model_id).to_lowercase();
+    let cached = get_ollama_cached_models();
+    cached.iter().any(|m| m.contains(&target) || target.contains(m.split(':').next().unwrap_or("")))
+}
+
 
 
 
@@ -611,7 +633,7 @@ mod tests {
     #[test]
     fn test_print_model_scores() {
         let selector = crate::EnhancedModelSelector::new("../../db/hf_models.db").unwrap();
-        let res = selector.select_best_model("text-generation", "compare python vs rust", SelectionStrategy::MultiObjective, 10).unwrap();
+        let res = selector.select_best_model("text-generation", "compare python vs rust", SelectionStrategy::MultiObjective, 10, None).unwrap();
         println!("Best model: {}", res.best_model.model_id);
         for (idx, candidate) in res.all_candidates.iter().enumerate() {
             println!(

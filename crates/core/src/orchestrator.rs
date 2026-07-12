@@ -140,7 +140,7 @@ impl HuggingFaceOrchestrator {
                         4
                     };
 
-                    match selector.select_best_model(&task_name, prompt, strategy, max_candidates) {
+                    match selector.select_best_model(&task_name, prompt, strategy, max_candidates, Some(self.budget)) {
                         Err(e) => {
                             log::warn!("Selection failed: {}. Using fallback model.", e);
                             candidates.push("gpt2".to_string());

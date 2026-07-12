@@ -134,7 +134,7 @@ pub async fn run_fusion(
         }
     } else if is_multi_sample {
         // Multi-sample: 1 model, N temperature variations — much faster for local execution
-        let res = selector.select_best_model(panel_task, prompt, strategy, 3)
+        let res = selector.select_best_model(panel_task, prompt, strategy, 3, None)
             .context("⚠️ [FUSION] Model selection failed from database.")?;
         
         if res.all_candidates.is_empty() {
@@ -166,7 +166,7 @@ pub async fn run_fusion(
     } else {
         // Multi-model: N different models (original behavior)
         let fetch_pool_size = max_candidates * 3;
-        let res = selector.select_best_model(panel_task, prompt, strategy, fetch_pool_size)
+        let res = selector.select_best_model(panel_task, prompt, strategy, fetch_pool_size, None)
             .context("⚠️ [FUSION] Model selection failed from database.")?;
             
         if res.all_candidates.is_empty() {
@@ -206,7 +206,7 @@ pub async fn run_fusion(
     let judge_model = if let Some(model_id) = forced_model {
         ModelConfig::huggingface(model_id)
     } else {
-        let judge_res = selector.select_best_model("text-generation", "judge evaluation", strategy, 1)
+        let judge_res = selector.select_best_model("text-generation", "judge evaluation", strategy, 1, None)
             .context("⚠️ [FUSION] Failed to select judge model from database.")?;
         ModelConfig::huggingface(&judge_res.best_model.model_id)
     };
@@ -216,7 +216,7 @@ pub async fn run_fusion(
     let writer_model = if let Some(model_id) = forced_model {
         ModelConfig::huggingface(model_id)
     } else {
-        let writer_res = selector.select_best_model("text-generation", "final synthesis writing", strategy, 1)
+        let writer_res = selector.select_best_model("text-generation", "final synthesis writing", strategy, 1, None)
             .context("⚠️ [FUSION] Failed to select writer model from database.")?;
         ModelConfig::huggingface(&writer_res.best_model.model_id)
     };
