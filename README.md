@@ -382,6 +382,22 @@ HugOS IDE is a fully integrated development environment built on VS Code, with M
    ```
 5. **Launch** HugOS IDE — the ModelFusion server starts automatically on port 5000
 
+#### Command-Line Installation (msiexec)
+
+```powershell
+# Standard install (with UI)
+msiexec /i "HugOS.msi"
+
+# Silent install (no UI, no prompts)
+msiexec /i "HugOS.msi" /qn
+
+# Silent install with verbose log
+msiexec /i "HugOS.msi" /qn /l*v "C:\hugos_install.log"
+
+# Uninstall
+msiexec /x "HugOS.msi" /qn
+```
+
 ### ⚡ Adaptive Inference Pipeline
 
 HugOS IDE uses an intelligent routing system that adapts to each question:
