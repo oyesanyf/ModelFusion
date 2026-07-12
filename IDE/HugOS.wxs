@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="HugOS IDE" Manufacturer="HugOS Team" Version="1.126.34" UpgradeCode="d77b7e06-80ba-4137-bcf4-654b95ccebc5" Scope="perUser">
+  <Package Name="HugOS IDE" Manufacturer="HugOS Team" Version="1.126.35" UpgradeCode="d77b7e06-80ba-4137-bcf4-654b95ccebc5" Scope="perUser">
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
 
     <MediaTemplate EmbedCab="yes" />
@@ -85141,31 +85141,34 @@
         <File Id="fil_25716" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\check_openvino.py" KeyPath="yes" />
       </Component>
       <Component Id="cmp_25717" Guid="*" Directory="dir_3976">
-        <File Id="fil_25717" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\prepare_model_openvino.py" KeyPath="yes" />
+        <File Id="fil_25717" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\getvino.py" KeyPath="yes" />
       </Component>
       <Component Id="cmp_25718" Guid="*" Directory="dir_3976">
-        <File Id="fil_25718" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\run_model_onnx.py" KeyPath="yes" />
+        <File Id="fil_25718" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\prepare_model_openvino.py" KeyPath="yes" />
       </Component>
       <Component Id="cmp_25719" Guid="*" Directory="dir_3976">
-        <File Id="fil_25719" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\run_model_openvino.py" KeyPath="yes" />
+        <File Id="fil_25719" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\run_model_onnx.py" KeyPath="yes" />
       </Component>
       <Component Id="cmp_25720" Guid="*" Directory="dir_3976">
-        <File Id="fil_25720" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\run_model_transformers.py" KeyPath="yes" />
+        <File Id="fil_25720" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\run_model_openvino.py" KeyPath="yes" />
       </Component>
       <Component Id="cmp_25721" Guid="*" Directory="dir_3976">
-        <File Id="fil_25721" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\run_model_vllm.py" KeyPath="yes" />
+        <File Id="fil_25721" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\run_model_transformers.py" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_25722" Guid="*">
-        <File Id="fil_25722" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\v8_context_snapshot.bin" KeyPath="yes" />
+      <Component Id="cmp_25722" Guid="*" Directory="dir_3976">
+        <File Id="fil_25722" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\run_model_vllm.py" KeyPath="yes" />
       </Component>
       <Component Id="cmp_25723" Guid="*">
-        <File Id="fil_25723" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\vk_swiftshader.dll" KeyPath="yes" />
+        <File Id="fil_25723" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\v8_context_snapshot.bin" KeyPath="yes" />
       </Component>
       <Component Id="cmp_25724" Guid="*">
-        <File Id="fil_25724" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\vk_swiftshader_icd.json" KeyPath="yes" />
+        <File Id="fil_25724" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\vk_swiftshader.dll" KeyPath="yes" />
       </Component>
       <Component Id="cmp_25725" Guid="*">
-        <File Id="fil_25725" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\vulkan-1.dll" KeyPath="yes" />
+        <File Id="fil_25725" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\vk_swiftshader_icd.json" KeyPath="yes" />
+      </Component>
+      <Component Id="cmp_25726" Guid="*">
+        <File Id="fil_25726" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\vulkan-1.dll" KeyPath="yes" />
       </Component>
     </ComponentGroup>
   </Package>
