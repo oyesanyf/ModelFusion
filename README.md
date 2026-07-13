@@ -354,6 +354,124 @@ $env:PYTHONUTF8="1"
 python src/scripts/cache_ov_hub.py ov_models db/hf_models.db 5
 ```
 
+#### Manually Downloading OpenVINO Models
+
+If the automated download (`--prepare-all-models` or `cache_ov_hub.py`) freezes your system — for example when batch-downloading many large INT4 models at once — you can download models **one at a time** manually.
+
+##### Where to find models
+
+Browse pre-converted OpenVINO INT4 models on HuggingFace:
+- **Official OpenVINO org**: [huggingface.co/OpenVINO](https://huggingface.co/OpenVINO)
+- **Community converters**: Search HuggingFace for `openvino int4` — look for repos by `CelesteImperia`, `Morteza89`, `rpanchum`, `xpuenabler`, etc.
+
+##### Method 1 — `huggingface-cli` (recommended)
+
+Download one model at a time with resume support (won't re-download interrupted files):
+```powershell
+# Install the CLI if you haven't
+pip install -U huggingface-hub
+
+# Download a single model into ov_models/
+huggingface-cli download OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov --local-dir ov_models/OpenVINO--Qwen2.5-1.5B-Instruct-int4-ov
+
+# Download a larger model
+huggingface-cli download OpenVINO/Qwen2.5-7B-Instruct-int4-ov --local-dir ov_models/OpenVINO--Qwen2.5-7B-Instruct-int4-ov
+
+# Download a community model
+huggingface-cli download CelesteImperia/Phi-3.5-mini-instruct-OpenVINO-INT4 --local-dir ov_models/CelesteImperia--Phi-3.5-mini-instruct-OpenVINO-INT4
+```
+
+##### Method 2 — `git clone` (full repo)
+
+```powershell
+cd ov_models
+
+# Clone with Git LFS (install git-lfs first: https://git-lfs.com)
+git lfs install
+git clone https://huggingface.co/OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov OpenVINO--Qwen2.5-1.5B-Instruct-int4-ov
+```
+
+##### Method 3 — Browser download
+
+1. Go to the model page, e.g. [OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov](https://huggingface.co/OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov)
+2. Click the **Files and versions** tab
+3. Download **all** files into a folder under `ov_models/`
+
+##### Method 4 — `--getvino` (CLI built-in background downloader)
+
+The CLI has a built-in `--getvino` flag that runs [`getvino.py`](src/scripts/getvino.py) as a **background thread**, downloading all matching OpenVINO org models while you work:
+
+```powershell
+# Downloads ALL OpenVINO org models into ov_models/ in the background (runs every 24h)
+cli.exe --getvino --ov-model-dir ov_models --prompt "Your prompt here"
+```
+
+This runs silently alongside your normal inference — models appear in `ov_models/` as they finish downloading. Progress is logged to stderr.
+
+You can also run `getvino.py` standalone with a **search filter** to download only specific architectures:
+
+```powershell
+# Download only Llama-based OpenVINO models
+python src/scripts/getvino.py ov_models llama
+
+# Download only Qwen-based OpenVINO models
+python src/scripts/getvino.py ov_models qwen
+
+# Download only Phi-based OpenVINO models
+python src/scripts/getvino.py ov_models phi
+
+# Download absolutely everything from the OpenVINO org
+python src/scripts/getvino.py ov_models all
+```
+
+> [!TIP]
+> Use a specific filter like `llama` or `qwen` instead of `all` to avoid downloading dozens of GB at once. The script automatically skips models that are already downloaded.
+
+##### Required folder naming and file structure
+
+The folder name **must** use `--` as the separator between org and model name (matching HuggingFace's `repo_id.replace("/", "--")` convention):
+
+```
+ov_models/
+├── OpenVINO--Qwen2.5-1.5B-Instruct-int4-ov/
+│   ├── openvino_model.xml          ← required (IR model definition)
+│   ├── openvino_model.bin          ← required (IR model weights)
+│   ├── openvino_tokenizer.xml      ← required for openvino_genai
+│   ├── openvino_tokenizer.bin
+│   ├── openvino_detokenizer.xml
+│   ├── openvino_detokenizer.bin
+│   ├── tokenizer.json
+│   ├── tokenizer_config.json
+│   ├── config.json
+│   └── generation_config.json
+├── CelesteImperia--Llama-3.2-1B-Instruct-OpenVINO-INT4/
+│   └── ...
+```
+
+> [!IMPORTANT]
+> The folder **must contain at least one `.xml` file** (e.g., `openvino_model.xml`). The CLI uses this to detect whether a model is cached and ready. Folders without `.xml` files are ignored.
+
+##### Verifying manually downloaded models
+
+After downloading, confirm the CLI detects your models:
+```powershell
+# List all cached models
+cli.exe --cache-stats
+
+# Run inference using a manually downloaded model
+cli.exe --openvino --ov-model-dir ov_models --model OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov --prompt "Hello world"
+```
+
+##### Tips to avoid system freezes
+
+- **Download one model at a time** instead of using `--prepare-all-models` which tries to download all at once
+- **Start with small models** (~600 MB–1.5 GB) before attempting 4+ GB models
+- **Use `huggingface-cli`** — it supports resume, so you can interrupt and restart without losing progress
+- **Set `max_size_gb`** when using `cache_ov_hub.py` to limit individual model size: `python src/scripts/cache_ov_hub.py ov_models db/hf_models.db 2` (only models ≤ 2 GB)
+- **Close other applications** — large model downloads can consume significant RAM and disk I/O
+
+---
+
 ### Running the Draco Benchmark
 To execute the DRACO evaluation benchmark offline with strict verification (no simulated fallbacks) and compute confidence intervals across 1,000 bootstrap replicates:
 ```powershell

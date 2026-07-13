@@ -124,7 +124,7 @@ impl HuggingFaceOrchestrator {
             match EnhancedModelSelector::new(&self.db_path) {
                 Err(e) => {
                     log::warn!("Could not open database for selection: {}. Using fallback model.", e);
-                    candidates.push("gpt2".to_string());
+                    candidates.push("HuggingFaceTB/SmolLM2-135M-Instruct".to_string());
                     selection_info = "db error fallback".to_string();
                 }
                 Ok(selector) => {
@@ -143,7 +143,7 @@ impl HuggingFaceOrchestrator {
                     match selector.select_best_model(&task_name, prompt, strategy, max_candidates, Some(self.budget)) {
                         Err(e) => {
                             log::warn!("Selection failed: {}. Using fallback model.", e);
-                            candidates.push("gpt2".to_string());
+                            candidates.push("HuggingFaceTB/SmolLM2-135M-Instruct".to_string());
                             selection_info = "selection failure fallback".to_string();
                         }
                         Ok(res) => {
@@ -162,7 +162,7 @@ impl HuggingFaceOrchestrator {
         }
 
         if candidates.is_empty() {
-            candidates.push("gpt2".to_string());
+            candidates.push("HuggingFaceTB/SmolLM2-135M-Instruct".to_string());
         }
 
         // Execute task (loop through candidates in order of ranking)

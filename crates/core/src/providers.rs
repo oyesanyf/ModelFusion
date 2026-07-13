@@ -100,7 +100,7 @@ impl Default for ModelConfig {
         Self {
             name: "Default Model".to_string(),
             api_provider: "huggingface".to_string(),
-            model_id: "gpt2".to_string(),
+            model_id: "HuggingFaceTB/SmolLM2-135M-Instruct".to_string(),
             max_tokens: 1000,
             temperature: 0.7,
             cost_per_1k_tokens: 0.0,
