@@ -1,0 +1,18 @@
+📊 Database Statistics:
+Total models in database: 2980778
+Last updated: 2026-06-27T16:13:58.407354200+00:00
+
+Top pipeline tags by model count:
+  • text-generation: 2390241 models (avg downloads: 358.6, avg decision score: 4.45)
+  • text-classification: 118573 models (avg downloads: 604.2, avg decision score: 4.53)
+  • text-to-image: 107572 models (avg downloads: 211.4, avg decision score: 3.47)
+  • reinforcement-learning: 73523 models (avg downloads: 4.5, avg decision score: 3.88)
+  • automatic-speech-recognition: 32827 models (avg downloads: 5725.1, avg decision score: 4.52)
+
+Top models by decision score:
+  • google/gemma-4-e2b-it [text-generation] (downloads: 50000000, decision score: 9.90)
+  • google-bert/bert-base-uncased [fill-mask] (downloads: 60271662, decision score: 8.60)
+  • google/electra-base-discriminator [text-generation] (downloads: 41762860, decision score: 8.60)
+  • Qwen/Qwen3-0.6B [text-generation] (downloads: 27739500, decision score: 8.60)
+  • openai/clip-vit-base-patch32 [zero-shot-image-classification] (downloads: 23159737, decision score: 8.60)
+

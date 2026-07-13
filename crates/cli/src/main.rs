@@ -323,6 +323,9 @@ struct Args {
     #[arg(long, help = "Periodically get OpenVINO preconfigured models in the background")]
     getvino: bool,
 
+    #[arg(long, default_value_t = 24, help = "Download interval in hours for --getvino background cycle (default: 24)")]
+    getvino_interval: u64,
+
     #[arg(long, help = "Enable real options analysis for backup model selection")]
     real_options: bool,
 
@@ -630,9 +633,10 @@ fn main() -> Result<()> {
         // Spawn getvino background thread if requested
         if args.getvino {
             let ov_dir = args.ov_model_dir.clone();
+            let interval_hours = args.getvino_interval.max(1); // minimum 1 hour
             rt.spawn(async move {
                 loop {
-                    eprintln!("[Background] Running OpenVINO model downloader...");
+                    eprintln!("[Background] Running OpenVINO model downloader (interval: {}h)...", interval_hours);
                     // Resolve getvino.py: try multiple locations for installed and dev builds
                     let exe_dir = std::env::current_exe()
                         .ok()
@@ -664,8 +668,8 @@ fn main() -> Result<()> {
                         Ok(status) => eprintln!("[Background] getvino.py exited with: {}", status),
                         Err(e) => eprintln!("[Background] Failed to run getvino.py: {}", e),
                     }
-                    // Run once every 24 hours
-                    tokio::time::sleep(tokio::time::Duration::from_secs(24 * 3600)).await;
+                    // Sleep for the configured interval
+                    tokio::time::sleep(tokio::time::Duration::from_secs(interval_hours * 3600)).await;
                 }
             });
         }
@@ -1154,7 +1158,7 @@ async fn run(args: Args) -> Result<()> {
         let mut bandit_arm = 0;
         let mut run_bandit_learning = false;
 
-        if !is_fusion_needed && !args.mcp && !args.server && !args.ollama && !args.openvino {
+        if !is_fusion_needed && !args.mcp && !args.server && !args.ollama && !args.openvino && !args.onnx {
             run_bandit_learning = true;
             let complexity_str = llm_classify_complexity(&final_prompt).await;
             eprintln!("🦙 [ROUTER] Prompt classified complexity: {}", complexity_str);
@@ -1722,13 +1726,91 @@ struct RouterDecision {
     detected_task: String,
 }
 
+/// Strip system prompt leakage and meta-commentary from model responses.
+/// Small models (1.5B-3B) often echo their instructions or add meta-commentary
+/// like "I don't see any specific instructions..." which should be hidden from users.
+fn clean_model_response(raw: &str) -> String {
+    let leakage_patterns: &[&str] = &[
+        "I don't see any specific instructions",
+        "I'm following a standard response",
+        "If you need to perform any actions",
+        "If you need me to perform",
+        "such as editing files",
+        "please let me know and I can",
+        "I can help guide you through",
+        "Let me know if you'd like me to",
+        "Is there anything else",
+        "I'll be happy to help",
+        "Based on the context provided",
+        "I notice you've selected",
+        "Looking at the selected file",
+        "I see that you've",
+        "As an AI assistant",
+        "As your AI",
+        "I'm an AI",
+        "Note: I",
+        "Disclaimer:",
+        "[Note:",
+        "[Context:",
+        "I'm here to provide assistance",
+        "I'm designed to",
+        "my knowledge cutoff",
+    ];
+
+    let lines: Vec<&str> = raw.lines().collect();
+    let mut clean_lines: Vec<&str> = Vec::new();
+    let mut in_leakage_block = false;
+
+    for line in &lines {
+        let trimmed = line.trim();
+        // Skip empty lines at the very start
+        if clean_lines.is_empty() && trimmed.is_empty() {
+            continue;
+        }
+        // Check if this line starts a leakage block
+        let is_leakage = leakage_patterns.iter().any(|p| trimmed.contains(p));
+        if is_leakage {
+            in_leakage_block = true;
+            continue;
+        }
+        // If we're in a leakage block, skip continuation lines
+        if in_leakage_block && !trimmed.is_empty() {
+            if trimmed.starts_with("- ") || trimmed.starts_with("* ")
+                || trimmed.starts_with("If ") || trimmed.starts_with("Please ")
+                || trimmed.starts_with("Feel free") || trimmed.starts_with("You can")
+                || trimmed.starts_with("Would you") || trimmed.starts_with("Do you")
+                || trimmed.starts_with("Happy to") || trimmed.starts_with("I'd be")
+            {
+                continue;
+            }
+            in_leakage_block = false;
+        }
+        if !in_leakage_block {
+            clean_lines.push(line);
+        }
+    }
+
+    // Trim trailing empty lines
+    while clean_lines.last().map_or(false, |l| l.trim().is_empty()) {
+        clean_lines.pop();
+    }
+
+    let result = clean_lines.join("\n");
+    if result.trim().is_empty() {
+        // Safety net: if everything was stripped, return the original
+        raw.trim().to_string()
+    } else {
+        result
+    }
+}
+
 async fn query_local_router(system_prompt: &str, user_prompt: &str) -> Option<String> {
     // 1. First attempt: Query local Ollama if running
     let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
         .unwrap_or_else(|_| "http://localhost:11434".to_string());
     
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(30))
         .connect_timeout(std::time::Duration::from_secs(2))
         .build()
         .ok();
@@ -2316,11 +2398,12 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             match client.post(&url).json(&body).send().await {
                                 Ok(res) if res.status().is_success() => {
                                     let data: serde_json::Value = res.json().await.unwrap_or_default();
-                                    let content = data["message"]["content"]
+                                    let raw_content = data["message"]["content"]
                                         .as_str()
                                         .unwrap_or("No response from model.")
                                         .to_string();
-                                    eprintln!("[SERVER] ⚡ Ollama fast path complete: {} chars", content.len());
+                                    let content = clean_model_response(&raw_content);
+                                    eprintln!("[SERVER] ⚡ Ollama fast path complete: {} chars (cleaned from {})", content.len(), raw_content.len());
                                     return content;
                                 }
                                 Ok(res) => {
@@ -2468,8 +2551,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     }
 
                     eprintln!("[SERVER] <<< Completed /orchestrate request in {}ms.", start_time.elapsed().as_millis());
+                    let cleaned_content = clean_model_response(&content);
                     let response_json = serde_json::json!({
-                        "content": content
+                        "content": cleaned_content
                     });
                     let response_str = response_json.to_string();
                     let chunk_size = format!("{:x}\r\n", response_str.len());

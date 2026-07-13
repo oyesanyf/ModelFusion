@@ -1,0 +1,7 @@
+[SEMAPHORE] Heavy pipeline pool: 2 slot(s)
+============================================================
+[MODEL] Ensemble Model Selection: Active Strategy: multi_objective
+============================================================
+[2026-07-12T22:48:16Z INFO  db::models] Database initialised at d:\harfile\ModelFusion\db\hf_models.db
+[2026-07-12T22:48:16Z INFO  db::models] Database initialised at d:\harfile\ModelFusion\db\hf_models.db
+[2026-07-12T22:48:16Z INFO  db::models] Database initialised at d:\harfile\ModelFusion\db\hf_models.db

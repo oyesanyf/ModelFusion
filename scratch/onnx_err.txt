@@ -1,0 +1,7 @@
+[SEMAPHORE] Heavy pipeline pool: 2 slot(s)
+============================================================
+[MODEL] Ensemble Model Selection: Active Strategy: multi_objective
+============================================================
+[2026-07-12T22:57:15Z INFO  db::models] Database initialised at d:\harfile\ModelFusion\db\hf_models.db
+[2026-07-12T22:57:15Z INFO  db::models] Database initialised at d:\harfile\ModelFusion\db\hf_models.db
+[LOCAL ROUTER] Found cached Ollama model: qwen2.5:1.5b. Querying via Ollama...
