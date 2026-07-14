@@ -1730,6 +1730,14 @@ struct RouterDecision {
 /// Small models (1.5B-3B) often echo their instructions or add meta-commentary
 /// like "I don't see any specific instructions..." which should be hidden from users.
 fn clean_model_response(raw: &str) -> String {
+    // Short responses are typically direct factual answers — don't risk
+    // stripping them with the leakage heuristic which is designed for
+    // longer, multi-paragraph LLM outputs that sometimes include filler.
+    let trimmed_raw = raw.trim();
+    if trimmed_raw.len() < 200 {
+        return trimmed_raw.to_string();
+    }
+
     let leakage_patterns: &[&str] = &[
         "I don't see any specific instructions",
         "I'm following a standard response",
