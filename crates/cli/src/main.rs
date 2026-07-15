@@ -584,6 +584,21 @@ struct Args {
 
     #[arg(long, help = "Run as MCP stdio server")]
     mcp: bool,
+
+    // ---------------------------------------------------------
+    // IDE Patching Flags
+    // ---------------------------------------------------------
+    #[arg(long, help = "Clone VSCode from GitHub and apply HugOS IDE branding patches")]
+    patch_ide: bool,
+
+    #[arg(long, default_value = "IDE/src", help = "Target directory for the VSCode clone")]
+    ide_src_dir: String,
+
+    #[arg(long, help = "Shallow clone with --depth 1 for faster download")]
+    shallow: bool,
+
+    #[arg(long, help = "Specific VSCode git tag to clone (e.g., '1.96.0')")]
+    vscode_tag: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -755,6 +770,11 @@ async fn run(args: Args) -> Result<()> {
 
     if args.mcp {
         run_mcp_server(args.db_path.clone()).await?;
+        return Ok(());
+    }
+
+    if args.patch_ide {
+        patch_ide_workflow(&args.ide_src_dir, args.shallow, args.vscode_tag.as_deref()).await?;
         return Ok(());
     }
 
@@ -2140,6 +2160,10 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     let mut cpu = request_json["cpu"].as_bool().unwrap_or(false);
                     let mut ollama = request_json["ollama"].as_bool().unwrap_or(false);
                     let mut fusion = request_json["fusion"].as_bool().unwrap_or(false);
+                    let model_override = request_json["model"]
+                        .as_str()
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string());
 
                     if slash_enabled {
                         // Parse slash commands from incoming prompt
@@ -2210,10 +2234,16 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         
                         if ollama && !is_complex {
                             // Simple question → fast path with 1.5b
-                            let ollama_model = if budget <= 0.5 {
-                                "qwen2.5:0.5b"
+                            let ollama_model_owned;
+                            let ollama_model = if let Some(ref m) = model_override {
+                                m.as_str()
                             } else {
-                                "qwen2.5:1.5b"
+                                ollama_model_owned = if budget <= 0.5 {
+                                    "qwen2.5:0.5b"
+                                } else {
+                                    "qwen2.5:1.5b"
+                                };
+                                ollama_model_owned
                             };
 
                             let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
@@ -2502,7 +2532,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 parse_selection_strategy(&strategy),
                                 Some(fusion_models),
                                 &fusion_mode,
-                                None,
+                                model_override.as_deref(),
                             ).await {
                                 Ok(content) => content,
                                 Err(e) => format!("Error: {}", e),
@@ -2514,7 +2544,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 .process_task(
                                     &clean_prompt,
                                     None,
-                                    None,
+                                    model_override.as_deref(),
                                     false,
                                     None,
                                     parse_selection_strategy(&strategy),
@@ -4188,4 +4218,402 @@ fn acquire_cross_process_lock() -> Result<std::fs::File> {
         }
     }
 }
+
+// =============================================================================
+// --patch-ide: Clone VSCode and apply HugOS IDE branding patches
+// =============================================================================
+
+/// Main workflow for --patch-ide: clone VSCode, apply all HugOS branding.
+async fn patch_ide_workflow(ide_src_dir: &str, shallow: bool, vscode_tag: Option<&str>) -> Result<()> {
+    use std::process::Command;
+
+    let project_root = std::env::current_dir()?;
+    let target_dir = project_root.join(ide_src_dir);
+    let patches_dir = project_root.join("IDE").join("patches");
+    let extension_src = project_root.join("IDE").join("vscode").join("extensions").join("modelfusion");
+
+    println!("{}", "╔══════════════════════════════════════════════════════════════╗");
+    println!("{}", "║        HugOS IDE Patcher — Clone & Brand VSCode             ║");
+    println!("{}", "╚══════════════════════════════════════════════════════════════╝");
+    println!();
+
+    let mut successes: Vec<String> = Vec::new();
+    let mut failures: Vec<String> = Vec::new();
+
+    // ── Step 1: Clone VSCode ──────────────────────────────────────────
+    println!("[1/7] Cloning VSCode repository...");
+    if target_dir.exists() {
+        println!("  WARNING: Target directory already exists: {}", target_dir.display());
+        println!("  Skipping clone, applying patches to existing tree.");
+        successes.push("Clone: skipped (directory exists)".into());
+    } else {
+        let mut cmd = Command::new("git");
+        cmd.arg("clone");
+        if shallow {
+            cmd.args(["--depth", "1"]);
+        }
+        if let Some(tag) = vscode_tag {
+            cmd.args(["--branch", tag]);
+        }
+        cmd.arg("https://github.com/microsoft/vscode.git");
+        cmd.arg(&target_dir);
+
+        println!("  git clone {} into {}",
+            if shallow { "(shallow)" } else { "(full)" },
+            target_dir.display());
+
+        let status = cmd.status();
+        match status {
+            Ok(s) if s.success() => {
+                println!("  [OK] Clone completed successfully.");
+                successes.push("Clone: success".into());
+            }
+            Ok(s) => {
+                let msg = format!("Clone: git exited with code {}", s.code().unwrap_or(-1));
+                println!("  [FAIL] {}", msg);
+                failures.push(msg);
+                print_patch_summary(&successes, &failures);
+                return Ok(());
+            }
+            Err(e) => {
+                let msg = format!("Clone: failed to run git: {}", e);
+                println!("  [FAIL] {}", msg);
+                failures.push(msg);
+                print_patch_summary(&successes, &failures);
+                return Ok(());
+            }
+        }
+    }
+    println!();
+
+    // ── Step 2: Replace product.json ──────────────────────────────────
+    println!("[2/7] Replacing product.json with HugOS branding...");
+    let product_src = patches_dir.join("product.json");
+    let product_dst = target_dir.join("product.json");
+    match std::fs::copy(&product_src, &product_dst) {
+        Ok(_) => {
+            println!("  [OK] product.json replaced.");
+            successes.push("Branding: product.json".into());
+        }
+        Err(e) => {
+            let msg = format!("Branding: product.json -- {}", e);
+            println!("  [FAIL] {}", msg);
+            failures.push(msg);
+        }
+    }
+    println!();
+
+    // ── Step 3: Patch package.json fields ─────────────────────────────
+    println!("[3/7] Patching package.json fields...");
+    let pkg_path = target_dir.join("package.json");
+    match patch_package_json(&pkg_path) {
+        Ok(_) => {
+            println!("  [OK] package.json patched (name, displayName, description, author).");
+            successes.push("Branding: package.json".into());
+        }
+        Err(e) => {
+            let msg = format!("Branding: package.json -- {}", e);
+            println!("  [FAIL] {}", msg);
+            failures.push(msg);
+        }
+    }
+    println!();
+
+    // ── Step 4: Apply source code patches ─────────────────────────────
+    println!("[4/7] Applying source code patches (copilot -> modelfusion)...");
+    let patches = get_source_patches();
+    let mut patch_ok = 0usize;
+    let mut patch_fail = 0usize;
+    for (rel_path, search, replace) in &patches {
+        let file_path = target_dir.join(rel_path);
+        match apply_text_patch(&file_path, search, replace) {
+            Ok(count) => {
+                println!("  [OK] {} ({} replacement{})", rel_path, count, if count != 1 { "s" } else { "" });
+                patch_ok += 1;
+            }
+            Err(e) => {
+                println!("  [FAIL] {} -- {}", rel_path, e);
+                patch_fail += 1;
+            }
+        }
+    }
+    successes.push(format!("Source patches: {}/{} succeeded", patch_ok, patches.len()));
+    if patch_fail > 0 {
+        failures.push(format!("Source patches: {} file(s) failed", patch_fail));
+    }
+    println!();
+
+    // ── Step 5: Copy modelfusion extension ─────────────────────────────
+    println!("[5/7] Copying modelfusion extension...");
+    let ext_dst = target_dir.join("extensions").join("modelfusion");
+    if extension_src.exists() {
+        match copy_dir_recursive(&extension_src, &ext_dst) {
+            Ok(count) => {
+                println!("  [OK] Copied {} files to extensions/modelfusion/", count);
+                successes.push(format!("Extension: {} files copied", count));
+            }
+            Err(e) => {
+                let msg = format!("Extension: copy failed -- {}", e);
+                println!("  [FAIL] {}", msg);
+                failures.push(msg);
+            }
+        }
+    } else {
+        let msg = "Extension: source directory IDE/vscode/extensions/modelfusion/ not found".to_string();
+        println!("  [FAIL] {}", msg);
+        failures.push(msg);
+    }
+    println!();
+
+    // ── Step 6: Copy icons ────────────────────────────────────────────
+    println!("[6/7] Replacing icons with HugOS branding...");
+    let icon_mappings: Vec<(&str, &str)> = vec![
+        ("icons/win32/code.ico", "resources/win32/code.ico"),
+        ("icons/win32/code_150x150.png", "resources/win32/code_150x150.png"),
+        ("icons/win32/code_70x70.png", "resources/win32/code_70x70.png"),
+        ("icons/darwin/code.icns", "resources/darwin/code.icns"),
+        ("icons/linux/code.png", "resources/linux/code.png"),
+    ];
+    for (src_rel, dst_rel) in &icon_mappings {
+        let src = patches_dir.join(src_rel);
+        let dst = target_dir.join(dst_rel);
+        if src.exists() {
+            if let Some(parent) = dst.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            match std::fs::copy(&src, &dst) {
+                Ok(_) => {
+                    println!("  [OK] {}", dst_rel);
+                    successes.push(format!("Icon: {}", dst_rel));
+                }
+                Err(e) => {
+                    println!("  [FAIL] {} -- {}", dst_rel, e);
+                    failures.push(format!("Icon: {} -- {}", dst_rel, e));
+                }
+            }
+        } else {
+            println!("  [SKIP] {} (source not found)", src_rel);
+        }
+    }
+    println!();
+
+    // ── Step 7: Patch dev config ──────────────────────────────────────
+    println!("[7/7] Patching .vscode dev configuration...");
+    // launch.json: add modelfusion outFiles entry
+    let launch_path = target_dir.join(".vscode").join("launch.json");
+    match apply_text_patch(
+        &launch_path,
+        "\"${workspaceFolder}/extensions/*/out/**/*.js\"",
+        "\"${workspaceFolder}/extensions/*/out/**/*.js\",\n\t\t\t\t\"${workspaceFolder}/extensions/modelfusion/dist/**/*.js\""
+    ) {
+        Ok(_) => {
+            println!("  [OK] .vscode/launch.json patched.");
+            successes.push("DevConfig: launch.json".into());
+        }
+        Err(e) => {
+            println!("  [FAIL] .vscode/launch.json -- {}", e);
+            failures.push(format!("DevConfig: launch.json -- {}", e));
+        }
+    }
+    // tasks.json: replace copilot reference with modelfusion
+    let tasks_path = target_dir.join(".vscode").join("tasks.json");
+    match apply_text_patch(
+        &tasks_path,
+        "\"${workspaceFolder}/extensions/copilot\"",
+        "\"${workspaceFolder}/extensions/modelfusion\""
+    ) {
+        Ok(_) => {
+            println!("  [OK] .vscode/tasks.json patched.");
+            successes.push("DevConfig: tasks.json".into());
+        }
+        Err(e) => {
+            // Stock tasks.json may not have copilot reference — not fatal
+            println!("  [SKIP] .vscode/tasks.json -- {} (non-fatal)", e);
+        }
+    }
+    println!();
+
+    print_patch_summary(&successes, &failures);
+    Ok(())
+}
+
+fn print_patch_summary(successes: &[String], failures: &[String]) {
+    println!("================================================================");
+    println!("                    PATCH SUMMARY                               ");
+    println!("================================================================");
+    println!();
+    println!("  {} steps succeeded:", successes.len());
+    for s in successes {
+        println!("    [OK] {}", s);
+    }
+    if !failures.is_empty() {
+        println!();
+        println!("  {} steps failed:", failures.len());
+        for f in failures {
+            println!("    [FAIL] {}", f);
+        }
+    } else {
+        println!();
+        println!("  All patches applied successfully!");
+        println!("  Next: cd into the target directory and run 'yarn' then");
+        println!("        'gulp vscode-win32-x64' to build the IDE.");
+    }
+    println!();
+}
+
+/// Patch package.json by reading it, modifying specific fields, and writing it back.
+fn patch_package_json(pkg_path: &std::path::Path) -> Result<()> {
+    let content = std::fs::read_to_string(pkg_path)?;
+    let mut json: serde_json::Value = serde_json::from_str(&content)?;
+
+    if let Some(obj) = json.as_object_mut() {
+        obj.insert("name".into(), serde_json::json!("hugos"));
+        obj.insert("displayName".into(), serde_json::json!("HugOS"));
+        obj.insert("description".into(), serde_json::json!("HugOS - Custom AI-Powered Code-OSS IDE"));
+        obj.insert("author".into(), serde_json::json!({ "name": "HugOS Team" }));
+    }
+
+    let output = serde_json::to_string_pretty(&json)?;
+    std::fs::write(pkg_path, output)?;
+    Ok(())
+}
+
+/// Apply a text search-and-replace patch to a file. Returns the number of replacements made.
+fn apply_text_patch(file_path: &std::path::Path, search: &str, replace: &str) -> Result<usize> {
+    let content = std::fs::read_to_string(file_path)
+        .map_err(|e| anyhow::anyhow!("cannot read {}: {}", file_path.display(), e))?;
+    let count = content.matches(search).count();
+    if count == 0 {
+        return Err(anyhow::anyhow!("search string not found in {}", file_path.display()));
+    }
+    let patched = content.replace(search, replace);
+    std::fs::write(file_path, patched)
+        .map_err(|e| anyhow::anyhow!("cannot write {}: {}", file_path.display(), e))?;
+    Ok(count)
+}
+
+/// Recursively copy a directory tree. Returns total number of files copied.
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<usize> {
+    let mut count = 0usize;
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if file_type.is_dir() {
+            count += copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            std::fs::copy(&src_path, &dst_path)?;
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+/// Returns all source code patches as (relative_path, search_string, replace_string) tuples.
+/// These transform stock Microsoft VSCode source into HugOS IDE source.
+fn get_source_patches() -> Vec<(&'static str, &'static str, &'static str)> {
+    vec![
+        // ── src/main.ts — argv.json comments (3 x "VS Code" -> "HugOS") ──
+        (
+            "src/main.ts",
+            "to pass permanent command line arguments to VS Code.",
+            "to pass permanent command line arguments to HugOS."
+        ),
+        (
+            "src/main.ts",
+            "Changing this file requires a restart of VS Code.",
+            "Changing this file requires a restart of HugOS."
+        ),
+        (
+            "src/main.ts",
+            "you see rendering issues in VS Code.",
+            "you see rendering issues in HugOS."
+        ),
+
+        // ── src/vs/platform/product/common/product.ts — defaultChatAgent ──
+        (
+            "src/vs/platform/product/common/product.ts",
+            "extensionId: 'GitHub.copilot'",
+            "extensionId: 'HugOS.modelfusion'"
+        ),
+        (
+            "src/vs/platform/product/common/product.ts",
+            "chatExtensionId: 'GitHub.copilot-chat'",
+            "chatExtensionId: 'HugOS.modelfusion'"
+        ),
+
+        // ── forwardingTelemetryService.ts — isCopilotLikeExtension ──
+        (
+            "src/vs/platform/dataChannel/browser/forwardingTelemetryService.ts",
+            "extIdLowerCase === 'github.copilot' || extIdLowerCase === 'github.copilot-chat'",
+            "extIdLowerCase === 'hugos.modelfusion' || extIdLowerCase === 'hugos.modelfusion'"
+        ),
+
+        // ── mcpListWidget.ts — COPILOT_EXTENSION_IDS ──
+        (
+            "src/vs/workbench/contrib/chat/browser/aiCustomization/mcpListWidget.ts",
+            "['github.copilot', 'github.copilot-chat']",
+            "['hugos.modelfusion', 'hugos.modelfusion']"
+        ),
+
+        // ── chatSetupProviders.ts — setup message ──
+        (
+            "src/vs/workbench/contrib/chat/browser/chatSetup/chatSetupProviders.ts",
+            "or select a language from the model picker to chat without signing in.",
+            "or select a local ModelFusion model from the model picker to chat without signing in."
+        ),
+
+        // ── chatSetupProviders.ts — timeout comment ──
+        (
+            "src/vs/workbench/contrib/chat/browser/chatSetup/chatSetupProviders.ts",
+            "accommodates Copilot model-metadata fetch",
+            "accommodates local ModelFusion server startup and Copilot model-metadata fetch"
+        ),
+
+        // ── editSourceTrackingFeature.ts — extension IDs ──
+        (
+            "src/vs/workbench/contrib/editTelemetry/browser/telemetry/editSourceTrackingFeature.ts",
+            "'GitHub.copilot'",
+            "'HugOS.modelfusion'"
+        ),
+
+        // ── editSourceTrackingImpl.ts — extension IDs ──
+        (
+            "src/vs/workbench/contrib/editTelemetry/browser/telemetry/editSourceTrackingImpl.ts",
+            "'github.copilot'",
+            "'hugos.modelfusion'"
+        ),
+
+        // ── terminalMenus.ts — isAiContributedProfile ──
+        (
+            "src/vs/workbench/contrib/terminal/browser/terminalMenus.ts",
+            "extensionIdentifier === 'github.copilot'",
+            "extensionIdentifier === 'hugos.modelfusion'"
+        ),
+
+        // ── settingsLayout.ts — commonly used settings ──
+        (
+            "src/vs/workbench/contrib/preferences/browser/settingsLayout.ts",
+            "'github.copilot.chat.agent.enabled'",
+            "'HugOS.modelfusion.manageExtension'"
+        ),
+
+        // ── mcpRegistry.ts — inject modelfusion collection filter ──
+        (
+            "src/vs/workbench/contrib/mcp/common/mcpRegistry.ts",
+            "public registerCollection(collection: McpCollectionDefinition): IDisposable {",
+            "public registerCollection(collection: McpCollectionDefinition): IDisposable {\n\t\tconst filteredServerDefinitions = collection.serverDefinitions.map(defs =>\n\t\t\tdefs.filter(d => d.id.endsWith('.modelfusion') || d.label === 'modelfusion')\n\t\t);\n\t\tconst filteredCollection: McpCollectionDefinition = {\n\t\t\t...collection,\n\t\t\tserverDefinitions: filteredServerDefinitions\n\t\t};\n\t\tcollection = filteredCollection;"
+        ),
+
+        // ── languageModels.ts — inject ModelFusion vendor auto-registration ──
+        (
+            "src/vs/workbench/contrib/chat/common/languageModels.ts",
+            "this._languageModelsConfigurationService.whenReady.then(async () => {",
+            "this._languageModelsConfigurationService.whenReady.then(async () => {\n\t\t\tconst groups = this._languageModelsConfigurationService.getLanguageModelsProviderGroups();\n\t\t\tif (!groups.some(g => g.vendor === 'modelfusion')) {\n\t\t\t\ttry {\n\t\t\t\t\tconst languageModelProviderGroup = {\n\t\t\t\t\t\tvendor: 'modelfusion',\n\t\t\t\t\t\tname: 'ModelFusion Local Panel',\n\t\t\t\t\t\tsettings: {\n\t\t\t\t\t\t\t'modelfusion-local': {}\n\t\t\t\t\t\t}\n\t\t\t\t\t};\n\t\t\t\t\tawait this._languageModelsConfigurationService.addLanguageModelsProviderGroup(languageModelProviderGroup);\n\t\t\t\t\tthis._logService.info('[LM] Added default ModelFusion provider group on startup');\n\t\t\t\t} catch (e) {\n\t\t\t\t\tthis._logService.error('[LM] Failed to add default ModelFusion provider group on startup', e);\n\t\t\t\t}\n\t\t\t}"
+        ),
+    ]
+}
+
 
