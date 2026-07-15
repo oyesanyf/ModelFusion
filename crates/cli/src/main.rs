@@ -4558,18 +4558,11 @@ fn get_source_patches() -> Vec<(&'static str, &'static str, &'static str)> {
             "['hugos.modelfusion', 'hugos.modelfusion']"
         ),
 
-        // ── chatSetupProviders.ts — setup message ──
+        // ── chatSetupProviders.ts — timeout increase for local server ──
         (
             "src/vs/workbench/contrib/chat/browser/chatSetup/chatSetupProviders.ts",
-            "or select a language from the model picker to chat without signing in.",
-            "or select a local ModelFusion model from the model picker to chat without signing in."
-        ),
-
-        // ── chatSetupProviders.ts — timeout comment ──
-        (
-            "src/vs/workbench/contrib/chat/browser/chatSetup/chatSetupProviders.ts",
-            "accommodates Copilot model-metadata fetch",
-            "accommodates local ModelFusion server startup and Copilot model-metadata fetch"
+            "this.environmentService.remoteAuthority ? 60000 /* increase for remote scenarios */ : 20000",
+            "this.environmentService.remoteAuthority ? 60000 /* increase for remote scenarios */ : 60000 /* 60s — accommodates local ModelFusion server startup */"
         ),
 
         // ── editSourceTrackingFeature.ts — extension IDs ──
@@ -4589,14 +4582,14 @@ fn get_source_patches() -> Vec<(&'static str, &'static str, &'static str)> {
         // ── terminalMenus.ts — isAiContributedProfile ──
         (
             "src/vs/workbench/contrib/terminal/browser/terminalMenus.ts",
-            "extensionIdentifier === 'github.copilot'",
+            "extensionIdentifier === 'github.copilot-chat'",
             "extensionIdentifier === 'hugos.modelfusion'"
         ),
 
         // ── settingsLayout.ts — commonly used settings ──
         (
             "src/vs/workbench/contrib/preferences/browser/settingsLayout.ts",
-            "'github.copilot.chat.agent.enabled'",
+            "'GitHub.copilot-chat.manageExtension'",
             "'HugOS.modelfusion.manageExtension'"
         ),
 
@@ -4608,10 +4601,11 @@ fn get_source_patches() -> Vec<(&'static str, &'static str, &'static str)> {
         ),
 
         // ── languageModels.ts — inject ModelFusion vendor auto-registration ──
+        // We inject after the onDidChangeLanguageModelGroups listener registration
         (
             "src/vs/workbench/contrib/chat/common/languageModels.ts",
-            "this._languageModelsConfigurationService.whenReady.then(async () => {",
-            "this._languageModelsConfigurationService.whenReady.then(async () => {\n\t\t\tconst groups = this._languageModelsConfigurationService.getLanguageModelsProviderGroups();\n\t\t\tif (!groups.some(g => g.vendor === 'modelfusion')) {\n\t\t\t\ttry {\n\t\t\t\t\tconst languageModelProviderGroup = {\n\t\t\t\t\t\tvendor: 'modelfusion',\n\t\t\t\t\t\tname: 'ModelFusion Local Panel',\n\t\t\t\t\t\tsettings: {\n\t\t\t\t\t\t\t'modelfusion-local': {}\n\t\t\t\t\t\t}\n\t\t\t\t\t};\n\t\t\t\t\tawait this._languageModelsConfigurationService.addLanguageModelsProviderGroup(languageModelProviderGroup);\n\t\t\t\t\tthis._logService.info('[LM] Added default ModelFusion provider group on startup');\n\t\t\t\t} catch (e) {\n\t\t\t\t\tthis._logService.error('[LM] Failed to add default ModelFusion provider group on startup', e);\n\t\t\t\t}\n\t\t\t}"
+            "this._store.add(this._languageModelsConfigurationService.onDidChangeLanguageModelGroups(changedGroups => this._onDidChangeLanguageModelGroups(changedGroups)));",
+            "this._store.add(this._languageModelsConfigurationService.onDidChangeLanguageModelGroups(changedGroups => this._onDidChangeLanguageModelGroups(changedGroups)));\n\n\t\t// HugOS: Auto-register ModelFusion provider group on startup\n\t\t{\n\t\t\tconst groups = this._languageModelsConfigurationService.getLanguageModelsProviderGroups();\n\t\t\tif (!groups.some(g => g.vendor === 'modelfusion')) {\n\t\t\t\tthis._languageModelsConfigurationService.addLanguageModelsProviderGroup({\n\t\t\t\t\tvendor: 'modelfusion',\n\t\t\t\t\tname: 'ModelFusion Local Panel',\n\t\t\t\t\tsettings: { 'modelfusion-local': {} }\n\t\t\t\t}).then(\n\t\t\t\t\t() => this._logService.info('[LM] Added default ModelFusion provider group on startup'),\n\t\t\t\t\t(e) => this._logService.error('[LM] Failed to add default ModelFusion provider group on startup', e)\n\t\t\t\t);\n\t\t\t}\n\t\t}"
         ),
     ]
 }
