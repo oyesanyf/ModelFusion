@@ -108,20 +108,18 @@ ${directoryTreeXml}
     <StandardDirectory Id="ProgramMenuFolder">
       <Directory Id="ApplicationProgramsFolder" Name="HugOS IDE" />
     </StandardDirectory>
-    <StandardDirectory Id="DesktopFolder" />
+    <StandardDirectory Id="DesktopFolder">
+      <Component Id="ApplicationShortcutDesktop" Guid="*">
+        <Shortcut Id="ApplicationDesktopShortcut" Name="HugOS IDE" Target="[INSTALLFOLDER]HugOS.exe" WorkingDirectory="INSTALLFOLDER" Icon="HugOSIcon.ico" />
+        <RegistryValue Root="HKCU" Key="Software\\HugOSTeam\\HugOSIDE" Name="desktop_shortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
 
     <DirectoryRef Id="ApplicationProgramsFolder">
       <Component Id="ApplicationShortcut" Guid="*">
         <Shortcut Id="ApplicationStartMenuShortcut" Name="HugOS IDE" Target="[INSTALLFOLDER]HugOS.exe" Directory="ApplicationProgramsFolder" WorkingDirectory="INSTALLFOLDER" Icon="HugOSIcon.ico" />
         <RemoveFolder Id="CleanUpShortcuts" On="uninstall" />
         <RegistryValue Root="HKCU" Key="Software\\HugOSTeam\\HugOSIDE" Name="installed" Type="integer" Value="1" KeyPath="yes" />
-      </Component>
-    </DirectoryRef>
-
-    <DirectoryRef Id="DesktopFolder">
-      <Component Id="ApplicationShortcutDesktop" Guid="*">
-        <Shortcut Id="ApplicationDesktopShortcut" Name="HugOS IDE" Target="[INSTALLFOLDER]HugOS.exe" Directory="DesktopFolder" WorkingDirectory="INSTALLFOLDER" Icon="HugOSIcon.ico" />
-        <RegistryValue Root="HKCU" Key="Software\\HugOSTeam\\HugOSIDE" Name="desktop_shortcut" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </DirectoryRef>
 
