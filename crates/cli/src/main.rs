@@ -2239,9 +2239,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 m.as_str()
                             } else {
                                 ollama_model_owned = if budget <= 0.5 {
-                                    "qwen2.5:0.5b"
-                                } else {
                                     "qwen2.5:1.5b"
+                                } else {
+                                    "qwen2.5:7b"
                                 };
                                 ollama_model_owned
                             };
