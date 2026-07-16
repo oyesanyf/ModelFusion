@@ -93,6 +93,35 @@ fn select_ollama_model_for_hardware(is_low_budget: bool) -> &'static str {
     }
 }
 
+/// Dynamically determine the optimal context window (num_ctx) for the chosen Ollama model.
+/// Balances context size against the physical RAM constraints to prevent OOM/slowdowns.
+fn select_context_window_for_model(model: &str) -> u32 {
+    let lower_model = model.to_lowercase();
+    let mut sys = sysinfo::System::new();
+    sys.refresh_memory();
+    let ram_gb = sys.total_memory() / 1_073_741_824;
+
+    if lower_model.contains("0.5b") || lower_model.contains("1.5b") {
+        // Very small models can easily handle larger context with low overhead
+        16384
+    } else if lower_model.contains("3b") || lower_model.contains("4b") {
+        if ram_gb >= 16 { 16384 } else { 8192 }
+    } else if lower_model.contains("7b") || lower_model.contains("8b") || lower_model.contains("llama3") {
+        // Large models need substantial memory for KV cache at high contexts
+        if ram_gb >= 32 {
+            16384
+        } else if ram_gb >= 16 {
+            8192
+        } else {
+            4096
+        }
+    } else {
+        // Safe default fallback for custom models
+        if ram_gb >= 16 { 8192 } else { 4096 }
+    }
+}
+
+
 #[derive(Parser, Debug)]
 #[command(name = "modelfusion", version = "0.1.0", about = "ModelFusion - Advanced HuggingFace Model Orchestration System")]
 struct Args {
@@ -2303,9 +2332,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 (None, prompt.clone())
                             };
 
-                            // Use shorter num_predict for simple questions
+                            // Scale num_predict based on input size and complexity
                             let user_len = user_msg.len();
-                            let num_predict: u32 = if user_len < 100 { 256 } else if user_len < 500 { 512 } else { 1024 };
+                            let num_predict: u32 = if user_len < 100 { 1024 } else if user_len < 500 { 2048 } else { 4096 };
 
                             // Dynamic system prompt: one prompt per tool/domain category
                             let lower_user = user_msg.to_lowercase();
@@ -2445,7 +2474,8 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 "stream": false,
                                 "options": {
                                     "temperature": temperature,
-                                    "num_predict": num_predict
+                                    "num_predict": num_predict,
+                                    "num_ctx": select_context_window_for_model(ollama_model)
                                 }
                             });
 
