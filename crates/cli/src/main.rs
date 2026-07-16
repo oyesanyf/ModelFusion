@@ -61,6 +61,38 @@ fn fast_inference_slots() -> usize {
     else { 4 }
 }
 
+/// Hardware-aware Ollama model selector.
+/// Detects system RAM and GPU availability to pick the best model for the machine.
+///   - 32GB+ RAM or dedicated GPU  → qwen2.5:7b  (smartest, needs ~5GB VRAM/RAM)
+///   - 16GB+ RAM                   → qwen2.5:3b  (good balance)
+///   - <16GB RAM                   → qwen2.5:1.5b (fast, lightweight)
+fn select_ollama_model_for_hardware(is_low_budget: bool) -> &'static str {
+    if is_low_budget {
+        return "qwen2.5:1.5b";
+    }
+    let mut sys = sysinfo::System::new();
+    sys.refresh_memory();
+    let ram_gb = sys.total_memory() / 1_073_741_824;
+
+    // Check for dedicated GPU via environment hints or nvidia-smi
+    let has_gpu = std::env::var("CUDA_VISIBLE_DEVICES").is_ok()
+        || std::env::var("NVIDIA_VISIBLE_DEVICES").is_ok()
+        || std::process::Command::new("nvidia-smi")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+    if ram_gb >= 32 || has_gpu {
+        "qwen2.5:7b"
+    } else if ram_gb >= 16 {
+        "qwen2.5:3b"
+    } else {
+        "qwen2.5:1.5b"
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "modelfusion", version = "0.1.0", about = "ModelFusion - Advanced HuggingFace Model Orchestration System")]
 struct Args {
@@ -2234,16 +2266,10 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         
                         if ollama && !is_complex {
                             // Simple question → fast path with 1.5b
-                            let ollama_model_owned;
                             let ollama_model = if let Some(ref m) = model_override {
                                 m.as_str()
                             } else {
-                                ollama_model_owned = if budget <= 0.5 {
-                                    "qwen2.5:1.5b"
-                                } else {
-                                    "qwen2.5:7b"
-                                };
-                                ollama_model_owned
+                                select_ollama_model_for_hardware(budget <= 0.5)
                             };
 
                             let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
