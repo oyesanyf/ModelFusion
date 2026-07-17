@@ -88,11 +88,24 @@ if ($exeSig.Status -ne 'Valid' -or $exeSig.SignerCertificate.Subject -notlike '*
     Copy-Item $codeExeFile.FullName $hugosExePath -Force
     Write-Host "[OK] HugOS.exe restored from Code.exe ($([int]($codeExeFile.Length/1MB)) MB, valid Microsoft sig)" -ForegroundColor Green
 
-    # Also sync matching Electron runtime data files
+    # Also sync matching Electron runtime data files (root-level copies)
     foreach ($f in @('icudtl.dat','v8_context_snapshot.bin','snapshot_blob.bin')) {
         $src = Get-ChildItem $extractDir -Filter $f -Recurse | Select-Object -First 1
         if ($src) { Copy-Item $src.FullName (Join-Path $vsCodePackDir $f) -Force }
     }
+
+    # CRITICAL: Copy the versioned Electron runtime directory (e.g. 7e7950df89/).
+    # Code.exe loads ICU data from this subdirectory, NOT from root.
+    # Without it, HugOS.exe crashes with "Invalid file descriptor to ICU data received".
+    $versionedDir = Get-ChildItem $extractDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{10,}$' } | Select-Object -First 1
+    if ($versionedDir) {
+        $destVersionedDir = Join-Path $vsCodePackDir $versionedDir.Name
+        Copy-Item $versionedDir.FullName $destVersionedDir -Recurse -Force
+        Write-Host "[OK] Copied Electron versioned runtime directory: $($versionedDir.Name)/" -ForegroundColor Green
+    } else {
+        Write-Host "[WARNING] No versioned runtime directory found in VSCode zip!" -ForegroundColor Yellow
+    }
+
     Write-Host "[OK] Electron runtime data files synced" -ForegroundColor Green
     Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
 } else {
