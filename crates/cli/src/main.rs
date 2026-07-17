@@ -4489,6 +4489,56 @@ async fn patch_ide_workflow(ide_src_dir: &str, shallow: bool, vscode_tag: Option
     println!();
 
     print_patch_summary(&successes, &failures);
+
+    // ── Safety Check: Warn if built HugOS.exe has a broken signature ──────
+    // This catches the July 2026 incident where build_msi.ps1 re-signed
+    // HugOS.exe with a self-signed cert, breaking Electron's ICU data loader
+    // and causing a silent renderer crash (IDE starts but no window appears).
+    //
+    // See: IDE/INCIDENT_SIGNING_2026-07-16.md for full details.
+    let built_exe = project_root
+        .join("IDE")
+        .join("VSCode-win32-x64")
+        .join("HugOS.exe");
+    if built_exe.exists() {
+        #[cfg(windows)]
+        {
+            use std::process::Command;
+            let check = Command::new("powershell")
+                .args([
+                    "-NoProfile", "-Command",
+                    &format!(
+                        r#"$s = Get-AuthenticodeSignature '{}'; \
+                        if ($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notlike '*Microsoft*') \
+                        {{ Write-Output 'INVALID' }} else {{ Write-Output 'OK' }}"#,
+                        built_exe.display()
+                    ),
+                ])
+                .output();
+            if let Ok(out) = check {
+                let result = String::from_utf8_lossy(&out.stdout);
+                if result.trim() == "INVALID" {
+                    println!();
+                    println!("╔══════════════════════════════════════════════════════════════╗");
+                    println!("║  ⛔  CRITICAL SAFETY WARNING — READ BEFORE BUILDING MSI     ║");
+                    println!("╠══════════════════════════════════════════════════════════════╣");
+                    println!("║  HugOS.exe has an INVALID or SELF-SIGNED certificate!       ║");
+                    println!("║                                                              ║");
+                    println!("║  build_msi.ps1 MUST NOT sign HugOS.exe with a self-signed  ║");
+                    println!("║  cert. Doing so corrupts Electron's ICU data loader and     ║");
+                    println!("║  causes the IDE to spawn 4 processes but NEVER show a      ║");
+                    println!("║  window. See IDE/INCIDENT_SIGNING_2026-07-16.md             ║");
+                    println!("║                                                              ║");
+                    println!("║  FIX: build_msi.ps1 step 4.1 will auto-restore Code.exe   ║");
+                    println!("║  from VSCode 1.126.0 before packaging. Ensure you run the  ║");
+                    println!("║  latest build_msi.ps1 (commit 2018208e or later).           ║");
+                    println!("╚══════════════════════════════════════════════════════════════╝");
+                    println!();
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
