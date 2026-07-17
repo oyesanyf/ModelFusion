@@ -668,7 +668,7 @@ fn main() -> Result<()> {
 
     if args.sys_info {
         let sys_mem = model_selection::memory::SystemMemory::detect();
-        let mut disks = sysinfo::Disks::new_with_refreshed_list();
+        let disks = sysinfo::Disks::new_with_refreshed_list();
         let free_disk_gb = if let Some(disk) = disks.iter().find(|d| d.mount_point() == std::path::Path::new("C:\\") || d.mount_point() == std::path::Path::new("/")) {
             disk.available_space() as f64 / 1_073_741_824.0
         } else if let Some(disk) = disks.first() {
@@ -763,7 +763,7 @@ async fn run(args: Args) -> Result<()> {
 
     if args.sys_info {
         let sys_mem = model_selection::memory::SystemMemory::detect();
-        let mut disks = sysinfo::Disks::new_with_refreshed_list();
+        let disks = sysinfo::Disks::new_with_refreshed_list();
         let free_disk_gb = if let Some(disk) = disks.iter().find(|d| d.mount_point() == std::path::Path::new("C:\\") || d.mount_point() == std::path::Path::new("/")) {
             disk.available_space() as f64 / 1_073_741_824.0
         } else if let Some(disk) = disks.first() {
@@ -1033,7 +1033,6 @@ async fn run(args: Args) -> Result<()> {
         }
         return Ok(());
     }
-
     if args.model_recommendations {
         let db_path = handler.db_path.clone();
         match db::HuggingFaceModelDatabase::new(&db_path) {
@@ -1041,7 +1040,7 @@ async fn run(args: Args) -> Result<()> {
                 println!("🌟 Personalized Model Recommendations (Top Overall):");
                 match db.get_top_overall(5) {
                     Ok(models) => {
-                        for (i, m) in models.iter().enumerate() {
+                        for m in models.iter() {
                             println!("  🏆 {} [{}] (Score: {:.2}, Downloads: {})", m.model_id, m.pipeline_tag, m.decision_score, m.downloads);
                         }
                     }
@@ -1254,7 +1253,7 @@ async fn run(args: Args) -> Result<()> {
                 }
             };
             let db_dir = db_path.parent().unwrap_or_else(|| std::path::Path::new("db"));
-            let mut state = load_bandit_state(db_dir);
+            let state = load_bandit_state(db_dir);
             let epsilon = 0.15;
             let mut lcg = Lcg::new();
             bandit_arm = if lcg.gen_bool(epsilon) {
@@ -2219,7 +2218,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     let mut openvino = request_json["openvino"].as_bool().unwrap_or(false);
                     let mut gpu = request_json["gpu"].as_bool().unwrap_or(false);
                     let mut cpu = request_json["cpu"].as_bool().unwrap_or(false);
-                    let mut ollama = request_json["ollama"].as_bool().unwrap_or(false);
+                    let ollama = request_json["ollama"].as_bool().unwrap_or(false);
                     let mut fusion = request_json["fusion"].as_bool().unwrap_or(false);
                     let model_override = request_json["model"]
                         .as_str()
@@ -2237,7 +2236,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                     // Acquire an inference slot. If all slots are busy the request
                     // queues here — no timeout, no drop — until a slot is released.
-                    let sem = inference_sem();
+                    let _sem = inference_sem();
                     // Adaptive semaphore: acquire fast pool first (high concurrency)
                     // Heavy pipeline will acquire its own semaphore if needed
                     let fast_sem = fast_inference_sem();

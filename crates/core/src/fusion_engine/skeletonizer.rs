@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::fs;
 
 /// Simple regex-based skeletonizer to extract code structure (signatures, classes, imports)
