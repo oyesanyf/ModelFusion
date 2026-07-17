@@ -62,6 +62,43 @@ $cliDestPath = Join-Path $cliDestDir "cli.exe"
 Copy-Item -Path $cliSrcPath -Destination $cliDestPath -Force
 Write-Host "[OK] Copied ModelFusion CLI to: $cliDestPath" -ForegroundColor Green
 
+# 4.1 Restore original Electron binary (Code.exe -> HugOS.exe)
+# CRITICAL: Do NOT use the custom-built HugOS.exe here — it was compiled with a modified
+# Electron resource table that breaks ICU data loading after any code signing.
+# Instead, download the matching VSCode 1.126.0 release and use Code.exe verbatim.
+# The HugOS branding is controlled entirely by product.json, NOT the binary.
+$hugosExePath = Join-Path $vsCodePackDir "HugOS.exe"
+$vscodeDlZip  = Join-Path $PSScriptRoot "vscode-1.126.0-win32-x64.zip"
+$vscodeDlUrl  = "https://update.code.visualstudio.com/1.126.0/win32-x64-archive/stable"
+
+# Check if current HugOS.exe has a valid (Microsoft) signature
+$exeSig = Get-AuthenticodeSignature $hugosExePath -ErrorAction SilentlyContinue
+if ($exeSig.Status -ne 'Valid' -or $exeSig.SignerCertificate.Subject -notlike '*Microsoft*') {
+    Write-Host "[INFO] HugOS.exe has invalid/untrusted signature. Restoring from VSCode 1.126.0..." -ForegroundColor Yellow
+    if (-not (Test-Path $vscodeDlZip) -or (Get-Item $vscodeDlZip).Length -lt 100MB) {
+        Write-Host "[INFO] Downloading VSCode 1.126.0 (~280MB)..." -ForegroundColor Yellow
+        Invoke-WebRequest -Uri $vscodeDlUrl -OutFile $vscodeDlZip -UseBasicParsing
+    }
+    $extractDir = Join-Path $env:TEMP "vscode-126-restore"
+    Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+    Expand-Archive -Path $vscodeDlZip -DestinationPath $extractDir -Force
+
+    # Replace HugOS.exe with Code.exe (same Electron, valid Microsoft signature)
+    $codeExeFile = Get-ChildItem $extractDir -Filter "Code.exe" -Recurse | Select-Object -First 1
+    Copy-Item $codeExeFile.FullName $hugosExePath -Force
+    Write-Host "[OK] HugOS.exe restored from Code.exe ($([int]($codeExeFile.Length/1MB)) MB, valid Microsoft sig)" -ForegroundColor Green
+
+    # Also sync matching Electron runtime data files
+    foreach ($f in @('icudtl.dat','v8_context_snapshot.bin','snapshot_blob.bin')) {
+        $src = Get-ChildItem $extractDir -Filter $f -Recurse | Select-Object -First 1
+        if ($src) { Copy-Item $src.FullName (Join-Path $vsCodePackDir $f) -Force }
+    }
+    Write-Host "[OK] Electron runtime data files synced" -ForegroundColor Green
+    Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+} else {
+    Write-Host "[OK] HugOS.exe already has valid Microsoft signature - no restore needed" -ForegroundColor Green
+}
+
 # 4.5 Copy Pre-populated HF Models Database (hf_models.db) into the packaged folder
 $dbSrcPath = Join-Path (Split-Path $PSScriptRoot -Parent) "db\hf_models.db"
 if (Test-Path $dbSrcPath) {
@@ -143,7 +180,23 @@ if (Test-Path $ovSrcPath) {
 
 # 5. Sign the binaries
 Write-Host "[INFO] Signing executables, DLLs, and native modules inside packaged folder..." -ForegroundColor Yellow
-$filesToSign = Get-ChildItem -Path $vsCodePackDir -Include *.exe, *.dll, *.node -Recurse | Select-Object -ExpandProperty FullName
+# IMPORTANT: Do NOT sign Electron binaries or GPU/DirectX DLLs.
+# - HugOS.exe uses Code.exe from VSCode which has a valid Microsoft signature — do not overwrite it.
+# - GPU/DirectX DLLs must keep their original signatures or Electron's renderer won't start.
+$dllExcludeList = @(
+    'HugOS.exe',          # Main Electron binary — uses Microsoft-signed Code.exe
+    'dxil.dll',           # DirectX IL runtime — requires Microsoft signature
+    'd3dcompiler_47.dll', # DirectX compiler — validated by Windows
+    'dxcompiler.dll',     # DX compiler runtime
+    'vk_swiftshader.dll', # Vulkan SwiftShader — Khronos/Google signed
+    'libEGL.dll',         # ANGLE EGL — Google signed
+    'libGLESv2.dll',      # ANGLE GLES2 — Google signed
+    'ffmpeg.dll'          # FFmpeg — Chromium signed
+)
+$filesToSign = Get-ChildItem -Path $vsCodePackDir -Include *.exe, *.dll, *.node -Recurse |
+    Where-Object { $dllExcludeList -notcontains $_.Name } |
+    Select-Object -ExpandProperty FullName
+
 
 $count = 0
 foreach ($file in $filesToSign) {
