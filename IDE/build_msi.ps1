@@ -112,6 +112,17 @@ if ($exeSig.Status -ne 'Valid' -or $exeSig.SignerCertificate.Subject -notlike '*
             Copy-Item $hugosProductJson $versionedProductJson -Force
             Write-Host "[OK] Replaced versioned product.json with HugOS branding" -ForegroundColor Green
         }
+
+        # CRITICAL: Copy modelfusion extension into the versioned directory.
+        # The versioned dir has its own complete extensions/ folder (96 stock extensions)
+        # but does NOT contain modelfusion. Without this, the IDE uses GitHub Copilot
+        # chat instead of our custom ModelFusion AI chat.
+        $mfExtSrc = Join-Path $vsCodePackDir "resources\app\extensions\modelfusion"
+        $mfExtDest = Join-Path $destVersionedDir "resources\app\extensions\modelfusion"
+        if (Test-Path $mfExtSrc) {
+            Copy-Item $mfExtSrc $mfExtDest -Recurse -Force
+            Write-Host "[OK] Copied modelfusion extension to versioned directory" -ForegroundColor Green
+        }
     } else {
         Write-Host "[WARNING] No versioned runtime directory found in VSCode zip!" -ForegroundColor Yellow
     }
