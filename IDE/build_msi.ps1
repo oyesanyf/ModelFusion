@@ -100,6 +100,28 @@ if (Test-Path $conptySrcFolder) {
     Write-Host "[OK] Copied conpty binaries to: $conptyDestDir" -ForegroundColor Green
 }
 
+# 4.85 Apply native module stubs (no prebuilt .node binaries shipped with build)
+# These stubs replace @vscode/policy-watcher, @vscode/spdlog, @vscode/windows-mutex
+# with no-op JS implementations so the IDE starts without native Electron bindings.
+$stubsDir = Join-Path $PSScriptRoot "patches\native_stubs"
+if (Test-Path $stubsDir) {
+    $stubMap = @{
+        "@vscode_policy-watcher_index.js" = "resources\app\node_modules\@vscode\policy-watcher\index.js"
+        "@vscode_spdlog_index.js"         = "resources\app\node_modules\@vscode\spdlog\index.js"
+        "@vscode_windows-mutex_index.js"  = "resources\app\node_modules\@vscode\windows-mutex\index.js"
+    }
+    foreach ($stub in $stubMap.GetEnumerator()) {
+        $stubSrc = Join-Path $stubsDir $stub.Key
+        $stubDst = Join-Path $vsCodePackDir $stub.Value
+        if ((Test-Path $stubSrc) -and (Test-Path (Split-Path $stubDst -Parent))) {
+            Copy-Item $stubSrc $stubDst -Force
+            Write-Host "[OK] Applied native stub: $($stub.Value)" -ForegroundColor Green
+        }
+    }
+} else {
+    Write-Host "[WARNING] Native stubs directory not found at $stubsDir - IDE may fail to start." -ForegroundColor Yellow
+}
+
 # 4.8 Bundle starter OpenVINO model for offline-ready experience
 $ovModelName = "OpenVINO--Qwen2.5-1.5B-Instruct-int4-ov"
 $ovSrcPath = Join-Path $env:USERPROFILE ".hugos-ide\ov_models\$ovModelName"
