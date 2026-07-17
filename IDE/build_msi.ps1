@@ -102,6 +102,16 @@ if ($exeSig.Status -ne 'Valid' -or $exeSig.SignerCertificate.Subject -notlike '*
         $destVersionedDir = Join-Path $vsCodePackDir $versionedDir.Name
         Copy-Item $versionedDir.FullName $destVersionedDir -Recurse -Force
         Write-Host "[OK] Copied Electron versioned runtime directory: $($versionedDir.Name)/" -ForegroundColor Green
+
+        # CRITICAL: Replace the versioned dir's product.json with HugOS branding.
+        # The VSCode zip ships with product.json containing nameShort:"Code" / nameLong:"Visual Studio Code"
+        # which OVERRIDES our resources/app/product.json and makes the IDE show VSCode branding.
+        $versionedProductJson = Join-Path $destVersionedDir "resources\app\product.json"
+        $hugosProductJson = Join-Path $vsCodePackDir "resources\app\product.json"
+        if ((Test-Path $versionedProductJson) -and (Test-Path $hugosProductJson)) {
+            Copy-Item $hugosProductJson $versionedProductJson -Force
+            Write-Host "[OK] Replaced versioned product.json with HugOS branding" -ForegroundColor Green
+        }
     } else {
         Write-Host "[WARNING] No versioned runtime directory found in VSCode zip!" -ForegroundColor Yellow
     }

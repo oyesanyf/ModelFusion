@@ -4488,6 +4488,155 @@ async fn patch_ide_workflow(ide_src_dir: &str, shallow: bool, vscode_tag: Option
     }
     println!();
 
+    // ── Step 8: Brand the Electron binary with rcedit ─────────────────
+    // CRITICAL: After gulp builds Code.exe, we must apply HugOS branding
+    // to the PE resource table (icon, product name, file description).
+    // Without this, the IDE shows "Visual Studio Code" everywhere.
+    // See: IDE/INCIDENT_SIGNING_2026-07-16.md
+    println!("[8/9] Branding Electron binary with rcedit...");
+    let rcedit_path = target_dir
+        .join("node_modules")
+        .join("@vscode")
+        .join("gulp-electron")
+        .join("node_modules")
+        .join("rcedit")
+        .join("bin")
+        .join("rcedit-x64.exe");
+
+    // The built IDE output directory (VSCode-win32-x64)
+    let ide_output_dir = project_root.join("IDE").join("VSCode-win32-x64");
+    let hugos_exe = ide_output_dir.join("HugOS.exe");
+    let hugos_ico = project_root.join("IDE").join("hugos.ico");
+
+    if rcedit_path.exists() && hugos_exe.exists() {
+        let rcedit_str = rcedit_path.to_string_lossy().to_string();
+        let exe_str = hugos_exe.to_string_lossy().to_string();
+
+        let branding_cmds: Vec<(&str, &str, &str)> = vec![
+            ("--set-version-string", "ProductName", "HugOS IDE"),
+            ("--set-version-string", "FileDescription", "HugOS IDE"),
+            ("--set-version-string", "CompanyName", "HugOS Team"),
+            ("--set-version-string", "InternalName", "HugOS"),
+            ("--set-version-string", "OriginalFilename", "HugOS.exe"),
+            ("--set-version-string", "LegalCopyright", "Copyright (C) 2026 HugOS Team"),
+        ];
+
+        let mut brand_ok = true;
+        for (flag, key, value) in &branding_cmds {
+            let status = Command::new(&rcedit_str)
+                .args([&exe_str, flag, key, value])
+                .output();
+            if let Err(e) = status {
+                println!("  [FAIL] rcedit {} {} -- {}", flag, key, e);
+                brand_ok = false;
+            }
+        }
+
+        // Set version strings
+        let _ = Command::new(&rcedit_str)
+            .args([&exe_str, "--set-product-version", "1.126.0"])
+            .output();
+        let _ = Command::new(&rcedit_str)
+            .args([&exe_str, "--set-file-version", "1.126.0"])
+            .output();
+
+        // Set HugOS icon
+        if hugos_ico.exists() {
+            let ico_str = hugos_ico.to_string_lossy().to_string();
+            match Command::new(&rcedit_str)
+                .args([&exe_str, "--set-icon", &ico_str])
+                .output()
+            {
+                Ok(o) if o.status.success() => println!("  [OK] Icon set to hugos.ico"),
+                Ok(o) => {
+                    println!("  [FAIL] Icon set failed: {}", String::from_utf8_lossy(&o.stderr));
+                    brand_ok = false;
+                }
+                Err(e) => {
+                    println!("  [FAIL] Icon set failed: {}", e);
+                    brand_ok = false;
+                }
+            }
+        }
+
+        if brand_ok {
+            println!("  [OK] HugOS branding applied to Electron binary.");
+            successes.push("Binary branding: rcedit applied".into());
+        } else {
+            failures.push("Binary branding: some rcedit steps failed".into());
+        }
+    } else {
+        if !rcedit_path.exists() {
+            println!("  [SKIP] rcedit not found at {:?}", rcedit_path);
+            println!("         Run 'yarn install' in IDE/vscode first.");
+        }
+        if !hugos_exe.exists() {
+            println!("  [SKIP] HugOS.exe not found at {:?}", hugos_exe);
+            println!("         Run the gulp build first to produce VSCode-win32-x64/.");
+        }
+    }
+    println!();
+
+    // ── Step 9: Restore Electron binary + versioned runtime dir ───────
+    // CRITICAL: Code.exe from VSCode 1.126.0 loads ICU data from a versioned
+    // hash subdirectory (e.g. 7e7950df89/), NOT from the root directory.
+    // Without this directory, HugOS.exe crashes with:
+    //   "Invalid file descriptor to ICU data received"
+    // See: IDE/INCIDENT_SIGNING_2026-07-16.md
+    println!("[9/9] Ensuring Electron runtime integrity...");
+    if ide_output_dir.exists() {
+        // Check if the versioned directory already exists
+        let has_versioned_dir = std::fs::read_dir(&ide_output_dir)
+            .map(|entries| {
+                entries.filter_map(|e| e.ok()).any(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    e.file_type().map(|ft| ft.is_dir()).unwrap_or(false)
+                        && name.len() >= 10
+                        && name.chars().all(|c| c.is_ascii_hexdigit())
+                })
+            })
+            .unwrap_or(false);
+
+        if !has_versioned_dir {
+            println!("  [WARNING] No versioned Electron runtime directory found!");
+            println!("  The IDE will crash without it. To fix:");
+            println!("  1. Download VSCode 1.126.0: https://update.code.visualstudio.com/1.126.0/win32-x64-archive/stable");
+            println!("  2. Extract and copy the hash-named directory (e.g. 7e7950df89/) into VSCode-win32-x64/");
+            println!("  3. Or run build_msi.ps1 which does this automatically.");
+            failures.push("Runtime: versioned Electron directory missing".into());
+        } else {
+            println!("  [OK] Versioned Electron runtime directory present.");
+            successes.push("Runtime: versioned directory verified".into());
+        }
+
+        // Verify HugOS.exe is not self-signed (the July 2026 incident guard)
+        #[cfg(windows)]
+        {
+            let check = Command::new("powershell")
+                .args([
+                    "-NoProfile", "-Command",
+                    &format!(
+                        r#"$s = Get-AuthenticodeSignature '{}'; if ($s.Status -eq 'Valid') {{ Write-Output 'VALID' }} else {{ Write-Output 'INVALID' }}"#,
+                        hugos_exe.display()
+                    ),
+                ])
+                .output();
+            if let Ok(out) = check {
+                let result = String::from_utf8_lossy(&out.stdout);
+                if result.trim() == "VALID" {
+                    println!("  [OK] HugOS.exe signature is valid.");
+                    successes.push("Runtime: binary signature valid".into());
+                } else {
+                    println!("  [WARNING] HugOS.exe signature is INVALID — build_msi.ps1 step 4.1 will auto-fix.");
+                    failures.push("Runtime: HugOS.exe signature invalid".into());
+                }
+            }
+        }
+    } else {
+        println!("  [SKIP] VSCode-win32-x64/ not yet built.");
+    }
+    println!();
+
     print_patch_summary(&successes, &failures);
 
     // ── Safety Check: Warn if built HugOS.exe has a broken signature ──────
