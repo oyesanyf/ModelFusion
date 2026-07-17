@@ -851,15 +851,11 @@ pub fn map_hf_to_ollama(hf_model_id: &str) -> String {
         _ if id.contains("mistral") && id.contains("7b") => "mistral:7b".to_string(),
         _ if id.contains("mixtral") && id.contains("8x7b") => "mixtral:8x7b".to_string(),
 
-        // Fallback: strip org prefix, lowercase, replace slashes
+        // Fallback: unrecognized HuggingFace models don't exist in Ollama.
+        // Use the smallest available model as a safe default.
         _ => {
-            let name = hf_model_id
-                .split('/')
-                .last()
-                .unwrap_or(hf_model_id)
-                .to_lowercase()
-                .replace(' ', "-");
-            name
+            log::warn!("No Ollama equivalent for '{}', falling back to qwen2.5:1.5b", hf_model_id);
+            "qwen2.5:1.5b".to_string()
         }
     }
 }

@@ -61,6 +61,67 @@ fn fast_inference_slots() -> usize {
     else { 4 }
 }
 
+/// Hardware-aware Ollama model selector.
+/// Detects system RAM and GPU availability to pick the best model for the machine.
+///   - 32GB+ RAM or dedicated GPU  → qwen2.5:7b  (smartest, needs ~5GB VRAM/RAM)
+///   - 16GB+ RAM                   → qwen2.5:3b  (good balance)
+///   - <16GB RAM                   → qwen2.5:1.5b (fast, lightweight)
+fn select_ollama_model_for_hardware(is_low_budget: bool) -> &'static str {
+    if is_low_budget {
+        return "qwen2.5:1.5b";
+    }
+    let mut sys = sysinfo::System::new();
+    sys.refresh_memory();
+    let ram_gb = sys.total_memory() / 1_073_741_824;
+
+    // Check for dedicated GPU via environment hints or nvidia-smi
+    let has_gpu = std::env::var("CUDA_VISIBLE_DEVICES").is_ok()
+        || std::env::var("NVIDIA_VISIBLE_DEVICES").is_ok()
+        || std::process::Command::new("nvidia-smi")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+
+    if ram_gb >= 32 || has_gpu {
+        "qwen2.5:7b"
+    } else if ram_gb >= 16 {
+        "qwen2.5:3b"
+    } else {
+        "qwen2.5:1.5b"
+    }
+}
+
+/// Dynamically determine the optimal context window (num_ctx) for the chosen Ollama model.
+/// Balances context size against the physical RAM constraints to prevent OOM/slowdowns.
+fn select_context_window_for_model(model: &str) -> u32 {
+    let lower_model = model.to_lowercase();
+    let mut sys = sysinfo::System::new();
+    sys.refresh_memory();
+    let ram_gb = sys.total_memory() / 1_073_741_824;
+
+    if lower_model.contains("0.5b") || lower_model.contains("1.5b") {
+        // Very small models can easily handle larger context with low overhead
+        16384
+    } else if lower_model.contains("3b") || lower_model.contains("4b") {
+        if ram_gb >= 16 { 16384 } else { 8192 }
+    } else if lower_model.contains("7b") || lower_model.contains("8b") || lower_model.contains("llama3") {
+        // Large models need substantial memory for KV cache at high contexts
+        if ram_gb >= 32 {
+            16384
+        } else if ram_gb >= 16 {
+            8192
+        } else {
+            4096
+        }
+    } else {
+        // Safe default fallback for custom models
+        if ram_gb >= 16 { 8192 } else { 4096 }
+    }
+}
+
+
 #[derive(Parser, Debug)]
 #[command(name = "modelfusion", version = "0.1.0", about = "ModelFusion - Advanced HuggingFace Model Orchestration System")]
 struct Args {
@@ -584,6 +645,21 @@ struct Args {
 
     #[arg(long, help = "Run as MCP stdio server")]
     mcp: bool,
+
+    // ---------------------------------------------------------
+    // IDE Patching Flags
+    // ---------------------------------------------------------
+    #[arg(long, help = "Clone VSCode from GitHub and apply HugOS IDE branding patches")]
+    patch_ide: bool,
+
+    #[arg(long, default_value = "IDE/src", help = "Target directory for the VSCode clone")]
+    ide_src_dir: String,
+
+    #[arg(long, help = "Shallow clone with --depth 1 for faster download")]
+    shallow: bool,
+
+    #[arg(long, help = "Specific VSCode git tag to clone (e.g., '1.96.0')")]
+    vscode_tag: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -592,7 +668,7 @@ fn main() -> Result<()> {
 
     if args.sys_info {
         let sys_mem = model_selection::memory::SystemMemory::detect();
-        let mut disks = sysinfo::Disks::new_with_refreshed_list();
+        let disks = sysinfo::Disks::new_with_refreshed_list();
         let free_disk_gb = if let Some(disk) = disks.iter().find(|d| d.mount_point() == std::path::Path::new("C:\\") || d.mount_point() == std::path::Path::new("/")) {
             disk.available_space() as f64 / 1_073_741_824.0
         } else if let Some(disk) = disks.first() {
@@ -687,7 +763,7 @@ async fn run(args: Args) -> Result<()> {
 
     if args.sys_info {
         let sys_mem = model_selection::memory::SystemMemory::detect();
-        let mut disks = sysinfo::Disks::new_with_refreshed_list();
+        let disks = sysinfo::Disks::new_with_refreshed_list();
         let free_disk_gb = if let Some(disk) = disks.iter().find(|d| d.mount_point() == std::path::Path::new("C:\\") || d.mount_point() == std::path::Path::new("/")) {
             disk.available_space() as f64 / 1_073_741_824.0
         } else if let Some(disk) = disks.first() {
@@ -755,6 +831,11 @@ async fn run(args: Args) -> Result<()> {
 
     if args.mcp {
         run_mcp_server(args.db_path.clone()).await?;
+        return Ok(());
+    }
+
+    if args.patch_ide {
+        patch_ide_workflow(&args.ide_src_dir, args.shallow, args.vscode_tag.as_deref()).await?;
         return Ok(());
     }
 
@@ -952,7 +1033,6 @@ async fn run(args: Args) -> Result<()> {
         }
         return Ok(());
     }
-
     if args.model_recommendations {
         let db_path = handler.db_path.clone();
         match db::HuggingFaceModelDatabase::new(&db_path) {
@@ -960,7 +1040,7 @@ async fn run(args: Args) -> Result<()> {
                 println!("🌟 Personalized Model Recommendations (Top Overall):");
                 match db.get_top_overall(5) {
                     Ok(models) => {
-                        for (i, m) in models.iter().enumerate() {
+                        for m in models.iter() {
                             println!("  🏆 {} [{}] (Score: {:.2}, Downloads: {})", m.model_id, m.pipeline_tag, m.decision_score, m.downloads);
                         }
                     }
@@ -1173,7 +1253,7 @@ async fn run(args: Args) -> Result<()> {
                 }
             };
             let db_dir = db_path.parent().unwrap_or_else(|| std::path::Path::new("db"));
-            let mut state = load_bandit_state(db_dir);
+            let state = load_bandit_state(db_dir);
             let epsilon = 0.15;
             let mut lcg = Lcg::new();
             bandit_arm = if lcg.gen_bool(epsilon) {
@@ -1730,6 +1810,14 @@ struct RouterDecision {
 /// Small models (1.5B-3B) often echo their instructions or add meta-commentary
 /// like "I don't see any specific instructions..." which should be hidden from users.
 fn clean_model_response(raw: &str) -> String {
+    // Short responses are typically direct factual answers — don't risk
+    // stripping them with the leakage heuristic which is designed for
+    // longer, multi-paragraph LLM outputs that sometimes include filler.
+    let trimmed_raw = raw.trim();
+    if trimmed_raw.len() < 200 {
+        return trimmed_raw.to_string();
+    }
+
     let leakage_patterns: &[&str] = &[
         "I don't see any specific instructions",
         "I'm following a standard response",
@@ -2130,8 +2218,12 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     let mut openvino = request_json["openvino"].as_bool().unwrap_or(false);
                     let mut gpu = request_json["gpu"].as_bool().unwrap_or(false);
                     let mut cpu = request_json["cpu"].as_bool().unwrap_or(false);
-                    let mut ollama = request_json["ollama"].as_bool().unwrap_or(false);
+                    let ollama = request_json["ollama"].as_bool().unwrap_or(false);
                     let mut fusion = request_json["fusion"].as_bool().unwrap_or(false);
+                    let model_override = request_json["model"]
+                        .as_str()
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string());
 
                     if slash_enabled {
                         // Parse slash commands from incoming prompt
@@ -2144,7 +2236,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                     // Acquire an inference slot. If all slots are busy the request
                     // queues here — no timeout, no drop — until a slot is released.
-                    let sem = inference_sem();
+                    let _sem = inference_sem();
                     // Adaptive semaphore: acquire fast pool first (high concurrency)
                     // Heavy pipeline will acquire its own semaphore if needed
                     let fast_sem = fast_inference_sem();
@@ -2202,10 +2294,10 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         
                         if ollama && !is_complex {
                             // Simple question → fast path with 1.5b
-                            let ollama_model = if budget <= 0.5 {
-                                "qwen2.5:0.5b"
+                            let ollama_model = if let Some(ref m) = model_override {
+                                m.as_str()
                             } else {
-                                "qwen2.5:1.5b"
+                                select_ollama_model_for_hardware(budget <= 0.5)
                             };
 
                             let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
@@ -2239,9 +2331,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 (None, prompt.clone())
                             };
 
-                            // Use shorter num_predict for simple questions
+                            // Scale num_predict based on input size and complexity
                             let user_len = user_msg.len();
-                            let num_predict: u32 = if user_len < 100 { 256 } else if user_len < 500 { 512 } else { 1024 };
+                            let num_predict: u32 = if user_len < 100 { 1024 } else if user_len < 500 { 2048 } else { 4096 };
 
                             // Dynamic system prompt: one prompt per tool/domain category
                             let lower_user = user_msg.to_lowercase();
@@ -2381,7 +2473,8 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 "stream": false,
                                 "options": {
                                     "temperature": temperature,
-                                    "num_predict": num_predict
+                                    "num_predict": num_predict,
+                                    "num_ctx": select_context_window_for_model(ollama_model)
                                 }
                             });
 
@@ -2494,7 +2587,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 parse_selection_strategy(&strategy),
                                 Some(fusion_models),
                                 &fusion_mode,
-                                None,
+                                model_override.as_deref(),
                             ).await {
                                 Ok(content) => content,
                                 Err(e) => format!("Error: {}", e),
@@ -2506,7 +2599,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 .process_task(
                                     &clean_prompt,
                                     None,
-                                    None,
+                                    model_override.as_deref(),
                                     false,
                                     None,
                                     parse_selection_strategy(&strategy),
@@ -4180,4 +4273,396 @@ fn acquire_cross_process_lock() -> Result<std::fs::File> {
         }
     }
 }
+
+// =============================================================================
+// --patch-ide: Clone VSCode and apply HugOS IDE branding patches
+// =============================================================================
+
+/// Main workflow for --patch-ide: clone VSCode, apply all HugOS branding.
+async fn patch_ide_workflow(ide_src_dir: &str, shallow: bool, vscode_tag: Option<&str>) -> Result<()> {
+    use std::process::Command;
+
+    let project_root = std::env::current_dir()?;
+    let target_dir = project_root.join(ide_src_dir);
+    let patches_dir = project_root.join("IDE").join("patches");
+    let extension_src = project_root.join("IDE").join("vscode").join("extensions").join("modelfusion");
+
+    println!("{}", "╔══════════════════════════════════════════════════════════════╗");
+    println!("{}", "║        HugOS IDE Patcher — Clone & Brand VSCode             ║");
+    println!("{}", "╚══════════════════════════════════════════════════════════════╝");
+    println!();
+
+    let mut successes: Vec<String> = Vec::new();
+    let mut failures: Vec<String> = Vec::new();
+
+    // ── Step 1: Clone VSCode ──────────────────────────────────────────
+    println!("[1/7] Cloning VSCode repository...");
+    if target_dir.exists() {
+        println!("  WARNING: Target directory already exists: {}", target_dir.display());
+        println!("  Skipping clone, applying patches to existing tree.");
+        successes.push("Clone: skipped (directory exists)".into());
+    } else {
+        let mut cmd = Command::new("git");
+        cmd.arg("clone");
+        if shallow {
+            cmd.args(["--depth", "1"]);
+        }
+        if let Some(tag) = vscode_tag {
+            cmd.args(["--branch", tag]);
+        }
+        cmd.arg("https://github.com/microsoft/vscode.git");
+        cmd.arg(&target_dir);
+
+        println!("  git clone {} into {}",
+            if shallow { "(shallow)" } else { "(full)" },
+            target_dir.display());
+
+        let status = cmd.status();
+        match status {
+            Ok(s) if s.success() => {
+                println!("  [OK] Clone completed successfully.");
+                successes.push("Clone: success".into());
+            }
+            Ok(s) => {
+                let msg = format!("Clone: git exited with code {}", s.code().unwrap_or(-1));
+                println!("  [FAIL] {}", msg);
+                failures.push(msg);
+                print_patch_summary(&successes, &failures);
+                return Ok(());
+            }
+            Err(e) => {
+                let msg = format!("Clone: failed to run git: {}", e);
+                println!("  [FAIL] {}", msg);
+                failures.push(msg);
+                print_patch_summary(&successes, &failures);
+                return Ok(());
+            }
+        }
+    }
+    println!();
+
+    // ── Step 2: Replace product.json ──────────────────────────────────
+    println!("[2/7] Replacing product.json with HugOS branding...");
+    let product_src = patches_dir.join("product.json");
+    let product_dst = target_dir.join("product.json");
+    match std::fs::copy(&product_src, &product_dst) {
+        Ok(_) => {
+            println!("  [OK] product.json replaced.");
+            successes.push("Branding: product.json".into());
+        }
+        Err(e) => {
+            let msg = format!("Branding: product.json -- {}", e);
+            println!("  [FAIL] {}", msg);
+            failures.push(msg);
+        }
+    }
+    println!();
+
+    // ── Step 3: Patch package.json fields ─────────────────────────────
+    println!("[3/7] Patching package.json fields...");
+    let pkg_path = target_dir.join("package.json");
+    match patch_package_json(&pkg_path) {
+        Ok(_) => {
+            println!("  [OK] package.json patched (name, displayName, description, author).");
+            successes.push("Branding: package.json".into());
+        }
+        Err(e) => {
+            let msg = format!("Branding: package.json -- {}", e);
+            println!("  [FAIL] {}", msg);
+            failures.push(msg);
+        }
+    }
+    println!();
+
+    // ── Step 4: Apply source code patches ─────────────────────────────
+    println!("[4/7] Applying source code patches (copilot -> modelfusion)...");
+    let patches = get_source_patches();
+    let mut patch_ok = 0usize;
+    let mut patch_fail = 0usize;
+    for (rel_path, search, replace) in &patches {
+        let file_path = target_dir.join(rel_path);
+        match apply_text_patch(&file_path, search, replace) {
+            Ok(count) => {
+                println!("  [OK] {} ({} replacement{})", rel_path, count, if count != 1 { "s" } else { "" });
+                patch_ok += 1;
+            }
+            Err(e) => {
+                println!("  [FAIL] {} -- {}", rel_path, e);
+                patch_fail += 1;
+            }
+        }
+    }
+    successes.push(format!("Source patches: {}/{} succeeded", patch_ok, patches.len()));
+    if patch_fail > 0 {
+        failures.push(format!("Source patches: {} file(s) failed", patch_fail));
+    }
+    println!();
+
+    // ── Step 5: Copy modelfusion extension ─────────────────────────────
+    println!("[5/7] Copying modelfusion extension...");
+    let ext_dst = target_dir.join("extensions").join("modelfusion");
+    if extension_src.exists() {
+        match copy_dir_recursive(&extension_src, &ext_dst) {
+            Ok(count) => {
+                println!("  [OK] Copied {} files to extensions/modelfusion/", count);
+                successes.push(format!("Extension: {} files copied", count));
+            }
+            Err(e) => {
+                let msg = format!("Extension: copy failed -- {}", e);
+                println!("  [FAIL] {}", msg);
+                failures.push(msg);
+            }
+        }
+    } else {
+        let msg = "Extension: source directory IDE/vscode/extensions/modelfusion/ not found".to_string();
+        println!("  [FAIL] {}", msg);
+        failures.push(msg);
+    }
+    println!();
+
+    // ── Step 6: Copy icons ────────────────────────────────────────────
+    println!("[6/7] Replacing icons with HugOS branding...");
+    let icon_mappings: Vec<(&str, &str)> = vec![
+        ("icons/win32/code.ico", "resources/win32/code.ico"),
+        ("icons/win32/code_150x150.png", "resources/win32/code_150x150.png"),
+        ("icons/win32/code_70x70.png", "resources/win32/code_70x70.png"),
+        ("icons/darwin/code.icns", "resources/darwin/code.icns"),
+        ("icons/linux/code.png", "resources/linux/code.png"),
+    ];
+    for (src_rel, dst_rel) in &icon_mappings {
+        let src = patches_dir.join(src_rel);
+        let dst = target_dir.join(dst_rel);
+        if src.exists() {
+            if let Some(parent) = dst.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            match std::fs::copy(&src, &dst) {
+                Ok(_) => {
+                    println!("  [OK] {}", dst_rel);
+                    successes.push(format!("Icon: {}", dst_rel));
+                }
+                Err(e) => {
+                    println!("  [FAIL] {} -- {}", dst_rel, e);
+                    failures.push(format!("Icon: {} -- {}", dst_rel, e));
+                }
+            }
+        } else {
+            println!("  [SKIP] {} (source not found)", src_rel);
+        }
+    }
+    println!();
+
+    // ── Step 7: Patch dev config ──────────────────────────────────────
+    println!("[7/7] Patching .vscode dev configuration...");
+    // launch.json: add modelfusion outFiles entry
+    let launch_path = target_dir.join(".vscode").join("launch.json");
+    match apply_text_patch(
+        &launch_path,
+        "\"${workspaceFolder}/extensions/*/out/**/*.js\"",
+        "\"${workspaceFolder}/extensions/*/out/**/*.js\",\n\t\t\t\t\"${workspaceFolder}/extensions/modelfusion/dist/**/*.js\""
+    ) {
+        Ok(_) => {
+            println!("  [OK] .vscode/launch.json patched.");
+            successes.push("DevConfig: launch.json".into());
+        }
+        Err(e) => {
+            println!("  [FAIL] .vscode/launch.json -- {}", e);
+            failures.push(format!("DevConfig: launch.json -- {}", e));
+        }
+    }
+    // tasks.json: replace copilot reference with modelfusion
+    let tasks_path = target_dir.join(".vscode").join("tasks.json");
+    match apply_text_patch(
+        &tasks_path,
+        "\"${workspaceFolder}/extensions/copilot\"",
+        "\"${workspaceFolder}/extensions/modelfusion\""
+    ) {
+        Ok(_) => {
+            println!("  [OK] .vscode/tasks.json patched.");
+            successes.push("DevConfig: tasks.json".into());
+        }
+        Err(e) => {
+            // Stock tasks.json may not have copilot reference — not fatal
+            println!("  [SKIP] .vscode/tasks.json -- {} (non-fatal)", e);
+        }
+    }
+    println!();
+
+    print_patch_summary(&successes, &failures);
+    Ok(())
+}
+
+fn print_patch_summary(successes: &[String], failures: &[String]) {
+    println!("================================================================");
+    println!("                    PATCH SUMMARY                               ");
+    println!("================================================================");
+    println!();
+    println!("  {} steps succeeded:", successes.len());
+    for s in successes {
+        println!("    [OK] {}", s);
+    }
+    if !failures.is_empty() {
+        println!();
+        println!("  {} steps failed:", failures.len());
+        for f in failures {
+            println!("    [FAIL] {}", f);
+        }
+    } else {
+        println!();
+        println!("  All patches applied successfully!");
+        println!("  Next: cd into the target directory and run 'yarn' then");
+        println!("        'gulp vscode-win32-x64' to build the IDE.");
+    }
+    println!();
+}
+
+/// Patch package.json by reading it, modifying specific fields, and writing it back.
+fn patch_package_json(pkg_path: &std::path::Path) -> Result<()> {
+    let content = std::fs::read_to_string(pkg_path)?;
+    let mut json: serde_json::Value = serde_json::from_str(&content)?;
+
+    if let Some(obj) = json.as_object_mut() {
+        obj.insert("name".into(), serde_json::json!("hugos"));
+        obj.insert("displayName".into(), serde_json::json!("HugOS"));
+        obj.insert("description".into(), serde_json::json!("HugOS - Custom AI-Powered Code-OSS IDE"));
+        obj.insert("author".into(), serde_json::json!({ "name": "HugOS Team" }));
+    }
+
+    let output = serde_json::to_string_pretty(&json)?;
+    std::fs::write(pkg_path, output)?;
+    Ok(())
+}
+
+/// Apply a text search-and-replace patch to a file. Returns the number of replacements made.
+fn apply_text_patch(file_path: &std::path::Path, search: &str, replace: &str) -> Result<usize> {
+    let content = std::fs::read_to_string(file_path)
+        .map_err(|e| anyhow::anyhow!("cannot read {}: {}", file_path.display(), e))?;
+    let count = content.matches(search).count();
+    if count == 0 {
+        return Err(anyhow::anyhow!("search string not found in {}", file_path.display()));
+    }
+    let patched = content.replace(search, replace);
+    std::fs::write(file_path, patched)
+        .map_err(|e| anyhow::anyhow!("cannot write {}: {}", file_path.display(), e))?;
+    Ok(count)
+}
+
+/// Recursively copy a directory tree. Returns total number of files copied.
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<usize> {
+    let mut count = 0usize;
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if file_type.is_dir() {
+            count += copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            std::fs::copy(&src_path, &dst_path)?;
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+/// Returns all source code patches as (relative_path, search_string, replace_string) tuples.
+/// These transform stock Microsoft VSCode source into HugOS IDE source.
+fn get_source_patches() -> Vec<(&'static str, &'static str, &'static str)> {
+    vec![
+        // ── src/main.ts — argv.json comments (3 x "VS Code" -> "HugOS") ──
+        (
+            "src/main.ts",
+            "to pass permanent command line arguments to VS Code.",
+            "to pass permanent command line arguments to HugOS."
+        ),
+        (
+            "src/main.ts",
+            "Changing this file requires a restart of VS Code.",
+            "Changing this file requires a restart of HugOS."
+        ),
+        (
+            "src/main.ts",
+            "you see rendering issues in VS Code.",
+            "you see rendering issues in HugOS."
+        ),
+
+        // ── src/vs/platform/product/common/product.ts — defaultChatAgent ──
+        (
+            "src/vs/platform/product/common/product.ts",
+            "extensionId: 'GitHub.copilot'",
+            "extensionId: 'HugOS.modelfusion'"
+        ),
+        (
+            "src/vs/platform/product/common/product.ts",
+            "chatExtensionId: 'GitHub.copilot-chat'",
+            "chatExtensionId: 'HugOS.modelfusion'"
+        ),
+
+        // ── forwardingTelemetryService.ts — isCopilotLikeExtension ──
+        (
+            "src/vs/platform/dataChannel/browser/forwardingTelemetryService.ts",
+            "extIdLowerCase === 'github.copilot' || extIdLowerCase === 'github.copilot-chat'",
+            "extIdLowerCase === 'hugos.modelfusion' || extIdLowerCase === 'hugos.modelfusion'"
+        ),
+
+        // ── mcpListWidget.ts — COPILOT_EXTENSION_IDS ──
+        (
+            "src/vs/workbench/contrib/chat/browser/aiCustomization/mcpListWidget.ts",
+            "['github.copilot', 'github.copilot-chat']",
+            "['hugos.modelfusion', 'hugos.modelfusion']"
+        ),
+
+        // ── chatSetupProviders.ts — timeout increase for local server ──
+        (
+            "src/vs/workbench/contrib/chat/browser/chatSetup/chatSetupProviders.ts",
+            "this.environmentService.remoteAuthority ? 60000 /* increase for remote scenarios */ : 20000",
+            "this.environmentService.remoteAuthority ? 60000 /* increase for remote scenarios */ : 60000 /* 60s — accommodates local ModelFusion server startup */"
+        ),
+
+        // ── editSourceTrackingFeature.ts — extension IDs ──
+        (
+            "src/vs/workbench/contrib/editTelemetry/browser/telemetry/editSourceTrackingFeature.ts",
+            "'GitHub.copilot'",
+            "'HugOS.modelfusion'"
+        ),
+
+        // ── editSourceTrackingImpl.ts — extension IDs ──
+        (
+            "src/vs/workbench/contrib/editTelemetry/browser/telemetry/editSourceTrackingImpl.ts",
+            "'github.copilot'",
+            "'hugos.modelfusion'"
+        ),
+
+        // ── terminalMenus.ts — isAiContributedProfile ──
+        (
+            "src/vs/workbench/contrib/terminal/browser/terminalMenus.ts",
+            "extensionIdentifier === 'github.copilot-chat'",
+            "extensionIdentifier === 'hugos.modelfusion'"
+        ),
+
+        // ── settingsLayout.ts — commonly used settings ──
+        (
+            "src/vs/workbench/contrib/preferences/browser/settingsLayout.ts",
+            "'GitHub.copilot-chat.manageExtension'",
+            "'HugOS.modelfusion.manageExtension'"
+        ),
+
+        // ── mcpRegistry.ts — inject modelfusion collection filter ──
+        (
+            "src/vs/workbench/contrib/mcp/common/mcpRegistry.ts",
+            "public registerCollection(collection: McpCollectionDefinition): IDisposable {",
+            "public registerCollection(collection: McpCollectionDefinition): IDisposable {\n\t\tconst filteredServerDefinitions = collection.serverDefinitions.map(defs =>\n\t\t\tdefs.filter(d => d.id.endsWith('.modelfusion') || d.label === 'modelfusion')\n\t\t);\n\t\tconst filteredCollection: McpCollectionDefinition = {\n\t\t\t...collection,\n\t\t\tserverDefinitions: filteredServerDefinitions\n\t\t};\n\t\tcollection = filteredCollection;"
+        ),
+
+        // ── languageModels.ts — inject ModelFusion vendor auto-registration ──
+        // We inject after the onDidChangeLanguageModelGroups listener registration
+        (
+            "src/vs/workbench/contrib/chat/common/languageModels.ts",
+            "this._store.add(this._languageModelsConfigurationService.onDidChangeLanguageModelGroups(changedGroups => this._onDidChangeLanguageModelGroups(changedGroups)));",
+            "this._store.add(this._languageModelsConfigurationService.onDidChangeLanguageModelGroups(changedGroups => this._onDidChangeLanguageModelGroups(changedGroups)));\n\n\t\t// HugOS: Auto-register ModelFusion provider group on startup\n\t\t{\n\t\t\tconst groups = this._languageModelsConfigurationService.getLanguageModelsProviderGroups();\n\t\t\tif (!groups.some(g => g.vendor === 'modelfusion')) {\n\t\t\t\tthis._languageModelsConfigurationService.addLanguageModelsProviderGroup({\n\t\t\t\t\tvendor: 'modelfusion',\n\t\t\t\t\tname: 'ModelFusion Local Panel',\n\t\t\t\t\tsettings: { 'modelfusion-local': {} }\n\t\t\t\t}).then(\n\t\t\t\t\t() => this._logService.info('[LM] Added default ModelFusion provider group on startup'),\n\t\t\t\t\t(e) => this._logService.error('[LM] Failed to add default ModelFusion provider group on startup', e)\n\t\t\t\t);\n\t\t\t}\n\t\t}"
+        ),
+    ]
+}
+
 
