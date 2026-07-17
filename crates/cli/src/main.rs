@@ -4488,12 +4488,75 @@ async fn patch_ide_workflow(ide_src_dir: &str, shallow: bool, vscode_tag: Option
     }
     println!();
 
-    // ── Step 8: Brand the Electron binary with rcedit ─────────────────
+    // ── Step 8: Build IDE from source ─────────────────────────────────
+    // CRITICAL: The IDE MUST be built from the patched vscode source tree.
+    // Using the official VSCode release zip introduces a foreign versioned
+    // directory (7e7950df89/) that overrides product.json, extensions, and
+    // branding. Building from source produces a clean VSCode-win32-x64/
+    // with HugOS branding and modelfusion extension baked in.
+    // See: commit 4c29cb1f (last known working state)
+    println!("[8/10] Building IDE from source (gulp vscode-win32-x64)...");
+    println!("       This may take 10-15 minutes on first run.");
+
+    // Step 8a: yarn install (ensure dependencies are up to date)
+    let yarn_status = Command::new("cmd.exe")
+        .args(["/c", "cd /d", &target_dir.to_string_lossy(), "&&", "yarn", "install", "--frozen-lockfile"])
+        .output();
+    match yarn_status {
+        Ok(o) if o.status.success() => {
+            println!("  [OK] yarn install completed.");
+        }
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            // yarn install may warn but still succeed
+            if !stderr.contains("error") {
+                println!("  [OK] yarn install completed (with warnings).");
+            } else {
+                println!("  [FAIL] yarn install failed: {}", stderr.chars().take(200).collect::<String>());
+                failures.push("Build: yarn install failed".into());
+            }
+        }
+        Err(e) => {
+            println!("  [FAIL] Could not run yarn: {}", e);
+            failures.push("Build: yarn not available".into());
+        }
+    }
+
+    // Step 8b: gulp vscode-win32-x64 (build the IDE)
+    let gulp_js = target_dir.join("node_modules").join("gulp").join("bin").join("gulp.js");
+    if gulp_js.exists() {
+        let build_status = Command::new("node")
+            .arg(gulp_js.to_string_lossy().to_string())
+            .arg("vscode-win32-x64")
+            .current_dir(&target_dir)
+            .output();
+        match build_status {
+            Ok(o) if o.status.success() => {
+                println!("  [OK] gulp vscode-win32-x64 build completed.");
+                successes.push("Build: IDE built from source".into());
+            }
+            Ok(o) => {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                println!("  [FAIL] gulp build failed: {}", stderr.chars().take(300).collect::<String>());
+                failures.push("Build: gulp vscode-win32-x64 failed".into());
+            }
+            Err(e) => {
+                println!("  [FAIL] Could not run gulp: {}", e);
+                failures.push("Build: gulp not available".into());
+            }
+        }
+    } else {
+        println!("  [SKIP] gulp not found. Run 'yarn install' in IDE/vscode first.");
+        failures.push("Build: gulp.js not found in node_modules".into());
+    }
+    println!();
+
+    // ── Step 9: Brand the Electron binary with rcedit ─────────────────
     // CRITICAL: After gulp builds Code.exe, we must apply HugOS branding
     // to the PE resource table (icon, product name, file description).
     // Without this, the IDE shows "Visual Studio Code" everywhere.
     // See: IDE/INCIDENT_SIGNING_2026-07-16.md
-    println!("[8/9] Branding Electron binary with rcedit...");
+    println!("[9/10] Branding Electron binary with rcedit...");
     let rcedit_path = target_dir
         .join("node_modules")
         .join("@vscode")
@@ -4583,7 +4646,7 @@ async fn patch_ide_workflow(ide_src_dir: &str, shallow: bool, vscode_tag: Option
     // Without this directory, HugOS.exe crashes with:
     //   "Invalid file descriptor to ICU data received"
     // See: IDE/INCIDENT_SIGNING_2026-07-16.md
-    println!("[9/9] Ensuring Electron runtime integrity...");
+    println!("[10/10] Ensuring Electron runtime integrity...");
     if ide_output_dir.exists() {
         // Check if the versioned directory already exists
         let has_versioned_dir = std::fs::read_dir(&ide_output_dir)
