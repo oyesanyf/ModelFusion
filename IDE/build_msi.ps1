@@ -71,9 +71,10 @@ $hugosExePath = Join-Path $vsCodePackDir "HugOS.exe"
 $vscodeDlZip  = Join-Path $PSScriptRoot "vscode-1.126.0-win32-x64.zip"
 $vscodeDlUrl  = "https://update.code.visualstudio.com/1.126.0/win32-x64-archive/stable"
 
-# Check if current HugOS.exe has a valid (Microsoft) signature
+# Check if current HugOS.exe has a valid (Microsoft) signature AND the versioned runtime dir exists
 $exeSig = Get-AuthenticodeSignature $hugosExePath -ErrorAction SilentlyContinue
-if ($exeSig.Status -ne 'Valid' -or $exeSig.SignerCertificate.Subject -notlike '*Microsoft*') {
+$versionedDirExists = (Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{10,}$' }).Count -gt 0
+if ($exeSig.Status -ne 'Valid' -or $exeSig.SignerCertificate.Subject -notlike '*Microsoft*' -or -not $versionedDirExists) {
     Write-Host "[INFO] HugOS.exe has invalid/untrusted signature. Restoring from VSCode 1.126.0..." -ForegroundColor Yellow
     if (-not (Test-Path $vscodeDlZip) -or (Get-Item $vscodeDlZip).Length -lt 100MB) {
         Write-Host "[INFO] Downloading VSCode 1.126.0 (~280MB)..." -ForegroundColor Yellow
@@ -113,15 +114,23 @@ if ($exeSig.Status -ne 'Valid' -or $exeSig.SignerCertificate.Subject -notlike '*
             Write-Host "[OK] Replaced versioned product.json with HugOS branding" -ForegroundColor Green
         }
 
-        # CRITICAL: Copy modelfusion extension into the versioned directory.
-        # The versioned dir has its own complete extensions/ folder (96 stock extensions)
-        # but does NOT contain modelfusion. Without this, the IDE uses GitHub Copilot
-        # chat instead of our custom ModelFusion AI chat.
+        # CRITICAL: Copy our custom Copilot/ModelFusion extension into the versioned directory,
+        # REPLACING the stock GitHub Copilot extension. Our custom extension has ModelFusion
+        # settings, OpenEvolve, /security, and other HugOS-specific features.
+        # The extension may be named 'copilot' (pre-rename) or 'modelfusion' (post-rename).
+        $copilotExtSrc = Join-Path $vsCodePackDir "resources\app\extensions\copilot"
         $mfExtSrc = Join-Path $vsCodePackDir "resources\app\extensions\modelfusion"
-        $mfExtDest = Join-Path $destVersionedDir "resources\app\extensions\modelfusion"
-        if (Test-Path $mfExtSrc) {
-            Copy-Item $mfExtSrc $mfExtDest -Recurse -Force
+        if (Test-Path $copilotExtSrc) {
+            $destCopilot = Join-Path $destVersionedDir "resources\app\extensions\copilot"
+            Remove-Item $destCopilot -Recurse -Force -ErrorAction SilentlyContinue
+            Copy-Item $copilotExtSrc $destCopilot -Recurse -Force
+            Write-Host "[OK] Replaced stock copilot extension with HugOS custom copilot extension" -ForegroundColor Green
+        } elseif (Test-Path $mfExtSrc) {
+            $destMF = Join-Path $destVersionedDir "resources\app\extensions\modelfusion"
+            Copy-Item $mfExtSrc $destMF -Recurse -Force
             Write-Host "[OK] Copied modelfusion extension to versioned directory" -ForegroundColor Green
+        } else {
+            Write-Host "[WARNING] Neither copilot nor modelfusion extension found in source build!" -ForegroundColor Yellow
         }
     } else {
         Write-Host "[WARNING] No versioned runtime directory found in VSCode zip!" -ForegroundColor Yellow
