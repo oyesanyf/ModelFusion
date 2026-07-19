@@ -221,6 +221,40 @@ if (Test-Path $ovSrcPath) {
     Write-Host "[WARNING] Starter OpenVINO model not found at $ovSrcPath. Packaging without bundled model." -ForegroundColor Yellow
 }
 
+# 4.9 Patch extensionHostProcess.js to accept ModelFusion as default vendor
+# VS Code's getDefaultLanguageModel() hardcodes vendor === "copilot" which blocks our
+# "modelfusion" vendor from being found as the default. This patch removes that vendor
+# check so any model with isDefaultForLocation.panel = true becomes the default model.
+Write-Host "[INFO] Patching extensionHostProcess.js to accept ModelFusion vendor..." -ForegroundColor Yellow
+$ejsPatterns = Get-ChildItem -Path $vsCodePackDir -Filter "extensionHostProcess.js" -Recurse
+foreach ($ejsFile in $ejsPatterns) {
+    $ejsContent = Get-Content $ejsFile.FullName -Raw
+    $vendorCheckOld = 'r.metadata.isDefaultForLocation.panel&&r.metadata.vendor===Yl'
+    $vendorCheckNew = 'r.metadata.isDefaultForLocation.panel'
+    if ($ejsContent.Contains($vendorCheckOld)) {
+        $ejsContent = $ejsContent.Replace($vendorCheckOld, $vendorCheckNew)
+        Set-Content $ejsFile.FullName -Value $ejsContent -NoNewline
+        Write-Host "[OK] Patched vendor check in: $($ejsFile.FullName)" -ForegroundColor Green
+    } else {
+        Write-Host "[SKIP] Vendor check already patched or not found in: $($ejsFile.FullName)" -ForegroundColor Yellow
+    }
+}
+
+# 4.95 Strip checksums from product.json to prevent "corrupt installation" warning
+# When product.json contains a checksums block, VS Code validates file hashes at startup.
+# Our patches naturally change file hashes, so we remove the block to avoid false alarms.
+Write-Host "[INFO] Stripping checksums from product.json..." -ForegroundColor Yellow
+$productJsonFiles = Get-ChildItem -Path $vsCodePackDir -Filter "product.json" -Recurse |
+    Where-Object { $_.FullName -like "*resources\app\product.json" }
+foreach ($pjFile in $productJsonFiles) {
+    $pjObj = Get-Content $pjFile.FullName -Raw | ConvertFrom-Json
+    if ($pjObj.checksums) {
+        $pjObj.PSObject.Properties.Remove('checksums')
+        $pjObj | ConvertTo-Json -Depth 20 | Set-Content $pjFile.FullName -Encoding UTF8
+        Write-Host "[OK] Removed checksums from: $($pjFile.FullName)" -ForegroundColor Green
+    }
+}
+
 # 5. Sign the binaries
 Write-Host "[INFO] Signing executables, DLLs, and native modules inside packaged folder..." -ForegroundColor Yellow
 # IMPORTANT: Do NOT sign Electron binaries or GPU/DirectX DLLs.

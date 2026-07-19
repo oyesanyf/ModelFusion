@@ -70,10 +70,10 @@ function generateWix(srcDir, outputFile) {
 
     const directoryTreeXml = renderDirTree(dirMap['INSTALLFOLDER'], '        ');
 
-    // Render components
-    let componentsXml = '    <ComponentGroup Id="AppFilesComponents" Directory="INSTALLFOLDER">\n';
+    // Render components — EVERY component must have explicit Directory
+    let componentsXml = '    <ComponentGroup Id="AppFilesComponents">\n';
     for (const cmp of components) {
-        const dirAttr = cmp.directoryId === 'INSTALLFOLDER' ? '' : ` Directory="${cmp.directoryId}"`;
+        const dirAttr = ` Directory="${cmp.directoryId}"`;
         componentsXml += `      <Component Id="${cmp.id}" Guid="*"${dirAttr}>\n`;
         componentsXml += `        <File Id="${cmp.fileId}" Source="${escapeXml(cmp.source)}" KeyPath="yes" />\n`;
         componentsXml += `      </Component>\n`;

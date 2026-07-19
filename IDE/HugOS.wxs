@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="HugOS IDE" Manufacturer="HugOS Team" Version="1.126.52" UpgradeCode="d77b7e06-80ba-4137-bcf4-654b95ccebc5" Scope="perUser">
+  <Package Name="HugOS IDE" Manufacturer="HugOS Team" Version="1.126.54" UpgradeCode="d77b7e06-80ba-4137-bcf4-654b95ccebc5" Scope="perUser">
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
 
     <MediaTemplate EmbedCab="yes" />
@@ -15968,7 +15968,7 @@
       <ComponentRef Id="ApplicationShortcutDesktop" />
     </Feature>
 
-    <ComponentGroup Id="AppFilesComponents" Directory="INSTALLFOLDER">
+    <ComponentGroup Id="AppFilesComponents">
       <Component Id="cmp_1" Guid="*" Directory="dir_1">
         <File Id="fil_1" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\7e7950df89\chrome_100_percent.pak" KeyPath="yes" />
       </Component>
@@ -91203,46 +91203,46 @@
       <Component Id="cmp_25078" Guid="*" Directory="dir_4002">
         <File Id="fil_25078" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\bin\hugos.cmd" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_25079" Guid="*">
+      <Component Id="cmp_25079" Guid="*" Directory="INSTALLFOLDER">
         <File Id="fil_25079" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\chrome_100_percent.pak" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_25080" Guid="*">
+      <Component Id="cmp_25080" Guid="*" Directory="INSTALLFOLDER">
         <File Id="fil_25080" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\chrome_200_percent.pak" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_25081" Guid="*">
+      <Component Id="cmp_25081" Guid="*" Directory="INSTALLFOLDER">
         <File Id="fil_25081" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\d3dcompiler_47.dll" KeyPath="yes" />
       </Component>
       <Component Id="cmp_25082" Guid="*" Directory="dir_4003">
         <File Id="fil_25082" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\db\hf_models.db" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_25083" Guid="*">
+      <Component Id="cmp_25083" Guid="*" Directory="INSTALLFOLDER">
         <File Id="fil_25083" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\debug.log" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_25084" Guid="*">
+      <Component Id="cmp_25084" Guid="*" Directory="INSTALLFOLDER">
         <File Id="fil_25084" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\dxcompiler.dll" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_25085" Guid="*">
+      <Component Id="cmp_25085" Guid="*" Directory="INSTALLFOLDER">
         <File Id="fil_25085" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\dxil.dll" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_25086" Guid="*">
+      <Component Id="cmp_25086" Guid="*" Directory="INSTALLFOLDER">
         <File Id="fil_25086" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\ffmpeg.dll" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_25087" Guid="*">
+      <Component Id="cmp_25087" Guid="*" Directory="INSTALLFOLDER">
         <File Id="fil_25087" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\HugOS.exe" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_25088" Guid="*">
+      <Component Id="cmp_25088" Guid="*" Directory="INSTALLFOLDER">
         <File Id="fil_25088" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\HugOS.VisualElementsManifest.xml" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_25089" Guid="*">
+      <Component Id="cmp_25089" Guid="*" Directory="INSTALLFOLDER">
         <File Id="fil_25089" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\icudtl.dat" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_25090" Guid="*">
+      <Component Id="cmp_25090" Guid="*" Directory="INSTALLFOLDER">
         <File Id="fil_25090" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\libEGL.dll" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_25091" Guid="*">
+      <Component Id="cmp_25091" Guid="*" Directory="INSTALLFOLDER">
         <File Id="fil_25091" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\libGLESv2.dll" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_25092" Guid="*">
+      <Component Id="cmp_25092" Guid="*" Directory="INSTALLFOLDER">
         <File Id="fil_25092" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\LICENSES.chromium.html" KeyPath="yes" />
       </Component>
       <Component Id="cmp_25093" Guid="*" Directory="dir_4004">
@@ -168351,10 +168351,10 @@
       <Component Id="cmp_50794" Guid="*" Directory="dir_4008">
         <File Id="fil_50794" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\ThirdPartyNotices.txt" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_50795" Guid="*">
+      <Component Id="cmp_50795" Guid="*" Directory="INSTALLFOLDER">
         <File Id="fil_50795" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources.pak" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_50796" Guid="*">
+      <Component Id="cmp_50796" Guid="*" Directory="INSTALLFOLDER">
         <File Id="fil_50796" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\snapshot_blob.bin" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50797" Guid="*" Directory="dir_7963">
@@ -168384,16 +168384,16 @@
       <Component Id="cmp_50805" Guid="*" Directory="dir_7964">
         <File Id="fil_50805" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\__pycache__\getvino.cpython-314.pyc" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_50806" Guid="*">
+      <Component Id="cmp_50806" Guid="*" Directory="INSTALLFOLDER">
         <File Id="fil_50806" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\v8_context_snapshot.bin" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_50807" Guid="*">
+      <Component Id="cmp_50807" Guid="*" Directory="INSTALLFOLDER">
         <File Id="fil_50807" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\vk_swiftshader.dll" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_50808" Guid="*">
+      <Component Id="cmp_50808" Guid="*" Directory="INSTALLFOLDER">
         <File Id="fil_50808" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\vk_swiftshader_icd.json" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_50809" Guid="*">
+      <Component Id="cmp_50809" Guid="*" Directory="INSTALLFOLDER">
         <File Id="fil_50809" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\vulkan-1.dll" KeyPath="yes" />
       </Component>
     </ComponentGroup>
