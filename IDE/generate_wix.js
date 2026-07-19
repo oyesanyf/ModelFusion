@@ -98,6 +98,9 @@ function generateWix(srcDir, outputFile) {
     <MediaTemplate EmbedCab="yes" />
 
     <Icon Id="HugOSIcon.ico" SourceFile="D:\\harfile\\ModelFusion\\IDE\\hugos.ico" />
+    <Property Id="ARPPRODUCTICON" Value="HugOSIcon.ico" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/oyesanyf/ModelFusion" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/oyesanyf/ModelFusion" />
 
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="INSTALLFOLDER" Name="HugOS IDE">
