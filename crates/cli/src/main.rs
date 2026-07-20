@@ -2208,7 +2208,41 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
             let db_path_str = db_path_clone.unwrap_or_else(|| "db/hf_models.db".to_string());
             let db_path_val = std::path::Path::new(&db_path_str);
 
-            let result_content = match request_path.as_str() {
+            // ── OpenAI-compatible /v1/chat/completions endpoint ──
+            // Translates OpenAI messages format → internal /orchestrate format → OpenAI response.
+            // This allows OpenEvolve and other OpenAI-SDK clients to use ModelFusion's multi-backend routing.
+            let is_openai_compat = request_path == "/v1/chat/completions" || request_path.starts_with("/v1/");
+            let mut request_json = request_json; // make mutable for translation
+            if is_openai_compat {
+                // Convert OpenAI messages array to a single prompt string
+                let mut prompt_parts: Vec<String> = Vec::new();
+                if let Some(messages) = request_json["messages"].as_array() {
+                    for msg in messages {
+                        let role = msg["role"].as_str().unwrap_or("user");
+                        let content = msg["content"].as_str().unwrap_or("");
+                        match role {
+                            "system" => prompt_parts.push(format!("System: {}", content)),
+                            "user" => prompt_parts.push(content.to_string()),
+                            "assistant" => prompt_parts.push(format!("Assistant: {}", content)),
+                            _ => prompt_parts.push(content.to_string()),
+                        }
+                    }
+                }
+                let combined_prompt = prompt_parts.join("\n\n");
+                let model = request_json["model"].as_str().unwrap_or("").to_string();
+                // Rewrite as /orchestrate request
+                request_json = serde_json::json!({
+                    "prompt": combined_prompt,
+                    "model": model,
+                    "ollama": true,
+                    "gpu": true,
+                    "selection_strategy": "multi_objective",
+                    "budget": 10.0
+                });
+                eprintln!("[SERVER] >>> /v1/chat/completions → translated to /orchestrate (model: {}, prompt len: {})", model, combined_prompt.len());
+            }
+
+            let result_content = match if is_openai_compat { "/orchestrate" } else { request_path.as_str() } {
                 "/orchestrate" => {
                     let mut prompt = request_json["prompt"].as_str().unwrap_or("").to_string();
                     let mut strategy = request_json["selection_strategy"].as_str().unwrap_or("multi_objective").to_string();
@@ -2645,9 +2679,32 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                     eprintln!("[SERVER] <<< Completed /orchestrate request in {}ms.", start_time.elapsed().as_millis());
                     let cleaned_content = clean_model_response(&content);
-                    let response_json = serde_json::json!({
-                        "content": cleaned_content
-                    });
+                    let response_json = if is_openai_compat {
+                        // Return OpenAI-compatible response format
+                        serde_json::json!({
+                            "id": format!("chatcmpl-{}", start_time.elapsed().as_millis()),
+                            "object": "chat.completion",
+                            "created": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                            "model": request_json["model"].as_str().unwrap_or("modelfusion"),
+                            "choices": [{
+                                "index": 0,
+                                "message": {
+                                    "role": "assistant",
+                                    "content": cleaned_content
+                                },
+                                "finish_reason": "stop"
+                            }],
+                            "usage": {
+                                "prompt_tokens": 0,
+                                "completion_tokens": 0,
+                                "total_tokens": 0
+                            }
+                        })
+                    } else {
+                        serde_json::json!({
+                            "content": cleaned_content
+                        })
+                    };
                     let response_str = response_json.to_string();
                     let chunk_size = format!("{:x}\r\n", response_str.len());
                     let _ = write_half.write_all(chunk_size.as_bytes()).await;
@@ -4587,7 +4644,7 @@ async fn patch_ide_workflow(ide_src_dir: &str, shallow: bool, vscode_tag: Option
         let mut brand_ok = true;
         for (flag, key, value) in &branding_cmds {
             let status = Command::new(&rcedit_str)
-                .args([&exe_str, flag, key, value])
+                .args([exe_str.as_str(), *flag, *key, *value])
                 .output();
             if let Err(e) = status {
                 println!("  [FAIL] rcedit {} {} -- {}", flag, key, e);
