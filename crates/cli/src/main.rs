@@ -4544,7 +4544,6 @@ async fn patch_ide_workflow(ide_src_dir: &str, shallow: bool, vscode_tag: Option
         }
     }
     println!();
-
     // ── Step 8: Build IDE from source ─────────────────────────────────
     // CRITICAL: The IDE MUST be built from the patched vscode source tree.
     // Using the official VSCode release zip introduces a foreign versioned
@@ -4806,8 +4805,7 @@ async fn patch_ide_workflow(ide_src_dir: &str, shallow: bool, vscode_tag: Option
                 }
             }
         }
-    }
-
+    print_patch_summary(&successes, &failures);
     Ok(())
 }
 
