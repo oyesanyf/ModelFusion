@@ -1898,6 +1898,7 @@ async fn query_local_router(system_prompt: &str, user_prompt: &str) -> Option<St
         .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
     
     let client = reqwest::Client::builder()
+        .no_proxy()
         .timeout(std::time::Duration::from_secs(30))
         .connect_timeout(std::time::Duration::from_secs(2))
         .build()
@@ -2517,6 +2518,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 sys_msg.as_ref().map(|s| s.len()).unwrap_or(0), num_predict);
 
                             let client = reqwest::Client::builder()
+                                .no_proxy()
                                 .connect_timeout(std::time::Duration::from_secs(3))
                                 .timeout(std::time::Duration::from_secs(120))
                                 .build()
@@ -3793,6 +3795,7 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                     });
                     
                     let client = reqwest::Client::builder()
+                        .no_proxy()
                         .connect_timeout(std::time::Duration::from_secs(3))
                         .timeout(std::time::Duration::from_secs(120))
                         .build()

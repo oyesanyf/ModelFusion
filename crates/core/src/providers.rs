@@ -433,6 +433,7 @@ impl HuggingFaceProvider {
         });
 
         let client = reqwest::Client::builder()
+            .no_proxy()
             .connect_timeout(std::time::Duration::from_secs(3))
             .timeout(std::time::Duration::from_secs(300))
             .build()?;
@@ -721,6 +722,7 @@ pub struct LocalProvider {
 impl LocalProvider {
     pub fn new(config: ModelConfig) -> Self {
         let client = Client::builder()
+            .no_proxy()
             .connect_timeout(Duration::from_secs(3))
             .timeout(Duration::from_secs(config.timeout_seconds))
             .build()
