@@ -62,35 +62,136 @@ fn fast_inference_slots() -> usize {
 }
 
 /// Hardware-aware Ollama model selector.
-/// Detects system RAM and GPU availability to pick the best model for the machine.
-///   - 32GB+ RAM or dedicated GPU  → qwen2.5:7b  (smartest, needs ~5GB VRAM/RAM)
-///   - 16GB+ RAM                   → qwen2.5:3b  (good balance)
-///   - <16GB RAM                   → qwen2.5:1.5b (fast, lightweight)
+#[derive(Debug, Clone)]
+pub struct SystemResourceSummary {
+    pub cpu_name: String,
+    pub logical_cores: usize,
+    pub total_ram_gb: f64,
+    pub free_ram_gb: f64,
+    pub gpu_name: String,
+    pub total_vram_mb: u64,
+    pub free_vram_mb: u64,
+    pub has_gpu: bool,
+    pub free_disk_gb: f64,
+}
+
+/// Queries hardware resources (CPU, RAM, GPU VRAM, Disk) using native Rust sysinfo and nvidia-smi / WMI.
+pub fn query_system_resources() -> SystemResourceSummary {
+    let mut sys = sysinfo::System::new_all();
+    sys.refresh_all();
+
+    let total_ram_gb = sys.total_memory() as f64 / 1_073_741_824.0;
+    let free_ram_gb = sys.available_memory() as f64 / 1_073_741_824.0;
+
+    let cpus = sys.cpus();
+    let logical_cores = cpus.len();
+    let cpu_name = cpus
+        .first()
+        .map(|c| c.brand().trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "Generic CPU".to_string());
+
+    // Query GPU via nvidia-smi
+    let mut gpu_name = "None / Integrated".to_string();
+    let mut total_vram_mb = 0u64;
+    let mut free_vram_mb = 0u64;
+    let mut has_gpu = false;
+
+    if let Ok(output) = std::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=name,memory.total,memory.free", "--format=csv,noheader,nounits"])
+        .output()
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let parts: Vec<&str> = stdout.trim().split(',').map(|s| s.trim()).collect();
+            if parts.len() >= 3 {
+                gpu_name = parts[0].to_string();
+                total_vram_mb = parts[1].parse::<u64>().unwrap_or(0);
+                free_vram_mb = parts[2].parse::<u64>().unwrap_or(0);
+                has_gpu = true;
+            }
+        }
+    }
+
+    // Windows WMI fallback if nvidia-smi wasn't available
+    if !has_gpu && cfg!(windows) {
+        if let Ok(output) = std::process::Command::new("wmic")
+            .args(["path", "win32_videocard", "get", "name"])
+            .output()
+        {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let lines: Vec<&str> = stdout.lines().map(|s| s.trim()).filter(|s| !s.is_empty() && *s != "Name").collect();
+                if let Some(first_gpu) = lines.first() {
+                    gpu_name = first_gpu.to_string();
+                    let lower = gpu_name.to_lowercase();
+                    if lower.contains("nvidia") || lower.contains("geforce") || lower.contains("radeon") || lower.contains("rtx") || lower.contains("gtx") {
+                        has_gpu = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // Query free disk space
+    let disks = sysinfo::Disks::new_with_refreshed_list();
+    let free_disk_gb = disks
+        .iter()
+        .map(|d| d.available_space())
+        .max()
+        .unwrap_or(0) as f64 / 1_073_741_824.0;
+
+    SystemResourceSummary {
+        cpu_name,
+        logical_cores,
+        total_ram_gb,
+        free_ram_gb,
+        gpu_name,
+        total_vram_mb,
+        free_vram_mb,
+        has_gpu,
+        free_disk_gb,
+    }
+}
+
+/// Detects system RAM, VRAM, and CPU to pick the optimal Ollama model fit.
+/// Prints a formatted debug log banner showing detected resources.
 fn select_ollama_model_for_hardware(is_low_budget: bool) -> &'static str {
     if is_low_budget {
         return "qwen2.5:1.5b";
     }
-    let mut sys = sysinfo::System::new();
-    sys.refresh_memory();
-    let ram_gb = sys.total_memory() / 1_073_741_824;
 
-    // Check for dedicated GPU via environment hints or nvidia-smi
-    let has_gpu = std::env::var("CUDA_VISIBLE_DEVICES").is_ok()
-        || std::env::var("NVIDIA_VISIBLE_DEVICES").is_ok()
-        || std::process::Command::new("nvidia-smi")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
+    let res = query_system_resources();
 
-    if ram_gb >= 32 || has_gpu {
+    // Print resource debug banner
+    eprintln!("============================================================");
+    eprintln!("        MODELFUSION RUST HARDWARE RESOURCE QUERY           ");
+    eprintln!("============================================================");
+    eprintln!("  CPU           : {} ({} logical cores)", res.cpu_name, res.logical_cores);
+    eprintln!("  RAM           : Total: {:.2} GB | Available Free: {:.2} GB", res.total_ram_gb, res.free_ram_gb);
+    if res.has_gpu {
+        eprintln!("  GPU           : {} (Total VRAM: {} MB, Free VRAM: {} MB)", res.gpu_name, res.total_vram_mb, res.free_vram_mb);
+    } else {
+        eprintln!("  GPU           : None detected / CPU fallthrough");
+    }
+    eprintln!("  Max Free Disk : {:.2} GB", res.free_disk_gb);
+
+    // VRAM-aware model fit logic
+    let chosen_model = if res.total_vram_mb >= 14_000 {
+        "qwen2.5:14b"
+    } else if res.total_vram_mb >= 4_500 || (res.has_gpu && res.total_ram_gb >= 16.0) {
+        // Fits inside 6GB VRAM (like GTX 1060 6GB) or 8GB VRAM GPUs cleanly
         "qwen2.5:7b"
-    } else if ram_gb >= 16 {
+    } else if res.total_vram_mb >= 2_000 || res.total_ram_gb >= 16.0 {
         "qwen2.5:3b"
     } else {
         "qwen2.5:1.5b"
-    }
+    };
+
+    eprintln!("  BEST MODEL FIT: {}", chosen_model);
+    eprintln!("============================================================");
+
+    chosen_model
 }
 
 /// Dynamically determine the optimal context window (num_ctx) for the chosen Ollama model.
@@ -2249,11 +2350,11 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     let mut strategy = request_json["selection_strategy"].as_str().unwrap_or("multi_objective").to_string();
                     let fusion_mode = request_json["fusion_mode"].as_str().unwrap_or("multi-model").to_string();
                     let fusion_models = request_json["fusion_models"].as_u64().unwrap_or(10) as usize;
-                    let budget = request_json["budget"].as_f64().unwrap_or(10.0);
+                    let res = query_system_resources();
                     let mut openvino = request_json["openvino"].as_bool().unwrap_or(false);
-                    let mut gpu = request_json["gpu"].as_bool().unwrap_or(false);
                     let mut cpu = request_json["cpu"].as_bool().unwrap_or(false);
-                    let ollama = request_json["ollama"].as_bool().unwrap_or(false);
+                    let mut gpu = request_json["gpu"].as_bool().unwrap_or_else(|| res.has_gpu && !cpu);
+                    let mut ollama = request_json["ollama"].as_bool().unwrap_or_else(|| res.has_gpu);
                     let mut fusion = request_json["fusion"].as_bool().unwrap_or(false);
                     let model_override = request_json["model"]
                         .as_str()
