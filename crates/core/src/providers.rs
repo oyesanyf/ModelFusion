@@ -402,7 +402,7 @@ impl HuggingFaceProvider {
     async fn execute_ollama(&self, prompt: &str, start: &Instant) -> Result<ProviderResult> {
         let ollama_model = map_hf_to_ollama(&self.config.model_id);
         let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
-            .unwrap_or_else(|_| "http://localhost:11434".to_string());
+            .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
         
         let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
         let mut messages = Vec::new();
@@ -738,7 +738,7 @@ impl LLMProvider for LocalProvider {
     async fn generate_response(&self, prompt: &str) -> Result<ProviderResult> {
         let start = Instant::now();
         let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
-            .unwrap_or_else(|_| "http://localhost:11434".to_string());
+            .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
         let url = format!("{}/api/generate", endpoint.trim_end_matches('/'));
 
         let (clean_prompt, images, _audio) = extract_media_from_prompt(prompt);

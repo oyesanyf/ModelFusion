@@ -1895,7 +1895,7 @@ fn clean_model_response(raw: &str) -> String {
 async fn query_local_router(system_prompt: &str, user_prompt: &str) -> Option<String> {
     // 1. First attempt: Query local Ollama if running
     let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
-        .unwrap_or_else(|_| "http://localhost:11434".to_string());
+        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
     
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
@@ -2335,7 +2335,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             };
 
                             let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
-                                .unwrap_or_else(|_| "http://localhost:11434".to_string());
+                                .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
                             let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
 
                             // Parse out system vs user message from IDE's combined format
@@ -3782,7 +3782,7 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                     let model = arguments["model"].as_str().unwrap_or("qwen2.5:3b").to_string();
                     
                     let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
-                        .unwrap_or_else(|_| "http://localhost:11434".to_string());
+                        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
                     let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
                     
                     let body = serde_json::json!({
@@ -4805,6 +4805,7 @@ async fn patch_ide_workflow(ide_src_dir: &str, shallow: bool, vscode_tag: Option
                 }
             }
         }
+    }
     print_patch_summary(&successes, &failures);
     Ok(())
 }

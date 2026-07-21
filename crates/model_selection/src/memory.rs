@@ -390,7 +390,7 @@ fn is_ollama_responding(endpoint: &str) -> bool {
 /// Ensure Ollama is running. If it's not, auto-start `ollama serve` and wait for it.
 pub fn ensure_ollama_running() -> Result<(), String> {
     let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
-        .unwrap_or_else(|_| "http://localhost:11434".to_string());
+        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
 
     // First check: is it already running?
     if is_ollama_responding(&endpoint) {
@@ -570,7 +570,7 @@ static OLLAMA_CACHED_TAGS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLoc
 fn get_ollama_cached_models() -> &'static Vec<String> {
     OLLAMA_CACHED_TAGS.get_or_init(|| {
         let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
-            .unwrap_or_else(|_| "http://localhost:11434".to_string());
+            .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
 
         let result = std::process::Command::new("curl")
             .args(["-s", &format!("{}/api/tags", endpoint)])
