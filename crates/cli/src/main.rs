@@ -2448,8 +2448,8 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         eprintln!("[SERVER] ⚡ Fast interception: Native /sysinfo query (10ms).");
                         let sys = query_system_resources();
                         let sys_str = format!(
-                            "💻 **System Hardware Specifications**\n\n- **CPU Cores**: {}\n- **RAM**: {:.2} GB total ({:.2} GB free)\n- **GPU Accelerator**: {}\n- **VRAM**: {:.2} GB free / {:.2} GB total\n- **Disk**: {:.2} GB free",
-                            sys.cores, sys.total_ram, sys.free_ram, sys.gpu, sys.gpu_vram_free, sys.gpu_vram_total, sys.free_disk
+                            "💻 **System Hardware Specifications**\n\n- **CPU**: {} ({} Logical Cores)\n- **RAM**: {:.2} GB total ({:.2} GB free)\n- **GPU**: {}\n- **VRAM**: {} MB free / {} MB total\n- **Disk**: {:.2} GB free",
+                            sys.cpu_name, sys.logical_cores, sys.total_ram_gb, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb, sys.total_vram_mb, sys.free_disk_gb
                         );
                         let json = serde_json::json!({ "response": sys_str }).to_string();
                         let hex_len = format!("{:x}\r\n", json.len());
