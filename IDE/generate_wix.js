@@ -81,10 +81,10 @@ function generateWix(srcDir, outputFile) {
     componentsXml += '    </ComponentGroup>';
 
     let buildNumber = 0;
-    const buildNumPath = path.join(__dirname, '.build_number');
     try {
         buildNumber = parseInt(fs.readFileSync(buildNumPath, 'utf-8').trim(), 10);
     } catch (e) {}
+    if (isNaN(buildNumber) || !buildNumber) { buildNumber = 1; }
     buildNumber++;
     fs.writeFileSync(buildNumPath, buildNumber.toString(), 'utf-8');
 
