@@ -1,5 +1,7 @@
 ---
-description: Explain code functions step-by-step
+description: Provide detailed, step-by-step breakdown and explanation of how the active code works.
 ---
 
-Execute explain command for ModelFusion.
+## Instruction
+When the user types /explain, execute the following directive:
+Provide detailed, step-by-step breakdown and explanation of how the active code works.

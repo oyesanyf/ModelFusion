@@ -1,5 +1,7 @@
 ---
-description: Run comprehensive Data Science machine learning pipeline
+description: Build complete Data Science pipeline: feature engineering, model training, cross-validation, and metrics.
 ---
 
-Execute datascience command for ModelFusion.
+## Instruction
+When the user types /datascience, execute the following directive:
+Build complete Data Science pipeline: feature engineering, model training, cross-validation, and metrics.

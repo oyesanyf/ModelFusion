@@ -1,5 +1,7 @@
 ---
-description: Perform cybersecurity audit and fix vulnerabilities in active code
+description: Act as a Principal Cybersecurity Auditor. Inspect active code files for security vulnerabilities (CWE, OWASP, memory leaks, buffer overflows) and generate hardened patches.
 ---
 
-Act as a Principal Cybersecurity Auditor. Scan active file context for vulnerabilities (CWE, OWASP Top 10, memory leaks, buffer overflows) and generate hardened patches.
+## Instruction
+When the user types /security, execute the following directive:
+Act as a Principal Cybersecurity Auditor. Inspect active code files for security vulnerabilities (CWE, OWASP, memory leaks, buffer overflows) and generate hardened patches.

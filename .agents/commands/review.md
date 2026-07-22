@@ -1,5 +1,7 @@
 ---
-description: Perform code review for design, performance, and security
+description: Perform exhaustive senior code review of design architecture, security risks, and error handling.
 ---
 
-Execute review command for ModelFusion.
+## Instruction
+When the user types /review, execute the following directive:
+Perform exhaustive senior code review of design architecture, security risks, and error handling.

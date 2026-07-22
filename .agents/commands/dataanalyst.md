@@ -1,5 +1,7 @@
 ---
-description: Run Data Analyst workflow on CSV/Excel datasets
+description: Analyze dataset structure, calculate summary statistics, detect outliers, and summarize key insights.
 ---
 
-Execute dataanalyst command for ModelFusion.
+## Instruction
+When the user types /dataanalyst, execute the following directive:
+Analyze dataset structure, calculate summary statistics, detect outliers, and summarize key insights.

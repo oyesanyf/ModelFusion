@@ -1,5 +1,7 @@
 ---
-description: Optimize code algorithms and memory performance
+description: Analyze and optimize active code for maximum speed, low memory usage, and GPU acceleration.
 ---
 
-Execute optimize command for ModelFusion.
+## Instruction
+When the user types /optimize, execute the following directive:
+Analyze and optimize active code for maximum speed, low memory usage, and GPU acceleration.

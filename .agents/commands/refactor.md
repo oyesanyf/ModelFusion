@@ -1,5 +1,7 @@
 ---
-description: Refactor code for readability, performance, and structure
+description: Refactor active code files for readability, maintainability, clean design patterns, and performance.
 ---
 
-Execute refactor command for ModelFusion.
+## Instruction
+When the user types /refactor, execute the following directive:
+Refactor active code files for readability, maintainability, clean design patterns, and performance.

@@ -1,5 +1,7 @@
 ---
-description: Extract and analyze PE executable headers
+description: Extract and analyze Portable Executable (PE) headers, section headers, imports, exports, and security indicators.
 ---
 
-Execute pe-header-extraction command for ModelFusion.
+## Instruction
+When the user types /pe-header-extraction, execute the following directive:
+Extract and analyze Portable Executable (PE) headers, section headers, imports, exports, and security indicators.
