@@ -2876,6 +2876,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 "/stats" => {
                     run_cli_subcommand(&["--stats".to_string()], db_path_val).await
                 }
+                "/sys-info" | "/sysinfo" => {
+                    run_cli_subcommand(&["--sys-info".to_string()], db_path_val).await
+                }
                 "/tasks" => {
                     let category = request_json["category"].as_str().unwrap_or("all");
                     run_cli_subcommand(&["--tasks".to_string(), category.to_string()], db_path_val).await
@@ -4328,6 +4331,9 @@ pub fn parse_slash_commands_in_prompt(
             }
             "/stats" => {
                 std::env::set_var("MODELFUSION_STATS", "true");
+            }
+            "/sys-info" | "/sysinfo" => {
+                std::env::set_var("MODELFUSION_SYS_INFO", "true");
             }
             "/update" => {
                 std::env::set_var("MODELFUSION_UPDATE", "true");
