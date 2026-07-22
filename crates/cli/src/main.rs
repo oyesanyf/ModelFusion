@@ -2327,11 +2327,16 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             "user" => prompt_parts.push(content.to_string()),
                             "assistant" => prompt_parts.push(format!("Assistant: {}", content)),
                             _ => prompt_parts.push(content.to_string()),
-                        }
+                        };
                     }
                 }
                 let combined_prompt = prompt_parts.join("\n\n");
-                let model = request_json["model"].as_str().unwrap_or("").to_string();
+                let mut model = request_json["model"].as_str().unwrap_or("").to_string();
+                let res = query_system_resources();
+                if res.has_gpu && res.total_vram_mb < 10000 && (model.contains("14b") || model.contains("32b")) {
+                    eprintln!("[HARDWARE] VRAM ({} MB) is < 10GB. Auto-mapping model {} -> qwen2.5:7b for fast VRAM GPU inference.", res.total_vram_mb, model);
+                    model = "qwen2.5:7b".to_string();
+                }
                 // Rewrite as /orchestrate request
                 request_json = serde_json::json!({
                     "prompt": combined_prompt,
@@ -2350,6 +2355,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     let mut strategy = request_json["selection_strategy"].as_str().unwrap_or("multi_objective").to_string();
                     let fusion_mode = request_json["fusion_mode"].as_str().unwrap_or("multi-model").to_string();
                     let fusion_models = request_json["fusion_models"].as_u64().unwrap_or(10) as usize;
+                    let budget = request_json["budget"].as_f64().unwrap_or(10.0);
                     let res = query_system_resources();
                     let mut openvino = request_json["openvino"].as_bool().unwrap_or(false);
                     let mut cpu = request_json["cpu"].as_bool().unwrap_or(false);
