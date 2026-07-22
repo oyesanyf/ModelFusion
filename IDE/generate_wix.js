@@ -80,6 +80,7 @@ function generateWix(srcDir, outputFile) {
     }
     componentsXml += '    </ComponentGroup>';
 
+    const buildNumPath = path.join(__dirname, 'build_number.txt');
     let buildNumber = 0;
     try {
         buildNumber = parseInt(fs.readFileSync(buildNumPath, 'utf-8').trim(), 10);
