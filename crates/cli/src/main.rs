@@ -2359,8 +2359,16 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     let res = query_system_resources();
                     let mut openvino = request_json["openvino"].as_bool().unwrap_or(false);
                     let mut cpu = request_json["cpu"].as_bool().unwrap_or(false);
-                    let mut gpu = request_json["gpu"].as_bool().unwrap_or_else(|| res.has_gpu && !cpu);
-                    let mut ollama = request_json["ollama"].as_bool().unwrap_or_else(|| res.has_gpu);
+                    let mut gpu = request_json["gpu"].as_bool().unwrap_or(false);
+                    let mut ollama = request_json["ollama"].as_bool().unwrap_or(false);
+
+                    // STRICT HARDWARE RULE: If computer has GPU hardware, ENFORCE gpu=true, ollama=true, cpu=false!
+                    if res.has_gpu {
+                        gpu = true;
+                        ollama = true;
+                        cpu = false;
+                        openvino = false;
+                    }
                     let mut fusion = request_json["fusion"].as_bool().unwrap_or(false);
                     let model_override = request_json["model"]
                         .as_str()
