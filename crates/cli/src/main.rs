@@ -2307,7 +2307,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 }
             };
 
-            let db_path_str = db_path_clone.unwrap_or_else(|| "db/hf_models.db".to_string());
+            let db_path_str = db_path_clone.clone().unwrap_or_else(|| "db/hf_models.db".to_string());
             let db_path_val = std::path::Path::new(&db_path_str);
 
             // ── OpenAI-compatible /v1/chat/completions endpoint ──
@@ -2434,8 +2434,8 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                     if prompt_lower.contains("/stats") || prompt_lower.contains("cli.exe --stats") {
                         eprintln!("[SERVER] ⚡ Fast interception: Native /stats query (10ms).");
-                        let handler = ComprehensiveTaskHandler::new(db_path.as_deref()).ok();
-                        let stats_output = handler.and_then(|h| h.handle_stats().ok()).unwrap_or_else(|| "📊 ModelFusion Database Stats active.".to_string());
+                        let handler = ComprehensiveTaskHandler::new(db_path_clone.as_deref()).ok();
+                        let stats_output = handler.map(|h| h.handle_stats().content).unwrap_or_else(|| "📊 ModelFusion Database Stats active.".to_string());
                         let json = serde_json::json!({ "response": stats_output }).to_string();
                         let hex_len = format!("{:x}\r\n", json.len());
                         let _ = write_half.write_all(hex_len.as_bytes()).await;
