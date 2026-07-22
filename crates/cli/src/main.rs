@@ -2424,7 +2424,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     {
                         eprintln!("[SERVER] ⚡ Fast interception: VS Code background conversation compaction (1ms).");
                         let resp = "Summary of recent activity: The user executed ModelFusion commands and analysis tasks in the workspace. Work is complete and context is preserved.";
-                        let json = serde_json::json!({ "response": resp }).to_string();
+                        let json = serde_json::json!({ "content": resp }).to_string();
                         let hex_len = format!("{:x}\r\n", json.len());
                         let _ = write_half.write_all(hex_len.as_bytes()).await;
                         let _ = write_half.write_all(json.as_bytes()).await;
@@ -2436,7 +2436,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         eprintln!("[SERVER] ⚡ Fast interception: Native /stats query (10ms).");
                         let handler = ComprehensiveTaskHandler::new(db_path_clone.as_deref()).ok();
                         let stats_output = handler.map(|h| h.handle_stats().content).unwrap_or_else(|| "📊 ModelFusion Database Stats active.".to_string());
-                        let json = serde_json::json!({ "response": stats_output }).to_string();
+                        let json = serde_json::json!({ "content": stats_output }).to_string();
                         let hex_len = format!("{:x}\r\n", json.len());
                         let _ = write_half.write_all(hex_len.as_bytes()).await;
                         let _ = write_half.write_all(json.as_bytes()).await;
@@ -2451,7 +2451,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             "💻 **System Hardware Specifications**\n\n- **CPU**: {} ({} Logical Cores)\n- **RAM**: {:.2} GB total ({:.2} GB free)\n- **GPU**: {}\n- **VRAM**: {} MB free / {} MB total\n- **Disk**: {:.2} GB free",
                             sys.cpu_name, sys.logical_cores, sys.total_ram_gb, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb, sys.total_vram_mb, sys.free_disk_gb
                         );
-                        let json = serde_json::json!({ "response": sys_str }).to_string();
+                        let json = serde_json::json!({ "content": sys_str }).to_string();
                         let hex_len = format!("{:x}\r\n", json.len());
                         let _ = write_half.write_all(hex_len.as_bytes()).await;
                         let _ = write_half.write_all(json.as_bytes()).await;
