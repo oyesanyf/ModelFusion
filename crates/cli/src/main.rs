@@ -2433,27 +2433,45 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     }
 
                     // ── Multi-Command Concurrent Thread Pool Interception ──
-                    let mut matched_cmds = Vec::new();
-                    if prompt_lower.contains("/mcp") { matched_cmds.push("mcp"); }
-                    if prompt_lower.contains("/stats") || prompt_lower.contains("cli.exe --stats") { matched_cmds.push("stats"); }
-                    if prompt_lower.contains("/sysinfo") || prompt_lower.contains("/sys-info") { matched_cmds.push("sysinfo"); }
-                    if prompt_lower.contains("/tasks") { matched_cmds.push("tasks"); }
-                    if prompt_lower.contains("/cache-stats") || prompt_lower.contains("/cachestats") { matched_cmds.push("cache-stats"); }
-                    if prompt_lower.contains("/performance-stats") || prompt_lower.contains("/performancestats") { matched_cmds.push("performance-stats"); }
-                    if prompt_lower.contains("/decision-stats") || prompt_lower.contains("/decisionstats") { matched_cmds.push("decision-stats"); }
-                    if prompt_lower.contains("/evolve") { matched_cmds.push("evolve"); }
-                    if prompt_lower.contains("/security") { matched_cmds.push("security"); }
-                    if prompt_lower.contains("/refactor") { matched_cmds.push("refactor"); }
+                    let mut matched_cmds: Vec<String> = Vec::new();
+                    
+                    // 1. Dynamic extraction for ANY /slash-command in prompt
+                    for word in prompt_lower.split_whitespace() {
+                        let clean_token = word.trim_matches(|c: char| c == '@' || c == ':' || c == ',' || c == '.' || c == '<' || c == '>');
+                        if let Some(cmd) = clean_token.strip_prefix('/') {
+                            let clean_cmd = cmd.trim_matches(|c: char| !c.is_alphanumeric() && c != '-' && c != '_');
+                            if !clean_cmd.is_empty() && !matched_cmds.contains(&clean_cmd.to_string()) {
+                                matched_cmds.push(clean_cmd.to_string());
+                            }
+                        }
+                    }
+
+                    // 2. Fallback checks for slash-less invocations (e.g. "sys-info", "cli.exe --stats", "api-keys")
+                    if prompt_lower.contains("sys-info") || prompt_lower.contains("sysinfo") { if !matched_cmds.contains(&"sysinfo".to_string()) && !matched_cmds.contains(&"sys-info".to_string()) { matched_cmds.push("sysinfo".to_string()); } }
+                    if prompt_lower.contains("cli.exe --stats") { if !matched_cmds.contains(&"stats".to_string()) { matched_cmds.push("stats".to_string()); } }
+                    if prompt_lower.contains("api-keys") { if !matched_cmds.contains(&"api-keys".to_string()) && !matched_cmds.contains(&"keys".to_string()) { matched_cmds.push("api-keys".to_string()); } }
 
                     if !matched_cmds.is_empty() {
                         eprintln!("[SERVER] ⚡ Multi-Thread Interception: Spawning {} concurrent command thread(s) for {:?}", matched_cmds.len(), matched_cmds);
                         let db_path_arc = std::sync::Arc::new(db_path_clone.clone());
                         let mut handles = Vec::new();
 
-                        for (idx, &cmd) in matched_cmds.iter().enumerate() {
+                        for (idx, cmd_owned) in matched_cmds.clone().into_iter().enumerate() {
                             let db_path_ref = db_path_arc.clone();
                             let handle = tokio::spawn(async move {
-                                match cmd {
+                                match cmd_owned.as_str() {
+                                    "api-keys" => {
+                                        let openai_st = if std::env::var("OPENAI_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "[LOADED]" } else { "[DISABLED]" };
+                                        let anthropic_st = if std::env::var("ANTHROPIC_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "[LOADED]" } else { "[DISABLED]" };
+                                        let gemini_st = if std::env::var("GEMINI_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "[LOADED]" } else { "[DISABLED]" };
+                                        let hf_st = if std::env::var("HF_TOKEN").or_else(|_| std::env::var("HUGGINGFACE_API_KEY")).map(|s| !s.trim().is_empty()).unwrap_or(true) { "[LOADED]" } else { "[DISABLED]" };
+
+                                        let report = format!(
+                                            "🔑 **ModelFusion API Key Status & Integrations**\n\n- **openai**: {}\n- **anthropic**: {}\n- **gemini**: {}\n- **huggingface**: {}\n\n*Configure API keys in VS Code Settings (`Ctrl+,` → search `hugos.modelfusion`)*",
+                                            openai_st, anthropic_st, gemini_st, hf_st
+                                        );
+                                        (idx, report)
+                                    },
                                     "mcp" => {
                                         std::env::set_var("MODELFUSION_MCP", "true");
                                         (idx, "🔌 **ModelContextProtocol (MCP) Engine**: Active & initialized stdio transport.".to_string())
@@ -2492,7 +2510,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                     "refactor" => {
                                         (idx, "🔧 **Refactoring Engine**: Code structure optimization thread ready.".to_string())
                                     },
-                                    _ => (idx, format!("Command /{cmd} processed.")),
+                                    _ => (idx, format!("Command /{cmd_owned} processed.")),
                                 }
                             });
                             handles.push(handle);
@@ -2510,12 +2528,30 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         results.sort_by_key(|&(idx, _)| idx);
                         let combined_output = results.into_iter().map(|(_, out)| out).collect::<Vec<_>>().join("\n\n---\n\n");
 
-                        let json = serde_json::json!({ "content": combined_output }).to_string();
-                        let hex_len = format!("{:x}\r\n", json.len());
-                        let _ = write_half.write_all(hex_len.as_bytes()).await;
-                        let _ = write_half.write_all(json.as_bytes()).await;
-                        let _ = write_half.write_all(b"\r\n0\r\n\r\n").await;
-                        return;
+                        // Check if the prompt has chat/conversational text beyond the command keywords
+                        let mut cleaned_prompt = prompt_lower.clone();
+                        for cmd in &matched_cmds {
+                            cleaned_prompt = cleaned_prompt.replace(&format!("/{cmd}"), "").replace(cmd, "");
+                        }
+                        let cleaned_chat_text = cleaned_prompt.replace("@agent", "").replace("<attachments>", "").replace("<environment_info>", "").replace("</environment_info>", "").replace("</attachments>", "").trim().to_string();
+
+                        let is_pure_command = cleaned_chat_text.len() < 15;
+                        if is_pure_command {
+                            // Fast return pure command requests (10ms)
+                            let json = serde_json::json!({ "content": combined_output }).to_string();
+                            let hex_len = format!("{:x}\r\n", json.len());
+                            let _ = write_half.write_all(hex_len.as_bytes()).await;
+                            let _ = write_half.write_all(json.as_bytes()).await;
+                            let _ = write_half.write_all(b"\r\n0\r\n\r\n").await;
+                            return;
+                        } else {
+                            // Mixed Mode: Send the fast command outputs immediately as first chunk, then let LLM execute chat response!
+                            let json = serde_json::json!({ "content": format!("{}\n\n---\n\n", combined_output) }).to_string();
+                            let hex_len = format!("{:x}\r\n", json.len());
+                            let _ = write_half.write_all(hex_len.as_bytes()).await;
+                            let _ = write_half.write_all(json.as_bytes()).await;
+                            eprintln!("[SERVER] 🔀 Mixed Mode: Executed {} command thread(s), now continuing to LLM chat execution...", matched_cmds.len());
+                        }
                     }
 
                     let mut full_process = Box::pin(async {
@@ -2539,6 +2575,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 lower.contains("implement") || lower.contains("refactor") 
                                 || lower.contains("debug") || lower.contains("write a function")
                                 || lower.contains("create a") || lower.contains("build a")
+                                || lower.contains("create file") || lower.contains("make a file")
+                                || lower.contains("write a file") || lower.contains("generate file")
+                                || lower.contains("new file") || lower.contains("add a file")
                                 || lower.contains("fix this") || lower.contains("code review")
                                 || lower.contains("analyze this code") || lower.contains("```")
                                 || lower.contains("class ") || lower.contains("def ")
