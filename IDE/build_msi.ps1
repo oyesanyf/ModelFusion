@@ -62,6 +62,86 @@ $cliDestPath = Join-Path $cliDestDir "cli.exe"
 Copy-Item -Path $cliSrcPath -Destination $cliDestPath -Force
 Write-Host "[OK] Copied ModelFusion CLI to: $cliDestPath" -ForegroundColor Green
 
+# 4.1 Restore original Electron binary (Code.exe -> HugOS.exe)
+# CRITICAL: Do NOT use the custom-built HugOS.exe here — it was compiled with a modified
+# Electron resource table that breaks ICU data loading after any code signing.
+# Instead, download the matching VSCode 1.126.0 release and use Code.exe verbatim.
+# The HugOS branding is controlled entirely by product.json, NOT the binary.
+$hugosExePath = Join-Path $vsCodePackDir "HugOS.exe"
+$vscodeDlZip  = Join-Path $PSScriptRoot "vscode-1.126.0-win32-x64.zip"
+$vscodeDlUrl  = "https://update.code.visualstudio.com/1.126.0/win32-x64-archive/stable"
+
+# Check if current HugOS.exe has a valid (Microsoft) signature AND the versioned runtime dir exists
+$exeSig = Get-AuthenticodeSignature $hugosExePath -ErrorAction SilentlyContinue
+$versionedDirExists = (Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{10,}$' }).Count -gt 0
+if ($exeSig.Status -ne 'Valid' -or $exeSig.SignerCertificate.Subject -notlike '*Microsoft*' -or -not $versionedDirExists) {
+    Write-Host "[INFO] HugOS.exe has invalid/untrusted signature. Restoring from VSCode 1.126.0..." -ForegroundColor Yellow
+    if (-not (Test-Path $vscodeDlZip) -or (Get-Item $vscodeDlZip).Length -lt 100MB) {
+        Write-Host "[INFO] Downloading VSCode 1.126.0 (~280MB)..." -ForegroundColor Yellow
+        Invoke-WebRequest -Uri $vscodeDlUrl -OutFile $vscodeDlZip -UseBasicParsing
+    }
+    $extractDir = Join-Path $env:TEMP "vscode-126-restore"
+    Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+    Expand-Archive -Path $vscodeDlZip -DestinationPath $extractDir -Force
+
+    # Replace HugOS.exe with Code.exe (same Electron, valid Microsoft signature)
+    $codeExeFile = Get-ChildItem $extractDir -Filter "Code.exe" -Recurse | Select-Object -First 1
+    Copy-Item $codeExeFile.FullName $hugosExePath -Force
+    Write-Host "[OK] HugOS.exe restored from Code.exe ($([int]($codeExeFile.Length/1MB)) MB, valid Microsoft sig)" -ForegroundColor Green
+
+    # Also sync matching Electron runtime data files (root-level copies)
+    foreach ($f in @('icudtl.dat','v8_context_snapshot.bin','snapshot_blob.bin')) {
+        $src = Get-ChildItem $extractDir -Filter $f -Recurse | Select-Object -First 1
+        if ($src) { Copy-Item $src.FullName (Join-Path $vsCodePackDir $f) -Force }
+    }
+
+    # CRITICAL: Copy the versioned Electron runtime directory (e.g. 7e7950df89/).
+    # Code.exe loads ICU data from this subdirectory, NOT from root.
+    # Without it, HugOS.exe crashes with "Invalid file descriptor to ICU data received".
+    $versionedDir = Get-ChildItem $extractDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{10,}$' } | Select-Object -First 1
+    if ($versionedDir) {
+        $destVersionedDir = Join-Path $vsCodePackDir $versionedDir.Name
+        Copy-Item $versionedDir.FullName $destVersionedDir -Recurse -Force
+        Write-Host "[OK] Copied Electron versioned runtime directory: $($versionedDir.Name)/" -ForegroundColor Green
+
+        # CRITICAL: Replace the versioned dir's product.json with HugOS branding.
+        # The VSCode zip ships with product.json containing nameShort:"Code" / nameLong:"Visual Studio Code"
+        # which OVERRIDES our resources/app/product.json and makes the IDE show VSCode branding.
+        $versionedProductJson = Join-Path $destVersionedDir "resources\app\product.json"
+        $hugosProductJson = Join-Path $vsCodePackDir "resources\app\product.json"
+        if ((Test-Path $versionedProductJson) -and (Test-Path $hugosProductJson)) {
+            Copy-Item $hugosProductJson $versionedProductJson -Force
+            Write-Host "[OK] Replaced versioned product.json with HugOS branding" -ForegroundColor Green
+        }
+
+        # CRITICAL: Copy our custom Copilot/ModelFusion extension into the versioned directory,
+        # REPLACING the stock GitHub Copilot extension. Our custom extension has ModelFusion
+        # settings, OpenEvolve, /security, and other HugOS-specific features.
+        # The extension may be named 'copilot' (pre-rename) or 'modelfusion' (post-rename).
+        $copilotExtSrc = Join-Path $vsCodePackDir "resources\app\extensions\copilot"
+        $mfExtSrc = Join-Path $vsCodePackDir "resources\app\extensions\modelfusion"
+        if (Test-Path $copilotExtSrc) {
+            $destCopilot = Join-Path $destVersionedDir "resources\app\extensions\copilot"
+            Remove-Item $destCopilot -Recurse -Force -ErrorAction SilentlyContinue
+            Copy-Item $copilotExtSrc $destCopilot -Recurse -Force
+            Write-Host "[OK] Replaced stock copilot extension with HugOS custom copilot extension" -ForegroundColor Green
+        } elseif (Test-Path $mfExtSrc) {
+            $destMF = Join-Path $destVersionedDir "resources\app\extensions\modelfusion"
+            Copy-Item $mfExtSrc $destMF -Recurse -Force
+            Write-Host "[OK] Copied modelfusion extension to versioned directory" -ForegroundColor Green
+        } else {
+            Write-Host "[WARNING] Neither copilot nor modelfusion extension found in source build!" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "[WARNING] No versioned runtime directory found in VSCode zip!" -ForegroundColor Yellow
+    }
+
+    Write-Host "[OK] Electron runtime data files synced" -ForegroundColor Green
+    Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+} else {
+    Write-Host "[OK] HugOS.exe already has valid Microsoft signature - no restore needed" -ForegroundColor Green
+}
+
 # 4.5 Copy Pre-populated HF Models Database (hf_models.db) into the packaged folder
 $dbSrcPath = Join-Path (Split-Path $PSScriptRoot -Parent) "db\hf_models.db"
 if (Test-Path $dbSrcPath) {
@@ -141,9 +221,59 @@ if (Test-Path $ovSrcPath) {
     Write-Host "[WARNING] Starter OpenVINO model not found at $ovSrcPath. Packaging without bundled model." -ForegroundColor Yellow
 }
 
+# 4.9 Patch extensionHostProcess.js to accept ModelFusion as default vendor
+# VS Code's getDefaultLanguageModel() hardcodes vendor === "copilot" which blocks our
+# "modelfusion" vendor from being found as the default. This patch removes that vendor
+# check so any model with isDefaultForLocation.panel = true becomes the default model.
+Write-Host "[INFO] Patching extensionHostProcess.js to accept ModelFusion vendor..." -ForegroundColor Yellow
+$ejsPatterns = Get-ChildItem -Path $vsCodePackDir -Filter "extensionHostProcess.js" -Recurse
+foreach ($ejsFile in $ejsPatterns) {
+    $ejsContent = Get-Content $ejsFile.FullName -Raw
+    $vendorCheckOld = 'r.metadata.isDefaultForLocation.panel&&r.metadata.vendor===Yl'
+    $vendorCheckNew = 'r.metadata.isDefaultForLocation.panel'
+    if ($ejsContent.Contains($vendorCheckOld)) {
+        $ejsContent = $ejsContent.Replace($vendorCheckOld, $vendorCheckNew)
+        Set-Content $ejsFile.FullName -Value $ejsContent -NoNewline
+        Write-Host "[OK] Patched vendor check in: $($ejsFile.FullName)" -ForegroundColor Green
+    } else {
+        Write-Host "[SKIP] Vendor check already patched or not found in: $($ejsFile.FullName)" -ForegroundColor Yellow
+    }
+}
+
+# 4.95 Strip checksums from product.json to prevent "corrupt installation" warning
+# When product.json contains a checksums block, VS Code validates file hashes at startup.
+# Our patches naturally change file hashes, so we remove the block to avoid false alarms.
+Write-Host "[INFO] Stripping checksums from product.json..." -ForegroundColor Yellow
+$productJsonFiles = Get-ChildItem -Path $vsCodePackDir -Filter "product.json" -Recurse |
+    Where-Object { $_.FullName -like "*resources\app\product.json" }
+foreach ($pjFile in $productJsonFiles) {
+    $pjObj = Get-Content $pjFile.FullName -Raw | ConvertFrom-Json
+    if ($pjObj.checksums) {
+        $pjObj.PSObject.Properties.Remove('checksums')
+        $pjObj | ConvertTo-Json -Depth 20 | Set-Content $pjFile.FullName -Encoding UTF8
+        Write-Host "[OK] Removed checksums from: $($pjFile.FullName)" -ForegroundColor Green
+    }
+}
+
 # 5. Sign the binaries
 Write-Host "[INFO] Signing executables, DLLs, and native modules inside packaged folder..." -ForegroundColor Yellow
-$filesToSign = Get-ChildItem -Path $vsCodePackDir -Include *.exe, *.dll, *.node -Recurse | Select-Object -ExpandProperty FullName
+# IMPORTANT: Do NOT sign Electron binaries or GPU/DirectX DLLs.
+# - HugOS.exe uses Code.exe from VSCode which has a valid Microsoft signature — do not overwrite it.
+# - GPU/DirectX DLLs must keep their original signatures or Electron's renderer won't start.
+$dllExcludeList = @(
+    'HugOS.exe',          # Main Electron binary — uses Microsoft-signed Code.exe
+    'dxil.dll',           # DirectX IL runtime — requires Microsoft signature
+    'd3dcompiler_47.dll', # DirectX compiler — validated by Windows
+    'dxcompiler.dll',     # DX compiler runtime
+    'vk_swiftshader.dll', # Vulkan SwiftShader — Khronos/Google signed
+    'libEGL.dll',         # ANGLE EGL — Google signed
+    'libGLESv2.dll',      # ANGLE GLES2 — Google signed
+    'ffmpeg.dll'          # FFmpeg — Chromium signed
+)
+$filesToSign = Get-ChildItem -Path $vsCodePackDir -Include *.exe, *.dll, *.node -Recurse |
+    Where-Object { $dllExcludeList -notcontains $_.Name } |
+    Select-Object -ExpandProperty FullName
+
 
 $count = 0
 foreach ($file in $filesToSign) {

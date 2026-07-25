@@ -70,21 +70,22 @@ function generateWix(srcDir, outputFile) {
 
     const directoryTreeXml = renderDirTree(dirMap['INSTALLFOLDER'], '        ');
 
-    // Render components
-    let componentsXml = '    <ComponentGroup Id="AppFilesComponents" Directory="INSTALLFOLDER">\n';
+    // Render components — EVERY component must have explicit Directory
+    let componentsXml = '    <ComponentGroup Id="AppFilesComponents">\n';
     for (const cmp of components) {
-        const dirAttr = cmp.directoryId === 'INSTALLFOLDER' ? '' : ` Directory="${cmp.directoryId}"`;
+        const dirAttr = ` Directory="${cmp.directoryId}"`;
         componentsXml += `      <Component Id="${cmp.id}" Guid="*"${dirAttr}>\n`;
         componentsXml += `        <File Id="${cmp.fileId}" Source="${escapeXml(cmp.source)}" KeyPath="yes" />\n`;
         componentsXml += `      </Component>\n`;
     }
     componentsXml += '    </ComponentGroup>';
 
+    const buildNumPath = path.join(__dirname, 'build_number.txt');
     let buildNumber = 0;
-    const buildNumPath = path.join(__dirname, '.build_number');
     try {
         buildNumber = parseInt(fs.readFileSync(buildNumPath, 'utf-8').trim(), 10);
     } catch (e) {}
+    if (isNaN(buildNumber) || !buildNumber) { buildNumber = 1; }
     buildNumber++;
     fs.writeFileSync(buildNumPath, buildNumber.toString(), 'utf-8');
 
@@ -98,6 +99,9 @@ function generateWix(srcDir, outputFile) {
     <MediaTemplate EmbedCab="yes" />
 
     <Icon Id="HugOSIcon.ico" SourceFile="D:\\harfile\\ModelFusion\\IDE\\hugos.ico" />
+    <Property Id="ARPPRODUCTICON" Value="HugOSIcon.ico" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/oyesanyf/ModelFusion" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/oyesanyf/ModelFusion" />
 
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="INSTALLFOLDER" Name="HugOS IDE">
