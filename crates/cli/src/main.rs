@@ -2435,27 +2435,23 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     // ── Multi-Command Concurrent Thread Pool Interception ──
                     let mut matched_cmds: Vec<String> = Vec::new();
                     
-                    // 1. Dynamic extraction for user slash commands (strictly scanning user section, ignoring system XML tags)
-                    let user_segment = if let Some(pos) = prompt_lower.rfind("\nuser:") {
-                        &prompt_lower[pos..]
-                    } else {
-                        &prompt_lower[..]
-                    };
+                    // Explicit blacklist of system XML closing tags to prevent false positives
+                    let xml_tags = ["environment_info", "workspace_info", "attachments", "attachment", "context", "editorcontext", "instructions", "tooluseinstructions", "editfileinstructions", "notebookinstructions", "reminderinstructions", "usermemory", "sessionmemory", "repomemory", "memoryscopes", "memoryguidelines", "memoryinstructions", "outputformatting", "userrequest"];
 
-                    for word in user_segment.split_whitespace() {
-                        let clean_token = word.trim_matches(|c: char| c == '@' || c == ':' || c == ',' || c == '.' || c == '`' || c == '"' || c == '\'');
+                    for word in prompt_lower.split_whitespace() {
+                        let clean_token = word.trim_matches(|c: char| c == '@' || c == ':' || c == ',' || c == '.' || c == '`' || c == '"' || c == '\'' || c == '(' || c == ')');
                         if clean_token.starts_with('/') && !clean_token.contains('<') && !clean_token.contains('>') {
                             let clean_cmd = clean_token.trim_matches(|c: char| !c.is_alphanumeric() && c != '-' && c != '_');
-                            if !clean_cmd.is_empty() && !matched_cmds.contains(&clean_cmd.to_string()) {
+                            if !clean_cmd.is_empty() && !xml_tags.contains(&clean_cmd) && !matched_cmds.contains(&clean_cmd.to_string()) {
                                 matched_cmds.push(clean_cmd.to_string());
                             }
                         }
                     }
 
-                    // 2. Fallback checks for slash-less invocations in user segment (e.g. "sys-info", "cli.exe --stats", "api-keys")
-                    if user_segment.contains("sys-info") || user_segment.contains("sysinfo") { if !matched_cmds.contains(&"sysinfo".to_string()) && !matched_cmds.contains(&"sys-info".to_string()) { matched_cmds.push("sysinfo".to_string()); } }
-                    if user_segment.contains("cli.exe --stats") { if !matched_cmds.contains(&"stats".to_string()) { matched_cmds.push("stats".to_string()); } }
-                    if user_segment.contains("api-keys") { if !matched_cmds.contains(&"api-keys".to_string()) && !matched_cmds.contains(&"keys".to_string()) { matched_cmds.push("api-keys".to_string()); } }
+                    // Fallback checks for slash-less invocations (e.g. "sys-info", "cli.exe --stats", "api-keys")
+                    if prompt_lower.contains("sys-info") || prompt_lower.contains("sysinfo") { if !matched_cmds.contains(&"sysinfo".to_string()) && !matched_cmds.contains(&"sys-info".to_string()) { matched_cmds.push("sysinfo".to_string()); } }
+                    if prompt_lower.contains("cli.exe --stats") { if !matched_cmds.contains(&"stats".to_string()) { matched_cmds.push("stats".to_string()); } }
+                    if prompt_lower.contains("api-keys") { if !matched_cmds.contains(&"api-keys".to_string()) && !matched_cmds.contains(&"keys".to_string()) { matched_cmds.push("api-keys".to_string()); } }
 
                     if !matched_cmds.is_empty() {
                         eprintln!("[SERVER] ⚡ Multi-Thread Interception: Spawning {} concurrent command thread(s) for {:?}", matched_cmds.len(), matched_cmds);
