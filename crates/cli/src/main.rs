@@ -2435,21 +2435,27 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     // ── Multi-Command Concurrent Thread Pool Interception ──
                     let mut matched_cmds: Vec<String> = Vec::new();
                     
-                    // 1. Dynamic extraction for ANY /slash-command in prompt
-                    for word in prompt_lower.split_whitespace() {
-                        let clean_token = word.trim_matches(|c: char| c == '@' || c == ':' || c == ',' || c == '.' || c == '<' || c == '>');
-                        if let Some(cmd) = clean_token.strip_prefix('/') {
-                            let clean_cmd = cmd.trim_matches(|c: char| !c.is_alphanumeric() && c != '-' && c != '_');
+                    // 1. Dynamic extraction for user slash commands (strictly scanning user section, ignoring system XML tags)
+                    let user_segment = if let Some(pos) = prompt_lower.rfind("\nuser:") {
+                        &prompt_lower[pos..]
+                    } else {
+                        &prompt_lower[..]
+                    };
+
+                    for word in user_segment.split_whitespace() {
+                        let clean_token = word.trim_matches(|c: char| c == '@' || c == ':' || c == ',' || c == '.' || c == '`' || c == '"' || c == '\'');
+                        if clean_token.starts_with('/') && !clean_token.contains('<') && !clean_token.contains('>') {
+                            let clean_cmd = clean_token.trim_matches(|c: char| !c.is_alphanumeric() && c != '-' && c != '_');
                             if !clean_cmd.is_empty() && !matched_cmds.contains(&clean_cmd.to_string()) {
                                 matched_cmds.push(clean_cmd.to_string());
                             }
                         }
                     }
 
-                    // 2. Fallback checks for slash-less invocations (e.g. "sys-info", "cli.exe --stats", "api-keys")
-                    if prompt_lower.contains("sys-info") || prompt_lower.contains("sysinfo") { if !matched_cmds.contains(&"sysinfo".to_string()) && !matched_cmds.contains(&"sys-info".to_string()) { matched_cmds.push("sysinfo".to_string()); } }
-                    if prompt_lower.contains("cli.exe --stats") { if !matched_cmds.contains(&"stats".to_string()) { matched_cmds.push("stats".to_string()); } }
-                    if prompt_lower.contains("api-keys") { if !matched_cmds.contains(&"api-keys".to_string()) && !matched_cmds.contains(&"keys".to_string()) { matched_cmds.push("api-keys".to_string()); } }
+                    // 2. Fallback checks for slash-less invocations in user segment (e.g. "sys-info", "cli.exe --stats", "api-keys")
+                    if user_segment.contains("sys-info") || user_segment.contains("sysinfo") { if !matched_cmds.contains(&"sysinfo".to_string()) && !matched_cmds.contains(&"sys-info".to_string()) { matched_cmds.push("sysinfo".to_string()); } }
+                    if user_segment.contains("cli.exe --stats") { if !matched_cmds.contains(&"stats".to_string()) { matched_cmds.push("stats".to_string()); } }
+                    if user_segment.contains("api-keys") { if !matched_cmds.contains(&"api-keys".to_string()) && !matched_cmds.contains(&"keys".to_string()) { matched_cmds.push("api-keys".to_string()); } }
 
                     if !matched_cmds.is_empty() {
                         eprintln!("[SERVER] ⚡ Multi-Thread Interception: Spawning {} concurrent command thread(s) for {:?}", matched_cmds.len(), matched_cmds);
@@ -2545,12 +2551,15 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             let _ = write_half.write_all(b"\r\n0\r\n\r\n").await;
                             return;
                         } else {
-                            // Mixed Mode: Send the fast command outputs immediately as first chunk, then let LLM execute chat response!
+                            // Mixed Mode: Send the fast command outputs immediately as first chunk, flush TCP socket so UI renders in 10ms, then let LLM execute chat response!
                             let json = serde_json::json!({ "content": format!("{}\n\n---\n\n", combined_output) }).to_string();
                             let hex_len = format!("{:x}\r\n", json.len());
                             let _ = write_half.write_all(hex_len.as_bytes()).await;
                             let _ = write_half.write_all(json.as_bytes()).await;
-                            eprintln!("[SERVER] 🔀 Mixed Mode: Executed {} command thread(s), now continuing to LLM chat execution...", matched_cmds.len());
+                            let _ = write_half.write_all(b"\r\n").await;
+                            let _ = write_half.flush().await;
+                            tokio::task::yield_now().await;
+                            eprintln!("[SERVER] 🔀 Mixed Mode: Executed {} command thread(s) in <10ms, flushed to UI socket, now continuing to LLM chat execution...", matched_cmds.len());
                         }
                     }
 
