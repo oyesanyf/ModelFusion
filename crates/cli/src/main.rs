@@ -2530,33 +2530,13 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         results.sort_by_key(|&(idx, _)| idx);
                         let combined_output = results.into_iter().map(|(_, out)| out).collect::<Vec<_>>().join("\n\n---\n\n");
 
-                        // Check if the prompt has chat/conversational text beyond the command keywords
-                        let mut cleaned_prompt = prompt_lower.clone();
-                        for cmd in &matched_cmds {
-                            cleaned_prompt = cleaned_prompt.replace(&format!("/{cmd}"), "").replace(cmd, "");
-                        }
-                        let cleaned_chat_text = cleaned_prompt.replace("@agent", "").replace("<attachments>", "").replace("<environment_info>", "").replace("</environment_info>", "").replace("</attachments>", "").trim().to_string();
-
-                        let is_pure_command = cleaned_chat_text.len() < 15;
-                        if is_pure_command {
-                            // Fast return pure command requests (10ms)
-                            let json = serde_json::json!({ "content": combined_output }).to_string();
-                            let hex_len = format!("{:x}\r\n", json.len());
-                            let _ = write_half.write_all(hex_len.as_bytes()).await;
-                            let _ = write_half.write_all(json.as_bytes()).await;
-                            let _ = write_half.write_all(b"\r\n0\r\n\r\n").await;
-                            return;
-                        } else {
-                            // Mixed Mode: Send the fast command outputs immediately as first chunk, flush TCP socket so UI renders in 10ms, then let LLM execute chat response!
-                            let json = serde_json::json!({ "content": format!("{}\n\n---\n\n", combined_output) }).to_string();
-                            let hex_len = format!("{:x}\r\n", json.len());
-                            let _ = write_half.write_all(hex_len.as_bytes()).await;
-                            let _ = write_half.write_all(json.as_bytes()).await;
-                            let _ = write_half.write_all(b"\r\n").await;
-                            let _ = write_half.flush().await;
-                            tokio::task::yield_now().await;
-                            eprintln!("[SERVER] 🔀 Mixed Mode: Executed {} command thread(s) in <10ms, flushed to UI socket, now continuing to LLM chat execution...", matched_cmds.len());
-                        }
+                        // Return command outputs as a clean single JSON payload (10ms)
+                        let json = serde_json::json!({ "content": combined_output }).to_string();
+                        let hex_len = format!("{:x}\r\n", json.len());
+                        let _ = write_half.write_all(hex_len.as_bytes()).await;
+                        let _ = write_half.write_all(json.as_bytes()).await;
+                        let _ = write_half.write_all(b"\r\n0\r\n\r\n").await;
+                        return;
                     }
 
                     let mut full_process = Box::pin(async {
