@@ -2521,7 +2521,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                     "refactor" => {
                                         (idx, "🔧 **Refactoring Engine**: Code structure optimization thread ready.".to_string())
                                     },
-                                    _ => (idx, format!("Command /{cmd_owned} processed.")),
+                                    _ => (idx, format!("⚠️ **Unknown command `/{cmd_owned}`.**\n\nType `/stats`, `/sysinfo`, `/mcp`, `/keys`, `/tasks`, `/evolve`, `/security`, `/refactor` to run ModelFusion commands.")),
                                 }
                             });
                             handles.push(handle);
