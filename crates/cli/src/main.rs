@@ -2438,20 +2438,29 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     // Explicit blacklist of system XML closing tags to prevent false positives
                     let xml_tags = ["environment_info", "workspace_info", "attachments", "attachment", "context", "editorcontext", "instructions", "tooluseinstructions", "editfileinstructions", "notebookinstructions", "reminderinstructions", "usermemory", "sessionmemory", "repomemory", "memoryscopes", "memoryguidelines", "memoryinstructions", "outputformatting", "userrequest"];
 
-                    for word in prompt_lower.split_whitespace() {
+                    // Extract strictly the LATEST user typed message segment (ignoring history and attachment wrappers)
+                    let latest_user_segment = if let Some(pos) = prompt_lower.rfind("\nuser:") {
+                        let seg = &prompt_lower[pos+6..];
+                        if let Some(att_pos) = seg.find("<attachments>") {
+                            &seg[..att_pos]
+                        } else {
+                            seg
+                        }
+                    } else {
+                        &prompt_lower[..]
+                    };
+
+                    let known_cmds = ["stats", "sysinfo", "sys-info", "mcp", "keys", "api-keys", "tasks", "cache-stats", "performance-stats", "decision-stats", "evolve", "security", "refactor"];
+
+                    for word in latest_user_segment.split_whitespace() {
                         let clean_token = word.trim_matches(|c: char| c == '@' || c == ':' || c == ',' || c == '.' || c == '`' || c == '"' || c == '\'' || c == '(' || c == ')');
-                        if clean_token.starts_with('/') && !clean_token.contains('<') && !clean_token.contains('>') {
-                            let clean_cmd = clean_token.trim_matches(|c: char| !c.is_alphanumeric() && c != '-' && c != '_');
+                        let clean_cmd = clean_token.trim_start_matches('/').trim_matches(|c: char| !c.is_alphanumeric() && c != '-' && c != '_');
+                        if (clean_token.starts_with('/') || known_cmds.contains(&clean_cmd)) && !clean_token.contains('<') && !clean_token.contains('>') {
                             if !clean_cmd.is_empty() && !xml_tags.contains(&clean_cmd) && !matched_cmds.contains(&clean_cmd.to_string()) {
                                 matched_cmds.push(clean_cmd.to_string());
                             }
                         }
                     }
-
-                    // Fallback checks for slash-less invocations (e.g. "sys-info", "cli.exe --stats", "api-keys")
-                    if prompt_lower.contains("sys-info") || prompt_lower.contains("sysinfo") { if !matched_cmds.contains(&"sysinfo".to_string()) && !matched_cmds.contains(&"sys-info".to_string()) { matched_cmds.push("sysinfo".to_string()); } }
-                    if prompt_lower.contains("cli.exe --stats") { if !matched_cmds.contains(&"stats".to_string()) { matched_cmds.push("stats".to_string()); } }
-                    if prompt_lower.contains("api-keys") { if !matched_cmds.contains(&"api-keys".to_string()) && !matched_cmds.contains(&"keys".to_string()) { matched_cmds.push("api-keys".to_string()); } }
 
                     if !matched_cmds.is_empty() {
                         eprintln!("[SERVER] ⚡ Multi-Thread Interception: Spawning {} concurrent command thread(s) for {:?}", matched_cmds.len(), matched_cmds);
