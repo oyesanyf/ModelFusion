@@ -2471,7 +2471,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             let db_path_ref = db_path_arc.clone();
                             let handle = tokio::spawn(async move {
                                 match cmd_owned.as_str() {
-                                    "api-keys" => {
+                                    "api-keys" | "keys" => {
                                         let openai_st = if std::env::var("OPENAI_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "[LOADED]" } else { "[DISABLED]" };
                                         let anthropic_st = if std::env::var("ANTHROPIC_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "[LOADED]" } else { "[DISABLED]" };
                                         let gemini_st = if std::env::var("GEMINI_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "[LOADED]" } else { "[DISABLED]" };
