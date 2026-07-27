@@ -66,6 +66,7 @@ impl HuggingFaceModelDatabase {
     pub fn connect(&self) -> Result<Connection> {
         let conn = Connection::open(&self.db_path)
             .with_context(|| format!("Cannot open DB at {}", self.db_path.display()))?;
+        conn.busy_timeout(std::time::Duration::from_secs(10))?;
         for pragma in schema::STARTUP_PRAGMAS {
             conn.execute_batch(pragma)?;
         }
