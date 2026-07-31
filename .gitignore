@@ -19,5 +19,9 @@ IDE/VSCode-win32-x64/
 IDE/vscode/
 IDE/hugos.exe
 IDE/bin/
-IDE/HugOS.wixpdb
 IDE/HugOS.wxs
+IDE/HugOS.wixpdb
+IDE/vscode-126-extract/
+IDE/vscode-1.126.0-win32-x64.zip
+*.zip
+.cm_project

@@ -2436,28 +2436,99 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     let mut matched_cmds: Vec<String> = Vec::new();
                     
                     // Explicit blacklist of system XML closing tags to prevent false positives
-                    let xml_tags = ["environment_info", "workspace_info", "attachments", "attachment", "context", "editorcontext", "instructions", "tooluseinstructions", "editfileinstructions", "notebookinstructions", "reminderinstructions", "usermemory", "sessionmemory", "repomemory", "memoryscopes", "memoryguidelines", "memoryinstructions", "outputformatting", "userrequest"];
+                    let xml_tags = ["environment_info", "workspace_info", "attachments", "attachment", "context", "editorcontext", "instructions", "tooluseinstructions", "editfileinstructions", "notebookinstructions", "reminderinstructions", "usermemory", "sessionmemory", "repomemory", "memoryscopes", "memoryguidelines", "memoryinstructions", "outputformatting", "userrequest", "customizationsupdate", "conversationsummary", "conversation-summary"];
 
-                    // Extract strictly the LATEST user typed message segment (ignoring history and attachment wrappers)
-                    let latest_user_segment = if let Some(pos) = prompt_lower.rfind("\nuser:") {
-                        let seg = &prompt_lower[pos+6..];
-                        if let Some(att_pos) = seg.find("<attachments>") {
-                            &seg[..att_pos]
-                        } else {
-                            seg
+                    // Remove system XML blocks before command extraction to prevent false positive matches in history/customizations
+                    let mut clean_prompt = prompt_lower.clone();
+                    // Tag prefixes to strip — we match `<prefix` then extract the full tag name up to `>` or whitespace
+                    let strip_prefixes = [
+                        "customizationsupdate", "conversation-summary", "conversationsummary",
+                        "environment_info", "workspace_info", "editorcontext",
+                        "reminderinstruction", "attachments", "attachment",
+                        "tooluseinstructions", "editfileinstructions", "notebookinstructions",
+                        "usermemory", "sessionmemory", "repomemory",
+                        "memoryscopes", "memoryguidelines", "memoryinstructions",
+                        "outputformatting", "instructions",
+                        "context",  // must be last — it's a prefix of other tags
+                    ];
+                    for prefix in strip_prefixes {
+                        let open_needle = format!("<{}", prefix);
+                        while let Some(s_pos) = clean_prompt.find(&open_needle) {
+                            // Extract the actual full tag name (handles reminderinstructions vs reminderinstruction, etc.)
+                            let after_prefix = &clean_prompt[s_pos + 1..]; // skip '<'
+                            let tag_name_end = after_prefix.find(|c: char| c == '>' || c == ' ' || c == '\n' || c == '\r').unwrap_or(after_prefix.len());
+                            let actual_tag = &after_prefix[..tag_name_end];
+                            let close_tag = format!("</{}>", actual_tag);
+
+                            if let Some(e_rel) = clean_prompt[s_pos..].find(&close_tag) {
+                                clean_prompt.replace_range(s_pos..s_pos + e_rel + close_tag.len(), " ");
+                            } else {
+                                // No closing tag found — just remove the opening tag line, do NOT truncate
+                                let line_end = clean_prompt[s_pos..].find('\n').map(|p| s_pos + p + 1).unwrap_or(clean_prompt.len());
+                                clean_prompt.replace_range(s_pos..line_end, " ");
+                            }
                         }
+                    }
+
+                    // Extract strictly the LATEST user typed message segment
+                    let latest_user_segment = if let Some(start) = clean_prompt.rfind("<user_request>") {
+                        let sub = &clean_prompt[start + 14..];
+                        if let Some(end) = sub.find("</user_request>") {
+                            &sub[..end]
+                        } else {
+                            sub
+                        }
+                    } else if let Some(start) = clean_prompt.rfind("<user>") {
+                        let sub = &clean_prompt[start + 6..];
+                        if let Some(end) = sub.find("</user>") {
+                            &sub[..end]
+                        } else {
+                            sub
+                        }
+                    } else if let Some(pos) = clean_prompt.rfind("\nuser:") {
+                        &clean_prompt[pos + 6..]
+                    } else if let Some(pos) = clean_prompt.rfind("user:") {
+                        &clean_prompt[pos + 5..]
                     } else {
-                        &prompt_lower[..]
+                        &clean_prompt[..]
                     };
 
-                    let known_cmds = ["stats", "sysinfo", "sys-info", "mcp", "keys", "api-keys", "tasks", "cache-stats", "performance-stats", "decision-stats", "evolve", "security", "refactor"];
+                    let known_slash_commands = [
+                        "keys", "api-keys", "mcp", "stats", "sysinfo", "sys-info", "tasks",
+                        "cache-stats", "performance-stats", "decision-stats",
+                        "security", "refactor",
+                    ];
 
                     for word in latest_user_segment.split_whitespace() {
-                        let clean_token = word.trim_matches(|c: char| c == '@' || c == ':' || c == ',' || c == '.' || c == '`' || c == '"' || c == '\'' || c == '(' || c == ')');
-                        let clean_cmd = clean_token.trim_start_matches('/').trim_matches(|c: char| !c.is_alphanumeric() && c != '-' && c != '_');
-                        if (clean_token.starts_with('/') || known_cmds.contains(&clean_cmd)) && !clean_token.contains('<') && !clean_token.contains('>') {
-                            if !clean_cmd.is_empty() && !xml_tags.contains(&clean_cmd) && !matched_cmds.contains(&clean_cmd.to_string()) {
-                                matched_cmds.push(clean_cmd.to_string());
+                        // Skip URLs, file paths with protocol, or XML tag brackets
+                        if word.contains("://") || word.contains('<') || word.contains('>') {
+                            continue;
+                        }
+
+                        let trimmed_word = word.trim_start_matches(|c: char| c == '@' || c == '(' || c == '[' || c == '{' || c == '"' || c == '\'' || c == '`');
+                        if trimmed_word.starts_with('/') {
+                            let after_slash = &trimmed_word[1..];
+                            // Skip paths with internal/trailing slashes (e.g., /path/to/file or /mcp/)
+                            if after_slash.contains('/') || after_slash.contains('\\') {
+                                continue;
+                            }
+
+                            let clean_cmd = after_slash.trim_end_matches(|c: char| c == '.' || c == ',' || c == ':' || c == ';' || c == '?' || c == '!' || c == ')' || c == ']' || c == '}' || c == '"' || c == '\'' || c == '`');
+                            // Skip tokens that have file extensions (e.g. mcp.py, evolve.ts, stats.json)
+                            if clean_cmd.contains('.') {
+                                continue;
+                            }
+
+                            if !clean_cmd.is_empty() {
+                                if known_slash_commands.contains(&clean_cmd) {
+                                    if !matched_cmds.contains(&clean_cmd.to_string()) {
+                                        matched_cmds.push(clean_cmd.to_string());
+                                    }
+                                } else if (latest_user_segment.trim_start().starts_with('/') || latest_user_segment.trim_start().starts_with("@agent /"))
+                                    && !xml_tags.contains(&clean_cmd)
+                                    && !matched_cmds.contains(&clean_cmd.to_string()) {
+                                    matched_cmds.push(clean_cmd.to_string());
+                                }
                             }
                         }
                     }
@@ -2512,9 +2583,6 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                     "decision-stats" => {
                                         (idx, "🎯 **Decision Statistics**: Multi-objective strategy active.".to_string())
                                     },
-                                    "evolve" => {
-                                        (idx, "🧬 **OpenEvolve Optimization**: Code evolution worker thread initialized.".to_string())
-                                    },
                                     "security" => {
                                         (idx, "🛡️ **CyberSecurity Audit**: Active security inspection thread scanning code.".to_string())
                                     },
@@ -2561,7 +2629,43 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             } else if let Some(pos) = prompt.find("\n\n") {
                                 prompt.get(pos+2..).unwrap_or(&prompt).trim().to_string()
                             } else { prompt.clone() }
-                        } else { prompt.clone() };
+                        } else {
+                            // For VS Code prompts: strip system XML blocks to isolate actual user text
+                            let lower = prompt.to_lowercase();
+                            let mut clean = lower.clone();
+                            let strip_tags = [
+                                "customizationsupdate", "conversation-summary", "conversationsummary",
+                                "environment_info", "workspace_info", "editorcontext",
+                                "reminderinstruction", "attachments", "attachment",
+                                "tooluseinstructions", "editfileinstructions", "notebookinstructions",
+                                "usermemory", "sessionmemory", "repomemory",
+                                "memoryscopes", "memoryguidelines", "memoryinstructions",
+                                "outputformatting", "instructions", "context",
+                            ];
+                            for prefix in strip_tags {
+                                let needle = format!("<{}", prefix);
+                                while let Some(s) = clean.find(&needle) {
+                                    let after = &clean[s + 1..];
+                                    let tag_end = after.find(|c: char| c == '>' || c == ' ' || c == '\n' || c == '\r').unwrap_or(after.len());
+                                    let tag = &after[..tag_end];
+                                    let close = format!("</{}>", tag);
+                                    if let Some(e) = clean[s..].find(&close) {
+                                        clean.replace_range(s..s + e + close.len(), " ");
+                                    } else {
+                                        let le = clean[s..].find('\n').map(|p| s + p + 1).unwrap_or(clean.len());
+                                        clean.replace_range(s..le, " ");
+                                    }
+                                }
+                            }
+                            // Extract just the last user segment from the cleaned prompt
+                            if let Some(pos) = clean.rfind("\nuser:") {
+                                let seg = &clean[pos + 6..];
+                                // Also strip <attachments> tail
+                                if let Some(att) = seg.find("<attachments>") { seg[..att].trim().to_string() } else { seg.trim().to_string() }
+                            } else if let Some(pos) = clean.rfind("user:") {
+                                clean[pos + 5..].trim().to_string()
+                            } else { prompt.clone() }
+                        };
                         
                         let is_complex = user_msg_for_check.len() > 300
                             || {
