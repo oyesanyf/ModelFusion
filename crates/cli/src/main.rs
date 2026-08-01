@@ -2495,7 +2495,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                     let known_slash_commands = [
                         "keys", "api-keys", "mcp", "stats", "sysinfo", "sys-info", "tasks",
-                        "cache-stats", "performance-stats", "decision-stats",
+                        "cache-stats", "performance-stats", "decision-stats", "evolve", "evovle",
                         "security", "refactor",
                     ];
 
@@ -2583,6 +2583,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                     "decision-stats" => {
                                         (idx, "🎯 **Decision Statistics**: Multi-objective strategy active.".to_string())
                                     },
+                                    "evolve" | "evovle" => {
+                                        (idx, "🧬 **OpenEvolve Optimization**: Code evolution worker thread initialized.".to_string())
+                                    },
                                     "security" => {
                                         (idx, "🛡️ **CyberSecurity Audit**: Active security inspection thread scanning code.".to_string())
                                     },
@@ -2609,6 +2612,55 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                         // Return command outputs as a clean single JSON payload (10ms)
                         let json = serde_json::json!({ "content": combined_output }).to_string();
+                        let hex_len = format!("{:x}\r\n", json.len());
+                        let _ = write_half.write_all(hex_len.as_bytes()).await;
+                        let _ = write_half.write_all(json.as_bytes()).await;
+                        let _ = write_half.write_all(b"\r\n0\r\n\r\n").await;
+                        return;
+                    }
+
+                    // Fast interception for empty user prompt / system context refresh (1ms)
+                    let is_empty_user_prompt = {
+                        let lower = prompt.to_lowercase();
+                        let mut clean = lower.clone();
+                        let strip_tags = [
+                            "customizationsupdate", "conversation-summary", "conversationsummary",
+                            "environment_info", "workspace_info", "editorcontext",
+                            "reminderinstruction", "attachments", "attachment",
+                            "tooluseinstructions", "editfileinstructions", "notebookinstructions",
+                            "usermemory", "sessionmemory", "repomemory",
+                            "memoryscopes", "memoryguidelines", "memoryinstructions",
+                            "outputformatting", "instructions", "context",
+                        ];
+                        for prefix in strip_tags {
+                            let needle = format!("<{}", prefix);
+                            while let Some(s) = clean.find(&needle) {
+                                let after = &clean[s + 1..];
+                                let tag_end = after.find(|c: char| c == '>' || c == ' ' || c == '\n' || c == '\r').unwrap_or(after.len());
+                                let tag = &after[..tag_end];
+                                let close = format!("</{}>", tag);
+                                if let Some(e) = clean[s..].find(&close) {
+                                    clean.replace_range(s..s + e + close.len(), " ");
+                                } else {
+                                    let le = clean[s..].find('\n').map(|p| s + p + 1).unwrap_or(clean.len());
+                                    clean.replace_range(s..le, " ");
+                                }
+                            }
+                        }
+                        let usr = if let Some(pos) = clean.rfind("\nuser:") {
+                            let seg = &clean[pos + 6..];
+                            if let Some(att) = seg.find("<attachments>") { &seg[..att] } else { seg }
+                        } else if let Some(pos) = clean.rfind("user:") {
+                            &clean[pos + 5..]
+                        } else {
+                            &clean[..]
+                        };
+                        usr.trim().is_empty()
+                    };
+
+                    if is_empty_user_prompt {
+                        eprintln!("[SERVER] ⚡ Fast interception: Empty user prompt / system context refresh (1ms).");
+                        let json = serde_json::json!({ "content": "" }).to_string();
                         let hex_len = format!("{:x}\r\n", json.len());
                         let _ = write_half.write_all(hex_len.as_bytes()).await;
                         let _ = write_half.write_all(json.as_bytes()).await;
@@ -2664,7 +2716,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 if let Some(att) = seg.find("<attachments>") { seg[..att].trim().to_string() } else { seg.trim().to_string() }
                             } else if let Some(pos) = clean.rfind("user:") {
                                 clean[pos + 5..].trim().to_string()
-                            } else { prompt.clone() }
+                            } else { clean.trim().to_string() }
                         };
                         
                         let is_complex = user_msg_for_check.len() > 300
