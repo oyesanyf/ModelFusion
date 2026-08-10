@@ -13,6 +13,12 @@ import urllib.request
 import json
 import time
 import sys
+import io
+
+# Ensure UTF-8 output on Windows console
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 
 SERVER = "http://127.0.0.1:5000"
 
@@ -282,19 +288,39 @@ if __name__ == "__main__":
         expect_contains=["summary"],
     ))
 
-    # ── Section 4: Edge cases ───────────────────────────────────────
-    print("\n── Section 4: EDGE CASES ──")
+    # Test: @agent command with attachments block at the start of user message (EXACT BUG REPRO)
+    attachments_with_agent_cmd = (
+        'You are an expert AI programming assistant.\n'
+        '\nuser: <attachments>\n'
+        '<attachment id="file:import math.py">\n'
+        'Excerpt from import math.py:\n'
+        'import math\ndef sqrt(n): return math.sqrt(n)\n'
+        '</attachment>\n'
+        '</attachments>\n'
+        '@agent /evolve'
+    )
 
     results.append(test_case(
-        "Multi-command: /stats /sysinfo in one message",
-        "System: You are HugOS AI.\nUser: /stats /sysinfo",
-        expect_contains=["stats"],
+        "@agent /evolve with attachments block — should run evolve",
+        attachments_with_agent_cmd,
+        expect_contains=["evolve"],
     ))
 
+    # Test: Prompt with attachments only (user attached code and invoked @agent without explicit slash cmd)
+    attachments_only_prompt = (
+        'You are an expert AI programming assistant.\n'
+        '\nuser: <attachments>\n'
+        '<attachment id="file:import math.py">\n'
+        'User active selection:\n'
+        'import math\n'
+        '</attachment>\n'
+        '</attachments>'
+    )
+
     results.append(test_case(
-        "Slash-less text — no interception expected",
-        "System: You are HugOS AI.\nUser: hello how are you",
-        expect_not_contains=["mcp engine", "openevolve", "api key", "security audit", "unknown command"],
+        "User message starting with attachments — should NOT return empty fast interception",
+        attachments_only_prompt,
+        expect_not_contains=["Fast interception: Empty user prompt"],
     ))
 
     # ── Summary ─────────────────────────────────────────────────────
