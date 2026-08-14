@@ -23,5 +23,6 @@ IDE/HugOS.wxs
 IDE/HugOS.wixpdb
 IDE/vscode-126-extract/
 IDE/vscode-1.126.0-win32-x64.zip
+IDE/test-user-data/
 *.zip
 .cm_project

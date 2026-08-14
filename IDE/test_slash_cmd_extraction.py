@@ -323,6 +323,67 @@ if __name__ == "__main__":
         expect_not_contains=["Fast interception: Empty user prompt"],
     ))
 
+    # Test: @agent evolve (slash-less) with attachments block
+    attachments_with_slashless_evolve = (
+        'You are an expert AI programming assistant.\n'
+        '\nuser: <attachments>\n'
+        '<attachment id="file:import math.py">\n'
+        'Excerpt from import math.py:\n'
+        'import math\ndef sqrt(n): return math.sqrt(n)\n'
+        '</attachment>\n'
+        '</attachments>\n'
+        '@agent evolve'
+    )
+
+    results.append(test_case(
+        "@agent evolve (slash-less) with attachments block — should run evolve",
+        attachments_with_slashless_evolve,
+        expect_contains=["evolve"],
+    ))
+
+    # Test: /evove typo alias
+    results.append(test_case(
+        "/evove typo — should map to evolve",
+        "System: You are HugOS AI.\nUser: /evove",
+        expect_contains=["evolve"],
+    ))
+
+    # Test: /evoce typo alias
+    results.append(test_case(
+        "/evoce typo — should map to evolve",
+        "System: You are HugOS AI.\nUser: /evoce",
+        expect_contains=["evolve"],
+    ))
+
+    # Test: @agent /evove
+    results.append(test_case(
+        "@agent /evove — should map to evolve",
+        "System: You are HugOS AI.\nUser: @agent /evove",
+        expect_contains=["evolve"],
+    ))
+
+    # Test: @agent /evoce
+    results.append(test_case(
+        "@agent /evoce — should map to evolve",
+        "System: You are HugOS AI.\nUser: @agent /evoce",
+        expect_contains=["evolve"],
+    ))
+
+    # Test: @agent stats (slash-less)
+    results.append(test_case(
+        "@agent stats (slash-less) — should run stats",
+        "System: You are HugOS AI.\nUser: @agent stats",
+        expect_contains=["database"],
+    ))
+
+    # Test: QA Engineer system prompt — must NOT be intercepted as quick_answer / canned command
+    qa_prompt = 'System: You are an expert QA Engineer. Write ONLY a single Python function definition named `evaluate_code(candidate_function)` for an automated code evolution framework.\n\nUser: generate evaluator'
+    results.append(test_case(
+        "QA Engineer prompt — should NOT intercept as quick_answer",
+        qa_prompt,
+        expect_not_contains=["Quick Answer", "Ollama error", "Ollama connection failed"],
+    ))
+
     # ── Summary ─────────────────────────────────────────────────────
     print("\n" + "=" * 78)
     total = len(results)

@@ -114,18 +114,25 @@ def main():
         print("\n--- Step 2: List Tools ---")
         client.send_request("tools/list")
 
-        # Step 3: Call Tool 'get_database_stats'
-        print("\n--- Step 3: Call Tool 'get_database_stats' ---")
+        # Step 3: Call Tool 'get_system_info'
+        print("\n--- Step 3: Call Tool 'get_system_info' ---")
+        client.send_request("tools/call", {
+            "name": "get_system_info",
+            "arguments": {}
+        })
+
+        # Step 4: Call Tool 'get_database_stats'
+        print("\n--- Step 4: Call Tool 'get_database_stats' ---")
         client.send_request("tools/call", {
             "name": "get_database_stats",
             "arguments": {}
         })
 
-        # Step 4: Call Tool 'get_system_info'
-        print("\n--- Step 4: Call Tool 'get_system_info' ---")
+        # Step 5: Call Tool 'text_classification'
+        print("\n--- Step 5: Call Tool 'text_classification' ---")
         client.send_request("tools/call", {
-            "name": "get_system_info",
-            "arguments": {}
+            "name": "text_classification",
+            "arguments": {"text": "ModelFusion provides high performance AI models."}
         })
 
     finally:
