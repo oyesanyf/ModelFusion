@@ -138,6 +138,7 @@ ${componentsXml}
 </Wix>
 `;
 
+    try { if (fs.existsSync(outputFile)) fs.unlinkSync(outputFile); } catch(e) {}
     fs.writeFileSync(outputFile, wxsContent, 'utf8');
     console.log(`Successfully generated WiX source at ${outputFile}`);
 }
