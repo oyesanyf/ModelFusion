@@ -2460,7 +2460,14 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     }
 
                     // Extract strictly the LATEST user typed message segment
-                    let latest_user_segment = if let Some(start) = clean_prompt.rfind("<user_request>") {
+                    let latest_user_segment = if let Some(start) = clean_prompt.rfind("<userrequest>") {
+                        let sub = &clean_prompt[start + 13..];
+                        if let Some(end) = sub.find("</userrequest>") {
+                            &sub[..end]
+                        } else {
+                            sub
+                        }
+                    } else if let Some(start) = clean_prompt.rfind("<user_request>") {
                         let sub = &clean_prompt[start + 14..];
                         if let Some(end) = sub.find("</user_request>") {
                             &sub[..end]
@@ -2542,17 +2549,20 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         // Each entry is (command_name, arguments_text)
                         let mut matched_cmds: Vec<(String, String)> = Vec::new();
 
+                        let is_from_user_request_tag = clean_prompt.rfind("<userrequest>").is_some() || clean_prompt.rfind("<user_request>").is_some();
                         // Split user segment into lines to handle multi-command batches
                         for line in latest_user_segment.lines() {
                             let line = line.trim();
                             if line.is_empty() { continue; }
 
-                            let is_agent_line = line.to_lowercase().starts_with("@agent") || line.to_lowercase().starts_with("@commands");
+                            let is_agent_line = line.to_lowercase().starts_with("@agent") || line.to_lowercase().starts_with("@commands") || is_from_user_request_tag;
                             let line_to_scan = if is_agent_line {
                                 if line.to_lowercase().starts_with("@agent") {
                                     line[6..].trim()
-                                } else {
+                                } else if line.to_lowercase().starts_with("@commands") {
                                     line[9..].trim()
+                                } else {
+                                    line
                                 }
                             } else {
                                 line
