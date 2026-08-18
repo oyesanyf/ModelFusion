@@ -151,9 +151,8 @@ impl EnhancedModelSelector {
             anyhow::bail!("No real chat models found in database for task '{}' after filtering.", task_name);
         }
 
-        // Calculate max downloads & likes for normalization
+        // Calculate max downloads for normalization
         let max_downloads = filtered_models.iter().map(|m| m.downloads).max().unwrap_or(1) as f64;
-        let max_likes = filtered_models.iter().map(|m| m.likes).max().unwrap_or(1) as f64;
 
         let mut candidates = Vec::new();
         for m in &filtered_models {
@@ -176,28 +175,53 @@ impl EnhancedModelSelector {
                 backend = Backend::Transformers;
             }
 
-            // Weights for multi-objective scoring
-            // downloads (0.3) + likes (0.2) + decision_score (0.2) + freshness (0.1) + license (0.1) + efficiency (0.1)
-            let downloads_norm = if max_downloads > 0.0 { m.downloads as f64 / max_downloads } else { 0.0 };
-            let likes_norm = if max_likes > 0.0 { m.likes as f64 / max_likes } else { 0.0 };
+            // Anti-Hype Model Scoring:
+            // High downloads indicate true automated/production pipeline adoption (0.35)
+            // Stored anti-hype decision score (0.25)
+            // Utility-to-Hype ratio: downloads / max(1, likes) (0.15)
+            // Parameter efficiency sweet-spot (0.15)
+            // Open license (0.05) + Freshness/stability (0.05)
+            let downloads_norm = if max_downloads > 0.0 { (m.downloads as f64 / max_downloads).clamp(0.0, 1.0) } else { 0.0 };
             
-            // Stored on a 0.0 to 1.0 scale in the database, clamp to be safe
-            let decision_norm = m.decision_score.clamp(0.0, 1.0);
-            
-            // Efficiency (prefer smaller models, but penalize tiny dummy models)
-            let efficiency_val = if m.size_mb > 0.0 {
-                // Decay score for very large models: e.g., score = 1 / (1 + size_gb)
-                1.0 / (1.0 + (m.size_mb / 1000.0))
+            // Calculate utility ratio (downloads per like)
+            let d_val = m.downloads.max(0) as f64;
+            let l_val = (m.likes.max(0) as f64).max(1.0);
+            let utility_ratio = d_val / l_val;
+            let utility_ratio_norm = if d_val > 100.0 {
+                (utility_ratio.log10() / 5.5).clamp(0.0, 1.0)
             } else {
-                0.5 // Default neutral score
+                0.1
             };
 
-            let mut final_score = downloads_norm * 0.3
-                + likes_norm * 0.2
-                + decision_norm * 0.2
-                + freshness * 0.1
-                + license_val * 0.1
-                + efficiency_val * 0.1;
+            // Stored on a 0.0 to 10.0 scale in the database, normalize to 0.0-1.0
+            let decision_norm = (m.decision_score / 10.0).clamp(0.0, 1.0);
+            
+            // Efficiency (prefer practical sweet-spot sizes: <1B = 83% of downloads, 1-14B = local desktop sweet spot)
+            let efficiency_val = if m.size_mb > 0.0 {
+                let size_gb = m.size_mb / 1024.0;
+                if size_gb <= 1.0 {
+                    1.0 // Super fast/lightweight (MiniLM, 0.5B, 1B)
+                } else if size_gb <= 8.0 {
+                    0.9 // 1B-4B sweet spot
+                } else if size_gb <= 16.0 {
+                    0.75 // 7B-8B desktop standard
+                } else if size_gb <= 32.0 {
+                    0.55 // 14B
+                } else if size_gb <= 70.0 {
+                    0.35 // 32B-70B (only 3% usage)
+                } else {
+                    0.15 // >70B / 100B+ / frontier behemoths (only 1% usage)
+                }
+            } else {
+                0.7 // Default neutral
+            };
+
+            let mut final_score = downloads_norm * 0.35
+                + decision_norm * 0.25
+                + utility_ratio_norm * 0.15
+                + efficiency_val * 0.15
+                + license_val * 0.05
+                + freshness * 0.05;
 
             // Apply strategy variations/stubs
             match strategy {
@@ -509,10 +533,10 @@ impl EnsembleModelSelector {
         let mut max_weighted_score = -1.0;
 
         for c in candidates {
-            // Ensemble score = 0.5 * final_score + 0.3 * decision_score + 0.2 * capability_score
+            // Ensemble score = 0.5 * final_score + 0.3 * normalized decision_score + 0.2 * normalized capability_score
             let score = c.final_score * 0.5
-                + c.decision_score.clamp(0.0, 1.0) * 0.3
-                + c.capability_score.clamp(0.0, 1.0) * 0.2;
+                + (c.decision_score / 10.0).clamp(0.0, 1.0) * 0.3
+                + (c.capability_score / 10.0).clamp(0.0, 1.0) * 0.2;
 
             if score > max_weighted_score {
                 max_weighted_score = score;

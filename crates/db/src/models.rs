@@ -160,10 +160,24 @@ impl HuggingFaceModelDatabase {
                         updated_at
                     ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,datetime('now'))
                     ON CONFLICT(model_id) DO UPDATE SET
-                        downloads      = excluded.downloads,
-                        likes          = excluded.likes,
-                        decision_score = excluded.decision_score,
-                        updated_at     = datetime('now')"#,
+                        pipeline_tag     = excluded.pipeline_tag,
+                        tags             = excluded.tags,
+                        description      = excluded.description,
+                        downloads        = excluded.downloads,
+                        likes            = excluded.likes,
+                        decision_score   = excluded.decision_score,
+                        capability_score = excluded.capability_score,
+                        efficiency_score = excluded.efficiency_score,
+                        popularity_score = excluded.popularity_score,
+                        model_type       = excluded.model_type,
+                        library_name     = excluded.library_name,
+                        last_modified    = excluded.last_modified,
+                        license          = excluded.license,
+                        task_keywords    = excluded.task_keywords,
+                        architecture     = excluded.architecture,
+                        size_mb          = excluded.size_mb,
+                        language         = excluded.language,
+                        updated_at       = datetime('now')"#,
                     params![
                         model.model_id, model.author, model.pipeline_tag, tags, model.description,
                         model.downloads, model.likes, model.decision_score, model.capability_score,
