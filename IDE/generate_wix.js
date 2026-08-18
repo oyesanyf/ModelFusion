@@ -80,11 +80,12 @@ function generateWix(srcDir, outputFile) {
     }
     componentsXml += '    </ComponentGroup>';
 
+    const buildNumPath = path.join(__dirname, 'build_number.txt');
     let buildNumber = 0;
-    const buildNumPath = path.join(__dirname, '.build_number');
     try {
         buildNumber = parseInt(fs.readFileSync(buildNumPath, 'utf-8').trim(), 10);
     } catch (e) {}
+    if (isNaN(buildNumber) || !buildNumber) { buildNumber = 1; }
     buildNumber++;
     fs.writeFileSync(buildNumPath, buildNumber.toString(), 'utf-8');
 
@@ -137,6 +138,7 @@ ${componentsXml}
 </Wix>
 `;
 
+    try { if (fs.existsSync(outputFile)) fs.unlinkSync(outputFile); } catch(e) {}
     fs.writeFileSync(outputFile, wxsContent, 'utf8');
     console.log(`Successfully generated WiX source at ${outputFile}`);
 }

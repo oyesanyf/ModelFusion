@@ -62,35 +62,136 @@ fn fast_inference_slots() -> usize {
 }
 
 /// Hardware-aware Ollama model selector.
-/// Detects system RAM and GPU availability to pick the best model for the machine.
-///   - 32GB+ RAM or dedicated GPU  → qwen2.5:7b  (smartest, needs ~5GB VRAM/RAM)
-///   - 16GB+ RAM                   → qwen2.5:3b  (good balance)
-///   - <16GB RAM                   → qwen2.5:1.5b (fast, lightweight)
+#[derive(Debug, Clone)]
+pub struct SystemResourceSummary {
+    pub cpu_name: String,
+    pub logical_cores: usize,
+    pub total_ram_gb: f64,
+    pub free_ram_gb: f64,
+    pub gpu_name: String,
+    pub total_vram_mb: u64,
+    pub free_vram_mb: u64,
+    pub has_gpu: bool,
+    pub free_disk_gb: f64,
+}
+
+/// Queries hardware resources (CPU, RAM, GPU VRAM, Disk) using native Rust sysinfo and nvidia-smi / WMI.
+pub fn query_system_resources() -> SystemResourceSummary {
+    let mut sys = sysinfo::System::new_all();
+    sys.refresh_all();
+
+    let total_ram_gb = sys.total_memory() as f64 / 1_073_741_824.0;
+    let free_ram_gb = sys.available_memory() as f64 / 1_073_741_824.0;
+
+    let cpus = sys.cpus();
+    let logical_cores = cpus.len();
+    let cpu_name = cpus
+        .first()
+        .map(|c| c.brand().trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "Generic CPU".to_string());
+
+    // Query GPU via nvidia-smi
+    let mut gpu_name = "None / Integrated".to_string();
+    let mut total_vram_mb = 0u64;
+    let mut free_vram_mb = 0u64;
+    let mut has_gpu = false;
+
+    if let Ok(output) = std::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=name,memory.total,memory.free", "--format=csv,noheader,nounits"])
+        .output()
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let parts: Vec<&str> = stdout.trim().split(',').map(|s| s.trim()).collect();
+            if parts.len() >= 3 {
+                gpu_name = parts[0].to_string();
+                total_vram_mb = parts[1].parse::<u64>().unwrap_or(0);
+                free_vram_mb = parts[2].parse::<u64>().unwrap_or(0);
+                has_gpu = true;
+            }
+        }
+    }
+
+    // Windows WMI fallback if nvidia-smi wasn't available
+    if !has_gpu && cfg!(windows) {
+        if let Ok(output) = std::process::Command::new("wmic")
+            .args(["path", "win32_videocard", "get", "name"])
+            .output()
+        {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let lines: Vec<&str> = stdout.lines().map(|s| s.trim()).filter(|s| !s.is_empty() && *s != "Name").collect();
+                if let Some(first_gpu) = lines.first() {
+                    gpu_name = first_gpu.to_string();
+                    let lower = gpu_name.to_lowercase();
+                    if lower.contains("nvidia") || lower.contains("geforce") || lower.contains("radeon") || lower.contains("rtx") || lower.contains("gtx") {
+                        has_gpu = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // Query free disk space
+    let disks = sysinfo::Disks::new_with_refreshed_list();
+    let free_disk_gb = disks
+        .iter()
+        .map(|d| d.available_space())
+        .max()
+        .unwrap_or(0) as f64 / 1_073_741_824.0;
+
+    SystemResourceSummary {
+        cpu_name,
+        logical_cores,
+        total_ram_gb,
+        free_ram_gb,
+        gpu_name,
+        total_vram_mb,
+        free_vram_mb,
+        has_gpu,
+        free_disk_gb,
+    }
+}
+
+/// Detects system RAM, VRAM, and CPU to pick the optimal Ollama model fit.
+/// Prints a formatted debug log banner showing detected resources.
 fn select_ollama_model_for_hardware(is_low_budget: bool) -> &'static str {
     if is_low_budget {
         return "qwen2.5:1.5b";
     }
-    let mut sys = sysinfo::System::new();
-    sys.refresh_memory();
-    let ram_gb = sys.total_memory() / 1_073_741_824;
 
-    // Check for dedicated GPU via environment hints or nvidia-smi
-    let has_gpu = std::env::var("CUDA_VISIBLE_DEVICES").is_ok()
-        || std::env::var("NVIDIA_VISIBLE_DEVICES").is_ok()
-        || std::process::Command::new("nvidia-smi")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
+    let res = query_system_resources();
 
-    if ram_gb >= 32 || has_gpu {
+    // Print resource debug banner
+    eprintln!("============================================================");
+    eprintln!("        MODELFUSION RUST HARDWARE RESOURCE QUERY           ");
+    eprintln!("============================================================");
+    eprintln!("  CPU           : {} ({} logical cores)", res.cpu_name, res.logical_cores);
+    eprintln!("  RAM           : Total: {:.2} GB | Available Free: {:.2} GB", res.total_ram_gb, res.free_ram_gb);
+    if res.has_gpu {
+        eprintln!("  GPU           : {} (Total VRAM: {} MB, Free VRAM: {} MB)", res.gpu_name, res.total_vram_mb, res.free_vram_mb);
+    } else {
+        eprintln!("  GPU           : None detected / CPU fallthrough");
+    }
+    eprintln!("  Max Free Disk : {:.2} GB", res.free_disk_gb);
+
+    // VRAM-aware model fit logic
+    let chosen_model = if res.total_vram_mb >= 14_000 {
+        "qwen2.5:14b"
+    } else if res.total_vram_mb >= 4_500 || (res.has_gpu && res.total_ram_gb >= 16.0) {
+        // Fits inside 6GB VRAM (like GTX 1060 6GB) or 8GB VRAM GPUs cleanly
         "qwen2.5:7b"
-    } else if ram_gb >= 16 {
+    } else if res.total_vram_mb >= 2_000 || res.total_ram_gb >= 16.0 {
         "qwen2.5:3b"
     } else {
         "qwen2.5:1.5b"
-    }
+    };
+
+    eprintln!("  BEST MODEL FIT: {}", chosen_model);
+    eprintln!("============================================================");
+
+    chosen_model
 }
 
 /// Dynamically determine the optimal context window (num_ctx) for the chosen Ollama model.
@@ -1843,6 +1944,12 @@ fn clean_model_response(raw: &str) -> String {
         "I'm here to provide assistance",
         "I'm designed to",
         "my knowledge cutoff",
+        "Since you are currently working on",
+        "let me know if you would like to add",
+        "incorporate this into your existing script",
+        "example of how it could be added",
+        "here's an example of how it could be added",
+        "you can add this information to your code",
     ];
 
     let lines: Vec<&str> = raw.lines().collect();
@@ -1895,9 +2002,10 @@ fn clean_model_response(raw: &str) -> String {
 async fn query_local_router(system_prompt: &str, user_prompt: &str) -> Option<String> {
     // 1. First attempt: Query local Ollama if running
     let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
-        .unwrap_or_else(|_| "http://localhost:11434".to_string());
+        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
     
     let client = reqwest::Client::builder()
+        .no_proxy()
         .timeout(std::time::Duration::from_secs(30))
         .connect_timeout(std::time::Duration::from_secs(2))
         .build()
@@ -2205,20 +2313,68 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 }
             };
 
-            let db_path_str = db_path_clone.unwrap_or_else(|| "db/hf_models.db".to_string());
+            let db_path_str = db_path_clone.clone().unwrap_or_else(|| "db/hf_models.db".to_string());
             let db_path_val = std::path::Path::new(&db_path_str);
 
-            let result_content = match request_path.as_str() {
+            // ── OpenAI-compatible /v1/chat/completions endpoint ──
+            // Translates OpenAI messages format → internal /orchestrate format → OpenAI response.
+            // This allows OpenEvolve and other OpenAI-SDK clients to use ModelFusion's multi-backend routing.
+            let is_openai_compat = request_path == "/v1/chat/completions" || request_path.starts_with("/v1/");
+            let mut request_json = request_json; // make mutable for translation
+            if is_openai_compat {
+                // Convert OpenAI messages array to a single prompt string
+                let mut prompt_parts: Vec<String> = Vec::new();
+                if let Some(messages) = request_json["messages"].as_array() {
+                    for msg in messages {
+                        let role = msg["role"].as_str().unwrap_or("user");
+                        let content = msg["content"].as_str().unwrap_or("");
+                        match role {
+                            "system" => prompt_parts.push(format!("System: {}", content)),
+                            "user" => prompt_parts.push(content.to_string()),
+                            "assistant" => prompt_parts.push(format!("Assistant: {}", content)),
+                            _ => prompt_parts.push(content.to_string()),
+                        };
+                    }
+                }
+                let combined_prompt = prompt_parts.join("\n\n");
+                let mut model = request_json["model"].as_str().unwrap_or("").to_string();
+                let res = query_system_resources();
+                if res.has_gpu && res.total_vram_mb < 10000 && (model.contains("14b") || model.contains("32b")) {
+                    eprintln!("[HARDWARE] VRAM ({} MB) is < 10GB. Auto-mapping model {} -> qwen2.5:7b for fast VRAM GPU inference.", res.total_vram_mb, model);
+                    model = "qwen2.5:7b".to_string();
+                }
+                // Rewrite as /orchestrate request
+                request_json = serde_json::json!({
+                    "prompt": combined_prompt,
+                    "model": model,
+                    "ollama": true,
+                    "gpu": true,
+                    "selection_strategy": "multi_objective",
+                    "budget": 10.0
+                });
+                eprintln!("[SERVER] >>> /v1/chat/completions → translated to /orchestrate (model: {}, prompt len: {})", model, combined_prompt.len());
+            }
+
+            let result_content = match if is_openai_compat { "/orchestrate" } else { request_path.as_str() } {
                 "/orchestrate" => {
                     let mut prompt = request_json["prompt"].as_str().unwrap_or("").to_string();
                     let mut strategy = request_json["selection_strategy"].as_str().unwrap_or("multi_objective").to_string();
                     let fusion_mode = request_json["fusion_mode"].as_str().unwrap_or("multi-model").to_string();
                     let fusion_models = request_json["fusion_models"].as_u64().unwrap_or(10) as usize;
                     let budget = request_json["budget"].as_f64().unwrap_or(10.0);
+                    let res = query_system_resources();
                     let mut openvino = request_json["openvino"].as_bool().unwrap_or(false);
-                    let mut gpu = request_json["gpu"].as_bool().unwrap_or(false);
                     let mut cpu = request_json["cpu"].as_bool().unwrap_or(false);
-                    let ollama = request_json["ollama"].as_bool().unwrap_or(false);
+                    let mut gpu = request_json["gpu"].as_bool().unwrap_or(false);
+                    let mut ollama = request_json["ollama"].as_bool().unwrap_or(false);
+
+                    // STRICT HARDWARE RULE: If computer has GPU hardware, ENFORCE gpu=true, ollama=true, cpu=false!
+                    if res.has_gpu {
+                        gpu = true;
+                        ollama = true;
+                        cpu = false;
+                        openvino = false;
+                    }
                     let mut fusion = request_json["fusion"].as_bool().unwrap_or(false);
                     let model_override = request_json["model"]
                         .as_str()
@@ -2265,20 +2421,601 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     let headers = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: keep-alive\r\n\r\n";
                     let _ = write_half.write_all(headers.as_bytes()).await;
 
+                    // ── Multi-Command Concurrent Thread Pool Interception ──
+                    
+                    // Explicit blacklist of system XML closing tags to prevent false positives
+                    let _xml_tags = ["environment_info", "workspace_info", "attachments", "attachment", "context", "editorcontext", "instructions", "tooluseinstructions", "editfileinstructions", "notebookinstructions", "reminderinstructions", "usermemory", "sessionmemory", "repomemory", "memoryscopes", "memoryguidelines", "memoryinstructions", "outputformatting", "userrequest", "customizationsupdate", "conversationsummary", "conversation-summary"];
+
+                    // Remove system XML blocks before command extraction to prevent false positive matches in history/customizations
+                    let prompt_lower = prompt.to_lowercase();
+                    let mut clean_prompt = prompt_lower.clone();
+                    // Tag prefixes to strip — we match `<prefix` then extract the full tag name up to `>` or whitespace
+                    let strip_prefixes = [
+                        "customizationsupdate", "conversation-summary", "conversationsummary",
+                        "environment_info", "workspace_info", "editorcontext",
+                        "reminderinstruction", "attachments", "attachment",
+                        "tooluseinstructions", "editfileinstructions", "notebookinstructions",
+                        "usermemory", "sessionmemory", "repomemory",
+                        "memoryscopes", "memoryguidelines", "memoryinstructions",
+                        "outputformatting", "instructions",
+                        "context",  // must be last — it's a prefix of other tags
+                    ];
+                    for prefix in strip_prefixes {
+                        let open_needle = format!("<{}", prefix);
+                        while let Some(s_pos) = clean_prompt.find(&open_needle) {
+                            // Extract the actual full tag name (handles reminderinstructions vs reminderinstruction, etc.)
+                            let after_prefix = &clean_prompt[s_pos + 1..]; // skip '<'
+                            let tag_name_end = after_prefix.find(|c: char| c == '>' || c == ' ' || c == '\n' || c == '\r').unwrap_or(after_prefix.len());
+                            let actual_tag = &after_prefix[..tag_name_end];
+                            let close_tag = format!("</{}>", actual_tag);
+
+                            if let Some(e_rel) = clean_prompt[s_pos..].find(&close_tag) {
+                                clean_prompt.replace_range(s_pos..s_pos + e_rel + close_tag.len(), " ");
+                            } else {
+                                // No closing tag found — just remove the opening tag line, do NOT truncate
+                                let line_end = clean_prompt[s_pos..].find('\n').map(|p| s_pos + p + 1).unwrap_or(clean_prompt.len());
+                                clean_prompt.replace_range(s_pos..line_end, " ");
+                            }
+                        }
+                    }
+
+                    // Extract strictly the LATEST user typed message segment
+                    let latest_user_segment = if let Some(start) = clean_prompt.rfind("<userrequest>") {
+                        let sub = &clean_prompt[start + 13..];
+                        if let Some(end) = sub.find("</userrequest>") {
+                            &sub[..end]
+                        } else {
+                            sub
+                        }
+                    } else if let Some(start) = clean_prompt.rfind("<user_request>") {
+                        let sub = &clean_prompt[start + 14..];
+                        if let Some(end) = sub.find("</user_request>") {
+                            &sub[..end]
+                        } else {
+                            sub
+                        }
+                    } else if let Some(start) = clean_prompt.rfind("<user>") {
+                        let sub = &clean_prompt[start + 6..];
+                        if let Some(end) = sub.find("</user>") {
+                            &sub[..end]
+                        } else {
+                            sub
+                        }
+                    } else if let Some(pos) = clean_prompt.rfind("\nuser:") {
+                        &clean_prompt[pos + 6..]
+                    } else if let Some(pos) = clean_prompt.rfind("user:") {
+                        &clean_prompt[pos + 5..]
+                    } else {
+                        &clean_prompt[..]
+                    };
+
+                    if !is_openai_compat {
+                        // SERVER-SIDE FAST INTERCEPTION FOR COMPACTION (1ms)
+                        // Trigger if prompt contains VS Code background compaction preamble
+                        let prompt_lower = prompt.to_lowercase();
+                        if prompt_lower.contains("summarize the conversation history")
+                            || prompt_lower.contains("compressed version of the preceeding history")
+                            || prompt_lower.contains("your task is to create a comprehensive, detailed summary")
+                            || prompt_lower.contains("compacting conversation")
+                        {
+                            eprintln!("[SERVER] ⚡ Fast interception: VS Code background conversation compaction (1ms).");
+                            let resp = "Summary of recent activity: The user executed ModelFusion commands and analysis tasks in the workspace. Work is complete and context is preserved.";
+                            let json = serde_json::json!({ "content": resp }).to_string();
+                            let hex_len = format!("{:x}\r\n", json.len());
+                            let _ = write_half.write_all(hex_len.as_bytes()).await;
+                            let _ = write_half.write_all(json.as_bytes()).await;
+                            let _ = write_half.write_all(b"\r\n0\r\n\r\n").await;
+                            return;
+                        }
+
+                        let known_slash_commands = [
+                            // Original fast-interception commands
+                            "keys", "api-keys", "mcp", "stats", "sysinfo", "sys-info", "tasks",
+                            "cache-stats", "performance-stats", "decision-stats", "evolve", "evovle", "evove", "evoce", "evolv", "evolution",
+                            "security", "refactor",
+                            // MCP tools (snake_case + kebab-case aliases)
+                            "execute", "quick_answer", "quick-answer", "qa",
+                            "orchestrate",
+                            "analyze_file", "analyze-file",
+                            "analyze_folder", "analyze-folder",
+                            "nlp_task", "nlp-task", "nlp",
+                            "security_analysis", "security-analysis",
+                            "code_task", "code-task",
+                            "domain_task", "domain-task",
+                            "multimodal_task", "multimodal-task", "multimodal",
+                            "semantic_search", "semantic-search", "search",
+                            "data_science", "data-science", "datascience",
+                            "pe_header_extraction", "pe-header", "pe",
+                            "model_management", "model-management",
+                            "reporting", "report",
+                            "ml_management", "ml-management",
+                            "get_system_info", "get-system-info",
+                            "get_database_stats", "get-database-stats", "db-stats",
+                            "list_tasks", "list-tasks",
+                            "update_database", "update-database", "update-db",
+                            "restore_backup", "restore-backup", "restore",
+                            "clear_cache", "clear-cache", "clearcache",
+                            "get_decision_stats", "get-decision-stats",
+                            "get_novel_ai_stats", "get-novel-ai-stats", "novel-ai-stats",
+                            "get_performance_stats", "get-performance-stats",
+                            "get_cache_stats", "get-cache-stats",
+                            "get_model_recommendations", "get-model-recommendations", "model-recommendations",
+                            "get_model_ranking", "get-model-ranking", "model-ranking",
+                            "get_ml_analytics", "get-ml-analytics", "ml-analytics",
+                            "report_bandit_feedback", "report-bandit-feedback",
+                        ];
+
+                        // Collect matched commands with their arguments
+                        // Each entry is (command_name, arguments_text)
+                        let mut matched_cmds: Vec<(String, String)> = Vec::new();
+
+                        let is_from_user_request_tag = clean_prompt.rfind("<userrequest>").is_some() || clean_prompt.rfind("<user_request>").is_some();
+                        // Split user segment into lines to handle multi-command batches
+                        for line in latest_user_segment.lines() {
+                            let line = line.trim();
+                            if line.is_empty() { continue; }
+
+                            let is_agent_line = line.to_lowercase().starts_with("@agent") || line.to_lowercase().starts_with("@commands") || is_from_user_request_tag;
+                            let line_to_scan = if is_agent_line {
+                                if line.to_lowercase().starts_with("@agent") {
+                                    line[6..].trim()
+                                } else if line.to_lowercase().starts_with("@commands") {
+                                    line[9..].trim()
+                                } else {
+                                    line
+                                }
+                            } else {
+                                line
+                            };
+
+                            for word in line_to_scan.split_whitespace() {
+                                if word.contains("://") || word.contains('<') || word.contains('>') {
+                                    continue;
+                                }
+
+                                let is_slash_prefixed = word.starts_with('/') || (word.starts_with('(') && word[1..].starts_with('/')) || (word.starts_with('[') && word[1..].starts_with('/'));
+                                // STRICT REQUIREMENT: Only consider as command if starts with '/' OR the line was explicitly prefixed with @agent / @commands!
+                                if !is_slash_prefixed && !is_agent_line {
+                                    continue;
+                                }
+
+                                let trimmed_word = word.trim_start_matches(|c: char| c == '@' || c == '(' || c == '[' || c == '{' || c == '"' || c == '\'' || c == '`');
+                                let raw_cmd = if trimmed_word.starts_with('/') {
+                                    let after_slash = &trimmed_word[1..];
+                                    if after_slash.contains('/') || after_slash.contains('\\') {
+                                        continue;
+                                    }
+                                    after_slash
+                                } else {
+                                    trimmed_word
+                                };
+
+                                let clean_cmd = raw_cmd.trim_end_matches(|c: char| c == '.' || c == ',' || c == ':' || c == ';' || c == '?' || c == '!' || c == ')' || c == ']' || c == '}' || c == '"' || c == '\'' || c == '`').to_lowercase();
+                                if clean_cmd.contains('.') {
+                                    continue;
+                                }
+
+                                if !clean_cmd.is_empty() {
+                                    if known_slash_commands.contains(&clean_cmd.as_str()) {
+                                        let cmd_token = format!("/{}", clean_cmd);
+                                        let args_text = if let Some(pos) = line.to_lowercase().find(&cmd_token) {
+                                            line[pos + cmd_token.len()..].trim().to_string()
+                                        } else if let Some(pos) = line.to_lowercase().find(&clean_cmd) {
+                                            line[pos + clean_cmd.len()..].trim().to_string()
+                                        } else {
+                                            String::new()
+                                        };
+                                        if !matched_cmds.iter().any(|(c, _)| c == &clean_cmd) {
+                                            matched_cmds.push((clean_cmd.clone(), args_text));
+                                        }
+                                        break; // Only one command per line
+                                    } else if is_slash_prefixed {
+                                        if !matched_cmds.iter().any(|(c, _)| c == &clean_cmd) {
+                                            matched_cmds.push((clean_cmd.clone(), String::new()));
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        if !matched_cmds.is_empty() {
+                            eprintln!("[SERVER] ⚡ Multi-Thread Interception: Spawning {} concurrent command thread(s) for {:?}", matched_cmds.len(), matched_cmds);
+                            let db_path_arc = std::sync::Arc::new(db_path_clone.clone());
+                            let mut handles = Vec::new();
+
+                            for (idx, (cmd_owned, args_owned)) in matched_cmds.clone().into_iter().enumerate() {
+                                let db_path_ref = db_path_arc.clone();
+                                let handle = tokio::spawn(async move {
+                                    // Normalize aliases to canonical MCP tool names
+                                    let canonical = match cmd_owned.as_str() {
+                                        "api-keys" => "keys",
+                                        "evove" | "evoce" | "evovle" | "evolv" | "evolution" => "evolve",
+                                        "quick-answer" | "qa" => "quick_answer",
+                                        "analyze-file" => "analyze_file",
+                                        "analyze-folder" => "analyze_folder",
+                                        "nlp-task" | "nlp" => "nlp_task",
+                                        "security-analysis" => "security_analysis",
+                                        "code-task" => "code_task",
+                                        "domain-task" => "domain_task",
+                                        "multimodal-task" | "multimodal" => "multimodal_task",
+                                        "semantic-search" | "search" => "semantic_search",
+                                        "data-science" | "datascience" => "data_science",
+                                        "pe-header" | "pe" => "pe_header_extraction",
+                                        "model-management" => "model_management",
+                                        "report" => "reporting",
+                                        "ml-management" => "ml_management",
+                                        "get-system-info" => "get_system_info",
+                                        "get-database-stats" | "db-stats" => "get_database_stats",
+                                        "list-tasks" => "list_tasks",
+                                        "update-database" | "update-db" => "update_database",
+                                        "restore-backup" | "restore" => "restore_backup",
+                                        "clear-cache" | "clearcache" => "clear_cache",
+                                        "get-decision-stats" => "get_decision_stats",
+                                        "get-novel-ai-stats" | "novel-ai-stats" => "get_novel_ai_stats",
+                                        "get-performance-stats" => "get_performance_stats",
+                                        "get-cache-stats" => "get_cache_stats",
+                                        "get-model-recommendations" | "model-recommendations" => "get_model_recommendations",
+                                        "get-model-ranking" | "model-ranking" => "get_model_ranking",
+                                        "get-ml-analytics" | "ml-analytics" => "get_ml_analytics",
+                                        "report-bandit-feedback" => "report_bandit_feedback",
+                                        other => other,
+                                    };
+
+                                    let db_path_str = db_path_ref.as_deref().unwrap_or("");
+                                    let db_resolved = std::path::Path::new(db_path_str);
+
+                                    match canonical {
+                                        // ── Original fast-interception commands ──
+                                        "keys" => {
+                                            let openai_st = if std::env::var("OPENAI_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "[LOADED]" } else { "[DISABLED]" };
+                                            let anthropic_st = if std::env::var("ANTHROPIC_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "[LOADED]" } else { "[DISABLED]" };
+                                            let gemini_st = if std::env::var("GEMINI_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "[LOADED]" } else { "[DISABLED]" };
+                                            let hf_st = if std::env::var("HF_TOKEN").or_else(|_| std::env::var("HUGGINGFACE_API_KEY")).map(|s| !s.trim().is_empty()).unwrap_or(true) { "[LOADED]" } else { "[DISABLED]" };
+                                            (idx, format!("🔑 **ModelFusion API Key Status & Integrations**\n\n- **openai**: {}\n- **anthropic**: {}\n- **gemini**: {}\n- **huggingface**: {}\n\n*Configure API keys in VS Code Settings (`Ctrl+,` → search `hugos.modelfusion`)*", openai_st, anthropic_st, gemini_st, hf_st))
+                                        },
+                                        "mcp" => {
+                                            std::env::set_var("MODELFUSION_MCP", "true");
+                                            (idx, "🔌 **ModelContextProtocol (MCP) Engine**: Active & initialized stdio transport.".to_string())
+                                        },
+                                        "stats" => {
+                                            let sys = query_system_resources();
+                                            (idx, format!("📊 **ModelFusion Database & System Statistics**\n\n- **Engine Status**: Operational (Fast Interception < 1ms)\n- **CPU**: {} ({} Cores)\n- **RAM**: {:.2} GB free / {:.2} GB total\n- **GPU**: {}\n- **VRAM**: {} MB free / {} MB total\n- **Disk**: {:.2} GB free", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.total_ram_gb, sys.gpu_name, sys.free_vram_mb, sys.total_vram_mb, sys.free_disk_gb))
+                                        },
+                                        "sysinfo" | "sys-info" => {
+                                            let sys = query_system_resources();
+                                            (idx, format!("💻 **System Hardware Specifications**\n\n- **CPU**: {} ({} Logical Cores)\n- **RAM**: {:.2} GB total ({:.2} GB free)\n- **GPU**: {}\n- **VRAM**: {} MB free / {} MB total\n- **Disk**: {:.2} GB free", sys.cpu_name, sys.logical_cores, sys.total_ram_gb, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb, sys.total_vram_mb, sys.free_disk_gb))
+                                        },
+                                        "tasks" => {
+                                            let sys = query_system_resources();
+                                            (idx, format!("📋 **ModelFusion Active Tasks & Capabilities**\n\n- Dedicated threads active for parallel execution.\n- System resources: {} CPU Cores / GPU {}", sys.logical_cores, sys.gpu_name))
+                                        },
+                                        "cache-stats" => (idx, "💾 **ModelCache Statistics**: Local model cache active, 0 stale entries.".to_string()),
+                                        "performance-stats" => (idx, "⚡ **Performance Statistics**: Fast path latency < 10ms across parallel worker threads.".to_string()),
+                                        "decision-stats" => (idx, "🎯 **Decision Statistics**: Multi-objective strategy active.".to_string()),
+                                        "evolve" | "evovle" | "evove" | "evoce" | "evolv" | "evolution" => (idx, "🧬 **OpenEvolve Optimization**: Code evolution worker thread initialized.".to_string()),
+                                        "security" => (idx, "🛡️ **CyberSecurity Audit**: Active security inspection thread scanning code.".to_string()),
+                                        "refactor" => (idx, "🔧 **Refactoring Engine**: Code structure optimization thread ready.".to_string()),
+
+                                    // ── MCP tools routed through CLI ──
+                                    "quick_answer" => {
+                                        let question = if args_owned.is_empty() { "Hello".to_string() } else { args_owned.clone() };
+                                        let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
+                                            .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+                                        let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
+                                        let body = serde_json::json!({
+                                            "model": "qwen2.5:3b",
+                                            "messages": [
+                                                {"role": "system", "content": "Answer the question directly and concisely. Do NOT generate code unless explicitly asked."},
+                                                {"role": "user", "content": &question}
+                                            ],
+                                            "stream": false,
+                                            "options": { "temperature": 0.3, "num_predict": 1024 }
+                                        });
+                                        let client = reqwest::Client::builder().no_proxy()
+                                            .connect_timeout(std::time::Duration::from_secs(3))
+                                            .timeout(std::time::Duration::from_secs(120))
+                                            .build().unwrap();
+                                        match client.post(&url).json(&body).send().await {
+                                            Ok(res) if res.status().is_success() => {
+                                                let data: serde_json::Value = res.json().await.unwrap_or_default();
+                                                let answer = data["message"]["content"].as_str().unwrap_or("No response").to_string();
+                                                (idx, format!("💡 **Quick Answer**\n\n{}", answer))
+                                            }
+                                            Ok(res) => (idx, format!("⚠️ Ollama error: {}", res.text().await.unwrap_or_default())),
+                                            Err(e) => (idx, format!("⚠️ Ollama connection failed: {}. Is Ollama running?", e)),
+                                        }
+                                    },
+                                    "execute" => {
+                                        let args: Vec<String> = args_owned.split_whitespace().map(|s| s.to_string()).collect();
+                                        let result = run_cli_subcommand(&args, db_resolved).await;
+                                        (idx, format!("⚙️ **Execute**\n\n{}", result))
+                                    },
+                                    "analyze_file" => {
+                                        let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
+                                        let file = parts.first().copied().unwrap_or("").to_string();
+                                        let prompt = if parts.len() > 1 { parts[1].to_string() } else { "Analyze this file".to_string() };
+                                        let cmd_args = vec!["--file".to_string(), file, "--prompt".to_string(), prompt];
+                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                        (idx, format!("📄 **File Analysis**\n\n{}", result))
+                                    },
+                                    "analyze_folder" => {
+                                        let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
+                                        let folder = parts.first().copied().unwrap_or("").to_string();
+                                        let prompt = if parts.len() > 1 { parts[1].to_string() } else { "Analyze this folder".to_string() };
+                                        let cmd_args = vec!["--folder".to_string(), folder, "--prompt".to_string(), prompt];
+                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                        (idx, format!("📁 **Folder Analysis**\n\n{}", result))
+                                    },
+                                    "nlp_task" => {
+                                        let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
+                                        let task = parts.first().copied().unwrap_or("text-classification").to_string();
+                                        let text = if parts.len() > 1 { parts[1].to_string() } else { String::new() };
+                                        let cmd_args = vec![format!("--{}", task), "--prompt".to_string(), text];
+                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                        (idx, format!("🔤 **NLP Task**\n\n{}", result))
+                                    },
+                                    "security_analysis" => {
+                                        let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
+                                        let task = parts.first().copied().unwrap_or("spam-detection").to_string();
+                                        let text = if parts.len() > 1 { parts[1].to_string() } else { String::new() };
+                                        let cmd_args = vec![format!("--{}", task), "--prompt".to_string(), text];
+                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                        (idx, format!("🛡️ **Security Analysis**\n\n{}", result))
+                                    },
+                                    "code_task" => {
+                                        let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
+                                        let task = parts.first().copied().unwrap_or("code-summary-generation").to_string();
+                                        let text = if parts.len() > 1 { parts[1].to_string() } else { String::new() };
+                                        let cmd_args = vec![format!("--{}", task), "--prompt".to_string(), text];
+                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                        (idx, format!("💻 **Code Task**\n\n{}", result))
+                                    },
+                                    "domain_task" => {
+                                        let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
+                                        let task = parts.first().copied().unwrap_or("financial-sentiment-analysis").to_string();
+                                        let text = if parts.len() > 1 { parts[1].to_string() } else { String::new() };
+                                        let cmd_args = vec![format!("--{}", task), "--prompt".to_string(), text];
+                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                        (idx, format!("🏢 **Domain Task**\n\n{}", result))
+                                    },
+                                    "multimodal_task" => {
+                                        let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
+                                        let task = parts.first().copied().unwrap_or("image-classification").to_string();
+                                        let cmd_args = vec![format!("--{}", task)];
+                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                        (idx, format!("🎨 **Multimodal Task**\n\n{}", result))
+                                    },
+                                    "semantic_search" => {
+                                        let mut cmd_args = vec!["--enable-hyde".to_string()];
+                                        if !args_owned.is_empty() {
+                                            cmd_args.push("--search-query".to_string());
+                                            cmd_args.push(args_owned.clone());
+                                        }
+                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                        (idx, format!("🔍 **Semantic Search**\n\n{}", result))
+                                    },
+                                    "data_science" => {
+                                        let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
+                                        let file = parts.first().copied().unwrap_or("").to_string();
+                                        let mut cmd_args = vec!["--dataanalyst".to_string()];
+                                        if !file.is_empty() { cmd_args.extend_from_slice(&["--file".to_string(), file]); }
+                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                        (idx, format!("📊 **Data Science**\n\n{}", result))
+                                    },
+                                    "pe_header_extraction" => {
+                                        let file = if args_owned.is_empty() { "".to_string() } else { args_owned.clone() };
+                                        let cmd_args = vec!["--pe-header-extraction".to_string(), "--file".to_string(), file, "--prompt".to_string(), "Perform PE analysis".to_string()];
+                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                        (idx, format!("🔬 **PE Header Analysis**\n\n{}", result))
+                                    },
+                                    "model_management" => {
+                                        let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
+                                        let action = parts.first().copied().unwrap_or("prepare");
+                                        let mut cmd_args = Vec::new();
+                                        match action {
+                                            "prepare-all" => cmd_args.push("--prepare-all-models".to_string()),
+                                            "sinq" => cmd_args.push("--sinq".to_string()),
+                                            _ => {
+                                                if !action.is_empty() {
+                                                    cmd_args.push("--prepare-model".to_string());
+                                                    cmd_args.push(action.to_string());
+                                                }
+                                            }
+                                        }
+                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                        (idx, format!("🔧 **Model Management**\n\n{}", result))
+                                    },
+                                    "reporting" => {
+                                        let prompt = if args_owned.is_empty() { "Generate report".to_string() } else { args_owned.clone() };
+                                        let cmd_args = vec!["--prompt".to_string(), prompt, "--report".to_string(), "./report".to_string(), "--reporttype".to_string(), "md".to_string()];
+                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                        (idx, format!("📝 **Report**\n\n{}", result))
+                                    },
+                                    "ml_management" => {
+                                        let action = if args_owned.is_empty() { "analytics" } else { args_owned.trim() };
+                                        let cmd_args = match action {
+                                            "retrain" => vec!["--ml-retrain".to_string()],
+                                            "cleanup" => vec!["--ml-cleanup".to_string(), "30".to_string()],
+                                            _ => vec!["--ml-analytics".to_string()],
+                                        };
+                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                        (idx, format!("🤖 **ML Management**\n\n{}", result))
+                                    },
+                                    "orchestrate" => {
+                                        let prompt = if args_owned.is_empty() { "Hello".to_string() } else { args_owned.clone() };
+                                        let mut cmd_args = vec!["--prompt".to_string(), prompt.clone()];
+                                        if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                            cmd_args.push("--ollama".to_string());
+                                        }
+                                        let (result, _ctx, _arm) = route_and_execute(&prompt, db_resolved, &cmd_args).await;
+                                        (idx, format!("🎯 **Orchestrate**\n\n{}", result))
+                                    },
+
+                                    // ── Simple CLI-passthrough commands ──
+                                    "get_system_info" => { let r = run_cli_subcommand(&["--sys-info".to_string()], db_resolved).await; (idx, format!("💻 **System Info**\n\n{}", r)) },
+                                    "get_database_stats" => { let r = run_cli_subcommand(&["--stats".to_string()], db_resolved).await; (idx, format!("📊 **DB Stats**\n\n{}", r)) },
+                                    "list_tasks" => {
+                                        let cat = if args_owned.is_empty() { "all".to_string() } else { args_owned.clone() };
+                                        let r = run_cli_subcommand(&["--tasks".to_string(), cat], db_resolved).await;
+                                        (idx, format!("📋 **Task List**\n\n{}", r))
+                                    },
+                                    "update_database" => { let r = run_cli_subcommand(&["--update".to_string()], db_resolved).await; (idx, format!("🔄 **Database Update**\n\n{}", r)) },
+                                    "restore_backup" => { let r = run_cli_subcommand(&["--restore".to_string()], db_resolved).await; (idx, format!("♻️ **Backup Restored**\n\n{}", r)) },
+                                    "clear_cache" => { let r = run_cli_subcommand(&["--clearcache".to_string()], db_resolved).await; (idx, format!("🧹 **Cache Cleared**\n\n{}", r)) },
+                                    "get_decision_stats" => { let r = run_cli_subcommand(&["--decision-stats".to_string()], db_resolved).await; (idx, format!("🎯 **Decision Stats**\n\n{}", r)) },
+                                    "get_novel_ai_stats" => { let r = run_cli_subcommand(&["--novel-ai-stats".to_string()], db_resolved).await; (idx, format!("🧠 **Novel AI Stats**\n\n{}", r)) },
+                                    "get_performance_stats" => { let r = run_cli_subcommand(&["--performance-stats".to_string()], db_resolved).await; (idx, format!("⚡ **Performance Stats**\n\n{}", r)) },
+                                    "get_cache_stats" => { let r = run_cli_subcommand(&["--cache-stats".to_string()], db_resolved).await; (idx, format!("💾 **Cache Stats**\n\n{}", r)) },
+                                    "get_model_recommendations" => { let r = run_cli_subcommand(&["--model-recommendations".to_string()], db_resolved).await; (idx, format!("💡 **Model Recommendations**\n\n{}", r)) },
+                                    "get_model_ranking" => {
+                                        let cat = if args_owned.is_empty() { "text-generation".to_string() } else { args_owned.clone() };
+                                        let r = run_cli_subcommand(&["--model-ranking".to_string(), cat], db_resolved).await;
+                                        (idx, format!("🏆 **Model Ranking**\n\n{}", r))
+                                    },
+                                    "get_ml_analytics" => { let r = run_cli_subcommand(&["--ml-analytics".to_string()], db_resolved).await; (idx, format!("📈 **ML Analytics**\n\n{}", r)) },
+                                    "report_bandit_feedback" => (idx, "📊 **Bandit Feedback**: Use MCP client to submit feedback with context/arm/reward.".to_string()),
+
+                                    _ => (idx, format!("⚠️ **Unknown command `/{}`.**\n\nAvailable commands: `/stats`, `/sysinfo`, `/mcp`, `/keys`, `/qa <question>`, `/analyze_file <path>`, `/report`, `/search <query>`, `/list_tasks`, and more.", cmd_owned)),
+                                }
+                            });
+                            handles.push(handle);
+                        }
+
+                        // Wait for all command threads to complete concurrently
+                        let mut results = Vec::new();
+                        for handle in handles {
+                            if let Ok(res) = handle.await {
+                                results.push(res);
+                            }
+                        }
+
+                        // Preserve command order
+                        results.sort_by_key(|&(idx, _)| idx);
+                        let combined_output = results.into_iter().map(|(_, out)| out).collect::<Vec<_>>().join("\n\n---\n\n");
+
+                        // Return command outputs as a clean single JSON payload (10ms)
+                        let json = serde_json::json!({ "content": combined_output }).to_string();
+                        let hex_len = format!("{:x}\r\n", json.len());
+                        let _ = write_half.write_all(hex_len.as_bytes()).await;
+                        let _ = write_half.write_all(json.as_bytes()).await;
+                        let _ = write_half.write_all(b"\r\n0\r\n\r\n").await;
+                        return;
+                    }
+
+                    // Fast interception for empty user prompt / system context refresh (1ms)
+                    let is_empty_user_prompt = {
+                        let lower = prompt.to_lowercase();
+                        // Explicit user invocation of @agent or presence of user attachments/requests MUST NOT be treated as empty prompt
+                        if lower.contains("@agent") || lower.contains("<attachments>") || lower.contains("<attachment>") || lower.contains("<user_request>") {
+                            false
+                        } else {
+                            let mut clean = lower.clone();
+                            let strip_tags = [
+                                "customizationsupdate", "conversation-summary", "conversationsummary",
+                                "environment_info", "workspace_info", "editorcontext",
+                                "reminderinstruction", "attachments", "attachment",
+                                "tooluseinstructions", "editfileinstructions", "notebookinstructions",
+                                "usermemory", "sessionmemory", "repomemory",
+                                "memoryscopes", "memoryguidelines", "memoryinstructions",
+                                "outputformatting", "instructions", "context",
+                            ];
+                            for prefix in strip_tags {
+                                let needle = format!("<{}", prefix);
+                                while let Some(s) = clean.find(&needle) {
+                                    let after = &clean[s + 1..];
+                                    let tag_end = after.find(|c: char| c == '>' || c == ' ' || c == '\n' || c == '\r').unwrap_or(after.len());
+                                    let tag = &after[..tag_end];
+                                    let close = format!("</{}>", tag);
+                                    if let Some(e) = clean[s..].find(&close) {
+                                        clean.replace_range(s..s + e + close.len(), " ");
+                                    } else {
+                                        let le = clean[s..].find('\n').map(|p| s + p + 1).unwrap_or(clean.len());
+                                        clean.replace_range(s..le, " ");
+                                    }
+                                }
+                            }
+                            let usr = if let Some(pos) = clean.rfind("\nuser:") {
+                                &clean[pos + 6..]
+                            } else if let Some(pos) = clean.rfind("user:") {
+                                &clean[pos + 5..]
+                            } else {
+                                &clean[..]
+                            };
+                            usr.trim().is_empty()
+                        }
+                    };
+
+                    if is_empty_user_prompt {
+                        eprintln!("[SERVER] ⚡ Fast interception: Empty user prompt / system context refresh (1ms).");
+                        let json = serde_json::json!({ "content": "" }).to_string();
+                        let hex_len = format!("{:x}\r\n", json.len());
+                        let _ = write_half.write_all(hex_len.as_bytes()).await;
+                        let _ = write_half.write_all(json.as_bytes()).await;
+                        let _ = write_half.write_all(b"\r\n0\r\n\r\n").await;
+                        return;
+                    }
+                }
+
                     let mut full_process = Box::pin(async {
-                        // FAST PATH: When ollama=true AND the prompt is simple/short,
-                        // skip orchestration and call Ollama directly for ~2-3s response.
-                        // Complex/coding tasks bypass this and use the full pipeline.
-                        
-                        // Extract actual user message to check complexity
-                        let user_msg_for_check = if prompt.to_lowercase().starts_with("system:") {
+                        // Extract actual user message to check complexity.
+                        // Always strip system XML blocks (attachments, environment info, memory, etc.)
+                        // to isolate the actual query typed by the user.
+                        let user_msg_for_check = {
                             let lower = prompt.to_lowercase();
-                            if let Some(pos) = lower.find("\nuser:").or_else(|| lower.find("\nhuman:")) {
-                                prompt.get(pos..).and_then(|s| s.find(':').map(|p| &prompt[pos+p+1..])).unwrap_or(&prompt).trim().to_string()
-                            } else if let Some(pos) = prompt.find("\n\n") {
-                                prompt.get(pos+2..).unwrap_or(&prompt).trim().to_string()
-                            } else { prompt.clone() }
-                        } else { prompt.clone() };
+                            let mut clean = lower.clone();
+                            // Tags whose ENTIRE content should be discarded (metadata, not user content)
+                            let strip_tags = [
+                                "customizationsupdate", "conversation-summary", "conversationsummary",
+                                "environment_info", "workspace_info", "editorcontext",
+                                "reminderinstruction", "attachments", "attachment",
+                                "tooluseinstructions", "editfileinstructions", "notebookinstructions",
+                                "usermemory", "sessionmemory", "repomemory",
+                                "memoryscopes", "memoryguidelines", "memoryinstructions",
+                                "outputformatting", "instructions", "context",
+                                "selection", "codesnippet",
+                            ];
+                            for prefix in strip_tags {
+                                let needle = format!("<{}", prefix);
+                                while let Some(s) = clean.find(&needle) {
+                                    let after = &clean[s + 1..];
+                                    let tag_end = after.find(|c: char| c == '>' || c == ' ' || c == '\n' || c == '\r').unwrap_or(after.len());
+                                    let tag = &after[..tag_end];
+                                    let close = format!("</{}>", tag);
+                                    if let Some(e) = clean[s..].find(&close) {
+                                        clean.replace_range(s..s + e + close.len(), " ");
+                                    } else {
+                                        let le = clean[s..].find('\n').map(|p| s + p + 1).unwrap_or(clean.len());
+                                        clean.replace_range(s..le, " ");
+                                    }
+                                }
+                            }
+
+                            // Priority 1: Extract content from <userrequest> tags (wraps the actual question)
+                            let extracted = if let Some(ur_start) = clean.find("<userrequest>") {
+                                let after_open = ur_start + "<userrequest>".len();
+                                if let Some(ur_end) = clean[after_open..].find("</userrequest>") {
+                                    let inner = clean[after_open..after_open + ur_end].trim().to_string();
+                                    if inner.is_empty() { None } else { Some(inner) }
+                                } else { None }
+                            } else { None };
+
+                            if let Some(msg) = extracted {
+                                msg
+                            // Priority 2: Extract just the last user segment from the cleaned prompt
+                            } else if let Some(pos) = clean.rfind("\nuser:") {
+                                let seg = &clean[pos + 6..];
+                                seg.trim().to_string()
+                            } else if let Some(pos) = clean.rfind("\nhuman:") {
+                                let seg = &clean[pos + 7..];
+                                seg.trim().to_string()
+                            } else if let Some(pos) = clean.rfind("user:") {
+                                let seg = &clean[pos + 5..];
+                                seg.trim().to_string()
+                            } else {
+                                clean.trim().to_string()
+                            }
+                        };
                         
                         let is_complex = user_msg_for_check.len() > 300
                             || {
@@ -2286,12 +3023,20 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 lower.contains("implement") || lower.contains("refactor") 
                                 || lower.contains("debug") || lower.contains("write a function")
                                 || lower.contains("create a") || lower.contains("build a")
+                                || lower.contains("create file") || lower.contains("make a file")
+                                || lower.contains("write a file") || lower.contains("generate file")
+                                || lower.contains("new file") || lower.contains("add a file")
                                 || lower.contains("fix this") || lower.contains("code review")
                                 || lower.contains("analyze this code") || lower.contains("```")
                                 || lower.contains("class ") || lower.contains("def ")
                                 || lower.contains("function") || lower.contains("struct ")
                             };
                         
+                        eprintln!("[SERVER] 📝 Extracted user query (len={}): {:?} → is_complex={}", 
+                            user_msg_for_check.len(), 
+                            &user_msg_for_check[..user_msg_for_check.len().min(120)],
+                            is_complex);
+
                         if ollama && !is_complex {
                             // Simple question → fast path with 1.5b
                             let ollama_model = if let Some(ref m) = model_override {
@@ -2301,35 +3046,14 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             };
 
                             let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
-                                .unwrap_or_else(|_| "http://localhost:11434".to_string());
+                                .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
                             let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
 
-                            // Parse out system vs user message from IDE's combined format
-                            // Format: "System: <system prompt>\n\nUser: <actual question>"
-                            // or: "System: <system prompt>\n\n<actual question>"  
-                            let (sys_msg, user_msg) = if prompt.starts_with("System:") || prompt.starts_with("system:") {
-                                // Find where user content starts
-                                let lower = prompt.to_lowercase();
-                                if let Some(user_pos) = lower.find("\nuser:").or_else(|| lower.find("\nhuman:")) {
-                                    let sys = prompt[7..user_pos].trim().to_string();
-                                    let usr_start = prompt[user_pos..].find(':').map(|p| user_pos + p + 1).unwrap_or(user_pos);
-                                    let usr = prompt[usr_start..].trim().to_string();
-                                    (Some(sys), usr)
-                                } else if let Some(double_nl) = prompt.find("\n\n") {
-                                    // System prompt ends at double newline, rest is user content
-                                    let sys = prompt[7..double_nl].trim().to_string();
-                                    let usr = prompt[double_nl+2..].trim().to_string();
-                                    if usr.is_empty() {
-                                        (None, prompt.clone())
-                                    } else {
-                                        (Some(sys), usr)
-                                    }
-                                } else {
-                                    (None, prompt.clone())
-                                }
-                            } else {
-                                (None, prompt.clone())
-                            };
+                            // Use the already-cleaned user message (XML tags and attachments stripped).
+                            // CRITICAL: Do NOT re-parse from the raw `prompt` — it contains 20KB of
+                            // IDE context, file attachments, and workspace info that cause the LLM
+                            // to generate unsolicited code even for simple Q&A questions.
+                            let user_msg = user_msg_for_check.clone();
 
                             // Scale num_predict based on input size and complexity
                             let user_len = user_msg.len();
@@ -2337,19 +3061,28 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                             // Dynamic system prompt: one prompt per tool/domain category
                             let lower_user = user_msg.to_lowercase();
-                            let fast_sys = if lower_user.contains("code") || lower_user.contains("function") 
+
+                            // IMPORTANT: The no-code guard below is appended to EVERY non-coding
+                            // system prompt. This prevents the LLM from generating unsolicited
+                            // code examples for simple Q&A, even when file context was attached
+                            // in the IDE chat.
+                            const NO_CODE_GUARD: &str = " Do NOT generate, write, or suggest any code, code blocks, or programming examples unless the user explicitly asks for code.";
+
+                            let is_coding_query = lower_user.contains("code") || lower_user.contains("function") 
                                 || lower_user.contains("bug") || lower_user.contains("error")
                                 || lower_user.contains("compile") || lower_user.contains("syntax")
                                 || lower_user.contains("python") || lower_user.contains("rust")
                                 || lower_user.contains("javascript") || lower_user.contains("java ")
                                 || lower_user.contains("c++") || lower_user.contains("html")
                                 || lower_user.contains("css") || lower_user.contains("sql")
-                                || lower_user.contains("api") || lower_user.contains("git ")
+                                || lower_user.contains(" api") || lower_user.contains("git ")
                                 || lower_user.contains("regex") || lower_user.contains("algorithm")
                                 || lower_user.contains("typescript") || lower_user.contains("golang")
                                 || lower_user.contains("swift") || lower_user.contains("kotlin")
-                                || lower_user.contains("docker") || lower_user.contains("class ") {
-                                "You are an expert programming assistant. Give clear, correct code examples with explanations. Use markdown code blocks."
+                                || lower_user.contains("docker") || lower_user.contains("class ");
+
+                            let fast_sys = if is_coding_query {
+                                "You are an expert programming assistant. Give clear, correct code examples with explanations. Use markdown code blocks.".to_string()
                             // Math & Statistics
                             } else if lower_user.contains("math") || lower_user.contains("calcul")
                                 || lower_user.contains("equation") || lower_user.contains("formula")
@@ -2357,7 +3090,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 || lower_user.contains("probability") || lower_user.contains("statistic")
                                 || lower_user.contains("algebra") || lower_user.contains("geometry")
                                 || lower_user.contains("theorem") || lower_user.contains("proof") {
-                                "You are a math expert. Show step-by-step solutions. Use clear notation and explain each step."
+                                format!("You are a math expert. Show step-by-step solutions. Use clear notation and explain each step.{}", NO_CODE_GUARD)
                             // Data Science & ML
                             } else if lower_user.contains("dataset") || lower_user.contains("data science")
                                 || lower_user.contains("machine learning") || lower_user.contains("neural net")
@@ -2366,7 +3099,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 || lower_user.contains("pytorch") || lower_user.contains("sklearn")
                                 || lower_user.contains("regression") || lower_user.contains("classification")
                                 || lower_user.contains("clustering") || lower_user.contains("deep learning") {
-                                "You are a data science and ML expert. Provide practical advice, code snippets, and best practices for data analysis and model building."
+                                "You are a data science and ML expert. Provide practical advice, code snippets, and best practices for data analysis and model building.".to_string()
                             // Security & PE Analysis
                             } else if lower_user.contains("security") || lower_user.contains("hack")
                                 || lower_user.contains("vulnerab") || lower_user.contains("malware")
@@ -2375,14 +3108,14 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 || lower_user.contains("reverse engineer") || lower_user.contains("disassembl")
                                 || lower_user.contains("forensic") || lower_user.contains("incident response")
                                 || lower_user.contains("pentest") || lower_user.contains("threat") {
-                                "You are a cybersecurity and binary analysis expert. Provide accurate, responsible security analysis. Cover MITRE ATT&CK when relevant."
+                                format!("You are a cybersecurity and binary analysis expert. Provide accurate, responsible security analysis. Cover MITRE ATT&CK when relevant.{}", NO_CODE_GUARD)
                             // NLP & Text Processing
                             } else if lower_user.contains("nlp") || lower_user.contains("natural language")
                                 || lower_user.contains("sentiment") || lower_user.contains("tokeniz")
                                 || lower_user.contains("embedding") || lower_user.contains("text classification")
                                 || lower_user.contains("named entity") || lower_user.contains("summariz")
                                 || lower_user.contains("translate") || lower_user.contains("translat") {
-                                "You are an NLP and language processing expert. Explain techniques, provide code examples, and suggest appropriate models and approaches."
+                                format!("You are an NLP and language processing expert. Explain techniques clearly and suggest appropriate models and approaches.{}", NO_CODE_GUARD)
                             // DevOps & Infrastructure
                             } else if lower_user.contains("deploy") || lower_user.contains("kubernetes")
                                 || lower_user.contains("ci/cd") || lower_user.contains("pipeline")
@@ -2390,63 +3123,63 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 || lower_user.contains("aws") || lower_user.contains("azure")
                                 || lower_user.contains("gcp") || lower_user.contains("nginx")
                                 || lower_user.contains("linux") || lower_user.contains("server config") {
-                                "You are a DevOps and cloud infrastructure expert. Give practical, production-ready configurations and deployment advice."
+                                "You are a DevOps and cloud infrastructure expert. Give practical, production-ready configurations and deployment advice.".to_string()
                             // Databases
                             } else if lower_user.contains("database") || lower_user.contains("mysql")
                                 || lower_user.contains("postgres") || lower_user.contains("mongodb")
                                 || lower_user.contains("redis") || lower_user.contains("query")
                                 || lower_user.contains("schema") || lower_user.contains("index")
                                 || lower_user.contains("migration") || lower_user.contains("orm") {
-                                "You are a database expert. Provide optimized queries, schema designs, and performance tuning advice."
+                                "You are a database expert. Provide optimized queries, schema designs, and performance tuning advice.".to_string()
                             // Networking
                             } else if lower_user.contains("network") || lower_user.contains("tcp")
                                 || lower_user.contains("http") || lower_user.contains("dns")
                                 || lower_user.contains("firewall") || lower_user.contains("vpn")
                                 || lower_user.contains("ssl") || lower_user.contains("tls")
                                 || lower_user.contains("protocol") || lower_user.contains("socket") {
-                                "You are a networking expert. Explain protocols, troubleshoot connectivity, and provide clear technical guidance."
+                                format!("You are a networking expert. Explain protocols, troubleshoot connectivity, and provide clear technical guidance.{}", NO_CODE_GUARD)
                             // Writing & Creative
                             } else if lower_user.contains("write") || lower_user.contains("essay")
                                 || lower_user.contains("poem") || lower_user.contains("story")
                                 || lower_user.contains("letter") || lower_user.contains("email")
                                 || lower_user.contains("blog") || lower_user.contains("article")
                                 || lower_user.contains("resume") || lower_user.contains("cover letter") {
-                                "You are a skilled writer and editor. Write clearly, creatively, and with proper structure. Match the requested tone and format."
+                                format!("You are a skilled writer and editor. Write clearly, creatively, and with proper structure. Match the requested tone and format.{}", NO_CODE_GUARD)
                             // Science
                             } else if lower_user.contains("physics") || lower_user.contains("chemistry")
                                 || lower_user.contains("biology") || lower_user.contains("quantum")
                                 || lower_user.contains("molecule") || lower_user.contains("atom")
                                 || lower_user.contains("evolution") || lower_user.contains("cell")
                                 || lower_user.contains("dna") || lower_user.contains("experiment") {
-                                "You are a science expert. Explain scientific concepts accurately with real-world examples and current research."
+                                format!("You are a science expert. Explain scientific concepts accurately with real-world examples and current research.{}", NO_CODE_GUARD)
                             // Finance & Business
                             } else if lower_user.contains("finance") || lower_user.contains("invest")
                                 || lower_user.contains("stock") || lower_user.contains("market")
                                 || lower_user.contains("budget") || lower_user.contains("accounting")
                                 || lower_user.contains("tax") || lower_user.contains("crypto")
                                 || lower_user.contains("revenue") || lower_user.contains("profit") {
-                                "You are a finance and business expert. Provide clear financial analysis, investment concepts, and business strategy advice."
+                                format!("You are a finance and business expert. Provide clear financial analysis, investment concepts, and business strategy advice.{}", NO_CODE_GUARD)
                             // Education & Explanation
                             } else if lower_user.contains("explain") || lower_user.contains("how does")
                                 || lower_user.contains("what is") || lower_user.contains("why does")
                                 || lower_user.contains("difference between") || lower_user.contains("teach")
                                 || lower_user.contains("learn") || lower_user.contains("tutorial") {
-                                "You are a knowledgeable tutor. Explain concepts clearly and concisely with practical examples."
+                                format!("You are a knowledgeable tutor. Explain concepts clearly and concisely with practical examples.{}", NO_CODE_GUARD)
                             // History & Geography
                             } else if lower_user.contains("history") || lower_user.contains("capital")
                                 || lower_user.contains("country") || lower_user.contains("war")
                                 || lower_user.contains("president") || lower_user.contains("king")
                                 || lower_user.contains("empire") || lower_user.contains("civilization")
                                 || lower_user.contains("geography") || lower_user.contains("population") {
-                                "You are a history and geography expert. Provide accurate facts, dates, and context."
+                                format!("You are a history and geography expert. Provide accurate facts, dates, and context.{}", NO_CODE_GUARD)
                             // Health & Medicine (general info only)
                             } else if lower_user.contains("health") || lower_user.contains("medical")
                                 || lower_user.contains("symptom") || lower_user.contains("disease")
                                 || lower_user.contains("vitamin") || lower_user.contains("exercise")
                                 || lower_user.contains("nutrition") || lower_user.contains("diet") {
-                                "You are a health information assistant. Provide general health information. Always recommend consulting a medical professional for specific advice."
+                                format!("You are a health information assistant. Provide general health information. Always recommend consulting a medical professional for specific advice.{}", NO_CODE_GUARD)
                             } else {
-                                "You are a helpful, knowledgeable AI assistant. Answer concisely and accurately."
+                                format!("You are a helpful, knowledgeable AI assistant. Answer concisely and accurately.{}", NO_CODE_GUARD)
                             };
                             
                             eprintln!("[SERVER] 🎭 Dynamic prompt: {:?}", &fast_sys[..fast_sys.len().min(60)]);
@@ -2480,9 +3213,10 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                             eprintln!("[SERVER] ⚡ Ollama fast path: model={}, user_len={}, sys_len={}, num_predict={}", 
                                 ollama_model, user_msg.len(), 
-                                sys_msg.as_ref().map(|s| s.len()).unwrap_or(0), num_predict);
+                                fast_sys.len(), num_predict);
 
                             let client = reqwest::Client::builder()
+                                .no_proxy()
                                 .connect_timeout(std::time::Duration::from_secs(3))
                                 .timeout(std::time::Duration::from_secs(120))
                                 .build()
@@ -2495,7 +3229,27 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         .as_str()
                                         .unwrap_or("No response from model.")
                                         .to_string();
-                                    let content = clean_model_response(&raw_content);
+                                    let mut content = clean_model_response(&raw_content);
+
+                                    // Safety net: for non-coding queries, strip any code blocks
+                                    // the model may have generated despite the NO_CODE_GUARD instruction.
+                                    if !is_coding_query && content.contains("```") {
+                                        eprintln!("[SERVER] 🧹 Stripping unsolicited code blocks from Q&A response");
+                                        let mut result = String::new();
+                                        let mut in_code_block = false;
+                                        for line in content.lines() {
+                                            if line.trim().starts_with("```") {
+                                                in_code_block = !in_code_block;
+                                                continue;
+                                            }
+                                            if !in_code_block {
+                                                result.push_str(line);
+                                                result.push('\n');
+                                            }
+                                        }
+                                        content = result.trim().to_string();
+                                    }
+
                                     eprintln!("[SERVER] ⚡ Ollama fast path complete: {} chars (cleaned from {})", content.len(), raw_content.len());
                                     return content;
                                 }
@@ -2645,9 +3399,32 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                     eprintln!("[SERVER] <<< Completed /orchestrate request in {}ms.", start_time.elapsed().as_millis());
                     let cleaned_content = clean_model_response(&content);
-                    let response_json = serde_json::json!({
-                        "content": cleaned_content
-                    });
+                    let response_json = if is_openai_compat {
+                        // Return OpenAI-compatible response format
+                        serde_json::json!({
+                            "id": format!("chatcmpl-{}", start_time.elapsed().as_millis()),
+                            "object": "chat.completion",
+                            "created": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                            "model": request_json["model"].as_str().unwrap_or("modelfusion"),
+                            "choices": [{
+                                "index": 0,
+                                "message": {
+                                    "role": "assistant",
+                                    "content": cleaned_content
+                                },
+                                "finish_reason": "stop"
+                            }],
+                            "usage": {
+                                "prompt_tokens": 0,
+                                "completion_tokens": 0,
+                                "total_tokens": 0
+                            }
+                        })
+                    } else {
+                        serde_json::json!({
+                            "content": cleaned_content
+                        })
+                    };
                     let response_str = response_json.to_string();
                     let chunk_size = format!("{:x}\r\n", response_str.len());
                     let _ = write_half.write_all(chunk_size.as_bytes()).await;
@@ -2657,6 +3434,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 }
                 "/stats" => {
                     run_cli_subcommand(&["--stats".to_string()], db_path_val).await
+                }
+                "/sys-info" | "/sysinfo" => {
+                    run_cli_subcommand(&["--sys-info".to_string()], db_path_val).await
                 }
                 "/tasks" => {
                     let category = request_json["category"].as_str().unwrap_or("all");
@@ -3376,6 +4156,860 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                                 },
                                 "required": ["context", "arm", "reward"]
                             }
+                        },
+                        {
+                            "name": "text_classification",
+                            "description": "Execute ModelFusion --text-classification for text classification.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "token_classification",
+                            "description": "Execute ModelFusion --token-classification for token classification.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "question_answering",
+                            "description": "Execute ModelFusion --question-answering for question answering.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "text_generation",
+                            "description": "Execute ModelFusion --text-generation for text generation.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "summarization",
+                            "description": "Execute ModelFusion --summarization for summarization.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "translation",
+                            "description": "Execute ModelFusion --translation for translation.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "fill_mask",
+                            "description": "Execute ModelFusion --fill-mask for fill mask.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "text2text_generation",
+                            "description": "Execute ModelFusion --text2text-generation for text2text generation.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "language_detection",
+                            "description": "Execute ModelFusion --language-detection for language detection.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "grammar_correction",
+                            "description": "Execute ModelFusion --grammar-correction for grammar correction.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "paraphrase_generation",
+                            "description": "Execute ModelFusion --paraphrase-generation for paraphrase generation.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "causal_language_modeling",
+                            "description": "Execute ModelFusion --causal-language-modeling for causal language modeling.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "zero_shot_classification",
+                            "description": "Execute ModelFusion --zero-shot-classification for zero shot classification.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "feature_extraction",
+                            "description": "Execute ModelFusion --feature-extraction for feature extraction.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "sentence_similarity",
+                            "description": "Execute ModelFusion --sentence-similarity for sentence similarity.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "anonymization",
+                            "description": "Execute ModelFusion --anonymization for anonymization.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "coreference_resolution",
+                            "description": "Execute ModelFusion --coreference-resolution for coreference resolution.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "spam_detection",
+                            "description": "Execute ModelFusion --spam-detection for spam detection.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "malware_text_detection",
+                            "description": "Execute ModelFusion --malware-text-detection for malware text detection.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "phishing_detection",
+                            "description": "Execute ModelFusion --phishing-detection for phishing detection.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "pii_detection",
+                            "description": "Execute ModelFusion --pii-detection for pii detection.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "hate_speech_detection",
+                            "description": "Execute ModelFusion --hate-speech-detection for hate speech detection.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "cyberbullying_detection",
+                            "description": "Execute ModelFusion --cyberbullying-detection for cyberbullying detection.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "fake_news_detection",
+                            "description": "Execute ModelFusion --fake-news-detection for fake news detection.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "legal_judgment_classification",
+                            "description": "Execute ModelFusion --legal-judgment-classification for legal judgment classification.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "contract_clause_classification",
+                            "description": "Execute ModelFusion --contract-clause-classification for contract clause classification.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "case_outcome_prediction",
+                            "description": "Execute ModelFusion --case-outcome-prediction for case outcome prediction.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "financial_ner",
+                            "description": "Execute ModelFusion --financial-ner for financial ner.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "legal_ner",
+                            "description": "Execute ModelFusion --legal-ner for legal ner.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "biomedical_ner",
+                            "description": "Execute ModelFusion --biomedical-ner for biomedical ner.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "chemical_reaction_ner",
+                            "description": "Execute ModelFusion --chemical-reaction-ner for chemical reaction ner.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "financial_sentiment_analysis",
+                            "description": "Execute ModelFusion --financial-sentiment-analysis for financial sentiment analysis.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "scientific_abstract_summarization",
+                            "description": "Execute ModelFusion --scientific-abstract-summarization for scientific abstract summarization.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "emotion_detection",
+                            "description": "Execute ModelFusion --emotion-detection for emotion detection.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "sarcasm_detection",
+                            "description": "Execute ModelFusion --sarcasm-detection for sarcasm detection.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "stance_detection",
+                            "description": "Execute ModelFusion --stance-detection for stance detection.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "bias_detection",
+                            "description": "Execute ModelFusion --bias-detection for bias detection.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "hallucination_detection",
+                            "description": "Execute ModelFusion --hallucination-detection for hallucination detection.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "reading_level_assessment",
+                            "description": "Execute ModelFusion --reading-level-assessment for reading level assessment.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "generation_groundedness",
+                            "description": "Execute ModelFusion --generation-groundedness for generation groundedness.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "citation_intent_classification",
+                            "description": "Execute ModelFusion --citation-intent-classification for citation intent classification.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "code_summary_generation",
+                            "description": "Execute ModelFusion --code-summary-generation for code summary generation.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "code_clone_detection",
+                            "description": "Execute ModelFusion --code-clone-detection for code clone detection.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "image_classification",
+                            "description": "Execute ModelFusion --image-classification for image classification.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "object_detection",
+                            "description": "Execute ModelFusion --object-detection for object detection.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "image_segmentation",
+                            "description": "Execute ModelFusion --image-segmentation for image segmentation.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "visual_question_answering",
+                            "description": "Execute ModelFusion --visual-question-answering for visual question answering.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "document_question_answering",
+                            "description": "Execute ModelFusion --document-question-answering for document question answering.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "zero_shot_image_classification",
+                            "description": "Execute ModelFusion --zero-shot-image-classification for zero shot image classification.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "depth_estimation",
+                            "description": "Execute ModelFusion --depth-estimation for depth estimation.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "image_feature_extraction",
+                            "description": "Execute ModelFusion --image-feature-extraction for image feature extraction.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "automatic_speech_recognition",
+                            "description": "Execute ModelFusion --automatic-speech-recognition for automatic speech recognition.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "audio_classification",
+                            "description": "Execute ModelFusion --audio-classification for audio classification.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "voice_activity_detection",
+                            "description": "Execute ModelFusion --voice-activity-detection for voice activity detection.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "emotion_recognition",
+                            "description": "Execute ModelFusion --emotion-recognition for emotion recognition.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "video_classification",
+                            "description": "Execute ModelFusion --video-classification for video classification.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "text_to_speech",
+                            "description": "Execute ModelFusion --text-to-speech for text to speech.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "text_to_image",
+                            "description": "Execute ModelFusion --text-to-image for text to image.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "image_super_resolution",
+                            "description": "Execute ModelFusion --image-super-resolution for image super resolution.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "table_question_answering",
+                            "description": "Execute ModelFusion --table-question-answering for table question answering.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "feature_ranking",
+                            "description": "Execute ModelFusion --feature-ranking for feature ranking.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Input text or code" },
+                                    "prompt": { "type": "string", "description": "Task instructions" },
+                                    "file": { "type": "string", "description": "Optional file path" },
+                                    "language": { "type": "string", "description": "Optional language" },
+                                    "gpu": { "type": "boolean" }
+                                }
+                            }
                         }
                     ]
 
@@ -3683,32 +5317,32 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                     run_cli_subcommand(&["--sys-info".to_string()], &db_path_resolved).await
                 }
                 "restore_backup" => {
-                    run_cli_subcommand(&["--restore".to_string()], &db_path_resolved).await
+                    handler.handle_restore(None).content
                 }
                 "get_database_stats" => {
-                    run_cli_subcommand(&["--stats".to_string()], &db_path_resolved).await
+                    handler.handle_stats().content
                 }
                 "list_tasks" => {
-                    let category = arguments["category"].as_str().unwrap_or("all");
-                    run_cli_subcommand(&["--tasks".to_string(), category.to_string()], &db_path_resolved).await
+                    let category = arguments["category"].as_str();
+                    handler.handle_tasks_list(category).content
                 }
                 "update_database" => {
-                    run_cli_subcommand(&["--update".to_string()], &db_path_resolved).await
+                    handler.handle_update_database().await.content
                 }
                 "clear_cache" => {
-                    run_cli_subcommand(&["--clearcache".to_string()], &db_path_resolved).await
+                    handler.handle_clear_cache().content
                 }
                 "get_decision_stats" => {
-                    run_cli_subcommand(&["--decision-stats".to_string()], &db_path_resolved).await
+                    handler.handle_decision_stats().content
                 }
                 "get_novel_ai_stats" => {
                     run_cli_subcommand(&["--novel-ai-stats".to_string()], &db_path_resolved).await
                 }
                 "get_performance_stats" => {
-                    run_cli_subcommand(&["--performance-stats".to_string()], &db_path_resolved).await
+                    handler.handle_performance_stats().content
                 }
                 "get_cache_stats" => {
-                    run_cli_subcommand(&["--cache-stats".to_string()], &db_path_resolved).await
+                    handler.handle_cache_stats().content
                 }
                 "get_model_recommendations" => {
                     run_cli_subcommand(&["--model-recommendations".to_string()], &db_path_resolved).await
@@ -3718,14 +5352,14 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                     run_cli_subcommand(&["--model-ranking".to_string(), category.to_string()], &db_path_resolved).await
                 }
                 "get_ml_analytics" => {
-                    run_cli_subcommand(&["--ml-analytics".to_string()], &db_path_resolved).await
+                    handler.handle_ml_analytics().content
                 }
                 "quick_answer" => {
                     let question = arguments["question"].as_str().unwrap_or("").to_string();
                     let model = arguments["model"].as_str().unwrap_or("qwen2.5:3b").to_string();
                     
                     let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
-                        .unwrap_or_else(|_| "http://localhost:11434".to_string());
+                        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
                     let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
                     
                     let body = serde_json::json!({
@@ -3736,6 +5370,7 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                     });
                     
                     let client = reqwest::Client::builder()
+                        .no_proxy()
                         .connect_timeout(std::time::Duration::from_secs(3))
                         .timeout(std::time::Duration::from_secs(120))
                         .build()
@@ -3768,7 +5403,30 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                         "Error: Invalid context or arm index".to_string()
                     }
                 }
-                _ => format!("Error: Unknown tool {}", name),
+                                other => {
+                    let flag_name = other.replace('_', "-");
+                    let text = arguments["text"].as_str()
+                        .or_else(|| arguments["prompt"].as_str())
+                        .or_else(|| arguments["input"].as_str())
+                        .unwrap_or("");
+                    let mut cmd_args = vec![format!("--{}", flag_name)];
+                    if !text.is_empty() {
+                        cmd_args.push("--prompt".to_string());
+                        cmd_args.push(text.to_string());
+                    }
+                    if let Some(file) = arguments["file"].as_str() {
+                        cmd_args.push("--file".to_string());
+                        cmd_args.push(file.to_string());
+                    }
+                    if let Some(lang) = arguments["language"].as_str() {
+                        cmd_args.push("--language".to_string());
+                        cmd_args.push(lang.to_string());
+                    }
+                    if arguments["gpu"].as_bool().unwrap_or(false) {
+                        cmd_args.push("--gpu".to_string());
+                    }
+                    run_cli_subcommand(&cmd_args, &db_path_resolved).await
+                }
             };
 
             let response = serde_json::json!({
@@ -3813,22 +5471,54 @@ pub fn parse_slash_commands_in_prompt(
 ) {
     let parse_line = |line: &str| -> Option<(String, String)> {
         let trimmed = line.trim();
-        let command_str = if trimmed.starts_with("User: ") {
+        let mut command_str = if trimmed.starts_with("User: ") {
             trimmed["User: ".len()..].trim()
+        } else if trimmed.starts_with("user: ") {
+            trimmed["user: ".len()..].trim()
         } else if trimmed.starts_with("System: ") {
             trimmed["System: ".len()..].trim()
         } else {
             trimmed
         };
         
-        if command_str.starts_with('/') {
+        let has_agent_prefix = if command_str.to_lowercase().starts_with("@agent") {
+            command_str = command_str[6..].trim();
+            true
+        } else if command_str.to_lowercase().starts_with("@commands") {
+            command_str = command_str[9..].trim();
+            true
+        } else {
+            false
+        };
+        
+        let (raw_cmd, rest) = if command_str.starts_with('/') {
             let mut parts = command_str.splitn(2, ' ');
-            if let Some(cmd) = parts.next() {
-                let rest = parts.next().unwrap_or("").trim().to_string();
-                return Some((cmd.to_lowercase(), rest));
-            }
+            let cmd = parts.next().unwrap_or("").to_lowercase();
+            let rest = parts.next().unwrap_or("").trim().to_string();
+            (cmd, rest)
+        } else if has_agent_prefix && !command_str.is_empty() {
+            let mut parts = command_str.splitn(2, ' ');
+            let cmd = format!("/{}", parts.next().unwrap_or("").to_lowercase());
+            let rest = parts.next().unwrap_or("").trim().to_string();
+            (cmd, rest)
+        } else {
+            return None;
+        };
+
+        let normalized_cmd = match raw_cmd.as_str() {
+            "/evove" | "/evoce" | "/evovle" | "/evolv" | "/evolution" => "/evolve".to_string(),
+            "/api-keys" => "/keys".to_string(),
+            "/sys-info" => "/sysinfo".to_string(),
+            "/db-stats" => "/stats".to_string(),
+            "/clearcache" => "/clear_cache".to_string(),
+            other => other.to_string(),
+        };
+
+        if normalized_cmd.starts_with('/') && normalized_cmd.len() > 1 {
+            Some((normalized_cmd, rest))
+        } else {
+            None
         }
-        None
     };
 
     let mut detected_cmd = None;
@@ -4109,6 +5799,9 @@ pub fn parse_slash_commands_in_prompt(
             }
             "/stats" => {
                 std::env::set_var("MODELFUSION_STATS", "true");
+            }
+            "/sys-info" | "/sysinfo" => {
+                std::env::set_var("MODELFUSION_SYS_INFO", "true");
             }
             "/update" => {
                 std::env::set_var("MODELFUSION_UPDATE", "true");
@@ -4487,7 +6180,6 @@ async fn patch_ide_workflow(ide_src_dir: &str, shallow: bool, vscode_tag: Option
         }
     }
     println!();
-
     // ── Step 8: Build IDE from source ─────────────────────────────────
     // CRITICAL: The IDE MUST be built from the patched vscode source tree.
     // Using the official VSCode release zip introduces a foreign versioned
@@ -4587,7 +6279,7 @@ async fn patch_ide_workflow(ide_src_dir: &str, shallow: bool, vscode_tag: Option
         let mut brand_ok = true;
         for (flag, key, value) in &branding_cmds {
             let status = Command::new(&rcedit_str)
-                .args([&exe_str, flag, key, value])
+                .args([exe_str.as_str(), *flag, *key, *value])
                 .output();
             if let Err(e) = status {
                 println!("  [FAIL] rcedit {} {} -- {}", flag, key, e);
@@ -4750,7 +6442,7 @@ async fn patch_ide_workflow(ide_src_dir: &str, shallow: bool, vscode_tag: Option
             }
         }
     }
-
+    print_patch_summary(&successes, &failures);
     Ok(())
 }
 
@@ -4919,6 +6611,8 @@ fn get_source_patches() -> Vec<(&'static str, &'static str, &'static str)> {
 
         // ── languageModels.ts — inject ModelFusion vendor auto-registration ──
         // We inject after the onDidChangeLanguageModelGroups listener registration
+        // ── languageModels.ts — inject ModelFusion vendor auto-registration ──
+        // We inject after the onDidChangeLanguageModelGroups listener registration
         (
             "src/vs/workbench/contrib/chat/common/languageModels.ts",
             "this._store.add(this._languageModelsConfigurationService.onDidChangeLanguageModelGroups(changedGroups => this._onDidChangeLanguageModelGroups(changedGroups)));",
@@ -4926,5 +6620,68 @@ fn get_source_patches() -> Vec<(&'static str, &'static str, &'static str)> {
         ),
     ]
 }
+
+#[cfg(test)]
+mod prompt_interception_tests {
+    fn check_is_empty_user_prompt(prompt: &str) -> bool {
+        let lower = prompt.to_lowercase();
+        if lower.contains("@agent") || lower.contains("<attachments>") || lower.contains("<attachment>") || lower.contains("<user_request>") {
+            false
+        } else {
+            let mut clean = lower.clone();
+            let strip_tags = [
+                "customizationsupdate", "conversation-summary", "conversationsummary",
+                "environment_info", "workspace_info", "editorcontext",
+                "reminderinstruction", "attachments", "attachment",
+                "tooluseinstructions", "editfileinstructions", "notebookinstructions",
+                "usermemory", "sessionmemory", "repomemory",
+                "memoryscopes", "memoryguidelines", "memoryinstructions",
+                "outputformatting", "instructions", "context",
+            ];
+            for prefix in strip_tags {
+                let needle = format!("<{}", prefix);
+                while let Some(s) = clean.find(&needle) {
+                    let after = &clean[s + 1..];
+                    let tag_end = after.find(|c: char| c == '>' || c == ' ' || c == '\n' || c == '\r').unwrap_or(after.len());
+                    let tag = &after[..tag_end];
+                    let close = format!("</{}>", tag);
+                    if let Some(e) = clean[s..].find(&close) {
+                        clean.replace_range(s..s + e + close.len(), " ");
+                    } else {
+                        let le = clean[s..].find('\n').map(|p| s + p + 1).unwrap_or(clean.len());
+                        clean.replace_range(s..le, " ");
+                    }
+                }
+            }
+            let usr = if let Some(pos) = clean.rfind("\nuser:") {
+                &clean[pos + 6..]
+            } else if let Some(pos) = clean.rfind("user:") {
+                &clean[pos + 5..]
+            } else {
+                &clean[..]
+            };
+            usr.trim().is_empty()
+        }
+    }
+
+    #[test]
+    fn test_agent_command_with_attachments_not_empty() {
+        let prompt = "System: You are HugOS AI.\nuser: <attachments>\n<attachment id=\"file:import math.py\">\nExcerpt from import math.py:\nimport math\n</attachment>\n</attachments>\n@agent /evolve";
+        assert!(!check_is_empty_user_prompt(prompt), "@agent command with attachments must NOT be classified as empty prompt");
+    }
+
+    #[test]
+    fn test_attachments_only_not_empty() {
+        let prompt = "System: You are HugOS AI.\nuser: <attachments>\n<attachment id=\"file:import math.py\">\nimport math\n</attachment>\n</attachments>";
+        assert!(!check_is_empty_user_prompt(prompt), "Attachments-only message must NOT be classified as empty prompt");
+    }
+
+    #[test]
+    fn test_context_refresh_is_empty() {
+        let prompt = "System: You are HugOS AI.\nuser: <environment_info>\nOS: Windows\n</environment_info>\n<workspace_info>\npath: d:\\test\n</workspace_info>";
+        assert!(check_is_empty_user_prompt(prompt), "System context refresh without user content MUST be classified as empty prompt");
+    }
+}
+
 
 

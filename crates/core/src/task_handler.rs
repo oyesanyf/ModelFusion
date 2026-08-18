@@ -3,7 +3,7 @@ use anyhow::Result;
 use db::{HuggingFaceModelDatabase, ModelMetrics};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use utils::FolderManager;
 
@@ -32,20 +32,7 @@ struct HFModelApiResponse {
     library_name: Option<String>,
 }
 
-fn parse_next_link(link_val: &str) -> Option<String> {
-    for item in link_val.split(',') {
-        if item.contains("rel=\"next\"") || item.contains("rel=next") {
-            if let Some(start) = item.find('<') {
-                if let Some(end) = item.find('>') {
-                    if start < end {
-                        return Some(item[start + 1..end].to_string());
-                    }
-                }
-            }
-        }
-    }
-    None
-}
+
 
 /// Handles CLI actions like update, stats, lists, restore, and specialized tasks.
 pub struct ComprehensiveTaskHandler {
@@ -226,9 +213,185 @@ impl ComprehensiveTaskHandler {
         }
     }
 
-    /// Handle updating database from HuggingFace Hub.
+    /// Calculate Anti-Hype Model Metrics grounded in real-world Hugging Face developer adoption:
+    /// 1. Logarithmic Download Popularity: Real production pipelines run on schedules (e.g. 1.55B MiniLM downloads).
+    /// 2. Utility-to-Hype Ratio: Downloads per Like (identifies workhorses vs hyped releases like Moonshot K3 with 60 downloads/like).
+    /// 3. Parameter Sweet-Spot Distribution: <1B = 83% of HF downloads, 1B-14B = local sweet spot, >70B = 3%, >100B = 1% penalty.
+    /// 4. Capability scoring: Instruction/chat/coder fine-tuning & architecture readiness.
+    pub fn compute_anti_hype_scores(
+        model_id: &str,
+        downloads: i64,
+        likes: i64,
+        tags: &[String],
+        pipeline_tag: &str,
+        library_name: &str,
+    ) -> (f64, f64, f64, f64, f64) {
+        let d_count = downloads.max(0) as f64;
+        let l_count = (likes.max(0) as f64).max(1.0);
+
+        // 1. Logarithmic Download Popularity (log10 scale up to 2 Billion downloads)
+        let log_downloads = if d_count > 1.0 { d_count.log10() } else { 0.0 };
+        // log10(2,000,000,000) ≈ 9.30
+        let popularity_norm = (log_downloads / 9.30).clamp(0.0, 1.0);
+
+        // 2. Utility-to-Hype Ratio (Downloads per Like)
+        let ratio = d_count / l_count;
+        let utility_ratio_norm = if d_count > 100.0 {
+            (ratio.log10() / 5.5).clamp(0.0, 1.0)
+        } else {
+            0.10
+        };
+
+        // 3. Parameter Count & Deployment Efficiency
+        let est_params_b = Self::estimate_params_from_id(model_id, tags, pipeline_tag);
+        let (efficiency_norm, weight_mb) = if est_params_b <= 0.35 {
+            // Embeddings / Sentence Transformers / small BERT (e.g., all-MiniLM-L6-v2 at 1.55B downloads)
+            (1.00, (est_params_b * 2.0 * 1024.0).max(80.0))
+        } else if est_params_b <= 1.0 {
+            // < 1B params (83% of all-time HF downloads)
+            (0.98, (est_params_b * 2.0 * 1024.0).max(250.0))
+        } else if est_params_b <= 4.0 {
+            // 1B - 4B (Qwen2.5 0.5B/1.5B/3B, Llama 3.2 1B/3B)
+            (0.92, est_params_b * 2.0 * 1024.0)
+        } else if est_params_b <= 9.0 {
+            // 7B - 8B desktop workhorses
+            (0.80, est_params_b * 2.0 * 1024.0)
+        } else if est_params_b <= 16.0 {
+            // 14B models (Qwen2.5 14B, DeepSeek-R1-Distill-Qwen-14B)
+            (0.65, est_params_b * 2.0 * 1024.0)
+        } else if est_params_b <= 35.0 {
+            // 32B models
+            (0.48, est_params_b * 2.0 * 1024.0)
+        } else if est_params_b <= 70.0 {
+            // 70B models (only 3% of 2026 downloads)
+            (0.30, est_params_b * 2.0 * 1024.0)
+        } else {
+            // > 70B / 100B+ / frontier behemoths (only 1% of downloads)
+            (0.12, est_params_b * 2.0 * 1024.0)
+        };
+
+        // 4. Capability Score
+        let name_lower = model_id.to_lowercase();
+        let mut cap_base: f64 = if library_name == "openvino" {
+            0.88 // pre-quantized, hardware-optimized
+        } else if library_name == "transformers" || library_name == "sentence-transformers" {
+            0.82
+        } else {
+            0.60
+        };
+
+        // Boost for instruction/chat/coder fine-tuning
+        if name_lower.contains("instruct")
+            || name_lower.contains("chat")
+            || name_lower.contains("coder")
+            || tags.iter().any(|t| t.contains("instruct") || t.contains("conversational"))
+        {
+            cap_base = (cap_base + 0.10).min(1.0);
+        }
+        // Boost for proven workhorse architectures (Qwen, sentence-transformers, Llama, DeepSeek)
+        if name_lower.contains("qwen")
+            || name_lower.contains("minilm")
+            || name_lower.contains("bge")
+            || name_lower.contains("llama-3")
+            || name_lower.contains("deepseek")
+        {
+            cap_base = (cap_base + 0.08).min(1.0);
+        }
+        let capability_norm = cap_base.clamp(0.0, 1.0);
+
+        // 5. Anti-Hype Combined Decision Score (0.0 to 1.0 scale)
+        // 35% Download Scale + 25% Utility Ratio + 25% Param Efficiency + 15% Capability
+        let decision_norm = (popularity_norm * 0.35)
+            + (utility_ratio_norm * 0.25)
+            + (efficiency_norm * 0.25)
+            + (capability_norm * 0.15);
+
+        (
+            decision_norm * 10.0,
+            capability_norm * 10.0,
+            efficiency_norm * 10.0,
+            popularity_norm * 10.0,
+            weight_mb,
+        )
+    }
+
+    /// Estimate parameter count in Billions from model ID, tags, or pipeline tag.
+    fn estimate_params_from_id(model_id: &str, tags: &[String], pipeline_tag: &str) -> f64 {
+        let name_lower = model_id.to_lowercase();
+
+        // Check for embeddings / sentence-transformers
+        if pipeline_tag == "sentence-similarity"
+            || pipeline_tag == "feature-extraction"
+            || name_lower.contains("minilm")
+            || name_lower.contains("bge-small")
+            || name_lower.contains("e5-small")
+        {
+            return 0.11; // ~110M params
+        }
+        if name_lower.contains("bge-large") || name_lower.contains("e5-large") {
+            return 0.35; // ~350M params
+        }
+
+        // Check tags for parameter size like "params:7B" or "7b"
+        for tag in tags {
+            let t = tag.to_lowercase();
+            if t.ends_with('b') && t.len() >= 2 {
+                let num_part = &t[..t.len() - 1];
+                if let Ok(p) = num_part.parse::<f64>() {
+                    if p > 0.0 && p < 4000.0 {
+                        return p;
+                    }
+                }
+            }
+        }
+
+        // Parse from name: e.g. "0.5B", "1.5B", "3B", "7B", "14B", "32B", "70B", "2.8T", "350M", "110M"
+        let chars: Vec<char> = name_lower.chars().collect();
+        let len = chars.len();
+        let mut i = 0;
+        while i < len {
+            if chars[i].is_ascii_digit() {
+                let start = i;
+                while i < len && (chars[i].is_ascii_digit() || chars[i] == '.') {
+                    i += 1;
+                }
+                if i < len {
+                    if chars[i] == 'b' {
+                        let num_str: String = chars[start..i].iter().collect();
+                        if let Ok(p) = num_str.parse::<f64>() {
+                            if p > 0.0 && p < 4000.0 {
+                                return p;
+                            }
+                        }
+                    } else if chars[i] == 't' {
+                        let num_str: String = chars[start..i].iter().collect();
+                        if let Ok(p) = num_str.parse::<f64>() {
+                            return p * 1000.0;
+                        }
+                    } else if chars[i] == 'm' {
+                        let num_str: String = chars[start..i].iter().collect();
+                        if let Ok(p) = num_str.parse::<f64>() {
+                            if p > 10.0 {
+                                return p / 1000.0;
+                            }
+                        }
+                    }
+                }
+            }
+            i += 1;
+        }
+
+        if pipeline_tag == "text-generation" {
+            7.0
+        } else {
+            0.5
+        }
+    }
+
+    /// Handle updating database from HuggingFace Hub using Anti-Hype multi-stream discovery.
     pub async fn handle_update_database(&self) -> TaskHandlerResult {
-        println!("🔄 Starting comprehensive database update...");
+        println!("🔄 Starting Anti-Hype multi-tier database update...");
+        println!("📊 Grounding model selection in real-world production adoption (downloads & utility ratio vs hype)...");
         println!("💾 Creating backup of current configuration...");
         
         let db_src = vec![self.db_path.clone()];
@@ -250,81 +413,68 @@ impl ComprehensiveTaskHandler {
             Ok(d) => d,
         };
 
-        // Check if there is a saved resume cursor URL
-        let mut url = match db.get_meta("update_cursor_url") {
-            Ok(Some(saved_url)) => {
-                if !saved_url.is_empty() {
-                    println!("🔄 Resuming database update from saved cursor...");
-                    saved_url
-                } else {
-                    "https://huggingface.co/api/models?limit=1000&full=false".to_string()
-                }
-            }
-            _ => "https://huggingface.co/api/models?limit=1000&full=false".to_string(),
-        };
-
         let client = reqwest::Client::new();
-        println!("🌍 Fetching models from HuggingFace Hub API...");
-        
-        let mut total_upserted = 0;
-        let mut page_num = 1;
         let token = std::env::var("HF_TOKEN")
             .or_else(|_| std::env::var("HUGGINGFACE_API_KEY"))
             .or_else(|_| std::env::var("HF_API_KEY"))
             .or_else(|_| std::env::var("HUGGINGFACE_TOKEN"))
             .ok();
 
-        loop {
-            println!("📥 Fetching page {} (url: {})...", page_num, url);
-            let mut req = client.get(&url);
+        let mut total_upserted = 0;
+        let mut seen_models: HashSet<String> = HashSet::new();
+
+        // Multi-tier discovery streams grounded in the Hugging Face empirical study:
+        let discovery_streams: Vec<(&str, &str)> = vec![
+            ("Global Top Downloaded Workhorses", "https://huggingface.co/api/models?sort=downloads&direction=-1&limit=500&full=false"),
+            ("Qwen Series (Developer Default Workflow)", "https://huggingface.co/api/models?search=qwen&sort=downloads&direction=-1&limit=250&full=false"),
+            ("Llama-3 / 3.2 Family", "https://huggingface.co/api/models?search=llama&sort=downloads&direction=-1&limit=150&full=false"),
+            ("DeepSeek Series", "https://huggingface.co/api/models?search=deepseek&sort=downloads&direction=-1&limit=150&full=false"),
+            ("Mistral & Gemma Workhorses", "https://huggingface.co/api/models?search=mistral&sort=downloads&direction=-1&limit=100&full=false"),
+            ("Sentence Transformers (High Utility)", "https://huggingface.co/api/models?author=sentence-transformers&sort=downloads&direction=-1&limit=100&full=false"),
+            ("Sentence Similarity & Embeddings", "https://huggingface.co/api/models?pipeline_tag=sentence-similarity&sort=downloads&direction=-1&limit=100&full=false"),
+            ("Feature Extraction Pipelines", "https://huggingface.co/api/models?pipeline_tag=feature-extraction&sort=downloads&direction=-1&limit=100&full=false"),
+        ];
+
+        let mut stats_small = 0; // < 1B params
+        let mut stats_mid = 0;   // 1B - 14B params
+        let mut stats_large = 0; // > 14B params
+
+        for (tier_name, stream_url) in discovery_streams {
+            println!("📥 [DISCOVERY] Ingesting {}: {}...", tier_name, stream_url);
+            let mut req = client.get(stream_url);
             if let Some(ref t) = token {
                 req = req.bearer_auth(t);
             }
 
             let response = match req.send().await {
+                Ok(res) if res.status().is_success() => res,
+                Ok(res) => {
+                    println!("⚠️ [DISCOVERY] {} returned status {}", tier_name, res.status());
+                    continue;
+                }
                 Err(e) => {
-                    println!("❌ Failed to connect to HuggingFace API on page {}: {}", page_num, e);
-                    break;
+                    println!("⚠️ [DISCOVERY] Failed to query {}: {}", tier_name, e);
+                    continue;
                 }
-                Ok(res) => res,
-            };
-
-            if !response.status().is_success() {
-                println!("❌ HuggingFace API returned status {} on page {}", response.status(), page_num);
-                if response.status() == 429 {
-                    println!("⚠️ Rate limit reached. Stopping pagination to preserve retrieved models.");
-                }
-                break;
-            }
-
-            let next_url = if let Some(link_val) = response.headers().get(reqwest::header::LINK) {
-                if let Ok(link_str) = link_val.to_str() {
-                    parse_next_link(link_str)
-                } else {
-                    None
-                }
-            } else {
-                None
             };
 
             let api_models: Vec<HFModelApiResponse> = match response.json().await {
-                Err(e) => {
-                    println!("❌ Failed to parse API JSON on page {}: {}", page_num, e);
-                    break;
-                }
                 Ok(m) => m,
+                Err(e) => {
+                    println!("⚠️ [DISCOVERY] JSON parse error for {}: {}", tier_name, e);
+                    continue;
+                }
             };
 
-            if api_models.is_empty() {
-                break;
-            }
-
-            println!("🏗️  Updating database with {} fetched models from page {}...", api_models.len(), page_num);
-
-            let mut models_to_insert = Vec::new();
+            let mut batch_to_insert = Vec::new();
             for m in api_models {
                 let model_id = m.id;
-                let author = m.author.unwrap_or_else(|| "unknown".to_string());
+                if seen_models.contains(&model_id) {
+                    continue;
+                }
+                seen_models.insert(model_id.clone());
+
+                let author = m.author.unwrap_or_else(|| model_id.split('/').next().unwrap_or("unknown").to_string());
                 let pipeline_tag = m.pipeline_tag.unwrap_or_else(|| "text-generation".to_string());
                 let tags = m.tags.unwrap_or_default();
                 let downloads = m.downloads.unwrap_or(0);
@@ -340,69 +490,64 @@ impl ComprehensiveTaskHandler {
                     }
                 }
 
-                let popularity_score = (downloads as f64 / 100000.0).min(1.0);
-                let capability_score = if library_name == "transformers" { 0.8 } else { 0.5 };
-                let efficiency_score = 0.7;
-                let decision_score = popularity_score * 0.4 + capability_score * 0.4 + efficiency_score * 0.2;
+                let (decision_score, capability_score, efficiency_score, popularity_score, size_mb) =
+                    Self::compute_anti_hype_scores(
+                        &model_id,
+                        downloads,
+                        likes,
+                        &tags,
+                        &pipeline_tag,
+                        &library_name,
+                    );
 
-                models_to_insert.push(ModelMetrics {
+                let est_params = Self::estimate_params_from_id(&model_id, &tags, &pipeline_tag);
+                if est_params <= 1.0 {
+                    stats_small += 1;
+                } else if est_params <= 14.0 {
+                    stats_mid += 1;
+                } else {
+                    stats_large += 1;
+                }
+
+                batch_to_insert.push(ModelMetrics {
                     model_id,
                     author,
                     pipeline_tag,
                     tags,
-                    description: "Imported from HF API".to_string(),
+                    description: format!("Production Model (Anti-Hype Tier: {})", tier_name),
                     downloads,
                     likes,
-                    decision_score: decision_score * 10.0, // Scale to 10
-                    capability_score: capability_score * 10.0,
-                    efficiency_score: efficiency_score * 10.0,
-                    popularity_score: popularity_score * 10.0,
+                    decision_score,
+                    capability_score,
+                    efficiency_score,
+                    popularity_score,
                     model_type: "causal-lm".to_string(),
                     library_name,
                     last_modified,
                     license,
                     task_keywords: Vec::new(),
                     architecture: "transformer".to_string(),
-                    size_mb: 500.0, // Default estimate
+                    size_mb,
                     language: "en".to_string(),
                 });
             }
 
-            match db.upsert_batch(&models_to_insert) {
-                Err(e) => {
-                    println!("❌ Failed to write to database on page {}: {}", page_num, e);
-                    break;
-                }
-                Ok(count) => {
-                    total_upserted += count;
-                    println!("✨ Page {} completed. Total upserted models: {}", page_num, total_upserted);
-                    // Save resume cursor for next iteration/run
-                    if let Some(ref next) = next_url {
-                        let _ = db.set_meta("update_cursor_url", next);
-                    } else {
-                        let _ = db.set_meta("update_cursor_url", "");
+            if !batch_to_insert.is_empty() {
+                match db.upsert_batch(&batch_to_insert) {
+                    Ok(count) => {
+                        total_upserted += count;
+                        println!("  ✨ Ingested {} models from {}", count, tier_name);
+                    }
+                    Err(e) => {
+                        println!("  ❌ Failed to write batch for {}: {}", tier_name, e);
                     }
                 }
             }
-
-            if let Some(next) = next_url {
-                url = next;
-                page_num += 1;
-            } else {
-                let _ = db.set_meta("update_cursor_url", "");
-                break;
-            }
         }
 
-        let _ = db.set_meta("last_updated", &chrono::Utc::now().to_rfc3339());
-        let out = format!("✨ Database successfully updated! Processed and upserted {} models.", total_upserted);
-        println!("{}", out);
-
         // ── OpenVINO Hub sync ────────────────────────────────────────────────
-        // Fetch all pre-converted models from the OpenVINO HuggingFace org and
-        // upsert them into the database so the model selector can find and prefer them.
-        println!("\n🔷 [OPENVINO] Syncing pre-converted models from OpenVINO HuggingFace org...");
-        let ov_url = "https://huggingface.co/api/models?author=OpenVINO&limit=200&full=false";
+        println!("\n🔷 [OPENVINO] Syncing pre-converted quantized models from OpenVINO org...");
+        let ov_url = "https://huggingface.co/api/models?author=OpenVINO&sort=downloads&direction=-1&limit=200&full=false";
         let mut ov_req = client.get(ov_url);
         if let Some(ref t) = token {
             ov_req = ov_req.bearer_auth(t);
@@ -411,10 +556,14 @@ impl ComprehensiveTaskHandler {
             Ok(res) if res.status().is_success() => {
                 match res.json::<Vec<HFModelApiResponse>>().await {
                     Ok(ov_models) => {
-                        println!("📦 Found {} models in OpenVINO org.", ov_models.len());
                         let mut ov_to_insert = Vec::new();
                         for m in ov_models {
-                            // Only include LLM / text-generation models (skip vision, audio, etc.)
+                            let model_id = m.id.clone();
+                            if seen_models.contains(&model_id) {
+                                continue;
+                            }
+                            seen_models.insert(model_id.clone());
+
                             let pipeline = m.pipeline_tag.clone().unwrap_or_default();
                             let tags = m.tags.clone().unwrap_or_default();
                             let is_llm = pipeline == "text-generation"
@@ -426,28 +575,18 @@ impl ComprehensiveTaskHandler {
                                 continue;
                             }
 
-                            let model_id = m.id.clone();
-
-                            // Estimate size from quantization suffix in model name
-                            // e.g. "Qwen2.5-1.5B-Instruct-int4-ov" → 1.5B × 0.5 bytes/param ≈ 750 MB
-                            let name_lower = model_id.to_lowercase();
-                            let weight_mb: f64 = if name_lower.contains("int4") {
-                                // INT4: 0.5 bytes/param — extract param count from name
-                                Self::estimate_mb_from_name(&model_id, 0.5)
-                            } else if name_lower.contains("int8") {
-                                Self::estimate_mb_from_name(&model_id, 1.0)
-                            } else {
-                                // fp16
-                                Self::estimate_mb_from_name(&model_id, 2.0)
-                            };
-
-                            // High efficiency/decision score: already quantized, ready to run
                             let downloads = m.downloads.unwrap_or(0);
                             let likes = m.likes.unwrap_or(0);
-                            let popularity = (downloads as f64 / 50_000.0).min(1.0);
-                            let efficiency_score = 0.95; // pre-quantized INT4/INT8
-                            let capability_score = 0.80;
-                            let decision_score = popularity * 0.3 + capability_score * 0.4 + efficiency_score * 0.3;
+
+                            let (decision_score, capability_score, efficiency_score, popularity_score, size_mb) =
+                                Self::compute_anti_hype_scores(
+                                    &model_id,
+                                    downloads,
+                                    likes,
+                                    &tags,
+                                    "text-generation",
+                                    "openvino",
+                                );
 
                             let mut all_tags = tags.clone();
                             all_tags.push("openvino".to_string());
@@ -462,10 +601,10 @@ impl ComprehensiveTaskHandler {
                                 description: "Pre-converted OpenVINO INT4/INT8 model — ready for immediate inference.".to_string(),
                                 downloads,
                                 likes,
-                                decision_score: decision_score * 10.0,
-                                capability_score: capability_score * 10.0,
-                                efficiency_score: efficiency_score * 10.0,
-                                popularity_score: popularity * 10.0,
+                                decision_score: (decision_score + 1.0).min(10.0), // Quantized efficiency bonus
+                                capability_score,
+                                efficiency_score: (efficiency_score + 0.5).min(10.0),
+                                popularity_score,
                                 model_type: "causal-lm".to_string(),
                                 library_name: "openvino".to_string(),
                                 last_modified: m.last_modified.unwrap_or_else(|| "2026-01-01T00:00:00Z".to_string()),
@@ -481,13 +620,16 @@ impl ComprehensiveTaskHandler {
                                 },
                                 task_keywords: vec!["text-generation".to_string(), "openvino".to_string()],
                                 architecture: "transformer".to_string(),
-                                size_mb: weight_mb,
+                                size_mb,
                                 language: "en".to_string(),
                             });
                         }
                         let ov_count = ov_to_insert.len();
                         match db.upsert_batch(&ov_to_insert) {
-                            Ok(n) => println!("✅ [OPENVINO] Synced {} pre-converted OV models into database ({} LLMs found).", n, ov_count),
+                            Ok(n) => {
+                                total_upserted += n;
+                                println!("✅ [OPENVINO] Synced {} pre-converted OV models into database ({} LLMs found).", n, ov_count);
+                            }
                             Err(e) => println!("⚠️ [OPENVINO] Failed to upsert OV Hub models: {}", e),
                         }
                     }
@@ -499,49 +641,32 @@ impl ComprehensiveTaskHandler {
         }
         println!("🔷 [OPENVINO] Hub sync complete.\n");
 
+        let _ = db.set_meta("last_updated", &chrono::Utc::now().to_rfc3339());
+        let _ = db.set_meta("anti_hype_scoring_version", "2.0");
+
+        let out = format!(
+            "✨ Anti-Hype Database Update Complete!\n\
+             📊 Total Unique Models Synced: {}\n\
+             🔹 <1B Parameter Production Workhorses (83% HF Usage Tier): {}\n\
+             🔹 1B-14B Parameter Practical LLM Sweet-Spot: {}\n\
+             🔹 Large Models (>14B): {}\n\
+             🏆 Ranking algorithm now prioritizes real-world downloads & utility ratio over social media hype.",
+            total_upserted, stats_small, stats_mid, stats_large
+        );
+        println!("{}", out);
+
         TaskHandlerResult {
             success: true,
             content: out,
-            data: Some(json!({ "upserted_count": total_upserted })),
+            data: Some(json!({
+                "upserted_count": total_upserted,
+                "small_models_count": stats_small,
+                "mid_models_count": stats_mid,
+                "large_models_count": stats_large
+            })),
             error_message: None,
         }
 
-    }
-
-    /// Estimate model weight size in MB from the model ID name.
-    /// Looks for patterns like "1.5B", "7B", "14B" and multiplies by bytes_per_param × 1000.
-    fn estimate_mb_from_name(model_id: &str, bytes_per_param: f64) -> f64 {
-        let name = model_id.split('/').last().unwrap_or(model_id).to_lowercase();
-        let chars: Vec<char> = name.chars().collect();
-        let len = chars.len();
-        let mut i = 0;
-        while i < len {
-            if chars[i].is_ascii_digit() {
-                let start = i;
-                while i < len && (chars[i].is_ascii_digit() || chars[i] == '.') {
-                    i += 1;
-                }
-                if i < len && chars[i] == 'b' {
-                    let num_str: String = chars[start..i].iter().collect();
-                    if let Ok(params_b) = num_str.parse::<f64>() {
-                        if params_b > 0.0 && params_b < 2000.0 {
-                            // params_b billion params × bytes_per_param × 1024 MB/GB
-                            return (params_b * bytes_per_param * 1024.0).max(50.0);
-                        }
-                    }
-                }
-                if i < len && chars[i] == 'm' {
-                    let num_str: String = chars[start..i].iter().collect();
-                    if let Ok(params_m) = num_str.parse::<f64>() {
-                        if params_m > 10.0 && params_m < 10_000.0 {
-                            return (params_m / 1000.0 * bytes_per_param * 1024.0).max(50.0);
-                        }
-                    }
-                }
-            }
-            i += 1;
-        }
-        500.0 // default fallback
     }
 
     /// Clear cache logic.
