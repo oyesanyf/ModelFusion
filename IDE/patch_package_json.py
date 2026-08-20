@@ -7,6 +7,10 @@ with open(pkg_path, "r", encoding="utf-8") as f:
 
 # Master list of slash commands to register in VS Code Chat UI autocomplete
 commands_to_add = [
+    {"name": "comment", "description": "Add inline comments and docstrings explaining code logic and algorithms"},
+    {"name": "comments", "description": "Add inline comments and docstrings explaining code logic and algorithms"},
+    {"name": "command", "description": "List all ModelFusion slash commands, capabilities, and system metrics"},
+    {"name": "commands", "description": "List all ModelFusion slash commands, capabilities, and system metrics"},
     {"name": "stats", "description": "Display ModelFusion SQLite database statistics and model counts"},
     {"name": "sysinfo", "description": "Display system hardware specifications (CPU, RAM, GPU)"},
     {"name": "sys-info", "description": "Display system hardware specifications (CPU, RAM, GPU)"},
