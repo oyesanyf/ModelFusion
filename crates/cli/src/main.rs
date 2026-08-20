@@ -2511,6 +2511,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         let known_slash_commands = [
                             // Original fast-interception commands
                             "keys", "api-keys", "mcp", "stats", "sysinfo", "sys-info", "tasks",
+                            "command", "commands", "help", "comment", "comments", "doc", "docs",
                             "cache-stats", "performance-stats", "decision-stats", "evolve", "evovle", "evove", "evoce", "evolv", "evolution",
                             "security", "refactor",
                             // MCP tools (snake_case + kebab-case aliases)
@@ -2555,18 +2556,57 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             let line = line.trim();
                             if line.is_empty() { continue; }
 
-                            let is_agent_line = line.to_lowercase().starts_with("@agent") || line.to_lowercase().starts_with("@commands") || is_from_user_request_tag;
+                            let lower_line = line.to_lowercase();
+                            let is_agent_line = lower_line.starts_with("@agent")
+                                || lower_line.starts_with("@commands")
+                                || lower_line.starts_with("@command")
+                                || lower_line.starts_with("@comments")
+                                || lower_line.starts_with("@comment")
+                                || lower_line.starts_with("@tasks")
+                                || lower_line.starts_with("@task")
+                                || lower_line.starts_with("@modelfusion")
+                                || lower_line.starts_with("@hugos")
+                                || is_from_user_request_tag;
+
                             let line_to_scan = if is_agent_line {
-                                if line.to_lowercase().starts_with("@agent") {
+                                if lower_line.starts_with("@agent") {
                                     line[6..].trim()
-                                } else if line.to_lowercase().starts_with("@commands") {
+                                } else if lower_line.starts_with("@commands") {
                                     line[9..].trim()
+                                } else if lower_line.starts_with("@command") {
+                                    line[8..].trim()
+                                } else if lower_line.starts_with("@comments") {
+                                    line[9..].trim()
+                                } else if lower_line.starts_with("@comment") {
+                                    line[8..].trim()
+                                } else if lower_line.starts_with("@tasks") {
+                                    line[6..].trim()
+                                } else if lower_line.starts_with("@task") {
+                                    line[5..].trim()
+                                } else if lower_line.starts_with("@modelfusion") {
+                                    line[12..].trim()
+                                } else if lower_line.starts_with("@hugos") {
+                                    line[6..].trim()
                                 } else {
                                     line
                                 }
                             } else {
                                 line
                             };
+
+                            // If user explicitly typed a standalone participant tag without extra command, provide stats or comment info
+                            if line_to_scan.is_empty() && is_agent_line {
+                                if lower_line.starts_with("@comment") || lower_line.starts_with("@comments") {
+                                    if !matched_cmds.iter().any(|(c, _)| c == "comment") {
+                                        matched_cmds.push(("comment".to_string(), String::new()));
+                                    }
+                                } else {
+                                    if !matched_cmds.iter().any(|(c, _)| c == "stats") {
+                                        matched_cmds.push(("stats".to_string(), String::new()));
+                                    }
+                                }
+                                continue;
+                            }
 
                             for word in line_to_scan.split_whitespace() {
                                 if word.contains("://") || word.contains('<') || word.contains('>') {
@@ -2659,6 +2699,8 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         "get-model-ranking" | "model-ranking" => "get_model_ranking",
                                         "get-ml-analytics" | "ml-analytics" => "get_ml_analytics",
                                         "report-bandit-feedback" => "report_bandit_feedback",
+                                        "commands" | "help" => "command",
+                                        "comments" | "docs" => "comment",
                                         other => other,
                                     };
 
@@ -2689,6 +2731,13 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         "tasks" => {
                                             let sys = query_system_resources();
                                             (idx, format!("📋 **ModelFusion Active Tasks & Capabilities**\n\n- Dedicated threads active for parallel execution.\n- System resources: {} CPU Cores / GPU {}", sys.logical_cores, sys.gpu_name))
+                                        },
+                                        "command" => {
+                                            let sys = query_system_resources();
+                                            (idx, format!("🤖 **ModelFusion Commands & System Status**\n\n- **Engine**: Active & Operational (<1ms Fast Interception)\n- **System**: {} ({} Cores), {:.2} GB RAM free\n- **GPU**: {} ({} MB free VRAM)\n\n### Available Slash Commands:\n- `/stats` — System & database metrics\n- `/sysinfo` — Detailed hardware specs\n- `/tasks` — Task pipelines & models\n- `/keys` — API key configuration\n- `/comment` — Add inline comments & docstrings to code\n- `/evolve` — OpenEvolve iterative optimization\n- `/security` — Vulnerability audit & fix\n- `/refactor` — Code refactoring\n- `/optimize` — Performance optimization\n- `/doc` — Generate technical documentation", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb))
+                                        },
+                                        "comment" | "doc" => {
+                                            (idx, "📝 **ModelFusion Code Commenting & Documentation Engine**: Active.\n\nProvide or attach code to generate comprehensive inline explanations and docstrings.".to_string())
                                         },
                                         "cache-stats" => (idx, "💾 **ModelCache Statistics**: Local model cache active, 0 stale entries.".to_string()),
                                         "performance-stats" => (idx, "⚡ **Performance Statistics**: Fast path latency < 10ms across parallel worker threads.".to_string()),
@@ -2906,8 +2955,18 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     // Fast interception for empty user prompt / system context refresh (1ms)
                     let is_empty_user_prompt = {
                         let lower = prompt.to_lowercase();
-                        // Explicit user invocation of @agent or presence of user attachments/requests MUST NOT be treated as empty prompt
-                        if lower.contains("@agent") || lower.contains("<attachments>") || lower.contains("<attachment>") || lower.contains("<user_request>") {
+                        // Explicit user invocation of @agent, @command, @comment, @tasks or presence of user attachments/requests MUST NOT be treated as empty prompt
+                        if lower.contains("@agent")
+                            || lower.contains("@command")
+                            || lower.contains("@comment")
+                            || lower.contains("@task")
+                            || lower.contains("@modelfusion")
+                            || lower.contains("@hugos")
+                            || lower.contains("<attachments>")
+                            || lower.contains("<attachment>")
+                            || lower.contains("<user_request>")
+                            || lower.contains("<userrequest>")
+                        {
                             false
                         } else {
                             let mut clean = lower.clone();
@@ -5481,15 +5540,29 @@ pub fn parse_slash_commands_in_prompt(
             trimmed
         };
         
-        let has_agent_prefix = if command_str.to_lowercase().starts_with("@agent") {
-            command_str = command_str[6..].trim();
-            true
-        } else if command_str.to_lowercase().starts_with("@commands") {
-            command_str = command_str[9..].trim();
-            true
+        let lower_cmd = command_str.to_lowercase();
+        let (has_agent_prefix, stripped_cmd, is_comment_prefix) = if lower_cmd.starts_with("@agent") {
+            (true, command_str[6..].trim(), false)
+        } else if lower_cmd.starts_with("@commands") {
+            (true, command_str[9..].trim(), false)
+        } else if lower_cmd.starts_with("@command") {
+            (true, command_str[8..].trim(), false)
+        } else if lower_cmd.starts_with("@comments") {
+            (true, command_str[9..].trim(), true)
+        } else if lower_cmd.starts_with("@comment") {
+            (true, command_str[8..].trim(), true)
+        } else if lower_cmd.starts_with("@tasks") {
+            (true, command_str[6..].trim(), false)
+        } else if lower_cmd.starts_with("@task") {
+            (true, command_str[5..].trim(), false)
+        } else if lower_cmd.starts_with("@modelfusion") {
+            (true, command_str[12..].trim(), false)
+        } else if lower_cmd.starts_with("@hugos") {
+            (true, command_str[6..].trim(), false)
         } else {
-            false
+            (false, command_str, false)
         };
+        command_str = stripped_cmd;
         
         let (raw_cmd, rest) = if command_str.starts_with('/') {
             let mut parts = command_str.splitn(2, ' ');
@@ -5501,6 +5574,12 @@ pub fn parse_slash_commands_in_prompt(
             let cmd = format!("/{}", parts.next().unwrap_or("").to_lowercase());
             let rest = parts.next().unwrap_or("").trim().to_string();
             (cmd, rest)
+        } else if has_agent_prefix && command_str.is_empty() {
+            if is_comment_prefix {
+                ("/comment".to_string(), String::new())
+            } else {
+                ("/stats".to_string(), String::new())
+            }
         } else {
             return None;
         };
@@ -5511,6 +5590,9 @@ pub fn parse_slash_commands_in_prompt(
             "/sys-info" => "/sysinfo".to_string(),
             "/db-stats" => "/stats".to_string(),
             "/clearcache" => "/clear_cache".to_string(),
+            "/comments" => "/comment".to_string(),
+            "/commands" | "/help" => "/command".to_string(),
+            "/docs" => "/doc".to_string(),
             other => other.to_string(),
         };
 
@@ -6680,6 +6762,29 @@ mod prompt_interception_tests {
     fn test_context_refresh_is_empty() {
         let prompt = "System: You are HugOS AI.\nuser: <environment_info>\nOS: Windows\n</environment_info>\n<workspace_info>\npath: d:\\test\n</workspace_info>";
         assert!(check_is_empty_user_prompt(prompt), "System context refresh without user content MUST be classified as empty prompt");
+    }
+
+    #[test]
+    fn test_parse_slash_commands_agent_stats() {
+        let mut prompt = "User: @agent /stats".to_string();
+        let (mut gpu, mut cpu, mut openvino, mut fusion) = (false, false, false, false);
+        super::parse_slash_commands_in_prompt(&mut prompt, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
+        assert_eq!(std::env::var("MODELFUSION_STATS").unwrap_or_default(), "true");
+    }
+
+    #[test]
+    fn test_parse_slash_commands_agent_no_slash_stats() {
+        let mut prompt = "User: @agent stats".to_string();
+        let (mut gpu, mut cpu, mut openvino, mut fusion) = (false, false, false, false);
+        super::parse_slash_commands_in_prompt(&mut prompt, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
+        assert_eq!(std::env::var("MODELFUSION_STATS").unwrap_or_default(), "true");
+    }
+
+    #[test]
+    fn test_parse_slash_commands_comment() {
+        let mut prompt = "User: @comment add comments to this code".to_string();
+        let (mut gpu, mut cpu, mut openvino, mut fusion) = (false, false, false, false);
+        super::parse_slash_commands_in_prompt(&mut prompt, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
     }
 }
 
