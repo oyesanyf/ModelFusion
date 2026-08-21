@@ -2962,6 +2962,12 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             || lower.contains("@task")
                             || lower.contains("@modelfusion")
                             || lower.contains("@hugos")
+                            || lower.contains("/evolve")
+                            || lower.contains("/evovle")
+                            || lower.contains("/stats")
+                            || lower.contains("/sysinfo")
+                            || lower.contains("/comment")
+                            || lower.contains("/command")
                             || lower.contains("<attachments>")
                             || lower.contains("<attachment>")
                             || lower.contains("<user_request>")
@@ -6707,7 +6713,7 @@ fn get_source_patches() -> Vec<(&'static str, &'static str, &'static str)> {
 mod prompt_interception_tests {
     fn check_is_empty_user_prompt(prompt: &str) -> bool {
         let lower = prompt.to_lowercase();
-        if lower.contains("@agent") || lower.contains("<attachments>") || lower.contains("<attachment>") || lower.contains("<user_request>") {
+        if lower.contains("@agent") || lower.contains("/evolve") || lower.contains("/stats") || lower.contains("<attachments>") || lower.contains("<attachment>") || lower.contains("<user_request>") {
             false
         } else {
             let mut clean = lower.clone();
