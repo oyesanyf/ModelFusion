@@ -6,10 +6,10 @@ sys.stdout.reconfigure(encoding='utf-8')
 sys.stderr.reconfigure(encoding='utf-8')
 
 p = subprocess.Popen(
-    [r"d:\harfile\ModelFusion\target\release\cli.exe", "--mcp"],
+    [r"d:\harfile\ModelFusion\target\release\cli.exe", "--mcp", "--db-path", r"C:\Users\oyesa\.hugos-ide\db\hf_models.db"],
     stdin=subprocess.PIPE,
     stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE,
+    stderr=subprocess.DEVNULL,
     text=True,
     encoding="utf-8"
 )
@@ -17,9 +17,18 @@ p = subprocess.Popen(
 def call(req):
     p.stdin.write(json.dumps(req) + "\n")
     p.stdin.flush()
-    line = p.stdout.readline()
-    data = json.loads(line)
-    return data
+    while True:
+        line = p.stdout.readline()
+        if not line:
+            raise Exception("EOF")
+        line_s = line.strip()
+        print(f"DEBUG RECV: {line_s}", file=sys.stderr)
+        if line_s.startswith("{"):
+            try:
+                return json.loads(line_s)
+            except Exception as e:
+                print(f"DEBUG EXCEPTION: {e}", file=sys.stderr)
+                continue
 
 print("1. Init:", call({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})["result"]["serverInfo"])
 
