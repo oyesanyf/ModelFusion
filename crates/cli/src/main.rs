@@ -2742,7 +2742,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         "cache-stats" => (idx, "💾 **ModelCache Statistics**: Local model cache active, 0 stale entries.".to_string()),
                                         "performance-stats" => (idx, "⚡ **Performance Statistics**: Fast path latency < 10ms across parallel worker threads.".to_string()),
                                         "decision-stats" => (idx, "🎯 **Decision Statistics**: Multi-objective strategy active.".to_string()),
-                                        "evolve" | "evovle" | "evove" | "evoce" | "evolv" | "evolution" => (idx, "❌ **OpenEvolve Routing Error**: The ModelFusion backend intercepted an `/evolve` request. OpenEvolve must be executed by the VS Code extension. Please ensure you type `@agent /evolve` correctly without typos so the IDE can launch the Python framework.".to_string()),
+                                        "evolve" | "evovle" | "evove" | "evoce" | "evolv" | "evolution" => (idx, "❌ **OpenEvolve Routing Error**: The ModelFusion backend intercepted an `/evolve` request. OpenEvolve must be executed by the VS Code extension. If you are seeing this, the IDE extension failed to intercept the command before sending it to the backend. Please try running it again or restarting the extension.".to_string()),
                                         "security" => (idx, "🛡️ **CyberSecurity Audit**: Active security inspection thread scanning code.".to_string()),
                                         "refactor" => (idx, "🔧 **Refactoring Engine**: Code structure optimization thread ready.".to_string()),
 
