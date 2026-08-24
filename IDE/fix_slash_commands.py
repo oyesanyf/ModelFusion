@@ -14,6 +14,8 @@ if hasattr(sys.stdout, 'reconfigure'):
 target_files = [
     r"C:\Users\oyesa\AppData\Local\HugOS IDE\7e7950df89\resources\app\extensions\copilot\dist\extension.js",
     r"C:\Users\oyesa\AppData\Local\HugOS IDE\resources\app\extensions\copilot\dist\extension.js",
+    r"D:\harfile\ModelFusion\IDE\VSCode-win32-x64\7e7950df89\resources\app\extensions\copilot\dist\extension.js",
+    r"D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\extensions\copilot\dist\extension.js",
     r"d:\harfile\ModelFusion\IDE\VSCode-win32-x64\7e7950df89\resources\app\extensions\copilot\dist\extension.js",
     r"d:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\extensions\copilot\dist\extension.js",
     r"d:\harfile\ModelFusion\IDE\vscode\extensions\copilot\dist\extension.js",
