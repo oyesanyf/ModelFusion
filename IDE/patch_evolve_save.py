@@ -2,9 +2,15 @@ import os
 import glob
 import sys
 
-base_dirs = [
-    r"d:\harfile\ModelFusion\IDE\vscode-126-extract\7e7950df89",
-    r"d:\harfile\ModelFusion\IDE\VSCode-win32-x64"
+target_files = [
+    r"C:\Users\oyesa\AppData\Local\HugOS IDE\7e7950df89\resources\app\extensions\copilot\dist\extension.js",
+    r"C:\Users\oyesa\AppData\Local\HugOS IDE\resources\app\extensions\copilot\dist\extension.js",
+    r"D:\harfile\ModelFusion\IDE\VSCode-win32-x64\7e7950df89\resources\app\extensions\copilot\dist\extension.js",
+    r"D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\extensions\copilot\dist\extension.js",
+    r"d:\harfile\ModelFusion\IDE\VSCode-win32-x64\7e7950df89\resources\app\extensions\copilot\dist\extension.js",
+    r"d:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\extensions\copilot\dist\extension.js",
+    r"d:\harfile\ModelFusion\IDE\vscode\extensions\copilot\dist\extension.js",
+    r"d:\harfile\ModelFusion\IDE\vscode\.build\extensions\copilot\dist\extension.js"
 ]
 
 def patch_evolve_save_in_file(file_path):
@@ -39,8 +45,8 @@ def patch_evolve_save_in_file(file_path):
     return False
 
 count = 0
-for base_dir in base_dirs:
-    for file_path in glob.glob(os.path.join(base_dir, "**", "extension.js"), recursive=True):
+for file_path in target_files:
+    if os.path.exists(file_path):
         print(f"Checking: {file_path}")
         if patch_evolve_save_in_file(file_path):
             count += 1

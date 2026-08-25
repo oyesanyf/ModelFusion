@@ -255,6 +255,19 @@ foreach ($pjFile in $productJsonFiles) {
     }
 }
 
+# 4.96 Apply ModelFusion extension patches (Slash Commands, @agent routing, OpenEvolve diffs)
+Write-Host "[INFO] Applying extension slash command and OpenEvolve patches..." -ForegroundColor Yellow
+$fixSlashScript = Join-Path $PSScriptRoot "fix_slash_commands.py"
+if (Test-Path $fixSlashScript) {
+    python $fixSlashScript
+    Write-Host "[OK] Applied slash command patches" -ForegroundColor Green
+}
+$patchEvolveScript = Join-Path $PSScriptRoot "patch_evolve_save.py"
+if (Test-Path $patchEvolveScript) {
+    python $patchEvolveScript
+    Write-Host "[OK] Applied OpenEvolve display & save patches" -ForegroundColor Green
+}
+
 # 5. Sign the binaries
 Write-Host "[INFO] Signing executables, DLLs, and native modules inside packaged folder..." -ForegroundColor Yellow
 # IMPORTANT: Do NOT sign Electron binaries or GPU/DirectX DLLs.
