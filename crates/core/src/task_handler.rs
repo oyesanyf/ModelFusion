@@ -45,7 +45,20 @@ pub struct ComprehensiveTaskHandler {
 impl ComprehensiveTaskHandler {
     /// Create a new task handler.
     pub fn new(db_path_opt: Option<&str>) -> Result<Self> {
-        let base_dir = PathBuf::from("d:\\harfile\\ModelFusion");
+        let base_dir = if let Ok(exe) = std::env::current_exe() {
+            if let Some(parent) = exe.parent() {
+                if parent.file_name().and_then(|n| n.to_str()) == Some("bin") {
+                    parent.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| parent.to_path_buf())
+                } else {
+                    parent.to_path_buf()
+                }
+            } else {
+                std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+            }
+        } else {
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+        };
+
         let db_path = match db_path_opt {
             Some(p) => {
                 let path = Path::new(p);

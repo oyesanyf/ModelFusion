@@ -61,6 +61,7 @@ pub const CREATE_INDEXES: &[&str] = &[
 pub const STARTUP_PRAGMAS: &[&str] = &[
     "PRAGMA journal_mode = WAL",
     "PRAGMA synchronous  = NORMAL",
+    "PRAGMA busy_timeout = 30000",
     "PRAGMA cache_size   = 10000",
     "PRAGMA temp_store   = MEMORY",
     "PRAGMA foreign_keys = ON",
