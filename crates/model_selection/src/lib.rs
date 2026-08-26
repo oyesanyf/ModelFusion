@@ -77,7 +77,7 @@ pub struct EnhancedModelSelector {
 impl EnhancedModelSelector {
     /// Create a new selector using the provided database path.
     pub fn new(db_path: impl AsRef<Path>) -> Result<Self> {
-        let db = HuggingFaceModelDatabase::new(db_path)?;
+        let db = HuggingFaceModelDatabase::open(db_path)?;
         let open_licenses = vec![
             "apache-2.0".to_string(),
             "mit".to_string(),
@@ -375,8 +375,8 @@ impl EnhancedModelSelector {
             });
         }
 
-        // Sort candidates by final score descending
-        candidates.sort_by(|a, b| b.final_score.partial_cmp(&a.final_score).unwrap());
+        // Sort candidates by final score descending (safe against NaN values)
+        candidates.sort_by(|a, b| b.final_score.partial_cmp(&a.final_score).unwrap_or(std::cmp::Ordering::Equal));
 
         // When using Ollama, only keep models that have known Ollama equivalents
         if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
@@ -449,6 +449,10 @@ impl EnhancedModelSelector {
                     println!("  ✅ {} ({:.1}B params) — Remote Serverless Inference", c.model_id, c.estimated_params_b);
                 }
             }
+        }
+
+        if candidates.is_empty() {
+            anyhow::bail!("No suitable candidate models found for task '{}'", task_name);
         }
 
         if candidates.len() > max_candidates {

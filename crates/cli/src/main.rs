@@ -2688,7 +2688,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         "get-system-info" => "get_system_info",
                                         "get-database-stats" | "db-stats" => "get_database_stats",
                                         "list-tasks" => "list_tasks",
-                                        "update-database" | "update-db" => "update_database",
+                                        "update" | "update-database" | "update-db" => "update_database",
                                         "restore-backup" | "restore" => "restore_backup",
                                         "clear-cache" | "clearcache" => "clear_cache",
                                         "get-decision-stats" => "get_decision_stats",

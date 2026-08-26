@@ -62,11 +62,20 @@ impl HuggingFaceModelDatabase {
         Ok(db)
     }
 
+    /// Open an existing database for read/write operations without re-running DDL initialization.
+    pub fn open(db_path: impl AsRef<Path>) -> Result<Self> {
+        let db_path = db_path.as_ref().to_path_buf();
+        if let Some(parent) = db_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        Ok(Self { db_path })
+    }
+
     /// Open a connection applying all startup pragmas.
     pub fn connect(&self) -> Result<Connection> {
         let conn = Connection::open(&self.db_path)
             .with_context(|| format!("Cannot open DB at {}", self.db_path.display()))?;
-        conn.busy_timeout(std::time::Duration::from_secs(10))?;
+        conn.busy_timeout(std::time::Duration::from_secs(30))?;
         for pragma in schema::STARTUP_PRAGMAS {
             conn.execute_batch(pragma)?;
         }
