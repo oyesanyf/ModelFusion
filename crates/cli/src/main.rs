@@ -1733,6 +1733,8 @@ fn parse_selection_strategy(strategy: &str) -> Option<SelectionStrategy> {
         "multi_objective" | "multi-objective" => Some(SelectionStrategy::MultiObjective),
         "bayesian_optimization" | "bayesian-optimization" => Some(SelectionStrategy::BayesianOptimization),
         "meta_learning" | "meta-learning" => Some(SelectionStrategy::MetaLearning),
+        "fastest" => Some(SelectionStrategy::Fastest),
+        "weighted_voting" | "weighted-voting" => Some(SelectionStrategy::WeightedVoting),
         _ => None,
     }
 }

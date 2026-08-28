@@ -22,6 +22,8 @@ pub enum SelectionStrategy {
     HyperparameterTuning,
     BayesianOptimization,
     MetaLearning,
+    Fastest,
+    WeightedVoting,
 }
 
 impl std::fmt::Display for SelectionStrategy {
@@ -33,6 +35,8 @@ impl std::fmt::Display for SelectionStrategy {
             Self::HyperparameterTuning => "Hyperparameter Tuning",
             Self::BayesianOptimization => "Bayesian Optimization",
             Self::MetaLearning => "Meta-Learning",
+            Self::Fastest => "Fastest",
+            Self::WeightedVoting => "WeightedVoting",
         };
         write!(f, "{}", name)
     }
@@ -245,6 +249,20 @@ impl EnhancedModelSelector {
                     if prompt.contains("code") && m.library_name.contains("transformers") {
                         final_score += 0.05;
                     }
+                }
+                SelectionStrategy::Fastest => {
+                    // Normalize size score to [0.01, 1.0]: Smaller models rank the highest
+                    final_score = if m.size_mb > 0.0 {
+                        (1.0 - (m.size_mb / 100_000.0)).clamp(0.01, 1.0)
+                    } else {
+                        0.5 // Default neutral score when size metadata is unknown
+                    };
+                }
+                SelectionStrategy::WeightedVoting => {
+                    // Weighted voting score: combines base score (50%), decision score (30%), and capability score (20%)
+                    let dec_norm = (m.decision_score / 10.0).clamp(0.0, 1.0);
+                    let cap_norm = (m.capability_score / 10.0).clamp(0.0, 1.0);
+                    final_score = final_score * 0.5 + dec_norm * 0.3 + cap_norm * 0.2;
                 }
                 SelectionStrategy::MultiObjective => {
                     // Sophisticated multi-objective optimization:
@@ -588,4 +606,55 @@ fn is_fictional_or_non_chat(model_id: &str) -> bool {
     }
     
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fastest_and_weighted_voting_strategies() {
+        let candidate_a = ModelCandidate {
+            model_id: "model-small".to_string(),
+            downloads: 1000,
+            likes: 100,
+            decision_score: 8.0,
+            capability_score: 7.0,
+            efficiency_score: 9.0,
+            popularity_score: 0.8,
+            size_mb: 500.0,
+            license: "mit".to_string(),
+            freshness_score: 0.9,
+            final_score: 0.8,
+            confidence_score: 0.85,
+            estimated_params_b: 0.5,
+            estimated_memory_gb: 1.0,
+        };
+
+        let candidate_b = ModelCandidate {
+            model_id: "model-large".to_string(),
+            downloads: 5000,
+            likes: 500,
+            decision_score: 9.5,
+            capability_score: 9.0,
+            efficiency_score: 5.0,
+            popularity_score: 0.9,
+            size_mb: 8000.0,
+            license: "apache-2.0".to_string(),
+            freshness_score: 0.9,
+            final_score: 0.9,
+            confidence_score: 0.95,
+            estimated_params_b: 7.0,
+            estimated_memory_gb: 14.0,
+        };
+
+        let ensemble_choice = EnsembleModelSelector::select_ensemble(&[candidate_a.clone(), candidate_b.clone()]);
+        assert!(ensemble_choice.is_some());
+        assert_eq!(ensemble_choice.unwrap().model_id, "model-large");
+
+        // Fastest score normalization check
+        let size_mb: f64 = 500.0;
+        let fastest_score = (1.0f64 - (size_mb / 100_000.0f64)).clamp(0.01f64, 1.0f64);
+        assert!(fastest_score <= 1.0 && fastest_score >= 0.0);
+    }
 }
