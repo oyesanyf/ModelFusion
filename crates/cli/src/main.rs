@@ -2006,9 +2006,13 @@ async fn query_local_router(system_prompt: &str, user_prompt: &str) -> Option<St
     let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
         .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
     
+    let custom_timeout = std::env::var("MODELFUSION_ROUTER_TIMEOUT")
+        .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
+        .unwrap_or(30);
+
     let client = reqwest::Client::builder()
         .no_proxy()
-        .timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(custom_timeout))
         .connect_timeout(std::time::Duration::from_secs(2))
         .build()
         .ok();
@@ -2132,8 +2136,12 @@ async fn query_hf_router(system_prompt: &str, user_prompt: &str) -> Option<Strin
         return query_local_router(system_prompt, user_prompt).await;
     }
     
+    let custom_timeout = std::env::var("MODELFUSION_HF_ROUTER_TIMEOUT")
+        .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
+        .unwrap_or(10);
+
     let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(custom_timeout))
         .connect_timeout(std::time::Duration::from_secs(5))
         .build() {
             Ok(c) => c,
@@ -2258,6 +2266,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
             let mut buf = [0; 8192];
             let mut body_start = 0;
             let mut content_length = 0;
+            let mut parsed_headers = std::collections::HashMap::new();
             let mut request_path = "/orchestrate".to_string();
 
             loop {
@@ -2282,12 +2291,15 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             let _ = socket.write_all(response.as_bytes()).await;
                             return;
                         }
-                        // Parse Content-Length
-                        for line in headers_str.lines() {
-                            if line.to_lowercase().starts_with("content-length:") {
-                                if let Some(val) = line.split(':').nth(1) {
-                                    content_length = val.trim().parse::<usize>().unwrap_or(0);
+                        // Parse Headers
+                        for line in headers_str.lines().skip(1) {
+                            if let Some((k, v)) = line.split_once(':') {
+                                let key = k.trim().to_lowercase();
+                                let value = v.trim();
+                                if key == "content-length" {
+                                    content_length = value.parse::<usize>().unwrap_or(0);
                                 }
+                                parsed_headers.insert(key, value.to_string());
                             }
                         }
                     }
@@ -2369,6 +2381,19 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     let mut cpu = request_json["cpu"].as_bool().unwrap_or(false);
                     let mut gpu = request_json["gpu"].as_bool().unwrap_or(false);
                     let mut ollama = request_json["ollama"].as_bool().unwrap_or(false);
+
+                    let mut orchestration_options = parsed_headers.clone();
+                    if let Some(opts) = request_json.get("options").and_then(|o| o.as_object()) {
+                        for (k, v) in opts {
+                            if let Some(s) = v.as_str() {
+                                orchestration_options.insert(k.clone(), s.to_string());
+                            } else if let Some(b) = v.as_bool() {
+                                orchestration_options.insert(k.clone(), b.to_string());
+                            } else if let Some(n) = v.as_f64() {
+                                orchestration_options.insert(k.clone(), n.to_string());
+                            }
+                        }
+                    }
 
                     // STRICT HARDWARE RULE: If computer has GPU hardware, ENFORCE gpu=true, ollama=true, cpu=false!
                     if res.has_gpu {
@@ -2763,9 +2788,12 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                             "stream": false,
                                             "options": { "temperature": 0.3, "num_predict": 1024 }
                                         });
+                                        let custom_timeout = std::env::var("MODELFUSION_TIMEOUT")
+                                            .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
+                                            .unwrap_or(120);
                                         let client = reqwest::Client::builder().no_proxy()
                                             .connect_timeout(std::time::Duration::from_secs(3))
-                                            .timeout(std::time::Duration::from_secs(120))
+                                            .timeout(std::time::Duration::from_secs(custom_timeout))
                                             .build().unwrap();
                                         match client.post(&url).json(&body).send().await {
                                             Ok(res) if res.status().is_success() => {
@@ -3282,10 +3310,15 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 ollama_model, user_msg.len(), 
                                 fast_sys.len(), num_predict);
 
+                            let custom_timeout = orchestration_options.get("timeout")
+                                .or_else(|| orchestration_options.get("x-timeout"))
+                                .and_then(|t| t.parse::<u64>().ok())
+                                .unwrap_or(120);
+
                             let client = reqwest::Client::builder()
                                 .no_proxy()
                                 .connect_timeout(std::time::Duration::from_secs(3))
-                                .timeout(std::time::Duration::from_secs(120))
+                                .timeout(std::time::Duration::from_secs(custom_timeout))
                                 .build()
                                 .unwrap();
 
@@ -3415,7 +3448,6 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             }
                         } else {
                             let orchestrator = HuggingFaceOrchestrator::new(db_path_val.to_path_buf(), budget, false, false);
-                            let options = std::collections::HashMap::new();
                             let res = orchestrator
                                 .process_task(
                                     &clean_prompt,
@@ -3424,7 +3456,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                     false,
                                     None,
                                     parse_selection_strategy(&strategy),
-                                    options,
+                                    orchestration_options,
                                 )
                                 .await;
                             if res.success {
@@ -5436,10 +5468,13 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                         "options": { "temperature": 0.7, "num_predict": 1024 }
                     });
                     
+                    let custom_timeout = std::env::var("MODELFUSION_TIMEOUT")
+                        .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
+                        .unwrap_or(120);
                     let client = reqwest::Client::builder()
                         .no_proxy()
                         .connect_timeout(std::time::Duration::from_secs(3))
-                        .timeout(std::time::Duration::from_secs(120))
+                        .timeout(std::time::Duration::from_secs(custom_timeout))
                         .build()
                         .unwrap();
                     
