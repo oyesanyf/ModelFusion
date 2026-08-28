@@ -186,6 +186,12 @@ impl UniversalTaskProcessor {
             } else {
                 let api_provider = self.determine_api_provider(&final_model_id);
                 let cost_per_1k = self.get_cost_for_model(&final_model_id);
+                let custom_timeout = options.get("timeout")
+                    .or_else(|| options.get("x-timeout"))
+                    .and_then(|t| t.parse::<u64>().ok())
+                    .or_else(|| std::env::var("MODELFUSION_TIMEOUT").ok().and_then(|t| t.parse::<u64>().ok()))
+                    .unwrap_or(30);
+
                 let config = ModelConfig {
                     name: final_model_id.clone(),
                     api_provider,
@@ -194,7 +200,7 @@ impl UniversalTaskProcessor {
                     temperature: temperature_override.unwrap_or(task_config.temperature),
                     cost_per_1k_tokens: cost_per_1k,
                     rate_limit_per_minute: 100,
-                    timeout_seconds: 30,
+                    timeout_seconds: custom_timeout,
                 };
                 let p: std::sync::Arc<dyn LLMProvider> = std::sync::Arc::from(create_provider(config));
                 providers.insert(final_model_id.clone(), p.clone());

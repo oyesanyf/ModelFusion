@@ -243,7 +243,7 @@ pub struct HuggingFaceProvider {
 impl HuggingFaceProvider {
     pub fn new(config: ModelConfig) -> Self {
         let client = Client::builder()
-            .timeout(Duration::from_secs(config.timeout_seconds.min(10)))
+            .timeout(Duration::from_secs(config.timeout_seconds))
             .danger_accept_invalid_certs(true)
             .build()
             .unwrap_or_default();
@@ -435,7 +435,7 @@ impl HuggingFaceProvider {
         let client = reqwest::Client::builder()
             .no_proxy()
             .connect_timeout(std::time::Duration::from_secs(3))
-            .timeout(std::time::Duration::from_secs(300))
+            .timeout(std::time::Duration::from_secs(self.config.timeout_seconds))
             .build()?;
 
         let res = client.post(&url).json(&body).send().await?;
