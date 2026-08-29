@@ -3310,10 +3310,15 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 ollama_model, user_msg.len(), 
                                 fast_sys.len(), num_predict);
 
+                            let token_processing_time = (user_msg.len() as u64 / 40);
+                            let generation_time = (num_predict as u64 / 10);
+                            let adaptive_default = 120 + token_processing_time + generation_time;
+
                             let custom_timeout = orchestration_options.get("timeout")
                                 .or_else(|| orchestration_options.get("x-timeout"))
                                 .and_then(|t| t.parse::<u64>().ok())
-                                .unwrap_or(120);
+                                .or_else(|| std::env::var("MODELFUSION_TIMEOUT").ok().and_then(|t| t.parse::<u64>().ok()))
+                                .unwrap_or(adaptive_default);
 
                             let client = reqwest::Client::builder()
                                 .no_proxy()
