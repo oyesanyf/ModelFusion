@@ -1,0 +1,31 @@
+[package]
+name = "mcp-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Core multithreaded runtime, priority scheduler, cancellation hierarchy, and command dispatcher for MCP IDE Engine"
+
+[dependencies]
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+rayon = { workspace = true }
+crossbeam-queue = { workspace = true }
+dashmap = { workspace = true }
+quanta = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }
+uuid = { workspace = true }
+parking_lot = { workspace = true }
+num_cpus = { workspace = true }
+hdrhistogram = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

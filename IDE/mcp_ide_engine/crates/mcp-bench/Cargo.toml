@@ -1,0 +1,25 @@
+[package]
+name = "mcp-bench"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Criterion latency and throughput microbenchmarks for MCP IDE Engine"
+
+[dependencies]
+mcp-core = { path = "../mcp-core" }
+mcp-protocol = { path = "../mcp-protocol" }
+mcp-resource = { path = "../mcp-resource" }
+criterion = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+serde_json = { workspace = true }
+quanta = { workspace = true }
+
+[[bench]]
+name = "dispatch"
+harness = false
+
+[[bench]]
+name = "jsonrpc"
+harness = false

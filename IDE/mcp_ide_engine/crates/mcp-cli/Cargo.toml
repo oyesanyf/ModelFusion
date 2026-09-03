@@ -1,0 +1,36 @@
+[package]
+name = "mcp-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "High-Performance Unified CLI & Reedline Interactive REPL for MCP IDE Engine"
+
+[dependencies]
+mcp-core = { path = "../mcp-core" }
+mcp-protocol = { path = "../mcp-protocol" }
+mcp-resource = { path = "../mcp-resource" }
+mcp-tui = { path = "../mcp-tui" }
+mcp-web = { path = "../mcp-web" }
+clap = { workspace = true }
+reedline = { workspace = true }
+tokio = { workspace = true, features = ["full", "tracing"] }
+tokio-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+colored = { workspace = true }
+indicatif = { workspace = true }
+parking_lot = { workspace = true }
+quanta = { workspace = true }
+num_cpus = { workspace = true }
+axum = { workspace = true }
+tower-http = { workspace = true }
+futures = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }

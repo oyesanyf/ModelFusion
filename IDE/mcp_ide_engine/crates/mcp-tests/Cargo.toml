@@ -1,0 +1,42 @@
+[package]
+name = "mcp-tests"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Comprehensive 4-Tier E2E Test Suite and 50+ Concurrent Task Stress Harness for MCP IDE Engine"
+autotests = false
+
+[dependencies]
+mcp-core = { path = "../mcp-core" }
+mcp-protocol = { path = "../mcp-protocol" }
+mcp-resource = { path = "../mcp-resource" }
+mcp-tui = { path = "../mcp-tui" }
+mcp-web = { path = "../mcp-web" }
+tokio = { workspace = true, features = ["full", "test-util"] }
+serde_json = { workspace = true }
+serde = { workspace = true }
+parking_lot = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }
+tower = { workspace = true, features = ["util"] }
+http-body-util = "0.1"
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+quanta = { workspace = true }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+tempfile = "3"
+
+[[test]]
+name = "ide_mcp_integration"
+path = "tests/ide_mcp_integration.rs"
+
+[[test]]
+name = "concurrency_stress"
+path = "tests/concurrency_stress.rs"
+
+[[test]]
+name = "challenger_m8_stress"
+path = "tests/challenger_m8_stress.rs"
+
