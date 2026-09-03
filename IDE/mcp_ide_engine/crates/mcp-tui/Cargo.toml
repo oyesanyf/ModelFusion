@@ -1,0 +1,30 @@
+[package]
+name = "mcp-tui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Interactive 5-tab Terminal User Interface (Ratatui) for the MCP IDE Engine"
+
+[dependencies]
+mcp-core = { path = "../mcp-core" }
+mcp-protocol = { path = "../mcp-protocol" }
+mcp-resource = { path = "../mcp-resource" }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+tokio = { workspace = true, features = ["full", "tracing"] }
+tokio-util = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+parking_lot = { workspace = true }
+anyhow = { workspace = true }
+quanta = { workspace = true }
+hdrhistogram = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }

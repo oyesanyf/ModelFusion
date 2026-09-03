@@ -90,6 +90,7 @@ function generateWix(srcDir, outputFile) {
     fs.writeFileSync(buildNumPath, buildNumber.toString(), 'utf-8');
 
     const version = `1.126.${buildNumber}`;
+    const iconPath = path.join(__dirname, 'hugos.ico');
 
     const wxsContent = `<?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
@@ -98,7 +99,7 @@ function generateWix(srcDir, outputFile) {
 
     <MediaTemplate EmbedCab="yes" />
 
-    <Icon Id="HugOSIcon.ico" SourceFile="D:\\harfile\\ModelFusion\\IDE\\hugos.ico" />
+    <Icon Id="HugOSIcon.ico" SourceFile="${escapeXml(iconPath)}" />
     <Property Id="ARPPRODUCTICON" Value="HugOSIcon.ico" />
     <Property Id="ARPHELPLINK" Value="https://github.com/oyesanyf/ModelFusion" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/oyesanyf/ModelFusion" />

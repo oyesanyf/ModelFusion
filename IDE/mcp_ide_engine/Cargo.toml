@@ -1,0 +1,84 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/mcp-core",
+    "crates/mcp-protocol",
+    "crates/mcp-resource",
+    "crates/mcp-tui",
+    "crates/mcp-web",
+    "crates/mcp-cli",
+    "crates/mcp-bench",
+    "crates/mcp-tests",
+]
+
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["MCP IDE Engine Contributors"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/mcp-ide-engine/mcp-ide-engine"
+
+[workspace.dependencies]
+# Concurrency & Async Runtime
+tokio = { version = "1.38", features = ["full", "tracing"] }
+tokio-util = { version = "0.7", features = ["codec", "rt", "io"] }
+rayon = "1.10"
+crossbeam-queue = "0.3"
+crossbeam-channel = "0.5"
+parking_lot = { version = "0.12", features = ["serde"] }
+dashmap = { version = "6.0", features = ["serde", "rayon"] }
+futures = "0.3"
+futures-util = "0.3"
+async-trait = "0.1"
+
+# Serialization & Protocols
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["raw_value", "preserve_order"] }
+uuid = { version = "1.8", features = ["v7", "v4", "serde", "fast-rng"] }
+
+# Telemetry & Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "time"] }
+quanta = "0.12"
+hdrhistogram = "7.5"
+sysinfo = "0.31"
+
+# Error Handling & Utilities
+thiserror = "1.0"
+anyhow = "1.0"
+num_cpus = "1.16"
+
+# TUI
+ratatui = { version = "0.28", default-features = false, features = ["crossterm"] }
+crossterm = { version = "0.28", features = ["event-stream"] }
+
+# Web & API
+axum = { version = "0.7", features = ["ws", "macros"] }
+tower = { version = "0.4", features = ["full"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "fs"] }
+
+# CLI & REPL
+clap = { version = "4.5", features = ["derive", "env"] }
+reedline = "0.34"
+colored = "2.1"
+indicatif = "0.17"
+
+# Benchmarking
+criterion = { version = "0.5", features = ["async_tokio", "html_reports"] }
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "unwind"
+strip = "debuginfo"
+
+[profile.bench]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

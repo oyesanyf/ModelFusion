@@ -1,0 +1,18 @@
+﻿<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="MCP IDE Engine" Manufacturer="Antigravity" Version="0.1.0" UpgradeCode="d3b5e4a8-6512-4c28-98e3-851726a40c99">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="MCP IDE Engine">
+        <Component Id="MainExecutable" Guid="a5b7c8d9-1234-5678-9abc-def012345678">
+          <File Id="McpCliExe" Source="target\release\mcp-cli.exe" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="MainFeature" Title="MCP IDE Engine" Level="1">
+      <ComponentRef Id="MainExecutable" />
+    </Feature>
+  </Package>
+</Wix>

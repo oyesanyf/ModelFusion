@@ -1,0 +1,24 @@
+[package]
+name = "mcp-resource"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Resource telemetry, GPU probing, model memory sizing formulas, and dynamic model selector for MCP IDE Engine"
+
+[dependencies]
+mcp-core = { path = "../mcp-core" }
+sysinfo = "0.31"
+tokio = { workspace = true, features = ["full", "tracing"] }
+tokio-util = { workspace = true, features = ["codec", "rt"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true, features = ["raw_value", "preserve_order"] }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+parking_lot = { workspace = true }
+futures = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }

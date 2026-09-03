@@ -2537,10 +2537,16 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                         let known_slash_commands = [
                             // Original fast-interception commands
-                            "keys", "api-keys", "mcp", "stats", "sysinfo", "sys-info", "tasks",
+                            "keys", "api-keys", "mcp", "stats", "sysinfo", "sys-info", "tasks", "task",
                             "command", "commands", "help", "comment", "comments", "doc", "docs",
                             "cache-stats", "performance-stats", "decision-stats", "evolve", "evovle", "evove", "evoce", "evolv", "evolution",
                             "security", "refactor",
+                            // Code & task directives
+                            "edit", "fix", "explain", "review", "tests", "test", "audit", "generate", "optimize",
+                            "export-pdf", "export_pdf", "exportpdf",
+                            "code-vulnerability-detection", "codevulnerabilitydetection",
+                            // Participant directives
+                            "agent", "modelfusion", "hugos",
                             // MCP tools (snake_case + kebab-case aliases)
                             "execute", "quick_answer", "quick-answer", "qa",
                             "orchestrate",
@@ -2552,7 +2558,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             "domain_task", "domain-task",
                             "multimodal_task", "multimodal-task", "multimodal",
                             "semantic_search", "semantic-search", "search",
-                            "data_science", "data-science", "datascience",
+                            "data_science", "data-science", "datascience", "dataanalyst", "data-analyst", "jupyter",
                             "pe_header_extraction", "pe-header", "pe",
                             "model_management", "model-management",
                             "reporting", "report",
@@ -2577,14 +2583,13 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         // Each entry is (command_name, arguments_text)
                         let mut matched_cmds: Vec<(String, String)> = Vec::new();
 
-                        let is_from_user_request_tag = clean_prompt.rfind("<userrequest>").is_some() || clean_prompt.rfind("<user_request>").is_some();
                         // Split user segment into lines to handle multi-command batches
                         for line in latest_user_segment.lines() {
                             let line = line.trim();
                             if line.is_empty() { continue; }
 
                             let lower_line = line.to_lowercase();
-                            let is_agent_line = lower_line.starts_with("@agent")
+                            let is_explicit_agent_prefix = lower_line.starts_with("@agent")
                                 || lower_line.starts_with("@commands")
                                 || lower_line.starts_with("@command")
                                 || lower_line.starts_with("@comments")
@@ -2592,10 +2597,11 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 || lower_line.starts_with("@tasks")
                                 || lower_line.starts_with("@task")
                                 || lower_line.starts_with("@modelfusion")
-                                || lower_line.starts_with("@hugos")
-                                || is_from_user_request_tag;
+                                || lower_line.starts_with("@hugos");
 
-                            let line_to_scan = if is_agent_line {
+                            let is_agent_line = is_explicit_agent_prefix;
+
+                            let line_to_scan = if is_explicit_agent_prefix {
                                 if lower_line.starts_with("@agent") {
                                     line[6..].trim()
                                 } else if lower_line.starts_with("@commands") {
@@ -2622,7 +2628,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             };
 
                             // If user explicitly typed a standalone participant tag without extra command, provide stats or comment info
-                            if line_to_scan.is_empty() && is_agent_line {
+                            if line_to_scan.is_empty() && is_explicit_agent_prefix {
                                 if lower_line.starts_with("@comment") || lower_line.starts_with("@comments") {
                                     if !matched_cmds.iter().any(|(c, _)| c == "comment") {
                                         matched_cmds.push(("comment".to_string(), String::new()));
@@ -2635,14 +2641,17 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 continue;
                             }
 
-                            for word in line_to_scan.split_whitespace() {
+                            let words: Vec<&str> = line_to_scan.split_whitespace().collect();
+                            let is_single_word_line = words.len() == 1;
+
+                            for word in words {
                                 if word.contains("://") || word.contains('<') || word.contains('>') {
                                     continue;
                                 }
 
                                 let is_slash_prefixed = word.starts_with('/') || (word.starts_with('(') && word[1..].starts_with('/')) || (word.starts_with('[') && word[1..].starts_with('/'));
-                                // STRICT REQUIREMENT: Only consider as command if starts with '/' OR the line was explicitly prefixed with @agent / @commands!
-                                if !is_slash_prefixed && !is_agent_line {
+                                // STRICT REQUIREMENT: Only consider as command if starts with '/' OR the line was explicitly prefixed with @agent / @commands OR it is a single standalone command word on its line!
+                                if !is_slash_prefixed && !is_agent_line && !is_single_word_line {
                                     continue;
                                 }
 
@@ -2707,7 +2716,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         "domain-task" => "domain_task",
                                         "multimodal-task" | "multimodal" => "multimodal_task",
                                         "semantic-search" | "search" => "semantic_search",
-                                        "data-science" | "datascience" => "data_science",
+                                        "data-science" | "datascience" | "dataanalyst" | "data-analyst" | "jupyter" => "data_science",
                                         "pe-header" | "pe" => "pe_header_extraction",
                                         "model-management" => "model_management",
                                         "report" => "reporting",
@@ -2728,6 +2737,10 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         "report-bandit-feedback" => "report_bandit_feedback",
                                         "commands" | "help" => "command",
                                         "comments" | "docs" => "comment",
+                                        "test" => "tests",
+                                        "task" => "tasks",
+                                        "export_pdf" | "exportpdf" => "export-pdf",
+                                        "code-vulnerability-detection" | "codevulnerabilitydetection" => "security",
                                         other => other,
                                     };
 
@@ -2940,7 +2953,6 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         (idx, format!("📋 **Task List**\n\n{}", r))
                                     },
                                     "update_database" => { let r = run_cli_subcommand(&["--update".to_string()], db_resolved).await; (idx, format!("🔄 **Database Update**\n\n{}", r)) },
-                                    "restore_backup" => { let r = run_cli_subcommand(&["--restore".to_string()], db_resolved).await; (idx, format!("♻️ **Backup Restored**\n\n{}", r)) },
                                     "clear_cache" => { let r = run_cli_subcommand(&["--clearcache".to_string()], db_resolved).await; (idx, format!("🧹 **Cache Cleared**\n\n{}", r)) },
                                     "get_decision_stats" => { let r = run_cli_subcommand(&["--decision-stats".to_string()], db_resolved).await; (idx, format!("🎯 **Decision Stats**\n\n{}", r)) },
                                     "get_novel_ai_stats" => { let r = run_cli_subcommand(&["--novel-ai-stats".to_string()], db_resolved).await; (idx, format!("🧠 **Novel AI Stats**\n\n{}", r)) },
@@ -2955,7 +2967,118 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                     "get_ml_analytics" => { let r = run_cli_subcommand(&["--ml-analytics".to_string()], db_resolved).await; (idx, format!("📈 **ML Analytics**\n\n{}", r)) },
                                     "report_bandit_feedback" => (idx, "📊 **Bandit Feedback**: Use MCP client to submit feedback with context/arm/reward.".to_string()),
 
-                                    _ => (idx, format!("⚠️ **Unknown command `/{}`.**\n\nAvailable commands: `/stats`, `/sysinfo`, `/mcp`, `/keys`, `/qa <question>`, `/analyze_file <path>`, `/report`, `/search <query>`, `/list_tasks`, and more.", cmd_owned)),
+                                    // ── Coding & Task Slash Directives ──
+                                    "edit" => {
+                                        if args_owned.is_empty() {
+                                            (idx, "✏️ **ModelFusion Code Editor**: Active.\n\nSpecify the target file and instructions to edit code.".to_string())
+                                        } else {
+                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), args_owned.clone()];
+                                            if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                cmd_args.push("--ollama".to_string());
+                                            }
+                                            let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                            (idx, format!("✏️ **Code Edit**\n\n{}", result))
+                                        }
+                                    },
+                                    "fix" => {
+                                        if args_owned.is_empty() {
+                                            (idx, "🔧 **ModelFusion Code Fixer**: Active.\n\nProvide the code and error details to analyze and generate fixes.".to_string())
+                                        } else {
+                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Fix the following code issue: {}", args_owned)];
+                                            if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                cmd_args.push("--ollama".to_string());
+                                            }
+                                            let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                            (idx, format!("🔧 **Code Fix**\n\n{}", result))
+                                        }
+                                    },
+                                    "explain" => {
+                                        if args_owned.is_empty() {
+                                            (idx, "💡 **ModelFusion Code Explainer**: Active.\n\nProvide code or concepts to generate clear step-by-step explanations.".to_string())
+                                        } else {
+                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Explain the following code: {}", args_owned)];
+                                            if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                cmd_args.push("--ollama".to_string());
+                                            }
+                                            let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                            (idx, format!("💡 **Code Explanation**\n\n{}", result))
+                                        }
+                                    },
+                                    "review" => {
+                                        if args_owned.is_empty() {
+                                            (idx, "🔍 **ModelFusion Code Reviewer**: Active.\n\nProvide code to perform a thorough review of architecture, readability, and performance.".to_string())
+                                        } else {
+                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Review the following code: {}", args_owned)];
+                                            if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                cmd_args.push("--ollama".to_string());
+                                            }
+                                            let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                            (idx, format!("🔍 **Code Review**\n\n{}", result))
+                                        }
+                                    },
+                                    "tests" => {
+                                        if args_owned.is_empty() {
+                                            (idx, "🧪 **ModelFusion Test Generator**: Active.\n\nProvide code to generate comprehensive unit and integration tests.".to_string())
+                                        } else {
+                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Generate unit tests for the following code: {}", args_owned)];
+                                            if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                cmd_args.push("--ollama".to_string());
+                                            }
+                                            let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                            (idx, format!("🧪 **Test Generation**\n\n{}", result))
+                                        }
+                                    },
+                                    "audit" => {
+                                        if args_owned.is_empty() {
+                                            (idx, "🛡️ **ModelFusion Security & Code Auditor**: Active.\n\nProvide code or repository context to perform a comprehensive vulnerability and quality audit.".to_string())
+                                        } else {
+                                             let mut cmd_args = vec!["--spam-detection".to_string(), "--prompt".to_string(), format!("Audit for security vulnerabilities: {}", args_owned)];
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                 cmd_args.push("--ollama".to_string());
+                                             }
+                                             let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                             (idx, format!("🛡️ **Code Audit**\n\n{}", result))
+                                         }
+                                     },
+                                     "generate" => {
+                                         if args_owned.is_empty() {
+                                             (idx, "⚡ **ModelFusion Code Generator**: Active.\n\nSpecify the requirements to generate production-ready implementation code.".to_string())
+                                         } else {
+                                             let mut cmd_args = vec!["--prompt".to_string(), args_owned.clone()];
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                 cmd_args.push("--ollama".to_string());
+                                             }
+                                             let (result, _ctx, _arm) = route_and_execute(&args_owned, db_resolved, &cmd_args).await;
+                                             (idx, format!("⚡ **Generated Code**\n\n{}", result))
+                                         }
+                                     },
+                                     "optimize" => {
+                                         if args_owned.is_empty() {
+                                             (idx, "⚡ **ModelFusion Performance Optimizer**: Active.\n\nProvide code or algorithms to optimize for speed and memory efficiency.".to_string())
+                                         } else {
+                                             let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Optimize the following code: {}", args_owned)];
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                 cmd_args.push("--ollama".to_string());
+                                             }
+                                             let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                             (idx, format!("⚡ **Code Optimization**\n\n{}", result))
+                                         }
+                                     },
+                                     "export-pdf" => {
+                                         let mut cmd_args = vec!["--export-pdf".to_string()];
+                                         if !args_owned.is_empty() {
+                                             cmd_args.push("--prompt".to_string());
+                                             cmd_args.push(args_owned.clone());
+                                         }
+                                         let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                         (idx, format!("📄 **Export PDF**\n\n{}", result))
+                                     },
+                                     "agent" | "modelfusion" | "hugos" => {
+                                         let sys = query_system_resources();
+                                         (idx, format!("🤖 **ModelFusion Multi-Agent Orchestrator**\n\n- **Status**: Operational (<1ms Fast Interception)\n- **Active Agent Hierarchy**: Lead Architect, Worker Subagents, AVO Evolution Agent\n- **System Resources**: {} ({} Cores), {:.2} GB RAM free\n- **GPU**: {} ({} MB free VRAM)", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb))
+                                     },
+
+                                     _ => (idx, format!("⚠️ **Unknown command `/{}`.**\n\nAvailable commands: `/stats`, `/sysinfo`, `/mcp`, `/keys`, `/qa <question>`, `/analyze_file <path>`, `/report`, `/search <query>`, `/list_tasks`, and more.", cmd_owned)),
                                 }
                             });
                             handles.push(handle);
@@ -3131,6 +3254,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             user_msg_for_check.len(), 
                             &user_msg_for_check[..user_msg_for_check.len().min(120)],
                             is_complex);
+
+                        let mut _heavy_permit = None;
+                        let mut _file_lock = None;
 
                         if ollama && !is_complex {
                             // Simple question → fast path with 1.5b
@@ -3374,11 +3500,12 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             // Complex/coding task → skip fast path, use full pipeline
                             // Acquire heavy semaphore to rate-limit resource-intensive pipeline
                             let heavy_sem = inference_sem();
-                            let _heavy_permit = heavy_sem.acquire().await;
+                            _heavy_permit = heavy_sem.acquire_owned().await.ok();
                             // Acquire cross-process lock (blocking) via spawn_blocking to not freeze tokio
-                            let _file_lock = tokio::task::spawn_blocking(acquire_cross_process_lock)
+                            _file_lock = tokio::task::spawn_blocking(acquire_cross_process_lock)
                                 .await
-                                .ok();
+                                .ok()
+                                .and_then(|r| r.ok());
                             eprintln!("[SERVER] 🧠 Complex prompt detected (len={}). Acquired heavy slot + file lock. Full pipeline.", user_msg_for_check.len());
                         }
 
@@ -5201,6 +5328,9 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                     if arguments["full"].as_bool().unwrap_or(false) {
                         cmd_args.push("--full".to_string());
                     }
+                    if arguments["ollama"].as_bool().unwrap_or(false) || std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                        cmd_args.push("--ollama".to_string());
+                    }
                     run_cli_subcommand(&cmd_args, &db_path_resolved).await
                 }
                 "analyze_folder" => {
@@ -5209,6 +5339,9 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                     let mut cmd_args = vec!["--folder".to_string(), folder, "--prompt".to_string(), prompt];
                     if arguments["full"].as_bool().unwrap_or(false) {
                         cmd_args.push("--full".to_string());
+                    }
+                    if arguments["ollama"].as_bool().unwrap_or(false) || std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                        cmd_args.push("--ollama".to_string());
                     }
                     run_cli_subcommand(&cmd_args, &db_path_resolved).await
                 }
@@ -5226,6 +5359,9 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                     if arguments["gpu"].as_bool().unwrap_or(false) {
                         cmd_args.push("--gpu".to_string());
                     }
+                    if arguments["ollama"].as_bool().unwrap_or(false) || std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                        cmd_args.push("--ollama".to_string());
+                    }
                     run_cli_subcommand(&cmd_args, &db_path_resolved).await
                 }
                 "security_analysis" => {
@@ -5241,6 +5377,9 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                     }
                     if arguments["gpu"].as_bool().unwrap_or(false) {
                         cmd_args.push("--gpu".to_string());
+                    }
+                    if arguments["ollama"].as_bool().unwrap_or(false) || std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                        cmd_args.push("--ollama".to_string());
                     }
                     run_cli_subcommand(&cmd_args, &db_path_resolved).await
                 }
@@ -5267,6 +5406,9 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                     if arguments["gpu"].as_bool().unwrap_or(false) {
                         cmd_args.push("--gpu".to_string());
                     }
+                    if arguments["ollama"].as_bool().unwrap_or(false) || std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                        cmd_args.push("--ollama".to_string());
+                    }
                     run_cli_subcommand(&cmd_args, &db_path_resolved).await
                 }
                 "domain_task" => {
@@ -5278,6 +5420,9 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                     ];
                     if arguments["gpu"].as_bool().unwrap_or(false) {
                         cmd_args.push("--gpu".to_string());
+                    }
+                    if arguments["ollama"].as_bool().unwrap_or(false) || std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                        cmd_args.push("--ollama".to_string());
                     }
                     run_cli_subcommand(&cmd_args, &db_path_resolved).await
                 }
@@ -5294,6 +5439,9 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                     }
                     if arguments["gpu"].as_bool().unwrap_or(false) {
                         cmd_args.push("--gpu".to_string());
+                    }
+                    if arguments["ollama"].as_bool().unwrap_or(false) || std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                        cmd_args.push("--ollama".to_string());
                     }
                     run_cli_subcommand(&cmd_args, &db_path_resolved).await
                 }
@@ -5327,6 +5475,9 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                             }
                         }
                     }
+                    if arguments["ollama"].as_bool().unwrap_or(false) || std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                        cmd_args.push("--ollama".to_string());
+                    }
                     run_cli_subcommand(&cmd_args, &db_path_resolved).await
                 }
                 "data_science" => {
@@ -5348,16 +5499,22 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                     if arguments["export_pdf"].as_bool().unwrap_or(false) {
                         cmd_args.push("--export-pdf".to_string());
                     }
+                    if arguments["ollama"].as_bool().unwrap_or(false) || std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                        cmd_args.push("--ollama".to_string());
+                    }
                     run_cli_subcommand(&cmd_args, &db_path_resolved).await
                 }
                 "pe_header_extraction" => {
                     let file = arguments["file"].as_str().unwrap_or("").to_string();
                     let prompt = arguments["prompt"].as_str().unwrap_or("Perform PE analysis");
-                    let cmd_args = vec![
+                    let mut cmd_args = vec![
                         "--pe-header-extraction".to_string(),
                         "--file".to_string(), file,
                         "--prompt".to_string(), prompt.to_string(),
                     ];
+                    if arguments["ollama"].as_bool().unwrap_or(false) || std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                        cmd_args.push("--ollama".to_string());
+                    }
                     run_cli_subcommand(&cmd_args, &db_path_resolved).await
                 }
                 "model_management" => {
@@ -5389,6 +5546,9 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                         cmd_args.push("--weight-format".to_string());
                         cmd_args.push(wf.to_string());
                     }
+                    if arguments["ollama"].as_bool().unwrap_or(false) || std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                        cmd_args.push("--ollama".to_string());
+                    }
                     run_cli_subcommand(&cmd_args, &db_path_resolved).await
                 }
                 "reporting" => {
@@ -5404,17 +5564,34 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                         cmd_args.push("--file".to_string());
                         cmd_args.push(file.to_string());
                     }
+                    if arguments["ollama"].as_bool().unwrap_or(false) || std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                        cmd_args.push("--ollama".to_string());
+                    }
                     run_cli_subcommand(&cmd_args, &db_path_resolved).await
                 }
                 "ml_management" => {
                     let action = arguments["action"].as_str().unwrap_or("analytics");
+                    let mut extra_args = Vec::new();
+                    if arguments["ollama"].as_bool().unwrap_or(false) || std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                        extra_args.push("--ollama".to_string());
+                    }
                     match action {
-                        "retrain" => run_cli_subcommand(&["--ml-retrain".to_string()], &db_path_resolved).await,
+                        "retrain" => {
+                            let mut args = vec!["--ml-retrain".to_string()];
+                            args.extend(extra_args);
+                            run_cli_subcommand(&args, &db_path_resolved).await
+                        },
                         "cleanup" => {
                             let days = arguments["cleanup_days"].as_u64().unwrap_or(30);
-                            run_cli_subcommand(&["--ml-cleanup".to_string(), days.to_string()], &db_path_resolved).await
+                            let mut args = vec!["--ml-cleanup".to_string(), days.to_string()];
+                            args.extend(extra_args);
+                            run_cli_subcommand(&args, &db_path_resolved).await
                         }
-                        _ => run_cli_subcommand(&["--ml-analytics".to_string()], &db_path_resolved).await,
+                        _ => {
+                            let mut args = vec!["--ml-analytics".to_string()];
+                            args.extend(extra_args);
+                            run_cli_subcommand(&args, &db_path_resolved).await
+                        },
                     }
                 }
                 "get_system_info" => {
@@ -5531,6 +5708,9 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                     }
                     if arguments["gpu"].as_bool().unwrap_or(false) {
                         cmd_args.push("--gpu".to_string());
+                    }
+                    if arguments["ollama"].as_bool().unwrap_or(false) || std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                        cmd_args.push("--ollama".to_string());
                     }
                     run_cli_subcommand(&cmd_args, &db_path_resolved).await
                 }
