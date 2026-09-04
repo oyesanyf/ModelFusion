@@ -95,7 +95,7 @@ function generateWix(srcDir, outputFile) {
     const wxsContent = `<?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="HugOS IDE" Manufacturer="HugOS Team" Version="${version}" UpgradeCode="d77b7e06-80ba-4137-bcf4-654b95ccebc5" Scope="perUser">
-    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." Schedule="afterInstallInitialize" AllowSameVersionUpgrades="yes" />
 
     <MediaTemplate EmbedCab="yes" />
 
