@@ -255,7 +255,60 @@ foreach ($pjFile in $productJsonFiles) {
     }
 }
 
-# 4.96 Apply ModelFusion extension patches (Slash Commands, @agent routing, OpenEvolve diffs)
+# 4.96 Disable GitHub login prompts - HugOS uses local ModelFusion, not GitHub Copilot auth
+Write-Host "[INFO] Disabling GitHub login prompts..." -ForegroundColor Yellow
+foreach ($pjFile in $productJsonFiles) {
+    $pjObj = Get-Content $pjFile.FullName -Raw | ConvertFrom-Json
+
+    # Remove the GitHub auth provider requirement from defaultChatAgent
+    if ($pjObj.defaultChatAgent -and $pjObj.defaultChatAgent.providerExtensionId) {
+        $pjObj.defaultChatAgent.providerExtensionId = ""
+        $pjObj.defaultChatAgent.entitlementUrl = ""
+        $pjObj.defaultChatAgent.entitlementSignupLimitedUrl = ""
+        $pjObj.defaultChatAgent.tokenEntitlementUrl = ""
+        $pjObj.defaultChatAgent.signUpUrl = ""
+    }
+
+    # Remove trustedExtensionAuthAccess to prevent auth popups
+    if ($pjObj.trustedExtensionAuthAccess) {
+        $pjObj.PSObject.Properties.Remove('trustedExtensionAuthAccess')
+    }
+
+    $pjObj | ConvertTo-Json -Depth 20 | Set-Content $pjFile.FullName -Encoding UTF8
+    Write-Host "[OK] Disabled GitHub auth in: $($pjFile.FullName)" -ForegroundColor Green
+}
+
+# Disable the github-authentication extension by renaming its package.json
+$githubAuthExt = Join-Path $vsCodePackDir "resources\app\extensions\github-authentication"
+if (Test-Path $githubAuthExt) {
+    $pkgJson = Join-Path $githubAuthExt "package.json"
+    if (Test-Path $pkgJson) {
+        Rename-Item -Path $pkgJson -NewName "package.json.disabled" -Force
+        Write-Host "[OK] Disabled github-authentication extension" -ForegroundColor Green
+    }
+}
+
+# Inject default settings to suppress any remaining auth/login prompts
+$defaultSettingsDir = Join-Path $vsCodePackDir "resources\app\out\vs\platform\configuration\common"
+if (-not (Test-Path $defaultSettingsDir)) {
+    $defaultSettingsDir = Join-Path $vsCodePackDir "resources\app"
+}
+$machineSettingsPath = Join-Path $vsCodePackDir "resources\app\product-default-settings.json"
+$defaultSettings = @{
+    "github.copilot.enable" = @{ "*" = $false }
+    "github.gitAuthentication" = $false
+    "git.autofetch" = $false
+    "workbench.accounts.experimental.showEntitlements" = $false
+    "workbench.enableExperiments" = $false
+    "telemetry.telemetryLevel" = "off"
+    "update.mode" = "none"
+    "extensions.autoCheckUpdates" = $false
+    "extensions.autoUpdate" = $false
+}
+$defaultSettings | ConvertTo-Json -Depth 10 | Set-Content $machineSettingsPath -Encoding UTF8
+Write-Host "[OK] Injected default settings to suppress login prompts" -ForegroundColor Green
+
+# 4.97 Apply ModelFusion extension patches (Slash Commands, @agent routing, OpenEvolve diffs)
 Write-Host "[INFO] Applying extension slash command and OpenEvolve patches..." -ForegroundColor Yellow
 $fixSlashScript = Join-Path $PSScriptRoot "fix_slash_commands.py"
 if (Test-Path $fixSlashScript) {
