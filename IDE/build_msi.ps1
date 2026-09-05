@@ -278,13 +278,13 @@ foreach ($pjFile in $productJsonFiles) {
     Write-Host "[OK] Disabled GitHub auth in: $($pjFile.FullName)" -ForegroundColor Green
 }
 
-# Disable the github-authentication extension by renaming its package.json
-$githubAuthExt = Join-Path $vsCodePackDir "resources\app\extensions\github-authentication"
-if (Test-Path $githubAuthExt) {
-    $pkgJson = Join-Path $githubAuthExt "package.json"
+# Disable the github-authentication extension by renaming its package.json (both root and versioned)
+$githubAuthExts = Get-ChildItem -Path $vsCodePackDir -Filter "github-authentication" -Recurse -Directory
+foreach ($ghExt in $githubAuthExts) {
+    $pkgJson = Join-Path $ghExt.FullName "package.json"
     if (Test-Path $pkgJson) {
         Rename-Item -Path $pkgJson -NewName "package.json.disabled" -Force
-        Write-Host "[OK] Disabled github-authentication extension" -ForegroundColor Green
+        Write-Host "[OK] Disabled github-authentication extension in: $($ghExt.FullName)" -ForegroundColor Green
     }
 }
 
