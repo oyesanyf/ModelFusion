@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="HugOS IDE" Manufacturer="HugOS Team" Version="1.126.65" UpgradeCode="d77b7e06-80ba-4137-bcf4-654b95ccebc5" Scope="perUser">
+  <Package Name="HugOS IDE" Manufacturer="HugOS Team" Version="1.126.66" UpgradeCode="d77b7e06-80ba-4137-bcf4-654b95ccebc5" Scope="perUser">
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." Schedule="afterInstallInitialize" AllowSameVersionUpgrades="yes" />
 
     <MediaTemplate EmbedCab="yes" />
@@ -73039,7 +73039,7 @@
         <File Id="fil_19023" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\7e7950df89\resources\app\extensions\github-authentication\media\sessions-icon.svg" KeyPath="yes" />
       </Component>
       <Component Id="cmp_19024" Guid="*" Directory="dir_2875">
-        <File Id="fil_19024" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\7e7950df89\resources\app\extensions\github-authentication\package.json" KeyPath="yes" />
+        <File Id="fil_19024" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\7e7950df89\resources\app\extensions\github-authentication\package.json.disabled" KeyPath="yes" />
       </Component>
       <Component Id="cmp_19025" Guid="*" Directory="dir_2875">
         <File Id="fil_19025" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\7e7950df89\resources\app\extensions\github-authentication\package.nls.json" KeyPath="yes" />
@@ -148486,7 +148486,7 @@
         <File Id="fil_44172" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\extensions\github-authentication\media\index.html" KeyPath="yes" />
       </Component>
       <Component Id="cmp_44173" Guid="*" Directory="dir_6882">
-        <File Id="fil_44173" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\extensions\github-authentication\package.json" KeyPath="yes" />
+        <File Id="fil_44173" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\extensions\github-authentication\package.json.disabled" KeyPath="yes" />
       </Component>
       <Component Id="cmp_44174" Guid="*" Directory="dir_6882">
         <File Id="fil_44174" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\extensions\github-authentication\package.nls.json" KeyPath="yes" />
@@ -168370,145 +168370,148 @@
         <File Id="fil_50800" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\package.json" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50801" Guid="*" Directory="dir_4008">
-        <File Id="fil_50801" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\product.json" KeyPath="yes" />
+        <File Id="fil_50801" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\product-default-settings.json" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_50802" Guid="*" Directory="dir_7961">
-        <File Id="fil_50802" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\bower.ico" KeyPath="yes" />
+      <Component Id="cmp_50802" Guid="*" Directory="dir_4008">
+        <File Id="fil_50802" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\product.json" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50803" Guid="*" Directory="dir_7961">
-        <File Id="fil_50803" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\c.ico" KeyPath="yes" />
+        <File Id="fil_50803" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\bower.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50804" Guid="*" Directory="dir_7961">
-        <File Id="fil_50804" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\code.ico" KeyPath="yes" />
+        <File Id="fil_50804" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\c.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50805" Guid="*" Directory="dir_7961">
-        <File Id="fil_50805" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\code_150x150.png" KeyPath="yes" />
+        <File Id="fil_50805" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\code.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50806" Guid="*" Directory="dir_7961">
-        <File Id="fil_50806" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\code_70x70.png" KeyPath="yes" />
+        <File Id="fil_50806" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\code_150x150.png" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50807" Guid="*" Directory="dir_7961">
-        <File Id="fil_50807" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\config.ico" KeyPath="yes" />
+        <File Id="fil_50807" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\code_70x70.png" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50808" Guid="*" Directory="dir_7961">
-        <File Id="fil_50808" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\cpp.ico" KeyPath="yes" />
+        <File Id="fil_50808" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\config.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50809" Guid="*" Directory="dir_7961">
-        <File Id="fil_50809" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\csharp.ico" KeyPath="yes" />
+        <File Id="fil_50809" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\cpp.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50810" Guid="*" Directory="dir_7961">
-        <File Id="fil_50810" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\css.ico" KeyPath="yes" />
+        <File Id="fil_50810" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\csharp.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50811" Guid="*" Directory="dir_7961">
-        <File Id="fil_50811" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\default.ico" KeyPath="yes" />
+        <File Id="fil_50811" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\css.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50812" Guid="*" Directory="dir_7961">
-        <File Id="fil_50812" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\go.ico" KeyPath="yes" />
+        <File Id="fil_50812" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\default.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50813" Guid="*" Directory="dir_7961">
-        <File Id="fil_50813" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\html.ico" KeyPath="yes" />
+        <File Id="fil_50813" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\go.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50814" Guid="*" Directory="dir_7961">
-        <File Id="fil_50814" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\jade.ico" KeyPath="yes" />
+        <File Id="fil_50814" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\html.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50815" Guid="*" Directory="dir_7961">
-        <File Id="fil_50815" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\java.ico" KeyPath="yes" />
+        <File Id="fil_50815" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\jade.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50816" Guid="*" Directory="dir_7961">
-        <File Id="fil_50816" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\javascript.ico" KeyPath="yes" />
+        <File Id="fil_50816" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\java.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50817" Guid="*" Directory="dir_7961">
-        <File Id="fil_50817" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\json.ico" KeyPath="yes" />
+        <File Id="fil_50817" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\javascript.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50818" Guid="*" Directory="dir_7961">
-        <File Id="fil_50818" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\less.ico" KeyPath="yes" />
+        <File Id="fil_50818" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\json.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50819" Guid="*" Directory="dir_7961">
-        <File Id="fil_50819" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\markdown.ico" KeyPath="yes" />
+        <File Id="fil_50819" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\less.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50820" Guid="*" Directory="dir_7961">
-        <File Id="fil_50820" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\php.ico" KeyPath="yes" />
+        <File Id="fil_50820" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\markdown.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50821" Guid="*" Directory="dir_7961">
-        <File Id="fil_50821" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\powershell.ico" KeyPath="yes" />
+        <File Id="fil_50821" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\php.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50822" Guid="*" Directory="dir_7961">
-        <File Id="fil_50822" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\python.ico" KeyPath="yes" />
+        <File Id="fil_50822" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\powershell.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50823" Guid="*" Directory="dir_7961">
-        <File Id="fil_50823" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\react.ico" KeyPath="yes" />
+        <File Id="fil_50823" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\python.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50824" Guid="*" Directory="dir_7961">
-        <File Id="fil_50824" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\ruby.ico" KeyPath="yes" />
+        <File Id="fil_50824" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\react.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50825" Guid="*" Directory="dir_7961">
-        <File Id="fil_50825" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\sass.ico" KeyPath="yes" />
+        <File Id="fil_50825" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\ruby.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50826" Guid="*" Directory="dir_7961">
-        <File Id="fil_50826" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\shell.ico" KeyPath="yes" />
+        <File Id="fil_50826" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\sass.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50827" Guid="*" Directory="dir_7961">
-        <File Id="fil_50827" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\sql.ico" KeyPath="yes" />
+        <File Id="fil_50827" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\shell.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50828" Guid="*" Directory="dir_7961">
-        <File Id="fil_50828" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\typescript.ico" KeyPath="yes" />
+        <File Id="fil_50828" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\sql.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50829" Guid="*" Directory="dir_7961">
-        <File Id="fil_50829" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\vue.ico" KeyPath="yes" />
+        <File Id="fil_50829" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\typescript.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50830" Guid="*" Directory="dir_7961">
-        <File Id="fil_50830" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\xml.ico" KeyPath="yes" />
+        <File Id="fil_50830" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\vue.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50831" Guid="*" Directory="dir_7961">
-        <File Id="fil_50831" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\yaml.ico" KeyPath="yes" />
+        <File Id="fil_50831" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\xml.ico" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_50832" Guid="*" Directory="dir_4008">
-        <File Id="fil_50832" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\ThirdPartyNotices.txt" KeyPath="yes" />
+      <Component Id="cmp_50832" Guid="*" Directory="dir_7961">
+        <File Id="fil_50832" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\resources\win32\yaml.ico" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_50833" Guid="*" Directory="INSTALLFOLDER">
-        <File Id="fil_50833" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources.pak" KeyPath="yes" />
+      <Component Id="cmp_50833" Guid="*" Directory="dir_4008">
+        <File Id="fil_50833" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\ThirdPartyNotices.txt" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50834" Guid="*" Directory="INSTALLFOLDER">
-        <File Id="fil_50834" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\snapshot_blob.bin" KeyPath="yes" />
+        <File Id="fil_50834" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources.pak" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_50835" Guid="*" Directory="dir_7963">
-        <File Id="fil_50835" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\cache_ov_hub.py" KeyPath="yes" />
+      <Component Id="cmp_50835" Guid="*" Directory="INSTALLFOLDER">
+        <File Id="fil_50835" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\snapshot_blob.bin" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50836" Guid="*" Directory="dir_7963">
-        <File Id="fil_50836" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\check_openvino.py" KeyPath="yes" />
+        <File Id="fil_50836" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\cache_ov_hub.py" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50837" Guid="*" Directory="dir_7963">
-        <File Id="fil_50837" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\getvino.py" KeyPath="yes" />
+        <File Id="fil_50837" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\check_openvino.py" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50838" Guid="*" Directory="dir_7963">
-        <File Id="fil_50838" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\prepare_model_openvino.py" KeyPath="yes" />
+        <File Id="fil_50838" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\getvino.py" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50839" Guid="*" Directory="dir_7963">
-        <File Id="fil_50839" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\run_model_onnx.py" KeyPath="yes" />
+        <File Id="fil_50839" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\prepare_model_openvino.py" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50840" Guid="*" Directory="dir_7963">
-        <File Id="fil_50840" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\run_model_openvino.py" KeyPath="yes" />
+        <File Id="fil_50840" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\run_model_onnx.py" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50841" Guid="*" Directory="dir_7963">
-        <File Id="fil_50841" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\run_model_transformers.py" KeyPath="yes" />
+        <File Id="fil_50841" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\run_model_openvino.py" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50842" Guid="*" Directory="dir_7963">
-        <File Id="fil_50842" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\run_model_vllm.py" KeyPath="yes" />
+        <File Id="fil_50842" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\run_model_transformers.py" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_50843" Guid="*" Directory="dir_7964">
-        <File Id="fil_50843" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\__pycache__\getvino.cpython-314.pyc" KeyPath="yes" />
+      <Component Id="cmp_50843" Guid="*" Directory="dir_7963">
+        <File Id="fil_50843" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\run_model_vllm.py" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_50844" Guid="*" Directory="INSTALLFOLDER">
-        <File Id="fil_50844" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\v8_context_snapshot.bin" KeyPath="yes" />
+      <Component Id="cmp_50844" Guid="*" Directory="dir_7964">
+        <File Id="fil_50844" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\src\scripts\__pycache__\getvino.cpython-314.pyc" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50845" Guid="*" Directory="INSTALLFOLDER">
-        <File Id="fil_50845" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\vk_swiftshader.dll" KeyPath="yes" />
+        <File Id="fil_50845" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\v8_context_snapshot.bin" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50846" Guid="*" Directory="INSTALLFOLDER">
-        <File Id="fil_50846" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\vk_swiftshader_icd.json" KeyPath="yes" />
+        <File Id="fil_50846" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\vk_swiftshader.dll" KeyPath="yes" />
       </Component>
       <Component Id="cmp_50847" Guid="*" Directory="INSTALLFOLDER">
-        <File Id="fil_50847" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\vulkan-1.dll" KeyPath="yes" />
+        <File Id="fil_50847" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\vk_swiftshader_icd.json" KeyPath="yes" />
+      </Component>
+      <Component Id="cmp_50848" Guid="*" Directory="INSTALLFOLDER">
+        <File Id="fil_50848" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\vulkan-1.dll" KeyPath="yes" />
       </Component>
     </ComponentGroup>
   </Package>

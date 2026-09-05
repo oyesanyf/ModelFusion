@@ -3,6 +3,10 @@ import glob
 import sys
 
 target_files = [
+    os.path.join(os.environ.get('LOCALAPPDATA', ''), r"HugOS IDE\7e7950df89\resources\app\extensions\copilot\dist\extension.js"),
+    os.path.join(os.environ.get('LOCALAPPDATA', ''), r"HugOS IDE\resources\app\extensions\copilot\dist\extension.js"),
+    r"C:\Users\oyesanyf\AppData\Local\HugOS IDE\7e7950df89\resources\app\extensions\copilot\dist\extension.js",
+    r"C:\Users\oyesanyf\AppData\Local\HugOS IDE\resources\app\extensions\copilot\dist\extension.js",
     r"C:\Users\oyesa\AppData\Local\HugOS IDE\7e7950df89\resources\app\extensions\copilot\dist\extension.js",
     r"C:\Users\oyesa\AppData\Local\HugOS IDE\resources\app\extensions\copilot\dist\extension.js",
     r"D:\harfile\ModelFusion\IDE\VSCode-win32-x64\7e7950df89\resources\app\extensions\copilot\dist\extension.js",
