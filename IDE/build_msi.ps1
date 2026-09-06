@@ -308,6 +308,44 @@ $defaultSettings = @{
 $defaultSettings | ConvertTo-Json -Depth 10 | Set-Content $machineSettingsPath -Encoding UTF8
 Write-Host "[OK] Injected default settings to suppress login prompts" -ForegroundColor Green
 
+# 4.965 Sync ModelFusion / Copilot extension and AVO framework into packaged distributions
+Write-Host "[INFO] Syncing custom copilot extension and AVO into packaged folder..." -ForegroundColor Yellow
+$srcExtDir = Join-Path $PSScriptRoot "vscode\extensions\copilot"
+$targetExtDirs = @(
+    Join-Path $vsCodePackDir "resources\app\extensions\copilot"
+)
+# Also target versioned runtime directories if present
+$verDirs = Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{10,}$' }
+foreach ($vd in $verDirs) {
+    $targetExtDirs += (Join-Path $vd.FullName "resources\app\extensions\copilot")
+}
+
+foreach ($tDir in $targetExtDirs) {
+    if (-not (Test-Path $tDir)) {
+        New-Item -ItemType Directory -Force -Path $tDir | Out-Null
+    }
+    # Sync dist/
+    $distSrc = Join-Path $srcExtDir "dist"
+    $distDst = Join-Path $tDir "dist"
+    if (Test-Path $distSrc) {
+        if (-not (Test-Path $distDst)) { New-Item -ItemType Directory -Force -Path $distDst | Out-Null }
+        Copy-Item -Path "$distSrc\*" -Destination $distDst -Recurse -Force
+    }
+    # Sync package.json
+    $pkgSrc = Join-Path $srcExtDir "package.json"
+    if (Test-Path $pkgSrc) {
+        Copy-Item -Path $pkgSrc -Destination (Join-Path $tDir "package.json") -Force
+    }
+    # Sync avo/
+    $avoSrc = Join-Path $srcExtDir "avo"
+    $avoDst = Join-Path $tDir "avo"
+    if (Test-Path $avoSrc) {
+        if (-not (Test-Path $avoDst)) { New-Item -ItemType Directory -Force -Path $avoDst | Out-Null }
+        Copy-Item -Path "$avoSrc\*" -Destination $avoDst -Recurse -Force
+    }
+    Write-Host "[OK] Synced extension dist and avo to: $tDir" -ForegroundColor Green
+}
+
 # 4.97 Apply ModelFusion extension patches (Slash Commands, @agent routing, OpenEvolve diffs)
 Write-Host "[INFO] Applying extension slash command and OpenEvolve patches..." -ForegroundColor Yellow
 $fixSlashScript = Join-Path $PSScriptRoot "fix_slash_commands.py"

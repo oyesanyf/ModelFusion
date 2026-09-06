@@ -26,3 +26,5 @@ IDE/vscode-1.126.0-win32-x64.zip
 IDE/test-user-data/
 *.zip
 .cm_project
+.agents/
+__pycache__/

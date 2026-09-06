@@ -32,7 +32,7 @@ UNMINIFIED_BLOCK = r'''
     const knownCommands = /* @__PURE__ */ new Set([
       "stats","sys-info","sysinfo","tasks","mcp","keys","api-keys","command","commands","help",
       "decision-stats","decisionstats","performance-stats","performancestats","cache-stats","cachestats",
-      "novel-ai-stats","novelaistats","evolve","evovle","evove","evoce","evolv","evolution","update",
+      "novel-ai-stats","novelaistats","evolve","evovle","evove","evoce","evolv","evolution","avo","update",
       "clearcache","restore","comment","comments","doc","docs","security","code-vulnerability-detection",
       "codevulnerabilitydetection","fix","review","explain","tests","refactor","audit","optimize","generate",
       "dataanalyst","datascience","jupyter","pe-header-extraction","peheaderextraction","export-pdf","exportpdf",
@@ -63,6 +63,7 @@ UNMINIFIED_BLOCK = r'''
       if (!cmd) return "";
       const l = cmd.toLowerCase().trim();
       if (l === "evove" || l === "evoce" || l === "evovle" || l === "evolv" || l === "evolution") return "evolve";
+      if (l === "avo") return "avo";
       if (l === "api-keys") return "keys";
       if (l === "sys-info") return "sysinfo";
       if (l === "decisionstats") return "decision-stats";
@@ -112,7 +113,7 @@ UNMINIFIED_BLOCK = r'''
       if (directAtCmd) {
         const rawCmd = directAtCmd[1].toLowerCase();
         const cn = normCmd(rawCmd);
-        if (knownCommands.has(rawCmd) || knownCommands.has(cn)) {
+        if (rawCmd !== "command" && rawCmd !== "commands" && (knownCommands.has(rawCmd) || knownCommands.has(cn))) {
           const args = (directAtCmd[2] || "").trim();
           return `/${cn}${args ? " " + args : ""}`;
         }
@@ -134,18 +135,47 @@ UNMINIFIED_BLOCK = r'''
         }
         return `/tasks${rest ? " " + rest : ""}`;
       }
-      const dam = cl.match(/(?:^|\n)\s*@(?:agent|commands?|modelfusion|hugos|code)\b\s*([\s\S]*)/i);
+      const dAgent = cl.match(/(?:^|\n)\s*@agent\b\s*([\s\S]*)/i);
+      if (dAgent) {
+        const rest = dAgent[1].trim();
+        if (!rest) return "";
+        const words = rest.split(/\s+/);
+        const rawWord = words[0].replace(/^[\/@]/, "").toLowerCase();
+        const normFirst = normCmd(rawWord);
+        if (normFirst === "evolve") {
+          const idx = rest.toLowerCase().indexOf(words[0].toLowerCase());
+          const aw = idx >= 0 ? rest.slice(idx + words[0].length).trim() : "";
+          return `/evolve${aw ? " " + aw : ""}`;
+        }
+        if (normFirst === "avo") {
+          const idx = rest.toLowerCase().indexOf(words[0].toLowerCase());
+          const aw = idx >= 0 ? rest.slice(idx + words[0].length).trim() : "";
+          return `/avo${aw ? " " + aw : ""}`;
+        }
+        if (words[0].startsWith("/")) {
+          const rawSlash = words[0].slice(1).toLowerCase();
+          const cn = normCmd(rawSlash);
+          if (knownCommands.has(rawSlash) || knownCommands.has(cn)) {
+            const idx = rest.toLowerCase().indexOf(words[0].toLowerCase());
+            const aw = idx >= 0 ? rest.slice(idx + words[0].length).trim() : "";
+            return `/${cn}${aw ? " " + aw : ""}`;
+          }
+        }
+        return "";
+      }
+      const dam = cl.match(/(?:^|\n)\s*@(?:commands?|modelfusion|hugos|code)\b\s*([\s\S]*)/i);
       if (dam) {
         const rest = dam[1].trim();
-        if (!rest) return "/stats";
+        if (!rest) return "/command";
         const words = rest.split(/\s+/);
-        const fw = words.length > 0 ? normCmd(words[0].replace(/^[\/@]/, "")) : "";
-        if (fw && (knownCommands.has(fw) || knownCommands.has(normCmd(fw)))) {
-          const cn = normCmd(fw);
-          const aw = rest.slice(rest.toLowerCase().indexOf(fw.toLowerCase()) + fw.length).trim();
+        const rawWord = words[0].replace(/^[\/@]/, "").toLowerCase();
+        const fw = normCmd(rawWord);
+        if (knownCommands.has(rawWord) || knownCommands.has(fw)) {
+          const cn = knownCommands.has(fw) ? fw : rawWord;
+          const aw = rest.slice(rest.toLowerCase().indexOf(words[0].toLowerCase()) + words[0].length).trim();
           return `/${cn}${aw ? " " + aw : ""}`;
         }
-        return `/stats ${rest}`;
+        return "";
       }
       const sm = cl.match(/(?:^|\n)\s*\/([a-zA-Z][\w-]*)\b\s*([\s\S]*)/i);
       if (sm) {
@@ -297,11 +327,11 @@ MINIFIED_BLOCK = r'''
 if(!c&&o?.command){let cmdName=o.command.toLowerCase();if(cmdName==="evove"||cmdName==="evoce"||cmdName==="evovle"||cmdName==="evolv"||cmdName==="evolution")cmdName="evolve";c="/"+cmdName;this._outputChannel.appendLine("[SlashCmd] Recognized command directly via options.command: /"+cmdName);}
 if(!c&&o?.slashCommand){let cmdName=o.slashCommand.toLowerCase();if(cmdName==="evove"||cmdName==="evoce"||cmdName==="evovle"||cmdName==="evolv"||cmdName==="evolution")cmdName="evolve";c="/"+cmdName;}
 if(!c){
-let KC=new Set(["stats","sys-info","sysinfo","tasks","mcp","keys","api-keys","command","commands","help","comment","comments","doc","docs","decision-stats","decisionstats","performance-stats","performancestats","cache-stats","cachestats","novel-ai-stats","novelaistats","evolve","evovle","evove","evoce","evolv","evolution","update","clearcache","restore","security","code-vulnerability-detection","codevulnerabilitydetection","fix","review","explain","tests","refactor","audit","optimize","generate","dataanalyst","datascience","jupyter","pe-header-extraction","peheaderextraction","export-pdf","exportpdf","prepare-model","prepare-all-models","question","summary","sentiment","ner","ml-analytics","model-ranking","model-recommendations","analytics-demo","ml-retrain","search-query","demo-hyde","add-documents","gpu","cpu","ollama","openvino","onnx","vllm","fusion","cot","context-auto","full","score","judge","plan","predict","innovate","verbose","debug","sinq","enable-ml","ml-learning","delegation","recursion","real-options","prompt-quality-scoring","ml-fallback","enable-innovations","workflow-optimization","semantic-analysis","temporal-tracking","predictive-mode","enable-hyde","use-hyde","hyde-variants","model","budget","fusion-models","fusion-mode","selection-strategy","innovation-level","top-k","sinq-nbits","sinq-group-size","sinq-tiling-mode","sinq-method","weight-format","ov-model-dir","port","db-path","report","reporttype","ml-confidence-threshold","ml-ensemble-method","ml-cleanup","text-classification","token-classification","question-answering","text-generation","summarization","translation","fill-mask","text2text-generation","language-detection","grammar-correction","paraphrase-generation","causal-language-modeling","zero-shot-classification","feature-extraction","sentence-similarity","anonymization","coreference-resolution","spam-detection","malware-text-detection","phishing-detection","pii-detection","hate-speech-detection","cyberbullying-detection","fake-news-detection","legal-judgment-classification","contract-clause-classification","case-outcome-prediction","financial-ner","legal-ner","biomedical-ner","chemical-reaction-ner","financial-sentiment-analysis","scientific-abstract-summarization","emotion-detection","sarcasm-detection","stance-detection","bias-detection","hallucination-detection","reading-level-assessment","generation-groundedness","citation-intent-classification","code-summary-generation","code-clone-detection","image-classification","object-detection","image-segmentation","visual-question-answering","document-question-answering","zero-shot-image-classification","depth-estimation","image-feature-extraction","automatic-speech-recognition","audio-classification","voice-activity-detection","emotion-recognition","video-classification","text-to-speech","text-to-image","image-super-resolution","table-question-answering","feature-ranking","error"]);
-let normCmd=function(cmd){if(!cmd)return"";let l=cmd.toLowerCase().trim();if(l==="evove"||l==="evoce"||l==="evovle"||l==="evolv"||l==="evolution")return"evolve";if(l==="api-keys")return"keys";if(l==="sys-info")return"sysinfo";if(l==="decisionstats")return"decision-stats";if(l==="performancestats")return"performance-stats";if(l==="cachestats")return"cache-stats";if(l==="novelaistats")return"novel-ai-stats";if(l==="datascience")return"data-science";if(l==="peheaderextraction")return"pe-header-extraction";if(l==="exportpdf")return"export-pdf";if(l==="commands"||l==="help")return"command";if(l==="comments"||l==="docs")return"comment";return l;};
+let KC=new Set(["stats","sys-info","sysinfo","tasks","mcp","keys","api-keys","command","commands","help","comment","comments","doc","docs","decision-stats","decisionstats","performance-stats","performancestats","cache-stats","cachestats","novel-ai-stats","novelaistats","evolve","evovle","evove","evoce","evolv","evolution","avo","update","clearcache","restore","security","code-vulnerability-detection","codevulnerabilitydetection","fix","review","explain","tests","refactor","audit","optimize","generate","dataanalyst","datascience","jupyter","pe-header-extraction","peheaderextraction","export-pdf","exportpdf","prepare-model","prepare-all-models","question","summary","sentiment","ner","ml-analytics","model-ranking","model-recommendations","analytics-demo","ml-retrain","search-query","demo-hyde","add-documents","gpu","cpu","ollama","openvino","onnx","vllm","fusion","cot","context-auto","full","score","judge","plan","predict","innovate","verbose","debug","sinq","enable-ml","ml-learning","delegation","recursion","real-options","prompt-quality-scoring","ml-fallback","enable-innovations","workflow-optimization","semantic-analysis","temporal-tracking","predictive-mode","enable-hyde","use-hyde","hyde-variants","model","budget","fusion-models","fusion-mode","selection-strategy","innovation-level","top-k","sinq-nbits","sinq-group-size","sinq-tiling-mode","sinq-method","weight-format","ov-model-dir","port","db-path","report","reporttype","ml-confidence-threshold","ml-ensemble-method","ml-cleanup","text-classification","token-classification","question-answering","text-generation","summarization","translation","fill-mask","text2text-generation","language-detection","grammar-correction","paraphrase-generation","causal-language-modeling","zero-shot-classification","feature-extraction","sentence-similarity","anonymization","coreference-resolution","spam-detection","malware-text-detection","phishing-detection","pii-detection","hate-speech-detection","cyberbullying-detection","fake-news-detection","legal-judgment-classification","contract-clause-classification","case-outcome-prediction","financial-ner","legal-ner","biomedical-ner","chemical-reaction-ner","financial-sentiment-analysis","scientific-abstract-summarization","emotion-detection","sarcasm-detection","stance-detection","bias-detection","hallucination-detection","reading-level-assessment","generation-groundedness","citation-intent-classification","code-summary-generation","code-clone-detection","image-classification","object-detection","image-segmentation","visual-question-answering","document-question-answering","zero-shot-image-classification","depth-estimation","image-feature-extraction","automatic-speech-recognition","audio-classification","voice-activity-detection","emotion-recognition","video-classification","text-to-speech","text-to-image","image-super-resolution","table-question-answering","feature-ranking","error"]);
+let normCmd=function(cmd){if(!cmd)return"";let l=cmd.toLowerCase().trim();if(l==="evove"||l==="evoce"||l==="evovle"||l==="evolv"||l==="evolution")return"evolve";if(l==="avo")return"avo";if(l==="api-keys")return"keys";if(l==="sys-info")return"sysinfo";if(l==="decisionstats")return"decision-stats";if(l==="performancestats")return"performance-stats";if(l==="cachestats")return"cache-stats";if(l==="novelaistats")return"novel-ai-stats";if(l==="datascience")return"data-science";if(l==="peheaderextraction")return"pe-header-extraction";if(l==="exportpdf")return"export-pdf";if(l==="commands"||l==="help")return"command";if(l==="comments"||l==="docs")return"comment";return l;};
 let isUM=function(M){if(!M)return false;let R=M.role;if(R===1||String(R)==="1"||String(R).toLowerCase()==="user")return true;if(M.constructor&&M.constructor.name.toLowerCase().includes("user"))return true;return false;};
 let clnUT=function(S){if(!S)return"";let X=String(S);let ur=X.match(/<user[_\s]*request>([\s\S]*?)<\/user[_\s]*request>/i)||X.match(/<user>([\s\S]*?)<\/user>/i);if(ur&&ur[1].trim()&&!ur[1].trim().startsWith("compressed version of the preceeding history"))return ur[1].trim();X=X.replace(/\[Context: Selected Explorer Item\(s\):[\s\S]*?\]/gi," ");X=X.replace(/<attachments[\s\S]*?<\/attachments>/gi," ");X=X.replace(/<attachment[\s\S]*?<\/attachment>/gi," ");X=X.replace(/<environment_info[\s\S]*?<\/environment_info>/gi," ");X=X.replace(/<workspace_info[\s\S]*?<\/workspace_info>/gi," ");X=X.replace(/<editorContext[\s\S]*?<\/editorContext>/gi," ");X=X.replace(/<reminderInstructions[\s\S]*?<\/reminderInstructions>/gi," ");X=X.replace(/<customizationsUpdate[\s\S]*?<\/customizationsUpdate>/gi," ");X=X.replace(/<conversation-summary[\s\S]*?<\/conversation-summary>/gi," ");X=X.replace(/The current date is \d{4}-\d{2}-\d{2}\.?/gi," ");X=X.replace(/The user's current OS is: [^\n\r]*/gi," ");X=X.replace(/<\/?[a-zA-Z][\w:-]*(\s+[^>]*)?>/gi," ");return X.trim();};
-let extKC=function(S){if(!S)return"";let cl=clnUT(S);if(!cl)return"";let dAt=cl.match(/(?:^|\n)\s*@([a-zA-Z][\w-]*)\b\s*([\s\S]*)/i);if(dAt){let rc=dAt[1].toLowerCase();let cn=normCmd(rc);if(KC.has(rc)||KC.has(cn)){return"/"+cn+(dAt[2]?" "+dAt[2].trim():"");}}let dcm=cl.match(/(?:^|\n)\s*@(?:comments?)\b\s*([\s\S]*)/i);if(dcm)return"/comment"+(dcm[1]?" "+dcm[1].trim():"");let dtm=cl.match(/(?:^|\n)\s*@(?:tasks?)\b\s*([\s\S]*)/i);if(dtm){let rest=dtm[1].trim();let ws=rest.split(/\s+/);let fw=ws.length>0?normCmd(ws[0].replace(/^[\/@]/,"")):"";if(fw&&(KC.has(fw)||KC.has(normCmd(fw)))){let cn=normCmd(fw);let aw=rest.slice(rest.toLowerCase().indexOf(fw.toLowerCase())+fw.length).trim();return"/"+cn+(aw?" "+aw:"");}return"/tasks"+(rest?" "+rest:"");}let dam=cl.match(/(?:^|\n)\s*@(?:agent|commands?|modelfusion|hugos|code)\b\s*([\s\S]*)/i);if(dam){let rest=dam[1].trim();if(!rest)return"/stats";let ws=rest.split(/\s+/);let fw=ws.length>0?normCmd(ws[0].replace(/^[\/@]/,"")):"";if(fw&&(KC.has(fw)||KC.has(normCmd(fw)))){let cn=normCmd(fw);let aw=rest.slice(rest.toLowerCase().indexOf(fw.toLowerCase())+fw.length).trim();return"/"+cn+(aw?" "+aw:"");}return"/stats "+rest;}let sm=cl.match(/(?:^|\n)\s*\/([a-zA-Z][\w-]*)\b\s*([\s\S]*)/i);if(sm){let raw=sm[1].toLowerCase();let cn=normCmd(raw);if(KC.has(raw)||KC.has(cn))return"/"+cn+(sm[2]?" "+sm[2].trim():"");}let anyAgent=cl.match(/(?:^|\n)\s*@[a-zA-Z0-9_-]+\s+([a-zA-Z0-9_-]+)(?:\b\s*([\s\S]*))?/i);if(anyAgent){let raw=anyAgent[1].toLowerCase();let cn=normCmd(raw);if(KC.has(raw)||KC.has(cn))return"/"+cn+((anyAgent[2]||"")?" "+anyAgent[2].trim():"");}let ws=cl.split(/\s+/);if(ws.length>0){let firstClean=normCmd(ws[0].toLowerCase().replace(/^[\/@]/,"").replace(/[^a-z0-9_-]/g,""));if(KC.has(firstClean)||KC.has(normCmd(firstClean))){let cn=normCmd(firstClean);let rest=ws.slice(1).join(" ").trim();return"/"+cn+(rest?" "+rest:"");}}return"";};
+let extKC=function(S){if(!S)return"";let cl=clnUT(S);if(!cl)return"";let dAt=cl.match(/(?:^|\n)\s*@([a-zA-Z][\w-]*)\b\s*([\s\S]*)/i);if(dAt){let rc=dAt[1].toLowerCase();let cn=normCmd(rc);if(rc!=="command"&&rc!=="commands"&&(KC.has(rc)||KC.has(cn))){return"/"+cn+(dAt[2]?" "+dAt[2].trim():"");}}let dcm=cl.match(/(?:^|\n)\s*@(?:comments?)\b\s*([\s\S]*)/i);if(dcm)return"/comment"+(dcm[1]?" "+dcm[1].trim():"");let dtm=cl.match(/(?:^|\n)\s*@(?:tasks?)\b\s*([\s\S]*)/i);if(dtm){let rest=dtm[1].trim();let ws=rest.split(/\s+/);let fw=ws.length>0?normCmd(ws[0].replace(/^[\/@]/,"")):"";if(fw&&(KC.has(fw)||KC.has(normCmd(fw)))){let cn=normCmd(fw);let aw=rest.slice(rest.toLowerCase().indexOf(fw.toLowerCase())+fw.length).trim();return"/"+cn+(aw?" "+aw:"");}return"/tasks"+(rest?" "+rest:"");}let dAgent=cl.match(/(?:^|\n)\s*@agent\b\s*([\s\S]*)/i);if(dAgent){let rest=dAgent[1].trim();if(!rest)return"";let ws=rest.split(/\s+/);let raw=ws[0].replace(/^[\/@]/,"").toLowerCase();let nf=normCmd(raw);if(nf==="evolve"){let idx=rest.toLowerCase().indexOf(ws[0].toLowerCase());let aw=idx>=0?rest.slice(idx+ws[0].length).trim():"";return"/evolve"+(aw?" "+aw:"");}if(nf==="avo"){let idx=rest.toLowerCase().indexOf(ws[0].toLowerCase());let aw=idx>=0?rest.slice(idx+ws[0].length).trim():"";return"/avo"+(aw?" "+aw:"");}if(ws[0].startsWith("/")){let rawS=ws[0].slice(1).toLowerCase();let cn=normCmd(rawS);if(KC.has(rawS)||KC.has(cn)){let idx=rest.toLowerCase().indexOf(ws[0].toLowerCase());let aw=idx>=0?rest.slice(idx+ws[0].length).trim():"";return"/"+cn+(aw?" "+aw:"");}}return"";}let dam=cl.match(/(?:^|\n)\s*@(?:commands?|modelfusion|hugos|code)\b\s*([\s\S]*)/i);if(dam){let rest=dam[1].trim();if(!rest)return"/command";let ws=rest.split(/\s+/);let raw=ws[0].replace(/^[\/@]/,"").toLowerCase();let fw=normCmd(raw);if(KC.has(raw)||KC.has(fw)){let cn=KC.has(fw)?fw:raw;let aw=rest.slice(rest.toLowerCase().indexOf(ws[0].toLowerCase())+ws[0].length).trim();return"/"+cn+(aw?" "+aw:"");}return"";}let sm=cl.match(/(?:^|\n)\s*\/([a-zA-Z][\w-]*)\b\s*([\s\S]*)/i);if(sm){let raw=sm[1].toLowerCase();let cn=normCmd(raw);if(KC.has(raw)||KC.has(cn))return"/"+cn+(sm[2]?" "+sm[2].trim():"");}let anyAgent=cl.match(/(?:^|\n)\s*@[a-zA-Z0-9_-]+\s+([a-zA-Z0-9_-]+)(?:\b\s*([\s\S]*))?/i);if(anyAgent){let raw=anyAgent[1].toLowerCase();let cn=normCmd(raw);if(KC.has(raw)||KC.has(cn))return"/"+cn+((anyAgent[2]||"")?" "+anyAgent[2].trim():"");}let ws=cl.split(/\s+/);if(ws.length>0){let firstClean=normCmd(ws[0].toLowerCase().replace(/^[\/@]/,"").replace(/[^a-z0-9_-]/g,""));if(KC.has(firstClean)||KC.has(normCmd(firstClean))){let cn=normCmd(firstClean);let rest=ws.slice(1).join(" ").trim();return"/"+cn+(rest?" "+rest:"");}}return"";};
 for(let i=r.length-1;i>=0;i--){if(!isUM(r[i]))continue;let rt=l[i]||"";let fd=extKC(rt);if(fd){c=fd;this._outputChannel.appendLine("[SlashCmd] Extracted command from user turn "+i+": "+c);break;}}
 if(!c){let deepFind=function(obj,d){if(!obj||d>4||typeof obj!=="object")return null;for(let k of["command","slashCommand","chatCommand","requestCommand","name","id"]){let v=obj[k];if(typeof v==="string"&&v.length>0){let raw=normCmd(v.toLowerCase().replace(/^[\\/@]/,""));if(KC.has(raw))return raw;}if(v&&typeof v==="object"){let n=v.name||v.id||v.value;if(typeof n==="string"){let raw=normCmd(n.toLowerCase().replace(/^[\\/@]/,""));if(KC.has(raw))return raw;}}}if(!Array.isArray(obj)){for(let k of Object.keys(obj)){if(k==="tools"||k==="toolInvocationToken"||k==="toolsPolicy")continue;let f=deepFind(obj[k],d+1);if(f)return f;}}return null;};let dc=deepFind(o,0);if(dc){let lp=clnUT(l[l.length-1]||"");c="/"+dc+(lp?" "+lp:"");this._outputChannel.appendLine("[SlashCmd] Recognized command via deep options scan: /"+dc);}}
 if(!c){for(let i=r.length-1;i>=0;i--){let nm=r[i]?.name;if(nm&&typeof nm==="string"){let raw=normCmd(nm.toLowerCase().replace(/^[\\/@]/,""));if(KC.has(raw)){c="/"+raw;this._outputChannel.appendLine("[SlashCmd] Recognized command via message name: /"+raw);break;}}}}
@@ -341,17 +371,17 @@ def patch_file(file_path):
         print(f"  PATCHED (unminified format, {len(UNMINIFIED_BLOCK)} chars): {file_path}")
         return True
 
-    elif "l.push(Q);}" in content:
-        start_anchor = "l.push(Q);}"
+    elif "if(c){let B=c.match" in content:
         end_anchor = "if(c){let B=c.match"
-        si = content.find(start_anchor)
-        if si < 0:
+        ei = content.find(end_anchor)
+        if "if(!c&&o?.command)" in content[:ei]:
+            si = content.rfind("if(!c&&o?.command)", 0, ei)
+        elif "l.push(Q);}" in content[:ei]:
+            si = content.rfind("l.push(Q);}", 0, ei) + len("l.push(Q);}")
+        elif "c=P;break}}" in content[:ei]:
+            si = content.rfind("c=P;break}}", 0, ei) + len("c=P;break}}")
+        else:
             print(f"  ERROR: Minified start anchor not found in {file_path}")
-            return False
-        si += len(start_anchor)
-        ei = content.find(end_anchor, si)
-        if ei < 0:
-            print(f"  ERROR: Minified end anchor not found in {file_path}")
             return False
         
         new_content = content[:si] + '\n' + MINIFIED_BLOCK.strip() + '\n' + content[ei:]
@@ -364,16 +394,25 @@ def patch_file(file_path):
         return False
 
 
-count = 0
-for file_path in target_files:
-    if os.path.exists(file_path):
-        print(f"Scanning: {file_path}")
-        if patch_file(file_path):
-            count += 1
+if __name__ == '__main__':
+    seen = set()
+    deduped_targets = []
+    for f in target_files:
+        norm = os.path.normcase(os.path.abspath(f))
+        if norm not in seen:
+            seen.add(norm)
+            deduped_targets.append(f)
 
-print(f"\nTotal files patched: {count}")
-if count == 0:
-    print("WARNING: No files were patched.")
-    sys.exit(1)
-else:
-    print("SUCCESS: All extension.js files patched with comprehensive slash command & @agent detection.")
+    count = 0
+    for file_path in deduped_targets:
+        if os.path.exists(file_path):
+            print(f"Scanning: {file_path}")
+            if patch_file(file_path):
+                count += 1
+
+    print(f"\nTotal files patched: {count}")
+    if count == 0:
+        print("WARNING: No files were patched.")
+        sys.exit(1)
+    else:
+        print("SUCCESS: All extension.js files patched with comprehensive slash command & @agent detection.")
