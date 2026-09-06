@@ -421,8 +421,8 @@ if (Test-Path $msiPath) {
     Remove-Item -Path $msiPath -Force
 }
 
-# Run wix build
-& wix build -arch x64 $wxsPath -out $msiPath
+# Run wix build with multi-threaded cabinet compression
+& wix build -arch x64 -ct 4 $wxsPath -out $msiPath
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] WiX build failed." -ForegroundColor Red
     Exit 1
