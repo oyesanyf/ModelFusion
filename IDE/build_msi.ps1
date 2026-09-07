@@ -339,9 +339,29 @@ foreach ($tDir in $targetExtDirs) {
     # Sync avo/
     $avoSrc = Join-Path $srcExtDir "avo"
     $avoDst = Join-Path $tDir "avo"
+    $avoDest = $avoDst
     if (Test-Path $avoSrc) {
         if (-not (Test-Path $avoDst)) { New-Item -ItemType Directory -Force -Path $avoDst | Out-Null }
         Copy-Item -Path "$avoSrc\*" -Destination $avoDst -Recurse -Force
+
+        # Exclude .git, runs, __pycache__, and temporary artifacts from packaging
+        @('.git', '.claude', 'runs', '__pycache__', '.pytest_cache', '.venv') | ForEach-Object {
+            $unwanted = Join-Path $avoDest $_
+            if (Test-Path $unwanted) {
+                Remove-Item $unwanted -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+        Get-ChildItem -Path $avoDest -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        Get-ChildItem -Path $avoDest -Recurse -Filter "*.pyc" -ErrorAction SilentlyContinue |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+
+        # Verification assertion gate checking that Test-Path "$avoDest\src\avo\cli.py" passes
+        if (-not (Test-Path "$avoDest\src\avo\cli.py")) {
+            Write-Error "[ASSERTION FAILED] AVO CLI entrypoint missing after packaging: $avoDest\src\avo\cli.py"
+            exit 1
+        }
+        Write-Host "[OK] Verified AVO CLI entrypoint at: $avoDest\src\avo\cli.py" -ForegroundColor Green
     }
     Write-Host "[OK] Synced extension dist and avo to: $tDir" -ForegroundColor Green
 }

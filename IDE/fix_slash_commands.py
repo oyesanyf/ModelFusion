@@ -424,6 +424,7 @@ def sync_targets(targets):
     print(f"Authoritative source extension: {SOURCE_EXT} ({os.path.getsize(SOURCE_EXT)} bytes)")
     
     norm_source = os.path.normcase(os.path.abspath(SOURCE_EXT))
+    norm_source_avo = os.path.normcase(os.path.abspath(SOURCE_AVO)) if os.path.exists(SOURCE_AVO) else None
     
     for file_path in targets:
         norm_target = os.path.normcase(os.path.abspath(file_path))
@@ -441,12 +442,55 @@ def sync_targets(targets):
                 shutil.copy2(SOURCE_EXT, file_path)
                 print(f"  Synced extension.js -> {file_path}")
             
-            if os.path.exists(SOURCE_AVO):
+            if norm_source_avo:
                 target_avo_dir = os.path.join(target_ext_dir, "avo")
-                shutil.copytree(SOURCE_AVO, target_avo_dir, dirs_exist_ok=True)
-                print(f"  Synced avo/ -> {target_avo_dir}")
+                norm_target_avo = os.path.normcase(os.path.abspath(target_avo_dir))
+                if norm_target_avo != norm_source_avo:
+                    shutil.copytree(
+                        SOURCE_AVO,
+                        target_avo_dir,
+                        dirs_exist_ok=True,
+                        ignore=shutil.ignore_patterns('.git', 'runs', '__pycache__', '*.pyc', '.claude', '.pytest_cache', '.venv')
+                    )
+                    # Clean up any leftover unwanted artifacts from prior runs
+                    for unwanted in ['.git', 'runs', '__pycache__', '.claude', '.pytest_cache', '.venv']:
+                        unwanted_path = os.path.join(target_avo_dir, unwanted)
+                        if os.path.isdir(unwanted_path):
+                            shutil.rmtree(unwanted_path, ignore_errors=True)
+                        elif os.path.isfile(unwanted_path):
+                            try:
+                                os.remove(unwanted_path)
+                            except OSError:
+                                pass
+                    print(f"  Synced avo/ -> {target_avo_dir}")
         except Exception as ex:
             print(f"  Warning: failed to sync to {file_path}: {ex}")
+
+    # Explicit multi-target verification across all 6 targets
+    all_6_targets = [
+        r"D:\harfile\ModelFusion\IDE\vscode\extensions\copilot\avo\src\avo\cli.py",
+        r"D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\extensions\copilot\avo\src\avo\cli.py",
+        r"D:\harfile\ModelFusion\IDE\VSCode-win32-x64\7e7950df89\resources\app\extensions\copilot\avo\src\avo\cli.py",
+        os.path.join(os.environ.get('LOCALAPPDATA', r"C:\Users\oyesanyf\AppData\Local"), r"HugOS IDE\resources\app\extensions\copilot\avo\src\avo\cli.py"),
+        os.path.join(os.environ.get('LOCALAPPDATA', r"C:\Users\oyesanyf\AppData\Local"), r"HugOS IDE\7e7950df89\resources\app\extensions\copilot\avo\src\avo\cli.py"),
+        r"D:\harfile\ModelFusion\IDE\vscode\.build\extensions\copilot\avo\src\avo\cli.py",
+    ]
+
+    print("\n--- Verifying avo/src/avo/cli.py across all 6 targets ---")
+    verified_count = 0
+    for target_cli in all_6_targets:
+        if os.path.isfile(target_cli):
+            size = os.path.getsize(target_cli)
+            print(f"  [PASS] AVO CLI exists: {target_cli} ({size} bytes)")
+            verified_count += 1
+        else:
+            print(f"  [FAIL] AVO CLI missing: {target_cli}")
+
+    if verified_count == len(all_6_targets):
+        print(f"  [OK] Verified avo/src/avo/cli.py across all {verified_count} targets successfully.\n")
+    else:
+        print(f"  [WARN] Verified {verified_count}/{len(all_6_targets)} targets.\n")
+
     return True
 
 
