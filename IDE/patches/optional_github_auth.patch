@@ -1,0 +1,26 @@
+diff --git a/src/vs/workbench/contrib/chat/browser/chatSetup/chatSetupContributions.ts b/src/vs/workbench/contrib/chat/browser/chatSetup/chatSetupContributions.ts
+index ac91175c..b2660549 100644
+--- a/src/vs/workbench/contrib/chat/browser/chatSetup/chatSetupContributions.ts
++++ b/src/vs/workbench/contrib/chat/browser/chatSetup/chatSetupContributions.ts
+@@ -88,6 +88,7 @@ export class ChatSetupContribution extends Disposable implements IWorkbenchContr
+ 
+ 		const context = chatEntitlementService.context?.value;
+ 		const requests = chatEntitlementService.requests?.value;
++		return; // HugOS: GitHub login is optional; do not intercept chat with SetupAgent
+ 		if (!context || !requests) {
+ 			return; // disabled
+ 		}
+diff --git a/src/vs/workbench/contrib/chat/browser/chatSetup/chatSetupRunner.ts b/src/vs/workbench/contrib/chat/browser/chatSetup/chatSetupRunner.ts
+index f74869f0..0a33bcb8 100644
+--- a/src/vs/workbench/contrib/chat/browser/chatSetup/chatSetupRunner.ts
++++ b/src/vs/workbench/contrib/chat/browser/chatSetup/chatSetupRunner.ts
+@@ -169,6 +169,9 @@ export class ChatSetup {
+ 	}
+ 
+ 	private async showDialog(options?: { forceSignInDialog?: boolean; forceAnonymous?: ChatSetupAnonymous; dialogIcon?: ThemeIcon; dialogTitle?: string; disableCloseButton?: boolean; onSignInStarted?: () => void }): Promise<ChatSetupStrategy> {
++		if (!options?.forceSignInDialog) {
++			return ChatSetupStrategy.Canceled;
++		}
+ 		const disposables = new DisposableStore();
+ 
+ 		const buttons = this.getButtons(options);
