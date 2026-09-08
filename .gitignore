@@ -14,7 +14,6 @@ logs/
 *.log
 
 ov_models/
-IDE/HugOS.msi
 IDE/VSCode-win32-x64/
 IDE/vscode/
 IDE/hugos.exe
