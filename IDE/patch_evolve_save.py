@@ -86,7 +86,7 @@ def patch_evolve_save_in_file(file_path):
     )
     if pattern_unmin_builtin_instr.search(content):
         content = pattern_unmin_builtin_instr.sub(
-            r'\g<1>\\u{1F9EC} Inline diff shown. **Ctrl+Shift+Y** to Accept, **Ctrl+Shift+N** to Reject.\\n\g<2>',
+            r'\g<1>\\u{1F9EC} Inline diff shown in editor. Press **Ctrl+S** or **Ctrl+Shift+Y** to Accept, **Ctrl+Shift+N** to Reject.\\n\g<2>',
             content
         )
         changed = True
@@ -94,7 +94,7 @@ def patch_evolve_save_in_file(file_path):
 
     # 1B. Ensure code block under autoApply in unminified Builtin Evolve
     pattern_unmin_no_codeblock = re.compile(
-        r'(if\s*\(\s*autoApply\s*\)\s*\{[^{}]+?Showing inline diff[^{}]+?)(progress\.report\(new\s+\w+\(["\'](?:\\u\{1F9EC\}\s*Inline diff shown\.\s*)?\*\*Ctrl\+Shift\+Y\*\*.*?\)\);[^{}]+?showInlineChanges\(\s*editor\s*,\s*originalCode\s*,\s*bestCode\s*\))',
+        r'(if\s*\(\s*autoApply\s*\)\s*\{[^{}]+?Showing inline diff[^{}]+?)(progress\.report\(new\s+\w+\(["\'](?:\\u\{1F9EC\}\s*Inline diff shown.*?\.\s*)?\*\*Ctrl\+Shift\+Y\*\*.*?\)\);[^{}]+?showInlineChanges\(\s*editor\s*,\s*originalCode\s*,\s*bestCode\s*\))',
         re.DOTALL
     )
     m = pattern_unmin_no_codeblock.search(content)
@@ -114,7 +114,7 @@ def patch_evolve_save_in_file(file_path):
     # 2. BUILTIN EVOLVE - MINIFIED (Legacy / Production terser)
     # =========================================================================
     target_builtin_min = 'f>0&&g!==r?l?(p.report(new st(`- **Status**: \\u2705 Code improved! Showing inline diff\\u2026\n\n`)),p.report(new st(`Use **Ctrl+Shift+Y** to Accept or **Ctrl+Shift+N** to Reject.\n`)),await this._inlineDiff.showInlineChanges(t,r,g)):(p.report(new st(`- **Status**: \\u2705 Code improved! (Auto-apply is disabled \\u2014 copy from chat output)\n\n`)),p.report(new st(`\\`\\`\\`${a}\n${g}\n\\`\\`\\`\n`)))'
-    replacement_builtin_min = 'f>0&&g!==r?l?(p.report(new st(`- **Status**: \\u2705 Code improved! Showing inline diff\\u2026\\n\\n`)),p.report(new st(`\\`\\`\\`${a}\\n${g}\\n\\`\\`\\`\\n\\n`)),p.report(new st(`\\u{1F9EC} Inline diff shown. **Ctrl+Shift+Y** to Accept, **Ctrl+Shift+N** to Reject.\\n`)),await this._inlineDiff.showInlineChanges(t,r,g)):(p.report(new st(`- **Status**: \\u2705 Code improved!\\n\\n`)),p.report(new st(`\\`\\`\\`${a}\\n${g}\\n\\`\\`\\`\\n`)))'
+    replacement_builtin_min = 'f>0&&g!==r?l?(p.report(new st(`- **Status**: \\u2705 Code improved! Showing inline diff\\u2026\\n\\n`)),p.report(new st(`\\`\\`\\`${a}\\n${g}\\n\\`\\`\\`\\n\\n`)),p.report(new st(`\\u{1F9EC} Inline diff shown in editor. Press **Ctrl+S** or **Ctrl+Shift+Y** to Accept, **Ctrl+Shift+N** to Reject.\\n`)),await this._inlineDiff.showInlineChanges(t,r,g)):(p.report(new st(`- **Status**: \\u2705 Code improved!\\n\\n`)),p.report(new st(`\\`\\`\\`${a}\\n${g}\\n\\`\\`\\`\\n`)))'
     if target_builtin_min in content:
         content = content.replace(target_builtin_min, replacement_builtin_min)
         changed = True
@@ -124,7 +124,7 @@ def patch_evolve_save_in_file(file_path):
     # 3. OPENEVOLVE / AVO - MINIFIED (Legacy / Production terser)
     # =========================================================================
     target_open_evolve_min = 'try{let S=Gi.readFileSync(g,"utf-8");S.trim()!==r.trim()?(await this._inlineDiff.showInlineChanges(t,r,S),u.report(new st(`\\u{1F9EC} Inline diff shown. **Ctrl+Shift+Y** to Accept, **Ctrl+Shift+N** to Reject.\n`))):u.report(new st(`Code unchanged after evolution.\n`))}'
-    replacement_open_evolve_min = 'try{let S=Gi.readFileSync(g,"utf-8");u.report(new st(`\\n\\`\\`\\`python\\n${S}\\n\\`\\`\\`\\n\\n`));S.trim()!==r.trim()?(await this._inlineDiff.showInlineChanges(t,r,S),u.report(new st(`\\u{1F9EC} Inline diff shown. **Ctrl+Shift+Y** to Accept, **Ctrl+Shift+N** to Reject.\\n`))):u.report(new st(`Code unchanged after evolution.\\n`))}'
+    replacement_open_evolve_min = 'try{let S=Gi.readFileSync(g,"utf-8");u.report(new st(`\\n\\`\\`\\`python\\n${S}\\n\\`\\`\\`\\n\\n`));S.trim()!==r.trim()?(await this._inlineDiff.showInlineChanges(t,r,S),u.report(new st(`\\u{1F9EC} Inline diff shown in editor. Press **Ctrl+S** or **Ctrl+Shift+Y** to Accept, **Ctrl+Shift+N** to Reject.\\n`))):u.report(new st(`Code unchanged after evolution.\\n`))}'
     if target_open_evolve_min in content:
         content = content.replace(target_open_evolve_min, replacement_open_evolve_min)
         changed = True

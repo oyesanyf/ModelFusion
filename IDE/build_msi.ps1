@@ -375,6 +375,11 @@ if (Test-Path $patchEvolveScript) {
     python $patchEvolveScript
     Write-Host "[OK] Applied OpenEvolve display & save patches" -ForegroundColor Green
 }
+$patchApplyCodeblockScript = Join-Path $PSScriptRoot "patch_apply_codeblock.py"
+if (Test-Path $patchApplyCodeblockScript) {
+    python $patchApplyCodeblockScript
+    Write-Host "[OK] Applied code block apply and auto-save patches" -ForegroundColor Green
+}
 
 # 5. Sign the binaries
 Write-Host "[INFO] Signing executables, DLLs, and native modules inside packaged folder..." -ForegroundColor Yellow
