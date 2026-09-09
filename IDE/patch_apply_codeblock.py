@@ -16,6 +16,8 @@ build packaging, and installed HugOS IDE locations to guarantee:
 import os
 import glob
 import sys
+import re
+import subprocess
 
 def patch_extension_js(file_path):
     if not os.path.isfile(file_path):
@@ -67,31 +69,29 @@ def patch_extension_js(file_path):
     else:
         print(f"  [WARN] provideMappedEdits target pattern not found in {file_path}")
 
-    # 2. Patch showInlineChanges Ctrl+S auto-accept
-    target_show_changes = '''        const autoDismiss = vscode11.window.onDidChangeActiveTextEditor((newEditor) => {
-          if (this._pendingEdit && newEditor !== this._pendingEdit.editor) {
-          }
-        });
-        this._pendingEdit.autoDismiss = autoDismiss;'''
+    # 2. Patch showInlineChanges Ctrl+S auto-accept (strictly deduplicating / idempotent)
+    save_pattern = re.compile(
+        r'(const autoDismiss\s*=\s*(vscode\d*)\.window\.onDidChangeActiveTextEditor.*?this\._pendingEdit\.autoDismiss\s*=\s*autoDismiss;)(?:\s*const saveListener\s*=\s*(?:vscode\d*)\.workspace\.onDidSaveTextDocument\(\(savedDoc\)\s*=>\s*\{.*?this\._pendingEdit\.saveListener\s*=\s*saveListener;)*',
+        re.DOTALL
+    )
 
-    replacement_show_changes = '''        const autoDismiss = vscode11.window.onDidChangeActiveTextEditor((newEditor) => {
-          if (this._pendingEdit && newEditor !== this._pendingEdit.editor) {
-          }
-        });
-        this._pendingEdit.autoDismiss = autoDismiss;
-        const saveListener = vscode11.workspace.onDidSaveTextDocument((savedDoc) => {
-          if (this._pendingEdit && savedDoc.uri.toString() === this._pendingEdit.editor.document.uri.toString()) {
+    def replace_save_listener(m):
+        prefix = m.group(1)
+        vsc = m.group(2)
+        return f'''{prefix}
+        const saveListener = {vsc}.workspace.onDidSaveTextDocument((savedDoc) => {{
+          if (this._pendingEdit && savedDoc.uri.toString() === this._pendingEdit.editor.document.uri.toString()) {{
             this.accept();
-          }
-        });
+          }}
+        }});
         this._pendingEdit.saveListener = saveListener;'''
 
-    if target_show_changes in content:
-        content = content.replace(target_show_changes, replacement_show_changes)
-        changed = True
-        print(f"  [OK] Patched onDidSaveTextDocument in {file_path}")
-    elif 'onDidSaveTextDocument((savedDoc)' in content:
-        print(f"  [INFO] onDidSaveTextDocument already patched in {file_path}")
+    if save_pattern.search(content):
+        new_content = save_pattern.sub(replace_save_listener, content)
+        if new_content != content:
+            content = new_content
+            changed = True
+            print(f"  [OK] Patched and deduplicated onDidSaveTextDocument in {file_path}")
 
     # Dispose saveListener in accept and reject
     target_accept = '''        const { editor, statusBarItem, autoDismiss } = this._pendingEdit;
@@ -123,11 +123,30 @@ def patch_extension_js(file_path):
         changed = True
         print(f"  [OK] Patched reject() in {file_path}")
 
+    # 3. Ensure 'avo' command is mapped in agentsToCommands
+    target_agents_evolve = '"evolve": "editAgent" /* Agent */,'
+    replacement_agents_avo = '"evolve": "editAgent" /* Agent */,\n    "avo": "editAgent" /* Agent */,'
+    if target_agents_evolve in content and '"avo": "editAgent"' not in content:
+        content = content.replace(target_agents_evolve, replacement_agents_avo)
+        changed = True
+        print(f"  [OK] Patched avo command in agentsToCommands in {file_path}")
+
     if changed:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
-        return True
-    return False
+
+    # Validate syntax with node --check
+    try:
+        chk = subprocess.run(["node", "--check", file_path], capture_output=True, text=True)
+        if chk.returncode != 0:
+            print(f"  [ERROR] Syntax check failed for {file_path}:\n{chk.stderr}")
+            return False
+        else:
+            print(f"  [OK] Syntax check passed (node --check) for {file_path}")
+    except Exception as e:
+        print(f"  [WARN] Could not run node --check: {e}")
+
+    return changed
 
 
 def patch_unminified_workbench(file_path):
