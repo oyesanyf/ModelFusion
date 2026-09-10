@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="HugOS IDE" Manufacturer="HugOS Team" Version="1.126.70" UpgradeCode="d77b7e06-80ba-4137-bcf4-654b95ccebc5" Scope="perUser">
+  <Package Name="HugOS IDE" Manufacturer="HugOS Team" Version="1.126.76" UpgradeCode="d77b7e06-80ba-4137-bcf4-654b95ccebc5" Scope="perUser">
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." Schedule="afterInstallInitialize" AllowSameVersionUpgrades="yes" />
 
     <MediaTemplate EmbedCab="yes" />
@@ -73487,7 +73487,7 @@
         <File Id="fil_19131" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\7e7950df89\resources\app\extensions\github-authentication\media\sessions-icon.svg" KeyPath="yes" />
       </Component>
       <Component Id="cmp_19132" Guid="*" Directory="dir_2906">
-        <File Id="fil_19132" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\7e7950df89\resources\app\extensions\github-authentication\package.json.disabled" KeyPath="yes" />
+        <File Id="fil_19132" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\7e7950df89\resources\app\extensions\github-authentication\package.json" KeyPath="yes" />
       </Component>
       <Component Id="cmp_19133" Guid="*" Directory="dir_2906">
         <File Id="fil_19133" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\7e7950df89\resources\app\extensions\github-authentication\package.nls.json" KeyPath="yes" />
@@ -149261,7 +149261,7 @@
         <File Id="fil_44389" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\extensions\github-authentication\media\index.html" KeyPath="yes" />
       </Component>
       <Component Id="cmp_44390" Guid="*" Directory="dir_6944">
-        <File Id="fil_44390" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\extensions\github-authentication\package.json.disabled" KeyPath="yes" />
+        <File Id="fil_44390" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\extensions\github-authentication\package.json" KeyPath="yes" />
       </Component>
       <Component Id="cmp_44391" Guid="*" Directory="dir_6944">
         <File Id="fil_44391" Source="D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\extensions\github-authentication\package.nls.json" KeyPath="yes" />
