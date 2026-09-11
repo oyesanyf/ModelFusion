@@ -380,6 +380,11 @@ if (Test-Path $patchApplyCodeblockScript) {
     python $patchApplyCodeblockScript
     Write-Host "[OK] Applied code block apply and auto-save patches" -ForegroundColor Green
 }
+$patchFusionScript = Join-Path $PSScriptRoot "patch_evolution_fusion.py"
+if (Test-Path $patchFusionScript) {
+    python $patchFusionScript
+    Write-Host "[OK] Applied evolution multi-model fusion patches" -ForegroundColor Green
+}
 
 # 5. Sign the binaries
 Write-Host "[INFO] Signing executables, DLLs, and native modules inside packaged folder..." -ForegroundColor Yellow
