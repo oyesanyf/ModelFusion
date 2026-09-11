@@ -3532,7 +3532,6 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         if ollama || (gpu && !openvino) {
                             std::env::set_var("MODELFUSION_USE_OLLAMA", "true");
                             std::env::set_var("MODELFUSION_FORCE_GPU", "true");
-                            fusion = false;
                         } else {
                             std::env::remove_var("MODELFUSION_USE_OLLAMA");
                             std::env::remove_var("MODELFUSION_FORCE_GPU");
@@ -3540,7 +3539,6 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                         if openvino {
                             std::env::set_var("MODELFUSION_USE_OPENVINO", "true");
-                            fusion = false; // Disable fusion if explicit backend is requested
                         } else {
                             std::env::remove_var("MODELFUSION_USE_OPENVINO");
                         }
@@ -3558,8 +3556,17 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         // "programming assistant" system prompt causes refusals for non-coding Qs
                         let clean_prompt = user_msg_for_check.clone();
 
+                        // Check if client explicitly requested fusion (in request JSON, options, or slash command)
+                        let explicit_fusion_requested = request_json["fusion"].as_bool().unwrap_or(false)
+                            || orchestration_options.get("fusion").map(|v| v == "true").unwrap_or(false);
+
                         // Classify prompt to see if fusion is actually needed
-                        let prompt_needs_fusion = fusion && modelfusion_core::fusion_engine::classify_prompt(&clean_prompt);
+                        let prompt_needs_fusion = if explicit_fusion_requested {
+                            eprintln!("[SERVER] ⚡ Explicit fusion requested by client. Activating multi-model fusion pipeline.");
+                            true
+                        } else {
+                            fusion && modelfusion_core::fusion_engine::classify_prompt(&clean_prompt)
+                        };
                         if fusion && !prompt_needs_fusion {
                             eprintln!("[SERVER] Prompt classified as simple. Bypassing fusion engine to run single model orchestrator.");
                         }
