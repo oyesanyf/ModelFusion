@@ -385,6 +385,13 @@ if (Test-Path $patchFusionScript) {
     python $patchFusionScript
     Write-Host "[OK] Applied evolution multi-model fusion patches" -ForegroundColor Green
 }
+$patchAvoOutputScript = Join-Path $PSScriptRoot "patch_avo_output.py"
+if (Test-Path $patchAvoOutputScript) {
+    python $patchAvoOutputScript
+    Write-Host "[OK] Applied AVO output reporting & diagnostic patches" -ForegroundColor Green
+}
+
+
 
 # 5. Sign the binaries
 Write-Host "[INFO] Signing executables, DLLs, and native modules inside packaged folder..." -ForegroundColor Yellow
