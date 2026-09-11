@@ -1,5 +1,5 @@
-﻿/target/
-!mcp-ide-engine-0.1.0.msi
+/target/
+*.msi
 *.pdb
 *.wixobj
 *.wixpdb
