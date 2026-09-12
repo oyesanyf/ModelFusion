@@ -45,7 +45,7 @@ def test_command_routing_logic():
     def norm_cmd(cmd):
         if not cmd: return ""
         l = cmd.lower().strip()
-        if l in ("evove", "evoce", "evovle", "evolv", "evolution"): return "evolve"
+        if l.startswith("evol") or l.startswith("evov") or l.startswith("evoc") or l == "evolution": return "evolve"
         if l == "avo": return "avo"
         return l
 
@@ -63,6 +63,8 @@ def test_command_routing_logic():
                 norm = norm_cmd(raw_cmd)
                 if norm in known_commands:
                     return f"/{norm} {rem}".strip()
+                if raw_cmd in known_commands:
+                    return f"/{raw_cmd} {rem}".strip()
             return ""
         m_slash = re.match(r"^\s*/([a-zA-Z0-9_\-]+)(?:\s+([\s\S]*))?$", cleaned)
         if m_slash:
@@ -74,9 +76,12 @@ def test_command_routing_logic():
 
     tests = [
         ("@agent evolve", "/evolve", "OpenEvolve"),
+        ("@agent evolove", "/evolve", "OpenEvolve"),
+        ("@agent evovle", "/evolve", "OpenEvolve"),
         ("@agent evolve --iterations 10", "/evolve --iterations 10", "OpenEvolve"),
         ("@agent avo", "/avo", "AVO"),
         ("@agent avo -n 5", "/avo -n 5", "AVO"),
+        ("@agent stats", "/stats", "Stats"),
         ("/evolve", "/evolve", "OpenEvolve"),
         ("/avo", "/avo", "AVO"),
         ("@agent write a test suite", "", "CodingAgent"),
