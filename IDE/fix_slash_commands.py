@@ -505,6 +505,96 @@ def sync_targets(targets):
     return True
 
 
+WORKBENCH_TARGETS = [
+    r"D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\out\vs\workbench\workbench.desktop.main.js",
+    r"D:\harfile\ModelFusion\IDE\VSCode-win32-x64\7e7950df89\resources\app\out\vs\workbench\workbench.desktop.main.js",
+    os.path.join(os.environ.get('LOCALAPPDATA', ''), r"HugOS IDE\resources\app\out\vs\workbench\workbench.desktop.main.js"),
+    os.path.join(os.environ.get('LOCALAPPDATA', ''), r"HugOS IDE\7e7950df89\resources\app\out\vs\workbench\workbench.desktop.main.js"),
+    r"C:\Users\oyesanyf\AppData\Local\HugOS IDE\resources\app\out\vs\workbench\workbench.desktop.main.js",
+    r"C:\Users\oyesanyf\AppData\Local\HugOS IDE\7e7950df89\resources\app\out\vs\workbench\workbench.desktop.main.js",
+]
+
+
+def patch_workbench_file(file_path):
+    """Patch workbench.desktop.main.js to make invokeAgent resilient (async polling + editsAgent fallback)."""
+    if not os.path.isfile(file_path):
+        return False
+
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        content = f.read()
+
+    # Check if already patched
+    if "github.copilot.editsAgent" in content and ("_w < 30" in content or "_w<30" in content):
+        print(f"  [SKIP] workbench.desktop.main.js already patched: {file_path}")
+        return True
+
+    patched = False
+
+    # 1. Unminified target
+    unmin_target = (
+        '    const data = this._agents.get(id2);\n'
+        '    if (!data?.impl) {\n'
+        '      throw new Error(`No activated agent with id "${id2}"`);\n'
+        '    }'
+    )
+    unmin_replace = (
+        '    let data = this._agents.get(id2);\n'
+        '    if (!data?.impl) {\n'
+        '      for (let _w = 0; _w < 30 && !this._agents.get(id2)?.impl; _w++) {\n'
+        '        await new Promise(res => setTimeout(res, 100));\n'
+        '      }\n'
+        '      data = this._agents.get(id2);\n'
+        '    }\n'
+        '    if (!data?.impl) {\n'
+        '      if (id2 === "github.copilot.editsAgent") {\n'
+        '        const defAgent = this.getDefaultAgent(request2.location);\n'
+        '        if (defAgent && defAgent.id !== id2) {\n'
+        '          return this.invokeAgent(defAgent.id, request2, progress, history, token);\n'
+        '        }\n'
+        '      }\n'
+        '      throw new Error(`No activated agent with id "${id2}"`);\n'
+        '    }'
+    )
+
+    if unmin_target in content:
+        content = content.replace(unmin_target, unmin_replace, 1)
+        patched = True
+        print(f"  [OK] Patched unminified invokeAgent in {file_path}")
+
+    # 2. Minified target
+    min_target = 'let s=this._agents.get(e);if(!s?.impl)throw new Error(`No activated agent with id "${e}"`);'
+    min_replace = (
+        'let s=this._agents.get(e);if(!s?.impl){'
+        'for(let _w=0;_w<30&&!this._agents.get(e)?.impl;_w++)await new Promise(res=>setTimeout(res,100));'
+        's=this._agents.get(e)}'
+        'if(!s?.impl){'
+        'if(e==="github.copilot.editsAgent"){'
+        'let d=this.getDefaultAgent(t.location);'
+        'if(d&&d.id!==e)return this.invokeAgent(d.id,t,o,n,r)}'
+        'throw new Error(`No activated agent with id "${e}"`);}'
+    )
+
+    if min_target in content:
+        content = content.replace(min_target, min_replace, 1)
+        patched = True
+        print(f"  [OK] Patched minified invokeAgent in {file_path}")
+
+    if patched:
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        # Validate syntax with node -c
+        import subprocess
+        res = subprocess.run(["node", "-c", file_path], capture_output=True, text=True)
+        if res.returncode != 0:
+            print(f"  [ERROR] Syntax validation failed for {file_path}:\n{res.stderr}", file=sys.stderr)
+            return False
+        print(f"  [OK] Syntax validated (node -c) for {file_path}")
+        return True
+    else:
+        print(f"  [WARN] Neither unminified nor minified invokeAgent target found in {file_path}")
+        return False
+
+
 if __name__ == '__main__':
     seen = set()
     deduped_targets = []
@@ -558,3 +648,16 @@ if __name__ == '__main__':
         sys.exit(1)
 
     print("\nSUCCESS: All distribution targets synchronized, patched, and verified with 100% parity.")
+
+    print("\nStep 4: Patching workbench.desktop.main.js with resilient invokeAgent...")
+    wb_seen = set()
+    wb_count = 0
+    for f in WORKBENCH_TARGETS:
+        norm = os.path.normcase(os.path.abspath(f))
+        if norm not in wb_seen and os.path.isfile(f):
+            wb_seen.add(norm)
+            print(f"Scanning workbench bundle: {f}")
+            if patch_workbench_file(f):
+                wb_count += 1
+    print(f"Total workbench bundles patched/verified: {wb_count}")
+

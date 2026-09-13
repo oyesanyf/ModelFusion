@@ -292,6 +292,7 @@ if (-not (Test-Path $defaultSettingsDir)) {
 }
 $machineSettingsPath = Join-Path $vsCodePackDir "resources\app\product-default-settings.json"
 $defaultSettings = @{
+    "chat.agent.enabled" = $true
     "github.copilot.enable" = @{ "*" = $false }
     "github.gitAuthentication" = $false
     "git.autofetch" = $false
