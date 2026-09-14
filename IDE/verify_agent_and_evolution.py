@@ -41,12 +41,13 @@ def test_bundle_invariants():
 
 def test_command_routing_logic():
     print("\n=== TEST SUITE 3: ROUTING & ZERO ALIASING ===")
-    known_commands = {"stats", "sysinfo", "tasks", "mcp", "keys", "command", "help", "evolve", "avo", "update"}
+    known_commands = {"stats", "statsd", "sysinfo", "tasks", "mcp", "keys", "command", "help", "evolve", "avo", "update"}
     def norm_cmd(cmd):
         if not cmd: return ""
         l = cmd.lower().strip()
         if l.startswith("evol") or l.startswith("evov") or l.startswith("evoc") or l == "evolution": return "evolve"
         if l == "avo": return "avo"
+        if l == "statsd": return "stats"
         return l
 
     def parse_slash(user_text):
@@ -66,6 +67,15 @@ def test_command_routing_logic():
                 if raw_cmd in known_commands:
                     return f"/{raw_cmd} {rem}".strip()
             return ""
+        m_at = re.match(r"^\s*@([a-zA-Z0-9_\-]+)(?:\s+([\s\S]*))?$", cleaned)
+        if m_at and m_at.group(1).lower() != "agent":
+            raw_cmd = m_at.group(1).lower()
+            rem = m_at.group(2) or ""
+            norm = norm_cmd(raw_cmd)
+            if norm in known_commands:
+                return f"/{norm} {rem}".strip()
+            if raw_cmd in known_commands:
+                return f"/{raw_cmd} {rem}".strip()
         m_slash = re.match(r"^\s*/([a-zA-Z0-9_\-]+)(?:\s+([\s\S]*))?$", cleaned)
         if m_slash:
             norm = norm_cmd(m_slash.group(1))
@@ -82,6 +92,9 @@ def test_command_routing_logic():
         ("@agent avo", "/avo", "AVO"),
         ("@agent avo -n 5", "/avo -n 5", "AVO"),
         ("@agent stats", "/stats", "Stats"),
+        ("@agent statsd", "/stats", "Stats"),
+        ("@statsd", "/stats", "Stats"),
+        ("/statsd", "/stats", "Stats"),
         ("/evolve", "/evolve", "OpenEvolve"),
         ("/avo", "/avo", "AVO"),
         ("@agent write a test suite", "", "CodingAgent"),
