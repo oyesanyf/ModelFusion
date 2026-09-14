@@ -925,7 +925,9 @@ async fn run(args: Args) -> Result<()> {
                     "mount": d.mount_point().to_string_lossy().to_string(),
                     "name": d.name().to_string_lossy().to_string(),
                     "total_gb": d.total_space() as f64 / 1_073_741_824.0,
+                    "total_size_gb": d.total_space() as f64 / 1_073_741_824.0,
                     "free_gb": d.available_space() as f64 / 1_073_741_824.0,
+                    "available_gb": d.available_space() as f64 / 1_073_741_824.0,
                     "fs": d.file_system().to_string_lossy().to_string(),
                 }));
             }
@@ -937,12 +939,17 @@ async fn run(args: Args) -> Result<()> {
             "cpu": sys_mem.gpu_name.is_none(),
             "cores": sys_mem.cpu_cores,
             "total_ram": sys_mem.total_ram_gb,
+            "total_size_ram": sys_mem.total_ram_gb,
             "free_ram": sys_mem.free_ram_gb,
+            "available_ram": sys_mem.free_ram_gb,
             "gpu": sys_mem.gpu_name.clone().unwrap_or_else(|| "None".to_string()),
             "gpu_vram_total": sys_mem.gpu_vram_total_gb,
             "gpu_vram_free": sys_mem.gpu_vram_free_gb,
+            "gpu_vram_available": sys_mem.gpu_vram_free_gb,
             "free_disk": free_disk_gb,
+            "available_disk": free_disk_gb,
             "total_disk": total_disk_gb,
+            "total_size_disk": total_disk_gb,
             "disks": disks_info,
         });
         println!("{}", serde_json::to_string(&info).unwrap_or_else(|_| "{}".to_string()));
@@ -2837,14 +2844,14 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                                 } else {
                                                     String::new()
                                                 };
-                                                disk_lines.push(format!("  - `{}`: {:.2} GB free / {:.2} GB total{}", label, d.free_gb, d.total_gb, fs_label));
+                                                disk_lines.push(format!("  - `{}`: {:.2} GB total size / {:.2} GB available{}", label, d.total_gb, d.free_gb, fs_label));
                                             }
                                             let disks_formatted = if disk_lines.is_empty() {
-                                                format!("- **Disk**: {:.2} GB free / {:.2} GB total", sys.free_disk_gb, sys.total_disk_gb)
+                                                format!("- **Disk**: {:.2} GB total size / {:.2} GB available", sys.total_disk_gb, sys.free_disk_gb)
                                             } else {
-                                                format!("- **Disk**: {:.2} GB free / {:.2} GB total\n- **Physical Drives**:\n{}", sys.free_disk_gb, sys.total_disk_gb, disk_lines.join("\n"))
+                                                format!("- **Disk**: {:.2} GB total size / {:.2} GB available\n- **Physical Drives**:\n{}", sys.total_disk_gb, sys.free_disk_gb, disk_lines.join("\n"))
                                             };
-                                            (idx, format!("📊 **ModelFusion Database & System Statistics**\n\n- **Engine Status**: Operational (Fast Interception < 1ms)\n- **CPU**: {} ({} Cores)\n- **RAM**: {:.2} GB free / {:.2} GB total\n- **GPU**: {}\n- **VRAM**: {} MB free / {} MB total\n{}", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.total_ram_gb, sys.gpu_name, sys.free_vram_mb, sys.total_vram_mb, disks_formatted))
+                                            (idx, format!("📊 **ModelFusion Database & System Statistics**\n\n- **Engine Status**: Operational (Fast Interception < 1ms)\n- **CPU**: {} ({} Cores)\n- **RAM**: {:.2} GB total size / {:.2} GB available\n- **GPU**: {}\n- **VRAM**: {} MB total size / {} MB available\n{}", sys.cpu_name, sys.logical_cores, sys.total_ram_gb, sys.free_ram_gb, sys.gpu_name, sys.total_vram_mb, sys.free_vram_mb, disks_formatted))
                                         },
                                         "sysinfo" | "sys-info" => {
                                             let sys = query_system_resources();
@@ -2860,14 +2867,14 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                                 } else {
                                                     String::new()
                                                 };
-                                                disk_lines.push(format!("  - `{}`: {:.2} GB free / {:.2} GB total{}", label, d.free_gb, d.total_gb, fs_label));
+                                                disk_lines.push(format!("  - `{}`: {:.2} GB total size / {:.2} GB available{}", label, d.total_gb, d.free_gb, fs_label));
                                             }
                                             let disks_formatted = if disk_lines.is_empty() {
-                                                format!("- **Disk**: {:.2} GB free / {:.2} GB total", sys.free_disk_gb, sys.total_disk_gb)
+                                                format!("- **Disk**: {:.2} GB total size / {:.2} GB available", sys.total_disk_gb, sys.free_disk_gb)
                                             } else {
-                                                format!("- **Disk**: {:.2} GB free / {:.2} GB total\n- **Physical Drives**:\n{}", sys.free_disk_gb, sys.total_disk_gb, disk_lines.join("\n"))
+                                                format!("- **Disk**: {:.2} GB total size / {:.2} GB available\n- **Physical Drives**:\n{}", sys.total_disk_gb, sys.free_disk_gb, disk_lines.join("\n"))
                                             };
-                                            (idx, format!("💻 **System Hardware Specifications**\n\n- **CPU**: {} ({} Logical Cores)\n- **RAM**: {:.2} GB total ({:.2} GB free)\n- **GPU**: {}\n- **VRAM**: {} MB free / {} MB total\n{}", sys.cpu_name, sys.logical_cores, sys.total_ram_gb, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb, sys.total_vram_mb, disks_formatted))
+                                            (idx, format!("💻 **System Hardware Specifications**\n\n- **CPU**: {} ({} Logical Cores)\n- **RAM**: {:.2} GB total size / {:.2} GB available\n- **GPU**: {}\n- **VRAM**: {} MB total size / {} MB available\n{}", sys.cpu_name, sys.logical_cores, sys.total_ram_gb, sys.free_ram_gb, sys.gpu_name, sys.total_vram_mb, sys.free_vram_mb, disks_formatted))
                                         },
                                         "tasks" => {
                                             let sys = query_system_resources();
