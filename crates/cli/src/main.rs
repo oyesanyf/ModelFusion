@@ -63,6 +63,15 @@ fn fast_inference_slots() -> usize {
 
 /// Hardware-aware Ollama model selector.
 #[derive(Debug, Clone)]
+pub struct DiskResourceInfo {
+    pub mount_point: String,
+    pub name: String,
+    pub total_gb: f64,
+    pub free_gb: f64,
+    pub file_system: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct SystemResourceSummary {
     pub cpu_name: String,
     pub logical_cores: usize,
@@ -73,6 +82,8 @@ pub struct SystemResourceSummary {
     pub free_vram_mb: u64,
     pub has_gpu: bool,
     pub free_disk_gb: f64,
+    pub total_disk_gb: f64,
+    pub disks: Vec<DiskResourceInfo>,
 }
 
 /// Queries hardware resources (CPU, RAM, GPU VRAM, Disk) using native Rust sysinfo and nvidia-smi / WMI.
@@ -133,13 +144,36 @@ pub fn query_system_resources() -> SystemResourceSummary {
         }
     }
 
-    // Query free disk space
-    let disks = sysinfo::Disks::new_with_refreshed_list();
-    let free_disk_gb = disks
-        .iter()
-        .map(|d| d.available_space())
-        .max()
-        .unwrap_or(0) as f64 / 1_073_741_824.0;
+    // Query disk space across all physical drives
+    let disks_list = sysinfo::Disks::new_with_refreshed_list();
+    let mut disks: Vec<DiskResourceInfo> = Vec::new();
+    let mut total_disk_bytes: u64 = 0;
+    let mut total_free_disk_bytes: u64 = 0;
+
+    for d in disks_list.iter() {
+        let total_b = d.total_space();
+        if total_b == 0 {
+            continue; // Skip 0-byte unmounted devices (e.g. empty CD-ROM)
+        }
+        let free_b = d.available_space();
+        total_disk_bytes += total_b;
+        total_free_disk_bytes += free_b;
+
+        let mount = d.mount_point().to_string_lossy().trim().to_string();
+        let name = d.name().to_string_lossy().trim().to_string();
+        let fs = d.file_system().to_string_lossy().trim().to_string();
+
+        disks.push(DiskResourceInfo {
+            mount_point: mount,
+            name,
+            total_gb: total_b as f64 / 1_073_741_824.0,
+            free_gb: free_b as f64 / 1_073_741_824.0,
+            file_system: fs,
+        });
+    }
+
+    let total_disk_gb = total_disk_bytes as f64 / 1_073_741_824.0;
+    let free_disk_gb = total_free_disk_bytes as f64 / 1_073_741_824.0;
 
     SystemResourceSummary {
         cpu_name,
@@ -151,6 +185,8 @@ pub fn query_system_resources() -> SystemResourceSummary {
         free_vram_mb,
         has_gpu,
         free_disk_gb,
+        total_disk_gb,
+        disks,
     }
 }
 
@@ -770,13 +806,24 @@ fn main() -> Result<()> {
     if args.sys_info {
         let sys_mem = model_selection::memory::SystemMemory::detect();
         let disks = sysinfo::Disks::new_with_refreshed_list();
-        let free_disk_gb = if let Some(disk) = disks.iter().find(|d| d.mount_point() == std::path::Path::new("C:\\") || d.mount_point() == std::path::Path::new("/")) {
-            disk.available_space() as f64 / 1_073_741_824.0
-        } else if let Some(disk) = disks.first() {
-            disk.available_space() as f64 / 1_073_741_824.0
-        } else {
-            0.0
-        };
+        let mut disks_info = Vec::new();
+        let mut total_disk_bytes: u64 = 0;
+        let mut free_disk_bytes: u64 = 0;
+        for d in disks.iter() {
+            if d.total_space() > 0 {
+                total_disk_bytes += d.total_space();
+                free_disk_bytes += d.available_space();
+                disks_info.push(serde_json::json!({
+                    "mount": d.mount_point().to_string_lossy().to_string(),
+                    "name": d.name().to_string_lossy().to_string(),
+                    "total_gb": d.total_space() as f64 / 1_073_741_824.0,
+                    "free_gb": d.available_space() as f64 / 1_073_741_824.0,
+                    "fs": d.file_system().to_string_lossy().to_string(),
+                }));
+            }
+        }
+        let total_disk_gb = total_disk_bytes as f64 / 1_073_741_824.0;
+        let free_disk_gb = free_disk_bytes as f64 / 1_073_741_824.0;
 
         let info = serde_json::json!({
             "cpu": sys_mem.gpu_name.is_none(),
@@ -787,6 +834,8 @@ fn main() -> Result<()> {
             "gpu_vram_total": sys_mem.gpu_vram_total_gb,
             "gpu_vram_free": sys_mem.gpu_vram_free_gb,
             "free_disk": free_disk_gb,
+            "total_disk": total_disk_gb,
+            "disks": disks_info,
         });
         println!("{}", serde_json::to_string(&info).unwrap_or_else(|_| "{}".to_string()));
         return Ok(());
@@ -865,13 +914,24 @@ async fn run(args: Args) -> Result<()> {
     if args.sys_info {
         let sys_mem = model_selection::memory::SystemMemory::detect();
         let disks = sysinfo::Disks::new_with_refreshed_list();
-        let free_disk_gb = if let Some(disk) = disks.iter().find(|d| d.mount_point() == std::path::Path::new("C:\\") || d.mount_point() == std::path::Path::new("/")) {
-            disk.available_space() as f64 / 1_073_741_824.0
-        } else if let Some(disk) = disks.first() {
-            disk.available_space() as f64 / 1_073_741_824.0
-        } else {
-            0.0
-        };
+        let mut disks_info = Vec::new();
+        let mut total_disk_bytes: u64 = 0;
+        let mut free_disk_bytes: u64 = 0;
+        for d in disks.iter() {
+            if d.total_space() > 0 {
+                total_disk_bytes += d.total_space();
+                free_disk_bytes += d.available_space();
+                disks_info.push(serde_json::json!({
+                    "mount": d.mount_point().to_string_lossy().to_string(),
+                    "name": d.name().to_string_lossy().to_string(),
+                    "total_gb": d.total_space() as f64 / 1_073_741_824.0,
+                    "free_gb": d.available_space() as f64 / 1_073_741_824.0,
+                    "fs": d.file_system().to_string_lossy().to_string(),
+                }));
+            }
+        }
+        let total_disk_gb = total_disk_bytes as f64 / 1_073_741_824.0;
+        let free_disk_gb = free_disk_bytes as f64 / 1_073_741_824.0;
 
         let info = serde_json::json!({
             "cpu": sys_mem.gpu_name.is_none(),
@@ -882,6 +942,8 @@ async fn run(args: Args) -> Result<()> {
             "gpu_vram_total": sys_mem.gpu_vram_total_gb,
             "gpu_vram_free": sys_mem.gpu_vram_free_gb,
             "free_disk": free_disk_gb,
+            "total_disk": total_disk_gb,
+            "disks": disks_info,
         });
         println!("{}", serde_json::to_string(&info).unwrap_or_else(|_| "{}".to_string()));
         return Ok(());
@@ -2537,7 +2599,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                         let known_slash_commands = [
                             // Original fast-interception commands
-                            "keys", "api-keys", "mcp", "stats", "sysinfo", "sys-info", "tasks", "task",
+                            "keys", "api-keys", "mcp", "stats", "statsd", "sysinfo", "sys-info", "tasks", "task",
                             "command", "commands", "help", "comment", "comments", "doc", "docs",
                             "cache-stats", "performance-stats", "decision-stats", "evolve", "evovle", "evove", "evoce", "evolv", "evolution",
                             "security", "refactor",
@@ -2705,6 +2767,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 let handle = tokio::spawn(async move {
                                     // Normalize aliases to canonical MCP tool names
                                     let canonical = match cmd_owned.as_str() {
+                                        "statsd" => "stats",
                                         "api-keys" => "keys",
                                         "evove" | "evoce" | "evovle" | "evolv" | "evolution" => "evolve",
                                         "quick-answer" | "qa" => "quick_answer",
@@ -2760,13 +2823,51 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                             std::env::set_var("MODELFUSION_MCP", "true");
                                             (idx, "🔌 **ModelContextProtocol (MCP) Engine**: Active & initialized stdio transport.".to_string())
                                         },
-                                        "stats" => {
+                                        "stats" | "statsd" => {
                                             let sys = query_system_resources();
-                                            (idx, format!("📊 **ModelFusion Database & System Statistics**\n\n- **Engine Status**: Operational (Fast Interception < 1ms)\n- **CPU**: {} ({} Cores)\n- **RAM**: {:.2} GB free / {:.2} GB total\n- **GPU**: {}\n- **VRAM**: {} MB free / {} MB total\n- **Disk**: {:.2} GB free", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.total_ram_gb, sys.gpu_name, sys.free_vram_mb, sys.total_vram_mb, sys.free_disk_gb))
+                                            let mut disk_lines = Vec::new();
+                                            for d in &sys.disks {
+                                                let label = if !d.name.is_empty() && d.name != d.mount_point {
+                                                    format!("{} ({})", d.mount_point, d.name)
+                                                } else {
+                                                    d.mount_point.clone()
+                                                };
+                                                let fs_label = if !d.file_system.is_empty() {
+                                                    format!(" [{}]", d.file_system)
+                                                } else {
+                                                    String::new()
+                                                };
+                                                disk_lines.push(format!("  - `{}`: {:.2} GB free / {:.2} GB total{}", label, d.free_gb, d.total_gb, fs_label));
+                                            }
+                                            let disks_formatted = if disk_lines.is_empty() {
+                                                format!("- **Disk**: {:.2} GB free / {:.2} GB total", sys.free_disk_gb, sys.total_disk_gb)
+                                            } else {
+                                                format!("- **Disk**: {:.2} GB free / {:.2} GB total\n- **Physical Drives**:\n{}", sys.free_disk_gb, sys.total_disk_gb, disk_lines.join("\n"))
+                                            };
+                                            (idx, format!("📊 **ModelFusion Database & System Statistics**\n\n- **Engine Status**: Operational (Fast Interception < 1ms)\n- **CPU**: {} ({} Cores)\n- **RAM**: {:.2} GB free / {:.2} GB total\n- **GPU**: {}\n- **VRAM**: {} MB free / {} MB total\n{}", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.total_ram_gb, sys.gpu_name, sys.free_vram_mb, sys.total_vram_mb, disks_formatted))
                                         },
                                         "sysinfo" | "sys-info" => {
                                             let sys = query_system_resources();
-                                            (idx, format!("💻 **System Hardware Specifications**\n\n- **CPU**: {} ({} Logical Cores)\n- **RAM**: {:.2} GB total ({:.2} GB free)\n- **GPU**: {}\n- **VRAM**: {} MB free / {} MB total\n- **Disk**: {:.2} GB free", sys.cpu_name, sys.logical_cores, sys.total_ram_gb, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb, sys.total_vram_mb, sys.free_disk_gb))
+                                            let mut disk_lines = Vec::new();
+                                            for d in &sys.disks {
+                                                let label = if !d.name.is_empty() && d.name != d.mount_point {
+                                                    format!("{} ({})", d.mount_point, d.name)
+                                                } else {
+                                                    d.mount_point.clone()
+                                                };
+                                                let fs_label = if !d.file_system.is_empty() {
+                                                    format!(" [{}]", d.file_system)
+                                                } else {
+                                                    String::new()
+                                                };
+                                                disk_lines.push(format!("  - `{}`: {:.2} GB free / {:.2} GB total{}", label, d.free_gb, d.total_gb, fs_label));
+                                            }
+                                            let disks_formatted = if disk_lines.is_empty() {
+                                                format!("- **Disk**: {:.2} GB free / {:.2} GB total", sys.free_disk_gb, sys.total_disk_gb)
+                                            } else {
+                                                format!("- **Disk**: {:.2} GB free / {:.2} GB total\n- **Physical Drives**:\n{}", sys.free_disk_gb, sys.total_disk_gb, disk_lines.join("\n"))
+                                            };
+                                            (idx, format!("💻 **System Hardware Specifications**\n\n- **CPU**: {} ({} Logical Cores)\n- **RAM**: {:.2} GB total ({:.2} GB free)\n- **GPU**: {}\n- **VRAM**: {} MB free / {} MB total\n{}", sys.cpu_name, sys.logical_cores, sys.total_ram_gb, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb, sys.total_vram_mb, disks_formatted))
                                         },
                                         "tasks" => {
                                             let sys = query_system_resources();
