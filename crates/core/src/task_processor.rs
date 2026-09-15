@@ -187,8 +187,8 @@ impl UniversalTaskProcessor {
                 let api_provider = self.determine_api_provider(&final_model_id);
                 let cost_per_1k = self.get_cost_for_model(&final_model_id);
                 let base_timeout = 30;
-                let token_processing_time = (prompt.len() as u64 / 40);
-                let generation_time = (max_tokens_override.unwrap_or(task_config.max_tokens) as u64 / 10);
+                let token_processing_time = prompt.len() as u64 / 40;
+                let generation_time = max_tokens_override.unwrap_or(task_config.max_tokens) as u64 / 10;
                 let adaptive_default = base_timeout + token_processing_time + generation_time;
 
                 let custom_timeout = options.get("timeout")

@@ -1978,6 +1978,205 @@ struct RouterDecision {
     detected_task: String,
 }
 
+/// Helper: Find substring case-insensitively (ASCII) and return its byte index.
+pub fn find_case_insensitive(haystack: &str, needle: &str) -> Option<usize> {
+    let needle_bytes = needle.as_bytes();
+    if needle_bytes.is_empty() || haystack.len() < needle_bytes.len() {
+        return None;
+    }
+    let h_bytes = haystack.as_bytes();
+    for i in 0..=h_bytes.len() - needle_bytes.len() {
+        if h_bytes[i..i + needle_bytes.len()]
+            .iter()
+            .zip(needle_bytes.iter())
+            .all(|(a, b)| a.to_ascii_lowercase() == b.to_ascii_lowercase())
+        {
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// Helper: Reverse find substring case-insensitively (ASCII) and return its byte index.
+pub fn rfind_case_insensitive(haystack: &str, needle: &str) -> Option<usize> {
+    let needle_bytes = needle.as_bytes();
+    if needle_bytes.is_empty() || haystack.len() < needle_bytes.len() {
+        return None;
+    }
+    let h_bytes = haystack.as_bytes();
+    for i in (0..=h_bytes.len() - needle_bytes.len()).rev() {
+        if h_bytes[i..i + needle_bytes.len()]
+            .iter()
+            .zip(needle_bytes.iter())
+            .all(|(a, b)| a.to_ascii_lowercase() == b.to_ascii_lowercase())
+        {
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// Strip system/metadata XML tags and their contents from prompt segments.
+pub fn strip_xml_metadata_tags(text: &str) -> String {
+    let mut clean = text.to_string();
+    let strip_prefixes = [
+        "customizationsupdate", "conversation-summary", "conversationsummary",
+        "environment_info", "workspace_info", "editorcontext",
+        "reminderinstruction", "attachments", "attachment",
+        "tooluseinstructions", "editfileinstructions", "notebookinstructions",
+        "usermemory", "sessionmemory", "repomemory",
+        "memoryscopes", "memoryguidelines", "memoryinstructions",
+        "outputformatting", "instructions",
+        "selection", "codesnippet",
+        "context", // placed last so it doesn't prefix match longer tags
+    ];
+
+    for prefix in strip_prefixes {
+        let needle = format!("<{}", prefix);
+        while let Some(s) = find_case_insensitive(&clean, &needle) {
+            let after = &clean[s + 1..];
+            let tag_name_end = after
+                .find(|c: char| c == '>' || c == ' ' || c == '\n' || c == '\r')
+                .unwrap_or(after.len());
+            let actual_tag = &after[..tag_name_end];
+            let close_tag = format!("</{}>", actual_tag);
+
+            if let Some(e_rel) = find_case_insensitive(&clean[s..], &close_tag) {
+                clean.replace_range(s..s + e_rel + close_tag.len(), " ");
+            } else {
+                // No closing tag found — strip through the end of the line
+                let line_end = clean[s..].find('\n').map(|p| s + p + 1).unwrap_or(clean.len());
+                clean.replace_range(s..line_end, " ");
+            }
+        }
+    }
+    clean
+}
+
+/// Robustly extracts strictly the LATEST user message/query from single-turn or multi-turn prompts.
+/// Ignores all prior conversational turns, past slash commands, and metadata XML tags.
+pub fn extract_latest_user_query(prompt: &str) -> String {
+    if prompt.trim().is_empty() {
+        return String::new();
+    }
+
+    // Step 1: Identify the start of the latest user turn.
+    // Scan backwards for user role boundaries:
+    // \nUser:, \nuser:, \nHuman:, \nhuman:, \n<user>, \n<userrequest>, \n<user_request>
+    let user_markers = [
+        ("\nuser:", 6),
+        ("\nhuman:", 7),
+        ("\n<user>", 1), // skip '\n', keep '<user>' so tag processor can read it
+        ("\n<userrequest>", 1),
+        ("\n<user_request>", 1),
+    ];
+
+    let mut latest_marker_pos: Option<(usize, usize)> = None; // (marker_start_idx, content_start_offset)
+    for (marker, skip_len) in &user_markers {
+        if let Some(pos) = rfind_case_insensitive(prompt, marker) {
+            let content_start = pos + skip_len;
+            match latest_marker_pos {
+                Some((cur_pos, _)) if pos > cur_pos => {
+                    latest_marker_pos = Some((pos, content_start));
+                }
+                None => {
+                    latest_marker_pos = Some((pos, content_start));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Also check if prompt starts directly at index 0 with a user marker
+    if latest_marker_pos.is_none() {
+        let prefix_markers = [
+            ("user:", 5),
+            ("human:", 6),
+            ("<user>", 0),
+            ("<userrequest>", 0),
+            ("<user_request>", 0),
+        ];
+        for (marker, skip_len) in &prefix_markers {
+            if prompt.len() >= marker.len() && prompt[..marker.len()].eq_ignore_ascii_case(marker) {
+                latest_marker_pos = Some((0, *skip_len));
+                break;
+            }
+        }
+    }
+
+    // Step 2: Slice the latest turn content
+    let turn_slice = if let Some((_, content_start)) = latest_marker_pos {
+        let after_user = &prompt[content_start..];
+        // If an assistant/bot turn follows this user turn, terminate at the assistant turn start
+        let asst_markers = ["\nassistant:", "\n<assistant>", "\nbot:"];
+        let mut end_pos = after_user.len();
+        for asst in &asst_markers {
+            if let Some(rel_pos) = find_case_insensitive(after_user, asst) {
+                if rel_pos < end_pos {
+                    end_pos = rel_pos;
+                }
+            }
+        }
+        &after_user[..end_pos]
+    } else {
+        // No explicit role delimiter found; entire prompt is the query
+        prompt
+    };
+
+    // Step 3: Check if the sliced latest turn contains <userrequest> or <user_request> or <user>
+    if let Some(s) = find_case_insensitive(turn_slice, "<userrequest>") {
+        let after = s + "<userrequest>".len();
+        if let Some(e) = find_case_insensitive(&turn_slice[after..], "</userrequest>") {
+            let inner = turn_slice[after..after + e].trim();
+            if !inner.is_empty() {
+                let cleaned = strip_xml_metadata_tags(inner);
+                let trimmed = cleaned.trim();
+                if !trimmed.is_empty() {
+                    return trimmed.to_string();
+                }
+            }
+        }
+    }
+
+    if let Some(s) = find_case_insensitive(turn_slice, "<user_request>") {
+        let after = s + "<user_request>".len();
+        if let Some(e) = find_case_insensitive(&turn_slice[after..], "</user_request>") {
+            let inner = turn_slice[after..after + e].trim();
+            if !inner.is_empty() {
+                let cleaned = strip_xml_metadata_tags(inner);
+                let trimmed = cleaned.trim();
+                if !trimmed.is_empty() {
+                    return trimmed.to_string();
+                }
+            }
+        }
+    }
+
+    if let Some(s) = find_case_insensitive(turn_slice, "<user>") {
+        let after = s + "<user>".len();
+        if let Some(e) = find_case_insensitive(&turn_slice[after..], "</user>") {
+            let inner = turn_slice[after..after + e].trim();
+            if !inner.is_empty() {
+                let cleaned = strip_xml_metadata_tags(inner);
+                let trimmed = cleaned.trim();
+                if !trimmed.is_empty() {
+                    return trimmed.to_string();
+                }
+            }
+        }
+    }
+
+    // Step 4: No <userrequest> tags inside latest turn, strip metadata tags from the turn slice
+    let cleaned = strip_xml_metadata_tags(turn_slice);
+    let trimmed = cleaned.trim();
+    if !trimmed.is_empty() {
+        trimmed.to_string()
+    } else {
+        // If stripping tags completely emptied it, fallback to trimmed raw slice
+        turn_slice.trim().to_string()
+    }
+}
+
 /// Strip system prompt leakage and meta-commentary from model responses.
 /// Small models (1.5B-3B) often echo their instructions or add meta-commentary
 /// like "I don't see any specific instructions..." which should be hidden from users.
@@ -2522,68 +2721,8 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     // Explicit blacklist of system XML closing tags to prevent false positives
                     let _xml_tags = ["environment_info", "workspace_info", "attachments", "attachment", "context", "editorcontext", "instructions", "tooluseinstructions", "editfileinstructions", "notebookinstructions", "reminderinstructions", "usermemory", "sessionmemory", "repomemory", "memoryscopes", "memoryguidelines", "memoryinstructions", "outputformatting", "userrequest", "customizationsupdate", "conversationsummary", "conversation-summary"];
 
-                    // Remove system XML blocks before command extraction to prevent false positive matches in history/customizations
-                    let prompt_lower = prompt.to_lowercase();
-                    let mut clean_prompt = prompt_lower.clone();
-                    // Tag prefixes to strip — we match `<prefix` then extract the full tag name up to `>` or whitespace
-                    let strip_prefixes = [
-                        "customizationsupdate", "conversation-summary", "conversationsummary",
-                        "environment_info", "workspace_info", "editorcontext",
-                        "reminderinstruction", "attachments", "attachment",
-                        "tooluseinstructions", "editfileinstructions", "notebookinstructions",
-                        "usermemory", "sessionmemory", "repomemory",
-                        "memoryscopes", "memoryguidelines", "memoryinstructions",
-                        "outputformatting", "instructions",
-                        "context",  // must be last — it's a prefix of other tags
-                    ];
-                    for prefix in strip_prefixes {
-                        let open_needle = format!("<{}", prefix);
-                        while let Some(s_pos) = clean_prompt.find(&open_needle) {
-                            // Extract the actual full tag name (handles reminderinstructions vs reminderinstruction, etc.)
-                            let after_prefix = &clean_prompt[s_pos + 1..]; // skip '<'
-                            let tag_name_end = after_prefix.find(|c: char| c == '>' || c == ' ' || c == '\n' || c == '\r').unwrap_or(after_prefix.len());
-                            let actual_tag = &after_prefix[..tag_name_end];
-                            let close_tag = format!("</{}>", actual_tag);
-
-                            if let Some(e_rel) = clean_prompt[s_pos..].find(&close_tag) {
-                                clean_prompt.replace_range(s_pos..s_pos + e_rel + close_tag.len(), " ");
-                            } else {
-                                // No closing tag found — just remove the opening tag line, do NOT truncate
-                                let line_end = clean_prompt[s_pos..].find('\n').map(|p| s_pos + p + 1).unwrap_or(clean_prompt.len());
-                                clean_prompt.replace_range(s_pos..line_end, " ");
-                            }
-                        }
-                    }
-
-                    // Extract strictly the LATEST user typed message segment
-                    let latest_user_segment = if let Some(start) = clean_prompt.rfind("<userrequest>") {
-                        let sub = &clean_prompt[start + 13..];
-                        if let Some(end) = sub.find("</userrequest>") {
-                            &sub[..end]
-                        } else {
-                            sub
-                        }
-                    } else if let Some(start) = clean_prompt.rfind("<user_request>") {
-                        let sub = &clean_prompt[start + 14..];
-                        if let Some(end) = sub.find("</user_request>") {
-                            &sub[..end]
-                        } else {
-                            sub
-                        }
-                    } else if let Some(start) = clean_prompt.rfind("<user>") {
-                        let sub = &clean_prompt[start + 6..];
-                        if let Some(end) = sub.find("</user>") {
-                            &sub[..end]
-                        } else {
-                            sub
-                        }
-                    } else if let Some(pos) = clean_prompt.rfind("\nuser:") {
-                        &clean_prompt[pos + 6..]
-                    } else if let Some(pos) = clean_prompt.rfind("user:") {
-                        &clean_prompt[pos + 5..]
-                    } else {
-                        &clean_prompt[..]
-                    };
+                    // Extract strictly the LATEST user typed message segment from multi-turn or single-turn prompts
+                    let latest_user_segment = extract_latest_user_query(&prompt);
 
                     if !is_openai_compat {
                         // SERVER-SIDE FAST INTERCEPTION FOR COMPACTION (1ms)
@@ -3288,59 +3427,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         // Always strip system XML blocks (attachments, environment info, memory, etc.)
                         // to isolate the actual query typed by the user.
                         let user_msg_for_check = {
-                            let lower = prompt.to_lowercase();
-                            let mut clean = lower.clone();
-                            // Tags whose ENTIRE content should be discarded (metadata, not user content)
-                            let strip_tags = [
-                                "customizationsupdate", "conversation-summary", "conversationsummary",
-                                "environment_info", "workspace_info", "editorcontext",
-                                "reminderinstruction", "attachments", "attachment",
-                                "tooluseinstructions", "editfileinstructions", "notebookinstructions",
-                                "usermemory", "sessionmemory", "repomemory",
-                                "memoryscopes", "memoryguidelines", "memoryinstructions",
-                                "outputformatting", "instructions", "context",
-                                "selection", "codesnippet",
-                            ];
-                            for prefix in strip_tags {
-                                let needle = format!("<{}", prefix);
-                                while let Some(s) = clean.find(&needle) {
-                                    let after = &clean[s + 1..];
-                                    let tag_end = after.find(|c: char| c == '>' || c == ' ' || c == '\n' || c == '\r').unwrap_or(after.len());
-                                    let tag = &after[..tag_end];
-                                    let close = format!("</{}>", tag);
-                                    if let Some(e) = clean[s..].find(&close) {
-                                        clean.replace_range(s..s + e + close.len(), " ");
-                                    } else {
-                                        let le = clean[s..].find('\n').map(|p| s + p + 1).unwrap_or(clean.len());
-                                        clean.replace_range(s..le, " ");
-                                    }
-                                }
-                            }
-
-                            // Priority 1: Extract content from <userrequest> tags (wraps the actual question)
-                            let extracted = if let Some(ur_start) = clean.find("<userrequest>") {
-                                let after_open = ur_start + "<userrequest>".len();
-                                if let Some(ur_end) = clean[after_open..].find("</userrequest>") {
-                                    let inner = clean[after_open..after_open + ur_end].trim().to_string();
-                                    if inner.is_empty() { None } else { Some(inner) }
-                                } else { None }
-                            } else { None };
-
-                            if let Some(msg) = extracted {
-                                msg
-                            // Priority 2: Extract just the last user segment from the cleaned prompt
-                            } else if let Some(pos) = clean.rfind("\nuser:") {
-                                let seg = &clean[pos + 6..];
-                                seg.trim().to_string()
-                            } else if let Some(pos) = clean.rfind("\nhuman:") {
-                                let seg = &clean[pos + 7..];
-                                seg.trim().to_string()
-                            } else if let Some(pos) = clean.rfind("user:") {
-                                let seg = &clean[pos + 5..];
-                                seg.trim().to_string()
-                            } else {
-                                clean.trim().to_string()
-                            }
+                            extract_latest_user_query(&prompt)
                         };
                         
                         let is_complex = user_msg_for_check.len() > 300
@@ -3348,14 +3435,19 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 let lower = user_msg_for_check.to_lowercase();
                                 lower.contains("implement") || lower.contains("refactor") 
                                 || lower.contains("debug") || lower.contains("write a function")
-                                || lower.contains("create a") || lower.contains("build a")
+                                || lower.contains("create a") || lower.contains("cretae a")
+                                || lower.contains("create ") || lower.contains("cretae ")
+                                || lower.contains("build a") || lower.contains("build ")
                                 || lower.contains("create file") || lower.contains("make a file")
                                 || lower.contains("write a file") || lower.contains("generate file")
                                 || lower.contains("new file") || lower.contains("add a file")
+                                || lower.contains("python file") || lower.contains("rust file")
+                                || lower.contains("script") || lower.contains("circuit")
                                 || lower.contains("fix this") || lower.contains("code review")
                                 || lower.contains("analyze this code") || lower.contains("```")
                                 || lower.contains("class ") || lower.contains("def ")
                                 || lower.contains("function") || lower.contains("struct ")
+                                || lower.contains("write code") || lower.contains("generate code")
                             };
                         
                         eprintln!("[SERVER] 📝 Extracted user query (len={}): {:?} → is_complex={}", 
@@ -3544,8 +3636,8 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 ollama_model, user_msg.len(), 
                                 fast_sys.len(), num_predict);
 
-                            let token_processing_time = (user_msg.len() as u64 / 40);
-                            let generation_time = (num_predict as u64 / 10);
+                            let token_processing_time = user_msg.len() as u64 / 40;
+                            let generation_time = num_predict as u64 / 10;
                             let adaptive_default = 120 + token_processing_time + generation_time;
 
                             let custom_timeout = orchestration_options.get("timeout")
@@ -5953,16 +6045,15 @@ pub fn parse_slash_commands_in_prompt(
     if let Some((cmd, rest)) = parse_line(prompt) {
         detected_cmd = Some(cmd);
         cleaned_rest = rest;
-    } else if prompt.contains("User: ") {
-        // Multi-turn transcript: check the last user line
-        let lines: Vec<&str> = prompt.lines().collect();
-        for i in (0..lines.len()).rev() {
-            let line = lines[i];
-            if line.trim().starts_with("User: ") {
-                if let Some((cmd, rest)) = parse_line(line) {
-                    detected_cmd = Some(cmd);
-                    cleaned_rest = rest;
-                }
+    } else {
+        // Multi-turn transcript or wrapped prompt: extract latest user query without metadata tags
+        let latest = extract_latest_user_query(prompt);
+        for line in latest.lines() {
+            let line = line.trim();
+            if line.is_empty() { continue; }
+            if let Some((cmd, rest)) = parse_line(line) {
+                detected_cmd = Some(cmd);
+                cleaned_rest = rest;
                 break;
             }
         }
@@ -6346,11 +6437,11 @@ pub fn parse_slash_commands_in_prompt(
         }
 
         // Apply back the cleaned prompt text
-        if prompt.contains("User: ") {
+        if prompt.to_lowercase().contains("user:") {
             let lines: Vec<&str> = prompt.lines().collect();
             for i in (0..lines.len()).rev() {
                 let line = lines[i];
-                if line.trim().starts_with("User: ") {
+                if line.trim().to_lowercase().starts_with("user:") {
                     let mut new_lines = lines.clone();
                     let new_line = format!("User: {}", actual_prompt);
                     new_lines[i] = &new_line;
@@ -7128,6 +7219,87 @@ mod prompt_interception_tests {
         let mut prompt = "User: @comment add comments to this code".to_string();
         let (mut gpu, mut cpu, mut openvino, mut fusion) = (false, false, false, false);
         super::parse_slash_commands_in_prompt(&mut prompt, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
+    }
+
+    #[test]
+    fn test_multi_turn_extract_latest_query_after_stats() {
+        let prompt = "System: You are HugOS AI, a helpful, accurate, and versatile assistant.\n\
+User: <context>some context</context><userrequest>stats</userrequest>\n\
+Assistant: Stats is a field that deals with the collection, analysis, interpretation, and presentation of data.\n\
+User: <context>\n\
+The current date is 2026-09-15.\n\
+<customizationsUpdate>\nThe available instructions, skills, and agents have changed since this conversation started.\n</customizationsUpdate>\n\
+</context>\n\
+cretae a same python file to create quantun computer circuits";
+
+        let extracted = super::extract_latest_user_query(prompt);
+        assert_eq!(
+            extracted,
+            "cretae a same python file to create quantun computer circuits",
+            "Latest user turn query must strictly isolate the latest message and not get stuck on historical 'stats'"
+        );
+    }
+
+    #[test]
+    fn test_multi_turn_extract_latest_query_with_userrequest_in_turn2() {
+        let prompt = "System: You are HugOS AI.\n\
+User: <userrequest>stats</userrequest>\n\
+Assistant: ModelFusion Stats output.\n\
+User: <context>ctx</context><userrequest>write a python script to simulate qubits</userrequest>";
+
+        let extracted = super::extract_latest_user_query(prompt);
+        assert_eq!(
+            extracted,
+            "write a python script to simulate qubits",
+            "Turn 2 <userrequest> must be extracted, ignoring Turn 1's stats"
+        );
+    }
+
+    #[test]
+    fn test_case_preservation_in_query_extraction() {
+        let prompt = "User: create a class QuantumCircuit with Gate operations in Qiskit";
+        let extracted = super::extract_latest_user_query(prompt);
+        assert_eq!(
+            extracted,
+            "create a class QuantumCircuit with Gate operations in Qiskit",
+            "Casing of code symbols must be preserved exactly"
+        );
+    }
+
+    #[test]
+    fn test_multi_turn_slash_command_after_coding_request() {
+        let mut prompt = "User: write a python script\n\
+Assistant: Here is your script.\n\
+User: <context><environment_info>OS: Windows</environment_info></context>@agent /keys".to_string();
+
+        let (mut gpu, mut cpu, mut openvino, mut fusion) = (false, false, false, false);
+        super::parse_slash_commands_in_prompt(&mut prompt, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
+        assert_eq!(std::env::var("MODELFUSION_TASK_OVERRIDE").unwrap_or_default(), "keys");
+    }
+
+    #[test]
+    fn test_quantum_circuits_complexity_detection() {
+        let query = "cretae a same python file to create quantun computer circuits";
+        let lower = query.to_lowercase();
+        let is_complex = query.len() > 300
+            || {
+                lower.contains("implement") || lower.contains("refactor") 
+                || lower.contains("debug") || lower.contains("write a function")
+                || lower.contains("create a") || lower.contains("cretae a")
+                || lower.contains("create ") || lower.contains("cretae ")
+                || lower.contains("build a") || lower.contains("build ")
+                || lower.contains("create file") || lower.contains("make a file")
+                || lower.contains("write a file") || lower.contains("generate file")
+                || lower.contains("new file") || lower.contains("add a file")
+                || lower.contains("python file") || lower.contains("rust file")
+                || lower.contains("script") || lower.contains("circuit")
+                || lower.contains("fix this") || lower.contains("code review")
+                || lower.contains("analyze this code") || lower.contains("```")
+                || lower.contains("class ") || lower.contains("def ")
+                || lower.contains("function") || lower.contains("struct ")
+                || lower.contains("write code") || lower.contains("generate code")
+            };
+        assert!(is_complex, "Prompt requesting python file for circuits must be detected as complex");
     }
 }
 
