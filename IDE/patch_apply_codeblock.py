@@ -131,6 +131,69 @@ def patch_extension_js(file_path):
         changed = True
         print(f"  [OK] Patched avo command in agentsToCommands in {file_path}")
 
+    # 4. Patch showInformationMessage toast to 'Apply Fix'
+    target_toast_old = '''          "\\u2705 Accept",
+          "\\u274C Reject"
+        ).then((choice) => {
+          if (choice === "\\u2705 Accept") {'''
+    replacement_toast = '''          "\\u2705 Apply Fix",
+          "\\u274C Reject"
+        ).then((choice) => {
+          if (choice === "\\u2705 Apply Fix" || choice === "\\u2705 Accept") {'''
+    if target_toast_old in content:
+        content = content.replace(target_toast_old, replacement_toast)
+        changed = True
+        print(f"  [OK] Patched notification toast to 'Apply Fix' in {file_path}")
+    elif "'\\u2705 Apply Fix'" in content or '"\\u2705 Apply Fix"' in content:
+        print(f"  [INFO] Notification toast already has 'Apply Fix' in {file_path}")
+
+    # 5. Automatically call _tryInlineApply on generated code in orchestrate response
+    for lmtp in ['LanguageModelTextPart3', 'LanguageModelTextPart']:
+        pattern_orch = f'progress.report(new {lmtp}(responseText || "\\u2026"));\n        }} catch'
+        repl_orch = f'progress.report(new {lmtp}(responseText || "\\u2026"));\n          if (responseText) {{\n            this._tryInlineApply(responseText);\n          }}\n        }} catch'
+        if pattern_orch in content and 'this._tryInlineApply(responseText)' not in content:
+            content = content.replace(pattern_orch, repl_orch)
+            changed = True
+            print(f"  [OK] Wired _tryInlineApply to response completion in {file_path}")
+            break
+
+    # Also wire _tryInlineApply to CLI fallback output if present
+    for lmtp in ['LanguageModelTextPart3', 'LanguageModelTextPart']:
+        pattern_cli_fb = f'progress.report(new {lmtp}(buffer));\n                reportedSomething = true;\n              }}'
+        repl_cli_fb = f'progress.report(new {lmtp}(buffer));\n                reportedSomething = true;\n                this._tryInlineApply(buffer);\n              }}'
+        if pattern_cli_fb in content and 'this._tryInlineApply(buffer)' not in content:
+            content = content.replace(pattern_cli_fb, repl_cli_fb)
+            changed = True
+            print(f"  [OK] Wired _tryInlineApply to CLI fallback in {file_path}")
+            break
+
+    # 6. Enhance _tryInlineApply editor fallback (support visible editors and untitled new files)
+    target_editor_check = '''        const editor = vscode15.window.activeTextEditor;
+        if (!editor) {
+          return;
+        }'''
+    replacement_editor_check = '''        let editor = vscode15.window.activeTextEditor || (vscode15.window.visibleTextEditors && vscode15.window.visibleTextEditors[0]);
+        if (!editor) {
+          try {
+            const langMatch = responseText.match(/```(\\w+)/);
+            const lang = langMatch ? langMatch[1] : "python";
+            vscode15.workspace.openTextDocument({ language: lang, content: "" }).then((newDoc) => {
+              vscode15.window.showTextDocument(newDoc, { preview: false }).then((newEditor) => {
+                this._inlineDiff.showInlineChanges(newEditor, "", blocks[0]).catch((e4) => {
+                  this._outputChannel.appendLine(`[InlineApply] Error showing inline diff: ${e4.message}`);
+                });
+              });
+            });
+          } catch (openErr) {}
+          return;
+        }'''
+    if target_editor_check in content:
+        content = content.replace(target_editor_check, replacement_editor_check)
+        changed = True
+        print(f"  [OK] Enhanced _tryInlineApply editor fallback in {file_path}")
+    elif 'vscode15.window.visibleTextEditors' in content:
+        print(f"  [INFO] _tryInlineApply editor fallback already enhanced in {file_path}")
+
     if changed:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
