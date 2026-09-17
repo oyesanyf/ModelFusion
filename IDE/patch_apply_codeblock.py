@@ -147,11 +147,23 @@ def patch_extension_js(file_path):
     elif "'\\u2705 Apply Fix'" in content or '"\\u2705 Apply Fix"' in content:
         print(f"  [INFO] Notification toast already has 'Apply Fix' in {file_path}")
 
-    # 5. Automatically call _tryInlineApply on generated code in orchestrate response
+    # 5. Automatically call _tryInlineApply on generated code in orchestrate response (with prompt context)
+    # Update existing calls to include (responseText, currentPrompt, slashCommandText)
+    content = re.sub(
+        r'this\._tryInlineApply\(\s*responseText\s*\)',
+        'this._tryInlineApply(responseText, currentPrompt, slashCommandText)',
+        content
+    )
+    content = re.sub(
+        r'this\._tryInlineApply\(\s*buffer\s*\)',
+        'this._tryInlineApply(buffer, promptText, "")',
+        content
+    )
+
     for lmtp in ['LanguageModelTextPart3', 'LanguageModelTextPart']:
         pattern_orch = f'progress.report(new {lmtp}(responseText || "\\u2026"));\n        }} catch'
-        repl_orch = f'progress.report(new {lmtp}(responseText || "\\u2026"));\n          if (responseText) {{\n            this._tryInlineApply(responseText);\n          }}\n        }} catch'
-        if pattern_orch in content and 'this._tryInlineApply(responseText)' not in content:
+        repl_orch = f'progress.report(new {lmtp}(responseText || "\\u2026"));\n          if (responseText) {{\n            this._tryInlineApply(responseText, currentPrompt, slashCommandText);\n          }}\n        }} catch'
+        if pattern_orch in content and 'this._tryInlineApply(responseText' not in content:
             content = content.replace(pattern_orch, repl_orch)
             changed = True
             print(f"  [OK] Wired _tryInlineApply to response completion in {file_path}")
@@ -160,39 +172,194 @@ def patch_extension_js(file_path):
     # Also wire _tryInlineApply to CLI fallback output if present
     for lmtp in ['LanguageModelTextPart3', 'LanguageModelTextPart']:
         pattern_cli_fb = f'progress.report(new {lmtp}(buffer));\n                reportedSomething = true;\n              }}'
-        repl_cli_fb = f'progress.report(new {lmtp}(buffer));\n                reportedSomething = true;\n                this._tryInlineApply(buffer);\n              }}'
-        if pattern_cli_fb in content and 'this._tryInlineApply(buffer)' not in content:
+        repl_cli_fb = f'progress.report(new {lmtp}(buffer));\n                reportedSomething = true;\n                this._tryInlineApply(buffer, promptText, "");\n              }}'
+        if pattern_cli_fb in content and 'this._tryInlineApply(buffer' not in content:
             content = content.replace(pattern_cli_fb, repl_cli_fb)
             changed = True
             print(f"  [OK] Wired _tryInlineApply to CLI fallback in {file_path}")
             break
 
-    # 6. Enhance _tryInlineApply editor fallback (support visible editors and untitled new files)
-    target_editor_check = '''        const editor = vscode15.window.activeTextEditor;
-        if (!editor) {
+    # 6. Replace _tryInlineApply with QA-excluding, code-validating implementation
+    m_vsc = re.search(r'editor\s*=\s*(vscode\d*)\.window\.activeTextEditor', content)
+    vsc_id = m_vsc.group(1) if m_vsc else "vscode15"
+
+    try_inline_regex = re.compile(
+        r'(\n\s*)_tryInlineApply\s*\([^)]*\)\s*\{.*?(\n\s*)\_findCliBinary\s*\(\)',
+        re.DOTALL
+    )
+
+    def replace_try_inline(m):
+        indent = m.group(1)
+        suffix = m.group(2)
+        return f'''{indent}_isQaOrInformationalRequest(userQuery, slashCommand) {{
+        let q = (userQuery || "").trim().toLowerCase();
+        if (q.includes("user:")) {{
+          q = q.slice(q.lastIndexOf("user:") + 5).trim();
+        }}
+        const cmd = (slashCommand || "").trim().toLowerCase().replace(/^[\\/@]/, "");
+        const qaCommands = new Set([
+          "qa", "quick-answer", "quick_answer", "question", "question-answering",
+          "explain", "summary", "summarization", "summarize",
+          "sentiment", "ner", "command", "commands", "help",
+          "stats", "statsd", "sysinfo", "sys-info", "keys", "api-keys",
+          "tasks", "doc", "docs", "table-question-answering",
+          "visual-question-answering", "document-question-answering",
+          "reading-level-assessment", "bias-detection", "hallucination-detection"
+        ]);
+        if (cmd && qaCommands.has(cmd)) {{
+          return true;
+        }}
+        const qaStarters = [
+          "what ", "what's ", "whats ", "why ", "how ", "when ", "where ", "who ", "which ",
+          "can you explain", "explain ", "tell me ", "describe ", "list ", "give me ",
+          "is there ", "are there ", "is it ", "does ", "do ", "did ", "could you ",
+          "should i ", "would it ", "meaning of ", "difference between ", "pros and cons",
+          "help me understand", "show me how", "what is", "how to", "how do"
+        ];
+        const startsWithQuestion = qaStarters.some((starter) => q.startsWith(starter));
+        const infoKeywords = /\\b(variation|variations|alternative|alternatives|phrase|phrases|sentence|sentences|message|messages|wording|idea|ideas|definition|definitions|meaning|explanation|pros and cons|difference|reasons?)\\b/i;
+        const hasCodeAction = /\\b(generate|create|write|implement|build|code|fix|refactor|optimize|patch|rewrite|edit)\\b.*\\b(file|script|function|class|program|circuit|pipeline|algorithm|code|tests?)\\b/i.test(q);
+        if (startsWithQuestion && !hasCodeAction) {{
+          return true;
+        }}
+        if (infoKeywords.test(q) && !hasCodeAction) {{
+          return true;
+        }}
+        if (q.endsWith("?") && !hasCodeAction) {{
+          return true;
+        }}
+        return false;
+      }}
+      _isCodeGenerationIntent(userQuery, slashCommand) {{
+        let q = (userQuery || "").trim().toLowerCase();
+        if (q.includes("user:")) {{
+          q = q.slice(q.lastIndexOf("user:") + 5).trim();
+        }}
+        const cmd = (slashCommand || "").trim().toLowerCase().replace(/^[\\/@]/, "");
+        const codeCommands = new Set([
+          "evolve", "evovle", "avo", "generate", "datascience", "data-science",
+          "dataanalyst", "data-analyst", "jupyter", "fix", "refactor", "tests",
+          "optimize", "security", "code-vulnerability-detection", "comment", "comments"
+        ]);
+        if (cmd && codeCommands.has(cmd)) {{
+          return true;
+        }}
+        const codeActionRegex = /\\b(generate|create|write|implement|build|make|add|fix|refactor|optimize|patch|rewrite|edit|debug|repair)\\b.*\\b(code|file|script|function|class|program|circuit|module|component|pipeline|unit test|tests?)\\b/i;
+        if (codeActionRegex.test(q)) {{
+          return true;
+        }}
+        const langFileRegex = /\\b(python|rust|javascript|typescript|c\\+\\+|cpp|c#|golang|java|html|css|sql)\\b.*\\b(code|file|script|program|function|class)\\b/i;
+        if (langFileRegex.test(q)) {{
+          return true;
+        }}
+        return false;
+      }}
+      _tryInlineApply(responseText, userQuery, slashCommand) {{
+        if (!responseText || this._inlineDiff.hasPendingEdit) {{
           return;
-        }'''
-    replacement_editor_check = '''        let editor = vscode15.window.activeTextEditor || (vscode15.window.visibleTextEditors && vscode15.window.visibleTextEditors[0]);
-        if (!editor) {
-          try {
-            const langMatch = responseText.match(/```(\\w+)/);
-            const lang = langMatch ? langMatch[1] : "python";
-            vscode15.workspace.openTextDocument({ language: lang, content: "" }).then((newDoc) => {
-              vscode15.window.showTextDocument(newDoc, { preview: false }).then((newEditor) => {
-                this._inlineDiff.showInlineChanges(newEditor, "", blocks[0]).catch((e4) => {
-                  this._outputChannel.appendLine(`[InlineApply] Error showing inline diff: ${e4.message}`);
-                });
-              });
-            });
-          } catch (openErr) {}
+        }}
+        if (this._isQaOrInformationalRequest(userQuery || "", slashCommand)) {{
+          this._outputChannel.appendLine("[InlineApply] Skipped: Request identified as Q&A / informational query.");
           return;
-        }'''
-    if target_editor_check in content:
-        content = content.replace(target_editor_check, replacement_editor_check)
-        changed = True
-        print(f"  [OK] Enhanced _tryInlineApply editor fallback in {file_path}")
-    elif 'vscode15.window.visibleTextEditors' in content:
-        print(f"  [INFO] _tryInlineApply editor fallback already enhanced in {file_path}")
+        }}
+        if (!this._isCodeGenerationIntent(userQuery || "", slashCommand)) {{
+          this._outputChannel.appendLine("[InlineApply] Skipped: Request does not contain explicit code generation or modification intent.");
+          return;
+        }}
+        const codeBlockRegex = /```(?:\\w+)?\\s*\\n([\\s\\S]*?)```/g;
+        const blocks = [];
+        let match3;
+        while ((match3 = codeBlockRegex.exec(responseText)) !== null) {{
+          const code = match3[1].trim();
+          if (code.length < 20) {{
+            continue;
+          }}
+          const looksLikeJsonStringArray = /^\\s*\\[\\s*(?:\"[^\"]*\"\\s*,\\s*)*\"[^\"]*\"\\s*\\]\\s*$/s.test(code);
+          if (looksLikeJsonStringArray) {{
+            continue;
+          }}
+          const codeConstructs = /\\b(def |class |import |from |function |const |let |var |return |if |else |for |while |switch |case |try |catch |throw |async |await |public |private |protected |fn |impl |struct |enum |trait |namespace |using |#include|print\\(|console\\.log|println!|SELECT |INSERT |UPDATE )\\b/i;
+          const hasSyntaxStructure = /(=>|\\(\\)\\s*\\{{|;\\s*$|:\\s*$)/m.test(code);
+          if (!codeConstructs.test(code) && !hasSyntaxStructure) {{
+            continue;
+          }}
+          blocks.push(code);
+        }}
+        if (blocks.length === 0) {{
+          return;
+        }}
+        let editor = {vsc_id}.window.activeTextEditor || ({vsc_id}.window.visibleTextEditors && {vsc_id}.window.visibleTextEditors[0]);
+        const bestBlock = blocks[0];
+        const langMatch = responseText.match(/```(\\w+)/);
+        const lang = langMatch ? langMatch[1] : "python";
+        if (!editor) {{
+          try {{
+            {vsc_id}.workspace.openTextDocument({{ language: lang, content: "" }}).then((newDoc) => {{
+              {vsc_id}.window.showTextDocument(newDoc, {{ preview: false }}).then((newEditor) => {{
+                this._inlineDiff.showInlineChanges(newEditor, "", bestBlock).catch((e4) => {{
+                  this._outputChannel.appendLine(`[InlineApply] Error showing inline diff: ${{e4.message}}`);
+                }});
+              }});
+            }});
+          }} catch (openErr) {{}}
+          return;
+        }}
+        const currentContent = editor.document.getText();
+        if (!currentContent || currentContent.trim().length < 10) {{
+          this._outputChannel.appendLine(`[InlineApply] Empty file detected. Showing proposed code for Accept/Reject.`);
+          this._inlineDiff.showInlineChanges(editor, currentContent, bestBlock).catch((e4) => {{
+            this._outputChannel.appendLine(`[InlineApply] Error showing inline diff: ${{e4.message}}`);
+          }});
+          return;
+        }}
+        const currentLines = currentContent.split("\\n");
+        let bestOverlap = 0;
+        let selectedBlock = bestBlock;
+        for (const block of blocks) {{
+          const blockLines = block.split("\\n");
+          let overlapCount = 0;
+          for (const line of blockLines) {{
+            if (line.trim().length > 5 && currentLines.some((cl) => cl.trim() === line.trim())) {{
+              overlapCount++;
+            }}
+          }}
+          if (overlapCount > bestOverlap) {{
+            bestOverlap = overlapCount;
+            selectedBlock = block;
+          }}
+        }}
+        const qLower = (userQuery || "").toLowerCase();
+        const isExplicitFileEdit = /\\b(fix|refactor|optimize|patch|rewrite|edit|modify)\\b/i.test(qLower) ||
+          qLower.includes("this file") || qLower.includes("current file");
+        if (bestOverlap > 0 || isExplicitFileEdit) {{
+          this._outputChannel.appendLine(`[InlineApply] Detected matching code modification (${{selectedBlock.length}} chars, ${{bestOverlap}} overlapping lines). Showing inline diff in ${{editor.document.fileName}}.`);
+          this._inlineDiff.showInlineChanges(editor, currentContent, selectedBlock).catch((e4) => {{
+            this._outputChannel.appendLine(`[InlineApply] Error showing inline diff: ${{e4.message}}`);
+          }});
+        }} else {{
+          this._outputChannel.appendLine(`[InlineApply] New code generation detected (0 overlap with open file). Opening in untitled document to preserve current file.`);
+          try {{
+            {vsc_id}.workspace.openTextDocument({{ language: lang, content: "" }}).then((newDoc) => {{
+              {vsc_id}.window.showTextDocument(newDoc, {{ preview: false }}).then((newEditor) => {{
+                this._inlineDiff.showInlineChanges(newEditor, "", selectedBlock).catch((e4) => {{
+                  this._outputChannel.appendLine(`[InlineApply] Error showing inline diff: ${{e4.message}}`);
+                }});
+              }});
+            }});
+          }} catch (err) {{}}
+        }}
+      }}{suffix}_findCliBinary()'''
+
+    if try_inline_regex.search(content):
+        new_content = try_inline_regex.sub(replace_try_inline, content)
+        if new_content != content:
+            content = new_content
+            changed = True
+            print(f"  [OK] Replaced _tryInlineApply with QA-excluding implementation in {file_path}")
+    elif '_isQaOrInformationalRequest' in content:
+        print(f"  [INFO] _tryInlineApply already QA-excluded in {file_path}")
+    else:
+        print(f"  [WARN] _tryInlineApply pattern not found in {file_path}")
 
     if changed:
         with open(file_path, "w", encoding="utf-8") as f:
