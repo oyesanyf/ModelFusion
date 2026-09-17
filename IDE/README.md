@@ -53,9 +53,29 @@ To run Hugging Face models using the serverless Inference API (the default fallb
 3. When HugOS launches, the IDE automatically detects the `.env` file in your workspace, parses it, and safely injects the token into the ModelFusion server process's environment. **No tokens are ever stored inside the global IDE configuration, keeping them 100% private to your workspace.**
 
 ### 3. Production Installation via MSI
-HugOS IDE packages all system files, local configuration, and a **prepopulated SQLite database** inside the `HugOS.msi` installer.
-* **Installer Page:** Download `HugOS.msi` directly from the [GitHub Releases BETA-01 Page](https://github.com/oyesanyf/ModelFusion/releases/tag/BETA-01).
-* **Install Command:** Run the following command in PowerShell to install silently/passively:
+`HugOS.msi` is a **100% self-contained Windows Installer** packaging all 51,000+ files, including the VS Code core runtime (`HugOS.exe`), ModelFusion backend (`cli.exe`, `mcp-cli.exe`), Copilot chat extension, and all 127 signed native dependencies. It requires zero external folders or internet access to install.
+
+#### Option A: Clone the Repository via Git LFS
+To clone the complete repository on any computer with the installer included:
+```powershell
+# 1. Initialize Git LFS
+git lfs install
+
+# 2. Clone the repository
+git clone https://github.com/oyesanyf/ModelFusion.git
+cd ModelFusion
+
+# 3. Verify the full installer was downloaded (~1.77 GB)
+(Get-Item IDE\HugOS.msi).Length
+
+# 4. Install HugOS IDE
+Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "IDE\HugOS.msi" -Wait
+```
+*(If `(Get-Item IDE\HugOS.msi).Length` shows ~130 bytes, Git LFS was not active during clone. Run `git lfs pull` to download the installer).*
+
+#### Option B: Direct Single-Click Download
+* **Latest Release:** Download `HugOS.msi` directly from [GitHub Releases](https://github.com/oyesanyf/ModelFusion/releases).
+* **Install Command:** Double-click `HugOS.msi`, or run in PowerShell:
   ```powershell
   msiexec /i "HugOS.msi" /qb
   ```

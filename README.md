@@ -23,6 +23,48 @@ ModelFusion is an open-weight compound intelligence system designed to achieve f
 ### 📚 Documentation Links
 *   [CLI Reference Manual](docs/CLI_REFERENCE.md) — Comprehensive guide for all 100+ commands, subcommands, and flags.
 *   [HugOS IDE Integration Manual](docs/HUGOS_IDE_MANUAL.md) — Details local multimodal processing, intent classifier centroids, and IDE specific CLI/MCP configurations.
+*   [HugOS IDE Build & Feature Guide](docs/HUGOS_IDE_GUIDE.md) — Architecture, installation, slash commands, and build pipeline.
+
+---
+
+## 🚀 Quickstart: Cloning & Installing HugOS IDE
+
+HugOS IDE is a standalone, AI-powered IDE built on Code-OSS with local ModelFusion integration. The installer (`IDE/HugOS.msi`) is **100% self-contained**—embedding all 51,000+ files, including the IDE runtime (`HugOS.exe`), ModelFusion backend (`cli.exe` & `mcp-cli.exe`), Copilot extension with ModelFusion local models, and all 127 signed native dependencies.
+
+### Option A: Clone the Full Repository (via Git LFS)
+To clone the entire repository on any computer (including the 1.77 GB signed installer):
+
+```powershell
+# 1. Initialize Git LFS (required to pull the 1.77 GB MSI package)
+git lfs install
+
+# 2. Clone the repository
+git clone https://github.com/oyesanyf/ModelFusion.git
+cd ModelFusion
+
+# 3. (Verification) Confirm HugOS.msi was fully downloaded (~1.77 GB)
+(Get-Item IDE\HugOS.msi).Length
+# Expected output: 1774284800 bytes
+
+# 4. Install HugOS IDE
+Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "IDE\HugOS.msi" -Wait
+```
+
+> [!IMPORTANT]
+> **Git LFS Requirement**: `IDE/HugOS.msi` is tracked via Git LFS. If `git lfs install` is not run before cloning, Git will download a 130-byte pointer file instead of the binary. If this occurs, simply run `git lfs pull` to fetch the complete installer.
+
+### Option B: Direct Single-Click Download (No Git Required)
+If you only want to install HugOS IDE without cloning the full repository:
+1. Download **[HugOS.msi](https://github.com/oyesanyf/ModelFusion/releases/latest/download/HugOS.msi)** directly from [GitHub Releases](https://github.com/oyesanyf/ModelFusion/releases).
+2. Double-click `HugOS.msi` to run the setup wizard.
+
+### Launching HugOS IDE
+Once installed:
+* **Start Menu**: Search for **HugOS IDE**
+* **PowerShell**:
+  ```powershell
+  & "$env:LOCALAPPDATA\Programs\HugOS IDE\HugOS.exe"
+  ```
 
 ---
 
