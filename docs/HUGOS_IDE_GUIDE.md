@@ -71,10 +71,18 @@ HugOS IDE is a custom fork of VS Code with an integrated AI-powered code assista
 
 ### Step 1: Clone the Repository
 
+Make sure Git LFS is installed and initialized so all large binary assets (including `IDE/HugOS.msi`) are pulled down:
+
 ```bash
+# Ensure Git LFS is initialized
+git lfs install
+
+# Clone repository
 git clone https://github.com/oyesanyf/ModelFusion.git
 cd ModelFusion
-git submodule update --init --recursive
+
+# Verify MSI installer or pull LFS files if needed
+git lfs pull
 ```
 
 ### Step 2: Build the Rust CLI
