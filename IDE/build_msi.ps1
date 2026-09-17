@@ -391,6 +391,11 @@ if (Test-Path $patchAvoOutputScript) {
     python $patchAvoOutputScript
     Write-Host "[OK] Applied AVO output reporting & diagnostic patches" -ForegroundColor Green
 }
+$patchProductJsonScript = Join-Path $PSScriptRoot "patch_product_json.py"
+if (Test-Path $patchProductJsonScript) {
+    python $patchProductJsonScript
+    Write-Host "[OK] Applied product.json alignment and API proposals" -ForegroundColor Green
+}
 
 
 
