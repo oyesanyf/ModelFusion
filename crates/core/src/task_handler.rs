@@ -436,23 +436,63 @@ impl ComprehensiveTaskHandler {
         let mut total_upserted = 0;
         let mut seen_models: HashSet<String> = HashSet::new();
 
-        // Multi-tier discovery streams grounded in the Hugging Face empirical study:
-        let discovery_streams: Vec<(&str, &str)> = vec![
-            ("Global Top Downloaded Workhorses", "https://huggingface.co/api/models?sort=downloads&direction=-1&limit=500&full=false"),
-            ("Qwen Series (Developer Default Workflow)", "https://huggingface.co/api/models?search=qwen&sort=downloads&direction=-1&limit=250&full=false"),
-            ("Llama-3 / 3.2 Family", "https://huggingface.co/api/models?search=llama&sort=downloads&direction=-1&limit=150&full=false"),
-            ("DeepSeek Series", "https://huggingface.co/api/models?search=deepseek&sort=downloads&direction=-1&limit=150&full=false"),
-            ("Mistral & Gemma Workhorses", "https://huggingface.co/api/models?search=mistral&sort=downloads&direction=-1&limit=100&full=false"),
-            ("Sentence Transformers (High Utility)", "https://huggingface.co/api/models?author=sentence-transformers&sort=downloads&direction=-1&limit=100&full=false"),
-            ("Sentence Similarity & Embeddings", "https://huggingface.co/api/models?pipeline_tag=sentence-similarity&sort=downloads&direction=-1&limit=100&full=false"),
-            ("Feature Extraction Pipelines", "https://huggingface.co/api/models?pipeline_tag=feature-extraction&sort=downloads&direction=-1&limit=100&full=false"),
+        // Multi-tier discovery streams covering all modalities (Audio, Vision, NLP, Security, Domains, Global)
+        let discovery_streams: Vec<(&str, &str, Option<&str>)> = vec![
+            // ── Global & Large Workhorses ──
+            ("Global Top Downloaded Workhorses", "https://huggingface.co/api/models?sort=downloads&direction=-1&limit=1000&full=false", None),
+            ("Global Most Liked Models", "https://huggingface.co/api/models?sort=likes&direction=-1&limit=500&full=false", None),
+            ("Qwen Series (Developer Default Workflow)", "https://huggingface.co/api/models?search=qwen&sort=downloads&direction=-1&limit=300&full=false", Some("text-generation")),
+            ("Llama-3 / 3.2 Family", "https://huggingface.co/api/models?search=llama&sort=downloads&direction=-1&limit=250&full=false", Some("text-generation")),
+            ("DeepSeek Series", "https://huggingface.co/api/models?search=deepseek&sort=downloads&direction=-1&limit=200&full=false", Some("text-generation")),
+            ("Mistral & Gemma Workhorses", "https://huggingface.co/api/models?search=mistral&sort=downloads&direction=-1&limit=150&full=false", Some("text-generation")),
+
+            // ── Embeddings & Representation ──
+            ("Sentence Transformers (High Utility)", "https://huggingface.co/api/models?author=sentence-transformers&sort=downloads&direction=-1&limit=150&full=false", Some("sentence-similarity")),
+            ("Sentence Similarity & Embeddings", "https://huggingface.co/api/models?pipeline_tag=sentence-similarity&sort=downloads&direction=-1&limit=200&full=false", Some("sentence-similarity")),
+            ("Feature Extraction Pipelines", "https://huggingface.co/api/models?pipeline_tag=feature-extraction&sort=downloads&direction=-1&limit=150&full=false", Some("feature-extraction")),
+
+            // ── Audio Modality ──
+            ("Automatic Speech Recognition (ASR / Whisper)", "https://huggingface.co/api/models?pipeline_tag=automatic-speech-recognition&sort=downloads&direction=-1&limit=250&full=false", Some("automatic-speech-recognition")),
+            ("Audio Classification", "https://huggingface.co/api/models?pipeline_tag=audio-classification&sort=downloads&direction=-1&limit=150&full=false", Some("audio-classification")),
+            ("Voice Activity Detection", "https://huggingface.co/api/models?pipeline_tag=voice-activity-detection&sort=downloads&direction=-1&limit=100&full=false", Some("voice-activity-detection")),
+            ("Text-to-Speech (TTS)", "https://huggingface.co/api/models?pipeline_tag=text-to-speech&sort=downloads&direction=-1&limit=200&full=false", Some("text-to-speech")),
+            ("Audio-to-Audio / Enhancement", "https://huggingface.co/api/models?pipeline_tag=audio-to-audio&sort=downloads&direction=-1&limit=100&full=false", Some("audio-to-audio")),
+
+            // ── Image & Computer Vision ──
+            ("Image Classification", "https://huggingface.co/api/models?pipeline_tag=image-classification&sort=downloads&direction=-1&limit=250&full=false", Some("image-classification")),
+            ("Object Detection", "https://huggingface.co/api/models?pipeline_tag=object-detection&sort=downloads&direction=-1&limit=200&full=false", Some("object-detection")),
+            ("Image Segmentation", "https://huggingface.co/api/models?pipeline_tag=image-segmentation&sort=downloads&direction=-1&limit=150&full=false", Some("image-segmentation")),
+            ("Depth Estimation", "https://huggingface.co/api/models?pipeline_tag=depth-estimation&sort=downloads&direction=-1&limit=100&full=false", Some("depth-estimation")),
+            ("Zero-Shot Image Classification", "https://huggingface.co/api/models?pipeline_tag=zero-shot-image-classification&sort=downloads&direction=-1&limit=150&full=false", Some("zero-shot-image-classification")),
+            ("Image Feature Extraction", "https://huggingface.co/api/models?pipeline_tag=image-feature-extraction&sort=downloads&direction=-1&limit=100&full=false", Some("image-feature-extraction")),
+            ("Visual Question Answering (VQA)", "https://huggingface.co/api/models?pipeline_tag=visual-question-answering&sort=downloads&direction=-1&limit=150&full=false", Some("visual-question-answering")),
+            ("Document Question Answering", "https://huggingface.co/api/models?pipeline_tag=document-question-answering&sort=downloads&direction=-1&limit=100&full=false", Some("document-question-answering")),
+            ("Text-to-Image Generation", "https://huggingface.co/api/models?pipeline_tag=text-to-image&sort=downloads&direction=-1&limit=250&full=false", Some("text-to-image")),
+            ("Image-to-Text / Captioning", "https://huggingface.co/api/models?pipeline_tag=image-to-text&sort=downloads&direction=-1&limit=150&full=false", Some("image-to-text")),
+
+            // ── NLP & Reasoning ──
+            ("Translation", "https://huggingface.co/api/models?pipeline_tag=translation&sort=downloads&direction=-1&limit=200&full=false", Some("translation")),
+            ("Summarization", "https://huggingface.co/api/models?pipeline_tag=summarization&sort=downloads&direction=-1&limit=200&full=false", Some("summarization")),
+            ("Question Answering", "https://huggingface.co/api/models?pipeline_tag=question-answering&sort=downloads&direction=-1&limit=250&full=false", Some("question-answering")),
+            ("Text Classification & Sentiment", "https://huggingface.co/api/models?pipeline_tag=text-classification&sort=downloads&direction=-1&limit=250&full=false", Some("text-classification")),
+            ("Token Classification / NER", "https://huggingface.co/api/models?pipeline_tag=token-classification&sort=downloads&direction=-1&limit=200&full=false", Some("token-classification")),
+            ("Fill-Mask / BERT Models", "https://huggingface.co/api/models?pipeline_tag=fill-mask&sort=downloads&direction=-1&limit=200&full=false", Some("fill-mask")),
+            ("Text2Text Generation (T5 / FLAN)", "https://huggingface.co/api/models?pipeline_tag=text2text-generation&sort=downloads&direction=-1&limit=200&full=false", Some("text2text-generation")),
+            ("Table Question Answering", "https://huggingface.co/api/models?pipeline_tag=table-question-answering&sort=downloads&direction=-1&limit=100&full=false", Some("table-question-answering")),
+            ("Zero-Shot Classification", "https://huggingface.co/api/models?pipeline_tag=zero-shot-classification&sort=downloads&direction=-1&limit=150&full=false", Some("zero-shot-classification")),
+
+            // ── Specialized Security & Domains ──
+            ("Biomedical & Healthcare Models", "https://huggingface.co/api/models?search=biomedical&sort=downloads&direction=-1&limit=150&full=false", Some("text-classification")),
+            ("Legal Reasoning Models", "https://huggingface.co/api/models?search=legal&sort=downloads&direction=-1&limit=150&full=false", Some("text-classification")),
+            ("Financial & FinTech Models", "https://huggingface.co/api/models?search=financial&sort=downloads&direction=-1&limit=150&full=false", Some("text-classification")),
+            ("Cybersecurity & Code Vulnerability Models", "https://huggingface.co/api/models?search=security&sort=downloads&direction=-1&limit=150&full=false", Some("text-classification")),
         ];
 
         let mut stats_small = 0; // < 1B params
         let mut stats_mid = 0;   // 1B - 14B params
         let mut stats_large = 0; // > 14B params
 
-        for (tier_name, stream_url) in discovery_streams {
+        for (tier_name, stream_url, default_tag) in discovery_streams {
             println!("📥 [DISCOVERY] Ingesting {}: {}...", tier_name, stream_url);
             let mut req = client.get(stream_url);
             if let Some(ref t) = token {
@@ -488,7 +528,9 @@ impl ComprehensiveTaskHandler {
                 seen_models.insert(model_id.clone());
 
                 let author = m.author.unwrap_or_else(|| model_id.split('/').next().unwrap_or("unknown").to_string());
-                let pipeline_tag = m.pipeline_tag.unwrap_or_else(|| "text-generation".to_string());
+                let pipeline_tag = m.pipeline_tag
+                    .or_else(|| default_tag.map(|s| s.to_string()))
+                    .unwrap_or_else(|| "text-generation".to_string());
                 let tags = m.tags.unwrap_or_default();
                 let downloads = m.downloads.unwrap_or(0);
                 let likes = m.likes.unwrap_or(0);

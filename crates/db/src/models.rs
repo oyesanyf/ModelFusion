@@ -45,6 +45,24 @@ impl ModelMetrics {
     }
 }
 
+/// Top-level statistics for a task category.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TaskStat {
+    pub pipeline_tag: String,
+    pub model_count: i64,
+    pub avg_downloads: f64,
+    pub avg_decision_score: f64,
+}
+
+/// Comprehensive statistics across the entire model database.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DatabaseStats {
+    pub total_models: i64,
+    pub last_updated: Option<String>,
+    pub top_tasks: Vec<TaskStat>,
+    pub top_models: Vec<ModelMetrics>,
+}
+
 /// SQLite-backed store for HuggingFace model metadata.
 pub struct HuggingFaceModelDatabase {
     pub db_path: PathBuf,
@@ -307,6 +325,44 @@ impl HuggingFaceModelDatabase {
         )?;
         let rows = stmt.query_map(params![limit as i64], row_to_model)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    /// Calculate database statistics including total models, last updated timestamp,
+    /// top pipeline tags, and top ranked models.
+    pub fn full_stats(&self) -> Result<DatabaseStats> {
+        let conn = self.connect()?;
+        let total_models: i64 = conn.query_row("SELECT COUNT(*) FROM models", [], |r| r.get(0))?;
+        let last_updated = self.get_meta("last_updated")?;
+
+        let mut stmt = conn.prepare(
+            r#"SELECT pipeline_tag, COUNT(*) as cnt, AVG(downloads) as avg_d, AVG(decision_score) as avg_s
+               FROM models
+               WHERE pipeline_tag IS NOT NULL AND pipeline_tag != ''
+               GROUP BY pipeline_tag
+               ORDER BY cnt DESC
+               LIMIT 20"#,
+        )?;
+        let task_rows = stmt.query_map([], |row| {
+            Ok(TaskStat {
+                pipeline_tag: row.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                model_count: row.get(1)?,
+                avg_downloads: row.get::<_, Option<f64>>(2)?.unwrap_or(0.0),
+                avg_decision_score: row.get::<_, Option<f64>>(3)?.unwrap_or(0.0),
+            })
+        })?;
+        let mut top_tasks = Vec::new();
+        for t in task_rows {
+            top_tasks.push(t?);
+        }
+
+        let top_models = self.get_top_overall(10)?;
+
+        Ok(DatabaseStats {
+            total_models,
+            last_updated,
+            top_tasks,
+            top_models,
+        })
     }
 }
 

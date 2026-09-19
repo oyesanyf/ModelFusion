@@ -190,7 +190,7 @@ pub fn query_system_resources() -> SystemResourceSummary {
     }
 }
 
-/// Detects system RAM, VRAM, and CPU to pick the optimal Ollama model fit.
+/// Detects system RAM, VRAM, and CPU to pick the optimal Ollama model fit based on available memory.
 /// Prints a formatted debug log banner showing detected resources.
 fn select_ollama_model_for_hardware(is_low_budget: bool) -> &'static str {
     if is_low_budget {
@@ -203,28 +203,31 @@ fn select_ollama_model_for_hardware(is_low_budget: bool) -> &'static str {
     eprintln!("============================================================");
     eprintln!("        MODELFUSION RUST HARDWARE RESOURCE QUERY           ");
     eprintln!("============================================================");
-    eprintln!("  CPU           : {} ({} logical cores)", res.cpu_name, res.logical_cores);
-    eprintln!("  RAM           : Total: {:.2} GB | Available Free: {:.2} GB", res.total_ram_gb, res.free_ram_gb);
+    eprintln!("  CPU                  : {} ({} logical cores)", res.cpu_name, res.logical_cores);
+    eprintln!("  RAM (Available/Free) : {:.2} GB (Total: {:.2} GB)", res.free_ram_gb, res.total_ram_gb);
     if res.has_gpu {
-        eprintln!("  GPU           : {} (Total VRAM: {} MB, Free VRAM: {} MB)", res.gpu_name, res.total_vram_mb, res.free_vram_mb);
+        eprintln!("  VRAM (Available/Free): {} MB (Total: {} MB) - GPU: {}", res.free_vram_mb, res.total_vram_mb, res.gpu_name);
     } else {
-        eprintln!("  GPU           : None detected / CPU fallthrough");
+        eprintln!("  GPU                  : None detected / CPU fallthrough");
     }
-    eprintln!("  Max Free Disk : {:.2} GB", res.free_disk_gb);
+    eprintln!("  Max Free Disk        : {:.2} GB", res.free_disk_gb);
 
-    // VRAM-aware model fit logic
-    let chosen_model = if res.total_vram_mb >= 14_000 {
+    // Runtime Available/Free Memory-aware model fit logic (protects against concurrent process usage)
+    let chosen_model = if res.free_ram_gb >= 48.0 || res.free_vram_mb >= 22_000 {
+        "qwen2.5:32b"
+    } else if res.free_ram_gb >= 24.0 || res.free_vram_mb >= 12_000 {
         "qwen2.5:14b"
-    } else if res.total_vram_mb >= 4_500 || (res.has_gpu && res.total_ram_gb >= 16.0) {
-        // Fits inside 6GB VRAM (like GTX 1060 6GB) or 8GB VRAM GPUs cleanly
+    } else if res.free_ram_gb >= 12.0 || res.free_vram_mb >= 5_500 {
         "qwen2.5:7b"
-    } else if res.total_vram_mb >= 2_000 || res.total_ram_gb >= 16.0 {
+    } else if res.free_ram_gb >= 6.0 || res.free_vram_mb >= 2_500 {
         "qwen2.5:3b"
-    } else {
+    } else if res.free_ram_gb >= 3.0 {
         "qwen2.5:1.5b"
+    } else {
+        "qwen2.5:0.5b"
     };
 
-    eprintln!("  BEST MODEL FIT: {}", chosen_model);
+    eprintln!("  BEST MODEL FIT (Based on runtime AVAILABLE memory): {}", chosen_model);
     eprintln!("============================================================");
 
     chosen_model
@@ -1028,10 +1031,47 @@ async fn run(args: Args) -> Result<()> {
     }
 
     if args.update {
+        // Step 1: Update database
         let res = handler.handle_update_database().await;
         println!("{}", res.content);
 
-        // Auto-prepare models after update if requested
+        // Step 2: Ollama model update
+        println!("\n🦙 [OLLAMA] Checking and updating local AI models for detected hardware...");
+        if let Err(e) = model_selection::memory::ensure_ollama_running() {
+            eprintln!("⚠️  [OLLAMA] Failed to ensure Ollama is running: {}", e);
+        } else {
+            let target_model = select_ollama_model_for_hardware(false);
+            println!("📦 [OLLAMA] Selected optimal model: {}", target_model);
+            let pull_status = std::process::Command::new("ollama")
+                .args(["pull", target_model])
+                .status()
+                .or_else(|_| {
+                    let mut fallback = std::path::PathBuf::from("ollama");
+                    if let Ok(appdata) = std::env::var("LOCALAPPDATA") {
+                        let cand = std::path::PathBuf::from(appdata).join("Programs").join("Ollama").join("ollama.exe");
+                        if cand.exists() {
+                            fallback = cand;
+                        }
+                    }
+                    std::process::Command::new(fallback)
+                        .args(["pull", target_model])
+                        .status()
+                });
+
+            match pull_status {
+                Ok(s) if s.success() => {
+                    println!("✅ [OLLAMA] Model '{}' is ready and up to date.", target_model);
+                }
+                Ok(s) => {
+                    eprintln!("⚠️  [OLLAMA] Pull exited with code: {:?}", s.code());
+                }
+                Err(e) => {
+                    eprintln!("⚠️  [OLLAMA] Could not execute ollama pull: {}", e);
+                }
+            }
+        }
+
+        // Step 3: Auto-prepare models after update if requested
         if args.prepare_all_models {
             println!("\n🔷 [OPENVINO] Auto-caching all OpenVINO models after database update...");
             println!("📂 Output directory: {}", args.ov_model_dir);
