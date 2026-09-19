@@ -10,21 +10,21 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8')
 
 CLI_PATH = r"D:\harfile\ModelFusion\IDE\bin\cli.exe"
-DB_PATH = r"C:\Users\oyesa\.hugos-ide\db\hf_models.db"
-OV_DIR = r"C:\Users\oyesa\.hugos-ide\ov_models"
+DB_PATH = r"C:\Users\oyesanyf\.hugos-ide\db\hf_models.db" if os.path.exists(r"C:\Users\oyesanyf\.hugos-ide\db\hf_models.db") else (r"C:\Users\oyesa\.hugos-ide\db\hf_models.db" if os.path.exists(r"C:\Users\oyesa\.hugos-ide\db\hf_models.db") else r"D:\harfile\ModelFusion\IDE\db\hf_models.db")
+OV_DIR = r"C:\Users\oyesanyf\.hugos-ide\ov_models" if os.path.exists(r"C:\Users\oyesanyf\.hugos-ide\ov_models") else r"C:\Users\oyesa\.hugos-ide\ov_models"
 SERVER_URL = "http://127.0.0.1:5005/orchestrate"
 
-print("=" * 75)
-print(" 🚀 STARTING INTEGRATED MODELFUSION SERVER & MCP TEST SUITE")
-print("=" * 75)
+print("=" * 75, flush=True)
+print(" 🚀 STARTING INTEGRATED MODELFUSION SERVER & MCP TEST SUITE", flush=True)
+print("=" * 75, flush=True)
 
 # 1. Spawn test server on dedicated port 5005
 server_cmd = [CLI_PATH, "--server", "--port", "5005", "--db-path", DB_PATH, "--ov-model-dir", OV_DIR]
-print(f"Spawning test server: {' '.join(server_cmd)}")
+print(f"Spawning test server: {' '.join(server_cmd)}", flush=True)
 
 proc = subprocess.Popen(
     server_cmd,
-    stdout=subprocess.PIPE,
+    stdout=subprocess.DEVNULL,
     stderr=subprocess.DEVNULL,
     text=True,
     encoding="utf-8"
