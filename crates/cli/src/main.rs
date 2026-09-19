@@ -5036,7 +5036,53 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         "Error: Invalid context or arm index".to_string()
                     }
                 }
-                _ => format!("Error: Unknown API path {}", request_path)
+                "/command" | "/commands" | "/help" => {
+                    if let Some(args_arr) = request_json["args"].as_array() {
+                        let mut cmd_args = Vec::new();
+                        for a in args_arr {
+                            if let Some(s) = a.as_str() {
+                                cmd_args.push(s.to_string());
+                            }
+                        }
+                        run_cli_subcommand(&cmd_args, db_path_val).await
+                    } else if let Some(cmd) = request_json["command"].as_str() {
+                        let trimmed = cmd.trim();
+                        let parts: Vec<String> = trimmed.split_whitespace().map(|s| s.to_string()).collect();
+                        run_cli_subcommand(&parts, db_path_val).await
+                    } else if let Some(prompt) = request_json["prompt"].as_str() {
+                        let trimmed = prompt.trim();
+                        let parts: Vec<String> = trimmed.split_whitespace().map(|s| s.to_string()).collect();
+                        run_cli_subcommand(&parts, db_path_val).await
+                    } else {
+                        let sys = query_system_resources();
+                        format!("🤖 **ModelFusion Command Router**\n\n- System: {} ({} Cores, {:.2} GB free RAM, GPU: {})\n- Active Endpoint: http://127.0.0.1:{}\n- Multi-Modal Catalog: {}\n\nUsage: Post JSON with `args`, `command`, or `prompt` to execute any ModelFusion CLI directive.", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name, port, db_path_val.display())
+                    }
+                }
+                other => {
+                    let clean_cmd = other.trim_start_matches('/');
+                    if clean_cmd.is_empty() {
+                        format!("ModelFusion API Server running on port {}", port)
+                    } else {
+                        let flag = format!("--{}", clean_cmd.replace('_', "-"));
+                        let mut cmd_args = vec![flag];
+                        if let Some(args_arr) = request_json["args"].as_array() {
+                            for a in args_arr {
+                                if let Some(s) = a.as_str() {
+                                    cmd_args.push(s.to_string());
+                                }
+                            }
+                        } else if let Some(prompt) = request_json["prompt"].as_str() {
+                            cmd_args.push("--prompt".to_string());
+                            cmd_args.push(prompt.to_string());
+                        } else if let Some(query) = request_json["query"].as_str() {
+                            cmd_args.push(query.to_string());
+                        }
+                        if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() && !cmd_args.iter().any(|a| a == "--ollama") {
+                            cmd_args.push("--ollama".to_string());
+                        }
+                        run_cli_subcommand(&cmd_args, db_path_val).await
+                    }
+                }
             };
 
             let response_json = serde_json::json!({
@@ -8240,6 +8286,8 @@ fn get_source_patches() -> Vec<(&'static str, &'static str, &'static str)> {
 
 #[cfg(test)]
 mod prompt_interception_tests {
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     fn check_is_empty_user_prompt(prompt: &str) -> bool {
         let lower = prompt.to_lowercase();
         if lower.contains("@agent") || lower.contains("/evolve") || lower.contains("/stats") || lower.contains("<attachments>") || lower.contains("<attachment>") || lower.contains("<user_request>") {
@@ -8301,6 +8349,7 @@ mod prompt_interception_tests {
 
     #[test]
     fn test_parse_slash_commands_agent_stats() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let mut prompt = "User: @agent /stats".to_string();
         let (mut gpu, mut cpu, mut openvino, mut fusion) = (false, false, false, false);
         super::parse_slash_commands_in_prompt(&mut prompt, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
@@ -8309,6 +8358,7 @@ mod prompt_interception_tests {
 
     #[test]
     fn test_parse_slash_commands_agent_no_slash_stats() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let mut prompt = "User: @agent stats".to_string();
         let (mut gpu, mut cpu, mut openvino, mut fusion) = (false, false, false, false);
         super::parse_slash_commands_in_prompt(&mut prompt, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
@@ -8317,6 +8367,7 @@ mod prompt_interception_tests {
 
     #[test]
     fn test_parse_slash_commands_comment() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let mut prompt = "User: @comment add comments to this code".to_string();
         let (mut gpu, mut cpu, mut openvino, mut fusion) = (false, false, false, false);
         super::parse_slash_commands_in_prompt(&mut prompt, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
@@ -8369,6 +8420,7 @@ User: <context>ctx</context><userrequest>write a python script to simulate qubit
 
     #[test]
     fn test_multi_turn_slash_command_after_coding_request() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let mut prompt = "User: write a python script\n\
 Assistant: Here is your script.\n\
 User: <context><environment_info>OS: Windows</environment_info></context>@agent /keys".to_string();
@@ -8437,6 +8489,7 @@ User: <context><environment_info>OS: Windows</environment_info></context>@agent 
 
     #[test]
     fn test_slash_command_research_and_reseach_alias() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let mut prompt1 = "/research open-weight models".to_string();
         let (mut gpu, mut cpu, mut openvino, mut fusion) = (false, false, false, false);
         super::parse_slash_commands_in_prompt(&mut prompt1, &mut gpu, &mut cpu, &mut openvino, &mut fusion);

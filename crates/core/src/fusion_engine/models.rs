@@ -18,7 +18,7 @@ pub async fn call_model(model: &ModelConfig, prompt: &str) -> anyhow::Result<Str
         temperature: model.temperature.unwrap_or(0.7) as f64,
         cost_per_1k_tokens: 0.0,
         rate_limit_per_minute: 60,
-        timeout_seconds: 30,
+        timeout_seconds: 120,
     };
 
     let provider = create_provider(core_config);

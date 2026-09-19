@@ -72,23 +72,28 @@ impl SystemMemory {
     /// probed once per CLI invocation even if called from multiple select_best_model() calls.
     pub fn detect() -> Self {
         SYSTEM_MEMORY_CACHE.get_or_init(|| {
-            let mut sys = System::new_all();
-            sys.refresh_all();
-
-            let total_ram_gb = sys.total_memory() as f64 / 1_073_741_824.0;
-            let free_ram_gb = sys.free_memory() as f64 / 1_073_741_824.0;
-            let cpu_cores = sys.physical_core_count().unwrap_or_else(|| sys.cpus().len()).max(1);
-
-            let (gpu_name, gpu_vram_total_gb, gpu_vram_free_gb) = detect_gpu();
-            SystemMemory {
-                total_ram_gb,
-                free_ram_gb,
-                cpu_cores,
-                gpu_name,
-                gpu_vram_total_gb,
-                gpu_vram_free_gb,
-            }
+            Self::detect_live()
         }).clone()
+    }
+
+    /// Dynamically detect current runtime system resources (probed live without caching).
+    pub fn detect_live() -> Self {
+        let mut sys = System::new_all();
+        sys.refresh_all();
+
+        let total_ram_gb = sys.total_memory() as f64 / 1_073_741_824.0;
+        let free_ram_gb = sys.available_memory() as f64 / 1_073_741_824.0;
+        let cpu_cores = sys.physical_core_count().unwrap_or_else(|| sys.cpus().len()).max(1);
+
+        let (gpu_name, gpu_vram_total_gb, gpu_vram_free_gb) = detect_gpu();
+        SystemMemory {
+            total_ram_gb,
+            free_ram_gb,
+            cpu_cores,
+            gpu_name,
+            gpu_vram_total_gb,
+            gpu_vram_free_gb,
+        }
     }
 
     /// Whether a usable GPU is detected.
@@ -168,9 +173,9 @@ impl SystemMemory {
     }
 }
 
-/// Convenience function to detect system memory and derive the optimal fusion model count.
+/// Convenience function to detect live system memory and derive the optimal fusion model count.
 pub fn derive_fusion_model_count() -> usize {
-    SystemMemory::detect().derive_fusion_model_count()
+    SystemMemory::detect_live().derive_fusion_model_count()
 }
 
 
@@ -702,7 +707,7 @@ fn map_hf_to_ollama(hf_model_id: &str) -> String {
 /// This avoids spawning a `curl` subprocess for every single candidate model.
 static OLLAMA_CACHED_TAGS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
 
-fn get_ollama_cached_models() -> &'static Vec<String> {
+pub fn get_ollama_cached_models() -> &'static Vec<String> {
     OLLAMA_CACHED_TAGS.get_or_init(|| {
         let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
             .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
@@ -734,7 +739,30 @@ fn get_ollama_cached_models() -> &'static Vec<String> {
 pub fn is_ollama_model_cached(model_id: &str) -> bool {
     let target = map_hf_to_ollama(model_id).to_lowercase();
     let cached = get_ollama_cached_models();
-    cached.iter().any(|m| m.contains(&target) || target.contains(m.split(':').next().unwrap_or("")))
+    let (target_base, target_tag) = if let Some((base, tag)) = target.split_once(':') {
+        (base, Some(tag))
+    } else {
+        (target.as_str(), None)
+    };
+
+    cached.iter().any(|m| {
+        let m_lower = m.to_lowercase();
+        if m_lower == target {
+            return true;
+        }
+        if let Some((m_base, m_tag)) = m_lower.split_once(':') {
+            if m_base == target_base {
+                match target_tag {
+                    Some(tt) => m_tag == tt || m_tag.starts_with(tt) || tt == "latest",
+                    None => true,
+                }
+            } else {
+                false
+            }
+        } else {
+            m_lower == target_base
+        }
+    })
 }
 
 
@@ -799,5 +827,58 @@ mod tests {
         // 7B model, Ollama Q4: 7 × 0.6 × 1.2 = 5.04 GB
         let mem = estimate_runtime_memory_gb(7.0, Backend::Ollama);
         assert!((mem - 5.04).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_derive_fusion_model_count_tiers() {
+        let mem_64 = SystemMemory {
+            total_ram_gb: 128.0,
+            free_ram_gb: 64.0,
+            cpu_cores: 16,
+            gpu_name: None,
+            gpu_vram_total_gb: 0.0,
+            gpu_vram_free_gb: 0.0,
+        };
+        assert_eq!(mem_64.derive_fusion_model_count(), 7);
+
+        let mem_32 = SystemMemory {
+            total_ram_gb: 64.0,
+            free_ram_gb: 32.0,
+            cpu_cores: 16,
+            gpu_name: None,
+            gpu_vram_total_gb: 0.0,
+            gpu_vram_free_gb: 0.0,
+        };
+        assert_eq!(mem_32.derive_fusion_model_count(), 5);
+
+        let mem_16 = SystemMemory {
+            total_ram_gb: 32.0,
+            free_ram_gb: 16.0,
+            cpu_cores: 8,
+            gpu_name: None,
+            gpu_vram_total_gb: 0.0,
+            gpu_vram_free_gb: 0.0,
+        };
+        assert_eq!(mem_16.derive_fusion_model_count(), 4);
+
+        let mem_8 = SystemMemory {
+            total_ram_gb: 16.0,
+            free_ram_gb: 8.0,
+            cpu_cores: 4,
+            gpu_name: None,
+            gpu_vram_total_gb: 0.0,
+            gpu_vram_free_gb: 0.0,
+        };
+        assert_eq!(mem_8.derive_fusion_model_count(), 3);
+
+        let mem_4 = SystemMemory {
+            total_ram_gb: 8.0,
+            free_ram_gb: 4.0,
+            cpu_cores: 2,
+            gpu_name: None,
+            gpu_vram_total_gb: 0.0,
+            gpu_vram_free_gb: 0.0,
+        };
+        assert_eq!(mem_4.derive_fusion_model_count(), 2);
     }
 }
