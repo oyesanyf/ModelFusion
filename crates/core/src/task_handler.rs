@@ -127,7 +127,7 @@ impl ComprehensiveTaskHandler {
             vec![
                 "spam-detection", "malware-text-detection", "phishing-detection",
                 "pii-detection", "hate-speech-detection", "cyberbullying-detection",
-                "fake-news-detection",
+                "fake-news-detection", "code-vulnerability-detection",
             ],
         );
         tasks.insert(
@@ -150,14 +150,14 @@ impl ComprehensiveTaskHandler {
                 "image-classification", "object-detection", "image-segmentation",
                 "visual-question-answering", "document-question-answering",
                 "zero-shot-image-classification", "depth-estimation",
-                "image-feature-extraction",
+                "image-feature-extraction", "text-to-image",
             ],
         );
         tasks.insert(
             "audio",
             vec![
                 "automatic-speech-recognition", "audio-classification",
-                "voice-activity-detection", "emotion-recognition",
+                "voice-activity-detection", "emotion-recognition", "text-to-speech",
             ],
         );
 
