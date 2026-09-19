@@ -432,6 +432,12 @@ struct Args {
     #[arg(long, help = "Update the HuggingFace models database")]
     update: bool,
 
+    #[arg(long, help = "Ingest ALL models from Hugging Face Hub (cursor-paginated, complete registry whether junk or not)")]
+    updatedb: bool,
+
+    #[arg(long, help = "Maximum number of models to ingest during --updatedb (defaults to unlimited)")]
+    max_models: Option<usize>,
+
     #[arg(long, help = "Restore config and database from backups")]
     restore: bool,
 
@@ -1027,6 +1033,13 @@ async fn run(args: Args) -> Result<()> {
     if let Some(category) = args.tasks {
         let res = handler.handle_tasks_list(Some(&category));
         println!("{}", res.content);
+        return Ok(());
+    }
+
+    if args.updatedb {
+        println!("🚀 Ingesting models from Hugging Face Hub into database (whether junk or not)...");
+        let result = handler.handle_update_all_models_database(args.max_models).await;
+        println!("{}", result.content);
         return Ok(());
     }
 

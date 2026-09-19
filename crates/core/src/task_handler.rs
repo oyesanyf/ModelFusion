@@ -32,6 +32,22 @@ struct HFModelApiResponse {
     library_name: Option<String>,
 }
 
+fn parse_next_link(link_header: &str) -> Option<String> {
+    for part in link_header.split(',') {
+        let part = part.trim();
+        if part.contains("rel=\"next\"") || part.contains("rel='next'") || part.contains("rel=next") {
+            if let Some(start) = part.find('<') {
+                if let Some(end) = part.find('>') {
+                    if start < end {
+                        return Some(part[start + 1..end].to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 
 
 /// Handles CLI actions like update, stats, lists, restore, and specialized tasks.
@@ -722,6 +738,197 @@ impl ComprehensiveTaskHandler {
             error_message: None,
         }
 
+    }
+
+    /// Ingest ALL models from Hugging Face Hub using cursor pagination.
+    pub async fn handle_update_all_models_database(&self, max_models: Option<usize>) -> TaskHandlerResult {
+        println!("🔄 Starting complete Hugging Face Hub database ingestion (cursor-paginated)...");
+
+        let db = match HuggingFaceModelDatabase::new(&self.db_path) {
+            Err(e) => {
+                return TaskHandlerResult {
+                    success: false,
+                    content: format!("❌ Failed to connect to database: {}", e),
+                    data: None,
+                    error_message: Some(e.to_string()),
+                };
+            }
+            Ok(d) => d,
+        };
+
+        let client = reqwest::Client::new();
+        let token = std::env::var("HF_TOKEN")
+            .or_else(|_| std::env::var("HUGGINGFACE_API_KEY"))
+            .or_else(|_| std::env::var("HF_API_KEY"))
+            .or_else(|_| std::env::var("HUGGINGFACE_TOKEN"))
+            .ok();
+
+        let mut next_url = Some("https://huggingface.co/api/models?limit=1000&full=false".to_string());
+        let mut total_upserted = 0;
+        let mut batch_num = 0;
+        let start_time = std::time::Instant::now();
+        let mut seen_models: HashSet<String> = HashSet::new();
+
+        while let Some(current_url) = next_url.take() {
+            let mut retries = 0;
+            let mut res_opt = None;
+
+            while retries < 4 {
+                let mut req = client.get(&current_url);
+                if let Some(ref t) = token {
+                    req = req.bearer_auth(t);
+                }
+
+                match req.send().await {
+                    Ok(resp) => {
+                        let status = resp.status();
+                        if status.is_success() {
+                            res_opt = Some(resp);
+                            break;
+                        } else if status.as_u16() == 429 || status.is_server_error() {
+                            let backoff_secs = 2u64.pow((retries + 1) as u32);
+                            println!("⚠️ [UPDATE-DB] Status {} on {}, retrying in {}s (attempt {}/4)...", status, current_url, backoff_secs, retries + 1);
+                            tokio::time::sleep(tokio::time::Duration::from_secs(backoff_secs)).await;
+                            retries += 1;
+                        } else {
+                            println!("⚠️ [UPDATE-DB] Request failed with HTTP status {}", status);
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        let backoff_secs = 2u64.pow((retries + 1) as u32);
+                        println!("⚠️ [UPDATE-DB] Network error on {}: {}, retrying in {}s (attempt {}/4)...", current_url, e, backoff_secs, retries + 1);
+                        tokio::time::sleep(tokio::time::Duration::from_secs(backoff_secs)).await;
+                        retries += 1;
+                    }
+                }
+            }
+
+            let resp = match res_opt {
+                Some(r) => r,
+                None => {
+                    println!("⚠️ [UPDATE-DB] Failed to fetch page after retries: {}", current_url);
+                    break;
+                }
+            };
+
+            // Extract next_url from response headers Link using parse_next_link
+            next_url = resp.headers().get("link")
+                .and_then(|h| h.to_str().ok())
+                .and_then(parse_next_link);
+
+            let api_models: Vec<HFModelApiResponse> = match resp.json().await {
+                Ok(m) => m,
+                Err(e) => {
+                    println!("⚠️ [UPDATE-DB] Failed to parse API JSON: {}", e);
+                    break;
+                }
+            };
+
+            if api_models.is_empty() {
+                break;
+            }
+
+            let mut batch = Vec::with_capacity(api_models.len());
+            for m in api_models {
+                let model_id = m.id;
+                if seen_models.contains(&model_id) {
+                    continue;
+                }
+                seen_models.insert(model_id.clone());
+
+                let author = m.author.unwrap_or_else(|| model_id.split('/').next().unwrap_or("unknown").to_string());
+                let pipeline_tag = m.pipeline_tag.unwrap_or_else(|| "text-generation".to_string());
+                let tags = m.tags.unwrap_or_default();
+                let downloads = m.downloads.unwrap_or(0);
+                let likes = m.likes.unwrap_or(0);
+                let last_modified = m.last_modified.unwrap_or_else(|| "2026-01-01T00:00:00Z".to_string());
+                let library_name = m.library_name.unwrap_or_else(|| "transformers".to_string());
+
+                let mut license = "unknown".to_string();
+                for t in &tags {
+                    if t.starts_with("license:") {
+                        license = t.trim_start_matches("license:").to_string();
+                        break;
+                    }
+                }
+
+                let (decision_score, capability_score, efficiency_score, popularity_score, size_mb) =
+                    Self::compute_anti_hype_scores(
+                        &model_id,
+                        downloads,
+                        likes,
+                        &tags,
+                        &pipeline_tag,
+                        &library_name,
+                    );
+
+                batch.push(ModelMetrics {
+                    model_id,
+                    author,
+                    pipeline_tag: pipeline_tag.clone(),
+                    tags,
+                    description: format!("Hugging Face Registry Model ({})", pipeline_tag),
+                    downloads,
+                    likes,
+                    decision_score,
+                    capability_score,
+                    efficiency_score,
+                    popularity_score,
+                    model_type: "causal-lm".to_string(),
+                    library_name,
+                    last_modified,
+                    license,
+                    task_keywords: Vec::new(),
+                    architecture: "transformer".to_string(),
+                    size_mb,
+                    language: "en".to_string(),
+                });
+            }
+
+            if !batch.is_empty() {
+                if let Err(e) = db.upsert_batch(&batch) {
+                    println!("⚠️ [UPDATE-DB] Failed to upsert batch: {}", e);
+                }
+            }
+
+            total_upserted += batch.len();
+            batch_num += 1;
+            let elapsed = start_time.elapsed().as_secs_f64();
+            let speed = if elapsed > 0.0 { total_upserted as f64 / elapsed } else { 0.0 };
+            println!("📦 [UPDATE-DB] Ingested {} models (Batch #{}, {:.1} models/sec)...", total_upserted, batch_num, speed);
+
+            if let Some(max) = max_models {
+                if total_upserted >= max {
+                    println!("🏁 Reached requested maximum limit of {} models.", max);
+                    break;
+                }
+            }
+        }
+
+        let _ = db.set_meta("last_updated", &chrono::Utc::now().to_rfc3339());
+        let _ = db.set_meta("anti_hype_scoring_version", "2.0");
+
+        let elapsed = start_time.elapsed().as_secs_f64();
+        let speed = if elapsed > 0.0 { total_upserted as f64 / elapsed } else { 0.0 };
+        let out = format!(
+            "✨ Complete Hugging Face Hub Registry Ingestion Complete!\n\
+             📊 Total Models Upserted: {}\n\
+             📦 Total Batches Processed: {}\n\
+             ⏱️ Elapsed Time: {:.2}s ({:.1} models/sec)",
+            total_upserted, batch_num, elapsed, speed
+        );
+
+        TaskHandlerResult {
+            success: true,
+            content: out,
+            data: Some(json!({
+                "upserted_count": total_upserted,
+                "batch_count": batch_num,
+                "elapsed_seconds": elapsed,
+            })),
+            error_message: None,
+        }
     }
 
     /// Clear cache logic.
