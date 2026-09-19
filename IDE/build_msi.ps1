@@ -597,7 +597,12 @@ Start-Sleep -Seconds 3
 # 6. Generate the WiX source manifest (.wxs)
 Write-Host "[INFO] Generating WiX source manifest (.wxs)..." -ForegroundColor Yellow
 $wxsPath = Join-Path $PSScriptRoot "HugOS.wxs"
-node (Join-Path $PSScriptRoot "generate_wix.js") $vsCodePackDir $wxsPath
+$nodeExe = "D:\tools\nodejs\node.exe"
+if (-not (Test-Path $nodeExe)) {
+    $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+    $nodeExe = if ($nodeCmd) { $nodeCmd.Source } else { "node" }
+}
+& $nodeExe (Join-Path $PSScriptRoot "generate_wix.js") $vsCodePackDir $wxsPath
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] Failed to run generate_wix.js." -ForegroundColor Red
     Exit 1
@@ -615,6 +620,11 @@ if (Test-Path $msiPath) {
 [System.GC]::Collect()
 [System.GC]::WaitForPendingFinalizers()
 Start-Sleep -Seconds 3
+
+# Kill any lingering wix or wixnative processes from previous runs
+Stop-Process -Name wix, wixnative -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:LOCALAPPDATA\Temp\#cab*" -Force -Recurse -ErrorAction SilentlyContinue
+Remove-Item "$env:TEMP\#cab*" -Force -Recurse -ErrorAction SilentlyContinue
 
 # Run wix build with multi-threaded cabinet compression and bind path
 & wix build -b $PSScriptRoot -arch x64 -ct 4 $wxsPath -out $msiPath

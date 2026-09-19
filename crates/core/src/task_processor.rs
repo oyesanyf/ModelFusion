@@ -317,10 +317,13 @@ impl UniversalTaskProcessor {
             "anthropic".to_string()
         } else if lower.starts_with("gemini-") {
             "gemini".to_string()
+        } else if lower.contains(':') || lower.starts_with("ollama") || model_selection::memory::is_ollama_model_cached(&lower) {
+            "local".to_string()
         } else {
             "huggingface".to_string()
         }
     }
+
 
     fn get_cost_for_model(&self, model_id: &str) -> f64 {
         let lower = model_id.to_lowercase();

@@ -76,6 +76,11 @@ pub fn get_small_model_ids(db_path: &Path, max_size_mb: f64) -> Vec<String> {
     }
 }
 
+/// Derive dynamic fusion model count based on live available runtime memory.
+pub fn derive_fusion_model_count() -> usize {
+    model_selection::memory::derive_fusion_model_count()
+}
+
 /// Run the model fusion pipeline.
 pub async fn run_fusion(
     prompt: &str,
@@ -104,7 +109,11 @@ pub async fn run_fusion(
     let selector = EnhancedModelSelector::new(db_path_ref)
         .context("⚠️ [FUSION] Failed to open database for model selection.")?;
         
-    let max_candidates = max_candidates.unwrap_or(10);
+    let max_candidates = match max_candidates {
+        Some(n) if n > 0 => n,
+        _ => derive_fusion_model_count(),
+    };
+    eprintln!("⚡ [FUSION] Effective fusion panel model count: {}", max_candidates);
 
     let is_multi_sample = fusion_mode == "multi-sample";
 

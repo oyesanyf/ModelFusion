@@ -266,13 +266,14 @@ impl HuggingFaceProvider {
             .unwrap_or_else(|_| "int8".to_string());
 
         let timeout_duration = std::time::Duration::from_secs(self.config.timeout_seconds.max(900));
+        let safe_prompt = if prompt.len() > 8000 { &prompt[..8000] } else { prompt };
         let output = tokio::time::timeout(
             timeout_duration,
             tokio::process::Command::new("python")
                 .env("PYTHONIOENCODING", "utf-8")
                 .arg(&script_path)
                 .arg(&self.config.model_id)
-                .arg(prompt)
+                .arg(safe_prompt)
                 .arg(self.config.max_tokens.to_string())
                 .arg(self.config.temperature.to_string())
                 .arg(&ov_model_dir)
@@ -315,13 +316,14 @@ impl HuggingFaceProvider {
         };
 
         let timeout_duration = std::time::Duration::from_secs(self.config.timeout_seconds.max(600));
+        let safe_prompt = if prompt.len() > 8000 { &prompt[..8000] } else { prompt };
         let output = tokio::time::timeout(
             timeout_duration,
             tokio::process::Command::new("python")
                 .env("PYTHONIOENCODING", "utf-8")
                 .arg(&script_path)
                 .arg(&self.config.model_id)
-                .arg(prompt)
+                .arg(safe_prompt)
                 .arg(self.config.max_tokens.to_string())
                 .arg(self.config.temperature.to_string())
                 .arg(device_arg)
@@ -363,19 +365,21 @@ impl HuggingFaceProvider {
         };
 
         let timeout_duration = std::time::Duration::from_secs(self.config.timeout_seconds.max(300));
+        let safe_prompt = if prompt.len() > 8000 { &prompt[..8000] } else { prompt };
         let output = tokio::time::timeout(
             timeout_duration,
             tokio::process::Command::new("python")
                 .env("PYTHONIOENCODING", "utf-8")
                 .arg(&script_path)
                 .arg(&self.config.model_id)
-                .arg(prompt)
+                .arg(safe_prompt)
                 .arg(self.config.max_tokens.to_string())
                 .arg(self.config.temperature.to_string())
                 .arg(device_arg)
                 .kill_on_drop(true)
                 .output()
         ).await;
+
 
         match output {
             Ok(Ok(out)) => {

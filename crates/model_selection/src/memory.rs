@@ -142,7 +142,37 @@ impl SystemMemory {
             println!("🎮 [MEMORY] GPU: Not detected (CPU-only execution)");
         }
     }
+
+    /// Derive the optimal number of models for a fusion panel based on live available runtime memory
+    /// (runtime free RAM and runtime free VRAM).
+    /// Free RAM >= 64GB or Free VRAM >= 24GB -> 7 models;
+    /// >= 32GB/12GB -> 5 models;
+    /// >= 16GB/6GB -> 4 models;
+    /// >= 8GB/3GB -> 3 models;
+    /// < 8GB -> 2 models.
+    pub fn derive_fusion_model_count(&self) -> usize {
+        let free_ram = self.free_ram_gb;
+        let free_vram = self.gpu_vram_free_gb;
+
+        if free_ram >= 64.0 || free_vram >= 24.0 {
+            7
+        } else if free_ram >= 32.0 || free_vram >= 12.0 {
+            5
+        } else if free_ram >= 16.0 || free_vram >= 6.0 {
+            4
+        } else if free_ram >= 8.0 || free_vram >= 3.0 {
+            3
+        } else {
+            2
+        }
+    }
 }
+
+/// Convenience function to detect system memory and derive the optimal fusion model count.
+pub fn derive_fusion_model_count() -> usize {
+    SystemMemory::detect().derive_fusion_model_count()
+}
+
 
 /// Calculate hardware requirements dynamically based on model size and backend.
 pub fn get_requirements_for_model(params_b: f64, backend: Backend) -> HardwareRequirements {
@@ -614,17 +644,25 @@ pub fn is_openvino_model_cached(model_id: &str) -> bool {
 
 /// Check if a HuggingFace transformers model is cached/downloaded in the local HF hub cache.
 pub fn is_transformers_model_cached(model_id: &str) -> bool {
+    let folder_name = format!("models--{}", model_id.replace('/', "--"));
+
+    if let Ok(hf_home) = std::env::var("HF_HOME") {
+        let cache_path = std::path::Path::new(&hf_home).join("hub").join(&folder_name);
+        if cache_path.is_dir() {
+            return true;
+        }
+    }
+
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .ok();
         
     if let Some(home_path) = home {
-        let folder_name = format!("models--{}", model_id.replace('/', "--"));
         let cache_path = std::path::Path::new(&home_path)
             .join(".cache")
             .join("huggingface")
             .join("hub")
-            .join(folder_name);
+            .join(&folder_name);
         
         if cache_path.is_dir() {
             // Check if there are snapshots or lock files indicating complete/partial download
@@ -721,9 +759,11 @@ mod tests {
 
     #[test]
     fn test_transformers_cache() {
-        // Since we know apple/OpenELM-1_1B-Instruct is cached on this system, this test should pass
-        let is_cached = is_transformers_model_cached("apple/OpenELM-1_1B-Instruct");
-        println!("apple/OpenELM-1_1B-Instruct cached: {}", is_cached);
+        assert!(!is_transformers_model_cached("nonexistent-test/definitely-not-cached-model-xyz"));
+        let is_cached = is_transformers_model_cached("Qwen/Qwen2.5-1.5B-Instruct")
+            || is_transformers_model_cached("HuggingFaceTB/SmolLM2-135M-Instruct")
+            || is_transformers_model_cached("apple/OpenELM-1_1B-Instruct");
+        println!("Test model cached: {}", is_cached);
         assert!(is_cached);
     }
 
