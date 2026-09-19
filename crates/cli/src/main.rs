@@ -2605,6 +2605,12 @@ pub fn extract_latest_user_query(prompt: &str) -> String {
 /// Hyphens, underscores, slashes, and leading dashes are ignored during resolution.
 pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
     let mut s = raw.trim();
+    let lower_init = s.to_lowercase();
+    if lower_init.starts_with("user:") {
+        s = s[5..].trim();
+    } else if lower_init.starts_with("human:") {
+        s = s[6..].trim();
+    }
     let lower = s.to_lowercase();
     for prefix in &[
         "@agent", "agent", "@commands", "commands", "@command", "command",
@@ -2824,6 +2830,44 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
         "featureranking" => Some("feature-ranking"),
 
         _ => None,
+    }
+}
+
+/// Returns whether a CLI flag takes an argument, and its default value if any.
+pub fn get_cli_flag_info(flag_name: &str) -> (bool, Option<&'static str>) {
+    let clean = flag_name.trim_start_matches('-').replace('_', "-");
+    match clean.as_str() {
+        // Value flags with Clap default values
+        "sinq-nbits" => (true, Some("4")),
+        "sinq-group-size" => (true, Some("64")),
+        "sinq-tiling-mode" => (true, Some("1D")),
+        "sinq-method" => (true, Some("sinq")),
+        "budget" => (true, Some("10.0")),
+        "selection-strategy" => (true, Some("multi_objective")),
+        "language" => (true, Some("en")),
+        "ml-ensemble-method" => (true, Some("weighted_voting")),
+        "ml-confidence-threshold" => (true, Some("0.6")),
+        "ml-cleanup" => (true, Some("30")),
+        "innovation-level" => (true, Some("2")),
+        "top-k" => (true, Some("5")),
+        "tasks" => (true, Some("all")),
+        "model-ranking" => (true, Some("all")),
+        "fusion-models" => (true, Some("10")),
+        "fusion-mode" => (true, Some("multi-model")),
+        "weight-format" => (true, Some("int8")),
+        "ov-model-dir" => (true, Some("ov_models")),
+        "reporttype" => (true, Some("md")),
+        "getvino-interval" => (true, Some("24")),
+        "port" => (true, Some("5000")),
+        "ide-src-dir" => (true, Some("IDE/src")),
+
+        // Option<String> / Option<usize> flags (no default value)
+        "file" | "folder" | "prompt" | "task" | "config" | "api-keys" | "load-model"
+        | "add-documents" | "search-query" | "research" | "search" | "max-models"
+        | "model" | "prepare-model" | "context" | "report" | "db-path" | "vscode-tag" => (true, None),
+
+        // All other flags are boolean flags
+        _ => (false, None),
     }
 }
 
@@ -3505,15 +3549,31 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 if let Some(messages) = request_json["messages"].as_array() {
                     for msg in messages {
                         let role = msg["role"].as_str().unwrap_or("user");
-                        let content = msg["content"].as_str().unwrap_or("");
+                        let content = if let Some(s) = msg["content"].as_str() {
+                            s.to_string()
+                        } else if let Some(arr) = msg["content"].as_array() {
+                            let mut parts = Vec::new();
+                            for item in arr {
+                                if let Some(t) = item.as_str() {
+                                    parts.push(t.to_string());
+                                } else if let Some(t) = item.get("text").and_then(|v| v.as_str()) {
+                                    parts.push(t.to_string());
+                                } else if let Some(v) = item.get("value").and_then(|v| v.as_str()) {
+                                    parts.push(v.to_string());
+                                }
+                            }
+                            parts.join("\n")
+                        } else {
+                            msg["content"].as_str().unwrap_or("").to_string()
+                        };
                         match role {
                             "system" => prompt_parts.push(format!("System: {}", content)),
                             "user" => {
                                 prompt_parts.push(format!("User: {}", content));
-                                latest_user_query_str = Some(content.to_string());
+                                latest_user_query_str = Some(content);
                             }
                             "assistant" => prompt_parts.push(format!("Assistant: {}", content)),
-                            _ => prompt_parts.push(content.to_string()),
+                            _ => prompt_parts.push(content),
                         };
                     }
                 }
@@ -3629,7 +3689,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     let _xml_tags = ["environment_info", "workspace_info", "attachments", "attachment", "context", "editorcontext", "instructions", "tooluseinstructions", "editfileinstructions", "notebookinstructions", "reminderinstructions", "usermemory", "sessionmemory", "repomemory", "memoryscopes", "memoryguidelines", "memoryinstructions", "outputformatting", "userrequest", "customizationsupdate", "conversationsummary", "conversation-summary"];
 
                     // Extract strictly the LATEST user typed message segment from multi-turn or single-turn prompts
-                    let latest_user_segment = if let Some(uq) = request_json.get("latest_user_query").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
+                    let raw_latest_user_segment = if let Some(uq) = request_json.get("latest_user_query").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
                         let uncompacted = strip_compacted_history(uq);
                         let cleaned = strip_xml_metadata_tags(&uncompacted);
                         if !cleaned.trim().is_empty() {
@@ -3641,46 +3701,12 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         extract_latest_user_query(&prompt)
                     };
 
-                    // SERVER-SIDE FAST INTERCEPTION FOR COMPACTION (1ms)
-                    // Trigger if prompt contains VS Code background compaction preamble
-                    let prompt_lower = prompt.to_lowercase();
-                    if prompt_lower.contains("summarize the conversation history")
-                        || prompt_lower.contains("compressed version of the preceeding history")
-                        || prompt_lower.contains("compressed version of the preceding history")
-                        || prompt_lower.contains("your task is to create a comprehensive, detailed summary")
-                        || prompt_lower.contains("compacting conversation")
-                    {
-                        eprintln!("[SERVER] ⚡ Fast interception: VS Code background conversation compaction (1ms).");
-                        let resp = "Summary of recent activity: The user executed ModelFusion commands and analysis tasks in the workspace. Work is complete and context is preserved.";
-                        let response_json = if is_openai_compat {
-                            serde_json::json!({
-                                "id": format!("chatcmpl-{}", start_time.elapsed().as_millis()),
-                                "object": "chat.completion",
-                                "created": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
-                                "model": request_json["model"].as_str().unwrap_or("modelfusion"),
-                                "choices": [{
-                                    "index": 0,
-                                    "message": {
-                                        "role": "assistant",
-                                        "content": resp
-                                    },
-                                    "finish_reason": "stop"
-                                }],
-                                "usage": {
-                                    "prompt_tokens": 0,
-                                    "completion_tokens": 0,
-                                    "total_tokens": 0
-                                }
-                            })
-                        } else {
-                            serde_json::json!({ "content": resp })
-                        };
-                        let json = response_json.to_string();
-                        let hex_len = format!("{:x}\r\n", json.len());
-                        let _ = write_half.write_all(hex_len.as_bytes()).await;
-                        let _ = write_half.write_all(json.as_bytes()).await;
-                        let _ = write_half.write_all(b"\r\n0\r\n\r\n").await;
-                        return;
+                    let mut latest_user_segment = raw_latest_user_segment.trim().to_string();
+                    let lower_temp = latest_user_segment.to_lowercase();
+                    if lower_temp.starts_with("user:") {
+                        latest_user_segment = latest_user_segment[5..].trim().to_string();
+                    } else if lower_temp.starts_with("human:") {
+                        latest_user_segment = latest_user_segment[6..].trim().to_string();
                     }
 
                     // Collect matched commands with their arguments
@@ -3720,13 +3746,15 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         || lower_user_seg.starts_with("@commands")
                         || lower_user_seg.starts_with("@tasks")
                         || lower_user_seg.starts_with("@task")
+                        || lower_user_seg.starts_with("@comments")
+                        || lower_user_seg.starts_with("@comment")
                         || lower_user_seg.starts_with("@modelfusion")
                         || lower_user_seg.starts_with("@hugos");
 
-                    // b) OR latest_user_segment is a single-line command whose first non-whitespace token starts with / or --
+                    // b) OR latest_user_segment is a single-line command whose first non-whitespace token starts with / or -- or -
                     let is_single_line_slash_or_flag = !is_multiline && non_empty_lines.first().map(|line| {
                         let first_token = line.split_whitespace().next().unwrap_or("");
-                        first_token.starts_with('/') || first_token.starts_with("--")
+                        first_token.starts_with('/') || first_token.starts_with("--") || (first_token.starts_with('-') && first_token.len() > 1 && !first_token[1..].starts_with(|c: char| c.is_ascii_digit()))
                     }).unwrap_or(false);
 
                     // c) OR latest_user_segment is a single standalone line with a single known command word (e.g. "stats", "sysinfo", "help", "tasks")
@@ -3735,11 +3763,19 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         ws.len() == 1 && canonicalize_command(ws[0]).is_some()
                     }).unwrap_or(false);
 
-                    let should_run_interception = (is_agent_prefixed || is_single_line_slash_or_flag || is_single_command_word)
-                        && !(starts_with_conversational && !is_agent_prefixed && !is_single_line_slash_or_flag && !is_single_command_word)
+                    // d) OR any line in the user segment contains an explicit command directive
+                    let has_explicit_command_line = non_empty_lines.iter().any(|line| {
+                        let first_token = line.split_whitespace().next().unwrap_or("");
+                        let tok_low = first_token.to_lowercase();
+                        tok_low.starts_with("@agent") || tok_low.starts_with("@command") || tok_low.starts_with("@tasks")
+                            || tok_low.starts_with('/') || tok_low.starts_with("--")
+                            || canonicalize_command(first_token).is_some()
+                    });
+
+                    let should_run_interception = (is_agent_prefixed || is_single_line_slash_or_flag || is_single_command_word || has_explicit_command_line)
+                        && !(starts_with_conversational && !is_agent_prefixed && !is_single_line_slash_or_flag && !is_single_command_word && !has_explicit_command_line)
                         && !has_code_blocks
-                        && !has_code_imports
-                        && !(is_multiline && !is_agent_prefixed);
+                        && !has_code_imports;
 
                     if should_run_interception {
                         // Split user segment into lines to handle multi-command batches
@@ -3811,8 +3847,8 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 let is_flag_prefixed = word.starts_with("--") || (word.starts_with('-') && word.len() > 1 && !word[1..].starts_with(|c: char| c.is_ascii_digit()));
                                 let is_slash_prefixed = word.starts_with('/') || (word.starts_with('(') && word[1..].starts_with('/')) || (word.starts_with('[') && word[1..].starts_with('/'));
                                 let is_prefixed = is_slash_prefixed || is_flag_prefixed;
-                                // STRICT REQUIREMENT: Only consider as command if starts with '/' or '--'/'-' OR the line was explicitly prefixed with @agent / @commands OR it is a single standalone command word on its line!
-                                if !is_prefixed && !is_agent_line && !is_single_word_line {
+                                // STRICT REQUIREMENT: Only consider as command if starts with '/' or '--'/'-' OR it is the first token of an @agent line OR it is a single standalone command word on its line!
+                                if !is_prefixed && !is_single_word_line && !(is_agent_line && w_idx == 0) {
                                     continue;
                                 }
 
@@ -3909,7 +3945,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         other => other,
                                     };
 
-                                    let db_path_str = db_path_ref.as_deref().unwrap_or("");
+                                    let db_path_str = db_path_ref.as_deref().filter(|s| !s.trim().is_empty()).unwrap_or("IDE/db/hf_models.db");
                                     let db_resolved = std::path::Path::new(db_path_str);
 
                                     match canonical {
@@ -4349,26 +4385,51 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                          (idx, format!("🤖 **ModelFusion Multi-Agent Orchestrator**\n\n- **Status**: Operational (<1ms Fast Interception)\n- **Active Agent Hierarchy**: Lead Architect, Worker Subagents, AVO Evolution Agent\n- **System Resources**: {} ({} Cores), {:.2} GB RAM free\n- **GPU**: {} ({} MB free VRAM)", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb))
                                      },
 
-                                      other => {
-                                          let flag = format!("--{}", other.replace('_', "-"));
-                                          let mut cmd_args = vec![flag];
-                                          let trimmed_args = args_owned.trim();
-                                          if !trimmed_args.is_empty() {
-                                              if trimmed_args.starts_with('-') {
-                                                  for part in trimmed_args.split_whitespace() {
-                                                      cmd_args.push(part.to_string());
-                                                  }
-                                              } else {
-                                                  cmd_args.push("--prompt".to_string());
-                                                  cmd_args.push(trimmed_args.to_string());
-                                              }
-                                          }
-                                          if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() && !cmd_args.iter().any(|a| a == "--ollama") {
-                                              cmd_args.push("--ollama".to_string());
-                                          }
-                                          let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                          (idx, format!("⚡ **ModelFusion CLI (`{}`)**\n\n{}", other, result))
-                                      },
+                                     other => {
+                                         let flag = format!("--{}", other.replace('_', "-"));
+                                         let mut cmd_args = vec![flag];
+                                         let trimmed_args = args_owned.trim();
+                                         let (is_val, default_val) = get_cli_flag_info(other);
+
+                                         if is_val {
+                                             if !trimmed_args.is_empty() {
+                                                 if trimmed_args.starts_with('-') {
+                                                     for part in trimmed_args.split_whitespace() {
+                                                         cmd_args.push(part.to_string());
+                                                     }
+                                                 } else {
+                                                     let mut parts = trimmed_args.splitn(2, char::is_whitespace);
+                                                     let val = parts.next().unwrap();
+                                                     cmd_args.push(val.to_string());
+                                                     if let Some(rest) = parts.next().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                                                         cmd_args.push("--prompt".to_string());
+                                                         cmd_args.push(rest.to_string());
+                                                     }
+                                                 }
+                                             } else if let Some(def) = default_val {
+                                                 cmd_args.push(def.to_string());
+                                             } else {
+                                                 return (idx, format!("⚠️ **Flag `--{}` requires a parameter.**\n\nExample usage: `@agent --{} <value>` or `/{}` <value>", other, other, other));
+                                             }
+                                         } else {
+                                             if !trimmed_args.is_empty() {
+                                                 if trimmed_args.starts_with('-') {
+                                                     for part in trimmed_args.split_whitespace() {
+                                                         cmd_args.push(part.to_string());
+                                                     }
+                                                 } else {
+                                                     cmd_args.push("--prompt".to_string());
+                                                     cmd_args.push(trimmed_args.to_string());
+                                                 }
+                                             }
+                                         }
+
+                                         if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() && !cmd_args.iter().any(|a| a == "--ollama") {
+                                             cmd_args.push("--ollama".to_string());
+                                         }
+                                         let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                         (idx, format!("⚡ **ModelFusion CLI (`{}`)**\n\n{}", other, result))
+                                     },
                                  }
                             });
                             handles.push(handle);
@@ -4409,6 +4470,54 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             })
                         } else {
                             serde_json::json!({ "content": combined_output })
+                        };
+                        let json = response_json.to_string();
+                        let hex_len = format!("{:x}\r\n", json.len());
+                        let _ = write_half.write_all(hex_len.as_bytes()).await;
+                        let _ = write_half.write_all(json.as_bytes()).await;
+                        let _ = write_half.write_all(b"\r\n0\r\n\r\n").await;
+                        return;
+                    }
+
+                    // SERVER-SIDE FAST INTERCEPTION FOR COMPACTION (1ms)
+                    // Trigger if prompt contains VS Code background compaction preamble
+                    // and no user command was executed
+                    let prompt_lower = prompt.to_lowercase();
+                    let uq_lower = latest_user_segment.to_lowercase();
+                    let is_compaction_request = uq_lower.contains("summarize the conversation history")
+                        || uq_lower.contains("compressed version of the preceeding history")
+                        || uq_lower.contains("compressed version of the preceding history")
+                        || uq_lower.contains("your task is to create a comprehensive, detailed summary")
+                        || uq_lower.contains("compacting conversation")
+                        || ((prompt_lower.contains("compressed version of the") || prompt_lower.contains("compacted conversation"))
+                            && (prompt_lower.contains("summarize") || prompt_lower.contains("summary of") || prompt_lower.contains("your task is to create a"))
+                            && latest_user_segment.trim().is_empty());
+
+                    if is_compaction_request {
+                        eprintln!("[SERVER] ⚡ Fast interception: VS Code background conversation compaction (1ms).");
+                        let resp = "Summary of recent activity: The user executed ModelFusion commands and analysis tasks in the workspace. Work is complete and context is preserved.";
+                        let response_json = if is_openai_compat {
+                            serde_json::json!({
+                                "id": format!("chatcmpl-{}", start_time.elapsed().as_millis()),
+                                "object": "chat.completion",
+                                "created": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                                "model": request_json["model"].as_str().unwrap_or("modelfusion"),
+                                "choices": [{
+                                    "index": 0,
+                                    "message": {
+                                        "role": "assistant",
+                                        "content": resp
+                                    },
+                                    "finish_reason": "stop"
+                                }],
+                                "usage": {
+                                    "prompt_tokens": 0,
+                                    "completion_tokens": 0,
+                                    "total_tokens": 0
+                                }
+                            })
+                        } else {
+                            serde_json::json!({ "content": resp })
                         };
                         let json = response_json.to_string();
                         let hex_len = format!("{:x}\r\n", json.len());
@@ -8679,6 +8788,22 @@ User: @agent --active-model";
 
         let extracted = super::extract_latest_user_query(prompt);
         assert_eq!(extracted, "@agent --active-model");
+    }
+
+    #[test]
+    fn test_get_cli_flag_info() {
+        assert_eq!(super::get_cli_flag_info("sinq-nbits"), (true, Some("4")));
+        assert_eq!(super::get_cli_flag_info("budget"), (true, Some("10.0")));
+        assert_eq!(super::get_cli_flag_info("file"), (true, None));
+        assert_eq!(super::get_cli_flag_info("text-classification"), (false, None));
+        assert_eq!(super::get_cli_flag_info("sentiment"), (false, None));
+        assert_eq!(super::get_cli_flag_info("tasks"), (true, Some("all")));
+    }
+
+    #[test]
+    fn test_agent_multiword_conversational_guard() {
+        let raw = "@agent please check if all tests pass";
+        assert_eq!(super::canonicalize_command(raw), None);
     }
 }
 
