@@ -30,3 +30,5 @@ IDE/mcp_ide_engine/*.msi
 .cm_project
 .agents/
 __pycache__/
+*.msi
+IDE/HugOS.msi
