@@ -11,6 +11,7 @@ import json
 import subprocess
 import urllib.request
 import urllib.error
+import hashlib
 
 REPO = "oyesanyf/ModelFusion"
 API_URL = f"https://api.github.com/repos/{REPO}"
@@ -95,11 +96,22 @@ def delete_existing_asset(release_id, asset_name, token):
             api_request(f"{API_URL}/releases/assets/{asset['id']}", method="DELETE", token=token)
             print(f"[OK] Deleted old asset: {asset_name}")
 
+def compute_sha256(file_path):
+    h = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        while True:
+            chunk = f.read(1024 * 1024 * 4)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
 def upload_asset(release_id, file_path, asset_name, token):
     delete_existing_asset(release_id, asset_name, token)
     file_size = os.path.getsize(file_path)
+    file_sha256 = compute_sha256(file_path)
     size_mb = round(file_size / (1024 * 1024), 2)
-    print(f"[INFO] Uploading {asset_name} ({size_mb} MB) to release {release_id}...")
+    print(f"[INFO] Uploading {asset_name} ({size_mb} MB, SHA256: {file_sha256}) to release {release_id}...")
 
     # Streaming upload
     upload_url = f"{UPLOADS_URL}/releases/{release_id}/assets?name={asset_name}"
@@ -114,13 +126,16 @@ def upload_asset(release_id, file_path, asset_name, token):
         req = urllib.request.Request(upload_url, data=f, headers=req_headers, method="POST")
         with urllib.request.urlopen(req) as resp:
             res = json.loads(resp.read().decode("utf-8"))
-            print(f"[OK] Uploaded {asset_name}: {res.get('browser_download_url')}")
+            uploaded_size = res.get("size")
+            if uploaded_size != file_size:
+                raise RuntimeError(f"[ERROR] Size mismatch for {asset_name}: uploaded {uploaded_size} vs local {file_size}")
+            print(f"[OK] Uploaded {asset_name} ({uploaded_size} bytes): {res.get('browser_download_url')}")
             return res
 
 def main():
     token = get_token()
     if not token:
-        print("[ERROR] No GitHub token found. Please run 'gh auth login' or set GH_TOKEN.")
+        print("[ERROR] No GitHub token found. Please ensure Git Credential Manager has github.com credentials or set GH_TOKEN.")
         sys.exit(1)
         
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -141,11 +156,43 @@ def main():
     if not os.path.isfile(cli_path):
         print(f"[ERROR] CLI not found at: {cli_path}")
         sys.exit(1)
+
+    print("==========================================")
+    print(f"Local Release Artifacts (Build {build_number}):")
+    print(f"  CLI: {cli_path} ({os.path.getsize(cli_path)} bytes, SHA256: {compute_sha256(cli_path)})")
+    print(f"  MSI: {msi_path} ({os.path.getsize(msi_path)} bytes, SHA256: {compute_sha256(msi_path)})")
+    print("==========================================")
         
     targets = [
         (f"v1.0.0-beta.{build_number}", f"HugOS IDE v1.0.0-beta.{build_number} (Build {build_number})"),
         ("v1.0.0-beta", f"HugOS IDE v1.0.0-beta (Build {build_number})")
     ]
+
+    if "--check" in sys.argv or "--verify-only" in sys.argv:
+        print("\n[INFO] Running in check/verify mode — inspecting remote assets...")
+        all_match = True
+        for tag_name, release_name in targets:
+            print(f"\nVerifying remote assets for {tag_name}...")
+            rel = api_request(f"{API_URL}/releases/tags/{tag_name}", token=token)
+            assets_by_name = {a["name"]: a for a in rel.get("assets", [])}
+            for local_f, name in [(cli_path, "cli.exe"), (msi_path, "HugOS.msi")]:
+                local_sz = os.path.getsize(local_f)
+                if name not in assets_by_name:
+                    print(f"  [FAIL] {name} NOT FOUND on {tag_name}")
+                    all_match = False
+                else:
+                    remote_sz = assets_by_name[name]["size"]
+                    if remote_sz == local_sz:
+                        print(f"  [PASS] {name} on {tag_name}: size {remote_sz} matches local")
+                    else:
+                        print(f"  [FAIL] {name} on {tag_name}: remote size {remote_sz} != local {local_sz}")
+                        all_match = False
+        if all_match:
+            print("\n[SUCCESS] All remote release assets match local artifacts perfectly!")
+            sys.exit(0)
+        else:
+            print("\n[ERROR] Remote release assets do not match local artifacts.")
+            sys.exit(1)
     
     for tag_name, release_name in targets:
         print(f"\n==========================================")
@@ -156,7 +203,7 @@ def main():
         upload_asset(rel_id, cli_path, "cli.exe", token)
         upload_asset(rel_id, msi_path, "HugOS.msi", token)
         
-    print("\n[SUCCESS] All release assets uploaded successfully to GitHub Releases!")
+    print("\n[SUCCESS] All release assets uploaded and verified successfully on GitHub Releases!")
 
 if __name__ == "__main__":
     main()

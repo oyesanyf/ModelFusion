@@ -87,6 +87,18 @@ def verify_product_default_settings(path, label, failures):
             failures.append(f"[{label}] chat.utilitySmallModel is '{u_small}' (expected '{desired}')")
         else:
             print(f"  [PASS] {label} chat.utilitySmallModel is '{desired}'")
+
+        fusion = data.get("hugos.modelfusion.fusion")
+        if fusion is not True:
+            failures.append(f"[{label}] hugos.modelfusion.fusion is '{fusion}' (expected True)")
+        else:
+            print(f"  [PASS] {label} hugos.modelfusion.fusion is True (enabled by default)")
+
+        fusion_models = data.get("hugos.modelfusion.fusionModels")
+        if fusion_models != 0:
+            failures.append(f"[{label}] hugos.modelfusion.fusionModels is '{fusion_models}' (expected 0 for dynamic hardware scaling)")
+        else:
+            print(f"  [PASS] {label} hugos.modelfusion.fusionModels is 0 (dynamic hardware scaling)")
     except Exception as e:
         failures.append(f"[{label}] Failed parsing product-default-settings.json: {e}")
 
