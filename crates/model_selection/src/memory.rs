@@ -397,26 +397,56 @@ pub fn ensure_ollama_running() -> Result<(), String> {
         return Ok(());
     }
 
-    // Check if Ollama is installed in PATH
+    // Check if Ollama is installed: PATH first, then common installation paths
+    let mut ollama_path: Option<std::path::PathBuf> = None;
+
     let check_installed = Command::new("cmd")
         .args(["/C", "where", "ollama"])
         .output();
 
-    let is_installed = match check_installed {
-        Ok(output) => output.status.success(),
-        Err(_) => false,
-    };
+    if let Ok(output) = check_installed {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                let trimmed = line.trim();
+                let p = std::path::PathBuf::from(trimmed);
+                if p.is_file() {
+                    ollama_path = Some(p);
+                    break;
+                }
+            }
+        }
+    }
 
-    if !is_installed {
+    if ollama_path.is_none() {
+        let mut common_candidates = Vec::new();
+        if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+            common_candidates.push(std::path::PathBuf::from(local_app_data).join("Programs").join("Ollama").join("ollama.exe"));
+        }
+        if let Ok(prog_files) = std::env::var("ProgramFiles") {
+            common_candidates.push(std::path::PathBuf::from(prog_files).join("Ollama").join("ollama.exe"));
+        }
+        common_candidates.push(std::path::PathBuf::from(r"C:\Program Files\Ollama\ollama.exe"));
+
+        for cand in common_candidates {
+            if cand.is_file() {
+                ollama_path = Some(cand);
+                break;
+            }
+        }
+    }
+
+    // If not found at all, auto-download and install silently
+    if ollama_path.is_none() {
         eprintln!("🦙 [OLLAMA] Ollama is not installed. Downloading and installing silently (this may take a minute)...");
         let install_result = Command::new("powershell")
             .args([
                 "-NoProfile",
                 "-Command",
-                "Invoke-WebRequest -Uri 'https://ollama.com/download/OllamaSetup.exe' -OutFile \"$env:TEMP\\OllamaSetup.exe\"; Start-Process -FilePath \"$env:TEMP\\OllamaSetup.exe\" -ArgumentList '/SILENT' -Wait"
+                "Invoke-WebRequest -Uri 'https://ollama.com/download/OllamaSetup.exe' -OutFile \"$env:TEMP\\OllamaSetup.exe\"; Start-Process -FilePath \"$env:TEMP\\OllamaSetup.exe\" -ArgumentList '/SILENT', '/NORESTART' -Wait"
             ])
             .status();
-        
+
         match install_result {
             Ok(status) if status.success() => {
                 eprintln!("🦙 [OLLAMA] Installation complete!");
@@ -427,15 +457,82 @@ pub fn ensure_ollama_running() -> Result<(), String> {
                 return Err("Failed to install Ollama automatically. Please download it from https://ollama.com".to_string());
             }
         }
+
+        // Re-check where ollama or common paths
+        if let Ok(output) = Command::new("cmd").args(["/C", "where", "ollama"]).output() {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                for line in stdout.lines() {
+                    let p = std::path::PathBuf::from(line.trim());
+                    if p.is_file() {
+                        ollama_path = Some(p);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if ollama_path.is_none() {
+            let mut post_candidates = Vec::new();
+            if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+                post_candidates.push(std::path::PathBuf::from(local_app_data).join("Programs").join("Ollama").join("ollama.exe"));
+            }
+            if let Ok(prog_files) = std::env::var("ProgramFiles") {
+                post_candidates.push(std::path::PathBuf::from(prog_files).join("Ollama").join("ollama.exe"));
+            }
+            post_candidates.push(std::path::PathBuf::from(r"C:\Program Files\Ollama\ollama.exe"));
+
+            for cand in post_candidates {
+                if cand.is_file() {
+                    ollama_path = Some(cand);
+                    break;
+                }
+            }
+        }
+
+        if ollama_path.is_none() {
+            return Err("Failed to locate Ollama executable after installation. Please download it from https://ollama.com".to_string());
+        }
+    }
+
+    // Once ollama.exe exists (found or installed):
+    if let Some(ref path) = ollama_path {
+        if let Some(ollama_dir) = path.parent() {
+            let current_path = std::env::var("PATH").unwrap_or_default();
+            std::env::set_var("PATH", format!("{};{}", ollama_dir.display(), current_path));
+
+            #[cfg(windows)]
+            {
+                let dir_str = ollama_dir.to_string_lossy().replace('\'', "''");
+                let ps_cmd = format!(
+                    "$dir = '{}'; $p = [Environment]::GetEnvironmentVariable('Path', 'User'); if (-not $p) {{ [Environment]::SetEnvironmentVariable('Path', $dir, 'User') }} elseif ($p -notlike ('*' + $dir + '*')) {{ [Environment]::SetEnvironmentVariable('Path', $p.TrimEnd(';') + ';' + $dir, 'User') }}",
+                    dir_str
+                );
+                let _ = Command::new("powershell")
+                    .args(["-NoProfile", "-Command", &ps_cmd])
+                    .status();
+            }
+        }
     }
 
     // Not running — start it
     eprintln!("🦙 [OLLAMA] Ollama is not running. Starting 'ollama serve' automatically...");
 
+    let ollama_exec = if let Some(ref path) = ollama_path {
+        path.to_string_lossy().to_string()
+    } else {
+        "ollama".to_string()
+    };
+
     // Launch ollama serve as a background process
     let start_result = Command::new("cmd")
         .args(["/C", "start", "/B", "ollama", "serve"])
-        .spawn();
+        .spawn()
+        .or_else(|_| {
+            Command::new(&ollama_exec)
+                .arg("serve")
+                .spawn()
+        });
 
     match start_result {
         Ok(_) => {

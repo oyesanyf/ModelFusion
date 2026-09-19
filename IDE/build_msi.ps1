@@ -226,16 +226,23 @@ foreach ($vDir in $versionedDirs) {
 }
 
 # 4.5 Copy Pre-populated HF Models Database (hf_models.db) into the packaged folder
-$dbSrcPath = Join-Path (Split-Path $PSScriptRoot -Parent) "db\hf_models.db"
+$candidateDbs = @(
+    (Join-Path $PSScriptRoot "db\hf_models.db"),
+    (Join-Path (Split-Path $PSScriptRoot -Parent) "db\hf_models.db")
+)
+$dbSrcPath = $candidateDbs | Where-Object { (Test-Path $_) -and (Get-Item $_).Length -gt 50000 } | Select-Object -First 1
+if (-not $dbSrcPath) {
+    $dbSrcPath = Join-Path (Split-Path $PSScriptRoot -Parent) "db\hf_models.db"
+}
 if (Test-Path $dbSrcPath) {
     $dbDestDir = Join-Path $vsCodePackDir "db"
     if (-not (Test-Path $dbDestDir)) {
         New-Item -ItemType Directory -Force -Path $dbDestDir | Out-Null
     }
     $dbDestPath = Join-Path $dbDestDir "hf_models.db"
-    Write-Host "[INFO] Copying pre-populated models database to installer package (this may take a few seconds)..." -ForegroundColor Yellow
+    Write-Host "[INFO] Copying pre-populated models database to installer package ($dbSrcPath)..." -ForegroundColor Yellow
     Copy-Item -Path $dbSrcPath -Destination $dbDestPath -Force
-    Write-Host "[OK] Copied ModelFusion Database to: $dbDestPath" -ForegroundColor Green
+    Write-Host "[OK] Copied ModelFusion Database to: $dbDestPath ($( (Get-Item $dbDestPath).Length ) bytes)" -ForegroundColor Green
 } else {
     Write-Host "[WARNING] Pre-populated database not found at $dbSrcPath. Packaging without pre-populated DB." -ForegroundColor Yellow
 }
@@ -531,6 +538,18 @@ if (Test-Path $patchUtilityScript) {
         Exit 1
     }
     Write-Host "[OK] Applied utility model preset and BYOK popup suppression patches" -ForegroundColor Green
+}
+
+# 4.977 Apply Ollama PATH and hardware scaling patches
+Write-Host "[INFO] Applying Ollama PATH and hardware scaling patches..." -ForegroundColor Yellow
+$patchOllamaScript = Join-Path $PSScriptRoot "patch_ollama_path.py"
+if (Test-Path $patchOllamaScript) {
+    python $patchOllamaScript "$vsCodePackDir" --skip-installed
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] patch_ollama_path script failed! Aborting MSI build." -ForegroundColor Red
+        Exit 1
+    }
+    Write-Host "[OK] Applied Ollama PATH and hardware scaling patches" -ForegroundColor Green
 }
 
 
