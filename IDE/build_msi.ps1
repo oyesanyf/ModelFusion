@@ -387,6 +387,8 @@ $defaultSettings = @{
     "chat.agent.enabled" = $true
     "chat.utilityModel" = "modelfusion/modelfusion-local"
     "chat.utilitySmallModel" = "modelfusion/modelfusion-local"
+    "hugos.modelfusion.fusion" = $true
+    "hugos.modelfusion.fusionModels" = 0
     "github.copilot.enable" = @{ "*" = $false }
     "github.gitAuthentication" = $false
     "git.autofetch" = $false
