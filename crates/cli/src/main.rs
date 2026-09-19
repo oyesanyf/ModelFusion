@@ -2377,11 +2377,70 @@ pub fn rfind_case_insensitive(haystack: &str, needle: &str) -> Option<usize> {
     None
 }
 
+/// Strip compacted conversation history transcripts and compaction markers.
+pub fn strip_compacted_history(text: &str) -> String {
+    let mut s = text.to_string();
+
+    // Strip compaction header texts
+    let compaction_headers = [
+        "[compacted conversation]",
+        "compacted conversation",
+        "the following is a compressed version of the preceeding history in the current conversation.",
+        "the following is a compressed version of the preceding history in the current conversation.",
+        "summarize the conversation history so far.",
+        "your task is to create a comprehensive, detailed summary of the entire conversation.",
+    ];
+    for h in &compaction_headers {
+        while let Some(pos) = find_case_insensitive(&s, h) {
+            s.replace_range(pos..pos + h.len(), " ");
+        }
+    }
+
+    // Strip historical <user>...</user> and <assistant>...</assistant> pairs from compaction
+    while let Some(u_start) = find_case_insensitive(&s, "<user>") {
+        let u_after = u_start + "<user>".len();
+        if let Some(u_rel_end) = find_case_insensitive(&s[u_after..], "</user>") {
+            let u_end = u_after + u_rel_end + "</user>".len();
+            let remainder = &s[u_end..];
+            if let Some(a_start) = find_case_insensitive(remainder, "<assistant>") {
+                let a_after = a_start + "<assistant>".len();
+                if let Some(a_rel_end) = find_case_insensitive(&remainder[a_after..], "</assistant>") {
+                    let total_end = u_end + a_after + a_rel_end + "</assistant>".len();
+                    s.replace_range(u_start..total_end, " ");
+                    continue;
+                }
+            }
+            // Check if there is trailing user input after the </user> tag
+            let text_after = s[u_end..].trim();
+            if !text_after.is_empty() {
+                s.replace_range(u_start..u_end, " ");
+                continue;
+            }
+            break;
+        } else {
+            break;
+        }
+    }
+
+    // Also strip any lone <assistant>...</assistant> tags from transcripts
+    while let Some(a_start) = find_case_insensitive(&s, "<assistant>") {
+        let a_after = a_start + "<assistant>".len();
+        if let Some(a_rel_end) = find_case_insensitive(&s[a_after..], "</assistant>") {
+            let total_end = a_after + a_rel_end + "</assistant>".len();
+            s.replace_range(a_start..total_end, " ");
+        } else {
+            break;
+        }
+    }
+
+    s
+}
+
 /// Strip system/metadata XML tags and their contents from prompt segments.
 pub fn strip_xml_metadata_tags(text: &str) -> String {
     let mut clean = text.to_string();
     let strip_prefixes = [
-        "customizationsupdate", "conversation-summary", "conversationsummary",
+        "customizationsupdate", "conversation-summary", "conversationsummary", "conversation_summary",
         "environment_info", "workspace_info", "editorcontext",
         "reminderinstruction", "attachments", "attachment",
         "tooluseinstructions", "editfileinstructions", "notebookinstructions",
@@ -2415,7 +2474,7 @@ pub fn strip_xml_metadata_tags(text: &str) -> String {
 }
 
 /// Robustly extracts strictly the LATEST user message/query from single-turn or multi-turn prompts.
-/// Ignores all prior conversational turns, past slash commands, and metadata XML tags.
+/// Ignores all prior conversational turns, past slash commands, compaction history transcripts, and metadata XML tags.
 pub fn extract_latest_user_query(prompt: &str) -> String {
     if prompt.trim().is_empty() {
         return String::new();
@@ -2423,11 +2482,12 @@ pub fn extract_latest_user_query(prompt: &str) -> String {
 
     // Step 1: Identify the start of the latest user turn.
     // Scan backwards for user role boundaries:
-    // \nUser:, \nuser:, \nHuman:, \nhuman:, \n<user>, \n<userrequest>, \n<user_request>
+    // \nUser:, \nuser:, \nHuman:, \nhuman:, \n<userrequest>, \n<user_request>
+    // Note: <user> is deliberately NOT in user_markers because in compacted conversation history,
+    // <user>...</user> is an inner transcript tag, not the current user turn delimiter.
     let user_markers = [
         ("\nuser:", 6),
         ("\nhuman:", 7),
-        ("\n<user>", 1), // skip '\n', keep '<user>' so tag processor can read it
         ("\n<userrequest>", 1),
         ("\n<user_request>", 1),
     ];
@@ -2453,7 +2513,6 @@ pub fn extract_latest_user_query(prompt: &str) -> String {
         let prefix_markers = [
             ("user:", 5),
             ("human:", 6),
-            ("<user>", 0),
             ("<userrequest>", 0),
             ("<user_request>", 0),
         ];
@@ -2469,7 +2528,7 @@ pub fn extract_latest_user_query(prompt: &str) -> String {
     let turn_slice = if let Some((_, content_start)) = latest_marker_pos {
         let after_user = &prompt[content_start..];
         // If an assistant/bot turn follows this user turn, terminate at the assistant turn start
-        let asst_markers = ["\nassistant:", "\n<assistant>", "\nbot:"];
+        let asst_markers = ["\nassistant:", "\nbot:"];
         let mut end_pos = after_user.len();
         for asst in &asst_markers {
             if let Some(rel_pos) = find_case_insensitive(after_user, asst) {
@@ -2484,11 +2543,14 @@ pub fn extract_latest_user_query(prompt: &str) -> String {
         prompt
     };
 
-    // Step 3: Check if the sliced latest turn contains <userrequest> or <user_request> or <user>
-    if let Some(s) = find_case_insensitive(turn_slice, "<userrequest>") {
+    // Step 3: Strip compacted history and conversation summaries from turn slice
+    let uncompacted = strip_compacted_history(turn_slice);
+
+    // Step 4: Check if turn slice contains explicit <userrequest> or <user_request> tags
+    if let Some(s) = find_case_insensitive(&uncompacted, "<userrequest>") {
         let after = s + "<userrequest>".len();
-        if let Some(e) = find_case_insensitive(&turn_slice[after..], "</userrequest>") {
-            let inner = turn_slice[after..after + e].trim();
+        if let Some(e) = find_case_insensitive(&uncompacted[after..], "</userrequest>") {
+            let inner = uncompacted[after..after + e].trim();
             if !inner.is_empty() {
                 let cleaned = strip_xml_metadata_tags(inner);
                 let trimmed = cleaned.trim();
@@ -2499,10 +2561,10 @@ pub fn extract_latest_user_query(prompt: &str) -> String {
         }
     }
 
-    if let Some(s) = find_case_insensitive(turn_slice, "<user_request>") {
+    if let Some(s) = find_case_insensitive(&uncompacted, "<user_request>") {
         let after = s + "<user_request>".len();
-        if let Some(e) = find_case_insensitive(&turn_slice[after..], "</user_request>") {
-            let inner = turn_slice[after..after + e].trim();
+        if let Some(e) = find_case_insensitive(&uncompacted[after..], "</user_request>") {
+            let inner = uncompacted[after..after + e].trim();
             if !inner.is_empty() {
                 let cleaned = strip_xml_metadata_tags(inner);
                 let trimmed = cleaned.trim();
@@ -2513,11 +2575,13 @@ pub fn extract_latest_user_query(prompt: &str) -> String {
         }
     }
 
-    if let Some(s) = find_case_insensitive(turn_slice, "<user>") {
+    // Step 5: Check for lone <user>...</user> if no trailing text exists
+    if let Some(s) = find_case_insensitive(&uncompacted, "<user>") {
         let after = s + "<user>".len();
-        if let Some(e) = find_case_insensitive(&turn_slice[after..], "</user>") {
-            let inner = turn_slice[after..after + e].trim();
-            if !inner.is_empty() {
+        if let Some(e) = find_case_insensitive(&uncompacted[after..], "</user>") {
+            let inner = uncompacted[after..after + e].trim();
+            let after_tag = uncompacted[after + e + "</user>".len()..].trim();
+            if after_tag.is_empty() && !inner.is_empty() {
                 let cleaned = strip_xml_metadata_tags(inner);
                 let trimmed = cleaned.trim();
                 if !trimmed.is_empty() {
@@ -2527,14 +2591,239 @@ pub fn extract_latest_user_query(prompt: &str) -> String {
         }
     }
 
-    // Step 4: No <userrequest> tags inside latest turn, strip metadata tags from the turn slice
-    let cleaned = strip_xml_metadata_tags(turn_slice);
+    // Step 6: Strip metadata XML tags and return cleaned user query
+    let cleaned = strip_xml_metadata_tags(&uncompacted);
     let trimmed = cleaned.trim();
     if !trimmed.is_empty() {
         trimmed.to_string()
     } else {
-        // If stripping tags completely emptied it, fallback to trimmed raw slice
         turn_slice.trim().to_string()
+    }
+}
+
+/// Canonicalizes any CLI flag, slash command, or @agent directive into its canonical command identifier.
+/// Hyphens, underscores, slashes, and leading dashes are ignored during resolution.
+pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
+    let mut s = raw.trim();
+    let lower = s.to_lowercase();
+    for prefix in &[
+        "@agent", "agent", "@commands", "commands", "@command", "command",
+        "@tasks", "tasks", "@task", "task", "@comments", "comments",
+        "@comment", "comment", "@modelfusion", "modelfusion", "@hugos", "hugos"
+    ] {
+        if lower.starts_with(prefix) {
+            let rest = &s[prefix.len()..];
+            if rest.is_empty() {
+                break;
+            }
+            if rest.starts_with(|c: char| c.is_whitespace() || c == ':' || c == '/' || c == '-') {
+                s = rest.trim_start_matches(|c: char| c.is_whitespace() || c == ':');
+                break;
+            }
+        }
+    }
+    let trimmed = s.trim_start_matches(|c: char| c == '@' || c == '/' || c == '-');
+    let stripped: String = trimmed
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_lowercase();
+    match stripped.as_str() {
+        "stats" | "statsd" => Some("stats"),
+        "sysinfo" => Some("sys-info"),
+        "mcp" => Some("mcp"),
+        "keys" | "apikeys" => Some("keys"),
+        "command" | "commands" | "help" => Some("command"),
+        "comment" | "comments" | "doc" | "docs" => Some("comment"),
+        "activemodel" | "activemodels" | "currentmodel" | "currentmodels" | "idemodel" | "idemodels" | "modelsinuse" => Some("active-model"),
+        "version" | "v" => Some("version"),
+        "updatedb" => Some("updatedb"),
+        "update" | "updatedatabase" => Some("update"),
+        "restore" | "restorebackup" => Some("restore"),
+        "clearcache" => Some("clearcache"),
+        "tasks" | "task" => Some("tasks"),
+        "decisionstats" => Some("decision-stats"),
+        "performancestats" => Some("performance-stats"),
+        "cachestats" => Some("cache-stats"),
+        "novelaistats" => Some("novel-ai-stats"),
+        "evolve" | "evovle" | "evove" | "evoce" | "evolv" | "evolution" => Some("evolve"),
+        "security" => Some("security"),
+        "refactor" => Some("refactor"),
+        "fix" => Some("fix"),
+        "review" => Some("review"),
+        "explain" => Some("explain"),
+        "tests" | "test" => Some("tests"),
+        "audit" => Some("audit"),
+        "generate" => Some("generate"),
+        "optimize" => Some("optimize"),
+        "exportpdf" => Some("export-pdf"),
+        "agent" | "modelfusion" | "hugos" => Some("agent"),
+        "quickanswer" | "qa" => Some("quick_answer"),
+        "execute" => Some("execute"),
+        "dataanalyst" | "datanalyst" => Some("dataanalyst"),
+        "datascience" => Some("datascience"),
+        "jupyter" => Some("jupyter"),
+        "pe" | "peheader" | "peheaderextraction" => Some("pe-header-extraction"),
+        "research" | "reseach" => Some("research"),
+        "search" | "serarch" | "searchquery" | "serarchquery" => Some("search"),
+        "analyzefile" => Some("analyze_file"),
+        "analyzefolder" => Some("analyze_folder"),
+        "nlptask" | "nlp" => Some("nlp_task"),
+        "securityanalysis" => Some("security_analysis"),
+        "codetask" => Some("code_task"),
+        "domaintask" => Some("domain_task"),
+        "multimodaltask" | "multimodal" => Some("multimodal_task"),
+        "semanticsearch" => Some("semantic_search"),
+        "analyticsdemo" => Some("analytics-demo"),
+        "modelranking" => Some("model-ranking"),
+        "modelrecommendations" => Some("model-recommendations"),
+        "mlanalytics" => Some("ml-analytics"),
+        "mlretrain" => Some("ml-retrain"),
+        "mlcleanup" => Some("ml-cleanup"),
+        "mlconfidence" | "mlconfidencethreshold" => Some("ml-confidence-threshold"),
+        "mlensemble" | "mlensemblemethod" => Some("ml-ensemble-method"),
+        "mlfallback" => Some("ml-fallback"),
+        "mllearning" => Some("ml-learning"),
+        "enableml" => Some("enable-ml"),
+        "enablemlselection" => Some("enable-ml-selection"),
+        "reportbanditfeedback" => Some("report_bandit_feedback"),
+        "sinq" => Some("sinq"),
+        "sinqnbits" => Some("sinq-nbits"),
+        "sinqgroupsize" => Some("sinq-group-size"),
+        "sinqtilingmode" => Some("sinq-tiling-mode"),
+        "sinqmethod" => Some("sinq-method"),
+        "enableinnovations" => Some("enable-innovations"),
+        "workflowoptimization" => Some("workflow-optimization"),
+        "semanticanalysis" => Some("semantic-analysis"),
+        "temporaltracking" => Some("temporal-tracking"),
+        "predictivemode" => Some("predictive-mode"),
+        "innovationlevel" => Some("innovation-level"),
+        "enablehyde" => Some("enable-hyde"),
+        "usehyde" => Some("use-hyde"),
+        "hydevariants" => Some("hyde-variants"),
+        "adddocuments" => Some("add-documents"),
+        "topk" => Some("top-k"),
+        "demohyde" => Some("demo-hyde"),
+        "full" => Some("full"),
+        "fusion" => Some("fusion"),
+        "fusionmodels" => Some("fusion-models"),
+        "fusionmode" => Some("fusion-mode"),
+        "ollama" => Some("ollama"),
+        "openvino" => Some("openvino"),
+        "onnx" => Some("onnx"),
+        "vllm" => Some("vllm"),
+        "model" => Some("model"),
+        "preparemodel" => Some("prepare-model"),
+        "prepareallmodels" => Some("prepare-all-models"),
+        "weightformat" => Some("weight-format"),
+        "ovmodeldir" => Some("ov-model-dir"),
+        "contextauto" => Some("context-auto"),
+        "context" => Some("context"),
+        "report" => Some("report"),
+        "reporttype" => Some("reporttype"),
+        "delegation" => Some("delegation"),
+        "recursion" => Some("recursion"),
+        "getvino" => Some("getvino"),
+        "getvinointerval" => Some("getvino-interval"),
+        "realoptions" => Some("real-options"),
+        "promptqualityscoring" => Some("prompt-quality-scoring"),
+        "score" => Some("score"),
+        "judge" => Some("judge"),
+        "plan" => Some("plan"),
+        "budget" => Some("budget"),
+        "chainofthought" => Some("chain-of-thought"),
+        "config" => Some("config"),
+        "useopenai" => Some("use-openai"),
+        "verbose" => Some("verbose"),
+        "debug" => Some("debug"),
+        "selectionstrategy" => Some("selection-strategy"),
+        "language" => Some("language"),
+        "gpu" => Some("gpu"),
+        "cpu" => Some("cpu"),
+        "savemodel" => Some("save-model"),
+        "loadmodel" => Some("load-model"),
+        "maxmodels" => Some("max-models"),
+        "sentiment" => Some("sentiment"),
+        "question" => Some("question"),
+        "ner" => Some("ner"),
+        "summary" => Some("summary"),
+        "file" => Some("file"),
+        "folder" => Some("folder"),
+        "prompt" => Some("prompt"),
+        "dbpath" => Some("db-path"),
+        "server" => Some("server"),
+        "enableslashcommands" => Some("enable-slash-commands"),
+        "port" => Some("port"),
+        "patchide" => Some("patch-ide"),
+        "idesrcdir" => Some("ide-src-dir"),
+        "shallow" => Some("shallow"),
+        "vscodetag" => Some("vscode-tag"),
+
+        // All 45 Hugging Face Tasks
+        "textclassification" => Some("text-classification"),
+        "tokenclassification" => Some("token-classification"),
+        "questionanswering" => Some("question-answering"),
+        "textgeneration" => Some("text-generation"),
+        "summarization" => Some("summarization"),
+        "translation" => Some("translation"),
+        "fillmask" => Some("fill-mask"),
+        "text2textgeneration" => Some("text2text-generation"),
+        "languagedetection" => Some("language-detection"),
+        "grammarcorrection" => Some("grammar-correction"),
+        "paraphrasegeneration" => Some("paraphrase-generation"),
+        "causallanguagemodeling" => Some("causal-language-modeling"),
+        "zeroshotclassification" => Some("zero-shot-classification"),
+        "featureextraction" => Some("feature-extraction"),
+        "sentencesimilarity" => Some("sentence-similarity"),
+        "anonymization" => Some("anonymization"),
+        "coreferenceresolution" => Some("coreference-resolution"),
+        "spamdetection" => Some("spam-detection"),
+        "malwaretextdetection" => Some("malware-text-detection"),
+        "phishingdetection" => Some("phishing-detection"),
+        "piidetection" => Some("pii-detection"),
+        "hatespeechdetection" => Some("hate-speech-detection"),
+        "cyberbullyingdetection" => Some("cyberbullying-detection"),
+        "fakenewsdetection" => Some("fake-news-detection"),
+        "legaljudgmentclassification" => Some("legal-judgment-classification"),
+        "contractclauseclassification" => Some("contract-clause-classification"),
+        "caseoutcomeprediction" => Some("case-outcome-prediction"),
+        "financialner" => Some("financial-ner"),
+        "legalner" => Some("legal-ner"),
+        "biomedicalner" => Some("biomedical-ner"),
+        "chemicalreactionner" => Some("chemical-reaction-ner"),
+        "financialsentimentanalysis" => Some("financial-sentiment-analysis"),
+        "scientificabstractsummarization" => Some("scientific-abstract-summarization"),
+        "emotiondetection" => Some("emotion-detection"),
+        "sarcasmdetection" => Some("sarcasm-detection"),
+        "stancedetection" => Some("stance-detection"),
+        "biasdetection" => Some("bias-detection"),
+        "hallucinationdetection" => Some("hallucination-detection"),
+        "readinglevelassessment" => Some("reading-level-assessment"),
+        "generationgroundedness" => Some("generation-groundedness"),
+        "citationintentclassification" => Some("citation-intent-classification"),
+        "codevulnerabilitydetection" => Some("code-vulnerability-detection"),
+        "codesummarygeneration" => Some("code-summary-generation"),
+        "codeclonedetection" => Some("code-clone-detection"),
+        "imageclassification" => Some("image-classification"),
+        "objectdetection" => Some("object-detection"),
+        "imagesegmentation" => Some("image-segmentation"),
+        "visualquestionanswering" => Some("visual-question-answering"),
+        "documentquestionanswering" => Some("document-question-answering"),
+        "zeroshotimageclassification" => Some("zero-shot-image-classification"),
+        "depthestimation" => Some("depth-estimation"),
+        "imagefeatureextraction" => Some("image-feature-extraction"),
+        "automaticspeechrecognition" => Some("automatic-speech-recognition"),
+        "audioclassification" => Some("audio-classification"),
+        "voiceactivitydetection" => Some("voice-activity-detection"),
+        "emotionrecognition" => Some("emotion-recognition"),
+        "videoclassification" => Some("video-classification"),
+        "texttospeech" => Some("text-to-speech"),
+        "texttoimage" => Some("text-to-image"),
+        "imagesuperresolution" => Some("image-super-resolution"),
+        "tablequestionanswering" => Some("table-question-answering"),
+        "featureranking" => Some("feature-ranking"),
+
+        _ => None,
     }
 }
 
@@ -3212,13 +3501,17 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
             if is_openai_compat {
                 // Convert OpenAI messages array to a single prompt string
                 let mut prompt_parts: Vec<String> = Vec::new();
+                let mut latest_user_query_str: Option<String> = None;
                 if let Some(messages) = request_json["messages"].as_array() {
                     for msg in messages {
                         let role = msg["role"].as_str().unwrap_or("user");
                         let content = msg["content"].as_str().unwrap_or("");
                         match role {
                             "system" => prompt_parts.push(format!("System: {}", content)),
-                            "user" => prompt_parts.push(content.to_string()),
+                            "user" => {
+                                prompt_parts.push(format!("User: {}", content));
+                                latest_user_query_str = Some(content.to_string());
+                            }
                             "assistant" => prompt_parts.push(format!("Assistant: {}", content)),
                             _ => prompt_parts.push(content.to_string()),
                         };
@@ -3231,6 +3524,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     eprintln!("[HARDWARE] VRAM ({} MB) is < 10GB. Auto-mapping model {} -> qwen2.5:7b for fast VRAM GPU inference.", res.total_vram_mb, model);
                     model = "qwen2.5:7b".to_string();
                 }
+                let latest_uq = latest_user_query_str.unwrap_or_default();
                 // Rewrite as /orchestrate request
                 request_json = serde_json::json!({
                     "prompt": combined_prompt,
@@ -3238,9 +3532,10 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     "ollama": true,
                     "gpu": true,
                     "selection_strategy": "multi_objective",
-                    "budget": 10.0
+                    "budget": 10.0,
+                    "latest_user_query": latest_uq
                 });
-                eprintln!("[SERVER] >>> /v1/chat/completions → translated to /orchestrate (model: {}, prompt len: {})", model, combined_prompt.len());
+                eprintln!("[SERVER] >>> /v1/chat/completions → translated to /orchestrate (model: {}, prompt len: {}, latest_user_query len: {})", model, combined_prompt.len(), latest_uq.len());
             }
 
             let result_content = match if is_openai_compat { "/orchestrate" } else { request_path.as_str() } {
@@ -3334,721 +3629,229 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     let _xml_tags = ["environment_info", "workspace_info", "attachments", "attachment", "context", "editorcontext", "instructions", "tooluseinstructions", "editfileinstructions", "notebookinstructions", "reminderinstructions", "usermemory", "sessionmemory", "repomemory", "memoryscopes", "memoryguidelines", "memoryinstructions", "outputformatting", "userrequest", "customizationsupdate", "conversationsummary", "conversation-summary"];
 
                     // Extract strictly the LATEST user typed message segment from multi-turn or single-turn prompts
-                    let latest_user_segment = extract_latest_user_query(&prompt);
-
-                    if !is_openai_compat {
-                        // SERVER-SIDE FAST INTERCEPTION FOR COMPACTION (1ms)
-                        // Trigger if prompt contains VS Code background compaction preamble
-                        let prompt_lower = prompt.to_lowercase();
-                        if prompt_lower.contains("summarize the conversation history")
-                            || prompt_lower.contains("compressed version of the preceeding history")
-                            || prompt_lower.contains("your task is to create a comprehensive, detailed summary")
-                            || prompt_lower.contains("compacting conversation")
-                        {
-                            eprintln!("[SERVER] ⚡ Fast interception: VS Code background conversation compaction (1ms).");
-                            let resp = "Summary of recent activity: The user executed ModelFusion commands and analysis tasks in the workspace. Work is complete and context is preserved.";
-                            let json = serde_json::json!({ "content": resp }).to_string();
-                            let hex_len = format!("{:x}\r\n", json.len());
-                            let _ = write_half.write_all(hex_len.as_bytes()).await;
-                            let _ = write_half.write_all(json.as_bytes()).await;
-                            let _ = write_half.write_all(b"\r\n0\r\n\r\n").await;
-                            return;
+                    let latest_user_segment = if let Some(uq) = request_json.get("latest_user_query").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
+                        let uncompacted = strip_compacted_history(uq);
+                        let cleaned = strip_xml_metadata_tags(&uncompacted);
+                        if !cleaned.trim().is_empty() {
+                            cleaned.trim().to_string()
+                        } else {
+                            uq.trim().to_string()
                         }
+                    } else {
+                        extract_latest_user_query(&prompt)
+                    };
 
-                        let known_slash_commands = [
-                            "active-model",
-                            "active-models",
-                            "active_model",
-                            "activemodel",
-                            "add-documents",
-                            "add_documents",
-                            "adddocuments",
-                            "agent",
-                            "analytics-demo",
-                            "analytics_demo",
-                            "analyticsdemo",
-                            "analyze-file",
-                            "analyze-folder",
-                            "analyze_file",
-                            "analyze_folder",
-                            "anonymization",
-                            "api-keys",
-                            "api_keys",
-                            "apikeys",
-                            "audio-classification",
-                            "audio_classification",
-                            "audioclassification",
-                            "audit",
-                            "automatic-speech-recognition",
-                            "automatic_speech_recognition",
-                            "automaticspeechrecognition",
-                            "bias-detection",
-                            "bias_detection",
-                            "biasdetection",
-                            "biomedical-ner",
-                            "biomedical_ner",
-                            "biomedicalner",
-                            "budget",
-                            "cache-stats",
-                            "cache_stats",
-                            "cachestats",
-                            "case-outcome-prediction",
-                            "case_outcome_prediction",
-                            "caseoutcomeprediction",
-                            "causal-language-modeling",
-                            "causal_language_modeling",
-                            "causallanguagemodeling",
-                            "chain-of-thought",
-                            "chain_of_thought",
-                            "chainofthought",
-                            "chemical-reaction-ner",
-                            "chemical_reaction_ner",
-                            "chemicalreactionner",
-                            "citation-intent-classification",
-                            "citation_intent_classification",
-                            "citationintentclassification",
-                            "clear-cache",
-                            "clear_cache",
-                            "clearcache",
-                            "code-clone-detection",
-                            "code-summary-generation",
-                            "code-task",
-                            "code-vulnerability-detection",
-                            "code_clone_detection",
-                            "code_summary_generation",
-                            "code_task",
-                            "code_vulnerability_detection",
-                            "codeclonedetection",
-                            "codesummarygeneration",
-                            "codevulnerabilitydetection",
-                            "command",
-                            "commands",
-                            "comment",
-                            "comments",
-                            "config",
-                            "context",
-                            "context-auto",
-                            "context_auto",
-                            "contextauto",
-                            "contract-clause-classification",
-                            "contract_clause_classification",
-                            "contractclauseclassification",
-                            "coreference-resolution",
-                            "coreference_resolution",
-                            "coreferenceresolution",
-                            "cpu",
-                            "current-model",
-                            "current-models",
-                            "current_model",
-                            "cyberbullying-detection",
-                            "cyberbullying_detection",
-                            "cyberbullyingdetection",
-                            "data-analyst",
-                            "data-science",
-                            "data_science",
-                            "dataanalyst",
-                            "datascience",
-                            "db-path",
-                            "db-stats",
-                            "db_path",
-                            "dbpath",
-                            "debug",
-                            "decision-stats",
-                            "decision_stats",
-                            "decisionstats",
-                            "delegation",
-                            "demo-hyde",
-                            "demo_hyde",
-                            "demohyde",
-                            "depth",
-                            "depth-estimation",
-                            "depth_estimation",
-                            "depthestimation",
-                            "doc",
-                            "docs",
-                            "document-question-answering",
-                            "document_question_answering",
-                            "documentquestionanswering",
-                            "domain-task",
-                            "domain_task",
-                            "edit",
-                            "emotion-detection",
-                            "emotion-recognition",
-                            "emotion_detection",
-                            "emotion_recognition",
-                            "emotiondetection",
-                            "emotionrecognition",
-                            "enable-hyde",
-                            "enable-innovations",
-                            "enable-ml",
-                            "enable-ml-selection",
-                            "enable-slash-commands",
-                            "enable_hyde",
-                            "enable_innovations",
-                            "enable_ml",
-                            "enable_ml_selection",
-                            "enable_slash_commands",
-                            "enablehyde",
-                            "enableinnovations",
-                            "enableml",
-                            "enablemlselection",
-                            "enableslashcommands",
-                            "evoce",
-                            "evolution",
-                            "evolv",
-                            "evolve",
-                            "evove",
-                            "evovle",
-                            "execute",
-                            "explain",
-                            "export-pdf",
-                            "export_pdf",
-                            "exportpdf",
-                            "fake-news-detection",
-                            "fake_news_detection",
-                            "fakenewsdetection",
-                            "feature-extraction",
-                            "feature-ranking",
-                            "feature_extraction",
-                            "feature_ranking",
-                            "featureextraction",
-                            "featureranking",
-                            "file",
-                            "fill-mask",
-                            "fill_mask",
-                            "fillmask",
-                            "financial-ner",
-                            "financial-sentiment-analysis",
-                            "financial_ner",
-                            "financial_sentiment_analysis",
-                            "financialner",
-                            "financialsentimentanalysis",
-                            "fix",
-                            "folder",
-                            "full",
-                            "fusion",
-                            "fusion-mode",
-                            "fusion-models",
-                            "fusion_mode",
-                            "fusion_models",
-                            "fusionmode",
-                            "fusionmodels",
-                            "generate",
-                            "generation-groundedness",
-                            "generation_groundedness",
-                            "generationgroundedness",
-                            "get-cache-stats",
-                            "get-database-stats",
-                            "get-decision-stats",
-                            "get-ml-analytics",
-                            "get-model-ranking",
-                            "get-model-recommendations",
-                            "get-novel-ai-stats",
-                            "get-performance-stats",
-                            "get-system-info",
-                            "get_cache_stats",
-                            "get_database_stats",
-                            "get_decision_stats",
-                            "get_ml_analytics",
-                            "get_model_ranking",
-                            "get_model_recommendations",
-                            "get_novel_ai_stats",
-                            "get_performance_stats",
-                            "get_system_info",
-                            "getvino",
-                            "getvino-interval",
-                            "getvino_interval",
-                            "getvinointerval",
-                            "gpu",
-                            "grammar-correction",
-                            "grammar_correction",
-                            "grammarcorrection",
-                            "hallucination-detection",
-                            "hallucination_detection",
-                            "hallucinationdetection",
-                            "hate-speech-detection",
-                            "hate_speech_detection",
-                            "hatespeechdetection",
-                            "help",
-                            "hugos",
-                            "hyde-variants",
-                            "hyde_variants",
-                            "hydevariants",
-                            "ide-model",
-                            "ide-models",
-                            "ide-src-dir",
-                            "ide_model",
-                            "ide_src_dir",
-                            "idesrcdir",
-                            "image-classification",
-                            "image-feature-extraction",
-                            "image-segmentation",
-                            "image-super-resolution",
-                            "image_classification",
-                            "image_feature_extraction",
-                            "image_segmentation",
-                            "image_super_resolution",
-                            "imageclassification",
-                            "imagefeatureextraction",
-                            "imagesegmentation",
-                            "imagesuperresolution",
-                            "innovation-level",
-                            "innovation_level",
-                            "innovationlevel",
-                            "judge",
-                            "jupyter",
-                            "keys",
-                            "language",
-                            "language-detection",
-                            "language_detection",
-                            "languagedetection",
-                            "legal-judgment-classification",
-                            "legal-ner",
-                            "legal_judgment_classification",
-                            "legal_ner",
-                            "legaljudgmentclassification",
-                            "legalner",
-                            "list-tasks",
-                            "list_tasks",
-                            "load-model",
-                            "load_model",
-                            "loadmodel",
-                            "malware-text-detection",
-                            "malware_text_detection",
-                            "malwaretextdetection",
-                            "max-models",
-                            "max_models",
-                            "maxmodels",
-                            "mcp",
-                            "ml-analytics",
-                            "ml-cleanup",
-                            "ml-confidence-threshold",
-                            "ml-ensemble-method",
-                            "ml-fallback",
-                            "ml-learning",
-                            "ml-management",
-                            "ml-retrain",
-                            "ml_analytics",
-                            "ml_cleanup",
-                            "ml_confidence_threshold",
-                            "ml_ensemble_method",
-                            "ml_fallback",
-                            "ml_learning",
-                            "ml_management",
-                            "ml_retrain",
-                            "mlanalytics",
-                            "mlcleanup",
-                            "mlconfidencethreshold",
-                            "mlensemblemethod",
-                            "mlfallback",
-                            "mllearning",
-                            "mlretrain",
-                            "model",
-                            "model-management",
-                            "model-ranking",
-                            "model-recommendations",
-                            "model_management",
-                            "model_ranking",
-                            "model_recommendations",
-                            "modelfusion",
-                            "modelranking",
-                            "modelrecommendations",
-                            "models-in-use",
-                            "models_in_use",
-                            "multimodal",
-                            "multimodal-task",
-                            "multimodal_task",
-                            "ner",
-                            "nlp",
-                            "nlp-task",
-                            "nlp_task",
-                            "novel-ai-stats",
-                            "novel_ai_stats",
-                            "novelaistats",
-                            "object-detection",
-                            "object_detection",
-                            "objectdetection",
-                            "ollama",
-                            "onnx",
-                            "openvino",
-                            "optimize",
-                            "orchestrate",
-                            "ov-model-dir",
-                            "ov_model_dir",
-                            "ovmodeldir",
-                            "paraphrase-generation",
-                            "paraphrase_generation",
-                            "paraphrasegeneration",
-                            "patch-ide",
-                            "patch_ide",
-                            "patchide",
-                            "pe",
-                            "pe-header",
-                            "pe-header-extraction",
-                            "pe_header_extraction",
-                            "peheaderextraction",
-                            "performance-stats",
-                            "performance_stats",
-                            "performancestats",
-                            "phishing-detection",
-                            "phishing_detection",
-                            "phishingdetection",
-                            "pii-detection",
-                            "pii_detection",
-                            "piidetection",
-                            "plan",
-                            "port",
-                            "predictive-mode",
-                            "predictive_mode",
-                            "predictivemode",
-                            "prepare-all-models",
-                            "prepare-model",
-                            "prepare_all_models",
-                            "prepare_model",
-                            "prepareallmodels",
-                            "preparemodel",
-                            "prompt",
-                            "prompt-quality-scoring",
-                            "prompt_quality_scoring",
-                            "promptqualityscoring",
-                            "qa",
-                            "question",
-                            "question-answering",
-                            "question_answering",
-                            "questionanswering",
-                            "quick-answer",
-                            "quick_answer",
-                            "reading-level-assessment",
-                            "reading_level_assessment",
-                            "readinglevelassessment",
-                            "real-options",
-                            "real_options",
-                            "realoptions",
-                            "recursion",
-                            "refactor",
-                            "report",
-                            "report-bandit-feedback",
-                            "report_bandit_feedback",
-                            "reporting",
-                            "reporttype",
-                            "reseach",
-                            "research",
-                            "restore",
-                            "restore-backup",
-                            "restore_backup",
-                            "review",
-                            "sarcasm-detection",
-                            "sarcasm_detection",
-                            "sarcasmdetection",
-                            "save-model",
-                            "save_model",
-                            "savemodel",
-                            "scientific-abstract-summarization",
-                            "scientific_abstract_summarization",
-                            "scientificabstractsummarization",
-                            "score",
-                            "search",
-                            "search-query",
-                            "search_query",
-                            "searchquery",
-                            "serarch",
-                            "serarch-query",
-                            "serarch_query",
-                            "serarchquery",
-                            "security",
-                            "security-analysis",
-                            "security_analysis",
-                            "selection-strategy",
-                            "selection_strategy",
-                            "selectionstrategy",
-                            "semantic-analysis",
-                            "semantic-search",
-                            "semantic_analysis",
-                            "semantic_search",
-                            "semanticanalysis",
-                            "sentence-similarity",
-                            "sentence_similarity",
-                            "sentencesimilarity",
-                            "sentiment",
-                            "server",
-                            "shallow",
-                            "sinq",
-                            "sinq-group-size",
-                            "sinq-method",
-                            "sinq-nbits",
-                            "sinq-tiling-mode",
-                            "sinq_group_size",
-                            "sinq_method",
-                            "sinq_nbits",
-                            "sinq_tiling_mode",
-                            "sinqgroupsize",
-                            "sinqmethod",
-                            "sinqnbits",
-                            "sinqtilingmode",
-                            "spam-detection",
-                            "spam_detection",
-                            "spamdetection",
-                            "stance-detection",
-                            "stance_detection",
-                            "stancedetection",
-                            "stats",
-                            "statsd",
-                            "summarization",
-                            "summary",
-                            "sys-info",
-                            "sys_info",
-                            "sysinfo",
-                            "table-question-answering",
-                            "table_question_answering",
-                            "tablequestionanswering",
-                            "task",
-                            "tasks",
-                            "temporal-tracking",
-                            "temporal_tracking",
-                            "temporaltracking",
-                            "test",
-                            "tests",
-                            "text-classification",
-                            "text-generation",
-                            "text-to-image",
-                            "text-to-speech",
-                            "text2text-generation",
-                            "text2text_generation",
-                            "text2textgeneration",
-                            "text_classification",
-                            "text_generation",
-                            "text_to_image",
-                            "text_to_speech",
-                            "textclassification",
-                            "textgeneration",
-                            "texttoimage",
-                            "texttospeech",
-                            "token-classification",
-                            "token_classification",
-                            "tokenclassification",
-                            "top-k",
-                            "top_k",
-                            "topk",
-                            "translation",
-                            "update",
-                            "update-database",
-                            "update-db",
-                            "update_database",
-                            "updatedb",
-                            "use-hyde",
-                            "use-openai",
-                            "use_hyde",
-                            "use_openai",
-                            "usehyde",
-                            "useopenai",
-                            "verbose",
-                            "version",
-                            "video-classification",
-                            "video_classification",
-                            "videoclassification",
-                            "visual-question-answering",
-                            "visual_question_answering",
-                            "visualquestionanswering",
-                            "vllm",
-                            "voice-activity-detection",
-                            "voice_activity_detection",
-                            "voiceactivitydetection",
-                            "vscode-tag",
-                            "vscode_tag",
-                            "vscodetag",
-                            "weight-format",
-                            "weight_format",
-                            "weightformat",
-                            "workflow-optimization",
-                            "workflow_optimization",
-                            "workflowoptimization",
-                            "zero-shot-classification",
-                            "zero-shot-image-classification",
-                            "zero_shot_classification",
-                            "zero_shot_image_classification",
-                            "zeroshotclassification",
-                            "zeroshotimageclassification",
-                        ];
+                    // SERVER-SIDE FAST INTERCEPTION FOR COMPACTION (1ms)
+                    // Trigger if prompt contains VS Code background compaction preamble
+                    let prompt_lower = prompt.to_lowercase();
+                    if prompt_lower.contains("summarize the conversation history")
+                        || prompt_lower.contains("compressed version of the preceeding history")
+                        || prompt_lower.contains("compressed version of the preceding history")
+                        || prompt_lower.contains("your task is to create a comprehensive, detailed summary")
+                        || prompt_lower.contains("compacting conversation")
+                    {
+                        eprintln!("[SERVER] ⚡ Fast interception: VS Code background conversation compaction (1ms).");
+                        let resp = "Summary of recent activity: The user executed ModelFusion commands and analysis tasks in the workspace. Work is complete and context is preserved.";
+                        let response_json = if is_openai_compat {
+                            serde_json::json!({
+                                "id": format!("chatcmpl-{}", start_time.elapsed().as_millis()),
+                                "object": "chat.completion",
+                                "created": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                                "model": request_json["model"].as_str().unwrap_or("modelfusion"),
+                                "choices": [{
+                                    "index": 0,
+                                    "message": {
+                                        "role": "assistant",
+                                        "content": resp
+                                    },
+                                    "finish_reason": "stop"
+                                }],
+                                "usage": {
+                                    "prompt_tokens": 0,
+                                    "completion_tokens": 0,
+                                    "total_tokens": 0
+                                }
+                            })
+                        } else {
+                            serde_json::json!({ "content": resp })
+                        };
+                        let json = response_json.to_string();
+                        let hex_len = format!("{:x}\r\n", json.len());
+                        let _ = write_half.write_all(hex_len.as_bytes()).await;
+                        let _ = write_half.write_all(json.as_bytes()).await;
+                        let _ = write_half.write_all(b"\r\n0\r\n\r\n").await;
+                        return;
+                    }
 
-                        // Collect matched commands with their arguments
-                        // Each entry is (command_name, arguments_text)
-                        let mut matched_cmds: Vec<(String, String)> = Vec::new();
+                    // Collect matched commands with their arguments
+                    // Each entry is (command_name, arguments_text)
+                    let mut matched_cmds: Vec<(String, String)> = Vec::new();
 
-                        let user_seg_trimmed = latest_user_segment.trim();
-                        let lower_user_seg = user_seg_trimmed.to_lowercase();
-                        let prompt_lower = prompt.to_lowercase();
+                    let user_seg_trimmed = latest_user_segment.trim();
+                    let lower_user_seg = user_seg_trimmed.to_lowercase();
 
-                        let non_empty_lines: Vec<&str> = latest_user_segment
-                            .lines()
-                            .map(|l| l.trim())
-                            .filter(|l| !l.is_empty())
-                            .collect();
-                        let is_multiline = non_empty_lines.len() > 1;
+                    let non_empty_lines: Vec<&str> = latest_user_segment
+                        .lines()
+                        .map(|l| l.trim())
+                        .filter(|l| !l.is_empty())
+                        .collect();
+                    let is_multiline = non_empty_lines.len() > 1;
 
-                        let conversational_prefixes = [
-                            "adopt", "create", "write", "how", "what", "why", "please", 
-                            "can you", "generate", "fix", "refactor", "explain", "help me", 
-                            "tell me", "show me", "could you", "would you", "i need", "i want"
-                        ];
-                        let starts_with_conversational = conversational_prefixes
-                            .iter()
-                            .any(|&p| lower_user_seg.starts_with(p));
+                    let conversational_prefixes = [
+                        "adopt", "create", "write", "how", "what", "why", "please", 
+                        "can you", "generate", "fix", "refactor", "explain", "help me", 
+                        "tell me", "show me", "could you", "would you", "i need", "i want"
+                    ];
+                    let starts_with_conversational = conversational_prefixes
+                        .iter()
+                        .any(|&p| lower_user_seg.starts_with(p));
 
-                        let has_code_blocks = prompt.contains("```") || latest_user_segment.contains("```");
-                        let has_code_imports = prompt_lower.contains("import ")
-                            || prompt_lower.contains("from ")
-                            || prompt_lower.contains("#include")
-                            || prompt_lower.contains("use std::")
-                            || prompt_lower.contains("require(")
-                            || prompt_lower.contains("#!/")
-                            || lower_user_seg.contains("import ")
-                            || lower_user_seg.contains("from ")
-                            || lower_user_seg.contains("#include")
-                            || lower_user_seg.contains("use std::")
-                            || lower_user_seg.contains("require(")
-                            || lower_user_seg.contains("#!/");
+                    let has_code_blocks = latest_user_segment.contains("```");
+                    let has_code_imports = lower_user_seg.contains("import ")
+                        || lower_user_seg.contains("from ")
+                        || lower_user_seg.contains("#include")
+                        || lower_user_seg.contains("use std::")
+                        || lower_user_seg.contains("require(")
+                        || lower_user_seg.contains("#!/");
 
-                        // a) latest_user_segment starts with @agent, @command, @commands, @tasks, @task, @modelfusion, or @hugos (case-insensitive)
-                        let is_agent_prefixed = lower_user_seg.starts_with("@agent")
-                            || lower_user_seg.starts_with("@command")
-                            || lower_user_seg.starts_with("@commands")
-                            || lower_user_seg.starts_with("@tasks")
-                            || lower_user_seg.starts_with("@task")
-                            || lower_user_seg.starts_with("@modelfusion")
-                            || lower_user_seg.starts_with("@hugos");
+                    // a) latest_user_segment starts with @agent, @command, @commands, @tasks, @task, @modelfusion, or @hugos (case-insensitive)
+                    let is_agent_prefixed = lower_user_seg.starts_with("@agent")
+                        || lower_user_seg.starts_with("@command")
+                        || lower_user_seg.starts_with("@commands")
+                        || lower_user_seg.starts_with("@tasks")
+                        || lower_user_seg.starts_with("@task")
+                        || lower_user_seg.starts_with("@modelfusion")
+                        || lower_user_seg.starts_with("@hugos");
 
-                        // b) OR latest_user_segment is a single-line command whose first non-whitespace token starts with / or --
-                        let is_single_line_slash_or_flag = !is_multiline && non_empty_lines.first().map(|line| {
-                            let first_token = line.split_whitespace().next().unwrap_or("");
-                            first_token.starts_with('/') || first_token.starts_with("--")
-                        }).unwrap_or(false);
+                    // b) OR latest_user_segment is a single-line command whose first non-whitespace token starts with / or --
+                    let is_single_line_slash_or_flag = !is_multiline && non_empty_lines.first().map(|line| {
+                        let first_token = line.split_whitespace().next().unwrap_or("");
+                        first_token.starts_with('/') || first_token.starts_with("--")
+                    }).unwrap_or(false);
 
-                        let should_run_interception = (is_agent_prefixed || is_single_line_slash_or_flag)
-                            && !starts_with_conversational
-                            && !has_code_blocks
-                            && !has_code_imports
-                            && !(is_multiline && !is_agent_prefixed);
+                    // c) OR latest_user_segment is a single standalone line with a single known command word (e.g. "stats", "sysinfo", "help", "tasks")
+                    let is_single_command_word = !is_multiline && non_empty_lines.first().map(|line| {
+                        let ws: Vec<&str> = line.split_whitespace().collect();
+                        ws.len() == 1 && canonicalize_command(ws[0]).is_some()
+                    }).unwrap_or(false);
 
-                        if should_run_interception {
-                            // Split user segment into lines to handle multi-command batches
-                            for line in latest_user_segment.lines() {
-                                let line = line.trim();
-                                if line.is_empty() { continue; }
+                    let should_run_interception = (is_agent_prefixed || is_single_line_slash_or_flag || is_single_command_word)
+                        && !(starts_with_conversational && !is_agent_prefixed && !is_single_line_slash_or_flag && !is_single_command_word)
+                        && !has_code_blocks
+                        && !has_code_imports
+                        && !(is_multiline && !is_agent_prefixed);
 
-                                let lower_line = line.to_lowercase();
-                                let is_explicit_agent_prefix = lower_line.starts_with("@agent")
-                                    || lower_line.starts_with("@commands")
-                                    || lower_line.starts_with("@command")
-                                    || lower_line.starts_with("@comments")
-                                    || lower_line.starts_with("@comment")
-                                    || lower_line.starts_with("@tasks")
-                                    || lower_line.starts_with("@task")
-                                    || lower_line.starts_with("@modelfusion")
-                                    || lower_line.starts_with("@hugos");
+                    if should_run_interception {
+                        // Split user segment into lines to handle multi-command batches
+                        for line in latest_user_segment.lines() {
+                            let line = line.trim();
+                            if line.is_empty() { continue; }
 
-                                let is_agent_line = is_explicit_agent_prefix;
+                            let lower_line = line.to_lowercase();
+                            let is_explicit_agent_prefix = lower_line.starts_with("@agent")
+                                || lower_line.starts_with("@commands")
+                                || lower_line.starts_with("@command")
+                                || lower_line.starts_with("@comments")
+                                || lower_line.starts_with("@comment")
+                                || lower_line.starts_with("@tasks")
+                                || lower_line.starts_with("@task")
+                                || lower_line.starts_with("@modelfusion")
+                                || lower_line.starts_with("@hugos");
 
-                                let line_to_scan = if is_explicit_agent_prefix {
-                                    if lower_line.starts_with("@agent") {
-                                        line[6..].trim()
-                                    } else if lower_line.starts_with("@commands") {
-                                        line[9..].trim()
-                                    } else if lower_line.starts_with("@command") {
-                                        line[8..].trim()
-                                    } else if lower_line.starts_with("@comments") {
-                                        line[9..].trim()
-                                    } else if lower_line.starts_with("@comment") {
-                                        line[8..].trim()
-                                    } else if lower_line.starts_with("@tasks") {
-                                        line[6..].trim()
-                                    } else if lower_line.starts_with("@task") {
-                                        line[5..].trim()
-                                    } else if lower_line.starts_with("@modelfusion") {
-                                        line[12..].trim()
-                                    } else if lower_line.starts_with("@hugos") {
-                                        line[6..].trim()
-                                    } else {
-                                        line
-                                    }
+                            let is_agent_line = is_explicit_agent_prefix;
+
+                            let line_to_scan = if is_explicit_agent_prefix {
+                                if lower_line.starts_with("@agent") {
+                                    line[6..].trim()
+                                } else if lower_line.starts_with("@commands") {
+                                    line[9..].trim()
+                                } else if lower_line.starts_with("@command") {
+                                    line[8..].trim()
+                                } else if lower_line.starts_with("@comments") {
+                                    line[9..].trim()
+                                } else if lower_line.starts_with("@comment") {
+                                    line[8..].trim()
+                                } else if lower_line.starts_with("@tasks") {
+                                    line[6..].trim()
+                                } else if lower_line.starts_with("@task") {
+                                    line[5..].trim()
+                                } else if lower_line.starts_with("@modelfusion") {
+                                    line[12..].trim()
+                                } else if lower_line.starts_with("@hugos") {
+                                    line[6..].trim()
                                 } else {
                                     line
-                                };
+                                }
+                            } else {
+                                line
+                            };
 
-                                // If user explicitly typed a standalone participant tag without extra command, provide stats or comment info
-                                if line_to_scan.is_empty() && is_explicit_agent_prefix {
-                                    if lower_line.starts_with("@comment") || lower_line.starts_with("@comments") {
-                                        if !matched_cmds.iter().any(|(c, _)| c == "comment") {
-                                            matched_cmds.push(("comment".to_string(), String::new()));
-                                        }
-                                    } else {
-                                        if !matched_cmds.iter().any(|(c, _)| c == "stats") {
-                                            matched_cmds.push(("stats".to_string(), String::new()));
-                                        }
+                            // If user explicitly typed a standalone participant tag without extra command, provide stats or comment info
+                            if line_to_scan.is_empty() && is_explicit_agent_prefix {
+                                if lower_line.starts_with("@comment") || lower_line.starts_with("@comments") {
+                                    if !matched_cmds.iter().any(|(c, _)| c == "comment") {
+                                        matched_cmds.push(("comment".to_string(), String::new()));
                                     }
+                                } else {
+                                    if !matched_cmds.iter().any(|(c, _)| c == "stats") {
+                                        matched_cmds.push(("stats".to_string(), String::new()));
+                                    }
+                                }
+                                continue;
+                            }
+
+                            let words: Vec<&str> = line_to_scan.split_whitespace().collect();
+                            let is_single_word_line = words.len() == 1;
+
+                            for (w_idx, word) in words.iter().enumerate() {
+                                if word.contains("://") || word.contains('<') || word.contains('>') {
                                     continue;
                                 }
 
-                                let words: Vec<&str> = line_to_scan.split_whitespace().collect();
-                                let is_single_word_line = words.len() == 1;
+                                let is_flag_prefixed = word.starts_with("--") || (word.starts_with('-') && word.len() > 1 && !word[1..].starts_with(|c: char| c.is_ascii_digit()));
+                                let is_slash_prefixed = word.starts_with('/') || (word.starts_with('(') && word[1..].starts_with('/')) || (word.starts_with('[') && word[1..].starts_with('/'));
+                                let is_prefixed = is_slash_prefixed || is_flag_prefixed;
+                                // STRICT REQUIREMENT: Only consider as command if starts with '/' or '--'/'-' OR the line was explicitly prefixed with @agent / @commands OR it is a single standalone command word on its line!
+                                if !is_prefixed && !is_agent_line && !is_single_word_line {
+                                    continue;
+                                }
 
-                                for word in words {
-                                    if word.contains("://") || word.contains('<') || word.contains('>') {
+                                let trimmed_word = word.trim_start_matches(|c: char| c == '@' || c == '(' || c == '[' || c == '{' || c == '"' || c == '\'' || c == '`');
+                                let raw_cmd = if trimmed_word.starts_with("--") {
+                                    &trimmed_word[2..]
+                                } else if trimmed_word.starts_with('-') && trimmed_word.len() > 1 && !trimmed_word[1..].starts_with(|c: char| c.is_ascii_digit()) {
+                                    &trimmed_word[1..]
+                                } else if trimmed_word.starts_with('/') {
+                                    let after_slash = &trimmed_word[1..];
+                                    if after_slash.contains('/') || after_slash.contains('\\') {
                                         continue;
                                     }
+                                    after_slash
+                                } else {
+                                    trimmed_word
+                                };
 
-                                    let is_flag_prefixed = word.starts_with("--") || (word.starts_with('-') && word.len() > 1 && !word[1..].starts_with(|c: char| c.is_ascii_digit()));
-                                    let is_slash_prefixed = word.starts_with('/') || (word.starts_with('(') && word[1..].starts_with('/')) || (word.starts_with('[') && word[1..].starts_with('/'));
-                                    let is_prefixed = is_slash_prefixed || is_flag_prefixed;
-                                    // STRICT REQUIREMENT: Only consider as command if starts with '/' or '--'/'-' OR the line was explicitly prefixed with @agent / @commands OR it is a single standalone command word on its line!
-                                    if !is_prefixed && !is_agent_line && !is_single_word_line {
-                                        continue;
+                                let clean_cmd = raw_cmd.trim_end_matches(|c: char| c == '.' || c == ',' || c == ':' || c == ';' || c == '?' || c == '!' || c == ')' || c == ']' || c == '}' || c == '"' || c == '\'' || c == '`').to_lowercase();
+                                if clean_cmd.contains('.') {
+                                    continue;
+                                }
+
+                                if let Some(canonical) = canonicalize_command(&clean_cmd) {
+                                    let args_text = words[w_idx + 1..].join(" ");
+                                    if !matched_cmds.iter().any(|(c, _)| c == canonical) {
+                                        matched_cmds.push((canonical.to_string(), args_text));
                                     }
-
-                                    let trimmed_word = word.trim_start_matches(|c: char| c == '@' || c == '(' || c == '[' || c == '{' || c == '"' || c == '\'' || c == '`');
-                                    let raw_cmd = if trimmed_word.starts_with("--") {
-                                        &trimmed_word[2..]
-                                    } else if trimmed_word.starts_with('-') && trimmed_word.len() > 1 && !trimmed_word[1..].starts_with(|c: char| c.is_ascii_digit()) {
-                                        &trimmed_word[1..]
-                                    } else if trimmed_word.starts_with('/') {
-                                        let after_slash = &trimmed_word[1..];
-                                        if after_slash.contains('/') || after_slash.contains('\\') {
-                                            continue;
-                                        }
-                                        after_slash
-                                    } else {
-                                        trimmed_word
-                                    };
-
-                                    let clean_cmd = raw_cmd.trim_end_matches(|c: char| c == '.' || c == ',' || c == ':' || c == ';' || c == '?' || c == '!' || c == ')' || c == ']' || c == '}' || c == '"' || c == '\'' || c == '`').to_lowercase();
-                                    if clean_cmd.contains('.') {
-                                        continue;
+                                    break; // Only one command per line
+                                } else if (is_slash_prefixed || (is_agent_line && is_prefixed)) && !clean_cmd.is_empty() {
+                                    let unknown_name = clean_cmd.clone();
+                                    if !matched_cmds.iter().any(|(c, _)| c == "unknown") {
+                                        matched_cmds.push(("unknown".to_string(), unknown_name));
                                     }
-
-                                    if !clean_cmd.is_empty() {
-                                        if known_slash_commands.contains(&clean_cmd.as_str()) {
-                                            let cmd_token_slash = format!("/{}", clean_cmd);
-                                            let cmd_token_dflag = format!("--{}", clean_cmd);
-                                            let cmd_token_sflag = format!("-{}", clean_cmd);
-                                            let args_text = if let Some(pos) = line.to_lowercase().find(&cmd_token_dflag) {
-                                                line[pos + cmd_token_dflag.len()..].trim().to_string()
-                                            } else if let Some(pos) = line.to_lowercase().find(&cmd_token_slash) {
-                                                line[pos + cmd_token_slash.len()..].trim().to_string()
-                                            } else if let Some(pos) = line.to_lowercase().find(&cmd_token_sflag) {
-                                                line[pos + cmd_token_sflag.len()..].trim().to_string()
-                                            } else if let Some(pos) = line.to_lowercase().find(&clean_cmd) {
-                                                line[pos + clean_cmd.len()..].trim().to_string()
-                                            } else {
-                                                String::new()
-                                            };
-                                            if !matched_cmds.iter().any(|(c, _)| c == &clean_cmd) {
-                                                matched_cmds.push((clean_cmd.clone(), args_text));
-                                            }
-                                            break; // Only one command per line
-                                        }
-                                    }
+                                    break;
                                 }
                             }
                         }
+                    }
 
                         if !matched_cmds.is_empty() {
                             eprintln!("[SERVER] ⚡ Multi-Thread Interception: Spawning {} concurrent command thread(s) for {:?}", matched_cmds.len(), matched_cmds);
@@ -4110,6 +3913,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                     let db_resolved = std::path::Path::new(db_path_str);
 
                                     match canonical {
+                                        "unknown" => {
+                                            (idx, format!("⚠️ **Unknown command `/{}`.** Type `/commands` or `/help` to view all available commands.", args_owned))
+                                        },
                                         // ── Original fast-interception commands ──
                                         "keys" => {
                                             let openai_st = if std::env::var("OPENAI_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "[LOADED]" } else { "[DISABLED]" };
@@ -4227,7 +4033,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         "cache-stats" => (idx, "💾 **ModelCache Statistics**: Local model cache active, 0 stale entries.".to_string()),
                                         "performance-stats" => (idx, "⚡ **Performance Statistics**: Fast path latency < 10ms across parallel worker threads.".to_string()),
                                         "decision-stats" => (idx, "🎯 **Decision Statistics**: Multi-objective strategy active.".to_string()),
-                                        "evolve" | "evovle" | "evove" | "evoce" | "evolv" | "evolution" => (idx, "❌ **OpenEvolve Routing Error**: The ModelFusion backend intercepted an `/evolve` request. OpenEvolve must be executed by the VS Code extension. If you are seeing this, the IDE extension failed to intercept the command before sending it to the backend. Please try running it again or restarting the extension.".to_string()),
+                                        "evolve" | "evovle" | "evove" | "evoce" | "evolv" | "evolution" => (idx, "❌ **OpenEvolve Routing Error**: The ModelFusion backend intercepted an `/evolve` iterative optimization request. OpenEvolve must be executed by the VS Code extension. If you are seeing this, the IDE extension failed to intercept the command before sending it to the backend. Please try running it again or restarting the extension.".to_string()),
                                         "security" => (idx, "🛡️ **CyberSecurity Audit**: Active security inspection thread scanning code.".to_string()),
                                         "refactor" => (idx, "🔧 **Refactoring Engine**: Code structure optimization thread ready.".to_string()),
 
@@ -4581,7 +4387,30 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         let combined_output = results.into_iter().map(|(_, out)| out).collect::<Vec<_>>().join("\n\n---\n\n");
 
                         // Return command outputs as a clean single JSON payload (10ms)
-                        let json = serde_json::json!({ "content": combined_output }).to_string();
+                        let response_json = if is_openai_compat {
+                            serde_json::json!({
+                                "id": format!("chatcmpl-{}", start_time.elapsed().as_millis()),
+                                "object": "chat.completion",
+                                "created": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                                "model": request_json["model"].as_str().unwrap_or("modelfusion"),
+                                "choices": [{
+                                    "index": 0,
+                                    "message": {
+                                        "role": "assistant",
+                                        "content": combined_output
+                                    },
+                                    "finish_reason": "stop"
+                                }],
+                                "usage": {
+                                    "prompt_tokens": 0,
+                                    "completion_tokens": 0,
+                                    "total_tokens": 0
+                                }
+                            })
+                        } else {
+                            serde_json::json!({ "content": combined_output })
+                        };
+                        let json = response_json.to_string();
                         let hex_len = format!("{:x}\r\n", json.len());
                         let _ = write_half.write_all(hex_len.as_bytes()).await;
                         let _ = write_half.write_all(json.as_bytes()).await;
@@ -4650,14 +4479,36 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                     if is_empty_user_prompt {
                         eprintln!("[SERVER] ⚡ Fast interception: Empty user prompt / system context refresh (1ms).");
-                        let json = serde_json::json!({ "content": "" }).to_string();
+                        let response_json = if is_openai_compat {
+                            serde_json::json!({
+                                "id": format!("chatcmpl-{}", start_time.elapsed().as_millis()),
+                                "object": "chat.completion",
+                                "created": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+                                "model": request_json["model"].as_str().unwrap_or("modelfusion"),
+                                "choices": [{
+                                    "index": 0,
+                                    "message": {
+                                        "role": "assistant",
+                                        "content": ""
+                                    },
+                                    "finish_reason": "stop"
+                                }],
+                                "usage": {
+                                    "prompt_tokens": 0,
+                                    "completion_tokens": 0,
+                                    "total_tokens": 0
+                                }
+                            })
+                        } else {
+                            serde_json::json!({ "content": "" })
+                        };
+                        let json = response_json.to_string();
                         let hex_len = format!("{:x}\r\n", json.len());
                         let _ = write_half.write_all(hex_len.as_bytes()).await;
                         let _ = write_half.write_all(json.as_bytes()).await;
                         let _ = write_half.write_all(b"\r\n0\r\n\r\n").await;
                         return;
                     }
-                }
 
                     let mut full_process = Box::pin(async {
                         // Extract actual user message to check complexity.
@@ -8752,6 +8603,82 @@ User: <context><environment_info>OS: Windows</environment_info></context>@agent 
         let mut prompt4 = "/serarch huggingface models".to_string();
         super::parse_slash_commands_in_prompt(&mut prompt4, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
         assert_eq!(std::env::var("MODELFUSION_SEARCH_QUERY").unwrap_or_default(), "huggingface models");
+    }
+
+    #[test]
+    fn test_canonicalize_all_commands_and_aliases() {
+        use super::canonicalize_command;
+        // active-model and all aliases
+        assert_eq!(canonicalize_command("active-model"), Some("active-model"));
+        assert_eq!(canonicalize_command("/active-models"), Some("active-model"));
+        assert_eq!(canonicalize_command("--active_model"), Some("active-model"));
+        assert_eq!(canonicalize_command("activemodel"), Some("active-model"));
+        assert_eq!(canonicalize_command("@agent active-models"), Some("active-model"));
+        assert_eq!(canonicalize_command("current-model"), Some("active-model"));
+        assert_eq!(canonicalize_command("current_models"), Some("active-model"));
+        assert_eq!(canonicalize_command("ide-model"), Some("active-model"));
+        assert_eq!(canonicalize_command("models-in-use"), Some("active-model"));
+
+        // System commands
+        assert_eq!(canonicalize_command("/stats"), Some("stats"));
+        assert_eq!(canonicalize_command("statsd"), Some("stats"));
+        assert_eq!(canonicalize_command("--sys-info"), Some("sys-info"));
+        assert_eq!(canonicalize_command("/sysinfo"), Some("sys-info"));
+        assert_eq!(canonicalize_command("/keys"), Some("keys"));
+        assert_eq!(canonicalize_command("api-keys"), Some("keys"));
+        assert_eq!(canonicalize_command("/mcp"), Some("mcp"));
+        assert_eq!(canonicalize_command("command"), Some("command"));
+        assert_eq!(canonicalize_command("commands"), Some("command"));
+        assert_eq!(canonicalize_command("help"), Some("command"));
+        assert_eq!(canonicalize_command("/version"), Some("version"));
+        assert_eq!(canonicalize_command("-v"), Some("version"));
+        assert_eq!(canonicalize_command("updatedb"), Some("updatedb"));
+        assert_eq!(canonicalize_command("update-db"), Some("updatedb"));
+        assert_eq!(canonicalize_command("update"), Some("update"));
+        assert_eq!(canonicalize_command("clearcache"), Some("clearcache"));
+        assert_eq!(canonicalize_command("clear-cache"), Some("clearcache"));
+
+        // Data science & reporting
+        assert_eq!(canonicalize_command("dataanalyst"), Some("dataanalyst"));
+        assert_eq!(canonicalize_command("data-analyst"), Some("dataanalyst"));
+        assert_eq!(canonicalize_command("datascience"), Some("datascience"));
+        assert_eq!(canonicalize_command("data-science"), Some("datascience"));
+        assert_eq!(canonicalize_command("export-pdf"), Some("export-pdf"));
+        assert_eq!(canonicalize_command("exportpdf"), Some("export-pdf"));
+
+        // Tasks & Quantization
+        assert_eq!(canonicalize_command("text-classification"), Some("text-classification"));
+        assert_eq!(canonicalize_command("/token-classification"), Some("token-classification"));
+        assert_eq!(canonicalize_command("--sinq-nbits"), Some("sinq-nbits"));
+        assert_eq!(canonicalize_command("sinqnbits"), Some("sinq-nbits"));
+        assert_eq!(canonicalize_command("bias-detection"), Some("bias-detection"));
+        assert_eq!(canonicalize_command("pe-header-extraction"), Some("pe-header-extraction"));
+    }
+
+    #[test]
+    fn test_compacted_history_extraction_with_trailing_active_models() {
+        let prompt = "System: You are HugOS AI.\n\
+The following is a compressed version of the preceeding history in the current conversation.\n\
+[Compacted conversation]\n\
+<user>show me some python code</user>\n\
+<assistant>import math\nprint(math.pi)</assistant>\n\
+User: /active-models";
+
+        let extracted = super::extract_latest_user_query(prompt);
+        assert_eq!(extracted, "/active-models");
+        assert_eq!(super::canonicalize_command(&extracted), Some("active-model"));
+    }
+
+    #[test]
+    fn test_compacted_history_extraction_with_trailing_agent_flag() {
+        let prompt = "System: You are HugOS AI.\n\
+[Compacted conversation]\n\
+<user>how do I use git?</user>\n\
+<assistant>Use git status</assistant>\n\
+User: @agent --active-model";
+
+        let extracted = super::extract_latest_user_query(prompt);
+        assert_eq!(extracted, "@agent --active-model");
     }
 }
 
