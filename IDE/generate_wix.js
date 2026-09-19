@@ -36,10 +36,15 @@ function generateWix(srcDir, outputFile) {
                 });
                 walk(itemPath, dirId);
             } else {
+                // Skip source maps (.map files) to optimize package size and eliminate MAX_PATH collisions
+                if (item.endsWith('.map')) {
+                    continue;
+                }
+                const relSource = path.relative(path.dirname(outputFile), itemPath);
                 components.push({
                     id: `cmp_${componentIdCounter++}`,
                     fileId: `fil_${fileIdCounter++}`,
-                    source: itemPath,
+                    source: relSource,
                     directoryId: parentDirId
                 });
             }

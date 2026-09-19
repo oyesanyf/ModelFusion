@@ -37,7 +37,7 @@
     "webviewContentExternalBaseUrlTemplate": "https://{{uuid}}.vscode-cdn.net/insider/ef65ac1ba57f57f2a3961bfe94aa20481caca4c6/out/vs/workbench/contrib/webview/browser/pre/",
     "builtInExtensions": [],
     "defaultChatAgent": {
-        "extensionId": "GitHub.copilot",
+        "extensionId": "GitHub.copilot-chat",
         "chatExtensionId": "GitHub.copilot-chat",
         "chatExtensionOutputId": "GitHub.copilot-chat.GitHub Copilot Chat.log",
         "chatExtensionOutputExtensionStateCommand": "github.copilot.debug.extensionState",

@@ -2,7 +2,7 @@
 target/
 
 # Local database and backup folder
-db/
+/db/
 backups/
 
 # Local environment variables
@@ -16,6 +16,7 @@ logs/
 ov_models/
 IDE/VSCode-win32-x64/
 IDE/vscode/
+IDE/db/
 IDE/hugos.exe
 IDE/bin/
 IDE/HugOS.wxs

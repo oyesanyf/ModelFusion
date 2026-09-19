@@ -6,6 +6,19 @@ $vsCodePackDir = Join-Path (Split-Path $PSScriptRoot -Parent) "IDE\VSCode-win32-
 $pfxPath = Join-Path $PSScriptRoot "hugos-signing-cert.pfx"
 $password = "HugOSPassword123!"
 
+# Ensure common tools are available in PATH
+$toolDirs = @(
+    "D:\tools\nodejs",
+    "D:\tools\wix\PFiles64\WiX Toolset v5.0\bin",
+    "D:\tools\gh\bin",
+    "C:\Program Files\dotnet"
+)
+foreach ($td in $toolDirs) {
+    if ((Test-Path $td) -and ($env:PATH -notlike "*$td*")) {
+        $env:PATH = "$td;" + $env:PATH
+    }
+}
+
 Write-Host "--------------------------------------------------------" -ForegroundColor Green
 Write-Host "[START] Starting HugOS IDE Signed MSI Packaging Process" -ForegroundColor Green
 Write-Host "--------------------------------------------------------" -ForegroundColor Green
@@ -18,20 +31,20 @@ if (-not (Test-Path $vsCodePackDir)) {
 }
 Write-Host "[OK] Resolved packaged VS Code directory at $vsCodePackDir" -ForegroundColor Green
 
-# 2. Locate signtool.exe
+# 2. Locate signtool.exe or setup PowerShell Set-AuthenticodeSignature
 $signtoolPath = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe"
 if (-not (Test-Path $signtoolPath)) {
     Write-Host "[INFO] Signtool not found at default path, searching Windows Kits..." -ForegroundColor Yellow
-    $signtoolPath = Get-ChildItem -Path 'C:\Program Files (x86)\Windows Kits' -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue | 
+    $signtoolPath = Get-ChildItem -Path 'C:\Program Files (x86)\Windows Kits', 'C:\Program Files\Windows Kits', 'D:\tools' -Filter signtool.exe -Recurse -Depth 4 -ErrorAction SilentlyContinue | 
                     Where-Object { $_.FullName -like "*x64*" } | 
                     Select-Object -ExpandProperty FullName -First 1
 }
 
-if (-not $signtoolPath) {
-    Write-Host "[ERROR] signtool.exe could not be found on this system. Please install the Windows SDK." -ForegroundColor Red
-    Exit 1
+if ($signtoolPath) {
+    Write-Host "[OK] Using signtool at: $signtoolPath" -ForegroundColor Green
+} else {
+    Write-Host "[INFO] signtool.exe not found. Using native PowerShell Set-AuthenticodeSignature." -ForegroundColor Yellow
 }
-Write-Host "[OK] Using signtool at: $signtoolPath" -ForegroundColor Green
 
 # 3. Code Signing Certificate Setup
 if (-not (Test-Path $pfxPath)) {
@@ -44,6 +57,36 @@ if (-not (Test-Path $pfxPath)) {
     Write-Host "[OK] Certificate created at: $pfxPath" -ForegroundColor Green
 } else {
     Write-Host "[OK] Found existing signing certificate at $pfxPath" -ForegroundColor Green
+}
+
+$pwdSecure = ConvertTo-SecureString $password -AsPlainText -Force
+$signCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($pfxPath, $pwdSecure)
+
+function Sign-FileWithCert {
+    param([string]$FilePath)
+    if ($signtoolPath) {
+        for ($i = 0; $i -lt 2; $i++) {
+            & $signtoolPath sign /f $pfxPath /p $password /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $FilePath 2>$null
+            if ($LASTEXITCODE -eq 0) { return $true }
+            & $signtoolPath sign /f $pfxPath /p $password /fd SHA256 $FilePath 2>$null
+            if ($LASTEXITCODE -eq 0) { return $true }
+            Start-Sleep -Seconds 1
+        }
+        return $false
+    } else {
+        for ($i = 0; $i -lt 2; $i++) {
+            try {
+                $res = Set-AuthenticodeSignature -FilePath $FilePath -Certificate $signCert -TimestampServer "http://timestamp.digicert.com" -HashAlgorithm SHA256 -ErrorAction SilentlyContinue
+                if ($res -and $res.SignerCertificate) { return $true }
+            } catch {}
+            try {
+                $res = Set-AuthenticodeSignature -FilePath $FilePath -Certificate $signCert -HashAlgorithm SHA256 -ErrorAction SilentlyContinue
+                if ($res -and $res.SignerCertificate) { return $true }
+            } catch {}
+            Start-Sleep -Seconds 1
+        }
+        return $false
+    }
 }
 
 # 4. Copy ModelFusion CLI (cli.exe) into the packaged folder
@@ -73,7 +116,7 @@ $vscodeDlUrl  = "https://update.code.visualstudio.com/1.126.0/win32-x64-archive/
 
 # Check if current HugOS.exe has a valid (Microsoft) signature AND the versioned runtime dir exists
 $exeSig = Get-AuthenticodeSignature $hugosExePath -ErrorAction SilentlyContinue
-$versionedDirExists = (Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{10,}$' }).Count -gt 0
+$versionedDirExists = (Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' }).Count -gt 0
 if ($exeSig.Status -ne 'Valid' -or $exeSig.SignerCertificate.Subject -notlike '*Microsoft*' -or -not $versionedDirExists) {
     Write-Host "[INFO] HugOS.exe has invalid/untrusted signature. Restoring from VSCode 1.126.0..." -ForegroundColor Yellow
     if (-not (Test-Path $vscodeDlZip) -or (Get-Item $vscodeDlZip).Length -lt 100MB) {
@@ -98,7 +141,7 @@ if ($exeSig.Status -ne 'Valid' -or $exeSig.SignerCertificate.Subject -notlike '*
     # CRITICAL: Copy the versioned Electron runtime directory (e.g. 7e7950df89/).
     # Code.exe loads ICU data from this subdirectory, NOT from root.
     # Without it, HugOS.exe crashes with "Invalid file descriptor to ICU data received".
-    $versionedDir = Get-ChildItem $extractDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{10,}$' } | Select-Object -First 1
+    $versionedDir = Get-ChildItem $extractDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' } | Select-Object -First 1
     if ($versionedDir) {
         $destVersionedDir = Join-Path $vsCodePackDir $versionedDir.Name
         Copy-Item $versionedDir.FullName $destVersionedDir -Recurse -Force
@@ -108,10 +151,14 @@ if ($exeSig.Status -ne 'Valid' -or $exeSig.SignerCertificate.Subject -notlike '*
         # The VSCode zip ships with product.json containing nameShort:"Code" / nameLong:"Visual Studio Code"
         # which OVERRIDES our resources/app/product.json and makes the IDE show VSCode branding.
         $versionedProductJson = Join-Path $destVersionedDir "resources\app\product.json"
-        $hugosProductJson = Join-Path $vsCodePackDir "resources\app\product.json"
-        if ((Test-Path $versionedProductJson) -and (Test-Path $hugosProductJson)) {
-            Copy-Item $hugosProductJson $versionedProductJson -Force
-            Write-Host "[OK] Replaced versioned product.json with HugOS branding" -ForegroundColor Green
+        $authoritativePj = Join-Path $PSScriptRoot "patches\product.json"
+        if (Test-Path $authoritativePj) {
+            $vPjDir = Split-Path $versionedProductJson -Parent
+            if (-not (Test-Path $vPjDir)) {
+                New-Item -ItemType Directory -Force -Path $vPjDir | Out-Null
+            }
+            Copy-Item $authoritativePj $versionedProductJson -Force -ErrorAction Stop
+            Write-Host "[OK] Replaced versioned product.json with authoritative HugOS product.json" -ForegroundColor Green
         }
 
         # CRITICAL: Copy our custom Copilot/ModelFusion extension into the versioned directory,
@@ -140,6 +187,42 @@ if ($exeSig.Status -ne 'Valid' -or $exeSig.SignerCertificate.Subject -notlike '*
     Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
 } else {
     Write-Host "[OK] HugOS.exe already has valid Microsoft signature - no restore needed" -ForegroundColor Green
+}
+
+# 4.2 Unconditionally deploy authoritative product.json from IDE/patches/product.json
+# The patched product.json at IDE/patches/product.json is the authoritative source
+# for HugOS branding, defaultChatAgent (GitHub.copilot-chat), extensionEnabledApiProposals, etc.
+# This MUST be copied to both resources/app/product.json AND all versioned runtime directories
+# unconditionally (whether or not Step 4.1 performed an Electron binary restore).
+Write-Host "[INFO] Deploying authoritative product.json to packaged directory..." -ForegroundColor Yellow
+$authoritativeProductJson = Join-Path $PSScriptRoot "patches\product.json"
+if (-not (Test-Path $authoritativeProductJson)) {
+    Write-Host "[ERROR] Authoritative product.json not found at: $authoritativeProductJson" -ForegroundColor Red
+    Exit 1
+}
+
+# 1. Copy to root resources/app/product.json
+$rootProductJson = Join-Path $vsCodePackDir "resources\app\product.json"
+$rootPjDir = Split-Path $rootProductJson -Parent
+if (-not (Test-Path $rootPjDir)) {
+    New-Item -ItemType Directory -Force -Path $rootPjDir | Out-Null
+}
+Copy-Item -Path $authoritativeProductJson -Destination $rootProductJson -Force -ErrorAction Stop
+Write-Host "[OK] Deployed authoritative product.json to: $rootProductJson" -ForegroundColor Green
+
+# 2. Copy to all versioned runtime directories (e.g., 7e7950df89/resources/app/product.json)
+$versionedDirs = @(Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' })
+if ($versionedDirs.Count -eq 0) {
+    Write-Host "[WARNING] No versioned runtime directories found in $vsCodePackDir!" -ForegroundColor Yellow
+}
+foreach ($vDir in $versionedDirs) {
+    $vProductJson = Join-Path $vDir.FullName "resources\app\product.json"
+    $vProductJsonDir = Split-Path $vProductJson -Parent
+    if (-not (Test-Path $vProductJsonDir)) {
+        New-Item -ItemType Directory -Force -Path $vProductJsonDir | Out-Null
+    }
+    Copy-Item -Path $authoritativeProductJson -Destination $vProductJson -Force -ErrorAction Stop
+    Write-Host "[OK] Deployed authoritative product.json to versioned dir: $vProductJson" -ForegroundColor Green
 }
 
 # 4.5 Copy Pre-populated HF Models Database (hf_models.db) into the packaged folder
@@ -250,7 +333,7 @@ foreach ($pjFile in $productJsonFiles) {
     $pjObj = Get-Content $pjFile.FullName -Raw | ConvertFrom-Json
     if ($pjObj.checksums) {
         $pjObj.PSObject.Properties.Remove('checksums')
-        $pjObj | ConvertTo-Json -Depth 20 | Set-Content $pjFile.FullName -Encoding UTF8
+        [System.IO.File]::WriteAllText($pjFile.FullName, ($pjObj | ConvertTo-Json -Depth 20), (New-Object System.Text.UTF8Encoding($false)))
         Write-Host "[OK] Removed checksums from: $($pjFile.FullName)" -ForegroundColor Green
     }
 }
@@ -259,23 +342,25 @@ foreach ($pjFile in $productJsonFiles) {
 Write-Host "[INFO] Disabling GitHub login prompts..." -ForegroundColor Yellow
 foreach ($pjFile in $productJsonFiles) {
     $pjObj = Get-Content $pjFile.FullName -Raw | ConvertFrom-Json
+    $changed = $false
 
     # Remove the GitHub auth provider requirement from defaultChatAgent
-    if ($pjObj.defaultChatAgent -and $pjObj.defaultChatAgent.providerExtensionId) {
+    if ($pjObj.defaultChatAgent -and ($pjObj.defaultChatAgent.providerExtensionId -or $pjObj.defaultChatAgent.signUpUrl -or $pjObj.defaultChatAgent.entitlementUrl)) {
         $pjObj.defaultChatAgent.providerExtensionId = ""
         $pjObj.defaultChatAgent.entitlementUrl = ""
         $pjObj.defaultChatAgent.entitlementSignupLimitedUrl = ""
         $pjObj.defaultChatAgent.tokenEntitlementUrl = ""
         $pjObj.defaultChatAgent.signUpUrl = ""
+        $changed = $true
     }
 
-    # Remove trustedExtensionAuthAccess to prevent auth popups
-    if ($pjObj.trustedExtensionAuthAccess) {
-        $pjObj.PSObject.Properties.Remove('trustedExtensionAuthAccess')
+    if ($changed) {
+        # Retain trustedExtensionAuthAccess from authoritative product.json (required for copilot-chat)
+        [System.IO.File]::WriteAllText($pjFile.FullName, ($pjObj | ConvertTo-Json -Depth 20), (New-Object System.Text.UTF8Encoding($false)))
+        Write-Host "[OK] Disabled GitHub auth in: $($pjFile.FullName)" -ForegroundColor Green
+    } else {
+        Write-Host "[INFO] GitHub auth already disabled in: $($pjFile.FullName)" -ForegroundColor Green
     }
-
-    $pjObj | ConvertTo-Json -Depth 20 | Set-Content $pjFile.FullName -Encoding UTF8
-    Write-Host "[OK] Disabled GitHub auth in: $($pjFile.FullName)" -ForegroundColor Green
 }
 
 # Ensure GitHub authentication is optional (no forced popups, but available if desired)
@@ -293,6 +378,8 @@ if (-not (Test-Path $defaultSettingsDir)) {
 $machineSettingsPath = Join-Path $vsCodePackDir "resources\app\product-default-settings.json"
 $defaultSettings = @{
     "chat.agent.enabled" = $true
+    "chat.utilityModel" = "modelfusion/modelfusion-local"
+    "chat.utilitySmallModel" = "modelfusion/modelfusion-local"
     "github.copilot.enable" = @{ "*" = $false }
     "github.gitAuthentication" = $false
     "git.autofetch" = $false
@@ -304,7 +391,18 @@ $defaultSettings = @{
     "extensions.autoUpdate" = $false
 }
 $defaultSettings | ConvertTo-Json -Depth 10 | Set-Content $machineSettingsPath -Encoding UTF8
-Write-Host "[OK] Injected default settings to suppress login prompts" -ForegroundColor Green
+Write-Host "[OK] Injected default settings to suppress login prompts: $machineSettingsPath" -ForegroundColor Green
+
+# Also deploy product-default-settings.json to all versioned runtime directories
+$verDirsForPds = Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' }
+foreach ($vd in $verDirsForPds) {
+    $vSettingsDir = Join-Path $vd.FullName "resources\app"
+    if (Test-Path $vSettingsDir) {
+        $vSettingsPath = Join-Path $vSettingsDir "product-default-settings.json"
+        $defaultSettings | ConvertTo-Json -Depth 10 | Set-Content $vSettingsPath -Encoding UTF8
+        Write-Host "[OK] Injected default settings to versioned runtime: $vSettingsPath" -ForegroundColor Green
+    }
+}
 
 # 4.965 Sync ModelFusion / Copilot extension and AVO framework into packaged distributions
 Write-Host "[INFO] Syncing custom copilot extension and AVO into packaged folder..." -ForegroundColor Yellow
@@ -313,7 +411,7 @@ $targetExtDirs = @(
     Join-Path $vsCodePackDir "resources\app\extensions\copilot"
 )
 # Also target versioned runtime directories if present
-$verDirs = Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{10,}$' }
+$verDirs = Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' }
 foreach ($vd in $verDirs) {
     $targetExtDirs += (Join-Path $vd.FullName "resources\app\extensions\copilot")
 }
@@ -393,8 +491,46 @@ if (Test-Path $patchAvoOutputScript) {
 }
 $patchProductJsonScript = Join-Path $PSScriptRoot "patch_product_json.py"
 if (Test-Path $patchProductJsonScript) {
-    python $patchProductJsonScript
+    python $patchProductJsonScript "$vsCodePackDir"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] product.json patch script failed! Aborting MSI build." -ForegroundColor Red
+        Exit 1
+    }
     Write-Host "[OK] Applied product.json alignment and API proposals" -ForegroundColor Green
+}
+
+$verifyProductJsonScript = Join-Path $PSScriptRoot "verify_product_json.ps1"
+if (Test-Path $verifyProductJsonScript) {
+    & powershell -ExecutionPolicy Bypass -File $verifyProductJsonScript -PackDir $vsCodePackDir -CheckInstalled $false
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] product.json verification failed! Aborting MSI build." -ForegroundColor Red
+        Exit 1
+    }
+    Write-Host "[OK] Verified product.json configuration successfully" -ForegroundColor Green
+}
+
+# 4.975 Apply workbench.desktop.main.js chat enablement patches
+Write-Host "[INFO] Applying workbench chat enablement patches..." -ForegroundColor Yellow
+$patchWorkbenchScript = Join-Path $PSScriptRoot "patch_workbench.py"
+if (Test-Path $patchWorkbenchScript) {
+    python $patchWorkbenchScript "$vsCodePackDir" --skip-installed
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] workbench patch script failed! Aborting MSI build." -ForegroundColor Red
+        Exit 1
+    }
+    Write-Host "[OK] Applied workbench chat enablement patches" -ForegroundColor Green
+}
+
+# 4.976 Apply utility model preset & BYOK popup suppression patches
+Write-Host "[INFO] Applying utility model preset and BYOK popup suppression patches..." -ForegroundColor Yellow
+$patchUtilityScript = Join-Path $PSScriptRoot "patch_utility_models.py"
+if (Test-Path $patchUtilityScript) {
+    python $patchUtilityScript "$vsCodePackDir" --skip-installed
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] patch_utility_models script failed! Aborting MSI build." -ForegroundColor Red
+        Exit 1
+    }
+    Write-Host "[OK] Applied utility model preset and BYOK popup suppression patches" -ForegroundColor Green
 }
 
 
@@ -415,34 +551,29 @@ $dllExcludeList = @(
     'ffmpeg.dll'          # FFmpeg — Chromium signed
 )
 $filesToSign = Get-ChildItem -Path $vsCodePackDir -Include *.exe, *.dll, *.node -Recurse |
-    Where-Object { $dllExcludeList -notcontains $_.Name } |
+    Where-Object {
+        $dllExcludeList -notcontains $_.Name -and
+        $_.FullName -notmatch 'darwin' -and
+        $_.FullName -notmatch 'linux' -and
+        $_.FullName -notmatch 'alpine'
+    } |
     Select-Object -ExpandProperty FullName
 
 
 $count = 0
 foreach ($file in $filesToSign) {
     # Skip files that are already signed or fail to sign (like some readonly or system files)
-    # We will attempt to sign with a retry in case of transient timestamp issues
     Write-Host "Signing: $file"
-    $signed = $false
-    for ($i = 0; $i -lt 2; $i++) {
-        # Try signing with timestamp
-        & $signtoolPath sign /f $pfxPath /p $password /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $file 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            $signed = $true
-            break
-        }
-        # Try signing without timestamp as fallback
-        & $signtoolPath sign /f $pfxPath /p $password /fd SHA256 $file 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            $signed = $true
-            break
-        }
-        Start-Sleep -Seconds 1
+    if (Sign-FileWithCert $file) {
+        $count++
     }
-    if ($signed) { $count++ }
 }
 Write-Host "[OK] Signed $count files inside the packaging directory." -ForegroundColor Green
+
+# Force garbage collection and allow file system handles to settle
+[System.GC]::Collect()
+[System.GC]::WaitForPendingFinalizers()
+Start-Sleep -Seconds 3
 
 # 6. Generate the WiX source manifest (.wxs)
 Write-Host "[INFO] Generating WiX source manifest (.wxs)..." -ForegroundColor Yellow
@@ -454,15 +585,20 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "[OK] WiX source generated at $wxsPath" -ForegroundColor Green
 
-# 7. Compile the MSI using WiX Toolset v7
-Write-Host "[INFO] Compiling MSI using WiX Toolset v7..." -ForegroundColor Yellow
+# 7. Compile the MSI using WiX Toolset
+Write-Host "[INFO] Compiling MSI using WiX Toolset..." -ForegroundColor Yellow
 $msiPath = Join-Path $PSScriptRoot "HugOS.msi"
 if (Test-Path $msiPath) {
     Remove-Item -Path $msiPath -Force
 }
 
-# Run wix build with multi-threaded cabinet compression
-& wix build -arch x64 -ct 4 $wxsPath -out $msiPath
+# Allow file handles to settle before WiX packaging
+[System.GC]::Collect()
+[System.GC]::WaitForPendingFinalizers()
+Start-Sleep -Seconds 3
+
+# Run wix build with multi-threaded cabinet compression and bind path
+& wix build -b $PSScriptRoot -arch x64 -ct 4 $wxsPath -out $msiPath
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] WiX build failed." -ForegroundColor Red
     Exit 1
@@ -471,25 +607,28 @@ Write-Host "[OK] MSI built successfully at $msiPath" -ForegroundColor Green
 
 # 8. Sign the final MSI file
 Write-Host "[INFO] Signing final MSI package..." -ForegroundColor Yellow
-$signedMsi = $false
-for ($i = 0; $i -lt 3; $i++) {
-    & $signtoolPath sign /f $pfxPath /p $password /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $msiPath
-    if ($LASTEXITCODE -eq 0) {
-        $signedMsi = $true
-        break
-    }
-    & $signtoolPath sign /f $pfxPath /p $password /fd SHA256 $msiPath
-    if ($LASTEXITCODE -eq 0) {
-        $signedMsi = $true
-        break
-    }
-    Start-Sleep -Seconds 2
-}
+$signedMsi = Sign-FileWithCert $msiPath
 
 if ($signedMsi) {
     Write-Host "[OK] Signed final MSI installer successfully!" -ForegroundColor Green
     Write-Host "[INFO] Verifying signature (warnings/errors are expected for self-signed certificates)..." -ForegroundColor Yellow
-    & $signtoolPath verify /pa $msiPath 2>&1 | Out-String | Write-Host
+    if ($signtoolPath) {
+        & $signtoolPath verify /pa $msiPath 2>&1 | Out-String | Write-Host
+    } else {
+        Get-AuthenticodeSignature $msiPath | Out-String | Write-Host
+    }
+    # 9. Verify MSI Package Payload Integrity
+    Write-Host "[INFO] Verifying MSI payload contents and configuration presets..." -ForegroundColor Yellow
+    $verifyMsiScript = Join-Path $PSScriptRoot "verify_msi_contents.py"
+    if (Test-Path $verifyMsiScript) {
+        python $verifyMsiScript "$msiPath"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[ERROR] MSI payload verification failed! Aborting build." -ForegroundColor Red
+            Exit 1
+        }
+        Write-Host "[OK] MSI payload verified 100% compliant and intact" -ForegroundColor Green
+    }
+
     Write-Host "[SUCCESS] Process complete. MSI installer generated at: $msiPath" -ForegroundColor Green
     Exit 0
 } else {
