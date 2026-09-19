@@ -5,7 +5,10 @@ import glob
 # 1. Coding commands routing to CLI with file context
 # 2. MCP / System commands routing to fast native server handlers
 
-base_dir = r"d:\harfile\ModelFusion\IDE\vscode-126-extract\7e7950df89"
+base_dirs = [
+    r"d:\harfile\ModelFusion\IDE\VSCode-win32-x64",
+    r"d:\harfile\ModelFusion\IDE\vscode-126-extract\7e7950df89"
+]
 
 PATCH_SCRIPT = """
 let cliCodeCommands = new Set([
@@ -22,13 +25,16 @@ if (cliCodeCommands.has(Q)) {
 
 print("Checking extension.js files...")
 count = 0
-for file_path in glob.glob(os.path.join(base_dir, "**", "extension.js"), recursive=True):
-    with open(file_path, "r", encoding="utf-8") as f:
-        content = f.read()
-    
-    # Verify presence of cliCodeCommands registry
-    if "cliCodeCommands" in content or "security" in content:
-        print(f"Verified slash command routing architecture in {file_path}")
-        count += 1
+for base_dir in base_dirs:
+    if not os.path.exists(base_dir):
+        continue
+    for file_path in glob.glob(os.path.join(base_dir, "**", "extension.js"), recursive=True):
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        
+        # Verify presence of cliCodeCommands registry
+        if "cliCodeCommands" in content or "security" in content:
+            print(f"Verified slash command routing architecture in {file_path}")
+            count += 1
 
 print(f"Verified {count} extension files.")

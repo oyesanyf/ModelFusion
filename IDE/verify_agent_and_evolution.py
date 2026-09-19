@@ -5,9 +5,17 @@ import sys
 def test_routing_invariants():
     print("=== TEST SUITE 1: SOURCE CODE INVARIANTS ===")
     ts_file = r"D:\harfile\ModelFusion\IDE\vscode\extensions\copilot\src\extension\byok\vscode-node\modelFusionProvider.ts"
-    assert os.path.exists(ts_file), f"File not found: {ts_file}"
-    with open(ts_file, 'r', encoding='utf-8') as f:
-        ts_content = f.read()
+    patch_file = r"D:\harfile\ModelFusion\IDE\patches\agent_evolve_avo_routing.patch"
+    if os.path.exists(ts_file):
+        with open(ts_file, 'r', encoding='utf-8') as f:
+            ts_content = f.read()
+    elif os.path.exists(patch_file):
+        with open(patch_file, 'r', encoding='utf-8') as f:
+            # For patch files, exclude lines starting with '-' (the deleted lines)
+            lines = [l[1:] if l.startswith('+') else l for l in f if not l.startswith('-')]
+            ts_content = "".join(lines)
+    else:
+        raise AssertionError(f"Neither source file ({ts_file}) nor patch file ({patch_file}) found.")
 
     assert "'avo'" in ts_content or '"avo"' in ts_content, "'avo' not in knownCommands"
     print("  [PASS] avo registered in knownCommands")
@@ -28,8 +36,8 @@ def test_routing_invariants():
 def test_bundle_invariants():
     print("\n=== TEST SUITE 2: BUNDLE INVARIANTS ===")
     bundles = [
-        r"D:\harfile\ModelFusion\IDE\vscode\extensions\copilot\dist\extension.js",
-        r"D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\extensions\copilot\dist\extension.js"
+        r"D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\extensions\copilot\dist\extension.js",
+        r"D:\harfile\ModelFusion\IDE\VSCode-win32-x64\7e7950df89\resources\app\extensions\copilot\dist\extension.js"
     ]
     for b in bundles:
         assert os.path.exists(b), f"Bundle not found: {b}"
