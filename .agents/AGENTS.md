@@ -30,3 +30,12 @@
 1. **RETRIEVE:** Cite specific context sources, files, logs, or external docs referenced.
 2. **CONTEXT:** Summarize key verified facts and remaining open variables.
 3. **ANSWER:** Present a concise, scannable response using bullet points or tables.
+
+## Master CLI & Update Architecture (Persistent Memory)
+- **Master CLI Source**: `crates/cli` in `d:\harfile\ModelFusion` compiles to `target/release/cli.exe`. HugOS IDE directly invokes this binary.
+- **4-Way Binary Parity**: Always maintain identical SHA-256 hashes across `target/release/cli.exe`, `IDE/bin/cli.exe`, `IDE/VSCode-win32-x64/bin/cli.exe`, and `%LOCALAPPDATA%/HugOS IDE/bin/cli.exe`.
+- **All Models & All Modalities**: The update pipeline covers all 45+ Hugging Face tasks (Vision, Audio, NLP, Multimodal, Tabular, RL, Legal, Security, etc.) for over 2 million models, not just coding models.
+- **Runtime Available Memory Rule**: NEVER allocate models against total physical RAM. Always evaluate runtime free/available RAM (`res.free_ram_gb`) and free VRAM (`res.free_vram_mb`) to avoid OOM from concurrent workloads.
+- **Ollama Engine Setup**: Must auto-detect, auto-install silently (`OllamaSetup.exe /SILENT /NORESTART`), persist Ollama path to Windows User PATH registry, start `ollama serve`, and pull the hardware-appropriate model.
+- **Incremental Background Watcher**: `_runDatabaseUpdate()` periodically invokes `cli.exe --update --db-path <dbPath>` at below-normal priority with logs piped to the `ModelFusion Server` channel.
+
