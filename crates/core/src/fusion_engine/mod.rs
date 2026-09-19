@@ -76,6 +76,11 @@ pub fn get_small_model_ids(db_path: &Path, max_size_mb: f64) -> Vec<String> {
     }
 }
 
+/// Derive dynamic fusion model count based on live available runtime memory.
+pub fn derive_fusion_model_count() -> usize {
+    model_selection::memory::derive_fusion_model_count()
+}
+
 /// Run the model fusion pipeline.
 pub async fn run_fusion(
     prompt: &str,
@@ -104,7 +109,11 @@ pub async fn run_fusion(
     let selector = EnhancedModelSelector::new(db_path_ref)
         .context("⚠️ [FUSION] Failed to open database for model selection.")?;
         
-    let max_candidates = max_candidates.unwrap_or(10);
+    let max_candidates = match max_candidates {
+        Some(n) if n > 0 => n,
+        _ => derive_fusion_model_count(),
+    };
+    eprintln!("⚡ [FUSION] Effective fusion panel model count: {}", max_candidates);
 
     let is_multi_sample = fusion_mode == "multi-sample";
 
@@ -206,9 +215,14 @@ pub async fn run_fusion(
     let judge_model = if let Some(model_id) = forced_model {
         ModelConfig::huggingface(model_id)
     } else {
-        let judge_res = selector.select_best_model("text-generation", "judge evaluation", strategy, 1, None)
-            .context("⚠️ [FUSION] Failed to select judge model from database.")?;
-        ModelConfig::huggingface(&judge_res.best_model.model_id)
+        let cached = model_selection::memory::get_ollama_cached_models();
+        if let Some(m) = cached.iter().find(|m| m.contains("qwen") || m.contains("llama") || m.contains("deepseek")) {
+            ModelConfig::local(m)
+        } else {
+            let judge_res = selector.select_best_model("text-generation", "judge evaluation", strategy, 1, None)
+                .context("⚠️ [FUSION] Failed to select judge model from database.")?;
+            ModelConfig::huggingface(&judge_res.best_model.model_id)
+        }
     };
     eprintln!("⚖️ [FUSION] Selected judge model: {}", judge_model.name);
 
@@ -216,9 +230,14 @@ pub async fn run_fusion(
     let writer_model = if let Some(model_id) = forced_model {
         ModelConfig::huggingface(model_id)
     } else {
-        let writer_res = selector.select_best_model("text-generation", "final synthesis writing", strategy, 1, None)
-            .context("⚠️ [FUSION] Failed to select writer model from database.")?;
-        ModelConfig::huggingface(&writer_res.best_model.model_id)
+        let cached = model_selection::memory::get_ollama_cached_models();
+        if let Some(m) = cached.iter().find(|m| m.contains("qwen") || m.contains("llama") || m.contains("deepseek")) {
+            ModelConfig::local(m)
+        } else {
+            let writer_res = selector.select_best_model("text-generation", "final synthesis writing", strategy, 1, None)
+                .context("⚠️ [FUSION] Failed to select writer model from database.")?;
+            ModelConfig::huggingface(&writer_res.best_model.model_id)
+        }
     };
     eprintln!("✍️ [FUSION] Selected writer model: {}", writer_model.name);
 

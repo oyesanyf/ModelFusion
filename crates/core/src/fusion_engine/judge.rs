@@ -44,7 +44,40 @@ pub async fn judge_panel(
 ) -> anyhow::Result<JudgeAnalysis> {
     let judge_prompt = build_judge_prompt(prompt, answers);
     
-    let response_text = call_model(judge_model, &judge_prompt).await?;
+    let response_result = call_model(judge_model, &judge_prompt).await;
+    let response_text = match response_result {
+        Ok(text) => text,
+        Err(e) => {
+            log::warn!("Judge model '{}' failed: {}. Attempting fallback to successful panel models.", judge_model.name, e);
+            let mut panel_fallback = None;
+            for ans in answers {
+                if !ans.answer.starts_with("MODEL ERROR") {
+                    let fallback_cfg = ModelConfig::huggingface(&ans.model_name);
+                    if let Ok(text) = call_model(&fallback_cfg, &judge_prompt).await {
+                        panel_fallback = Some(text);
+                        break;
+                    }
+                }
+            }
+            match panel_fallback {
+                Some(text) => text,
+                None => {
+                    let best_answer = answers.iter()
+                        .find(|a| !a.answer.starts_with("MODEL ERROR"))
+                        .map(|a| a.answer.clone())
+                        .unwrap_or_else(|| "No successful model answers available.".to_string());
+                    return Ok(JudgeAnalysis {
+                        consensus: vec!["Direct consensus from available panel responses".to_string()],
+                        disagreements: vec![],
+                        unique_insights: vec![],
+                        blind_spots: vec![],
+                        risk_flags: vec![],
+                        recommended_final_position: best_answer,
+                    });
+                }
+            }
+        }
+    };
     
     // Strip <think>...</think> block if present
     let mut clean_json = if let Some(end_idx) = response_text.find("</think>") {
@@ -112,6 +145,12 @@ pub async fn write_final_answer(
     writer_prompt.push_str(&format!("Risk Flags: {:?}\n", judge_json.risk_flags));
     writer_prompt.push_str(&format!("Recommended Position: {}\n", judge_json.recommended_final_position));
 
-    let ans = call_model(writer_model, &writer_prompt).await?;
+    let ans = match call_model(writer_model, &writer_prompt).await {
+        Ok(text) => text,
+        Err(e) => {
+            log::warn!("Writer model '{}' failed: {}. Falling back to judge recommended position.", writer_model.name, e);
+            judge_json.recommended_final_position.clone()
+        }
+    };
     Ok(ans)
 }

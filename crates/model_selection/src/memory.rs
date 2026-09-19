@@ -72,23 +72,28 @@ impl SystemMemory {
     /// probed once per CLI invocation even if called from multiple select_best_model() calls.
     pub fn detect() -> Self {
         SYSTEM_MEMORY_CACHE.get_or_init(|| {
-            let mut sys = System::new_all();
-            sys.refresh_all();
-
-            let total_ram_gb = sys.total_memory() as f64 / 1_073_741_824.0;
-            let free_ram_gb = sys.free_memory() as f64 / 1_073_741_824.0;
-            let cpu_cores = sys.physical_core_count().unwrap_or_else(|| sys.cpus().len()).max(1);
-
-            let (gpu_name, gpu_vram_total_gb, gpu_vram_free_gb) = detect_gpu();
-            SystemMemory {
-                total_ram_gb,
-                free_ram_gb,
-                cpu_cores,
-                gpu_name,
-                gpu_vram_total_gb,
-                gpu_vram_free_gb,
-            }
+            Self::detect_live()
         }).clone()
+    }
+
+    /// Dynamically detect current runtime system resources (probed live without caching).
+    pub fn detect_live() -> Self {
+        let mut sys = System::new_all();
+        sys.refresh_all();
+
+        let total_ram_gb = sys.total_memory() as f64 / 1_073_741_824.0;
+        let free_ram_gb = sys.available_memory() as f64 / 1_073_741_824.0;
+        let cpu_cores = sys.physical_core_count().unwrap_or_else(|| sys.cpus().len()).max(1);
+
+        let (gpu_name, gpu_vram_total_gb, gpu_vram_free_gb) = detect_gpu();
+        SystemMemory {
+            total_ram_gb,
+            free_ram_gb,
+            cpu_cores,
+            gpu_name,
+            gpu_vram_total_gb,
+            gpu_vram_free_gb,
+        }
     }
 
     /// Whether a usable GPU is detected.
@@ -142,7 +147,37 @@ impl SystemMemory {
             println!("🎮 [MEMORY] GPU: Not detected (CPU-only execution)");
         }
     }
+
+    /// Derive the optimal number of models for a fusion panel based on live available runtime memory
+    /// (runtime free RAM and runtime free VRAM).
+    /// Free RAM >= 64GB or Free VRAM >= 24GB -> 7 models;
+    /// >= 32GB/12GB -> 5 models;
+    /// >= 16GB/6GB -> 4 models;
+    /// >= 8GB/3GB -> 3 models;
+    /// < 8GB -> 2 models.
+    pub fn derive_fusion_model_count(&self) -> usize {
+        let free_ram = self.free_ram_gb;
+        let free_vram = self.gpu_vram_free_gb;
+
+        if free_ram >= 64.0 || free_vram >= 24.0 {
+            7
+        } else if free_ram >= 32.0 || free_vram >= 12.0 {
+            5
+        } else if free_ram >= 16.0 || free_vram >= 6.0 {
+            4
+        } else if free_ram >= 8.0 || free_vram >= 3.0 {
+            3
+        } else {
+            2
+        }
+    }
 }
+
+/// Convenience function to detect live system memory and derive the optimal fusion model count.
+pub fn derive_fusion_model_count() -> usize {
+    SystemMemory::detect_live().derive_fusion_model_count()
+}
+
 
 /// Calculate hardware requirements dynamically based on model size and backend.
 pub fn get_requirements_for_model(params_b: f64, backend: Backend) -> HardwareRequirements {
@@ -614,17 +649,25 @@ pub fn is_openvino_model_cached(model_id: &str) -> bool {
 
 /// Check if a HuggingFace transformers model is cached/downloaded in the local HF hub cache.
 pub fn is_transformers_model_cached(model_id: &str) -> bool {
+    let folder_name = format!("models--{}", model_id.replace('/', "--"));
+
+    if let Ok(hf_home) = std::env::var("HF_HOME") {
+        let cache_path = std::path::Path::new(&hf_home).join("hub").join(&folder_name);
+        if cache_path.is_dir() {
+            return true;
+        }
+    }
+
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .ok();
         
     if let Some(home_path) = home {
-        let folder_name = format!("models--{}", model_id.replace('/', "--"));
         let cache_path = std::path::Path::new(&home_path)
             .join(".cache")
             .join("huggingface")
             .join("hub")
-            .join(folder_name);
+            .join(&folder_name);
         
         if cache_path.is_dir() {
             // Check if there are snapshots or lock files indicating complete/partial download
@@ -664,7 +707,7 @@ fn map_hf_to_ollama(hf_model_id: &str) -> String {
 /// This avoids spawning a `curl` subprocess for every single candidate model.
 static OLLAMA_CACHED_TAGS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
 
-fn get_ollama_cached_models() -> &'static Vec<String> {
+pub fn get_ollama_cached_models() -> &'static Vec<String> {
     OLLAMA_CACHED_TAGS.get_or_init(|| {
         let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
             .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
@@ -696,7 +739,30 @@ fn get_ollama_cached_models() -> &'static Vec<String> {
 pub fn is_ollama_model_cached(model_id: &str) -> bool {
     let target = map_hf_to_ollama(model_id).to_lowercase();
     let cached = get_ollama_cached_models();
-    cached.iter().any(|m| m.contains(&target) || target.contains(m.split(':').next().unwrap_or("")))
+    let (target_base, target_tag) = if let Some((base, tag)) = target.split_once(':') {
+        (base, Some(tag))
+    } else {
+        (target.as_str(), None)
+    };
+
+    cached.iter().any(|m| {
+        let m_lower = m.to_lowercase();
+        if m_lower == target {
+            return true;
+        }
+        if let Some((m_base, m_tag)) = m_lower.split_once(':') {
+            if m_base == target_base {
+                match target_tag {
+                    Some(tt) => m_tag == tt || m_tag.starts_with(tt) || tt == "latest",
+                    None => true,
+                }
+            } else {
+                false
+            }
+        } else {
+            m_lower == target_base
+        }
+    })
 }
 
 
@@ -721,9 +787,11 @@ mod tests {
 
     #[test]
     fn test_transformers_cache() {
-        // Since we know apple/OpenELM-1_1B-Instruct is cached on this system, this test should pass
-        let is_cached = is_transformers_model_cached("apple/OpenELM-1_1B-Instruct");
-        println!("apple/OpenELM-1_1B-Instruct cached: {}", is_cached);
+        assert!(!is_transformers_model_cached("nonexistent-test/definitely-not-cached-model-xyz"));
+        let is_cached = is_transformers_model_cached("Qwen/Qwen2.5-1.5B-Instruct")
+            || is_transformers_model_cached("HuggingFaceTB/SmolLM2-135M-Instruct")
+            || is_transformers_model_cached("apple/OpenELM-1_1B-Instruct");
+        println!("Test model cached: {}", is_cached);
         assert!(is_cached);
     }
 
@@ -759,5 +827,58 @@ mod tests {
         // 7B model, Ollama Q4: 7 × 0.6 × 1.2 = 5.04 GB
         let mem = estimate_runtime_memory_gb(7.0, Backend::Ollama);
         assert!((mem - 5.04).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_derive_fusion_model_count_tiers() {
+        let mem_64 = SystemMemory {
+            total_ram_gb: 128.0,
+            free_ram_gb: 64.0,
+            cpu_cores: 16,
+            gpu_name: None,
+            gpu_vram_total_gb: 0.0,
+            gpu_vram_free_gb: 0.0,
+        };
+        assert_eq!(mem_64.derive_fusion_model_count(), 7);
+
+        let mem_32 = SystemMemory {
+            total_ram_gb: 64.0,
+            free_ram_gb: 32.0,
+            cpu_cores: 16,
+            gpu_name: None,
+            gpu_vram_total_gb: 0.0,
+            gpu_vram_free_gb: 0.0,
+        };
+        assert_eq!(mem_32.derive_fusion_model_count(), 5);
+
+        let mem_16 = SystemMemory {
+            total_ram_gb: 32.0,
+            free_ram_gb: 16.0,
+            cpu_cores: 8,
+            gpu_name: None,
+            gpu_vram_total_gb: 0.0,
+            gpu_vram_free_gb: 0.0,
+        };
+        assert_eq!(mem_16.derive_fusion_model_count(), 4);
+
+        let mem_8 = SystemMemory {
+            total_ram_gb: 16.0,
+            free_ram_gb: 8.0,
+            cpu_cores: 4,
+            gpu_name: None,
+            gpu_vram_total_gb: 0.0,
+            gpu_vram_free_gb: 0.0,
+        };
+        assert_eq!(mem_8.derive_fusion_model_count(), 3);
+
+        let mem_4 = SystemMemory {
+            total_ram_gb: 8.0,
+            free_ram_gb: 4.0,
+            cpu_cores: 2,
+            gpu_name: None,
+            gpu_vram_total_gb: 0.0,
+            gpu_vram_free_gb: 0.0,
+        };
+        assert_eq!(mem_4.derive_fusion_model_count(), 2);
     }
 }

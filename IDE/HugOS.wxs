@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="HugOS IDE" Manufacturer="HugOS Team" Version="1.126.97" UpgradeCode="d77b7e06-80ba-4137-bcf4-654b95ccebc5" Scope="perUser">
+  <Package Name="HugOS IDE" Manufacturer="HugOS Team" Version="1.126.111" UpgradeCode="d77b7e06-80ba-4137-bcf4-654b95ccebc5" Scope="perUser">
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." Schedule="afterInstallInitialize" AllowSameVersionUpgrades="yes" />
 
     <MediaTemplate EmbedCab="yes" />
@@ -119191,20 +119191,23 @@
       <Component Id="cmp_34366" Guid="*" Directory="dir_8025">
         <File Id="fil_34366" Source="VSCode-win32-x64\src\scripts\run_model_vllm.py" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_34367" Guid="*" Directory="dir_8026">
-        <File Id="fil_34367" Source="VSCode-win32-x64\src\scripts\__pycache__\getvino.cpython-314.pyc" KeyPath="yes" />
+      <Component Id="cmp_34367" Guid="*" Directory="dir_8025">
+        <File Id="fil_34367" Source="VSCode-win32-x64\src\scripts\web_research_agent.py" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_34368" Guid="*" Directory="INSTALLFOLDER">
-        <File Id="fil_34368" Source="VSCode-win32-x64\v8_context_snapshot.bin" KeyPath="yes" />
+      <Component Id="cmp_34368" Guid="*" Directory="dir_8026">
+        <File Id="fil_34368" Source="VSCode-win32-x64\src\scripts\__pycache__\getvino.cpython-314.pyc" KeyPath="yes" />
       </Component>
       <Component Id="cmp_34369" Guid="*" Directory="INSTALLFOLDER">
-        <File Id="fil_34369" Source="VSCode-win32-x64\vk_swiftshader.dll" KeyPath="yes" />
+        <File Id="fil_34369" Source="VSCode-win32-x64\v8_context_snapshot.bin" KeyPath="yes" />
       </Component>
       <Component Id="cmp_34370" Guid="*" Directory="INSTALLFOLDER">
-        <File Id="fil_34370" Source="VSCode-win32-x64\vk_swiftshader_icd.json" KeyPath="yes" />
+        <File Id="fil_34370" Source="VSCode-win32-x64\vk_swiftshader.dll" KeyPath="yes" />
       </Component>
       <Component Id="cmp_34371" Guid="*" Directory="INSTALLFOLDER">
-        <File Id="fil_34371" Source="VSCode-win32-x64\vulkan-1.dll" KeyPath="yes" />
+        <File Id="fil_34371" Source="VSCode-win32-x64\vk_swiftshader_icd.json" KeyPath="yes" />
+      </Component>
+      <Component Id="cmp_34372" Guid="*" Directory="INSTALLFOLDER">
+        <File Id="fil_34372" Source="VSCode-win32-x64\vulkan-1.dll" KeyPath="yes" />
       </Component>
     </ComponentGroup>
   </Package>

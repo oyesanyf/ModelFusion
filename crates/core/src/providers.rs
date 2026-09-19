@@ -266,13 +266,14 @@ impl HuggingFaceProvider {
             .unwrap_or_else(|_| "int8".to_string());
 
         let timeout_duration = std::time::Duration::from_secs(self.config.timeout_seconds.max(900));
+        let safe_prompt = if prompt.len() > 8000 { &prompt[..8000] } else { prompt };
         let output = tokio::time::timeout(
             timeout_duration,
             tokio::process::Command::new("python")
                 .env("PYTHONIOENCODING", "utf-8")
                 .arg(&script_path)
                 .arg(&self.config.model_id)
-                .arg(prompt)
+                .arg(safe_prompt)
                 .arg(self.config.max_tokens.to_string())
                 .arg(self.config.temperature.to_string())
                 .arg(&ov_model_dir)
@@ -315,13 +316,14 @@ impl HuggingFaceProvider {
         };
 
         let timeout_duration = std::time::Duration::from_secs(self.config.timeout_seconds.max(600));
+        let safe_prompt = if prompt.len() > 8000 { &prompt[..8000] } else { prompt };
         let output = tokio::time::timeout(
             timeout_duration,
             tokio::process::Command::new("python")
                 .env("PYTHONIOENCODING", "utf-8")
                 .arg(&script_path)
                 .arg(&self.config.model_id)
-                .arg(prompt)
+                .arg(safe_prompt)
                 .arg(self.config.max_tokens.to_string())
                 .arg(self.config.temperature.to_string())
                 .arg(device_arg)
@@ -363,19 +365,21 @@ impl HuggingFaceProvider {
         };
 
         let timeout_duration = std::time::Duration::from_secs(self.config.timeout_seconds.max(300));
+        let safe_prompt = if prompt.len() > 8000 { &prompt[..8000] } else { prompt };
         let output = tokio::time::timeout(
             timeout_duration,
             tokio::process::Command::new("python")
                 .env("PYTHONIOENCODING", "utf-8")
                 .arg(&script_path)
                 .arg(&self.config.model_id)
-                .arg(prompt)
+                .arg(safe_prompt)
                 .arg(self.config.max_tokens.to_string())
                 .arg(self.config.temperature.to_string())
                 .arg(device_arg)
                 .kill_on_drop(true)
                 .output()
         ).await;
+
 
         match output {
             Ok(Ok(out)) => {
@@ -400,7 +404,14 @@ impl HuggingFaceProvider {
     }
 
     async fn execute_ollama(&self, prompt: &str, start: &Instant) -> Result<ProviderResult> {
-        let ollama_model = map_hf_to_ollama(&self.config.model_id);
+        let mut ollama_model = map_hf_to_ollama(&self.config.model_id);
+        let cached = model_selection::memory::get_ollama_cached_models();
+        if !cached.is_empty() && !model_selection::memory::is_ollama_model_cached(&self.config.model_id) {
+            if let Some(fallback) = cached.iter().find(|m| m.contains("qwen") || m.contains("llama") || m.contains("deepseek")).or_else(|| cached.first()) {
+                log::info!("Ollama model '{}' not installed. Using installed fallback '{}'", ollama_model, fallback);
+                ollama_model = fallback.clone();
+            }
+        }
         let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
             .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
         
@@ -434,8 +445,8 @@ impl HuggingFaceProvider {
 
         let client = reqwest::Client::builder()
             .no_proxy()
-            .connect_timeout(std::time::Duration::from_secs(3))
-            .timeout(std::time::Duration::from_secs(self.config.timeout_seconds))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(self.config.timeout_seconds.max(180)))
             .build()?;
 
         let res = client.post(&url).json(&body).send().await?;
@@ -455,6 +466,32 @@ impl HuggingFaceProvider {
             })
         } else {
             let err_text = res.text().await.unwrap_or_default();
+            if err_text.contains("not found") && !cached.is_empty() {
+                if let Some(fallback) = cached.iter().find(|m| m.contains("qwen") || m.contains("llama") || m.contains("deepseek")).or_else(|| cached.first()) {
+                    if fallback != &ollama_model {
+                        log::info!("Model '{}' not found in Ollama, retrying with '{}'", ollama_model, fallback);
+                        let mut body_retry = body.clone();
+                        body_retry["model"] = serde_json::json!(fallback);
+                        if let Ok(res_retry) = client.post(&url).json(&body_retry).send().await {
+                            if res_retry.status().is_success() {
+                                let data: serde_json::Value = res_retry.json().await?;
+                                let content = data["message"]["content"]
+                                    .as_str()
+                                    .unwrap_or_default()
+                                    .to_string();
+                                let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
+                                return Ok(ProviderResult {
+                                    content,
+                                    tokens_used,
+                                    cost: 0.0,
+                                    latency_ms: start.elapsed().as_millis() as f64,
+                                    answer_type: "OLLAMA_ANSWER".to_string(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
             bail!("Ollama error: {}", err_text);
         }
     }
@@ -723,8 +760,8 @@ impl LocalProvider {
     pub fn new(config: ModelConfig) -> Self {
         let client = Client::builder()
             .no_proxy()
-            .connect_timeout(Duration::from_secs(3))
-            .timeout(Duration::from_secs(config.timeout_seconds))
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(config.timeout_seconds.max(180)))
             .build()
             .unwrap_or_default();
         Self { config, client }
@@ -745,8 +782,16 @@ impl LLMProvider for LocalProvider {
 
         let (clean_prompt, images, _audio) = extract_media_from_prompt(prompt);
 
+        let mut model_to_use = self.config.model_id.clone();
+        let cached = model_selection::memory::get_ollama_cached_models();
+        if !cached.is_empty() && !cached.iter().any(|m| m == &model_to_use || model_to_use.starts_with(m)) {
+            if let Some(fallback) = cached.iter().find(|m| m.contains("qwen") || m.contains("llama") || m.contains("deepseek")).or_else(|| cached.first()) {
+                model_to_use = fallback.clone();
+            }
+        }
+
         let mut body = serde_json::json!({
-            "model": self.config.model_id,
+            "model": model_to_use,
             "prompt": clean_prompt,
             "stream": false,
             "options": {
@@ -779,6 +824,28 @@ impl LLMProvider for LocalProvider {
                     })
                 } else {
                     let err_text = res.text().await.unwrap_or_default();
+                    if err_text.contains("not found") && !cached.is_empty() {
+                        if let Some(fallback) = cached.iter().find(|m| m.contains("qwen") || m.contains("llama") || m.contains("deepseek")).or_else(|| cached.first()) {
+                            if fallback != &model_to_use {
+                                log::info!("Model '{}' not found in Ollama, retrying with '{}'", model_to_use, fallback);
+                                body["model"] = serde_json::json!(fallback);
+                                if let Ok(res_retry) = self.client.post(&url).json(&body).send().await {
+                                    if res_retry.status().is_success() {
+                                        let data: serde_json::Value = res_retry.json().await?;
+                                        let content = data["response"].as_str().unwrap_or_default().to_string();
+                                        let tokens_used = prompt.split_whitespace().count() + content.split_whitespace().count();
+                                        return Ok(ProviderResult {
+                                            content,
+                                            tokens_used,
+                                            cost: 0.0,
+                                            latency_ms: start.elapsed().as_millis() as f64,
+                                            answer_type: "LOCAL_ANSWER".to_string(),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
                     bail!("Local Ollama API error: {}", err_text);
                 }
             }

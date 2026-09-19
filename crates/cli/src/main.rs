@@ -622,6 +622,20 @@ struct Args {
     #[arg(long, help = "Perform semantic search query")]
     search_query: Option<String>,
 
+    #[arg(
+        long,
+        alias = "reseach",
+        help = "Perform deep web research using open-weight reasoning models (Qwen 2.5 / DeepSeek-R1) and web search agents"
+    )]
+    research: Option<String>,
+
+    #[arg(
+        long,
+        alias = "serarch",
+        help = "Perform live web search and summarization using open-weight models"
+    )]
+    search: Option<String>,
+
     #[arg(long, default_value = "5", help = "Number of top results for search")]
     top_k: u32,
 
@@ -1248,6 +1262,30 @@ async fn run(args: Args) -> Result<()> {
         return Ok(());
     }
 
+    if let Some(ref q) = args.research {
+        let topic = if q.trim().is_empty() {
+            "open-weight reasoning models on Hugging Face"
+        } else {
+            q.trim()
+        };
+        println!("🌐 Initiating Autonomous Deep Web Research for: \"{}\"...\n", topic);
+        let report = modelfusion_core::run_deep_research(topic, 8, args.model.as_deref()).await?;
+        println!("{}", report);
+        return Ok(());
+    }
+
+    if let Some(ref q) = args.search {
+        let query = if q.trim().is_empty() {
+            "open-weight reasoning models on Hugging Face"
+        } else {
+            q.trim()
+        };
+        println!("🔍 Performing Live Web Search for: \"{}\"...\n", query);
+        let results = modelfusion_core::run_web_search_only(query, 6).await?;
+        println!("{}", results);
+        return Ok(());
+    }
+
     // Dispatch system commands first
     if args.active_model {
         let report = generate_active_models_report(args.db_path.as_deref()).await;
@@ -1647,6 +1685,38 @@ async fn run(args: Args) -> Result<()> {
         let mut fusion = args.fusion;
         if args.enable_slash_commands {
             parse_slash_commands_in_prompt(&mut final_prompt, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
+        }
+
+        if let Ok(rq) = std::env::var("MODELFUSION_RESEARCH_QUERY") {
+            if !rq.is_empty() {
+                println!("🌐 Initiating Autonomous Deep Web Research for: \"{}\"...\n", rq);
+                let report = modelfusion_core::run_deep_research(&rq, 8, args.model.as_deref()).await?;
+                println!("{}", report);
+                return Ok(());
+            }
+        }
+
+        if let Ok(sq) = std::env::var("MODELFUSION_SEARCH_QUERY") {
+            if !sq.is_empty() {
+                println!("🔍 Performing Live Web Search for: \"{}\"...\n", sq);
+                let results = modelfusion_core::run_web_search_only(&sq, 6).await?;
+                println!("{}", results);
+                return Ok(());
+            }
+        }
+
+        if let Some((is_search, topic)) = detect_natural_language_research(&final_prompt) {
+            if is_search {
+                println!("🔍 Performing Live Web Search for: \"{}\"...\n", topic);
+                let results = modelfusion_core::run_web_search_only(&topic, 6).await?;
+                println!("{}", results);
+                return Ok(());
+            } else {
+                println!("🌐 Initiating Autonomous Deep Web Research for: \"{}\"...\n", topic);
+                let report = modelfusion_core::run_deep_research(&topic, 8, args.model.as_deref()).await?;
+                println!("{}", report);
+                return Ok(());
+            }
         }
 
         if let Some(ref folder_path) = args.folder {
@@ -2468,6 +2538,247 @@ pub fn extract_latest_user_query(prompt: &str) -> String {
     }
 }
 
+/// Detects if a user's conversational prompt is asking to perform internet research or live web search.
+/// Returns Some((is_search_only, extracted_topic_or_query)) if detected, None otherwise.
+pub fn detect_natural_language_research(raw_query: &str) -> Option<(bool, String)> {
+    let text = raw_query.trim();
+    if text.is_empty() {
+        return None;
+    }
+    let lower = text.to_lowercase();
+
+    // Guard: ignore algorithmic search programming questions
+    if lower.contains("binary search")
+        || lower.contains("linear search")
+        || lower.contains("breadth first search")
+        || lower.contains("depth first search")
+        || lower.contains("search algorithm")
+        || lower.contains("search tree")
+        || lower.contains("grid search")
+        || lower.contains("search bar")
+        || lower.contains("elastic search")
+        || lower.contains("elasticsearch")
+    {
+        return None;
+    }
+
+    // Direct trigger patterns and their prefixes: (trigger, is_search_only)
+    let triggers: &[(&str, bool)] = &[
+        ("search the internet for", false),
+        ("search the internet about", false),
+        ("search the internet on", false),
+        ("search the internet:", false),
+        ("search the internet", false),
+        ("serarch the internet for", false),
+        ("serarch the internet about", false),
+        ("serarch the internet on", false),
+        ("serarch the internet:", false),
+        ("serarch the internet", false),
+        ("search the web for", false),
+        ("search the web about", false),
+        ("search the web on", false),
+        ("search the web:", false),
+        ("search the web", false),
+        ("browse the web for", false),
+        ("browse the web about", false),
+        ("browse the web on", false),
+        ("browse the web", false),
+        ("do research on", false),
+        ("do research about", false),
+        ("do research for", false),
+        ("do research:", false),
+        ("do research", false),
+        ("do reseach on", false),
+        ("do reseach about", false),
+        ("do reseach for", false),
+        ("do reseach:", false),
+        ("do reseach", false),
+        ("deep research on", false),
+        ("deep research about", false),
+        ("deep research for", false),
+        ("deep research:", false),
+        ("deep research", false),
+        ("web research on", false),
+        ("web research about", false),
+        ("web research for", false),
+        ("web research", false),
+        ("internet research on", false),
+        ("internet research about", false),
+        ("internet research for", false),
+        ("internet research:", false),
+        ("internet research", false),
+        ("internet search for", false),
+        ("internet search about", false),
+        ("internet search on", false),
+        ("internet search:", false),
+        ("internet search", false),
+        ("online search for", false),
+        ("online search about", false),
+        ("online search on", false),
+        ("online search", false),
+        ("live web search for", true),
+        ("live web search:", true),
+        ("live web search", true),
+        ("live search for", true),
+        ("live search:", true),
+        ("live search", true),
+        ("search online for", false),
+        ("search online about", false),
+        ("search online", false),
+        ("research on ", false),
+        ("research about ", false),
+        ("research for ", false),
+        ("research: ", false),
+        ("research:", false),
+        ("reseach on ", false),
+        ("reseach about ", false),
+        ("reseach for ", false),
+        ("reseach: ", false),
+        ("reseach:", false),
+        ("search for ", true),
+        ("search for:", true),
+        ("search about ", true),
+        ("search on ", true),
+        ("search: ", true),
+        ("search:", true),
+        ("serarch for ", true),
+        ("serarch for:", true),
+        ("serarch about ", true),
+        ("serarch on ", true),
+        ("serarch: ", true),
+        ("serarch:", true),
+    ];
+
+    for (trigger, is_search_only) in triggers {
+        if let Some(idx) = lower.find(trigger) {
+            let after = text[idx + trigger.len()..].trim();
+            let clean_topic = after
+                .trim_start_matches(':')
+                .trim_start_matches('-')
+                .trim()
+                .trim_end_matches('?')
+                .trim_end_matches('.')
+                .trim_end_matches('!')
+                .trim();
+            let final_topic = if clean_topic.is_empty() {
+                let before = text[..idx].trim();
+                let before_lower = before.to_lowercase();
+                if before_lower.ends_with("for") || before_lower.ends_with("about") || before_lower.ends_with("on") {
+                    let stripped = before.trim_end_matches("for").trim_end_matches("about").trim_end_matches("on").trim();
+                    if stripped.is_empty() {
+                        "open-weight reasoning models on Hugging Face".to_string()
+                    } else {
+                        stripped.to_string()
+                    }
+                } else if !before.is_empty()
+                    && !before_lower.starts_with("can you")
+                    && !before_lower.starts_with("please")
+                    && !before_lower.starts_with("could you")
+                    && !before_lower.starts_with("would you")
+                {
+                    before.to_string()
+                } else {
+                    "open-weight reasoning models on Hugging Face".to_string()
+                }
+            } else {
+                clean_topic.to_string()
+            };
+            return Some((*is_search_only, final_topic));
+        }
+    }
+
+    // Direct standalone words
+    if lower == "research" || lower == "reseach" {
+        return Some((false, "open-weight reasoning models on Hugging Face".to_string()));
+    }
+    if lower == "search" || lower == "serarch" {
+        return Some((true, "open-weight reasoning models on Hugging Face".to_string()));
+    }
+
+    // Strip polite leading prefixes (e.g. "please", "can you", "could you", "would you")
+    let (prefix_offset, effective_lower) = if let Some(stripped) = lower.strip_prefix("can you please ") {
+        (15, stripped.trim_start())
+    } else if let Some(stripped) = lower.strip_prefix("could you please ") {
+        (17, stripped.trim_start())
+    } else if let Some(stripped) = lower.strip_prefix("please ") {
+        (7, stripped.trim_start())
+    } else if let Some(stripped) = lower.strip_prefix("can you ") {
+        (8, stripped.trim_start())
+    } else if let Some(stripped) = lower.strip_prefix("could you ") {
+        (10, stripped.trim_start())
+    } else if let Some(stripped) = lower.strip_prefix("would you ") {
+        (10, stripped.trim_start())
+    } else {
+        (0, lower.as_str())
+    };
+
+    let effective_text = &text[prefix_offset.min(text.len())..];
+
+    if effective_lower == "research" || effective_lower == "reseach" {
+        return Some((false, "open-weight reasoning models on Hugging Face".to_string()));
+    }
+    if effective_lower == "search" || effective_lower == "serarch" {
+        return Some((true, "open-weight reasoning models on Hugging Face".to_string()));
+    }
+
+    // Check direct command prefixes with exact slice lengths
+    if effective_lower.starts_with("research ") || effective_lower.starts_with("research:") {
+        let skip = 9;
+        let topic = effective_text[skip..].trim()
+            .trim_start_matches(':')
+            .trim_start_matches("on ")
+            .trim_start_matches("about ")
+            .trim_start_matches("for ")
+            .trim()
+            .trim_end_matches('?')
+            .trim_end_matches('.')
+            .trim_end_matches('!')
+            .trim();
+        return Some((false, if topic.is_empty() { "open-weight reasoning models on Hugging Face".to_string() } else { topic.to_string() }));
+    } else if effective_lower.starts_with("reseach ") || effective_lower.starts_with("reseach:") {
+        let skip = 8;
+        let topic = effective_text[skip..].trim()
+            .trim_start_matches(':')
+            .trim_start_matches("on ")
+            .trim_start_matches("about ")
+            .trim_start_matches("for ")
+            .trim()
+            .trim_end_matches('?')
+            .trim_end_matches('.')
+            .trim_end_matches('!')
+            .trim();
+        return Some((false, if topic.is_empty() { "open-weight reasoning models on Hugging Face".to_string() } else { topic.to_string() }));
+    } else if effective_lower.starts_with("search ") || effective_lower.starts_with("search:") {
+        let skip = 7;
+        let topic = effective_text[skip..].trim()
+            .trim_start_matches(':')
+            .trim_start_matches("for ")
+            .trim_start_matches("about ")
+            .trim_start_matches("on ")
+            .trim()
+            .trim_end_matches('?')
+            .trim_end_matches('.')
+            .trim_end_matches('!')
+            .trim();
+        return Some((true, if topic.is_empty() { "open-weight reasoning models on Hugging Face".to_string() } else { topic.to_string() }));
+    } else if effective_lower.starts_with("serarch ") || effective_lower.starts_with("serarch:") {
+        let skip = 8;
+        let topic = effective_text[skip..].trim()
+            .trim_start_matches(':')
+            .trim_start_matches("for ")
+            .trim_start_matches("about ")
+            .trim_start_matches("on ")
+            .trim()
+            .trim_end_matches('?')
+            .trim_end_matches('.')
+            .trim_end_matches('!')
+            .trim();
+        return Some((true, if topic.is_empty() { "open-weight reasoning models on Hugging Face".to_string() } else { topic.to_string() }));
+    }
+
+    None
+}
+
 /// Strip system prompt leakage and meta-commentary from model responses.
 /// Small models (1.5B-3B) often echo their instructions or add meta-commentary
 /// like "I don't see any specific instructions..." which should be hidden from users.
@@ -2936,8 +3247,13 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 "/orchestrate" => {
                     let mut prompt = request_json["prompt"].as_str().unwrap_or("").to_string();
                     let mut strategy = request_json["selection_strategy"].as_str().unwrap_or("multi_objective").to_string();
-                    let fusion_mode = request_json["fusion_mode"].as_str().unwrap_or("multi-model").to_string();
-                    let fusion_models = request_json["fusion_models"].as_u64().unwrap_or(10) as usize;
+                    let raw_fusion_models = request_json["fusion_models"].as_u64().unwrap_or(0) as usize;
+                    let fusion_models = if raw_fusion_models == 0 {
+                        model_selection::memory::derive_fusion_model_count()
+                    } else {
+                        raw_fusion_models
+                    };
+                    let fusion_mode = request_json["fusion_mode"].as_str().unwrap_or("auto").to_string();
                     let budget = request_json["budget"].as_f64().unwrap_or(10.0);
                     let res = query_system_resources();
                     let mut openvino = request_json["openvino"].as_bool().unwrap_or(false);
@@ -2965,8 +3281,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         cpu = false;
                         openvino = false;
                     }
-                    let mut fusion = request_json["fusion"].as_bool().unwrap_or(false);
+                    let mut fusion = request_json.get("fusion").and_then(|v| v.as_bool()).unwrap_or(true);
                     let model_override = request_json["model"]
+
                         .as_str()
                         .filter(|s| !s.is_empty())
                         .map(|s| s.to_string());
@@ -3039,50 +3356,518 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         }
 
                         let known_slash_commands = [
-                            // Original fast-interception commands
-                            "keys", "api-keys", "mcp", "stats", "statsd", "sysinfo", "sys-info", "tasks", "task",
-                            "active-model", "active_model", "active-models", "current-model", "current_model", "current-models",
-                            "ide-model", "ide_model", "ide-models", "models-in-use", "models_in_use",
-                            "version", "updatedb", "update-db",
-                            "command", "commands", "help", "comment", "comments", "doc", "docs",
-                            "cache-stats", "performance-stats", "decision-stats", "evolve", "evovle", "evove", "evoce", "evolv", "evolution",
-                            "security", "refactor",
-                            // Code & task directives
-                            "edit", "fix", "explain", "review", "tests", "test", "audit", "generate", "optimize",
-                            "export-pdf", "export_pdf", "exportpdf",
-                            "code-vulnerability-detection", "codevulnerabilitydetection",
-                            // Participant directives
-                            "agent", "modelfusion", "hugos",
-                            // MCP tools (snake_case + kebab-case aliases)
-                            "execute", "quick_answer", "quick-answer", "qa",
+                            "active-model",
+                            "active-models",
+                            "active_model",
+                            "activemodel",
+                            "add-documents",
+                            "add_documents",
+                            "adddocuments",
+                            "agent",
+                            "analytics-demo",
+                            "analytics_demo",
+                            "analyticsdemo",
+                            "analyze-file",
+                            "analyze-folder",
+                            "analyze_file",
+                            "analyze_folder",
+                            "anonymization",
+                            "api-keys",
+                            "api_keys",
+                            "apikeys",
+                            "audio-classification",
+                            "audio_classification",
+                            "audioclassification",
+                            "audit",
+                            "automatic-speech-recognition",
+                            "automatic_speech_recognition",
+                            "automaticspeechrecognition",
+                            "bias-detection",
+                            "bias_detection",
+                            "biasdetection",
+                            "biomedical-ner",
+                            "biomedical_ner",
+                            "biomedicalner",
+                            "budget",
+                            "cache-stats",
+                            "cache_stats",
+                            "cachestats",
+                            "case-outcome-prediction",
+                            "case_outcome_prediction",
+                            "caseoutcomeprediction",
+                            "causal-language-modeling",
+                            "causal_language_modeling",
+                            "causallanguagemodeling",
+                            "chain-of-thought",
+                            "chain_of_thought",
+                            "chainofthought",
+                            "chemical-reaction-ner",
+                            "chemical_reaction_ner",
+                            "chemicalreactionner",
+                            "citation-intent-classification",
+                            "citation_intent_classification",
+                            "citationintentclassification",
+                            "clear-cache",
+                            "clear_cache",
+                            "clearcache",
+                            "code-clone-detection",
+                            "code-summary-generation",
+                            "code-task",
+                            "code-vulnerability-detection",
+                            "code_clone_detection",
+                            "code_summary_generation",
+                            "code_task",
+                            "code_vulnerability_detection",
+                            "codeclonedetection",
+                            "codesummarygeneration",
+                            "codevulnerabilitydetection",
+                            "command",
+                            "commands",
+                            "comment",
+                            "comments",
+                            "config",
+                            "context",
+                            "context-auto",
+                            "context_auto",
+                            "contextauto",
+                            "contract-clause-classification",
+                            "contract_clause_classification",
+                            "contractclauseclassification",
+                            "coreference-resolution",
+                            "coreference_resolution",
+                            "coreferenceresolution",
+                            "cpu",
+                            "current-model",
+                            "current-models",
+                            "current_model",
+                            "cyberbullying-detection",
+                            "cyberbullying_detection",
+                            "cyberbullyingdetection",
+                            "data-analyst",
+                            "data-science",
+                            "data_science",
+                            "dataanalyst",
+                            "datascience",
+                            "db-path",
+                            "db-stats",
+                            "db_path",
+                            "dbpath",
+                            "debug",
+                            "decision-stats",
+                            "decision_stats",
+                            "decisionstats",
+                            "delegation",
+                            "demo-hyde",
+                            "demo_hyde",
+                            "demohyde",
+                            "depth",
+                            "depth-estimation",
+                            "depth_estimation",
+                            "depthestimation",
+                            "doc",
+                            "docs",
+                            "document-question-answering",
+                            "document_question_answering",
+                            "documentquestionanswering",
+                            "domain-task",
+                            "domain_task",
+                            "edit",
+                            "emotion-detection",
+                            "emotion-recognition",
+                            "emotion_detection",
+                            "emotion_recognition",
+                            "emotiondetection",
+                            "emotionrecognition",
+                            "enable-hyde",
+                            "enable-innovations",
+                            "enable-ml",
+                            "enable-ml-selection",
+                            "enable-slash-commands",
+                            "enable_hyde",
+                            "enable_innovations",
+                            "enable_ml",
+                            "enable_ml_selection",
+                            "enable_slash_commands",
+                            "enablehyde",
+                            "enableinnovations",
+                            "enableml",
+                            "enablemlselection",
+                            "enableslashcommands",
+                            "evoce",
+                            "evolution",
+                            "evolv",
+                            "evolve",
+                            "evove",
+                            "evovle",
+                            "execute",
+                            "explain",
+                            "export-pdf",
+                            "export_pdf",
+                            "exportpdf",
+                            "fake-news-detection",
+                            "fake_news_detection",
+                            "fakenewsdetection",
+                            "feature-extraction",
+                            "feature-ranking",
+                            "feature_extraction",
+                            "feature_ranking",
+                            "featureextraction",
+                            "featureranking",
+                            "file",
+                            "fill-mask",
+                            "fill_mask",
+                            "fillmask",
+                            "financial-ner",
+                            "financial-sentiment-analysis",
+                            "financial_ner",
+                            "financial_sentiment_analysis",
+                            "financialner",
+                            "financialsentimentanalysis",
+                            "fix",
+                            "folder",
+                            "full",
+                            "fusion",
+                            "fusion-mode",
+                            "fusion-models",
+                            "fusion_mode",
+                            "fusion_models",
+                            "fusionmode",
+                            "fusionmodels",
+                            "generate",
+                            "generation-groundedness",
+                            "generation_groundedness",
+                            "generationgroundedness",
+                            "get-cache-stats",
+                            "get-database-stats",
+                            "get-decision-stats",
+                            "get-ml-analytics",
+                            "get-model-ranking",
+                            "get-model-recommendations",
+                            "get-novel-ai-stats",
+                            "get-performance-stats",
+                            "get-system-info",
+                            "get_cache_stats",
+                            "get_database_stats",
+                            "get_decision_stats",
+                            "get_ml_analytics",
+                            "get_model_ranking",
+                            "get_model_recommendations",
+                            "get_novel_ai_stats",
+                            "get_performance_stats",
+                            "get_system_info",
+                            "getvino",
+                            "getvino-interval",
+                            "getvino_interval",
+                            "getvinointerval",
+                            "gpu",
+                            "grammar-correction",
+                            "grammar_correction",
+                            "grammarcorrection",
+                            "hallucination-detection",
+                            "hallucination_detection",
+                            "hallucinationdetection",
+                            "hate-speech-detection",
+                            "hate_speech_detection",
+                            "hatespeechdetection",
+                            "help",
+                            "hugos",
+                            "hyde-variants",
+                            "hyde_variants",
+                            "hydevariants",
+                            "ide-model",
+                            "ide-models",
+                            "ide-src-dir",
+                            "ide_model",
+                            "ide_src_dir",
+                            "idesrcdir",
+                            "image-classification",
+                            "image-feature-extraction",
+                            "image-segmentation",
+                            "image-super-resolution",
+                            "image_classification",
+                            "image_feature_extraction",
+                            "image_segmentation",
+                            "image_super_resolution",
+                            "imageclassification",
+                            "imagefeatureextraction",
+                            "imagesegmentation",
+                            "imagesuperresolution",
+                            "innovation-level",
+                            "innovation_level",
+                            "innovationlevel",
+                            "judge",
+                            "jupyter",
+                            "keys",
+                            "language",
+                            "language-detection",
+                            "language_detection",
+                            "languagedetection",
+                            "legal-judgment-classification",
+                            "legal-ner",
+                            "legal_judgment_classification",
+                            "legal_ner",
+                            "legaljudgmentclassification",
+                            "legalner",
+                            "list-tasks",
+                            "list_tasks",
+                            "load-model",
+                            "load_model",
+                            "loadmodel",
+                            "malware-text-detection",
+                            "malware_text_detection",
+                            "malwaretextdetection",
+                            "max-models",
+                            "max_models",
+                            "maxmodels",
+                            "mcp",
+                            "ml-analytics",
+                            "ml-cleanup",
+                            "ml-confidence-threshold",
+                            "ml-ensemble-method",
+                            "ml-fallback",
+                            "ml-learning",
+                            "ml-management",
+                            "ml-retrain",
+                            "ml_analytics",
+                            "ml_cleanup",
+                            "ml_confidence_threshold",
+                            "ml_ensemble_method",
+                            "ml_fallback",
+                            "ml_learning",
+                            "ml_management",
+                            "ml_retrain",
+                            "mlanalytics",
+                            "mlcleanup",
+                            "mlconfidencethreshold",
+                            "mlensemblemethod",
+                            "mlfallback",
+                            "mllearning",
+                            "mlretrain",
+                            "model",
+                            "model-management",
+                            "model-ranking",
+                            "model-recommendations",
+                            "model_management",
+                            "model_ranking",
+                            "model_recommendations",
+                            "modelfusion",
+                            "modelranking",
+                            "modelrecommendations",
+                            "models-in-use",
+                            "models_in_use",
+                            "multimodal",
+                            "multimodal-task",
+                            "multimodal_task",
+                            "ner",
+                            "nlp",
+                            "nlp-task",
+                            "nlp_task",
+                            "novel-ai-stats",
+                            "novel_ai_stats",
+                            "novelaistats",
+                            "object-detection",
+                            "object_detection",
+                            "objectdetection",
+                            "ollama",
+                            "onnx",
+                            "openvino",
+                            "optimize",
                             "orchestrate",
-                            "analyze_file", "analyze-file",
-                            "analyze_folder", "analyze-folder",
-                            "nlp_task", "nlp-task", "nlp",
-                            "security_analysis", "security-analysis",
-                            "code_task", "code-task",
-                            "domain_task", "domain-task",
-                            "multimodal_task", "multimodal-task", "multimodal",
-                            "semantic_search", "semantic-search", "search",
-                            "data_science", "data-science", "datascience", "dataanalyst", "data-analyst", "jupyter",
-                            "pe_header_extraction", "pe-header", "pe",
-                            "model_management", "model-management",
-                            "reporting", "report",
-                            "ml_management", "ml-management",
-                            "get_system_info", "get-system-info",
-                            "get_database_stats", "get-database-stats", "db-stats",
-                            "list_tasks", "list-tasks",
-                            "update_database", "update-database", "update-db",
-                            "restore_backup", "restore-backup", "restore",
-                            "clear_cache", "clear-cache", "clearcache",
-                            "get_decision_stats", "get-decision-stats",
-                            "get_novel_ai_stats", "get-novel-ai-stats", "novel-ai-stats",
-                            "get_performance_stats", "get-performance-stats",
-                            "get_cache_stats", "get-cache-stats",
-                            "get_model_recommendations", "get-model-recommendations", "model-recommendations",
-                            "get_model_ranking", "get-model-ranking", "model-ranking",
-                            "get_ml_analytics", "get-ml-analytics", "ml-analytics",
-                            "report_bandit_feedback", "report-bandit-feedback",
+                            "ov-model-dir",
+                            "ov_model_dir",
+                            "ovmodeldir",
+                            "paraphrase-generation",
+                            "paraphrase_generation",
+                            "paraphrasegeneration",
+                            "patch-ide",
+                            "patch_ide",
+                            "patchide",
+                            "pe",
+                            "pe-header",
+                            "pe-header-extraction",
+                            "pe_header_extraction",
+                            "peheaderextraction",
+                            "performance-stats",
+                            "performance_stats",
+                            "performancestats",
+                            "phishing-detection",
+                            "phishing_detection",
+                            "phishingdetection",
+                            "pii-detection",
+                            "pii_detection",
+                            "piidetection",
+                            "plan",
+                            "port",
+                            "predictive-mode",
+                            "predictive_mode",
+                            "predictivemode",
+                            "prepare-all-models",
+                            "prepare-model",
+                            "prepare_all_models",
+                            "prepare_model",
+                            "prepareallmodels",
+                            "preparemodel",
+                            "prompt",
+                            "prompt-quality-scoring",
+                            "prompt_quality_scoring",
+                            "promptqualityscoring",
+                            "qa",
+                            "question",
+                            "question-answering",
+                            "question_answering",
+                            "questionanswering",
+                            "quick-answer",
+                            "quick_answer",
+                            "reading-level-assessment",
+                            "reading_level_assessment",
+                            "readinglevelassessment",
+                            "real-options",
+                            "real_options",
+                            "realoptions",
+                            "recursion",
+                            "refactor",
+                            "report",
+                            "report-bandit-feedback",
+                            "report_bandit_feedback",
+                            "reporting",
+                            "reporttype",
+                            "reseach",
+                            "research",
+                            "restore",
+                            "restore-backup",
+                            "restore_backup",
+                            "review",
+                            "sarcasm-detection",
+                            "sarcasm_detection",
+                            "sarcasmdetection",
+                            "save-model",
+                            "save_model",
+                            "savemodel",
+                            "scientific-abstract-summarization",
+                            "scientific_abstract_summarization",
+                            "scientificabstractsummarization",
+                            "score",
+                            "search",
+                            "search-query",
+                            "search_query",
+                            "searchquery",
+                            "serarch",
+                            "serarch-query",
+                            "serarch_query",
+                            "serarchquery",
+                            "security",
+                            "security-analysis",
+                            "security_analysis",
+                            "selection-strategy",
+                            "selection_strategy",
+                            "selectionstrategy",
+                            "semantic-analysis",
+                            "semantic-search",
+                            "semantic_analysis",
+                            "semantic_search",
+                            "semanticanalysis",
+                            "sentence-similarity",
+                            "sentence_similarity",
+                            "sentencesimilarity",
+                            "sentiment",
+                            "server",
+                            "shallow",
+                            "sinq",
+                            "sinq-group-size",
+                            "sinq-method",
+                            "sinq-nbits",
+                            "sinq-tiling-mode",
+                            "sinq_group_size",
+                            "sinq_method",
+                            "sinq_nbits",
+                            "sinq_tiling_mode",
+                            "sinqgroupsize",
+                            "sinqmethod",
+                            "sinqnbits",
+                            "sinqtilingmode",
+                            "spam-detection",
+                            "spam_detection",
+                            "spamdetection",
+                            "stance-detection",
+                            "stance_detection",
+                            "stancedetection",
+                            "stats",
+                            "statsd",
+                            "summarization",
+                            "summary",
+                            "sys-info",
+                            "sys_info",
+                            "sysinfo",
+                            "table-question-answering",
+                            "table_question_answering",
+                            "tablequestionanswering",
+                            "task",
+                            "tasks",
+                            "temporal-tracking",
+                            "temporal_tracking",
+                            "temporaltracking",
+                            "test",
+                            "tests",
+                            "text-classification",
+                            "text-generation",
+                            "text-to-image",
+                            "text-to-speech",
+                            "text2text-generation",
+                            "text2text_generation",
+                            "text2textgeneration",
+                            "text_classification",
+                            "text_generation",
+                            "text_to_image",
+                            "text_to_speech",
+                            "textclassification",
+                            "textgeneration",
+                            "texttoimage",
+                            "texttospeech",
+                            "token-classification",
+                            "token_classification",
+                            "tokenclassification",
+                            "top-k",
+                            "top_k",
+                            "topk",
+                            "translation",
+                            "update",
+                            "update-database",
+                            "update-db",
+                            "update_database",
+                            "updatedb",
+                            "use-hyde",
+                            "use-openai",
+                            "use_hyde",
+                            "use_openai",
+                            "usehyde",
+                            "useopenai",
+                            "verbose",
+                            "version",
+                            "video-classification",
+                            "video_classification",
+                            "videoclassification",
+                            "visual-question-answering",
+                            "visual_question_answering",
+                            "visualquestionanswering",
+                            "vllm",
+                            "voice-activity-detection",
+                            "voice_activity_detection",
+                            "voiceactivitydetection",
+                            "vscode-tag",
+                            "vscode_tag",
+                            "vscodetag",
+                            "weight-format",
+                            "weight_format",
+                            "weightformat",
+                            "workflow-optimization",
+                            "workflow_optimization",
+                            "workflowoptimization",
+                            "zero-shot-classification",
+                            "zero-shot-image-classification",
+                            "zero_shot_classification",
+                            "zero_shot_image_classification",
+                            "zeroshotclassification",
+                            "zeroshotimageclassification",
                         ];
 
                         // Collect matched commands with their arguments
@@ -3272,6 +4057,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                             for (idx, (cmd_owned, args_owned)) in matched_cmds.clone().into_iter().enumerate() {
                                 let db_path_ref = db_path_arc.clone();
+                                let model_override_opt = model_override.clone();
                                 let handle = tokio::spawn(async move {
                                     // Normalize aliases to canonical MCP tool names
                                     let canonical = match cmd_owned.as_str() {
@@ -3286,7 +4072,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         "code-task" => "code_task",
                                         "domain-task" => "domain_task",
                                         "multimodal-task" | "multimodal" => "multimodal_task",
-                                        "semantic-search" | "search" => "semantic_search",
+                                        "semantic-search" | "semantic_search" => "semantic_search",
+                                        "research" | "reseach" => "research",
+                                        "search" | "serarch" | "serarch-query" | "serarch_query" | "serarchquery" => "search",
                                         "data-science" | "datascience" | "dataanalyst" | "data-analyst" | "jupyter" => "data_science",
                                         "pe-header" | "pe" => "pe_header_extraction",
                                         "model-management" => "model_management",
@@ -3431,7 +4219,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         },
                                         "command" => {
                                             let sys = query_system_resources();
-                                            (idx, format!("🤖 **ModelFusion Commands & System Directory**\n\n- **Engine**: Active & Operational (<1ms Fast Interception)\n- **System**: {} ({} Cores), {:.2} GB RAM free\n- **GPU**: {} ({} MB free VRAM)\n\n### Available Slash Commands & CLI Directives:\n- `/active-model` (or `--active-model`) — All models currently in use by the IDE (Ollama runtime, SQLite pipelines, OpenVINO cache)\n- `/stats` (or `--stats`) — Real-time system resource allocation and database metrics\n- `/sysinfo` (or `--sys-info`) — Detailed hardware specifications, CPU cores, RAM, and disk drives\n- `/tasks` (or `--tasks [category]`) — Multi-modal task capabilities and top database models (audio, vision, nlp, security, legal)\n- `/keys` (or `--keys`) — Cloud API key configuration (OpenAI, Anthropic, Gemini, HF)\n- `/comment` — Add inline explanations and docstrings to code\n- `/evolve` — OpenEvolve iterative code optimization\n- `/security` — CyberSecurity audit and vulnerability fixes\n- `/refactor` — Code structure refactoring\n- `/optimize` — Performance optimization\n- `/version` (or `-v`) — Engine and build version\n- `/update` — Fast curated update (~6,500 models) and local Ollama hardware model provisioning\n- `/updatedb` — Full registry crawler for all 2M+ Hugging Face models", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb))
+                                            (idx, format!("🤖 **ModelFusion Commands & System Directory**\n\n- **Engine**: Active & Operational (<1ms Fast Interception)\n- **System**: {} ({} Cores), {:.2} GB RAM free\n- **GPU**: {} ({} MB free VRAM)\n\n### Available Slash Commands & CLI Directives:\n- `/active-model` (or `--active-model`) — All models currently in use by the IDE (Ollama runtime, SQLite pipelines, OpenVINO cache)\n- `/research <topic>` (or `--research`) — Autonomous deep web research using open-weight models (Qwen 2.5 / DeepSeek-R1) and DuckDuckGo search\n- `/search <query>` (or `--search`) — Live web search and snippet extraction\n- `/stats` (or `--stats`) — Real-time system resource allocation and database metrics\n- `/sysinfo` (or `--sys-info`) — Detailed hardware specifications, CPU cores, RAM, and disk drives\n- `/tasks` (or `--tasks [category]`) — Multi-modal task capabilities and top database models (audio, vision, nlp, security, legal)\n- `/keys` (or `--keys`) — Cloud API key configuration (OpenAI, Anthropic, Gemini, HF)\n- `/comment` — Add inline explanations and docstrings to code\n- `/evolve` — OpenEvolve iterative code optimization\n- `/security` — CyberSecurity audit and vulnerability fixes\n- `/refactor` — Code structure refactoring\n- `/optimize` — Performance optimization\n- `/version` (or `-v`) — Engine and build version\n- `/update` — Fast curated update (~6,500 models) and local Ollama hardware model provisioning\n- `/updatedb` — Full registry crawler for all 2M+ Hugging Face models", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb))
                                         },
                                         "comment" | "doc" => {
                                             (idx, "📝 **ModelFusion Code Commenting & Documentation Engine**: Active.\n\nProvide or attach code to generate comprehensive inline explanations and docstrings.".to_string())
@@ -3543,6 +4331,26 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         }
                                         let result = run_cli_subcommand(&cmd_args, db_resolved).await;
                                         (idx, format!("🔍 **Semantic Search**\n\n{}", result))
+                                    },
+                                    "research" => {
+                                        let topic = if args_owned.is_empty() {
+                                            "Latest developments in solid-state batteries in 2026 and key commercial players".to_string()
+                                        } else {
+                                            args_owned.clone()
+                                        };
+                                        let report = modelfusion_core::run_deep_research(&topic, 8, model_override_opt.as_deref()).await
+                                            .unwrap_or_else(|e| format!("⚠️ Research agent error: {}", e));
+                                        (idx, format!("🌐 **Deep Web Research Agent**\n\n{}", report))
+                                    },
+                                    "search" => {
+                                        let query = if args_owned.is_empty() {
+                                            "open-weight reasoning models on Hugging Face".to_string()
+                                        } else {
+                                            args_owned.clone()
+                                        };
+                                        let results = modelfusion_core::run_web_search_only(&query, 6).await
+                                            .unwrap_or_else(|e| format!("⚠️ Web search error: {}", e));
+                                        (idx, format!("🔍 **Live Web Search**\n\n{}", results))
                                     },
                                     "data_science" => {
                                         let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
@@ -3735,8 +4543,27 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                          (idx, format!("🤖 **ModelFusion Multi-Agent Orchestrator**\n\n- **Status**: Operational (<1ms Fast Interception)\n- **Active Agent Hierarchy**: Lead Architect, Worker Subagents, AVO Evolution Agent\n- **System Resources**: {} ({} Cores), {:.2} GB RAM free\n- **GPU**: {} ({} MB free VRAM)", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb))
                                      },
 
-                                     _ => (idx, format!("⚠️ **Unknown command `/{}`.**\n\nAvailable commands: `/stats`, `/sysinfo`, `/mcp`, `/keys`, `/qa <question>`, `/analyze_file <path>`, `/report`, `/search <query>`, `/list_tasks`, and more.", cmd_owned)),
-                                }
+                                      other => {
+                                          let flag = format!("--{}", other.replace('_', "-"));
+                                          let mut cmd_args = vec![flag];
+                                          let trimmed_args = args_owned.trim();
+                                          if !trimmed_args.is_empty() {
+                                              if trimmed_args.starts_with('-') {
+                                                  for part in trimmed_args.split_whitespace() {
+                                                      cmd_args.push(part.to_string());
+                                                  }
+                                              } else {
+                                                  cmd_args.push("--prompt".to_string());
+                                                  cmd_args.push(trimmed_args.to_string());
+                                              }
+                                          }
+                                          if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() && !cmd_args.iter().any(|a| a == "--ollama") {
+                                              cmd_args.push("--ollama".to_string());
+                                          }
+                                          let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                          (idx, format!("⚡ **ModelFusion CLI (`{}`)**\n\n{}", other, result))
+                                      },
+                                 }
                             });
                             handles.push(handle);
                         }
@@ -3869,6 +4696,19 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             user_msg_for_check.len(), 
                             &user_msg_for_check[..user_msg_for_check.len().min(120)],
                             is_complex);
+
+                        if let Some((is_search_only, topic)) = detect_natural_language_research(&user_msg_for_check) {
+                            eprintln!("[SERVER] 🌐 Intercepted natural language web research request: is_search={}, topic={:?}", is_search_only, topic);
+                            if is_search_only {
+                                return modelfusion_core::run_web_search_only(&topic, 6).await
+                                    .map(|res| format!("🔍 **Live Web Search**\n\n{}", res))
+                                    .unwrap_or_else(|e| format!("⚠️ Web search error: {}", e));
+                            } else {
+                                return modelfusion_core::run_deep_research(&topic, 8, model_override.as_deref()).await
+                                    .map(|rep| format!("🌐 **Deep Web Research Agent**\n\n{}", rep))
+                                    .unwrap_or_else(|e| format!("⚠️ Research agent error: {}", e));
+                            }
+                        }
 
                         let mut _heavy_permit = None;
                         let mut _file_lock = None;
@@ -4153,22 +4993,22 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         // "programming assistant" system prompt causes refusals for non-coding Qs
                         let clean_prompt = user_msg_for_check.clone();
 
-                        // Check if client explicitly requested fusion (in request JSON, options, or slash command)
-                        let explicit_fusion_requested = request_json["fusion"].as_bool().unwrap_or(false)
-                            || orchestration_options.get("fusion").map(|v| v == "true").unwrap_or(false);
+                        // Check if client explicitly requested or disabled fusion
+                        let explicit_fusion_in_json = request_json.get("fusion").and_then(|v| v.as_bool());
+                        let explicit_fusion_in_opts = orchestration_options.get("fusion").map(|v| v.as_str() == "true");
+                        let is_explicit_false = explicit_fusion_in_json == Some(false)
+                            || explicit_fusion_in_opts == Some(false);
 
-                        // Classify prompt to see if fusion is actually needed
-                        let prompt_needs_fusion = if explicit_fusion_requested {
-                            eprintln!("[SERVER] ⚡ Explicit fusion requested by client. Activating multi-model fusion pipeline.");
-                            true
+                        // Classify prompt to see if fusion is actually needed:
+                        // If fusion is true or is_complex is true (or when not explicitly set to false), route to fusion engine!
+                        let prompt_needs_fusion = if is_explicit_false && !is_complex {
+                            false
                         } else {
-                            fusion && modelfusion_core::fusion_engine::classify_prompt(&clean_prompt)
+                            fusion || is_complex || modelfusion_core::fusion_engine::classify_prompt(&clean_prompt)
                         };
-                        if fusion && !prompt_needs_fusion {
-                            eprintln!("[SERVER] Prompt classified as simple. Bypassing fusion engine to run single model orchestrator.");
-                        }
 
                         if prompt_needs_fusion {
+                            eprintln!("[SERVER] ⚡ Multi-model fusion active (is_complex={}, fusion={}, models={}).", is_complex, fusion, fusion_models);
                             match modelfusion_core::fusion_engine::run_fusion(
                                 &clean_prompt,
                                 None,
@@ -4180,9 +5020,29 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 model_override.as_deref(),
                             ).await {
                                 Ok(content) => content,
-                                Err(e) => format!("Error: {}", e),
+                                Err(e) => {
+                                    eprintln!("[SERVER] ⚠️ Fusion engine error: {}. Gracefully falling back to single model orchestrator.", e);
+                                    let orchestrator = HuggingFaceOrchestrator::new(db_path_val.to_path_buf(), budget, false, false);
+                                    let res = orchestrator
+                                        .process_task(
+                                            &clean_prompt,
+                                            None,
+                                            model_override.as_deref(),
+                                            false,
+                                            None,
+                                            parse_selection_strategy(&strategy),
+                                            orchestration_options,
+                                        )
+                                        .await;
+                                    if res.success {
+                                        res.content
+                                    } else {
+                                        res.error_message.unwrap_or_else(|| format!("Fusion and fallback error: {}", e))
+                                    }
+                                }
                             }
                         } else {
+
                             let orchestrator = HuggingFaceOrchestrator::new(db_path_val.to_path_buf(), budget, false, false);
                             let res = orchestrator
                                 .process_task(
@@ -4345,7 +5205,53 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         "Error: Invalid context or arm index".to_string()
                     }
                 }
-                _ => format!("Error: Unknown API path {}", request_path)
+                "/command" | "/commands" | "/help" => {
+                    if let Some(args_arr) = request_json["args"].as_array() {
+                        let mut cmd_args = Vec::new();
+                        for a in args_arr {
+                            if let Some(s) = a.as_str() {
+                                cmd_args.push(s.to_string());
+                            }
+                        }
+                        run_cli_subcommand(&cmd_args, db_path_val).await
+                    } else if let Some(cmd) = request_json["command"].as_str() {
+                        let trimmed = cmd.trim();
+                        let parts: Vec<String> = trimmed.split_whitespace().map(|s| s.to_string()).collect();
+                        run_cli_subcommand(&parts, db_path_val).await
+                    } else if let Some(prompt) = request_json["prompt"].as_str() {
+                        let trimmed = prompt.trim();
+                        let parts: Vec<String> = trimmed.split_whitespace().map(|s| s.to_string()).collect();
+                        run_cli_subcommand(&parts, db_path_val).await
+                    } else {
+                        let sys = query_system_resources();
+                        format!("🤖 **ModelFusion Command Router**\n\n- System: {} ({} Cores, {:.2} GB free RAM, GPU: {})\n- Active Endpoint: http://127.0.0.1:{}\n- Multi-Modal Catalog: {}\n\nUsage: Post JSON with `args`, `command`, or `prompt` to execute any ModelFusion CLI directive.", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name, port, db_path_val.display())
+                    }
+                }
+                other => {
+                    let clean_cmd = other.trim_start_matches('/');
+                    if clean_cmd.is_empty() {
+                        format!("ModelFusion API Server running on port {}", port)
+                    } else {
+                        let flag = format!("--{}", clean_cmd.replace('_', "-"));
+                        let mut cmd_args = vec![flag];
+                        if let Some(args_arr) = request_json["args"].as_array() {
+                            for a in args_arr {
+                                if let Some(s) = a.as_str() {
+                                    cmd_args.push(s.to_string());
+                                }
+                            }
+                        } else if let Some(prompt) = request_json["prompt"].as_str() {
+                            cmd_args.push("--prompt".to_string());
+                            cmd_args.push(prompt.to_string());
+                        } else if let Some(query) = request_json["query"].as_str() {
+                            cmd_args.push(query.to_string());
+                        }
+                        if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() && !cmd_args.iter().any(|a| a == "--ollama") {
+                            cmd_args.push("--ollama".to_string());
+                        }
+                        run_cli_subcommand(&cmd_args, db_path_val).await
+                    }
+                }
             };
 
             let response_json = serde_json::json!({
@@ -6425,6 +7331,8 @@ pub fn parse_slash_commands_in_prompt(
             "/comments" => "/comment".to_string(),
             "/commands" | "/help" => "/command".to_string(),
             "/docs" => "/doc".to_string(),
+            "/reseach" => "/research".to_string(),
+            "/serarch" => "/search".to_string(),
             other => other.to_string(),
         };
 
@@ -6564,6 +7472,18 @@ pub fn parse_slash_commands_in_prompt(
                 let (val, act) = get_arg(&cleaned_rest);
                 std::env::set_var("MODELFUSION_SEARCH_QUERY", &val);
                 actual_prompt = act;
+            }
+            "/research" | "/reseach" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                let query = if !act.is_empty() { format!("{} {}", val, act) } else { val };
+                std::env::set_var("MODELFUSION_RESEARCH_QUERY", &query);
+                actual_prompt = query;
+            }
+            "/search" | "/serarch" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                let query = if !act.is_empty() { format!("{} {}", val, act) } else { val };
+                std::env::set_var("MODELFUSION_SEARCH_QUERY", &query);
+                actual_prompt = query;
             }
             "/top-k" => {
                 let (val, act) = get_arg(&cleaned_rest);
@@ -7536,6 +8456,8 @@ fn get_source_patches() -> Vec<(&'static str, &'static str, &'static str)> {
 
 #[cfg(test)]
 mod prompt_interception_tests {
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     fn check_is_empty_user_prompt(prompt: &str) -> bool {
         let lower = prompt.to_lowercase();
         if lower.contains("@agent") || lower.contains("/evolve") || lower.contains("/stats") || lower.contains("<attachments>") || lower.contains("<attachment>") || lower.contains("<user_request>") {
@@ -7597,6 +8519,7 @@ mod prompt_interception_tests {
 
     #[test]
     fn test_parse_slash_commands_agent_stats() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let mut prompt = "User: @agent /stats".to_string();
         let (mut gpu, mut cpu, mut openvino, mut fusion) = (false, false, false, false);
         super::parse_slash_commands_in_prompt(&mut prompt, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
@@ -7605,6 +8528,7 @@ mod prompt_interception_tests {
 
     #[test]
     fn test_parse_slash_commands_agent_no_slash_stats() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let mut prompt = "User: @agent stats".to_string();
         let (mut gpu, mut cpu, mut openvino, mut fusion) = (false, false, false, false);
         super::parse_slash_commands_in_prompt(&mut prompt, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
@@ -7613,6 +8537,7 @@ mod prompt_interception_tests {
 
     #[test]
     fn test_parse_slash_commands_comment() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let mut prompt = "User: @comment add comments to this code".to_string();
         let (mut gpu, mut cpu, mut openvino, mut fusion) = (false, false, false, false);
         super::parse_slash_commands_in_prompt(&mut prompt, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
@@ -7665,6 +8590,7 @@ User: <context>ctx</context><userrequest>write a python script to simulate qubit
 
     #[test]
     fn test_multi_turn_slash_command_after_coding_request() {
+        let _lock = ENV_LOCK.lock().unwrap();
         let mut prompt = "User: write a python script\n\
 Assistant: Here is your script.\n\
 User: <context><environment_info>OS: Windows</environment_info></context>@agent /keys".to_string();
@@ -7697,6 +8623,135 @@ User: <context><environment_info>OS: Windows</environment_info></context>@agent 
                 || lower.contains("write code") || lower.contains("generate code")
             };
         assert!(is_complex, "Prompt requesting python file for circuits must be detected as complex");
+    }
+
+    #[test]
+    fn test_detect_natural_language_research_queries() {
+        // Natural language "search the internet"
+        let (is_search, topic) = super::detect_natural_language_research("search the internet for open-weight reasoning models").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "open-weight reasoning models");
+
+        // Natural language "do research"
+        let (is_search, topic) = super::detect_natural_language_research("do research on solid state battery developments").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "solid state battery developments");
+
+        // Typo alias "serarch the internet"
+        let (is_search, topic) = super::detect_natural_language_research("serarch the internet: quantum computing advancements").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "quantum computing advancements");
+
+        // Typo alias "do reseach"
+        let (is_search, topic) = super::detect_natural_language_research("do reseach about deepseek-r1").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "deepseek-r1");
+
+        // Direct prefix with typo "reseach" (ensure character boundary is correct, not truncating 'r')
+        let (is_search, topic) = super::detect_natural_language_research("reseach rust 2024").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "rust 2024");
+
+        // Direct prefix "research"
+        let (is_search, topic) = super::detect_natural_language_research("research quantum circuits?").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "quantum circuits");
+
+        // Direct prefix "search"
+        let (is_search, topic) = super::detect_natural_language_research("search solid state batteries").unwrap();
+        assert!(is_search);
+        assert_eq!(topic, "solid state batteries");
+
+        // "search for"
+        let (is_search, topic) = super::detect_natural_language_research("search for huggingface smolagents").unwrap();
+        assert!(is_search);
+        assert_eq!(topic, "huggingface smolagents");
+
+        // Standalone words without topics
+        let (is_search, topic) = super::detect_natural_language_research("do research").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "open-weight reasoning models on Hugging Face");
+
+        let (is_search, topic) = super::detect_natural_language_research("serarch the internet").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "open-weight reasoning models on Hugging Face");
+
+        // Standalone or trailing whitespace fallback to default topic
+        let (is_search, topic) = super::detect_natural_language_research("reseach ").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "open-weight reasoning models on Hugging Face");
+
+        let (is_search, topic) = super::detect_natural_language_research("research ").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "open-weight reasoning models on Hugging Face");
+
+        // Colon syntax triggers
+        let (is_search, topic) = super::detect_natural_language_research("research: quantum computing").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "quantum computing");
+
+        let (is_search, topic) = super::detect_natural_language_research("reseach: deepseek-r1").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "deepseek-r1");
+
+        let (is_search, topic) = super::detect_natural_language_research("search: rust async").unwrap();
+        assert!(is_search);
+        assert_eq!(topic, "rust async");
+
+        let (is_search, topic) = super::detect_natural_language_research("serarch: ollama models").unwrap();
+        assert!(is_search);
+        assert_eq!(topic, "ollama models");
+
+        // Polite leading prefixes
+        let (is_search, topic) = super::detect_natural_language_research("please research quantum circuits").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "quantum circuits");
+
+        let (is_search, topic) = super::detect_natural_language_research("can you reseach deepseek-r1?").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "deepseek-r1");
+
+        let (is_search, topic) = super::detect_natural_language_research("could you search for hugging face spaces").unwrap();
+        assert!(is_search);
+        assert_eq!(topic, "hugging face spaces");
+
+        let (is_search, topic) = super::detect_natural_language_research("can you please serarch the internet for web agents").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "web agents");
+
+        // Empty / pure whitespace must return None
+        assert!(super::detect_natural_language_research("   ").is_none());
+        assert!(super::detect_natural_language_research("").is_none());
+
+        // Live web search
+        let (is_search, topic) = super::detect_natural_language_research("live web search for llama 3.3").unwrap();
+        assert!(is_search);
+        assert_eq!(topic, "llama 3.3");
+
+        // Algorithmic query should NOT trigger internet research
+        assert!(super::detect_natural_language_research("implement binary search algorithm in rust").is_none());
+        assert!(super::detect_natural_language_research("build a search tree data structure").is_none());
+    }
+
+    #[test]
+    fn test_slash_command_research_and_reseach_alias() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let mut prompt1 = "/research open-weight models".to_string();
+        let (mut gpu, mut cpu, mut openvino, mut fusion) = (false, false, false, false);
+        super::parse_slash_commands_in_prompt(&mut prompt1, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
+        assert_eq!(std::env::var("MODELFUSION_RESEARCH_QUERY").unwrap_or_default(), "open-weight models");
+
+        let mut prompt2 = "/reseach quantum computing".to_string();
+        super::parse_slash_commands_in_prompt(&mut prompt2, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
+        assert_eq!(std::env::var("MODELFUSION_RESEARCH_QUERY").unwrap_or_default(), "quantum computing");
+
+        let mut prompt3 = "/search huggingface spaces".to_string();
+        super::parse_slash_commands_in_prompt(&mut prompt3, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
+        assert_eq!(std::env::var("MODELFUSION_SEARCH_QUERY").unwrap_or_default(), "huggingface spaces");
+
+        let mut prompt4 = "/serarch huggingface models".to_string();
+        super::parse_slash_commands_in_prompt(&mut prompt4, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
+        assert_eq!(std::env::var("MODELFUSION_SEARCH_QUERY").unwrap_or_default(), "huggingface models");
     }
 }
 
