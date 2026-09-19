@@ -322,6 +322,34 @@ cli.exe --fusion --ollama --fusion-models 5 --context-auto --prompt "Compare tok
 cli.exe --fusion --context-auto --prompt "What are the tradeoffs of microservices?"
 ```
 
+### Database & Model Update Commands
+
+ModelFusion provides two distinct, non-aliased updating commands for its local SQLite catalog (`hf_models.db`) and local AI runtime:
+
+| Command / Flag | Default | Description |
+|:---|:---:|:---|
+| `--update` | off | **Fast curated update**: indexes top ~6,500 production workhorse models across all 45 tasks and provisions optimal local Ollama hardware model |
+| `--updatedb` | off | **Full registry crawler**: continuously ingests ALL 2M+ models from Hugging Face Hub (cursor-paginated in 1,000-model batches, whether junk or not) |
+| `--max-models <N>` | unlimited | Maximum number of models to ingest during `--updatedb` |
+| `--db-path <PATH>` | `db/hf_models.db` | Custom SQLite database path for ModelFusion (e.g. `IDE/db/hf_models.db`) |
+
+#### Update Examples
+
+**Fast curated update + Ollama model setup** (daily usage & IDE background watcher):
+```powershell
+cli.exe --update --db-path "IDE/db/hf_models.db"
+```
+
+**Full registry crawler** (ingest all 2M+ models from Hugging Face Hub):
+```powershell
+cli.exe --updatedb --db-path "IDE/db/hf_models.db"
+```
+
+**Capped registry crawl** (ingest up to 50,000 models):
+```powershell
+cli.exe --updatedb --max-models 50000 --db-path "IDE/db/hf_models.db"
+```
+
 ### Pre-installing Ollama Models
 To pre-install the models commonly selected by the `--fusion --ollama` panel:
 ```powershell

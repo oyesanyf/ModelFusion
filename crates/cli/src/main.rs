@@ -263,7 +263,30 @@ fn select_context_window_for_model(model: &str) -> u32 {
 
 
 #[derive(Parser, Debug)]
-#[command(name = "modelfusion", version = "0.1.0", about = "ModelFusion - Advanced HuggingFace Model Orchestration System")]
+#[command(
+    name = "modelfusion",
+    version = "0.1.0",
+    about = "ModelFusion - Advanced HuggingFace Model Orchestration System",
+    after_help = "\
+DATABASE & MODEL UPDATE COMMANDS:
+  --update              Fast curated update: indexes top ~6,500 production workhorse models
+                        across all 45 tasks and provisions optimal local Ollama hardware model
+  --updatedb            Full registry crawler: continuously ingests ALL 2M+ models from Hugging Face
+                        Hub (cursor-paginated in 1,000-model batches, whether junk or not)
+  --max-models <N>      Cap the number of models during --updatedb (defaults to unlimited)
+  --db-path <PATH>      Target SQLite database path (e.g. IDE/db/hf_models.db)
+
+EXAMPLES:
+  # Fast curated update + Ollama model setup
+  cli.exe --update --db-path \"IDE/db/hf_models.db\"
+
+  # Ingest all 2M+ models from Hugging Face Hub (whether junk or not)
+  cli.exe --updatedb --db-path \"IDE/db/hf_models.db\"
+
+  # Ingest up to 50,000 models
+  cli.exe --updatedb --max-models 50000 --db-path \"IDE/db/hf_models.db\"
+"
+)]
 struct Args {
     // ---------------------------------------------------------
     // Global Flags
@@ -429,10 +452,10 @@ struct Args {
     )]
     tasks: Option<String>,
 
-    #[arg(long, help = "Update the HuggingFace models database")]
+    #[arg(long, help = "Fast curated update: indexes top ~6,500 production workhorses across all 45 tasks and provisions local Ollama hardware model")]
     update: bool,
 
-    #[arg(long, help = "Ingest ALL models from Hugging Face Hub (cursor-paginated, complete registry whether junk or not)")]
+    #[arg(long, help = "Full registry crawler: continuously ingests ALL 2M+ models from Hugging Face Hub (cursor-paginated, whether junk or not)")]
     updatedb: bool,
 
     #[arg(long, help = "Maximum number of models to ingest during --updatedb (defaults to unlimited)")]
@@ -777,7 +800,7 @@ struct Args {
     #[arg(long)]
     feature_ranking: bool,
 
-    #[arg(long, help = "Custom SQLite database path for ModelFusion")]
+    #[arg(long, help = "Custom SQLite database path for ModelFusion (e.g. --db-path IDE/db/hf_models.db)")]
     db_path: Option<String>,
 
     #[arg(long, help = "Run as HTTP API server")]

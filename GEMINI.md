@@ -25,6 +25,20 @@ Whenever code changes, bug fixes, or enhancements are made to ModelFusion or Hug
 
 The ModelFusion Master CLI (`crates/cli/src/main.rs`) is the single authoritative execution engine for hardware discovery, model selection, local AI lifecycle management, and catalog database ingestion. HugOS IDE does not implement an independent updating mechanism; it delegates directly to the Master CLI.
 
+### Database Update Commands: `--update` vs `--updatedb`
+ModelFusion provides two distinct, non-aliased update commands:
+- **`--update` (Fast Curated Engine)**:
+  - Ingests top ~6,500 production workhorse models across all 45 tasks.
+  - Detects runtime available/free RAM and provisions matching Ollama model (e.g. `qwen2.5:32b`).
+  - Designed for daily use, `@agent update` in chat, and IDE background watcher.
+  - Syntax: `cli.exe --update --db-path "IDE/db/hf_models.db"`
+- **`--updatedb` (Full Registry Crawler - All 2M+ Models)**:
+  - Continuously traverses the entire Hugging Face Hub via cursor pagination (`limit=1000`, HTTP `Link: rel="next"`).
+  - Ingests every model in the registry into SQLite ("whether junk or not").
+  - Commits 1,000 models per transaction (~1,000 models/sec).
+  - Syntax: `cli.exe --updatedb --db-path "IDE/db/hf_models.db"`
+  - Optional cap: `--max-models <N>` (e.g. `--max-models 50000`).
+
 ### 1. 4-Way Cryptographic Binary Parity
 Whenever `cli.exe` is recompiled, it MUST be mirrored across all 4 locations with identical SHA-256 hashes:
 1. `d:\harfile\ModelFusion\target\release\cli.exe` (Authoritative build target)

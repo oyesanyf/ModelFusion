@@ -31,4 +31,5 @@ IDE/mcp_ide_engine/*.msi
 .agents/
 __pycache__/
 *.msi
-IDE/HugOS.msi
+IDE/HugOS.msi
+IDE/cli.exe
