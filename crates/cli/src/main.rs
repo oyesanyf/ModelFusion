@@ -631,6 +631,7 @@ struct Args {
 
     #[arg(
         long,
+        alias = "serarch",
         help = "Perform live web search and summarization using open-weight models"
     )]
     search: Option<String>,
@@ -1262,15 +1263,25 @@ async fn run(args: Args) -> Result<()> {
     }
 
     if let Some(ref q) = args.research {
-        println!("🌐 Initiating Autonomous Deep Web Research for: \"{}\"...\n", q);
-        let report = modelfusion_core::run_deep_research(q, 8, args.model.as_deref()).await?;
+        let topic = if q.trim().is_empty() {
+            "open-weight reasoning models on Hugging Face"
+        } else {
+            q.trim()
+        };
+        println!("🌐 Initiating Autonomous Deep Web Research for: \"{}\"...\n", topic);
+        let report = modelfusion_core::run_deep_research(topic, 8, args.model.as_deref()).await?;
         println!("{}", report);
         return Ok(());
     }
 
     if let Some(ref q) = args.search {
-        println!("🔍 Performing Live Web Search for: \"{}\"...\n", q);
-        let results = modelfusion_core::run_web_search_only(q, 6).await?;
+        let query = if q.trim().is_empty() {
+            "open-weight reasoning models on Hugging Face"
+        } else {
+            q.trim()
+        };
+        println!("🔍 Performing Live Web Search for: \"{}\"...\n", query);
+        let results = modelfusion_core::run_web_search_only(query, 6).await?;
         println!("{}", results);
         return Ok(());
     }
@@ -1674,6 +1685,38 @@ async fn run(args: Args) -> Result<()> {
         let mut fusion = args.fusion;
         if args.enable_slash_commands {
             parse_slash_commands_in_prompt(&mut final_prompt, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
+        }
+
+        if let Ok(rq) = std::env::var("MODELFUSION_RESEARCH_QUERY") {
+            if !rq.is_empty() {
+                println!("🌐 Initiating Autonomous Deep Web Research for: \"{}\"...\n", rq);
+                let report = modelfusion_core::run_deep_research(&rq, 8, args.model.as_deref()).await?;
+                println!("{}", report);
+                return Ok(());
+            }
+        }
+
+        if let Ok(sq) = std::env::var("MODELFUSION_SEARCH_QUERY") {
+            if !sq.is_empty() {
+                println!("🔍 Performing Live Web Search for: \"{}\"...\n", sq);
+                let results = modelfusion_core::run_web_search_only(&sq, 6).await?;
+                println!("{}", results);
+                return Ok(());
+            }
+        }
+
+        if let Some((is_search, topic)) = detect_natural_language_research(&final_prompt) {
+            if is_search {
+                println!("🔍 Performing Live Web Search for: \"{}\"...\n", topic);
+                let results = modelfusion_core::run_web_search_only(&topic, 6).await?;
+                println!("{}", results);
+                return Ok(());
+            } else {
+                println!("🌐 Initiating Autonomous Deep Web Research for: \"{}\"...\n", topic);
+                let report = modelfusion_core::run_deep_research(&topic, 8, args.model.as_deref()).await?;
+                println!("{}", report);
+                return Ok(());
+            }
         }
 
         if let Some(ref folder_path) = args.folder {
@@ -2561,13 +2604,49 @@ pub fn detect_natural_language_research(raw_query: &str) -> Option<(bool, String
         ("web research", false),
         ("internet research on", false),
         ("internet research about", false),
+        ("internet research for", false),
+        ("internet research:", false),
         ("internet research", false),
+        ("internet search for", false),
+        ("internet search about", false),
+        ("internet search on", false),
+        ("internet search:", false),
+        ("internet search", false),
+        ("online search for", false),
+        ("online search about", false),
+        ("online search on", false),
+        ("online search", false),
         ("live web search for", true),
         ("live web search:", true),
         ("live web search", true),
+        ("live search for", true),
+        ("live search:", true),
+        ("live search", true),
         ("search online for", false),
         ("search online about", false),
         ("search online", false),
+        ("research on ", false),
+        ("research about ", false),
+        ("research for ", false),
+        ("research: ", false),
+        ("research:", false),
+        ("reseach on ", false),
+        ("reseach about ", false),
+        ("reseach for ", false),
+        ("reseach: ", false),
+        ("reseach:", false),
+        ("search for ", true),
+        ("search for:", true),
+        ("search about ", true),
+        ("search on ", true),
+        ("search: ", true),
+        ("search:", true),
+        ("serarch for ", true),
+        ("serarch for:", true),
+        ("serarch about ", true),
+        ("serarch on ", true),
+        ("serarch: ", true),
+        ("serarch:", true),
     ];
 
     for (trigger, is_search_only) in triggers {
@@ -2576,6 +2655,10 @@ pub fn detect_natural_language_research(raw_query: &str) -> Option<(bool, String
             let clean_topic = after
                 .trim_start_matches(':')
                 .trim_start_matches('-')
+                .trim()
+                .trim_end_matches('?')
+                .trim_end_matches('.')
+                .trim_end_matches('!')
                 .trim();
             let final_topic = if clean_topic.is_empty() {
                 let before = text[..idx].trim();
@@ -2604,12 +2687,93 @@ pub fn detect_natural_language_research(raw_query: &str) -> Option<(bool, String
         }
     }
 
-    // Check if query starts directly with "research " or "reseach "
-    if lower.starts_with("research ") || lower.starts_with("reseach ") {
-        let topic = text[9..].trim().trim_start_matches("on ").trim_start_matches("about ").trim();
-        if !topic.is_empty() {
-            return Some((false, topic.to_string()));
-        }
+    // Direct standalone words
+    if lower == "research" || lower == "reseach" {
+        return Some((false, "open-weight reasoning models on Hugging Face".to_string()));
+    }
+    if lower == "search" || lower == "serarch" {
+        return Some((true, "open-weight reasoning models on Hugging Face".to_string()));
+    }
+
+    // Strip polite leading prefixes (e.g. "please", "can you", "could you", "would you")
+    let (prefix_offset, effective_lower) = if let Some(stripped) = lower.strip_prefix("can you please ") {
+        (15, stripped.trim_start())
+    } else if let Some(stripped) = lower.strip_prefix("could you please ") {
+        (17, stripped.trim_start())
+    } else if let Some(stripped) = lower.strip_prefix("please ") {
+        (7, stripped.trim_start())
+    } else if let Some(stripped) = lower.strip_prefix("can you ") {
+        (8, stripped.trim_start())
+    } else if let Some(stripped) = lower.strip_prefix("could you ") {
+        (10, stripped.trim_start())
+    } else if let Some(stripped) = lower.strip_prefix("would you ") {
+        (10, stripped.trim_start())
+    } else {
+        (0, lower.as_str())
+    };
+
+    let effective_text = &text[prefix_offset.min(text.len())..];
+
+    if effective_lower == "research" || effective_lower == "reseach" {
+        return Some((false, "open-weight reasoning models on Hugging Face".to_string()));
+    }
+    if effective_lower == "search" || effective_lower == "serarch" {
+        return Some((true, "open-weight reasoning models on Hugging Face".to_string()));
+    }
+
+    // Check direct command prefixes with exact slice lengths
+    if effective_lower.starts_with("research ") || effective_lower.starts_with("research:") {
+        let skip = 9;
+        let topic = effective_text[skip..].trim()
+            .trim_start_matches(':')
+            .trim_start_matches("on ")
+            .trim_start_matches("about ")
+            .trim_start_matches("for ")
+            .trim()
+            .trim_end_matches('?')
+            .trim_end_matches('.')
+            .trim_end_matches('!')
+            .trim();
+        return Some((false, if topic.is_empty() { "open-weight reasoning models on Hugging Face".to_string() } else { topic.to_string() }));
+    } else if effective_lower.starts_with("reseach ") || effective_lower.starts_with("reseach:") {
+        let skip = 8;
+        let topic = effective_text[skip..].trim()
+            .trim_start_matches(':')
+            .trim_start_matches("on ")
+            .trim_start_matches("about ")
+            .trim_start_matches("for ")
+            .trim()
+            .trim_end_matches('?')
+            .trim_end_matches('.')
+            .trim_end_matches('!')
+            .trim();
+        return Some((false, if topic.is_empty() { "open-weight reasoning models on Hugging Face".to_string() } else { topic.to_string() }));
+    } else if effective_lower.starts_with("search ") || effective_lower.starts_with("search:") {
+        let skip = 7;
+        let topic = effective_text[skip..].trim()
+            .trim_start_matches(':')
+            .trim_start_matches("for ")
+            .trim_start_matches("about ")
+            .trim_start_matches("on ")
+            .trim()
+            .trim_end_matches('?')
+            .trim_end_matches('.')
+            .trim_end_matches('!')
+            .trim();
+        return Some((true, if topic.is_empty() { "open-weight reasoning models on Hugging Face".to_string() } else { topic.to_string() }));
+    } else if effective_lower.starts_with("serarch ") || effective_lower.starts_with("serarch:") {
+        let skip = 8;
+        let topic = effective_text[skip..].trim()
+            .trim_start_matches(':')
+            .trim_start_matches("for ")
+            .trim_start_matches("about ")
+            .trim_start_matches("on ")
+            .trim()
+            .trim_end_matches('?')
+            .trim_end_matches('.')
+            .trim_end_matches('!')
+            .trim();
+        return Some((true, if topic.is_empty() { "open-weight reasoning models on Hugging Face".to_string() } else { topic.to_string() }));
     }
 
     None
@@ -3587,6 +3751,10 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             "search-query",
                             "search_query",
                             "searchquery",
+                            "serarch",
+                            "serarch-query",
+                            "serarch_query",
+                            "serarchquery",
                             "security",
                             "security-analysis",
                             "security_analysis",
@@ -3889,6 +4057,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                             for (idx, (cmd_owned, args_owned)) in matched_cmds.clone().into_iter().enumerate() {
                                 let db_path_ref = db_path_arc.clone();
+                                let model_override_opt = model_override.clone();
                                 let handle = tokio::spawn(async move {
                                     // Normalize aliases to canonical MCP tool names
                                     let canonical = match cmd_owned.as_str() {
@@ -3905,7 +4074,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         "multimodal-task" | "multimodal" => "multimodal_task",
                                         "semantic-search" | "semantic_search" => "semantic_search",
                                         "research" | "reseach" => "research",
-                                        "search" => "search",
+                                        "search" | "serarch" | "serarch-query" | "serarch_query" | "serarchquery" => "search",
                                         "data-science" | "datascience" | "dataanalyst" | "data-analyst" | "jupyter" => "data_science",
                                         "pe-header" | "pe" => "pe_header_extraction",
                                         "model-management" => "model_management",
@@ -4169,7 +4338,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         } else {
                                             args_owned.clone()
                                         };
-                                        let report = modelfusion_core::run_deep_research(&topic, 8, None).await
+                                        let report = modelfusion_core::run_deep_research(&topic, 8, model_override_opt.as_deref()).await
                                             .unwrap_or_else(|e| format!("⚠️ Research agent error: {}", e));
                                         (idx, format!("🌐 **Deep Web Research Agent**\n\n{}", report))
                                     },
@@ -7163,6 +7332,7 @@ pub fn parse_slash_commands_in_prompt(
             "/commands" | "/help" => "/command".to_string(),
             "/docs" => "/doc".to_string(),
             "/reseach" => "/research".to_string(),
+            "/serarch" => "/search".to_string(),
             other => other.to_string(),
         };
 
@@ -7309,7 +7479,7 @@ pub fn parse_slash_commands_in_prompt(
                 std::env::set_var("MODELFUSION_RESEARCH_QUERY", &query);
                 actual_prompt = query;
             }
-            "/search" => {
+            "/search" | "/serarch" => {
                 let (val, act) = get_arg(&cleaned_rest);
                 let query = if !act.is_empty() { format!("{} {}", val, act) } else { val };
                 std::env::set_var("MODELFUSION_SEARCH_QUERY", &query);
@@ -8477,6 +8647,82 @@ User: <context><environment_info>OS: Windows</environment_info></context>@agent 
         assert!(!is_search);
         assert_eq!(topic, "deepseek-r1");
 
+        // Direct prefix with typo "reseach" (ensure character boundary is correct, not truncating 'r')
+        let (is_search, topic) = super::detect_natural_language_research("reseach rust 2024").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "rust 2024");
+
+        // Direct prefix "research"
+        let (is_search, topic) = super::detect_natural_language_research("research quantum circuits?").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "quantum circuits");
+
+        // Direct prefix "search"
+        let (is_search, topic) = super::detect_natural_language_research("search solid state batteries").unwrap();
+        assert!(is_search);
+        assert_eq!(topic, "solid state batteries");
+
+        // "search for"
+        let (is_search, topic) = super::detect_natural_language_research("search for huggingface smolagents").unwrap();
+        assert!(is_search);
+        assert_eq!(topic, "huggingface smolagents");
+
+        // Standalone words without topics
+        let (is_search, topic) = super::detect_natural_language_research("do research").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "open-weight reasoning models on Hugging Face");
+
+        let (is_search, topic) = super::detect_natural_language_research("serarch the internet").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "open-weight reasoning models on Hugging Face");
+
+        // Standalone or trailing whitespace fallback to default topic
+        let (is_search, topic) = super::detect_natural_language_research("reseach ").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "open-weight reasoning models on Hugging Face");
+
+        let (is_search, topic) = super::detect_natural_language_research("research ").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "open-weight reasoning models on Hugging Face");
+
+        // Colon syntax triggers
+        let (is_search, topic) = super::detect_natural_language_research("research: quantum computing").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "quantum computing");
+
+        let (is_search, topic) = super::detect_natural_language_research("reseach: deepseek-r1").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "deepseek-r1");
+
+        let (is_search, topic) = super::detect_natural_language_research("search: rust async").unwrap();
+        assert!(is_search);
+        assert_eq!(topic, "rust async");
+
+        let (is_search, topic) = super::detect_natural_language_research("serarch: ollama models").unwrap();
+        assert!(is_search);
+        assert_eq!(topic, "ollama models");
+
+        // Polite leading prefixes
+        let (is_search, topic) = super::detect_natural_language_research("please research quantum circuits").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "quantum circuits");
+
+        let (is_search, topic) = super::detect_natural_language_research("can you reseach deepseek-r1?").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "deepseek-r1");
+
+        let (is_search, topic) = super::detect_natural_language_research("could you search for hugging face spaces").unwrap();
+        assert!(is_search);
+        assert_eq!(topic, "hugging face spaces");
+
+        let (is_search, topic) = super::detect_natural_language_research("can you please serarch the internet for web agents").unwrap();
+        assert!(!is_search);
+        assert_eq!(topic, "web agents");
+
+        // Empty / pure whitespace must return None
+        assert!(super::detect_natural_language_research("   ").is_none());
+        assert!(super::detect_natural_language_research("").is_none());
+
         // Live web search
         let (is_search, topic) = super::detect_natural_language_research("live web search for llama 3.3").unwrap();
         assert!(is_search);
@@ -8502,6 +8748,10 @@ User: <context><environment_info>OS: Windows</environment_info></context>@agent 
         let mut prompt3 = "/search huggingface spaces".to_string();
         super::parse_slash_commands_in_prompt(&mut prompt3, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
         assert_eq!(std::env::var("MODELFUSION_SEARCH_QUERY").unwrap_or_default(), "huggingface spaces");
+
+        let mut prompt4 = "/serarch huggingface models".to_string();
+        super::parse_slash_commands_in_prompt(&mut prompt4, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
+        assert_eq!(std::env::var("MODELFUSION_SEARCH_QUERY").unwrap_or_default(), "huggingface models");
     }
 }
 

@@ -111,24 +111,59 @@ def search_duckduckgo(query: str, max_results: int = 8) -> List[Dict[str, str]]:
     return results[:max_results]
 
 def pick_reasoning_model() -> str:
-    """Select the best open-weight reasoning model in local Ollama."""
+    """Select the best open-weight reasoning model in local Ollama based on detected hardware memory."""
+    free_ram_gb = 16.0
+    try:
+        import ctypes
+        class MEMORYSTATUSEX(ctypes.Structure):
+            _fields_ = [
+                ("dwLength", ctypes.c_ulong),
+                ("dwMemoryLoad", ctypes.c_ulong),
+                ("ullTotalPhys", ctypes.c_ulonglong),
+                ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong),
+                ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong),
+                ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("sullAvailExtendedVirtual", ctypes.c_ulonglong),
+            ]
+        stat = MEMORYSTATUSEX()
+        stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+            free_ram_gb = stat.ullAvailPhys / (1024 ** 3)
+    except Exception:
+        pass
+
+    if free_ram_gb >= 48.0:
+        preferred = ["deepseek-r1:32b", "qwen2.5:32b", "deepseek-r1:14b", "qwen2.5:14b", "deepseek-r1:8b", "deepseek-r1:7b", "qwen2.5:7b", "qwen2.5:3b", "deepseek-r1:1.5b", "qwen2.5:1.5b"]
+        default_model = "qwen2.5:32b"
+    elif free_ram_gb >= 24.0:
+        preferred = ["deepseek-r1:14b", "qwen2.5:14b", "deepseek-r1:8b", "deepseek-r1:7b", "qwen2.5:7b", "qwen2.5:3b", "deepseek-r1:1.5b", "qwen2.5:1.5b", "deepseek-r1:32b", "qwen2.5:32b"]
+        default_model = "qwen2.5:14b"
+    elif free_ram_gb >= 12.0:
+        preferred = ["deepseek-r1:8b", "deepseek-r1:7b", "qwen2.5:7b", "qwen2.5:3b", "deepseek-r1:1.5b", "qwen2.5:1.5b", "deepseek-r1:14b", "qwen2.5:14b"]
+        default_model = "qwen2.5:7b"
+    elif free_ram_gb >= 6.0:
+        preferred = ["qwen2.5:3b", "deepseek-r1:1.5b", "qwen2.5:1.5b", "deepseek-r1:7b", "qwen2.5:7b"]
+        default_model = "qwen2.5:3b"
+    else:
+        preferred = ["deepseek-r1:1.5b", "qwen2.5:1.5b", "qwen2.5:3b"]
+        default_model = "qwen2.5:1.5b"
+
     try:
         req = urllib.request.Request(f"{OLLAMA_ENDPOINT}/api/tags", headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=3) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             installed = [m.get("name", "") for m in data.get("models", [])]
-            
-            # Prioritized order of reasoning models:
-            for preferred in ["deepseek-r1:32b", "deepseek-r1:14b", "deepseek-r1:8b", "deepseek-r1:7b",
-                              "qwen2.5:32b", "qwen2.5:14b", "qwen2.5:7b", "qwen2.5:3b", "qwen2.5:1.5b"]:
+            for p in preferred:
                 for m in installed:
-                    if m.startswith(preferred):
+                    if m.startswith(p):
                         return m
             if installed:
                 return installed[0]
     except Exception:
         pass
-    return "qwen2.5:32b"
+    return default_model
 
 def run_smolagents(query: str) -> Optional[str]:
     """Execute research prompt using Hugging Face smolagents library if installed."""
@@ -204,7 +239,7 @@ def synthesize_with_reasoning_model(query: str, search_results: List[Dict[str, s
         "stream": False,
         "options": {
             "temperature": 0.3,
-            "num_predict": 4096
+            "num_predict": 2048
         }
     }
 
@@ -215,7 +250,7 @@ def synthesize_with_reasoning_model(query: str, search_results: List[Dict[str, s
             data=data,
             headers={"Content-Type": "application/json"}
         )
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with urllib.request.urlopen(req, timeout=240) as resp:
             res_json = json.loads(resp.read().decode("utf-8"))
             content = res_json.get("message", {}).get("content", "")
             if content:

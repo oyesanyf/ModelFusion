@@ -85,9 +85,8 @@ pub async fn live_web_search(query: &str, max_results: usize) -> Result<Vec<Sear
     let mut results = Vec::new();
 
     let client = reqwest::Client::builder()
-        .no_proxy()
-        .connect_timeout(Duration::from_secs(4))
-        .timeout(Duration::from_secs(10))
+        .connect_timeout(Duration::from_secs(6))
+        .timeout(Duration::from_secs(12))
         .build()?;
 
     let mut headers = HeaderMap::new();
@@ -235,19 +234,19 @@ pub async fn detect_best_reasoning_model() -> String {
                     .filter_map(|m| m["name"].as_str().map(|s| s.to_string()))
                     .collect();
 
-                // Preference ranking: DeepSeek-R1 deep reasoning -> Qwen 2.5 high-parameter
-                let preferred = [
-                    "deepseek-r1:32b",
-                    "deepseek-r1:14b",
-                    "deepseek-r1:8b",
-                    "deepseek-r1:7b",
-                    "deepseek-r1:1.5b",
-                    "qwen2.5:32b",
-                    "qwen2.5:14b",
-                    "qwen2.5:7b",
-                    "qwen2.5:3b",
-                    "qwen2.5:1.5b",
-                ];
+                // Dynamically evaluate runtime available memory per AGENTS.md rule
+                let mem = model_selection::memory::SystemMemory::detect_live();
+                let preferred: Vec<&str> = if mem.free_ram_gb >= 48.0 || mem.gpu_vram_free_gb >= 22.0 {
+                    vec!["deepseek-r1:32b", "qwen2.5:32b", "deepseek-r1:14b", "qwen2.5:14b", "deepseek-r1:8b", "deepseek-r1:7b", "qwen2.5:7b", "qwen2.5:3b", "deepseek-r1:1.5b", "qwen2.5:1.5b"]
+                } else if mem.free_ram_gb >= 24.0 || mem.gpu_vram_free_gb >= 12.0 {
+                    vec!["deepseek-r1:14b", "qwen2.5:14b", "deepseek-r1:8b", "deepseek-r1:7b", "qwen2.5:7b", "qwen2.5:3b", "deepseek-r1:1.5b", "qwen2.5:1.5b", "deepseek-r1:32b", "qwen2.5:32b"]
+                } else if mem.free_ram_gb >= 12.0 || mem.gpu_vram_free_gb >= 5.5 {
+                    vec!["deepseek-r1:8b", "deepseek-r1:7b", "qwen2.5:7b", "qwen2.5:3b", "deepseek-r1:1.5b", "qwen2.5:1.5b", "deepseek-r1:14b", "qwen2.5:14b"]
+                } else if mem.free_ram_gb >= 6.0 || mem.gpu_vram_free_gb >= 2.5 {
+                    vec!["qwen2.5:3b", "deepseek-r1:1.5b", "qwen2.5:1.5b", "deepseek-r1:7b", "qwen2.5:7b"]
+                } else {
+                    vec!["deepseek-r1:1.5b", "qwen2.5:1.5b", "qwen2.5:3b"]
+                };
 
                 for p in preferred {
                     if let Some(found) = names.iter().find(|n| n.starts_with(p)) {
@@ -262,7 +261,18 @@ pub async fn detect_best_reasoning_model() -> String {
         }
     }
 
-    "qwen2.5:32b".to_string()
+    let mem = model_selection::memory::SystemMemory::detect_live();
+    if mem.free_ram_gb >= 48.0 || mem.gpu_vram_free_gb >= 22.0 {
+        "qwen2.5:32b".to_string()
+    } else if mem.free_ram_gb >= 24.0 || mem.gpu_vram_free_gb >= 12.0 {
+        "qwen2.5:14b".to_string()
+    } else if mem.free_ram_gb >= 12.0 || mem.gpu_vram_free_gb >= 5.5 {
+        "qwen2.5:7b".to_string()
+    } else if mem.free_ram_gb >= 6.0 || mem.gpu_vram_free_gb >= 2.5 {
+        "qwen2.5:3b".to_string()
+    } else {
+        "qwen2.5:1.5b".to_string()
+    }
 }
 
 /// Synthesizes live search results into a deep research report using an open-weight reasoning model.
@@ -330,14 +340,14 @@ Guidelines:
         "stream": false,
         "options": {
             "temperature": 0.3,
-            "num_predict": 4096
+            "num_predict": 2048
         }
     });
 
     let client = reqwest::Client::builder()
         .no_proxy()
-        .connect_timeout(Duration::from_secs(3))
-        .timeout(Duration::from_secs(180))
+        .connect_timeout(Duration::from_secs(4))
+        .timeout(Duration::from_secs(240))
         .build()?;
 
     let resp = client.post(&url).json(&body).send().await;
@@ -380,11 +390,21 @@ pub async fn run_deep_research(
     model_override: Option<&str>,
 ) -> Result<String> {
     // 1. Try invoking Python web_research_agent.py if available
-    let script_candidates = [
+    let mut script_candidates = vec![
         std::path::PathBuf::from("src/scripts/web_research_agent.py"),
         std::path::PathBuf::from("../src/scripts/web_research_agent.py"),
         std::path::PathBuf::from("../../src/scripts/web_research_agent.py"),
     ];
+
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            script_candidates.push(exe_dir.join("src").join("scripts").join("web_research_agent.py"));
+            if let Some(install_root) = exe_dir.parent() {
+                script_candidates.push(install_root.join("src").join("scripts").join("web_research_agent.py"));
+                script_candidates.push(install_root.join("resources").join("app").join("src").join("scripts").join("web_research_agent.py"));
+            }
+        }
+    }
 
     let mut py_script = None;
     for c in &script_candidates {
