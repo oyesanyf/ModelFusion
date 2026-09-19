@@ -261,6 +261,191 @@ fn select_context_window_for_model(model: &str) -> u32 {
     }
 }
 
+fn resolve_db_path(db_path_opt: Option<&str>) -> std::path::PathBuf {
+    if let Some(p) = db_path_opt {
+        let path = std::path::Path::new(p);
+        if path.exists() {
+            return path.to_path_buf();
+        }
+    }
+    let candidates = [
+        "IDE/db/hf_models.db",
+        "db/hf_models.db",
+        "../IDE/db/hf_models.db",
+    ];
+    for c in &candidates {
+        let p = std::path::Path::new(c);
+        if p.exists() {
+            return p.to_path_buf();
+        }
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let p1 = parent.join("db").join("hf_models.db");
+            if p1.exists() { return p1; }
+            if let Some(grandparent) = parent.parent() {
+                let p2 = grandparent.join("db").join("hf_models.db");
+                if p2.exists() { return p2; }
+                let p3 = grandparent.join("IDE").join("db").join("hf_models.db");
+                if p3.exists() { return p3; }
+            }
+        }
+    }
+    std::path::PathBuf::from(db_path_opt.unwrap_or("IDE/db/hf_models.db"))
+}
+
+async fn generate_active_models_markdown(db_path_opt: Option<&str>) -> String {
+    let mut out = String::new();
+    out.push_str("### 🤖 ModelFusion Active Models & Runtime Overview\n\n");
+
+    // 1. Hardware profile & dynamic Ollama model recommendation
+    let sys = query_system_resources();
+    let recommended_model = select_ollama_model_for_hardware(false);
+
+    out.push_str("#### ⚡ 1. Local AI Engine (Ollama)\n");
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(1500))
+        .build()
+        .unwrap_or_default();
+
+    let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
+        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+    let endpoint_trimmed = endpoint.trim_end_matches('/');
+
+    let ps_url = format!("{}/api/ps", endpoint_trimmed);
+    let tags_url = format!("{}/api/tags", endpoint_trimmed);
+
+    let ps_resp = client.get(&ps_url).send().await;
+    let tags_resp = client.get(&tags_url).send().await;
+
+    let is_ollama_online = ps_resp.is_ok() || tags_resp.is_ok();
+    if is_ollama_online {
+        out.push_str(&format!("- **Engine Status**: 🟢 Active & Responding (`{}`)\n", endpoint_trimmed));
+    } else {
+        out.push_str(&format!("- **Engine Status**: 🟡 Offline / Standby (`{}`)\n", endpoint_trimmed));
+    }
+    out.push_str(&format!("- **Hardware-Sized Target Model**: `{}` (Available RAM: {:.2} GB, Free VRAM: {} MB)\n", recommended_model, sys.free_ram_gb, sys.free_vram_mb));
+
+    // Resident models in memory / VRAM
+    let mut resident_found = false;
+    if let Ok(resp) = ps_resp {
+        if let Ok(json) = resp.json::<serde_json::Value>().await {
+            if let Some(arr) = json.get("models").and_then(|m| m.as_array()) {
+                if !arr.is_empty() {
+                    out.push_str("- **Resident In-Memory / VRAM Models**:\n");
+                    for m in arr {
+                        let name = m.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
+                        let size_vram = m.get("size_vram").and_then(|s| s.as_u64()).unwrap_or(0);
+                        let size_vram_mb = size_vram / (1024 * 1024);
+                        let expires_at = m.get("expires_at").and_then(|e| e.as_str()).unwrap_or("");
+                        let exp_short = if expires_at.len() >= 19 { &expires_at[..19] } else { expires_at };
+                        out.push_str(&format!("  • **`{}`** — VRAM: {} MB, Expiration: `{}`\n", name, size_vram_mb, exp_short));
+                        resident_found = true;
+                    }
+                }
+            }
+        }
+    }
+    if !resident_found {
+        out.push_str("- **Resident In-Memory / VRAM Models**: None active (Ollama idle; loads on first token)\n");
+    }
+
+    // Installed local models
+    if let Ok(resp) = tags_resp {
+        if let Ok(json) = resp.json::<serde_json::Value>().await {
+            if let Some(arr) = json.get("models").and_then(|m| m.as_array()) {
+                if !arr.is_empty() {
+                    out.push_str("- **Installed Local Models**:\n");
+                    for m in arr {
+                        let name = m.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
+                        let size = m.get("size").and_then(|s| s.as_u64()).unwrap_or(0);
+                        let size_gb = size as f64 / (1024.0 * 1024.0 * 1024.0);
+                        out.push_str(&format!("  • `{}` ({:.2} GB)\n", name, size_gb));
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Active Multi-Modal Task Models (Catalog Database)
+    out.push_str("\n#### 📋 2. Active Multi-Modal Task Models (Catalog SQLite)\n");
+    let resolved_db = resolve_db_path(db_path_opt);
+    out.push_str(&format!("- **Database Path**: `{}`\n", resolved_db.display()));
+
+    if let Ok(db) = db::HuggingFaceModelDatabase::open(&resolved_db) {
+        let key_tasks = [
+            ("Code & Text Generation", "text-generation"),
+            ("Speech Recognition (ASR)", "automatic-speech-recognition"),
+            ("Audio Classification", "audio-classification"),
+            ("Text-to-Speech (TTS)", "text-to-speech"),
+            ("Vision / Image Classification", "image-classification"),
+            ("Object Detection", "object-detection"),
+            ("Text Summarization", "summarization"),
+            ("CyberSecurity Vulnerability", "code-vulnerability-detection"),
+            ("Sentence Similarity / Embeddings", "sentence-similarity"),
+        ];
+
+        for (label, task_key) in &key_tasks {
+            if let Ok(models) = db.get_by_task(task_key, 1) {
+                if let Some(top) = models.first() {
+                    out.push_str(&format!("- **{}** (`{}`): `{}` (Score: {:.2}, {} downloads)\n", label, task_key, top.model_id, top.decision_score, top.downloads));
+                } else {
+                    out.push_str(&format!("- **{}** (`{}`): *No models indexed yet*\n", label, task_key));
+                }
+            }
+        }
+    } else {
+        out.push_str("- ⚠️ Database not accessible at resolved path. Run `--update` or `--updatedb` to initialize.\n");
+    }
+
+    // 3. OpenVINO Local Acceleration Cache
+    out.push_str("\n#### 🚀 3. OpenVINO Local Acceleration Cache\n");
+    let ov_dirs = [
+        std::path::PathBuf::from("ov_models"),
+        std::path::PathBuf::from("IDE/ov_models"),
+        std::path::PathBuf::from("../IDE/ov_models"),
+    ];
+    let mut ov_found = false;
+    for d in &ov_dirs {
+        if d.exists() && d.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(d) {
+                let model_dirs: Vec<String> = entries
+                    .filter_map(|e| e.ok())
+                    .filter(|e| e.path().is_dir())
+                    .map(|e| e.file_name().to_string_lossy().to_string())
+                    .collect();
+                out.push_str(&format!("- **Cache Directory**: `{}` ({} cached IR models)\n", d.display(), model_dirs.len()));
+                for m in &model_dirs {
+                    out.push_str(&format!("  • `{}`\n", m));
+                }
+                ov_found = true;
+                break;
+            }
+        }
+    }
+    if !ov_found {
+        out.push_str("- **Cache Directory**: `ov_models/` (0 cached IR models — Intel CPU/GPU/NPU acceleration ready)\n");
+    }
+
+    // 4. Cloud API Providers
+    out.push_str("\n#### ☁️ 4. Cloud API Providers & Integrations\n");
+    let openai_st = if std::env::var("OPENAI_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "🟢 [LOADED]" } else { "⚪ [NOT CONFIGURED]" };
+    let anthropic_st = if std::env::var("ANTHROPIC_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "🟢 [LOADED]" } else { "⚪ [NOT CONFIGURED]" };
+    let gemini_st = if std::env::var("GEMINI_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "🟢 [LOADED]" } else { "⚪ [NOT CONFIGURED]" };
+    let hf_st = if std::env::var("HF_TOKEN").or_else(|_| std::env::var("HUGGINGFACE_API_KEY")).map(|s| !s.trim().is_empty()).unwrap_or(false) { "🟢 [LOADED]" } else { "🟢 [ANONYMOUS/DEFAULT]" };
+
+    out.push_str(&format!("- **OpenAI**: {}\n", openai_st));
+    out.push_str(&format!("- **Anthropic**: {}\n", anthropic_st));
+    out.push_str(&format!("- **Google Gemini**: {}\n", gemini_st));
+    out.push_str(&format!("- **Hugging Face Hub**: {}\n", hf_st));
+
+    out
+}
+
+async fn generate_active_models_report(db_path_opt: Option<&str>) -> String {
+    generate_active_models_markdown(db_path_opt).await
+}
+
 
 #[derive(Parser, Debug)]
 #[command(
@@ -269,6 +454,8 @@ fn select_context_window_for_model(model: &str) -> u32 {
     about = "ModelFusion - Advanced HuggingFace Model Orchestration System",
     after_help = "\
 DATABASE & MODEL UPDATE COMMANDS:
+  --active-model        Display all models currently in use by the IDE (active Ollama
+                        runtime in VRAM/RAM, active task models in SQLite, OpenVINO cache)
   --update              Fast curated update: indexes top ~6,500 production workhorse models
                         across all 45 tasks and provisions optimal local Ollama hardware model
   --updatedb            Full registry crawler: continuously ingests ALL 2M+ models from Hugging Face
@@ -277,6 +464,9 @@ DATABASE & MODEL UPDATE COMMANDS:
   --db-path <PATH>      Target SQLite database path (e.g. IDE/db/hf_models.db)
 
 EXAMPLES:
+  # Inspect all active runtime and catalog models
+  cli.exe --active-model --db-path \"IDE/db/hf_models.db\"
+
   # Fast curated update + Ollama model setup
   cli.exe --update --db-path \"IDE/db/hf_models.db\"
 
@@ -441,6 +631,18 @@ struct Args {
     // ---------------------------------------------------------
     // System Commands / Flags
     // ---------------------------------------------------------
+    #[arg(
+        long,
+        alias = "active-models",
+        alias = "current-model",
+        alias = "current-models",
+        alias = "ide-model",
+        alias = "ide-models",
+        alias = "models-in-use",
+        help = "Display all models currently in use by the IDE (active Ollama runtime, active task models, OpenVINO cache)"
+    )]
+    active_model: bool,
+
     #[arg(long, help = "Show model categorization statistics")]
     stats: bool,
 
@@ -1047,6 +1249,12 @@ async fn run(args: Args) -> Result<()> {
     }
 
     // Dispatch system commands first
+    if args.active_model {
+        let report = generate_active_models_report(args.db_path.as_deref()).await;
+        println!("{}", report);
+        return Ok(());
+    }
+
     if args.stats {
         let res = handler.handle_stats();
         println!("{}", res.content);
@@ -1418,9 +1626,16 @@ async fn run(args: Args) -> Result<()> {
     // ---------------------------------------------------------
     // Orchestration Flow
     // ---------------------------------------------------------
-    if args.prompt.is_some() || args.query.is_some() || args.folder.is_some() || determine_task_override(&args).is_some() {
+    if args.prompt.is_some() || args.query.is_some() || args.folder.is_some() || args.file.is_some() || determine_task_override(&args).is_some() {
         let mut final_prompt = args.prompt.clone()
             .or_else(|| args.query.clone())
+            .or_else(|| {
+                if let Some(ref file_path) = args.file {
+                    std::fs::read_to_string(file_path).ok()
+                } else {
+                    None
+                }
+            })
             .unwrap_or_else(|| {
                 "Review the code in this folder, identify any bugs, vulnerabilities, or optimization opportunities, and suggest improvements.".to_string()
             });
@@ -2592,6 +2807,10 @@ Respond ONLY with a valid JSON object matching this schema:
 }
 
 async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: bool) -> Result<()> {
+    // Set default runtime backend flags once at startup so they remain read-only during server lifetime
+    std::env::set_var("MODELFUSION_USE_OLLAMA", "true");
+    std::env::set_var("MODELFUSION_FORCE_GPU", "true");
+
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
     println!("ModelFusion API server running on http://127.0.0.1:{}", port);
     
@@ -2822,6 +3041,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         let known_slash_commands = [
                             // Original fast-interception commands
                             "keys", "api-keys", "mcp", "stats", "statsd", "sysinfo", "sys-info", "tasks", "task",
+                            "active-model", "active_model", "active-models", "current-model", "current_model", "current-models",
+                            "ide-model", "ide_model", "ide-models", "models-in-use", "models_in_use",
+                            "version", "updatedb", "update-db",
                             "command", "commands", "help", "comment", "comments", "doc", "docs",
                             "cache-stats", "performance-stats", "decision-stats", "evolve", "evovle", "evove", "evoce", "evolv", "evolution",
                             "security", "refactor",
@@ -2867,113 +3089,177 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         // Each entry is (command_name, arguments_text)
                         let mut matched_cmds: Vec<(String, String)> = Vec::new();
 
-                        // Split user segment into lines to handle multi-command batches
-                        for line in latest_user_segment.lines() {
-                            let line = line.trim();
-                            if line.is_empty() { continue; }
+                        let user_seg_trimmed = latest_user_segment.trim();
+                        let lower_user_seg = user_seg_trimmed.to_lowercase();
+                        let prompt_lower = prompt.to_lowercase();
 
-                            let lower_line = line.to_lowercase();
-                            let is_explicit_agent_prefix = lower_line.starts_with("@agent")
-                                || lower_line.starts_with("@commands")
-                                || lower_line.starts_with("@command")
-                                || lower_line.starts_with("@comments")
-                                || lower_line.starts_with("@comment")
-                                || lower_line.starts_with("@tasks")
-                                || lower_line.starts_with("@task")
-                                || lower_line.starts_with("@modelfusion")
-                                || lower_line.starts_with("@hugos");
+                        let non_empty_lines: Vec<&str> = latest_user_segment
+                            .lines()
+                            .map(|l| l.trim())
+                            .filter(|l| !l.is_empty())
+                            .collect();
+                        let is_multiline = non_empty_lines.len() > 1;
 
-                            let is_agent_line = is_explicit_agent_prefix;
+                        let conversational_prefixes = [
+                            "adopt", "create", "write", "how", "what", "why", "please", 
+                            "can you", "generate", "fix", "refactor", "explain", "help me", 
+                            "tell me", "show me", "could you", "would you", "i need", "i want"
+                        ];
+                        let starts_with_conversational = conversational_prefixes
+                            .iter()
+                            .any(|&p| lower_user_seg.starts_with(p));
 
-                            let line_to_scan = if is_explicit_agent_prefix {
-                                if lower_line.starts_with("@agent") {
-                                    line[6..].trim()
-                                } else if lower_line.starts_with("@commands") {
-                                    line[9..].trim()
-                                } else if lower_line.starts_with("@command") {
-                                    line[8..].trim()
-                                } else if lower_line.starts_with("@comments") {
-                                    line[9..].trim()
-                                } else if lower_line.starts_with("@comment") {
-                                    line[8..].trim()
-                                } else if lower_line.starts_with("@tasks") {
-                                    line[6..].trim()
-                                } else if lower_line.starts_with("@task") {
-                                    line[5..].trim()
-                                } else if lower_line.starts_with("@modelfusion") {
-                                    line[12..].trim()
-                                } else if lower_line.starts_with("@hugos") {
-                                    line[6..].trim()
+                        let has_code_blocks = prompt.contains("```") || latest_user_segment.contains("```");
+                        let has_code_imports = prompt_lower.contains("import ")
+                            || prompt_lower.contains("from ")
+                            || prompt_lower.contains("#include")
+                            || prompt_lower.contains("use std::")
+                            || prompt_lower.contains("require(")
+                            || prompt_lower.contains("#!/")
+                            || lower_user_seg.contains("import ")
+                            || lower_user_seg.contains("from ")
+                            || lower_user_seg.contains("#include")
+                            || lower_user_seg.contains("use std::")
+                            || lower_user_seg.contains("require(")
+                            || lower_user_seg.contains("#!/");
+
+                        // a) latest_user_segment starts with @agent, @command, @commands, @tasks, @task, @modelfusion, or @hugos (case-insensitive)
+                        let is_agent_prefixed = lower_user_seg.starts_with("@agent")
+                            || lower_user_seg.starts_with("@command")
+                            || lower_user_seg.starts_with("@commands")
+                            || lower_user_seg.starts_with("@tasks")
+                            || lower_user_seg.starts_with("@task")
+                            || lower_user_seg.starts_with("@modelfusion")
+                            || lower_user_seg.starts_with("@hugos");
+
+                        // b) OR latest_user_segment is a single-line command whose first non-whitespace token starts with / or --
+                        let is_single_line_slash_or_flag = !is_multiline && non_empty_lines.first().map(|line| {
+                            let first_token = line.split_whitespace().next().unwrap_or("");
+                            first_token.starts_with('/') || first_token.starts_with("--")
+                        }).unwrap_or(false);
+
+                        let should_run_interception = (is_agent_prefixed || is_single_line_slash_or_flag)
+                            && !starts_with_conversational
+                            && !has_code_blocks
+                            && !has_code_imports
+                            && !(is_multiline && !is_agent_prefixed);
+
+                        if should_run_interception {
+                            // Split user segment into lines to handle multi-command batches
+                            for line in latest_user_segment.lines() {
+                                let line = line.trim();
+                                if line.is_empty() { continue; }
+
+                                let lower_line = line.to_lowercase();
+                                let is_explicit_agent_prefix = lower_line.starts_with("@agent")
+                                    || lower_line.starts_with("@commands")
+                                    || lower_line.starts_with("@command")
+                                    || lower_line.starts_with("@comments")
+                                    || lower_line.starts_with("@comment")
+                                    || lower_line.starts_with("@tasks")
+                                    || lower_line.starts_with("@task")
+                                    || lower_line.starts_with("@modelfusion")
+                                    || lower_line.starts_with("@hugos");
+
+                                let is_agent_line = is_explicit_agent_prefix;
+
+                                let line_to_scan = if is_explicit_agent_prefix {
+                                    if lower_line.starts_with("@agent") {
+                                        line[6..].trim()
+                                    } else if lower_line.starts_with("@commands") {
+                                        line[9..].trim()
+                                    } else if lower_line.starts_with("@command") {
+                                        line[8..].trim()
+                                    } else if lower_line.starts_with("@comments") {
+                                        line[9..].trim()
+                                    } else if lower_line.starts_with("@comment") {
+                                        line[8..].trim()
+                                    } else if lower_line.starts_with("@tasks") {
+                                        line[6..].trim()
+                                    } else if lower_line.starts_with("@task") {
+                                        line[5..].trim()
+                                    } else if lower_line.starts_with("@modelfusion") {
+                                        line[12..].trim()
+                                    } else if lower_line.starts_with("@hugos") {
+                                        line[6..].trim()
+                                    } else {
+                                        line
+                                    }
                                 } else {
                                     line
-                                }
-                            } else {
-                                line
-                            };
-
-                            // If user explicitly typed a standalone participant tag without extra command, provide stats or comment info
-                            if line_to_scan.is_empty() && is_explicit_agent_prefix {
-                                if lower_line.starts_with("@comment") || lower_line.starts_with("@comments") {
-                                    if !matched_cmds.iter().any(|(c, _)| c == "comment") {
-                                        matched_cmds.push(("comment".to_string(), String::new()));
-                                    }
-                                } else {
-                                    if !matched_cmds.iter().any(|(c, _)| c == "stats") {
-                                        matched_cmds.push(("stats".to_string(), String::new()));
-                                    }
-                                }
-                                continue;
-                            }
-
-                            let words: Vec<&str> = line_to_scan.split_whitespace().collect();
-                            let is_single_word_line = words.len() == 1;
-
-                            for word in words {
-                                if word.contains("://") || word.contains('<') || word.contains('>') {
-                                    continue;
-                                }
-
-                                let is_slash_prefixed = word.starts_with('/') || (word.starts_with('(') && word[1..].starts_with('/')) || (word.starts_with('[') && word[1..].starts_with('/'));
-                                // STRICT REQUIREMENT: Only consider as command if starts with '/' OR the line was explicitly prefixed with @agent / @commands OR it is a single standalone command word on its line!
-                                if !is_slash_prefixed && !is_agent_line && !is_single_word_line {
-                                    continue;
-                                }
-
-                                let trimmed_word = word.trim_start_matches(|c: char| c == '@' || c == '(' || c == '[' || c == '{' || c == '"' || c == '\'' || c == '`');
-                                let raw_cmd = if trimmed_word.starts_with('/') {
-                                    let after_slash = &trimmed_word[1..];
-                                    if after_slash.contains('/') || after_slash.contains('\\') {
-                                        continue;
-                                    }
-                                    after_slash
-                                } else {
-                                    trimmed_word
                                 };
 
-                                let clean_cmd = raw_cmd.trim_end_matches(|c: char| c == '.' || c == ',' || c == ':' || c == ';' || c == '?' || c == '!' || c == ')' || c == ']' || c == '}' || c == '"' || c == '\'' || c == '`').to_lowercase();
-                                if clean_cmd.contains('.') {
+                                // If user explicitly typed a standalone participant tag without extra command, provide stats or comment info
+                                if line_to_scan.is_empty() && is_explicit_agent_prefix {
+                                    if lower_line.starts_with("@comment") || lower_line.starts_with("@comments") {
+                                        if !matched_cmds.iter().any(|(c, _)| c == "comment") {
+                                            matched_cmds.push(("comment".to_string(), String::new()));
+                                        }
+                                    } else {
+                                        if !matched_cmds.iter().any(|(c, _)| c == "stats") {
+                                            matched_cmds.push(("stats".to_string(), String::new()));
+                                        }
+                                    }
                                     continue;
                                 }
 
-                                if !clean_cmd.is_empty() {
-                                    if known_slash_commands.contains(&clean_cmd.as_str()) {
-                                        let cmd_token = format!("/{}", clean_cmd);
-                                        let args_text = if let Some(pos) = line.to_lowercase().find(&cmd_token) {
-                                            line[pos + cmd_token.len()..].trim().to_string()
-                                        } else if let Some(pos) = line.to_lowercase().find(&clean_cmd) {
-                                            line[pos + clean_cmd.len()..].trim().to_string()
-                                        } else {
-                                            String::new()
-                                        };
-                                        if !matched_cmds.iter().any(|(c, _)| c == &clean_cmd) {
-                                            matched_cmds.push((clean_cmd.clone(), args_text));
+                                let words: Vec<&str> = line_to_scan.split_whitespace().collect();
+                                let is_single_word_line = words.len() == 1;
+
+                                for word in words {
+                                    if word.contains("://") || word.contains('<') || word.contains('>') {
+                                        continue;
+                                    }
+
+                                    let is_flag_prefixed = word.starts_with("--") || (word.starts_with('-') && word.len() > 1 && !word[1..].starts_with(|c: char| c.is_ascii_digit()));
+                                    let is_slash_prefixed = word.starts_with('/') || (word.starts_with('(') && word[1..].starts_with('/')) || (word.starts_with('[') && word[1..].starts_with('/'));
+                                    let is_prefixed = is_slash_prefixed || is_flag_prefixed;
+                                    // STRICT REQUIREMENT: Only consider as command if starts with '/' or '--'/'-' OR the line was explicitly prefixed with @agent / @commands OR it is a single standalone command word on its line!
+                                    if !is_prefixed && !is_agent_line && !is_single_word_line {
+                                        continue;
+                                    }
+
+                                    let trimmed_word = word.trim_start_matches(|c: char| c == '@' || c == '(' || c == '[' || c == '{' || c == '"' || c == '\'' || c == '`');
+                                    let raw_cmd = if trimmed_word.starts_with("--") {
+                                        &trimmed_word[2..]
+                                    } else if trimmed_word.starts_with('-') && trimmed_word.len() > 1 && !trimmed_word[1..].starts_with(|c: char| c.is_ascii_digit()) {
+                                        &trimmed_word[1..]
+                                    } else if trimmed_word.starts_with('/') {
+                                        let after_slash = &trimmed_word[1..];
+                                        if after_slash.contains('/') || after_slash.contains('\\') {
+                                            continue;
                                         }
-                                        break; // Only one command per line
-                                    } else if is_slash_prefixed {
-                                        if !matched_cmds.iter().any(|(c, _)| c == &clean_cmd) {
-                                            matched_cmds.push((clean_cmd.clone(), String::new()));
+                                        after_slash
+                                    } else {
+                                        trimmed_word
+                                    };
+
+                                    let clean_cmd = raw_cmd.trim_end_matches(|c: char| c == '.' || c == ',' || c == ':' || c == ';' || c == '?' || c == '!' || c == ')' || c == ']' || c == '}' || c == '"' || c == '\'' || c == '`').to_lowercase();
+                                    if clean_cmd.contains('.') {
+                                        continue;
+                                    }
+
+                                    if !clean_cmd.is_empty() {
+                                        if known_slash_commands.contains(&clean_cmd.as_str()) {
+                                            let cmd_token_slash = format!("/{}", clean_cmd);
+                                            let cmd_token_dflag = format!("--{}", clean_cmd);
+                                            let cmd_token_sflag = format!("-{}", clean_cmd);
+                                            let args_text = if let Some(pos) = line.to_lowercase().find(&cmd_token_dflag) {
+                                                line[pos + cmd_token_dflag.len()..].trim().to_string()
+                                            } else if let Some(pos) = line.to_lowercase().find(&cmd_token_slash) {
+                                                line[pos + cmd_token_slash.len()..].trim().to_string()
+                                            } else if let Some(pos) = line.to_lowercase().find(&cmd_token_sflag) {
+                                                line[pos + cmd_token_sflag.len()..].trim().to_string()
+                                            } else if let Some(pos) = line.to_lowercase().find(&clean_cmd) {
+                                                line[pos + clean_cmd.len()..].trim().to_string()
+                                            } else {
+                                                String::new()
+                                            };
+                                            if !matched_cmds.iter().any(|(c, _)| c == &clean_cmd) {
+                                                matched_cmds.push((clean_cmd.clone(), args_text));
+                                            }
+                                            break; // Only one command per line
                                         }
-                                        break;
                                     }
                                 }
                             }
@@ -3020,6 +3306,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         "get-model-ranking" | "model-ranking" => "get_model_ranking",
                                         "get-ml-analytics" | "ml-analytics" => "get_ml_analytics",
                                         "report-bandit-feedback" => "report_bandit_feedback",
+                                        "active-model" | "active_model" | "active-models" | "current-model" | "current_model" | "current-models" | "ide-model" | "ide_model" | "ide-models" | "models-in-use" | "models_in_use" => "active-model",
+                                        "version" | "v" => "version",
+                                        "updatedb" => "updatedb",
                                         "commands" | "help" => "command",
                                         "comments" | "docs" => "comment",
                                         "test" => "tests",
@@ -3092,12 +3381,57 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                             (idx, format!("💻 **System Hardware Specifications**\n\n- **CPU**: {} ({} Logical Cores)\n- **RAM**: {:.2} GB total size / {:.2} GB available\n- **GPU**: {}\n- **VRAM**: {} MB total size / {} MB available\n{}", sys.cpu_name, sys.logical_cores, sys.total_ram_gb, sys.free_ram_gb, sys.gpu_name, sys.total_vram_mb, sys.free_vram_mb, disks_formatted))
                                         },
                                         "tasks" => {
+                                            let clean_args = args_owned.trim().to_lowercase();
+                                            let first_arg = clean_args.split_whitespace().next().unwrap_or("");
+                                            let cat_opt = if !first_arg.is_empty() { Some(first_arg) } else { None };
+                                            let db_path_str = db_path_ref.as_deref().filter(|s| !s.is_empty()).unwrap_or("IDE/db/hf_models.db");
+                                            let handler = ComprehensiveTaskHandler::new(Some(db_path_str)).unwrap_or_else(|_| ComprehensiveTaskHandler::new(None).unwrap());
+                                            let tasks_res = handler.handle_tasks_list(cat_opt);
+                                            
+                                            let mut enriched = format!("### 📋 ModelFusion Tasks ({})\n\n{}", cat_opt.unwrap_or("all"), tasks_res.content);
+                                            let db_to_open = if handler.db_path.exists() {
+                                                handler.db_path.to_string_lossy().to_string()
+                                            } else {
+                                                db_path_str.to_string()
+                                            };
+                                            if let Ok(db) = db::HuggingFaceModelDatabase::open(&db_to_open).or_else(|_| db::HuggingFaceModelDatabase::open(db_path_str)) {
+                                                if let Some(cat) = cat_opt {
+                                                    let task_list: Vec<&str> = match cat {
+                                                        "audio" => vec!["automatic-speech-recognition", "audio-classification", "voice-activity-detection", "emotion-recognition", "text-to-speech"],
+                                                        "image" | "vision" => vec!["image-classification", "object-detection", "image-segmentation", "depth-estimation", "visual-question-answering", "text-to-image"],
+                                                        "text" | "nlp" => vec!["text-generation", "text-classification", "summarization", "translation", "question-answering", "sentence-similarity"],
+                                                        "security" => vec!["code-vulnerability-detection", "malware-text-detection", "phishing-detection"],
+                                                        "legal" => vec!["legal-judgment-classification", "contract-clause-classification", "case-outcome-prediction"],
+                                                        _ => vec![],
+                                                    };
+                                                    if !task_list.is_empty() {
+                                                        enriched.push_str("\n🏆 **Top Selected Models in Database**:\n");
+                                                        for t in task_list {
+                                                            if let Ok(models) = db.get_by_task(t, 1) {
+                                                                if let Some(m) = models.first() {
+                                                                    enriched.push_str(&format!("- **`{}`**: `{}` (Decision Score: {:.2}, {} downloads)\n", t, m.model_id, m.decision_score, m.downloads));
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            (idx, enriched)
+                                        },
+                                        "active-model" => {
+                                            let report = generate_active_models_markdown(db_path_ref.as_deref()).await;
+                                            (idx, report)
+                                        },
+                                        "version" => {
                                             let sys = query_system_resources();
-                                            (idx, format!("📋 **ModelFusion Active Tasks & Capabilities**\n\n- Dedicated threads active for parallel execution.\n- System resources: {} CPU Cores / GPU {}", sys.logical_cores, sys.gpu_name))
+                                            (idx, format!("ℹ️ **ModelFusion Engine v0.1.0 (Build 96+)**\n\n- System: {} ({} Cores, {:.2} GB RAM, GPU: {})\n- Local Ollama Endpoint: http://127.0.0.1:11434\n- Multi-Modal Catalog: IDE/db/hf_models.db", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name))
+                                        },
+                                        "updatedb" => {
+                                            (idx, "🚀 **ModelFusion Full Registry Crawler**: Ingesting ALL 2M+ models from Hugging Face Hub.\n\nRun in the terminal for continuous cursor-paginated progress:\n```powershell\ncli.exe --updatedb --db-path \"IDE/db/hf_models.db\"\n```".to_string())
                                         },
                                         "command" => {
                                             let sys = query_system_resources();
-                                            (idx, format!("🤖 **ModelFusion Commands & System Status**\n\n- **Engine**: Active & Operational (<1ms Fast Interception)\n- **System**: {} ({} Cores), {:.2} GB RAM free\n- **GPU**: {} ({} MB free VRAM)\n\n### Available Slash Commands:\n- `/stats` — System & database metrics\n- `/sysinfo` — Detailed hardware specs\n- `/tasks` — Task pipelines & models\n- `/keys` — API key configuration\n- `/comment` — Add inline comments & docstrings to code\n- `/evolve` — OpenEvolve iterative optimization\n- `/security` — Vulnerability audit & fix\n- `/refactor` — Code refactoring\n- `/optimize` — Performance optimization\n- `/doc` — Generate technical documentation", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb))
+                                            (idx, format!("🤖 **ModelFusion Commands & System Directory**\n\n- **Engine**: Active & Operational (<1ms Fast Interception)\n- **System**: {} ({} Cores), {:.2} GB RAM free\n- **GPU**: {} ({} MB free VRAM)\n\n### Available Slash Commands & CLI Directives:\n- `/active-model` (or `--active-model`) — All models currently in use by the IDE (Ollama runtime, SQLite pipelines, OpenVINO cache)\n- `/stats` (or `--stats`) — Real-time system resource allocation and database metrics\n- `/sysinfo` (or `--sys-info`) — Detailed hardware specifications, CPU cores, RAM, and disk drives\n- `/tasks` (or `--tasks [category]`) — Multi-modal task capabilities and top database models (audio, vision, nlp, security, legal)\n- `/keys` (or `--keys`) — Cloud API key configuration (OpenAI, Anthropic, Gemini, HF)\n- `/comment` — Add inline explanations and docstrings to code\n- `/evolve` — OpenEvolve iterative code optimization\n- `/security` — CyberSecurity audit and vulnerability fixes\n- `/refactor` — Code structure refactoring\n- `/optimize` — Performance optimization\n- `/version` (or `-v`) — Engine and build version\n- `/update` — Fast curated update (~6,500 models) and local Ollama hardware model provisioning\n- `/updatedb` — Full registry crawler for all 2M+ Hugging Face models", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb))
                                         },
                                         "comment" | "doc" => {
                                             (idx, "📝 **ModelFusion Code Commenting & Documentation Engine**: Active.\n\nProvide or attach code to generate comprehensive inline explanations and docstrings.".to_string())
@@ -3506,7 +3840,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             extract_latest_user_query(&prompt)
                         };
                         
-                        let is_complex = user_msg_for_check.len() > 300
+                        let mut is_complex = user_msg_for_check.len() > 300
                             || {
                                 let lower = user_msg_for_check.to_lowercase();
                                 lower.contains("implement") || lower.contains("refactor") 
@@ -3525,6 +3859,11 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 || lower.contains("function") || lower.contains("struct ")
                                 || lower.contains("write code") || lower.contains("generate code")
                             };
+
+                        let lower_check = user_msg_for_check.to_lowercase();
+                        if lower_check.contains("progress messages") || lower_check.contains("progress message") {
+                            is_complex = false;
+                        }
                         
                         eprintln!("[SERVER] 📝 Extracted user query (len={}): {:?} → is_complex={}", 
                             user_msg_for_check.len(), 
@@ -3769,7 +4108,6 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 }
                             }
                             // If fast path fails, fall through to full orchestrator below
-                            std::env::set_var("MODELFUSION_USE_OLLAMA", "true");
                             fusion = false;
                             gpu = true;
                         } else if is_complex {
@@ -3805,27 +4143,10 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         eprintln!("[SERVER] Options: fusion={}, strategy={}, budget={}, gpu={}, cpu={}, openvino={}, ollama={}", fusion, strategy, budget, gpu, cpu, openvino, ollama);
 
 
-                        if ollama || (gpu && !openvino) {
-                            std::env::set_var("MODELFUSION_USE_OLLAMA", "true");
-                            std::env::set_var("MODELFUSION_FORCE_GPU", "true");
-                        } else {
-                            std::env::remove_var("MODELFUSION_USE_OLLAMA");
-                            std::env::remove_var("MODELFUSION_FORCE_GPU");
-                        }
-
-                        if openvino {
-                            std::env::set_var("MODELFUSION_USE_OPENVINO", "true");
-                        } else {
-                            std::env::remove_var("MODELFUSION_USE_OPENVINO");
-                        }
-
-                        if cpu {
-                            std::env::set_var("MODELFUSION_USE_TRANSFORMERS", "true");
-                            std::env::set_var("MODELFUSION_FORCE_CPU", "true");
-                        } else {
-                            std::env::remove_var("MODELFUSION_USE_TRANSFORMERS");
-                            std::env::remove_var("MODELFUSION_FORCE_CPU");
-                        }
+                        orchestration_options.insert("ollama".to_string(), ollama.to_string());
+                        orchestration_options.insert("gpu".to_string(), gpu.to_string());
+                        orchestration_options.insert("cpu".to_string(), cpu.to_string());
+                        orchestration_options.insert("openvino".to_string(), openvino.to_string());
 
                         // Strip IDE's restrictive system prompt before orchestrator
                         // The orchestrator/models have their own prompting — the IDE's
