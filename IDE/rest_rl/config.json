@@ -1,0 +1,61 @@
+{
+  "ipc": {
+    "pipe_name": "\\\\.\\pipe\\hugos_rest_rl_ipc",
+    "unix_socket_path": "/tmp/hugos_rest_rl.sock",
+    "tcp_host": "127.0.0.1",
+    "tcp_port": 45454,
+    "default_transport": "tcp",
+    "request_timeout_seconds": 30.0
+  },
+  "idle": {
+    "debounce_seconds": 45.0,
+    "heartbeat_interval_seconds": 10.0
+  },
+  "resources": {
+    "max_cuda_memory_fraction": 0.5,
+    "vllm_gpu_memory_utilization": 0.4,
+    "tier1_min_available_ram_gb": 24.0,
+    "tier1_min_free_vram_gb": 14.0,
+    "tier2_min_available_ram_gb": 12.0,
+    "tier2_min_free_vram_gb": 4.5,
+    "tier3_min_available_ram_gb": 4.0
+  },
+  "sandbox": {
+    "timeout_seconds": 5.0,
+    "max_memory_mb": 512,
+    "forbidden_ast_calls": [
+      "os.system",
+      "shutil.rmtree",
+      "subprocess.Popen",
+      "subprocess.call",
+      "subprocess.run"
+    ]
+  },
+  "models": {
+    "tier1": {
+      "tier": 1,
+      "name": "Qwen/Qwen2.5-Coder-7B-Instruct",
+      "reward_model": "Skywork/Skywork-Reward-Llama-3.1-8B-v0.2",
+      "framework": "rest_rl_mcts",
+      "mcts_iterations": 16,
+      "mcts_rollout_depth": 4,
+      "temperature": 0.7
+    },
+    "tier2": {
+      "tier": 2,
+      "name": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+      "framework": "trl_grpo",
+      "num_generations": 4,
+      "max_completion_length": 512,
+      "temperature": 0.8
+    },
+    "tier3": {
+      "tier": 3,
+      "name": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+      "framework": "minimal_rejection_sampling",
+      "ollama_model": "qwen2.5-coder:1.5b",
+      "num_samples": 3,
+      "temperature": 0.6
+    }
+  }
+}
