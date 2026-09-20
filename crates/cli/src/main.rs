@@ -715,7 +715,7 @@ struct Args {
     #[arg(long, help = "Enable model fusion to process prompt using a panel of models")]
     fusion: bool,
 
-    #[arg(long, default_value = "10", help = "Number of models to run in the fusion panel")]
+    #[arg(long, default_value = "0", help = "Number of models to run in the fusion panel (0 = dynamically derive based on available RAM/VRAM)")]
     fusion_models: usize,
 
     #[arg(long, default_value = "multi-model", help = "Fusion execution mode: 'multi-model' (N different models) or 'multi-sample' (1 model, N temperature samples — much faster locally)")]
@@ -1962,15 +1962,29 @@ async fn run(args: Args) -> Result<()> {
                 }
             }
 
+            let effective_fusion_models = if args.fusion_models <= 1 {
+                let derived = model_selection::memory::derive_fusion_model_count();
+                let sys_mem = model_selection::memory::SystemMemory::detect_live();
+                eprintln!("[CLI] 🧠 Dynamic hardware allocation: runtime available RAM={:.1}GB, free VRAM={:.1}GB -> dynamically allocated fusion panel: {} models (raw setting was {}).",
+                    sys_mem.free_ram_gb, sys_mem.gpu_vram_free_gb, derived, args.fusion_models);
+                derived
+            } else {
+                args.fusion_models
+            };
+
+            let clean_model = args.model.as_deref()
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty() && *s != "modelfusion-local" && *s != "modelfusion" && *s != "default" && *s != "auto");
+
             match modelfusion_core::fusion_engine::run_fusion(
                 &final_prompt_orig,
                 context_to_pass.as_deref(),
                 Some(&db_path),
                 task_override.as_deref(),
                 selection_strategy,
-                Some(args.fusion_models),
+                Some(effective_fusion_models),
                 &args.fusion_mode,
-                args.model.as_deref(),
+                clean_model,
             ).await {
                 Ok(content) => {
                     eprintln!("\n[SUCCESS] Orchestration Successful (via Model Fusion)!\n");
@@ -3604,8 +3618,12 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     let mut prompt = request_json["prompt"].as_str().unwrap_or("").to_string();
                     let mut strategy = request_json["selection_strategy"].as_str().unwrap_or("multi_objective").to_string();
                     let raw_fusion_models = request_json["fusion_models"].as_u64().unwrap_or(0) as usize;
-                    let fusion_models = if raw_fusion_models == 0 {
-                        model_selection::memory::derive_fusion_model_count()
+                    let fusion_models = if raw_fusion_models <= 1 {
+                        let derived = model_selection::memory::derive_fusion_model_count();
+                        let sys_mem = model_selection::memory::SystemMemory::detect_live();
+                        eprintln!("[SERVER] 🧠 Dynamic hardware allocation: runtime available RAM={:.1}GB, free VRAM={:.1}GB -> dynamically allocated fusion panel: {} models (raw setting was {}).",
+                            sys_mem.free_ram_gb, sys_mem.gpu_vram_free_gb, derived, raw_fusion_models);
+                        derived
                     } else {
                         raw_fusion_models
                     };
@@ -3639,9 +3657,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     }
                     let mut fusion = request_json.get("fusion").and_then(|v| v.as_bool()).unwrap_or(true);
                     let model_override = request_json["model"]
-
                         .as_str()
-                        .filter(|s| !s.is_empty())
+                        .map(|s| s.trim())
+                        .filter(|s| !s.is_empty() && *s != "modelfusion-local" && *s != "modelfusion" && *s != "default" && *s != "auto")
                         .map(|s| s.to_string());
 
                     if slash_enabled {
@@ -8954,6 +8972,34 @@ User: @agent --active-model";
     fn test_agent_multiword_conversational_guard() {
         let raw = "@agent please check if all tests pass";
         assert_eq!(super::canonicalize_command(raw), None);
+    }
+
+    #[test]
+    fn test_dynamic_fusion_models_derivation() {
+        let raw_zero = 0;
+        let derived_zero = if raw_zero <= 1 {
+            model_selection::memory::derive_fusion_model_count()
+        } else {
+            raw_zero
+        };
+        assert!(derived_zero >= 2);
+        assert_eq!(derived_zero, 7); // On this machine with >=64GB free RAM
+
+        let raw_one = 1;
+        let derived_one = if raw_one <= 1 {
+            model_selection::memory::derive_fusion_model_count()
+        } else {
+            raw_one
+        };
+        assert_eq!(derived_one, 7);
+
+        let raw_five = 5;
+        let explicit_five = if raw_five <= 1 {
+            model_selection::memory::derive_fusion_model_count()
+        } else {
+            raw_five
+        };
+        assert_eq!(explicit_five, 5);
     }
 }
 
