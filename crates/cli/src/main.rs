@@ -2860,6 +2860,7 @@ pub fn get_cli_flag_info(flag_name: &str) -> (bool, Option<&'static str>) {
         "getvino-interval" => (true, Some("24")),
         "port" => (true, Some("5000")),
         "ide-src-dir" => (true, Some("IDE/src")),
+        "ml-fallback" => (true, Some("true")),
 
         // Option<String> / Option<usize> flags (no default value)
         "file" | "folder" | "prompt" | "task" | "config" | "api-keys" | "load-model"
@@ -3690,23 +3691,28 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                     // Extract strictly the LATEST user typed message segment from multi-turn or single-turn prompts
                     let raw_latest_user_segment = if let Some(uq) = request_json.get("latest_user_query").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()) {
-                        let uncompacted = strip_compacted_history(uq);
+                        let extracted = extract_latest_user_query(uq);
+                        let target = if !extracted.trim().is_empty() { extracted } else { uq.to_string() };
+                        let uncompacted = strip_compacted_history(&target);
                         let cleaned = strip_xml_metadata_tags(&uncompacted);
                         if !cleaned.trim().is_empty() {
                             cleaned.trim().to_string()
                         } else {
-                            uq.trim().to_string()
+                            target.trim().to_string()
                         }
                     } else {
                         extract_latest_user_query(&prompt)
                     };
 
                     let mut latest_user_segment = raw_latest_user_segment.trim().to_string();
-                    let lower_temp = latest_user_segment.to_lowercase();
-                    if lower_temp.starts_with("user:") {
+                    while latest_user_segment.to_lowercase().starts_with("user:") {
                         latest_user_segment = latest_user_segment[5..].trim().to_string();
-                    } else if lower_temp.starts_with("human:") {
+                    }
+                    while latest_user_segment.to_lowercase().starts_with("human:") {
                         latest_user_segment = latest_user_segment[6..].trim().to_string();
+                    }
+                    while latest_user_segment.to_lowercase().starts_with("system:") {
+                        latest_user_segment = latest_user_segment[7..].trim().to_string();
                     }
 
                     // Collect matched commands with their arguments
@@ -3718,7 +3724,15 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                     let non_empty_lines: Vec<&str> = latest_user_segment
                         .lines()
-                        .map(|l| l.trim())
+                        .map(|l| {
+                            let mut t = l.trim();
+                            if t.to_lowercase().starts_with("user:") {
+                                t = t[5..].trim();
+                            } else if t.to_lowercase().starts_with("human:") {
+                                t = t[6..].trim();
+                            }
+                            t
+                        })
                         .filter(|l| !l.is_empty())
                         .collect();
                     let is_multiline = non_empty_lines.len() > 1;
@@ -3780,7 +3794,13 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     if should_run_interception {
                         // Split user segment into lines to handle multi-command batches
                         for line in latest_user_segment.lines() {
-                            let line = line.trim();
+                            let mut line = line.trim();
+                            if line.is_empty() { continue; }
+                            if line.to_lowercase().starts_with("user:") {
+                                line = line[5..].trim();
+                            } else if line.to_lowercase().starts_with("human:") {
+                                line = line[6..].trim();
+                            }
                             if line.is_empty() { continue; }
 
                             let lower_line = line.to_lowercase();
@@ -3797,27 +3817,28 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             let is_agent_line = is_explicit_agent_prefix;
 
                             let line_to_scan = if is_explicit_agent_prefix {
-                                if lower_line.starts_with("@agent") {
-                                    line[6..].trim()
+                                let stripped_prefix = if lower_line.starts_with("@agent") {
+                                    &line[6..]
                                 } else if lower_line.starts_with("@commands") {
-                                    line[9..].trim()
+                                    &line[9..]
                                 } else if lower_line.starts_with("@command") {
-                                    line[8..].trim()
+                                    &line[8..]
                                 } else if lower_line.starts_with("@comments") {
-                                    line[9..].trim()
+                                    &line[9..]
                                 } else if lower_line.starts_with("@comment") {
-                                    line[8..].trim()
+                                    &line[8..]
                                 } else if lower_line.starts_with("@tasks") {
-                                    line[6..].trim()
+                                    &line[6..]
                                 } else if lower_line.starts_with("@task") {
-                                    line[5..].trim()
+                                    &line[5..]
                                 } else if lower_line.starts_with("@modelfusion") {
-                                    line[12..].trim()
+                                    &line[12..]
                                 } else if lower_line.starts_with("@hugos") {
-                                    line[6..].trim()
+                                    &line[6..]
                                 } else {
                                     line
-                                }
+                                };
+                                stripped_prefix.trim_start_matches(|c: char| c.is_whitespace() || c == ':').trim()
                             } else {
                                 line
                             };
@@ -3852,7 +3873,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                     continue;
                                 }
 
-                                let trimmed_word = word.trim_start_matches(|c: char| c == '@' || c == '(' || c == '[' || c == '{' || c == '"' || c == '\'' || c == '`');
+                                let trimmed_word = word.trim_start_matches(|c: char| c == '@' || c == ':' || c == '(' || c == '[' || c == '{' || c == '"' || c == '\'' || c == '`');
                                 let raw_cmd = if trimmed_word.starts_with("--") {
                                     &trimmed_word[2..]
                                 } else if trimmed_word.starts_with('-') && trimmed_word.len() > 1 && !trimmed_word[1..].starts_with(|c: char| c.is_ascii_digit()) {
@@ -3914,8 +3935,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         "semantic-search" | "semantic_search" => "semantic_search",
                                         "research" | "reseach" => "research",
                                         "search" | "serarch" | "serarch-query" | "serarch_query" | "serarchquery" => "search",
-                                        "data-science" | "datascience" | "dataanalyst" | "data-analyst" | "jupyter" => "data_science",
-                                        "pe-header" | "pe" => "pe_header_extraction",
+                                        "data-science" | "datascience" | "dataanalyst" | "data-analyst" => "data_science",
+                                        "jupyter" => "jupyter",
+                                        "pe-header" | "pe" | "pe-header-extraction" | "peheaderextraction" => "pe_header_extraction",
                                         "model-management" => "model_management",
                                         "report" => "reporting",
                                         "ml-management" => "ml_management",
@@ -4111,20 +4133,28 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         (idx, format!("⚙️ **Execute**\n\n{}", result))
                                     },
                                     "analyze_file" => {
-                                        let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
-                                        let file = parts.first().copied().unwrap_or("").to_string();
-                                        let prompt = if parts.len() > 1 { parts[1].to_string() } else { "Analyze this file".to_string() };
-                                        let cmd_args = vec!["--file".to_string(), file, "--prompt".to_string(), prompt];
-                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                        (idx, format!("📄 **File Analysis**\n\n{}", result))
+                                        if args_owned.trim().is_empty() {
+                                            (idx, "📄 **ModelFusion File Analyzer**: Active (<1ms Fast Interception).\n\nAnalyze code, configurations, or documents:\n- `@agent --file <path> <instructions>`\n- `/analyze-file <path> <instructions>`".to_string())
+                                        } else {
+                                            let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
+                                            let file = parts.first().copied().unwrap_or("").to_string();
+                                            let prompt = if parts.len() > 1 { parts[1].to_string() } else { "Analyze this file".to_string() };
+                                            let cmd_args = vec!["--file".to_string(), file, "--prompt".to_string(), prompt];
+                                            let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                            (idx, format!("📄 **File Analysis**\n\n{}", result))
+                                        }
                                     },
                                     "analyze_folder" => {
-                                        let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
-                                        let folder = parts.first().copied().unwrap_or("").to_string();
-                                        let prompt = if parts.len() > 1 { parts[1].to_string() } else { "Analyze this folder".to_string() };
-                                        let cmd_args = vec!["--folder".to_string(), folder, "--prompt".to_string(), prompt];
-                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                        (idx, format!("📁 **Folder Analysis**\n\n{}", result))
+                                        if args_owned.trim().is_empty() {
+                                            (idx, "📁 **ModelFusion Folder & Repository Analyzer**: Active (<1ms Fast Interception).\n\nAnalyze directory structures and codebases:\n- `@agent --folder <path> <instructions>`\n- `/analyze-folder <path> <instructions>`".to_string())
+                                        } else {
+                                            let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
+                                            let folder = parts.first().copied().unwrap_or("").to_string();
+                                            let prompt = if parts.len() > 1 { parts[1].to_string() } else { "Analyze this folder".to_string() };
+                                            let cmd_args = vec!["--folder".to_string(), folder, "--prompt".to_string(), prompt];
+                                            let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                            (idx, format!("📁 **Folder Analysis**\n\n{}", result))
+                                        }
                                     },
                                     "nlp_task" => {
                                         let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
@@ -4175,39 +4205,47 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         (idx, format!("🔍 **Semantic Search**\n\n{}", result))
                                     },
                                     "research" => {
-                                        let topic = if args_owned.is_empty() {
-                                            "Latest developments in solid-state batteries in 2026 and key commercial players".to_string()
+                                        let topic = args_owned.trim();
+                                        if topic.is_empty() {
+                                            (idx, "🌐 **ModelFusion Deep Web Research Agent**: Active & Operational (<1ms Fast Interception).\n\nSpecify a research topic:\n- `@agent --research <topic>`\n- `/research <topic>`\n\n*Example*: `/research latest advancements in small reasoning models`".to_string())
                                         } else {
-                                            args_owned.clone()
-                                        };
-                                        let report = modelfusion_core::run_deep_research(&topic, 8, model_override_opt.as_deref()).await
-                                            .unwrap_or_else(|e| format!("⚠️ Research agent error: {}", e));
-                                        (idx, format!("🌐 **Deep Web Research Agent**\n\n{}", report))
+                                            let report = modelfusion_core::run_deep_research(topic, 8, model_override_opt.as_deref()).await
+                                                .unwrap_or_else(|e| format!("⚠️ Research agent error: {}", e));
+                                            (idx, format!("🌐 **Deep Web Research Agent**\n\n{}", report))
+                                        }
                                     },
                                     "search" => {
-                                        let query = if args_owned.is_empty() {
-                                            "open-weight reasoning models on Hugging Face".to_string()
+                                        let query = args_owned.trim();
+                                        if query.is_empty() {
+                                            (idx, "🔍 **ModelFusion Live Web Search**: Active & Operational (<1ms Fast Interception).\n\nSpecify a search query:\n- `@agent --search <query>`\n- `/search <query>`\n\n*Example*: `/search open-weight models Hugging Face`".to_string())
                                         } else {
-                                            args_owned.clone()
-                                        };
-                                        let results = modelfusion_core::run_web_search_only(&query, 6).await
-                                            .unwrap_or_else(|e| format!("⚠️ Web search error: {}", e));
-                                        (idx, format!("🔍 **Live Web Search**\n\n{}", results))
+                                            let results = modelfusion_core::run_web_search_only(query, 6).await
+                                                .unwrap_or_else(|e| format!("⚠️ Web search error: {}", e));
+                                            (idx, format!("🔍 **Live Web Search**\n\n{}", results))
+                                        }
                                     },
-                                    "data_science" => {
-                                        let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
-                                        let file = parts.first().copied().unwrap_or("").to_string();
-                                        let mut cmd_args = vec!["--dataanalyst".to_string()];
-                                        if !file.is_empty() { cmd_args.extend_from_slice(&["--file".to_string(), file]); }
-                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                        (idx, format!("📊 **Data Science**\n\n{}", result))
-                                    },
-                                    "pe_header_extraction" => {
-                                        let file = if args_owned.is_empty() { "".to_string() } else { args_owned.clone() };
-                                        let cmd_args = vec!["--pe-header-extraction".to_string(), "--file".to_string(), file, "--prompt".to_string(), "Perform PE analysis".to_string()];
-                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                        (idx, format!("🔬 **PE Header Analysis**\n\n{}", result))
-                                    },
+                                     "data_science" => {
+                                         if args_owned.trim().is_empty() {
+                                             (idx, "📊 **ModelFusion Data Science & Analytics**: Active (<1ms Fast Interception).\n\nAnalyze datasets, tabular data, or notebooks:\n- `@agent --datascience <dataset.csv>`\n- `/dataanalyst <data.json>`\n- `/jupyter` to launch interactive Jupyter workspace".to_string())
+                                         } else {
+                                             let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
+                                             let file = parts.first().copied().unwrap_or("").to_string();
+                                             let mut cmd_args = vec!["--dataanalyst".to_string()];
+                                             if !file.is_empty() { cmd_args.extend_from_slice(&["--file".to_string(), file]); }
+                                             let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                             (idx, format!("📊 **Data Science**\n\n{}", result))
+                                         }
+                                     },
+                                     "pe_header_extraction" => {
+                                         if args_owned.trim().is_empty() {
+                                             (idx, "🔬 **ModelFusion PE Header Analysis**: Active (<1ms Fast Interception).\n\nAnalyze Windows Portable Executable (PE) binaries and extract header metadata:\n- `@agent --pe-header-extraction <path/to/binary.exe>`\n- `/pe <path/to/binary.exe>`".to_string())
+                                         } else {
+                                             let file = args_owned.trim().to_string();
+                                             let cmd_args = vec!["--pe-header-extraction".to_string(), "--file".to_string(), file, "--prompt".to_string(), "Perform PE analysis".to_string()];
+                                             let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                             (idx, format!("🔬 **PE Header Analysis**\n\n{}", result))
+                                         }
+                                     },
                                     "model_management" => {
                                         let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
                                         let action = parts.first().copied().unwrap_or("prepare");
@@ -4225,12 +4263,16 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         let result = run_cli_subcommand(&cmd_args, db_resolved).await;
                                         (idx, format!("🔧 **Model Management**\n\n{}", result))
                                     },
-                                    "reporting" => {
-                                        let prompt = if args_owned.is_empty() { "Generate report".to_string() } else { args_owned.clone() };
-                                        let cmd_args = vec!["--prompt".to_string(), prompt, "--report".to_string(), "./report".to_string(), "--reporttype".to_string(), "md".to_string()];
-                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                        (idx, format!("📝 **Report**\n\n{}", result))
-                                    },
+                                     "reporting" => {
+                                         if args_owned.trim().is_empty() {
+                                             (idx, "📝 **ModelFusion Reporting Engine**: Active (<1ms Fast Interception).\n\nGenerate analytical reports and documentation:\n- `@agent --report <output_path> <prompt>`\n- `/report <output_path> <prompt>`\n\nFormat options: `--reporttype md|pdf|json`".to_string())
+                                         } else {
+                                             let prompt = args_owned.clone();
+                                             let cmd_args = vec!["--prompt".to_string(), prompt, "--report".to_string(), "./report".to_string(), "--reporttype".to_string(), "md".to_string()];
+                                             let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                             (idx, format!("📝 **Report**\n\n{}", result))
+                                         }
+                                     },
                                     "ml_management" => {
                                         let action = if args_owned.is_empty() { "analytics" } else { args_owned.trim() };
                                         let cmd_args = match action {
@@ -4259,8 +4301,23 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         let r = run_cli_subcommand(&["--tasks".to_string(), cat], db_resolved).await;
                                         (idx, format!("📋 **Task List**\n\n{}", r))
                                     },
-                                    "update_database" => { let r = run_cli_subcommand(&["--update".to_string()], db_resolved).await; (idx, format!("🔄 **Database Update**\n\n{}", r)) },
+                                     "update" | "update_database" => {
+                                         (idx, "🔄 **ModelFusion Fast Curated Update**: Updating top ~6,500 production workhorse models across all 45 tasks & provisioning local Ollama hardware model.\n\nRun in the terminal for continuous live progress:\n```powershell\ncli.exe --update --db-path \"IDE/db/hf_models.db\"\n```".to_string())
+                                     },
+                                     "prepare-all-models" => {
+                                         (idx, "🔷 **OpenVINO Model Batch Preparation**: Converts all eligible database models to OpenVINO IR format.\n\nRun in the terminal for batch preparation progress:\n```powershell\ncli.exe --prepare-all-models --db-path \"IDE/db/hf_models.db\"\n```".to_string())
+                                     },
+                                     "getvino" => {
+                                         (idx, "🔷 **OpenVINO Background Sync (`getvino`)**: Active background synchronization engine.\n- Sync Interval: 24h (configurable via `--getvino-interval <hours>`)".to_string())
+                                     },
+                                     "jupyter" => {
+                                         (idx, "🚀 **ModelFusion Jupyter Notebook**: Launch interactive data analysis workspace:\n```powershell\ncli.exe --jupyter\n```".to_string())
+                                     },
                                     "clear_cache" => { let r = run_cli_subcommand(&["--clearcache".to_string()], db_resolved).await; (idx, format!("🧹 **Cache Cleared**\n\n{}", r)) },
+                                     "restore" | "restore_backup" => { let r = run_cli_subcommand(&["--restore".to_string()], db_resolved).await; (idx, format!("🚑 **Database Restored**\n\n{}", r)) },
+                                     "use-openai" | "use_openai" => {
+                                         (idx, "ℹ️ **ModelFusion Provider Notice**: Paid proprietary cloud models (including OpenAI) are disabled per system policy. ModelFusion operates exclusively with high-performance local open-weight models via Ollama and OpenVINO.".to_string())
+                                     },
                                     "get_decision_stats" => { let r = run_cli_subcommand(&["--decision-stats".to_string()], db_resolved).await; (idx, format!("🎯 **Decision Stats**\n\n{}", r)) },
                                     "get_novel_ai_stats" => { let r = run_cli_subcommand(&["--novel-ai-stats".to_string()], db_resolved).await; (idx, format!("🧠 **Novel AI Stats**\n\n{}", r)) },
                                     "get_performance_stats" => { let r = run_cli_subcommand(&["--performance-stats".to_string()], db_resolved).await; (idx, format!("⚡ **Performance Stats**\n\n{}", r)) },
@@ -4385,51 +4442,136 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                          (idx, format!("🤖 **ModelFusion Multi-Agent Orchestrator**\n\n- **Status**: Operational (<1ms Fast Interception)\n- **Active Agent Hierarchy**: Lead Architect, Worker Subagents, AVO Evolution Agent\n- **System Resources**: {} ({} Cores), {:.2} GB RAM free\n- **GPU**: {} ({} MB free VRAM)", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb))
                                      },
 
-                                     other => {
-                                         let flag = format!("--{}", other.replace('_', "-"));
-                                         let mut cmd_args = vec![flag];
-                                         let trimmed_args = args_owned.trim();
-                                         let (is_val, default_val) = get_cli_flag_info(other);
+                                      "text-classification" | "token-classification" | "question-answering" |
+                                      "text-generation" | "summarization" | "translation" | "fill-mask" |
+                                      "text2text-generation" | "language-detection" | "grammar-correction" |
+                                      "paraphrase-generation" | "causal-language-modeling" | "zero-shot-classification" |
+                                      "feature-extraction" | "sentence-similarity" | "anonymization" |
+                                      "coreference-resolution" | "spam-detection" | "malware-text-detection" |
+                                      "phishing-detection" | "pii-detection" | "hate-speech-detection" |
+                                      "cyberbullying-detection" | "fake-news-detection" | "legal-judgment-classification" |
+                                      "contract-clause-classification" | "case-outcome-prediction" |
+                                      "financial-ner" | "legal-ner" | "biomedical-ner" | "chemical-reaction-ner" |
+                                      "financial-sentiment-analysis" | "scientific-abstract-summarization" |
+                                      "emotion-detection" | "sarcasm-detection" | "stance-detection" |
+                                      "bias-detection" | "hallucination-detection" | "reading-level-assessment" |
+                                      "generation-groundedness" | "citation-intent-classification" |
+                                      "code-summary-generation" | "code-clone-detection" |
+                                      "image-classification" | "object-detection" | "image-segmentation" |
+                                      "visual-question-answering" | "document-question-answering" |
+                                      "zero-shot-image-classification" | "depth-estimation" | "image-feature-extraction" |
+                                      "automatic-speech-recognition" | "audio-classification" | "voice-activity-detection" |
+                                      "emotion-recognition" | "video-classification" | "text-to-speech" |
+                                      "text-to-image" | "image-super-resolution" | "table-question-answering" |
+                                      "feature-ranking" | "sentiment" | "question" | "ner" | "summary" => {
+                                          let clean_task = match canonical {
+                                              "sentiment" => "sentiment-analysis",
+                                              "question" => "question-answering",
+                                              "ner" => "token-classification",
+                                              "summary" => "summarization",
+                                              t => t,
+                                          };
+                                          if args_owned.trim().is_empty() {
+                                              let db_path_str = db_path_ref.as_deref().filter(|s| !s.is_empty()).unwrap_or("IDE/db/hf_models.db");
+                                              let top_models = if let Ok(db) = db::HuggingFaceModelDatabase::open(db_path_str) {
+                                                  db.get_by_task(clean_task, 3).unwrap_or_default()
+                                              } else {
+                                                  Vec::new()
+                                              };
+                                              let mut msg = format!("📋 **ModelFusion Task (`{}`)**\n\n- **Status**: Active & Registered in Multi-Modal Catalog (<1ms Fast Interception)\n- **Task**: `{}`\n", canonical, clean_task);
+                                              if !top_models.is_empty() {
+                                                  msg.push_str("- **Top Selected Models in Database**:\n");
+                                                  for m in &top_models {
+                                                      msg.push_str(&format!("  - `{}` (Decision Score: {:.2}, {} downloads)\n", m.model_id, m.decision_score, m.downloads));
+                                                  }
+                                              }
+                                              msg.push_str(&format!("\nTo execute this task with a prompt:\n- `@agent --{} \"<text to process>\"`\n- `/{}` \"<text to process>\"", canonical, canonical));
+                                              (idx, msg)
+                                          } else {
+                                              let mut cmd_args = vec![format!("--{}", canonical), "--prompt".to_string(), args_owned.trim().to_string()];
+                                              if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() && !cmd_args.iter().any(|a| a == "--ollama") {
+                                                  cmd_args.push("--ollama".to_string());
+                                              }
+                                              let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                              (idx, format!("⚡ **ModelFusion CLI (`{}`)**\n\n{}", canonical, result))
+                                          }
+                                      },
 
-                                         if is_val {
-                                             if !trimmed_args.is_empty() {
-                                                 if trimmed_args.starts_with('-') {
-                                                     for part in trimmed_args.split_whitespace() {
-                                                         cmd_args.push(part.to_string());
-                                                     }
-                                                 } else {
-                                                     let mut parts = trimmed_args.splitn(2, char::is_whitespace);
-                                                     let val = parts.next().unwrap();
-                                                     cmd_args.push(val.to_string());
-                                                     if let Some(rest) = parts.next().map(|s| s.trim()).filter(|s| !s.is_empty()) {
-                                                         cmd_args.push("--prompt".to_string());
-                                                         cmd_args.push(rest.to_string());
-                                                     }
-                                                 }
-                                             } else if let Some(def) = default_val {
-                                                 cmd_args.push(def.to_string());
-                                             } else {
-                                                 return (idx, format!("⚠️ **Flag `--{}` requires a parameter.**\n\nExample usage: `@agent --{} <value>` or `/{}` <value>", other, other, other));
-                                             }
-                                         } else {
-                                             if !trimmed_args.is_empty() {
-                                                 if trimmed_args.starts_with('-') {
-                                                     for part in trimmed_args.split_whitespace() {
-                                                         cmd_args.push(part.to_string());
-                                                     }
-                                                 } else {
-                                                     cmd_args.push("--prompt".to_string());
-                                                     cmd_args.push(trimmed_args.to_string());
-                                                 }
-                                             }
-                                         }
+                                      other => {
+                                          let flag = format!("--{}", other.replace('_', "-"));
+                                          let mut cmd_args = vec![flag];
+                                          let trimmed_args = args_owned.trim();
 
-                                         if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() && !cmd_args.iter().any(|a| a == "--ollama") {
-                                             cmd_args.push("--ollama".to_string());
-                                         }
-                                         let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                         (idx, format!("⚡ **ModelFusion CLI (`{}`)**\n\n{}", other, result))
-                                     },
+                                          if other == "prompt" {
+                                              if !trimmed_args.is_empty() {
+                                                  cmd_args.push(trimmed_args.trim_matches('"').trim_matches('\'').to_string());
+                                              } else {
+                                                  return (idx, "⚠️ **Flag `--prompt` requires a parameter.**\n\nExample usage: `@agent --prompt \"<text>\"` or `/prompt \"<text>\"`".to_string());
+                                              }
+                                          } else {
+                                              let (is_val, default_val) = get_cli_flag_info(other);
+
+                                              if is_val {
+                                                  if !trimmed_args.is_empty() {
+                                                      if trimmed_args.starts_with('-') {
+                                                          for part in trimmed_args.split_whitespace() {
+                                                              cmd_args.push(part.to_string());
+                                                          }
+                                                      } else {
+                                                          let (val, rest_opt) = if trimmed_args.starts_with('"') {
+                                                              if let Some(end_idx) = trimmed_args[1..].find('"') {
+                                                                  let v = &trimmed_args[1..1 + end_idx];
+                                                                  let r = trimmed_args[1 + end_idx + 1..].trim();
+                                                                  (v, if r.is_empty() { None } else { Some(r) })
+                                                              } else {
+                                                                  (trimmed_args.trim_matches('"'), None)
+                                                              }
+                                                          } else if trimmed_args.starts_with('\'') {
+                                                              if let Some(end_idx) = trimmed_args[1..].find('\'') {
+                                                                  let v = &trimmed_args[1..1 + end_idx];
+                                                                  let r = trimmed_args[1 + end_idx + 1..].trim();
+                                                                  (v, if r.is_empty() { None } else { Some(r) })
+                                                              } else {
+                                                                  (trimmed_args.trim_matches('\''), None)
+                                                              }
+                                                          } else {
+                                                              let mut parts = trimmed_args.splitn(2, char::is_whitespace);
+                                                              let v = parts.next().unwrap();
+                                                              let r = parts.next().map(|s| s.trim()).filter(|s| !s.is_empty());
+                                                              (v, r)
+                                                          };
+
+                                                          cmd_args.push(val.to_string());
+                                                          if let Some(rest) = rest_opt {
+                                                              cmd_args.push("--prompt".to_string());
+                                                              cmd_args.push(rest.to_string());
+                                                          }
+                                                      }
+                                                  } else if let Some(def) = default_val {
+                                                      cmd_args.push(def.to_string());
+                                                  } else {
+                                                      return (idx, format!("⚠️ **Flag `--{}` requires a parameter.**\n\nExample usage: `@agent --{} <value>` or `/{}` <value>", other, other, other));
+                                                  }
+                                              } else {
+                                                  if !trimmed_args.is_empty() {
+                                                      if trimmed_args.starts_with('-') {
+                                                          for part in trimmed_args.split_whitespace() {
+                                                              cmd_args.push(part.to_string());
+                                                          }
+                                                      } else {
+                                                          cmd_args.push("--prompt".to_string());
+                                                          cmd_args.push(trimmed_args.to_string());
+                                                      }
+                                                  }
+                                              }
+                                          }
+
+                                          if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() && !cmd_args.iter().any(|a| a == "--ollama") {
+                                              cmd_args.push("--ollama".to_string());
+                                          }
+                                          let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                          (idx, format!("⚡ **ModelFusion CLI (`{}`)**\n\n{}", other, result))
+                                      },
                                  }
                             });
                             handles.push(handle);
@@ -8762,6 +8904,14 @@ User: <context><environment_info>OS: Windows</environment_info></context>@agent 
         assert_eq!(canonicalize_command("sinqnbits"), Some("sinq-nbits"));
         assert_eq!(canonicalize_command("bias-detection"), Some("bias-detection"));
         assert_eq!(canonicalize_command("pe-header-extraction"), Some("pe-header-extraction"));
+
+        // Colon prefixes and critical command aliases
+        assert_eq!(canonicalize_command("@agent:--active-model"), Some("active-model"));
+        assert_eq!(canonicalize_command("@agent: --stats"), Some("stats"));
+        assert_eq!(canonicalize_command("restore"), Some("restore"));
+        assert_eq!(canonicalize_command("/restore"), Some("restore"));
+        assert_eq!(canonicalize_command("--use-openai"), Some("use-openai"));
+        assert_eq!(canonicalize_command("/use-openai"), Some("use-openai"));
     }
 
     #[test]
