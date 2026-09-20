@@ -341,3 +341,125 @@ class IdleActivityTracker:
             with self._lock:
                 if self.running:
                     self._schedule_poll()
+
+
+def main():
+    import argparse
+    import subprocess
+    import sys
+
+    parser = argparse.ArgumentParser(description="HugOS ReST-RL Client CLI")
+    parser.add_argument("--host", default="127.0.0.1", help="TCP Host")
+    parser.add_argument("--port", type=int, default=45454, help="TCP Port")
+    parser.add_argument("--transport", choices=["tcp", "named_pipe"], default="tcp", help="IPC transport")
+
+    subparsers = parser.add_subparsers(dest="action", help="Subcommand to execute")
+    subparsers.add_parser("status", help="Query daemon status")
+    subparsers.add_parser("start", help="Start the ReST-RL daemon if not running")
+    subparsers.add_parser("stop", help="Stop the running ReST-RL daemon")
+
+    eq = subparsers.add_parser("enqueue", help="Enqueue a task")
+    eq.add_argument("--task-id", default="", help="Unique task ID")
+    eq.add_argument("--target-file", default="", help="Target file path")
+    eq.add_argument("--test-target", default="", help="Test target or command")
+    eq.add_argument("--workspace-root", default=".", help="Workspace root directory")
+    eq.add_argument("--instruction", default="", help="Task instruction")
+    eq.add_argument("--original-code", default="", help="Original file code")
+    eq.add_argument("--max-iterations", type=int, default=None, help="Max iterations")
+
+    args, remaining = parser.parse_known_args()
+    action = args.action or "status"
+
+    client = RestRLClient(host=args.host, port=args.port, transport=args.transport, timeout=5.0)
+
+    if action == "status":
+        try:
+            status = client.get_status()
+            print(json.dumps({"running": True, "data": status}, indent=2))
+        except Exception:
+            print(json.dumps({"running": False, "status": "STOPPED", "message": "ReST-RL daemon is not running."}, indent=2))
+
+    elif action == "start":
+        try:
+            status = client.get_status()
+            print(json.dumps({"running": True, "status": "ALREADY_RUNNING", "data": status}, indent=2))
+            return
+        except Exception:
+            pass
+
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        daemon_path = os.path.join(script_dir, "rest_rl_daemon.py")
+        if not os.path.isfile(daemon_path):
+            print(json.dumps({"error": f"Daemon script not found at {daemon_path}"}, indent=2))
+            sys.exit(1)
+
+        creationflags = 0
+        if sys.platform == "win32":
+            creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | 0x00000008  # DETACHED_PROCESS
+
+        proc = subprocess.Popen(
+            [sys.executable, daemon_path],
+            cwd=script_dir,
+            creationflags=creationflags,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        # Wait up to 10 seconds for daemon to start listening
+        ready = False
+        status_data = None
+        for _ in range(20):
+            time.sleep(0.5)
+            try:
+                status_data = client.get_status()
+                ready = True
+                break
+            except Exception:
+                continue
+
+        if ready:
+            print(json.dumps({"running": True, "status": "STARTED", "pid": proc.pid, "data": status_data}, indent=2))
+        else:
+            print(json.dumps({"running": False, "status": "START_TIMEOUT", "message": "Daemon process started but did not respond to status probe within 10s."}, indent=2))
+            sys.exit(1)
+
+    elif action == "stop":
+        try:
+            res = client.shutdown_daemon()
+            print(json.dumps({"running": False, "status": "STOPPED", "result": res}, indent=2))
+        except Exception:
+            print(json.dumps({"running": False, "status": "ALREADY_STOPPED", "message": "Daemon was not running."}, indent=2))
+
+    elif action == "enqueue":
+        task_id = args.task_id or f"task_{int(time.time())}"
+        target_file = args.target_file or (remaining[0] if remaining else "solution.py")
+        test_target = args.test_target or (remaining[1] if len(remaining) > 1 else "test_solution.py")
+        workspace_root = args.workspace_root or "."
+        instruction = args.instruction
+        original_code = args.original_code
+
+        if not original_code and os.path.isfile(os.path.join(workspace_root, target_file)):
+            try:
+                with open(os.path.join(workspace_root, target_file), "r", encoding="utf-8") as f:
+                    original_code = f.read()
+            except Exception:
+                pass
+
+        try:
+            res = client.enqueue_task(
+                task_id=task_id,
+                target_file=target_file,
+                test_target=test_target,
+                workspace_root=workspace_root,
+                instruction=instruction,
+                original_code=original_code,
+                max_iterations=args.max_iterations,
+            )
+            print(json.dumps({"success": True, "task_id": task_id, "result": res}, indent=2))
+        except Exception as e:
+            print(json.dumps({"success": False, "error": str(e)}, indent=2))
+            sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

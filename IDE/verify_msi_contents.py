@@ -126,8 +126,33 @@ def verify_copilot_package_json(path, label, failures):
             failures.append(f"[{label}] contributes.configurationDefaults['chat.utilitySmallModel'] is '{u_small}' (expected '{desired}')")
         else:
             print(f"  [PASS] {label} configurationDefaults['chat.utilitySmallModel'] is '{desired}'")
+
+        # Verify /rl and /restrl commands are present in chatParticipants
+        participants = data.get("contributes", {}).get("chatParticipants", [])
+        all_cmd_names = set()
+        for p in participants:
+            for c in p.get("commands", []):
+                all_cmd_names.add(c.get("name"))
+        for req_cmd in ["rl", "restrl"]:
+            if req_cmd not in all_cmd_names:
+                failures.append(f"[{label}] Missing '{req_cmd}' slash command in chatParticipants")
+            else:
+                print(f"  [PASS] {label} chatParticipants contains '/{req_cmd}' slash command")
     except Exception as e:
         failures.append(f"[{label}] Failed parsing copilot package.json: {e}")
+
+def verify_rest_rl_subsystem(base_dir, label, failures):
+    """Validate presence and integrity of ReST-RL subsystem and configuration."""
+    rl_dir = os.path.join(base_dir, "resources", "app", "rest_rl")
+    if not os.path.isdir(rl_dir):
+        failures.append(f"[{label}] Missing ReST-RL directory at: {rl_dir}")
+        return
+    for req_f in ["config.json", "rest_rl_daemon.py", "rest_rl_client.py", "hardware_profiler.py", "sandbox.py"]:
+        fp = os.path.join(rl_dir, req_f)
+        if not os.path.isfile(fp):
+            failures.append(f"[{label}] Missing ReST-RL file: {req_f}")
+        else:
+            print(f"  [PASS] {label} ReST-RL contains {req_f}")
 
 def verify_copilot_extension_js(path, label, failures):
     """Validate copilot dist/extension.js has neutralized BYOK popup and ModelFusion auto-route."""
@@ -248,6 +273,7 @@ def main():
         verify_copilot_package_json(os.path.join(install_root, "resources", "app", "extensions", "copilot", "package.json"), "Root copilot package.json", failures)
         verify_copilot_extension_js(os.path.join(install_root, "resources", "app", "extensions", "copilot", "dist", "extension.js"), "Root copilot extension.js", failures)
         verify_workbench_main_js(os.path.join(install_root, "resources", "app", "out", "vs", "workbench", "workbench.desktop.main.js"), "Root workbench.desktop.main.js", failures)
+        verify_rest_rl_subsystem(install_root, "Root", failures)
 
         print("\n--- 2. Versioned Runtime Files & Payloads ---")
         verify_product_json(os.path.join(v_root, "resources", "app", "product.json"), f"Versioned ({versioned_dir_name}) product.json", failures)
@@ -255,6 +281,7 @@ def main():
         verify_copilot_package_json(os.path.join(v_root, "resources", "app", "extensions", "copilot", "package.json"), f"Versioned ({versioned_dir_name}) copilot package.json", failures)
         verify_copilot_extension_js(os.path.join(v_root, "resources", "app", "extensions", "copilot", "dist", "extension.js"), f"Versioned ({versioned_dir_name}) copilot extension.js", failures)
         verify_workbench_main_js(os.path.join(v_root, "resources", "app", "out", "vs", "workbench", "workbench.desktop.main.js"), f"Versioned ({versioned_dir_name}) workbench.desktop.main.js", failures)
+        verify_rest_rl_subsystem(v_root, f"Versioned ({versioned_dir_name})", failures)
 
         print("\n--- 3. Core Engine Binaries & Database ---")
         verify_binary_file(os.path.join(install_root, "bin", "cli.exe"), "ModelFusion CLI Binary (bin/cli.exe)", 10_000_000, failures)

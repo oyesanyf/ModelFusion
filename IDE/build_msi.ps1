@@ -258,6 +258,48 @@ if (Test-Path $scriptsSrcPath) {
     Write-Host "[OK] Copied python helper scripts to: $scriptsDestDir" -ForegroundColor Green
 }
 
+# 4.65 Copy ReST-RL subsystem and config into packaged folders (root and all versioned runtimes)
+$restRlSrc = Join-Path $PSScriptRoot "rest_rl"
+if (Test-Path $restRlSrc) {
+    Write-Host "[INFO] Copying ReST-RL subsystem into packaged distributions..." -ForegroundColor Yellow
+    $restRlTargets = @(
+        Join-Path $vsCodePackDir "resources\app\rest_rl"
+    )
+    $verDirsForRl = Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' }
+    foreach ($vd in $verDirsForRl) {
+        $restRlTargets += (Join-Path $vd.FullName "resources\app\rest_rl")
+    }
+
+    foreach ($rlDst in $restRlTargets) {
+        if (-not (Test-Path $rlDst)) {
+            New-Item -ItemType Directory -Force -Path $rlDst | Out-Null
+        }
+        Copy-Item -Path "$restRlSrc\*" -Destination $rlDst -Recurse -Force
+        # Clean temporary Python cache artifacts
+        @('__pycache__', '.pytest_cache') | ForEach-Object {
+            $unwanted = Join-Path $rlDst $_
+            if (Test-Path $unwanted) {
+                Remove-Item $unwanted -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+        Get-ChildItem -Path $rlDst -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        Get-ChildItem -Path $rlDst -Recurse -Filter "*.pyc" -ErrorAction SilentlyContinue |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+
+        # Verification assertion gate checking that config.json and daemon exist
+        if (-not (Test-Path (Join-Path $rlDst "config.json"))) {
+            Write-Error "[ASSERTION FAILED] ReST-RL config.json missing after packaging: $rlDst\config.json"
+            exit 1
+        }
+        if (-not (Test-Path (Join-Path $rlDst "rest_rl_daemon.py"))) {
+            Write-Error "[ASSERTION FAILED] ReST-RL daemon missing after packaging: $rlDst\rest_rl_daemon.py"
+            exit 1
+        }
+        Write-Host "[OK] Synced and verified ReST-RL subsystem to: $rlDst" -ForegroundColor Green
+    }
+}
+
 # 4.7 Ensure conpty.dll and OpenConsole.exe are copied to node-pty build folder
 $conptyDestDir = Join-Path $vsCodePackDir "resources\app\node_modules\node-pty\build\Release\conpty"
 if (-not (Test-Path $conptyDestDir)) {
@@ -473,6 +515,11 @@ foreach ($tDir in $targetExtDirs) {
 
 # 4.97 Apply ModelFusion extension patches (Slash Commands, @agent routing, OpenEvolve diffs)
 Write-Host "[INFO] Applying extension slash command and OpenEvolve patches..." -ForegroundColor Yellow
+$registerRlScript = Join-Path $PSScriptRoot "register_rest_rl_commands.py"
+if (Test-Path $registerRlScript) {
+    python $registerRlScript
+    Write-Host "[OK] Registered ReST-RL slash commands in package.json" -ForegroundColor Green
+}
 $fixSlashScript = Join-Path $PSScriptRoot "fix_slash_commands.py"
 if (Test-Path $fixSlashScript) {
     python $fixSlashScript
