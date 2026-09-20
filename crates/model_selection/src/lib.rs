@@ -4,6 +4,9 @@
 //! and supports different selection strategies.
 
 pub mod memory;
+pub mod structured_router;
+
+pub use structured_router::{RoutingDecision, StructuredRouter};
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};

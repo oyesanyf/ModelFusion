@@ -25,13 +25,20 @@ from typing import Optional, List, Dict, Any, Tuple, Set, Callable
 
 logger = logging.getLogger("rest_rl.sandbox")
 
-# Win32 Job Object imports for sub-8ms process tree preemption
 _HAS_WIN32_JOBS = False
 if sys.platform == "win32":
     try:
         import ctypes
         from ctypes import wintypes
         _kernel32 = ctypes.windll.kernel32
+        _kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+        _kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+        _kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+        _kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        _kernel32.TerminateJobObject.restype = wintypes.BOOL
+        _kernel32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        _kernel32.CloseHandle.restype = wintypes.BOOL
+        _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
         _HAS_WIN32_JOBS = True
     except Exception as _e:
         logger.debug("Win32 Job Object API unavailable: %s", _e)
@@ -367,7 +374,7 @@ class VerificationSandbox:
                 try:
                     hJob = _kernel32.CreateJobObjectW(None, None)
                     if hJob:
-                        _kernel32.AssignProcessToJobObject(hJob, int(proc._handle))
+                        _kernel32.AssignProcessToJobObject(hJob, wintypes.HANDLE(int(proc._handle)))
                         self._active_jobs.add(hJob)
                 except Exception as e:
                     logger.debug("Failed to assign process to Windows Job Object: %s", e)

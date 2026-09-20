@@ -11,7 +11,8 @@ $toolDirs = @(
     "D:\tools\nodejs",
     "D:\tools\wix\PFiles64\WiX Toolset v5.0\bin",
     "D:\tools\gh\bin",
-    "C:\Program Files\dotnet"
+    "C:\Program Files\dotnet",
+    "C:\Users\oyesanyf\AppData\Local\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.POSIX.MSVCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\mingw64\bin"
 )
 foreach ($td in $toolDirs) {
     if ((Test-Path $td) -and ($env:PATH -notlike "*$td*")) {

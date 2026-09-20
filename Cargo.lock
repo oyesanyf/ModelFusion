@@ -1099,6 +1099,7 @@ dependencies = [
  "chrono",
  "db",
  "log",
+ "reqwest",
  "serde",
  "serde_json",
  "sysinfo",

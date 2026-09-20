@@ -1,6 +1,9 @@
 #![recursion_limit = "512"]
 //! CLI Entry Point for ModelFusion.
 
+pub mod fusion_arbiter;
+pub use fusion_arbiter::{ArbitrationResult, CandidateSolution, FusionArbiter};
+
 use anyhow::Result;
 use clap::Parser;
 use modelfusion_core::{ComprehensiveTaskHandler, HuggingFaceOrchestrator};
