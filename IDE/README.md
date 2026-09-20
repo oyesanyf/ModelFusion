@@ -10,7 +10,7 @@ Unlike standard editors that rely on proprietary cloud APIs, HugOS is built from
 
 ## 🏗️ Architecture & Integration
 
-HugOS disables and strips out all proprietary and paid model registries (such as OpenAI, Anthropic, and Gemini) and strictly restricts the MCP registry to **only allow the ModelFusion local MCP server**. All other MCP server registrations are dynamically filtered out at the core workbench registry layer.
+HugOS defaults to 100% private local execution powered by native runtimes (Ollama, OpenVINO, ONNX) and restricts the MCP registry to **only allow the ModelFusion local MCP server**. All third-party MCP server registrations are dynamically filtered out at the core workbench registry layer. For developers who require hybrid cloud capabilities, HugOS optionally supports user-provided API keys (`openaiApiKey`, `anthropicApiKey`, `geminiApiKey`, `huggingfaceApiKey`) configured securely in VS Code Settings (`Ctrl+,`), keeping all credentials local to your machine.
 
 ### Integration Flow
 ```mermaid
@@ -84,7 +84,7 @@ Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "IDE\HugOS.msi" -Wait
 ### 4. Automatic Spec Auto-Configuration
 Upon launch, the IDE scans your system's hardware (logical CPU threads, physical RAM, free memory, and GPU description using Windows Registry query `reg.exe` for sub-10ms latency). 
 * The system's specifications are passed to a local "thinking" resource manager or rule-based heuristic.
-* It automatically configures the local backend (defaults to `openvino` for local Hugging Face models), GPU/CPU device routing, parameter size budget, and whether multi-model `fusion` is enabled (unlocked only on systems with >= 16GB RAM and dedicated GPUs).
+* It automatically configures the local backend (defaults to `ollama` with `qwen2.5:7b` / `14b` dynamic provisioning, or `openvino` for Intel-accelerated IR models), GPU/CPU device routing, parameter size budget, and multi-model `fusion` (enabled by default with `fusionModels: 0` for dynamic available RAM/VRAM scaling).
 
 ### 5. GitHub Account Login Setup
 To enable cloning, pushing, pulling, and querying private repositories on GitHub:
@@ -199,12 +199,41 @@ The ModelFusion binary `cli.exe` (located in the IDE `bin` directory) supports c
 * **`--cpu`**: Forces CPU fallback for local transformers.
 
 ### Deactivated or Unsupported CLI Flags in HugOS IDE
-* **`--use-openai`**: **Disabled / Stripped** in the IDE core. HugOS strictly forbids and blocks connections to proprietary registries (OpenAI, Anthropic, Gemini) to guarantee local privacy.
+* **`--use-openai`**: Configured via user settings (`hugos.modelfusion.openaiApiKey`) rather than CLI flags. HugOS guarantees 100% private local execution by default while optionally enabling hybrid cloud routing when API keys are configured.
 * **`--vllm`**: **Linux-only.** Cannot be used on Windows IDE installations.
 * **`--config` / `--api-keys`**: Managed automatically by the HugOS extension and user settings; manually overriding these via CLI flags is unsupported inside the IDE environment.
 * **`--save-model` / `--load-model` / `--ml-retrain`**: CLI-only tools for developer experimentation; these will not work inside the IDE's read-only production environment.
 
 ---
+
+---
+
+## ⚡ Quick Reference: Chat Slash Commands & @agent Directives
+
+HugOS Chat supports over 71 interactive commands with complete **1:1 parity** between slash commands (`/<command>`) and agent directives (`@agent <command>`). Type `/` or `@agent ` in the chat panel to trigger interactive autocomplete.
+
+| Category | Slash Command | @agent Directive | Description & Real-World Example |
+|:---|:---|:---|:---|
+| **Code Evolution** | `/evolve -n 5` | `@agent evolve -n 5` | Multi-pass code evolution with inline diff (`Ctrl+Shift+Y` / `Ctrl+Shift+N`).<br>`/evolve -n 5 Eliminate allocations in hot parsing loop` |
+| **Refactoring** | `/refactor` | `@agent refactor` | Clean architecture, modularity, and SOLID design.<br>`/refactor Decouple this handler with dependency injection` |
+| **Security Audit** | `/security --deep` | `@agent security --deep` | ATLAS static vulnerability and OWASP Top 10 taint analysis.<br>`/security Audit auth router for SQLi and timing attacks` |
+| **Consensus Deliberation** | `/fusion` | `@agent fusion` | Multi-model deliberation with consensus answer synthesis.<br>`/fusion Compare Kafka vs Debezium CDC for financial ledgers` |
+| **Consensus Panel Size** | `/fusion-models 0` | `@agent fusion-models 0` | Dynamic hardware sizing (`0` = auto-scales to free RAM/VRAM).<br>`/fusion-models 0 Deliberate on distributed cache invalidation` |
+| **Execution Planning** | `/plan` | `@agent plan` | Emits structured sequential execution plan before modifying files.<br>`/plan Plan migration from CommonJS to ESM modules` |
+| **Chain-of-Thought** | `/cot` | `@agent cot` | Enables step-by-step deduction scratchpad before emitting code.<br>`/cot Solve this concurrent deadlock in tokio worker pool` |
+| **Local Runtime** | `/ollama` / `/openvino` | `@agent ollama` | Switches active local inference engine.<br>`/ollama Route inference to local Ollama daemon` |
+| **Hardware Steering** | `/gpu` / `/cpu` | `@agent gpu` / `@agent cpu` | Forces CUDA/Arc GPU acceleration or AVX-512 CPU execution.<br>`/gpu Run inference with discrete GPU acceleration` |
+| **Model Override** | `/model <name>` | `@agent model <name>` | Selects specific model tier.<br>`/model qwen2.5:14b` |
+| **Parameter Budget** | `/budget <N>` | `@agent budget <N>` | Sets maximum parameter budget in billions of parameters.<br>`/budget 14 Cap selection at 14B parameters` |
+| **Data Science** | `/dataanalyst` | `@agent dataanalyst` | Automated tabular analysis, anomaly detection, descriptive stats.<br>`/dataanalyst Analyze customer_churn.csv and find correlations` |
+| **Binary Analysis** | `/pe-header-extraction`| `@agent pe-header-extraction` | Static analysis of Windows PE headers, imports, sections, entropy.<br>`/pe-header-extraction target/release/cli.exe` |
+| **Web Research** | `/research <topic>` | `@agent research <topic>` | Live internet research, documentation scraping, source citations.<br>`/research Next.js 15 Server Actions best practices` |
+| **Hub Fast Sync** | `/update` | `@agent update` | Fast sync top ~6,500 models + auto-provisions Ollama model.<br>`/update Sync curated catalog and verify local qwen2.5` |
+| **Full Hub Crawler** | `/updatedb` | `@agent updatedb` | Full registry crawler indexing all 2M+ Hugging Face models.<br>`/updatedb --max-models 50000` |
+| **Hardware Telemetry** | `/sysinfo` | `@agent sysinfo` | Displays live CPU cores, free RAM, GPU VRAM, and budget.<br>`/sysinfo` |
+| **Active Model** | `/active-model` | `@agent active-model` | Inspects currently loaded model, device, and runtime engine.<br>`/active-model` |
+| **API Keys Status** | `/keys` | `@agent keys` | Checks status of configured cloud API keys (`[LOADED]` / `[DISABLED]`).<br>`/keys` |
+| **PDF Export** | `/export-pdf` | `@agent export-pdf` | Exports active chat session, benchmarks, and diffs to PDF report.<br>`/export-pdf system_architecture_review.pdf` |
 
 ## 🛠️ ModelFusion MCP Stdio Server Tools
 
