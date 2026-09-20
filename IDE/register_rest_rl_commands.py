@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Registers /rl and /restrl slash commands in copilot extension package.json across
-IDE source, packaging staging, and versioned runtime directories.
+Registers @rl and @restrl first-class chat participants and /rl /restrl slash commands in
+copilot extension package.json across IDE source, packaging staging, and versioned runtime directories.
 """
 
 import os
@@ -42,10 +42,64 @@ def patch_package_json(filepath):
         return False
 
     modified = False
-    contributes = data.get("contributes", {})
-    participants = contributes.get("chatParticipants", [])
+    contributes = data.setdefault("contributes", {})
+    participants = contributes.setdefault("chatParticipants", [])
 
-    new_commands = [
+    rl_commands = [
+        {"name": "status", "description": "Display ReST-RL daemon state, queue length, and hardware tier"},
+        {"name": "start", "description": "Start the HugOS ReST-RL autonomous reasoning daemon"},
+        {"name": "stop", "description": "Halt the HugOS ReST-RL autonomous reasoning daemon"},
+        {"name": "enqueue", "description": "Enqueue a reasoning or test-repair task for background execution"}
+    ]
+
+    # 1. Register @rl and @restrl first-class chat participants
+    existing_participant_names = {p.get("name") for p in participants if isinstance(p, dict)}
+    existing_participant_ids = {p.get("id") for p in participants if isinstance(p, dict)}
+
+    participants_to_register = [
+        {
+            "id": "hugos.rest_rl",
+            "name": "rl",
+            "fullName": "HugOS ReST-RL",
+            "description": "HugOS ReST-RL / GRPO autonomous reasoning daemon",
+            "locations": ["panel"],
+            "commands": rl_commands
+        },
+        {
+            "id": "hugos.restrl",
+            "name": "restrl",
+            "fullName": "HugOS ReST-RL",
+            "description": "HugOS ReST-RL / GRPO autonomous reasoning daemon",
+            "locations": ["panel"],
+            "commands": rl_commands
+        }
+    ]
+
+    for np in participants_to_register:
+        if np["name"] not in existing_participant_names and np["id"] not in existing_participant_ids:
+            participants.append(np)
+            existing_participant_names.add(np["name"])
+            existing_participant_ids.add(np["id"])
+            modified = True
+        else:
+            # Update existing entry to ensure commands and locations are complete
+            for p in participants:
+                if p.get("name") == np["name"] or p.get("id") == np["id"]:
+                    if "commands" not in p:
+                        p["commands"] = list(rl_commands)
+                        modified = True
+                    else:
+                        existing_cmds = {c.get("name") for c in p["commands"] if isinstance(c, dict)}
+                        for cmd in rl_commands:
+                            if cmd["name"] not in existing_cmds:
+                                p["commands"].append(cmd)
+                                modified = True
+                    if "locations" not in p:
+                        p["locations"] = ["panel"]
+                        modified = True
+
+    # 2. Also register /rl and /restrl slash commands in existing participants for slash autocomplete
+    slash_commands = [
         {
             "name": "rl",
             "description": "HugOS ReST-RL / GRPO reinforcement learning subsystem (status, start, stop, enqueue)"
@@ -57,20 +111,21 @@ def patch_package_json(filepath):
     ]
 
     for p in participants:
-        if "commands" in p and isinstance(p["commands"], list):
-            existing_names = {c.get("name") for c in p["commands"] if isinstance(c, dict)}
-            for nc in new_commands:
-                if nc["name"] not in existing_names:
-                    p["commands"].append(nc)
-                    modified = True
+        if p.get("name") in ("agent", "copilot", "terminal"):
+            if "commands" in p and isinstance(p["commands"], list):
+                existing_names = {c.get("name") for c in p["commands"] if isinstance(c, dict)}
+                for sc in slash_commands:
+                    if sc["name"] not in existing_names:
+                        p["commands"].append(sc)
+                        modified = True
 
     if modified:
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
-        print(f"[OK] Registered /rl and /restrl in: {filepath}")
+        print(f"[OK] Registered @rl, @restrl, /rl, and /restrl in: {filepath}")
         return True
     else:
-        print(f"[INFO] /rl and /restrl already registered in: {filepath}")
+        print(f"[INFO] @rl, @restrl, /rl, and /restrl already up to date in: {filepath}")
         return False
 
 
