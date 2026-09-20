@@ -254,6 +254,11 @@ class HardwareProfiler:
 
         return 0.0, 0.0, "None / CPU Only"
 
+    @staticmethod
+    def get_available_vram_mb() -> float:
+        """Returns the runtime free VRAM in MB."""
+        free_mb, _, _ = HardwareProfiler.get_runtime_vram()
+        return float(free_mb)
 
     def classify(
         self,

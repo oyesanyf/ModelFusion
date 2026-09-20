@@ -11,3 +11,4 @@ log        = { workspace = true }
 chrono     = { workspace = true }
 db         = { path = "../db" }
 sysinfo    = { workspace = true }
+reqwest    = { workspace = true }

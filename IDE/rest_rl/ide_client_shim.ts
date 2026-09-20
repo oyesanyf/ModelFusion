@@ -350,6 +350,8 @@ export class RestRLIdeShim implements vscode.Disposable {
       vscode.window.showErrorMessage(
         `ReST-RL: Failed to display diff viewer: ${err.message}`
       );
+    } finally {
+      this._diffProvider.deleteContent(candidateUri);
     }
   }
 
