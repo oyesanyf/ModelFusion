@@ -109,11 +109,19 @@ pub async fn run_fusion(
     let selector = EnhancedModelSelector::new(db_path_ref)
         .context("⚠️ [FUSION] Failed to open database for model selection.")?;
         
+    let forced_model = forced_model
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty() && *s != "modelfusion-local" && *s != "modelfusion" && *s != "auto" && *s != "default");
+
     let max_candidates = match max_candidates {
-        Some(n) if n > 0 => n,
+        Some(n) if n > 1 => n,
         _ => derive_fusion_model_count(),
-    };
+    }.max(2);
     eprintln!("⚡ [FUSION] Effective fusion panel model count: {}", max_candidates);
+
+    if let Some(ref model_id) = forced_model {
+        eprintln!("⚡ [FUSION] Forced model override active: using {}", model_id);
+    }
 
     let is_multi_sample = fusion_mode == "multi-sample";
 
@@ -121,43 +129,31 @@ pub async fn run_fusion(
     // For multi-model mode: select N different models
     let panel_task = "text-generation";
 
-    let (panel_models, fallback_pool) = if let Some(model_id) = forced_model {
-        eprintln!("⚡ [FUSION] Forced model override active: using {}", model_id);
-        if is_multi_sample {
-            eprintln!("⚡ [FUSION] Multi-sample mode: using 1 model with {} temperature variations", max_candidates);
-            // Generate evenly spaced temperatures from 0.3 to 1.1
-            let temps: Vec<f32> = (0..max_candidates)
-                .map(|i| 0.3 + (i as f32) * (0.8 / (max_candidates as f32 - 1.0).max(1.0)))
-                .collect();
-
-            let models: Vec<ModelConfig> = temps.iter().enumerate()
-                .map(|(i, &t)| {
-                    eprintln!("  {}. Sample #{} (T={:.2})", i + 1, i + 1, t);
-                    ModelConfig::huggingface_with_temp(model_id, t, i + 1)
-                })
-                .collect();
-            (models, vec![])
+    let (panel_models, fallback_pool) = if is_multi_sample {
+        let (model_id, fallback) = if let Some(ref model_id) = forced_model {
+            (model_id.to_string(), vec![])
         } else {
-            let models = vec![ModelConfig::huggingface(model_id)];
-            (models, vec![])
-        }
-    } else if is_multi_sample {
-        // Multi-sample: 1 model, N temperature variations — much faster for local execution
-        let res = selector.select_best_model(panel_task, prompt, strategy, 3, None)
-            .context("⚠️ [FUSION] Model selection failed from database.")?;
-        
-        if res.all_candidates.is_empty() {
-            return Err(anyhow::anyhow!("⚠️ [FUSION] No candidates found in database for task '{}'.", panel_task));
-        }
+            let res = selector.select_best_model(panel_task, prompt, strategy, 3, None)
+                .context("⚠️ [FUSION] Model selection failed from database.")?;
+            if res.all_candidates.is_empty() {
+                let cached = model_selection::memory::get_ollama_cached_models();
+                if let Some(first_cached) = cached.first() {
+                    (first_cached.clone(), vec![])
+                } else {
+                    return Err(anyhow::anyhow!("⚠️ [FUSION] No candidates found in database for task '{}'.", panel_task));
+                }
+            } else {
+                let best = &res.best_model;
+                eprintln!("📋 [FUSION] Selected model: {} (score: {:.2})", best.model_id, best.final_score);
+                if best.estimated_params_b > 0.0 {
+                    eprintln!("   ~{:.1}B params, ~{:.1} GB RAM", best.estimated_params_b, best.estimated_memory_gb);
+                }
+                let fb: Vec<_> = res.all_candidates.iter().skip(1).cloned().collect();
+                (best.model_id.clone(), fb)
+            }
+        };
 
-        let best = &res.best_model;
         eprintln!("⚡ [FUSION] Multi-sample mode: using 1 model with {} temperature variations", max_candidates);
-        eprintln!("📋 [FUSION] Selected model: {} (score: {:.2})", best.model_id, best.final_score);
-        if best.estimated_params_b > 0.0 {
-            eprintln!("   ~{:.1}B params, ~{:.1} GB RAM", best.estimated_params_b, best.estimated_memory_gb);
-        }
-
-        // Generate evenly spaced temperatures from 0.3 to 1.1
         let temps: Vec<f32> = (0..max_candidates)
             .map(|i| 0.3 + (i as f32) * (0.8 / (max_candidates as f32 - 1.0).max(1.0)))
             .collect();
@@ -165,50 +161,99 @@ pub async fn run_fusion(
         let models: Vec<ModelConfig> = temps.iter().enumerate()
             .map(|(i, &t)| {
                 eprintln!("  {}. Sample #{} (T={:.2})", i + 1, i + 1, t);
-                ModelConfig::huggingface_with_temp(&best.model_id, t, i + 1)
+                ModelConfig::huggingface_with_temp(&model_id, t, i + 1)
             })
             .collect();
-
-        // Fallback: remaining candidates from DB as different models
-        let fallback: Vec<_> = res.all_candidates.iter().skip(1).cloned().collect();
         (models, fallback)
     } else {
-        // Multi-model: N different models (original behavior)
+        // Multi-model: construct a panel of max_candidates models
+        let mut panel_models: Vec<ModelConfig> = Vec::new();
+
+        // 1. If forced_model is present, Slot 1
+        if let Some(ref model_id) = forced_model {
+            panel_models.push(ModelConfig::huggingface(model_id));
+        }
+
+        // 2. Query selector for candidates
         let fetch_pool_size = max_candidates * 3;
-        let res = selector.select_best_model(panel_task, prompt, strategy, fetch_pool_size, None)
-            .context("⚠️ [FUSION] Model selection failed from database.")?;
-            
-        if res.all_candidates.is_empty() {
-            return Err(anyhow::anyhow!("⚠️ [FUSION] No candidates found in database for task '{}'.", panel_task));
-        }
-        
-        let primary: Vec<_> = res.all_candidates.iter().take(max_candidates).cloned().collect();
-        let fallback: Vec<_> = res.all_candidates.iter().skip(max_candidates).cloned().collect();
+        let db_candidates_res = selector.select_best_model(panel_task, prompt, strategy, fetch_pool_size, None);
 
-        if primary.len() < max_candidates {
-            eprintln!("⚠️ [FUSION] Requested {} panel models, but only {} fit in available memory. Automatically reduced panel size.",
-                max_candidates, primary.len());
-        }
+        let (db_candidates, mut leftover_db) = match db_candidates_res {
+            Ok(res) => {
+                eprintln!("📋 [FUSION] Model selection successful (detected task: '{}', selected strategy: {}).", detected_task, res.strategy);
+                let mut cands = res.all_candidates;
+                if let Some(ref model_id) = forced_model {
+                    cands.retain(|c| &c.model_id != model_id);
+                }
+                (cands, vec![])
+            }
+            Err(e) => {
+                eprintln!("⚠️ [FUSION] Warning querying candidates from database: {}", e);
+                (vec![], vec![])
+            }
+        };
 
-        eprintln!("📋 [FUSION] Model selection successful (detected task: '{}', selected strategy: {}).", detected_task, res.strategy);
-        eprintln!("📋 [FUSION] Primary panel ({}/{} models):", primary.len(), max_candidates);
-        for (i, candidate) in primary.iter().enumerate() {
-            if candidate.estimated_params_b > 0.0 {
-                eprintln!("  {}. {} (score: {:.2}, ~{:.1}B params, ~{:.1} GB RAM)",
-                    i + 1, candidate.model_id, candidate.final_score,
-                    candidate.estimated_params_b, candidate.estimated_memory_gb);
+        // 3. Add database candidates to panel_models up to max_candidates
+        let mut db_iter = db_candidates.into_iter();
+        while panel_models.len() < max_candidates {
+            if let Some(cand) = db_iter.next() {
+                if !panel_models.iter().any(|m| m.endpoint == cand.model_id) {
+                    panel_models.push(ModelConfig::huggingface(&cand.model_id));
+                }
             } else {
-                eprintln!("  {}. {} (score: {:.2})", i + 1, candidate.model_id, candidate.final_score);
+                break;
             }
         }
-        if !fallback.is_empty() {
-            eprintln!("📋 [FUSION] Fallback pool: {} additional models available", fallback.len());
+        leftover_db.extend(db_iter);
+
+        // 4. If panel_models.len() < max_candidates, check locally installed/cached models in Ollama
+        if panel_models.len() < max_candidates {
+            let cached = model_selection::memory::get_ollama_cached_models();
+            for cm in cached {
+                if panel_models.len() >= max_candidates {
+                    break;
+                }
+                if !panel_models.iter().any(|m| m.endpoint == *cm || m.name.contains(cm.as_str())) {
+                    panel_models.push(ModelConfig::local(&cm));
+                }
+            }
         }
 
-        let models: Vec<ModelConfig> = primary.iter()
-            .map(|c| ModelConfig::huggingface(&c.model_id))
-            .collect();
-        (models, fallback)
+        // 5. If panel_models is empty at this point, ensure we have at least one base candidate
+        if panel_models.is_empty() {
+            panel_models.push(ModelConfig::huggingface("qwen2.5:7b"));
+        }
+
+        // 6. If panel_models.len() < max_candidates, fill remaining slots with temperature variations of top candidate(s)
+        if panel_models.len() < max_candidates {
+            let base_models = panel_models.clone();
+            let temp_steps = [0.3f32, 0.5, 0.7, 0.9, 0.4, 0.6, 0.8, 1.0];
+            let mut step_idx = 0;
+            while panel_models.len() < max_candidates {
+                for base in &base_models {
+                    if panel_models.len() >= max_candidates {
+                        break;
+                    }
+                    let t = temp_steps[step_idx % temp_steps.len()];
+                    step_idx += 1;
+                    let sample_num = panel_models.len() + 1;
+                    let mut var_config = base.clone();
+                    var_config.temperature = Some(t);
+                    var_config.name = format!("{} (var #{}, T={:.1})", base.name, sample_num, t);
+                    panel_models.push(var_config);
+                }
+            }
+        }
+
+        eprintln!("📋 [FUSION] Primary panel ({}/{} models):", panel_models.len(), max_candidates);
+        for (i, m) in panel_models.iter().enumerate() {
+            eprintln!("  {}. {} (provider: {:?})", i + 1, m.name, m.provider);
+        }
+        if !leftover_db.is_empty() {
+            eprintln!("📋 [FUSION] Fallback pool: {} additional models available", leftover_db.len());
+        }
+
+        (panel_models, leftover_db)
     };
 
     // Define the judge model
