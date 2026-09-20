@@ -29,6 +29,13 @@ import threading
 import traceback
 from typing import Optional, Dict, Any, List
 
+if not __package__:
+    pkg_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(pkg_dir)
+    if parent_dir not in sys.path:
+        sys.path.insert(0, parent_dir)
+    __package__ = os.path.basename(pkg_dir)
+
 from .hardware_profiler import HardwareProfiler, HardwareTier, MemoryProfile
 from .sandbox import VerificationSandbox, SandboxResult
 from .adapters.base import RLTask, RolloutResult, BaseRLAdapter
@@ -397,10 +404,13 @@ class RestRLDaemon:
             with self.task_lock:
                 q_len = len(self.task_queue)
                 curr_id = self.current_task_id
+                resolved_count = len(self.resolved_tasks)
 
             current_task_info = None
+            running_task_str = None
             if curr_id and curr_id in self.tasks:
                 ct = self.tasks[curr_id]
+                running_task_str = ct.task.target_file
                 current_task_info = {
                     "task_id": curr_id,
                     "target_file": ct.task.target_file,
@@ -409,13 +419,22 @@ class RestRLDaemon:
                     "reward": ct.result.best_reward if ct.result else 0.0,
                 }
 
+            hw_dict = mem_profile.to_dict()
+            ide_state_str = "IDLE" if self.is_idle else "ACTIVE"
+
             return {
                 "daemon_running": self.running,
                 "is_idle": self.is_idle,
                 "is_paused": self.pause_event.is_set(),
+                "ide_state": ide_state_str,
+                "hardware_tier": int(mem_profile.tier),
+                "hardware_tier_name": mem_profile.tier.name,
                 "queue_length": q_len,
+                "processed_tasks_count": resolved_count,
+                "running_task": running_task_str,
                 "current_task": current_task_info,
-                "hardware": mem_profile.to_dict(),
+                "hardware": hw_dict,
+                "hardware_profile": hw_dict,
                 "adapter": type(self.active_adapter).__name__ if self.active_adapter else "None",
             }
 

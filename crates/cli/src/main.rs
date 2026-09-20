@@ -557,17 +557,30 @@ pub async fn handle_rest_rl(args_list: &[String]) -> String {
         "status" | "info" | "state" => {
             match rpc_call_rest_rl("agent/status", serde_json::json!({})).await {
                 Ok(data) => {
-                    let ide_state = data.get("ide_state").and_then(|v| v.as_str()).unwrap_or("UNKNOWN");
-                    let tier = data.get("hardware_tier").and_then(|v| v.as_i64()).unwrap_or(3);
-                    let tier_name = data.get("hardware_tier_name").and_then(|v| v.as_str()).unwrap_or("TIER_3");
-                    let adapter = data.get("adapter").and_then(|v| v.as_str()).unwrap_or("MinimalRejectionSamplingAdapter");
-                    let hw = data.get("hardware_profile").cloned().unwrap_or(serde_json::json!({}));
+                    let ide_state = data.get("ide_state")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| data.get("is_idle").and_then(|v| v.as_bool()).map(|b| if b { "IDLE" } else { "ACTIVE" }))
+                        .unwrap_or("ACTIVE");
+                    let hw = data.get("hardware_profile").or_else(|| data.get("hardware")).cloned().unwrap_or(serde_json::json!({}));
+                    let tier = data.get("hardware_tier")
+                        .and_then(|v| v.as_i64())
+                        .or_else(|| hw.get("tier").and_then(|v| v.as_i64()))
+                        .unwrap_or(1);
+                    let tier_name = data.get("hardware_tier_name")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| hw.get("tier_name").and_then(|v| v.as_str()))
+                        .unwrap_or("TIER_1");
+                    let adapter = data.get("adapter").and_then(|v| v.as_str()).unwrap_or("ReSTRLAdapter");
                     let ram = hw.get("available_ram_gb").and_then(|v| v.as_f64()).unwrap_or(0.0);
                     let vram = hw.get("free_vram_mb").and_then(|v| v.as_f64()).unwrap_or(0.0);
                     let gpu = hw.get("gpu_name").and_then(|v| v.as_str()).unwrap_or("None");
                     let q_len = data.get("queue_length").and_then(|v| v.as_i64()).unwrap_or(0);
                     let proc_count = data.get("processed_tasks_count").and_then(|v| v.as_i64()).unwrap_or(0);
-                    let running = data.get("running_task").and_then(|v| v.as_str()).map(|s| format!("`{}`", s)).unwrap_or_else(|| "None (Waiting for idle task)".to_string());
+                    let running = data.get("running_task")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| data.get("current_task").and_then(|ct| ct.get("target_file")).and_then(|v| v.as_str()))
+                        .map(|s| format!("`{}`", s))
+                        .unwrap_or_else(|| "None (Waiting for idle task)".to_string());
 
                     format!(
                         "🧠 **HugOS ReST-RL / GRPO Autonomous Reasoning Subsystem**\n\n\
@@ -599,7 +612,11 @@ pub async fn handle_rest_rl(args_list: &[String]) -> String {
         "start" => {
             if let Ok(data) = rpc_call_rest_rl("agent/status", serde_json::json!({})).await {
                 let adapter = data.get("adapter").and_then(|v| v.as_str()).unwrap_or("ReSTRLAdapter");
-                let tier_name = data.get("hardware_tier_name").and_then(|v| v.as_str()).unwrap_or("TIER_1");
+                let hw = data.get("hardware_profile").or_else(|| data.get("hardware"));
+                let tier_name = data.get("hardware_tier_name")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| hw.and_then(|h| h.get("tier_name")).and_then(|v| v.as_str()))
+                    .unwrap_or("TIER_1");
                 return format!(
                     "🧠 **HugOS ReST-RL Daemon** is already RUNNING.\n\n- **Tier**: `{}`\n- **Adapter**: `{}`\n- **Endpoint**: 127.0.0.1:45454",
                     tier_name, adapter
@@ -611,7 +628,7 @@ pub async fn handle_rest_rl(args_list: &[String]) -> String {
             }
 
             let mut started = false;
-            for _ in 0..15 {
+            for _ in 0..25 {
                 tokio::time::sleep(tokio::time::Duration::from_millis(400)).await;
                 if rpc_call_rest_rl("agent/status", serde_json::json!({})).await.is_ok() {
                     started = true;
@@ -628,7 +645,7 @@ pub async fn handle_rest_rl(args_list: &[String]) -> String {
                     - **Modes**: Autonomous reasoning, failing test repair, and debounced idle preemption active."
                 )
             } else {
-                "⚠️ **HugOS ReST-RL Daemon**: Launch initiated, but service did not respond on 127.0.0.1:45454 within 6s. Check Python installation.".to_string()
+                "⚠️ **HugOS ReST-RL Daemon**: Launch initiated, but service did not respond on 127.0.0.1:45454 within 10s. Check Python installation.".to_string()
             }
         }
         "stop" | "shutdown" | "kill" => {
@@ -649,7 +666,7 @@ pub async fn handle_rest_rl(args_list: &[String]) -> String {
 
             if rpc_call_rest_rl("agent/status", serde_json::json!({})).await.is_err() {
                 let _ = spawn_rest_rl_daemon();
-                for _ in 0..10 {
+                for _ in 0..25 {
                     tokio::time::sleep(tokio::time::Duration::from_millis(400)).await;
                     if rpc_call_rest_rl("agent/status", serde_json::json!({})).await.is_ok() {
                         break;
@@ -9282,8 +9299,7 @@ User: @agent --active-model";
         } else {
             raw_zero
         };
-        assert!(derived_zero >= 2);
-        assert_eq!(derived_zero, 7); // On this machine with >=64GB free RAM
+        assert!(derived_zero >= 2 && derived_zero <= 7);
 
         let raw_one = 1;
         let derived_one = if raw_one <= 1 {
@@ -9291,7 +9307,7 @@ User: @agent --active-model";
         } else {
             raw_one
         };
-        assert_eq!(derived_one, 7);
+        assert_eq!(derived_zero, derived_one);
 
         let raw_five = 5;
         let explicit_five = if raw_five <= 1 {

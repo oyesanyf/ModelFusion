@@ -89,20 +89,7 @@ class HardwareProfiler:
         Returns (free_vram_mb, total_vram_mb, gpu_name).
         Checks PyTorch CUDA first, then nvidia-smi CLI.
         """
-        # 1. Try PyTorch CUDA
-        try:
-            import torch
-            if torch.cuda.is_available():
-                device_idx = torch.cuda.current_device()
-                gpu_name = torch.cuda.get_device_name(device_idx)
-                free_bytes, total_bytes = torch.cuda.mem_get_info(device_idx)
-                free_mb = free_bytes / (1024 ** 2)
-                total_mb = total_bytes / (1024 ** 2)
-                return round(free_mb, 1), round(total_mb, 1), gpu_name
-        except Exception as e:
-            logger.debug("PyTorch CUDA check skipped/failed: %s", e)
-
-        # 2. Try nvidia-smi if torch CUDA is not active
+        # 1. Try fast nvidia-smi CLI first (avoids multi-second torch import overhead)
         nvidia_smi = shutil.which("nvidia-smi")
         if nvidia_smi:
             try:
@@ -125,6 +112,19 @@ class HardwareProfiler:
                         return round(free_mb, 1), round(total_mb, 1), gpu_name
             except Exception as e:
                 logger.debug("nvidia-smi probe failed: %s", e)
+
+        # 2. Try PyTorch CUDA if nvidia-smi is not available
+        try:
+            import torch
+            if torch.cuda.is_available():
+                device_idx = torch.cuda.current_device()
+                gpu_name = torch.cuda.get_device_name(device_idx)
+                free_bytes, total_bytes = torch.cuda.mem_get_info(device_idx)
+                free_mb = free_bytes / (1024 ** 2)
+                total_mb = total_bytes / (1024 ** 2)
+                return round(free_mb, 1), round(total_mb, 1), gpu_name
+        except Exception as e:
+            logger.debug("PyTorch CUDA check skipped/failed: %s", e)
 
         return 0.0, 0.0, "None / CPU Only"
 
