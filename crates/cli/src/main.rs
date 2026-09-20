@@ -446,6 +446,266 @@ async fn generate_active_models_report(db_path_opt: Option<&str>) -> String {
     generate_active_models_markdown(db_path_opt).await
 }
 
+async fn rpc_call_rest_rl(method: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::TcpStream;
+    use tokio::time::{timeout, Duration};
+
+    let stream = timeout(Duration::from_millis(1500), TcpStream::connect("127.0.0.1:45454"))
+        .await
+        .map_err(|_| "Connection timed out".to_string())?
+        .map_err(|e| format!("Failed to connect to ReST-RL daemon on 127.0.0.1:45454: {}", e))?;
+
+    let (reader, mut writer) = stream.into_split();
+    let mut buf_reader = BufReader::new(reader);
+
+    let req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": method,
+        "params": params
+    });
+
+    let mut line = req.to_string();
+    line.push('\n');
+
+    writer.write_all(line.as_bytes())
+        .await
+        .map_err(|e| format!("Write failed: {}", e))?;
+
+    let mut response_line = String::new();
+    timeout(Duration::from_secs(8), buf_reader.read_line(&mut response_line))
+        .await
+        .map_err(|_| "Response timed out".to_string())?
+        .map_err(|e| format!("Read failed: {}", e))?;
+
+    let val: serde_json::Value = serde_json::from_str(response_line.trim())
+        .map_err(|e| format!("Invalid JSON response: {}", e))?;
+
+    if let Some(err) = val.get("error") {
+        return Err(format!("RPC error: {}", err));
+    }
+
+    Ok(val.get("result").cloned().unwrap_or(serde_json::Value::Null))
+}
+
+fn resolve_rest_rl_dir() -> std::path::PathBuf {
+    if let Ok(mut exe_path) = std::env::current_exe() {
+        exe_path.pop(); // remove binary name
+        let candidates = [
+            exe_path.join("resources").join("app").join("rest_rl"),
+            exe_path.join("..").join("resources").join("app").join("rest_rl"),
+            exe_path.join("..").join("rest_rl"),
+            exe_path.join("..").join("IDE").join("rest_rl"),
+            exe_path.join("..").join("..").join("IDE").join("rest_rl"),
+        ];
+        for cand in &candidates {
+            if cand.join("rest_rl_daemon.py").exists() {
+                return cand.clone();
+            }
+        }
+    }
+    let cwd_candidates = [
+        std::path::PathBuf::from("IDE").join("rest_rl"),
+        std::path::PathBuf::from("resources").join("app").join("rest_rl"),
+    ];
+    for cand in &cwd_candidates {
+        if cand.join("rest_rl_daemon.py").exists() {
+            return cand.clone();
+        }
+    }
+    std::path::PathBuf::from("IDE").join("rest_rl")
+}
+
+fn spawn_rest_rl_daemon() -> Result<(), String> {
+    let rl_dir = resolve_rest_rl_dir();
+    let daemon_script = rl_dir.join("rest_rl_daemon.py");
+    if !daemon_script.exists() {
+        return Err(format!("ReST-RL daemon script not found at {:?}", daemon_script));
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+        const DETACHED_PROCESS: u32 = 0x00000008;
+        let mut cmd = std::process::Command::new("python");
+        cmd.arg(&daemon_script)
+            .current_dir(&rl_dir)
+            .creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        cmd.spawn().map_err(|e| format!("Failed to spawn daemon: {}", e))?;
+    }
+    #[cfg(not(windows))]
+    {
+        let mut cmd = std::process::Command::new("python3");
+        cmd.arg(&daemon_script)
+            .current_dir(&rl_dir)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        cmd.spawn().map_err(|e| format!("Failed to spawn daemon: {}", e))?;
+    }
+    Ok(())
+}
+
+pub async fn handle_rest_rl(args_list: &[String]) -> String {
+    let subcmd = args_list.first().map(|s| s.trim()).filter(|s| !s.is_empty()).unwrap_or("status");
+    let clean_sub = subcmd.trim_start_matches('/').trim_start_matches('-').to_lowercase();
+    match clean_sub.as_str() {
+        "status" | "info" | "state" => {
+            match rpc_call_rest_rl("agent/status", serde_json::json!({})).await {
+                Ok(data) => {
+                    let ide_state = data.get("ide_state").and_then(|v| v.as_str()).unwrap_or("UNKNOWN");
+                    let tier = data.get("hardware_tier").and_then(|v| v.as_i64()).unwrap_or(3);
+                    let tier_name = data.get("hardware_tier_name").and_then(|v| v.as_str()).unwrap_or("TIER_3");
+                    let adapter = data.get("adapter").and_then(|v| v.as_str()).unwrap_or("MinimalRejectionSamplingAdapter");
+                    let hw = data.get("hardware_profile").cloned().unwrap_or(serde_json::json!({}));
+                    let ram = hw.get("available_ram_gb").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let vram = hw.get("free_vram_mb").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let gpu = hw.get("gpu_name").and_then(|v| v.as_str()).unwrap_or("None");
+                    let q_len = data.get("queue_length").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let proc_count = data.get("processed_tasks_count").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let running = data.get("running_task").and_then(|v| v.as_str()).map(|s| format!("`{}`", s)).unwrap_or_else(|| "None (Waiting for idle task)".to_string());
+
+                    format!(
+                        "🧠 **HugOS ReST-RL / GRPO Autonomous Reasoning Subsystem**\n\n\
+                        - **Daemon Status**: 🟢 RUNNING (TCP 127.0.0.1:45454 / Named Pipe)\n\
+                        - **IDE Activity State**: `{}`\n\
+                        - **Hardware Tier**: Tier {} (`{}`)\n\
+                        - **RL Reasoning Adapter**: `{}`\n\
+                        - **Hardware Available**: {:.1} GB RAM | {:.0} MB VRAM ({})\n\
+                        - **Active Task**: {}\n\
+                        - **Queue Length**: {} task(s)\n\
+                        - **Processed Tasks**: {}\n\n\
+                        *Autonomous reinforcement learning reasoning active during debounced IDE idle periods.*",
+                        ide_state, tier, tier_name, adapter, ram, vram, gpu, running, q_len, proc_count
+                    )
+                }
+                Err(_) => {
+                    let sys = query_system_resources();
+                    format!(
+                        "🧠 **HugOS ReST-RL / GRPO Autonomous Reasoning Subsystem**\n\n\
+                        - **Daemon Status**: ⚪ STOPPED / IDLE (Daemon not currently active)\n\
+                        - **Default Port**: 127.0.0.1:45454 (TCP JSON-RPC) / `\\\\.\\pipe\\hugos_rest_rl_ipc`\n\
+                        - **Detected Hardware**: {:.1} GB Available RAM | {} MB Free VRAM ({})\n\n\
+                        Type `/rl start` or `cli.exe --rest-rl start` to launch the autonomous background reasoning worker.",
+                        sys.free_ram_gb, sys.free_vram_mb, sys.gpu_name
+                    )
+                }
+            }
+        }
+        "start" => {
+            if let Ok(data) = rpc_call_rest_rl("agent/status", serde_json::json!({})).await {
+                let adapter = data.get("adapter").and_then(|v| v.as_str()).unwrap_or("ReSTRLAdapter");
+                let tier_name = data.get("hardware_tier_name").and_then(|v| v.as_str()).unwrap_or("TIER_1");
+                return format!(
+                    "🧠 **HugOS ReST-RL Daemon** is already RUNNING.\n\n- **Tier**: `{}`\n- **Adapter**: `{}`\n- **Endpoint**: 127.0.0.1:45454",
+                    tier_name, adapter
+                );
+            }
+
+            if let Err(e) = spawn_rest_rl_daemon() {
+                return format!("❌ **Failed to start ReST-RL daemon**: {}", e);
+            }
+
+            let mut started = false;
+            for _ in 0..15 {
+                tokio::time::sleep(tokio::time::Duration::from_millis(400)).await;
+                if rpc_call_rest_rl("agent/status", serde_json::json!({})).await.is_ok() {
+                    started = true;
+                    break;
+                }
+            }
+
+            if started {
+                format!(
+                    "🚀 **HugOS ReST-RL Daemon Started Successfully!**\n\n\
+                    - **Status**: 🟢 RUNNING (Listening on 127.0.0.1:45454)\n\
+                    - **Process Priority**: IDLE_PRIORITY_CLASS\n\
+                    - **IPC**: TCP 127.0.0.1:45454 & `\\\\.\\pipe\\hugos_rest_rl_ipc`\n\
+                    - **Modes**: Autonomous reasoning, failing test repair, and debounced idle preemption active."
+                )
+            } else {
+                "⚠️ **HugOS ReST-RL Daemon**: Launch initiated, but service did not respond on 127.0.0.1:45454 within 6s. Check Python installation.".to_string()
+            }
+        }
+        "stop" | "shutdown" | "kill" => {
+            match rpc_call_rest_rl("system/shutdown", serde_json::json!({})).await {
+                Ok(_) => {
+                    "🛑 **HugOS ReST-RL Daemon**: Shutdown signal delivered successfully. Daemon stopped.".to_string()
+                }
+                Err(_) => {
+                    "⚪ **HugOS ReST-RL Daemon**: Daemon was not running or has already stopped.".to_string()
+                }
+            }
+        }
+        "enqueue" | "queue" | "add" => {
+            let rest = &args_list[1..];
+            if rest.is_empty() {
+                return "⚠️ **ReST-RL Enqueue Usage**:\n- `/rl enqueue <target_file> <test_target> [instruction]`\n- `cli.exe --rest-rl enqueue <target_file> <test_target>`".to_string();
+            }
+
+            if rpc_call_rest_rl("agent/status", serde_json::json!({})).await.is_err() {
+                let _ = spawn_rest_rl_daemon();
+                for _ in 0..10 {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(400)).await;
+                    if rpc_call_rest_rl("agent/status", serde_json::json!({})).await.is_ok() {
+                        break;
+                    }
+                }
+            }
+
+            let task_id = format!("task_{}", chrono::Utc::now().timestamp_millis());
+            let target_file = rest.first().cloned().unwrap_or_else(|| "solution.py".to_string());
+            let test_target = rest.get(1).cloned().unwrap_or_else(|| "test_solution.py".to_string());
+            let instruction = if rest.len() > 2 {
+                rest[2..].join(" ")
+            } else {
+                "Optimize code and make all unit tests pass".to_string()
+            };
+
+            let params = serde_json::json!({
+                "task_id": task_id,
+                "target_file": target_file,
+                "test_target": test_target,
+                "workspace_root": ".",
+                "instruction": instruction,
+                "original_code": ""
+            });
+
+            match rpc_call_rest_rl("agent/enqueue_task", params).await {
+                Ok(_) => {
+                    format!(
+                        "📥 **ReST-RL Task Enqueued Successfully!**\n\n\
+                        - **Task ID**: `{}`\n\
+                        - **Target File**: `{}`\n\
+                        - **Test Target**: `{}`\n\
+                        - **Instruction**: {}\n\n\
+                        *Background RL worker will execute reasoning rollouts during debounced IDE idle periods.*",
+                        task_id, target_file, test_target, instruction
+                    )
+                }
+                Err(e) => {
+                    format!("❌ **Failed to enqueue task**: {}", e)
+                }
+            }
+        }
+        unknown => {
+            format!(
+                "⚠️ **Unknown ReST-RL Subcommand `{}`**\n\n\
+                **Available Subcommands**:\n\
+                - `/rl status` — Query daemon status, hardware tier, and queue length\n\
+                - `/rl start` — Launch background reasoning daemon\n\
+                - `/rl stop` — Stop background daemon\n\
+                - `/rl enqueue <target_file> <test_target> [instruction]` — Queue code for RL optimization",
+                unknown
+            )
+        }
+    }
+}
+
 
 #[derive(Parser, Debug)]
 #[command(
@@ -456,6 +716,8 @@ async fn generate_active_models_report(db_path_opt: Option<&str>) -> String {
 DATABASE & MODEL UPDATE COMMANDS:
   --active-model        Display all models currently in use by the IDE (active Ollama
                         runtime in VRAM/RAM, active task models in SQLite, OpenVINO cache)
+  --rest-rl [ACTION]    HugOS ReST-RL / GRPO reinforcement learning subsystem (status, start, stop, enqueue)
+  --rl [ACTION]         Alias for --rest-rl
   --update              Fast curated update: indexes top ~6,500 production workhorse models
                         across all 45 tasks and provisions optimal local Ollama hardware model
   --updatedb            Full registry crawler: continuously ingests ALL 2M+ models from Hugging Face
@@ -466,6 +728,10 @@ DATABASE & MODEL UPDATE COMMANDS:
 EXAMPLES:
   # Inspect all active runtime and catalog models
   cli.exe --active-model --db-path \"IDE/db/hf_models.db\"
+
+  # ReST-RL daemon status and control
+  cli.exe --rest-rl status
+  cli.exe --rl start
 
   # Fast curated update + Ollama model setup
   cli.exe --update --db-path \"IDE/db/hf_models.db\"
@@ -771,6 +1037,15 @@ struct Args {
 
     #[arg(long, default_value_t = 24, help = "Download interval in hours for --getvino background cycle (default: 24)")]
     getvino_interval: u64,
+
+    #[arg(
+        long = "rest-rl",
+        alias = "rl",
+        num_args = 0..=5,
+        default_missing_value = "status",
+        help = "HugOS ReST-RL / GRPO reinforcement learning subsystem (status, start, stop, enqueue)"
+    )]
+    rest_rl: Option<Vec<String>>,
 
     #[arg(long, help = "Enable real options analysis for backup model selection")]
     real_options: bool,
@@ -1287,6 +1562,12 @@ async fn run(args: Args) -> Result<()> {
     }
 
     // Dispatch system commands first
+    if let Some(ref rl_args) = args.rest_rl {
+        let res = handle_rest_rl(rl_args).await;
+        println!("{}", res);
+        return Ok(());
+    }
+
     if args.active_model {
         let report = generate_active_models_report(args.db_path.as_deref()).await;
         println!("{}", report);
@@ -2747,6 +3028,7 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
         "getvinointerval" => Some("getvino-interval"),
         "realoptions" => Some("real-options"),
         "promptqualityscoring" => Some("prompt-quality-scoring"),
+        "restrl" | "rl" | "restrlstatus" | "rlstatus" | "restrldaemon" | "rldaemon" | "rest-rl" => Some("rest-rl"),
         "score" => Some("score"),
         "judge" => Some("judge"),
         "plan" => Some("plan"),
@@ -2875,6 +3157,7 @@ pub fn get_cli_flag_info(flag_name: &str) -> (bool, Option<&'static str>) {
         "port" => (true, Some("5000")),
         "ide-src-dir" => (true, Some("IDE/src")),
         "ml-fallback" => (true, Some("true")),
+        "rest-rl" | "rl" => (true, Some("status")),
 
         // Option<String> / Option<usize> flags (no default value)
         "file" | "folder" | "prompt" | "task" | "config" | "api-keys" | "load-model"
@@ -3982,6 +4265,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         "task" => "tasks",
                                         "export_pdf" | "exportpdf" => "export-pdf",
                                         "code-vulnerability-detection" | "codevulnerabilitydetection" => "security",
+                                        "rest-rl" | "restrl" | "rl" => "rest-rl",
                                         other => other,
                                     };
 
@@ -4101,7 +4385,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         },
                                         "command" => {
                                             let sys = query_system_resources();
-                                            (idx, format!("🤖 **ModelFusion Commands & System Directory**\n\n- **Engine**: Active & Operational (<1ms Fast Interception)\n- **System**: {} ({} Cores), {:.2} GB RAM free\n- **GPU**: {} ({} MB free VRAM)\n\n### Available Slash Commands & CLI Directives:\n- `/active-model` (or `--active-model`) — All models currently in use by the IDE (Ollama runtime, SQLite pipelines, OpenVINO cache)\n- `/research <topic>` (or `--research`) — Autonomous deep web research using open-weight models (Qwen 2.5 / DeepSeek-R1) and DuckDuckGo search\n- `/search <query>` (or `--search`) — Live web search and snippet extraction\n- `/stats` (or `--stats`) — Real-time system resource allocation and database metrics\n- `/sysinfo` (or `--sys-info`) — Detailed hardware specifications, CPU cores, RAM, and disk drives\n- `/tasks` (or `--tasks [category]`) — Multi-modal task capabilities and top database models (audio, vision, nlp, security, legal)\n- `/keys` (or `--keys`) — Cloud API key configuration (OpenAI, Anthropic, Gemini, HF)\n- `/comment` — Add inline explanations and docstrings to code\n- `/evolve` — OpenEvolve iterative code optimization\n- `/security` — CyberSecurity audit and vulnerability fixes\n- `/refactor` — Code structure refactoring\n- `/optimize` — Performance optimization\n- `/version` (or `-v`) — Engine and build version\n- `/update` — Fast curated update (~6,500 models) and local Ollama hardware model provisioning\n- `/updatedb` — Full registry crawler for all 2M+ Hugging Face models", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb))
+                                            (idx, format!("🤖 **ModelFusion Commands & System Directory**\n\n- **Engine**: Active & Operational (<1ms Fast Interception)\n- **System**: {} ({} Cores), {:.2} GB RAM free\n- **GPU**: {} ({} MB free VRAM)\n\n### Available Slash Commands & CLI Directives:\n- `/active-model` (or `--active-model`) — All models currently in use by the IDE (Ollama runtime, SQLite pipelines, OpenVINO cache)\n- `/research <topic>` (or `--research`) — Autonomous deep web research using open-weight models (Qwen 2.5 / DeepSeek-R1) and DuckDuckGo search\n- `/search <query>` (or `--search`) — Live web search and snippet extraction\n- `/stats` (or `--stats`) — Real-time system resource allocation and database metrics\n- `/sysinfo` (or `--sys-info`) — Detailed hardware specifications, CPU cores, RAM, and disk drives\n- `/tasks` (or `--tasks [category]`) — Multi-modal task capabilities and top database models (audio, vision, nlp, security, legal)\n- `/keys` (or `--keys`) — Cloud API key configuration (OpenAI, Anthropic, Gemini, HF)\n- `/comment` — Add inline explanations and docstrings to code\n- `/evolve` — OpenEvolve iterative code optimization\n- `/security` — CyberSecurity audit and vulnerability fixes\n- `/refactor` — Code structure refactoring\n- `/optimize` — Performance optimization\n- `/version` (or `-v`) — Engine and build version\n- `/rl [status|start|stop|enqueue]` (or `/restrl`, `--rest-rl`) — HugOS ReST-RL / GRPO recursive reinforcement learning and idle preemption engine\n- `/update` — Fast curated update (~6,500 models) and local Ollama hardware model provisioning\n- `/updatedb` — Full registry crawler for all 2M+ Hugging Face models", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb))
                                         },
                                         "comment" | "doc" => {
                                             (idx, "📝 **ModelFusion Code Commenting & Documentation Engine**: Active.\n\nProvide or attach code to generate comprehensive inline explanations and docstrings.".to_string())
@@ -4112,6 +4396,11 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         "evolve" | "evovle" | "evove" | "evoce" | "evolv" | "evolution" => (idx, "❌ **OpenEvolve Routing Error**: The ModelFusion backend intercepted an `/evolve` iterative optimization request. OpenEvolve must be executed by the VS Code extension. If you are seeing this, the IDE extension failed to intercept the command before sending it to the backend. Please try running it again or restarting the extension.".to_string()),
                                         "security" => (idx, "🛡️ **CyberSecurity Audit**: Active security inspection thread scanning code.".to_string()),
                                         "refactor" => (idx, "🔧 **Refactoring Engine**: Code structure optimization thread ready.".to_string()),
+                                        "rest-rl" => {
+                                            let parts: Vec<String> = args_owned.split_whitespace().map(|s| s.to_string()).collect();
+                                            let res = handle_rest_rl(&parts).await;
+                                            (idx, res)
+                                        },
 
                                     // ── MCP tools routed through CLI ──
                                     "quick_answer" => {
@@ -8930,6 +9219,15 @@ User: <context><environment_info>OS: Windows</environment_info></context>@agent 
         assert_eq!(canonicalize_command("/restore"), Some("restore"));
         assert_eq!(canonicalize_command("--use-openai"), Some("use-openai"));
         assert_eq!(canonicalize_command("/use-openai"), Some("use-openai"));
+
+        // ReST-RL reinforcement learning
+        assert_eq!(canonicalize_command("rl"), Some("rest-rl"));
+        assert_eq!(canonicalize_command("/rl"), Some("rest-rl"));
+        assert_eq!(canonicalize_command("restrl"), Some("rest-rl"));
+        assert_eq!(canonicalize_command("/restrl"), Some("rest-rl"));
+        assert_eq!(canonicalize_command("--rest-rl"), Some("rest-rl"));
+        assert_eq!(canonicalize_command("@agent rl"), Some("rest-rl"));
+        assert_eq!(canonicalize_command("@agent /restrl"), Some("rest-rl"));
     }
 
     #[test]
@@ -8966,6 +9264,8 @@ User: @agent --active-model";
         assert_eq!(super::get_cli_flag_info("text-classification"), (false, None));
         assert_eq!(super::get_cli_flag_info("sentiment"), (false, None));
         assert_eq!(super::get_cli_flag_info("tasks"), (true, Some("all")));
+        assert_eq!(super::get_cli_flag_info("rest-rl"), (true, Some("status")));
+        assert_eq!(super::get_cli_flag_info("rl"), (true, Some("status")));
     }
 
     #[test]

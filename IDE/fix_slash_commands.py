@@ -63,11 +63,12 @@ UNMINIFIED_BLOCK = r'''
       "zero-shot-image-classification","depth-estimation","image-feature-extraction","automatic-speech-recognition",
       "audio-classification","voice-activity-detection","emotion-recognition","video-classification",
       "text-to-speech","text-to-image","image-super-resolution","table-question-answering","feature-ranking","error",
-      "research","reseach","search"
+      "research","reseach","search","rl","restrl","rest-rl"
     ]);
     const normCmd = (cmd) => {
       if (!cmd) return "";
       const l = cmd.toLowerCase().trim();
+      if (l === "rl" || l === "restrl") return "rest-rl";
       if (l.startsWith("evol") || l.startsWith("evov") || l.startsWith("evoc") || l === "evolution" || l === "evovle") return "evolve";
       if (l === "avo") return "avo"; /* if(l==="avo")return"avo"; */
       if (l === "reseach") return "research";
