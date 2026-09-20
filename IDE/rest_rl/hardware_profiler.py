@@ -84,12 +84,138 @@ class HardwareProfiler:
             return 8.0, 16.0, 50.0
 
     @staticmethod
+    def probe_dxgi_vram() -> Optional[Tuple[float, float, str]]:
+        """
+        Multi-vendor DirectX DXGI video memory probe via ctypes (dxgi.dll).
+        Supports NVIDIA, AMD Radeon, and Intel Arc in <15ms without external dependencies.
+        Returns (free_vram_mb, total_vram_mb, gpu_name) or None if unavailable.
+        """
+        if sys.platform != "win32":
+            return None
+
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class GUID(ctypes.Structure):
+                _fields_ = [
+                    ("Data1", wintypes.DWORD),
+                    ("Data2", wintypes.WORD),
+                    ("Data3", wintypes.WORD),
+                    ("Data4", wintypes.BYTE * 8),
+                ]
+
+            IID_IDXGIFactory1 = GUID(
+                0x770AAE78,
+                0xF26F,
+                0x4DBA,
+                (wintypes.BYTE * 8)(0xA8, 0x29, 0x25, 0x3C, 0x83, 0xD1, 0xB3, 0x87),
+            )
+
+            class LUID(ctypes.Structure):
+                _fields_ = [("LowPart", wintypes.DWORD), ("HighPart", wintypes.LONG)]
+
+            class DXGI_ADAPTER_DESC1(ctypes.Structure):
+                _fields_ = [
+                    ("Description", wintypes.WCHAR * 128),
+                    ("VendorId", wintypes.UINT),
+                    ("DeviceId", wintypes.UINT),
+                    ("SubSysId", wintypes.UINT),
+                    ("Revision", wintypes.UINT),
+                    ("DedicatedVideoMemory", ctypes.c_size_t),
+                    ("DedicatedSystemMemory", ctypes.c_size_t),
+                    ("SharedSystemMemory", ctypes.c_size_t),
+                    ("AdapterLuid", LUID),
+                    ("Flags", wintypes.UINT),
+                ]
+
+            dxgi = ctypes.windll.dxgi
+            pFactory = ctypes.c_void_p()
+            hr = dxgi.CreateDXGIFactory1(ctypes.byref(IID_IDXGIFactory1), ctypes.byref(pFactory))
+            if hr != 0 or not pFactory:
+                return None
+
+            vtable = ctypes.cast(pFactory, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents
+            EnumAdapters1_proto = ctypes.WINFUNCTYPE(
+                ctypes.c_long, ctypes.c_void_p, wintypes.UINT, ctypes.POINTER(ctypes.c_void_p)
+            )
+            EnumAdapters1 = EnumAdapters1_proto(vtable[12])
+            Release_proto = ctypes.WINFUNCTYPE(wintypes.ULONG, ctypes.c_void_p)
+            GetDesc1_proto = ctypes.WINFUNCTYPE(
+                ctypes.c_long, ctypes.c_void_p, ctypes.POINTER(DXGI_ADAPTER_DESC1)
+            )
+
+            best_vram = 0.0
+            best_gpu_name = ""
+            best_vendor = 0
+
+            idx = 0
+            pAdapter = ctypes.c_void_p()
+            while EnumAdapters1(pFactory, idx, ctypes.byref(pAdapter)) == 0:
+                adapter_vtable = ctypes.cast(
+                    pAdapter, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))
+                ).contents
+                GetDesc1 = GetDesc1_proto(adapter_vtable[10])
+                Release_adapter = Release_proto(adapter_vtable[2])
+
+                desc = DXGI_ADAPTER_DESC1()
+                if GetDesc1(pAdapter, ctypes.byref(desc)) == 0:
+                    # Filter out software adapters (DXGI_ADAPTER_FLAG_SOFTWARE = 2)
+                    if not (desc.Flags & 2):
+                        vram_mb = desc.DedicatedVideoMemory / (1024 ** 2)
+                        if vram_mb > best_vram:
+                            best_vram = vram_mb
+                            best_gpu_name = desc.Description
+                            best_vendor = desc.VendorId
+
+                Release_adapter(pAdapter)
+                idx += 1
+
+            Release_proto(vtable[2])(pFactory)
+
+            if best_vram > 0.0 and best_gpu_name:
+                vendor_map = {0x10DE: "NVIDIA", 0x1002: "AMD", 0x8086: "Intel", 0x5143: "Qualcomm"}
+                vendor_prefix = vendor_map.get(best_vendor, "")
+                if vendor_prefix and vendor_prefix not in best_gpu_name:
+                    full_gpu_name = f"{vendor_prefix} {best_gpu_name}"
+                else:
+                    full_gpu_name = best_gpu_name
+
+                # Check if nvidia-smi can give exact live free VRAM for NVIDIA GPUs
+                free_mb = round(best_vram * 0.85, 1)
+                if best_vendor == 0x10DE:
+                    nvidia_smi = shutil.which("nvidia-smi")
+                    if nvidia_smi:
+                        try:
+                            out = subprocess.check_output(
+                                [nvidia_smi, "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+                                text=True,
+                                timeout=1,
+                            ).strip()
+                            if out:
+                                free_mb = float(out.splitlines()[0].strip())
+                        except Exception:
+                            pass
+
+                return round(free_mb, 1), round(best_vram, 1), full_gpu_name
+
+        except Exception as e:
+            logger.debug("DXGI VRAM probe exception: %s", e)
+
+        return None
+
+    @staticmethod
     def get_runtime_vram() -> Tuple[float, float, str]:
         """
         Returns (free_vram_mb, total_vram_mb, gpu_name).
-        Checks PyTorch CUDA first, then nvidia-smi CLI.
+        Checks DXGI first (<15ms, multi-vendor: NVIDIA/AMD/Intel Arc), then nvidia-smi, then PyTorch CUDA.
         """
-        # 1. Try fast nvidia-smi CLI first (avoids multi-second torch import overhead)
+        # 1. Try ultra-fast multi-vendor DXGI probe (<15ms)
+        dxgi_res = HardwareProfiler.probe_dxgi_vram()
+        if dxgi_res:
+            return dxgi_res
+
+        # 2. Try fast nvidia-smi CLI (fallback if non-Windows or DXGI failed)
         nvidia_smi = shutil.which("nvidia-smi")
         if nvidia_smi:
             try:
@@ -113,7 +239,7 @@ class HardwareProfiler:
             except Exception as e:
                 logger.debug("nvidia-smi probe failed: %s", e)
 
-        # 2. Try PyTorch CUDA if nvidia-smi is not available
+        # 3. Try PyTorch CUDA if nvidia-smi is not available
         try:
             import torch
             if torch.cuda.is_available():
@@ -127,6 +253,7 @@ class HardwareProfiler:
             logger.debug("PyTorch CUDA check skipped/failed: %s", e)
 
         return 0.0, 0.0, "None / CPU Only"
+
 
     def classify(
         self,

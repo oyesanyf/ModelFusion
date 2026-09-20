@@ -20,7 +20,7 @@ for t in targets:
     print(f"Copying to {t}...")
     try:
         shutil.copy2(src, t)
-    except PermissionError:
+    except (PermissionError, OSError):
         # On Windows, locked binaries can be renamed then replaced
         old_path = t + ".old"
         if os.path.exists(old_path):

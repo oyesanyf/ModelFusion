@@ -36,10 +36,17 @@ if not __package__:
         sys.path.insert(0, parent_dir)
     __package__ = os.path.basename(pkg_dir)
 
+import sqlite3
 from .hardware_profiler import HardwareProfiler, HardwareTier, MemoryProfile
 from .sandbox import VerificationSandbox, SandboxResult
 from .adapters.base import RLTask, RolloutResult, BaseRLAdapter
 from .adapters.factory import create_adapter
+from .graduated_rewards import GraduatedRewardEvaluator
+from .mutation_verifier import ASTMutator, AdversarialCertificationGate
+from .compute_budgeter import ComputeBudgeter
+from .lsp_diagnostic_repair import LSPDiagnosticHarvester, CompilerOracleRepairLoop, LSPDiagnostic
+from .speculative_synthesis import SpeculativeSynthesizer, SpeculativeCache
+from .dependency_migration import DependencyMigrationManager
 
 # Configure logging
 logging.basicConfig(
@@ -85,6 +92,23 @@ class RestRLDaemon:
             default_timeout=self.config.get("sandbox", {}).get("timeout_seconds", 5.0)
         )
 
+        # Advanced reasoning, verification, and tooling modules
+        self.reward_evaluator = GraduatedRewardEvaluator(sandbox=self.sandbox)
+        self.mutator = ASTMutator()
+        self.certification_gate = AdversarialCertificationGate(sandbox=self.sandbox, mutator=self.mutator)
+        self.budgeter = ComputeBudgeter()
+        self.harvester = LSPDiagnosticHarvester()
+        self.repair_loop = CompilerOracleRepairLoop(harvester=self.harvester)
+        self.speculative_cache = SpeculativeCache()
+        self.speculative_synthesizer = SpeculativeSynthesizer(cache=self.speculative_cache)
+        self.migration_mgr = DependencyMigrationManager()
+
+        # Persistent SQLite storage (IDE/db/rest_rl.db)
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        ide_dir = os.path.dirname(base_dir)
+        self.db_path = self.config.get("database", {}).get("db_path", os.path.join(ide_dir, "db", "rest_rl.db"))
+        self._init_sqlite()
+
         # Idle & Pause synchronization
         self.is_idle = False
         self.pause_event = threading.Event()
@@ -126,6 +150,116 @@ class RestRLDaemon:
             except Exception as e:
                 logger.error("Failed to load config from %s: %s", config_path, e)
         return {}
+
+    def _init_sqlite(self) -> None:
+        """Ensures SQLite schema exists at IDE/db/rest_rl.db."""
+        try:
+            os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+            with sqlite3.connect(self.db_path) as conn:
+                cur = conn.cursor()
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS tasks (
+                        task_id TEXT PRIMARY KEY,
+                        target_file TEXT,
+                        test_target TEXT,
+                        workspace_root TEXT,
+                        instruction TEXT,
+                        state TEXT,
+                        reward REAL,
+                        created_at REAL,
+                        updated_at REAL
+                    )
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS resolutions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        task_id TEXT,
+                        target_file TEXT,
+                        candidate_code TEXT,
+                        original_code TEXT,
+                        diff_patch TEXT,
+                        reward REAL,
+                        passed INTEGER,
+                        created_at REAL
+                    )
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS diagnostics (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        task_id TEXT,
+                        file_path TEXT,
+                        line_number INTEGER,
+                        column INTEGER,
+                        severity TEXT,
+                        source TEXT,
+                        code TEXT,
+                        message TEXT,
+                        created_at REAL
+                    )
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS speculative_cache (
+                        key TEXT PRIMARY KEY,
+                        file_path TEXT,
+                        func_name TEXT,
+                        signature TEXT,
+                        candidate_code TEXT,
+                        reward REAL,
+                        created_at REAL
+                    )
+                """)
+                conn.commit()
+            logger.info("Persistent SQLite database initialized at %s", self.db_path)
+        except Exception as e:
+            logger.warning("Failed to initialize SQLite database at %s: %s", self.db_path, e)
+
+    def _save_task_to_db(self, task: RLTask, state: str, reward: float = 0.0) -> None:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cur = conn.cursor()
+                now = time.time()
+                cur.execute("""
+                    INSERT INTO tasks (task_id, target_file, test_target, workspace_root, instruction, state, reward, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(task_id) DO UPDATE SET
+                        state=excluded.state,
+                        reward=excluded.reward,
+                        updated_at=excluded.updated_at
+                """, (
+                    task.task_id,
+                    task.target_file,
+                    task.test_target,
+                    task.workspace_root,
+                    task.instruction,
+                    state,
+                    reward,
+                    now,
+                    now,
+                ))
+                conn.commit()
+        except Exception as e:
+            logger.debug("SQLite save task error: %s", e)
+
+    def _save_resolution_to_db(self, payload: Dict[str, Any]) -> None:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cur = conn.cursor()
+                cur.execute("""
+                    INSERT INTO resolutions (task_id, target_file, candidate_code, original_code, diff_patch, reward, passed, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    payload.get("task_id", ""),
+                    payload.get("target_file", ""),
+                    payload.get("candidate_code", ""),
+                    payload.get("original_code", ""),
+                    payload.get("diff_patch", ""),
+                    payload.get("reward", 0.0),
+                    1 if payload.get("passed") else 0,
+                    time.time(),
+                ))
+                conn.commit()
+        except Exception as e:
+            logger.debug("SQLite save resolution error: %s", e)
 
     def initialize(self):
         """Initializes low process scheduling priority, memory caps, and hardware tier."""
@@ -240,6 +374,7 @@ class RestRLDaemon:
             task_to_run.state = TaskState.RUNNING
             if not task_to_run.started_at:
                 task_to_run.started_at = time.time()
+            self._save_task_to_db(task_to_run.task, TaskState.RUNNING, 0.0)
 
             logger.info("Worker starting/resuming task: %s (Target: %s)", task_to_run.task.task_id, task_to_run.task.target_file)
 
@@ -253,6 +388,7 @@ class RestRLDaemon:
 
                 if rollout_result.status == "PAUSED":
                     task_to_run.state = TaskState.PAUSED
+                    self._save_task_to_db(task_to_run.task, TaskState.PAUSED, rollout_result.best_reward)
                     logger.info("Task %s paused at iteration %d", task_to_run.task.task_id, rollout_result.iterations_completed)
                     time.sleep(0.1)
                 else:
@@ -285,6 +421,9 @@ class RestRLDaemon:
                             self.task_queue.pop(0)
                         self.current_task_id = None
 
+                    self._save_task_to_db(task_to_run.task, TaskState.COMPLETED, rollout_result.best_reward)
+                    self._save_resolution_to_db(resolution_payload)
+
                     logger.info(
                         "Task %s finished with reward %.2f (status: %s)",
                         task_to_run.task.task_id,
@@ -296,6 +435,7 @@ class RestRLDaemon:
                 logger.error("Exception in worker execution for task %s: %s", task_to_run.task.task_id, e, exc_info=True)
                 task_to_run.state = TaskState.FAILED
                 task_to_run.error = str(e)
+                self._save_task_to_db(task_to_run.task, TaskState.FAILED, 0.0)
                 with self.task_lock:
                     if self.task_queue and self.task_queue[0] == task_to_run.task.task_id:
                         self.task_queue.pop(0)
@@ -366,7 +506,8 @@ class RestRLDaemon:
         elif method == "ide/idle_stop":
             self.is_idle = False
             self.pause_event.set()  # Pause worker immediately
-            logger.info("State changed: IDE is ACTIVE -> Immediately paused background worker.")
+            self.sandbox.terminate_active_jobs()
+            logger.info("State changed: IDE is ACTIVE -> Immediately paused background worker and terminated active jobs.")
             return {"status": "PAUSED", "is_idle": False}
 
         elif method == "agent/enqueue_task":
@@ -391,6 +532,8 @@ class RestRLDaemon:
             with self.task_lock:
                 self.tasks[task_id] = daemon_task
                 self.task_queue.append(task_id)
+
+            self._save_task_to_db(task, TaskState.QUEUED, 0.0)
 
             logger.info("Enqueued task %s for target %s (Queue length: %d)", task_id, target_file, len(self.task_queue))
             return {
@@ -468,6 +611,64 @@ class RestRLDaemon:
                 resolutions = list(self.resolved_tasks)
                 self.resolved_tasks.clear()
             return {"resolutions": resolutions}
+
+        elif method == "diagnostics/report":
+            diags = self.harvester.harvest_from_payload(params)
+            count = len(diags)
+            try:
+                with sqlite3.connect(self.db_path) as conn:
+                    cur = conn.cursor()
+                    now = time.time()
+                    task_id = params.get("task_id", "")
+                    for d in diags:
+                        cur.execute("""
+                            INSERT INTO diagnostics (task_id, file_path, line_number, column, severity, source, code, message, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (task_id, d.file_path, d.line_number, d.column, d.severity, d.source, d.code, d.message, now))
+                    conn.commit()
+            except Exception as e:
+                logger.debug("Failed saving diagnostics to SQLite: %s", e)
+            return {"recorded": count, "diagnostics": [d.to_dict() for d in diags]}
+
+        elif method == "speculative/detect":
+            code_str = params.get("code", "")
+            file_path = params.get("file_path", "solution.py")
+            callsites = self.speculative_synthesizer.detect_unwritten_callsites(code_str, target_file=file_path)
+            return {"count": len(callsites), "callsites": [c.to_dict() for c in callsites]}
+
+        elif method == "speculative/get_cache":
+            file_path = params.get("file_path", "")
+            func_name = params.get("func_name", "")
+            if file_path and func_name:
+                item = self.speculative_cache.get(file_path, func_name)
+                return {"found": item is not None, "item": item.to_dict() if item else None}
+            else:
+                return {"items": self.speculative_cache.all_items()}
+
+        elif method == "migration/detect":
+            manifest_filename = params.get("manifest_filename", "")
+            old_content = params.get("old_content", "")
+            new_content = params.get("new_content", "")
+            bumps = self.migration_mgr.detect_manifest_bumps(manifest_filename, old_content, new_content)
+            return {"bumps": [b.to_dict() for b in bumps]}
+
+        elif method == "agent/certify":
+            code = params.get("code", "")
+            test_code = params.get("test_code", "")
+            target_filename = params.get("target_filename", "solution.py")
+            workspace_root = params.get("workspace_root")
+            cert_result = self.certification_gate.certify(
+                candidate_code=code,
+                test_source=test_code,
+                target_filename=target_filename,
+                workspace_root=workspace_root,
+            )
+            return cert_result.to_dict()
+
+        elif method == "budget/complexity":
+            code_str = params.get("code", "")
+            score = self.budgeter.compute_complexity(code_str)
+            return score.to_dict()
 
         elif method == "system/shutdown":
             threading.Thread(target=self.stop, daemon=True).start()

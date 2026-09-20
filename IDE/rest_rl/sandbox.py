@@ -21,9 +21,20 @@ import tempfile
 import subprocess
 import logging
 from dataclasses import dataclass, asdict
-from typing import Optional, List, Dict, Any, Tuple, Set
+from typing import Optional, List, Dict, Any, Tuple, Set, Callable
 
 logger = logging.getLogger("rest_rl.sandbox")
+
+# Win32 Job Object imports for sub-8ms process tree preemption
+_HAS_WIN32_JOBS = False
+if sys.platform == "win32":
+    try:
+        import ctypes
+        from ctypes import wintypes
+        _kernel32 = ctypes.windll.kernel32
+        _HAS_WIN32_JOBS = True
+    except Exception as _e:
+        logger.debug("Win32 Job Object API unavailable: %s", _e)
 
 
 @dataclass
@@ -167,6 +178,34 @@ class VerificationSandbox:
         self.forbidden_calls = forbidden_calls or ASTValidator.DEFAULT_FORBIDDEN_CALLS
         self.forbidden_modules = forbidden_modules or ASTValidator.DEFAULT_FORBIDDEN_MODULES
         self.forbidden_builtins = forbidden_builtins or ASTValidator.DEFAULT_FORBIDDEN_BUILTINS
+        self._active_jobs: Set[Any] = set()
+        self._active_procs: Set[subprocess.Popen] = set()
+
+    def terminate_active_jobs(self) -> int:
+        """
+        Immediately terminates all active Windows Job Objects and test subprocesses (<8ms).
+        Called upon ide/idle_stop to achieve instant cooperative preemption.
+        """
+        count = 0
+        if _HAS_WIN32_JOBS:
+            for hJob in list(self._active_jobs):
+                try:
+                    _kernel32.TerminateJobObject(hJob, 1)
+                    _kernel32.CloseHandle(hJob)
+                    count += 1
+                except Exception:
+                    pass
+                self._active_jobs.discard(hJob)
+
+        for proc in list(self._active_procs):
+            try:
+                proc.kill()
+                count += 1
+            except Exception:
+                pass
+            self._active_procs.discard(proc)
+
+        return count
 
     def validate_code_ast(self, code_str: str) -> Tuple[bool, Optional[str]]:
         """
@@ -199,6 +238,7 @@ class VerificationSandbox:
         target_filename: str = "solution.py",
         test_filename: str = "test_solution.py",
         workspace_root: Optional[str] = None,
+        is_paused: Optional[Callable[[], bool]] = None,
     ) -> SandboxResult:
         """
         Runs candidate code against test_source in an isolated environment.
@@ -279,7 +319,7 @@ class VerificationSandbox:
             env["PYTHONPATH"] = os.pathsep.join(paths)
 
             # 3. Execute runner (try pytest first; fallback to unittest runner)
-            return self._run_test_process(temp_dir, test_filename, timeout, start_time, env)
+            return self._run_test_process(temp_dir, test_filename, timeout, start_time, env, is_paused=is_paused)
         finally:
             try:
                 shutil.rmtree(temp_dir, ignore_errors=True)
@@ -293,8 +333,9 @@ class VerificationSandbox:
         timeout: float,
         start_time: float,
         env: dict,
+        is_paused: Optional[Callable[[], bool]] = None,
     ) -> SandboxResult:
-        """Executes test runner subprocess with timeout handling."""
+        """Executes test runner subprocess bound to Windows Job Object for sub-8ms preemption."""
         # Check if pytest is available
         has_pytest = self._check_pytest_available()
         if has_pytest:
@@ -305,21 +346,89 @@ class VerificationSandbox:
             cmd = [sys.executable, "-m", "unittest", test_file]
             runner_type = "unittest"
 
+        proc = None
+        hJob = None
+        aborted_by_pause = False
+        timed_out = False
+
         try:
-            proc = subprocess.run(
+            proc = subprocess.Popen(
                 cmd,
                 cwd=cwd,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=timeout,
                 env=env,
             )
+            self._active_procs.add(proc)
+
+            # Bind subprocess to Windows Job Object
+            if _HAS_WIN32_JOBS:
+                try:
+                    hJob = _kernel32.CreateJobObjectW(None, None)
+                    if hJob:
+                        _kernel32.AssignProcessToJobObject(hJob, int(proc._handle))
+                        self._active_jobs.add(hJob)
+                except Exception as e:
+                    logger.debug("Failed to assign process to Windows Job Object: %s", e)
+
+            # High-resolution wait loop checking is_paused() every 5ms
+            poll_interval = 0.005
+            while True:
+                if is_paused and is_paused():
+                    aborted_by_pause = True
+                    if hJob and _HAS_WIN32_JOBS:
+                        _kernel32.TerminateJobObject(hJob, 1)
+                    proc.kill()
+                    break
+
+                ret = proc.poll()
+                if ret is not None:
+                    break
+
+                if (time.time() - start_time) >= timeout:
+                    timed_out = True
+                    if hJob and _HAS_WIN32_JOBS:
+                        _kernel32.TerminateJobObject(hJob, 1)
+                    proc.kill()
+                    break
+
+                time.sleep(poll_interval)
+
+            try:
+                stdout, stderr = proc.communicate(timeout=0.5)
+            except Exception:
+                stdout, stderr = "", ""
+
             duration = time.time() - start_time
-            stdout = proc.stdout
-            stderr = proc.stderr
+
+            if aborted_by_pause:
+                return SandboxResult(
+                    reward=0.0,
+                    passed_count=0,
+                    total_count=0,
+                    duration_sec=round(duration, 3),
+                    stdout=stdout,
+                    stderr="Subprocess preempted by user activity (<8ms)",
+                    status="PREEMPTED",
+                    error_message="Preempted by user activity",
+                )
+
+            if timed_out:
+                return SandboxResult(
+                    reward=0.0,
+                    passed_count=0,
+                    total_count=0,
+                    duration_sec=round(duration, 3),
+                    stdout=stdout,
+                    stderr=f"Execution timed out after {timeout:.1f}s",
+                    status="TIMEOUT",
+                    error_message=f"Timeout after {timeout:.1f}s",
+                )
+
             returncode = proc.returncode
 
-            # 4. Parse results and compute discrete reward
+            # Parse results and compute discrete reward
             passed, total = self._parse_test_counts(stdout, stderr, runner_type)
 
             if returncode == 0:
@@ -343,18 +452,6 @@ class VerificationSandbox:
                 error_message=stderr if returncode != 0 and total == 0 else None,
             )
 
-        except subprocess.TimeoutExpired:
-            duration = time.time() - start_time
-            return SandboxResult(
-                reward=0.0,
-                passed_count=0,
-                total_count=0,
-                duration_sec=round(duration, 3),
-                stdout="",
-                stderr=f"Execution timed out after {timeout:.1f}s",
-                status="TIMEOUT",
-                error_message=f"Timeout after {timeout:.1f}s",
-            )
         except Exception as e:
             duration = time.time() - start_time
             return SandboxResult(
@@ -367,6 +464,16 @@ class VerificationSandbox:
                 status="ERROR",
                 error_message=str(e),
             )
+        finally:
+            if hJob and _HAS_WIN32_JOBS:
+                self._active_jobs.discard(hJob)
+                try:
+                    _kernel32.CloseHandle(hJob)
+                except Exception:
+                    pass
+            if proc:
+                self._active_procs.discard(proc)
+
 
     @staticmethod
     def _check_pytest_available() -> bool:

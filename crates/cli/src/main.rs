@@ -9240,11 +9240,15 @@ User: <context><environment_info>OS: Windows</environment_info></context>@agent 
         // ReST-RL reinforcement learning
         assert_eq!(canonicalize_command("rl"), Some("rest-rl"));
         assert_eq!(canonicalize_command("/rl"), Some("rest-rl"));
+        assert_eq!(canonicalize_command("@rl"), Some("rest-rl"));
         assert_eq!(canonicalize_command("restrl"), Some("rest-rl"));
         assert_eq!(canonicalize_command("/restrl"), Some("rest-rl"));
+        assert_eq!(canonicalize_command("@restrl"), Some("rest-rl"));
         assert_eq!(canonicalize_command("--rest-rl"), Some("rest-rl"));
         assert_eq!(canonicalize_command("@agent rl"), Some("rest-rl"));
         assert_eq!(canonicalize_command("@agent /restrl"), Some("rest-rl"));
+        assert_eq!(canonicalize_command("@command rl"), Some("rest-rl"));
+        assert_eq!(canonicalize_command("@commands rl"), Some("rest-rl"));
     }
 
     #[test]

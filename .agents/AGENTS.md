@@ -41,4 +41,13 @@
 - **Runtime Available Memory Rule**: NEVER allocate models against total physical RAM. Always evaluate runtime free/available RAM (`res.free_ram_gb`) and free VRAM (`res.free_vram_mb`) to avoid OOM from concurrent workloads.
 - **Ollama Engine Setup**: Must auto-detect, auto-install silently (`OllamaSetup.exe /SILENT /NORESTART`), persist Ollama path to Windows User PATH registry, start `ollama serve`, and pull the hardware-appropriate model.
 - **Incremental Background Watcher**: `_runDatabaseUpdate()` periodically invokes `cli.exe --update --db-path <dbPath>` at below-normal priority with logs piped to the `ModelFusion Server` channel.
+
+### 6. ReST-RL Background Daemon Invariants & Zero-Impact Laws
+- **Strict 40% VRAM Cap**: Never load independent secondary reward models (e.g. 8B Skywork) concurrently with policy models on systems with <24 GB VRAM. Sizing must rely on the 4-tier zero-VRAM graduated verification signal and unified single-model PRM/logprob scoring.
+- **Dynamic Ollama Tag Parity**: Adapters must dynamically query `/api/tags` or use the Master CLI's dynamically pulled models (`qwen2.5:32b`, `qwen2.5:14b`, `qwen2.5:7b`, `qwen2.5:1.5b`). Never hardcode model tags with `-coder` suffixes that trigger silent HTTP 404 aborts. Prompts must always include `task.test_target` and error reflection tracebacks.
+- **Sub-50ms Preemption Architecture**:
+  - Test runners in `sandbox.py` must register subprocesses with a Windows Job Object (`CreateJobObjectW`) terminated via `TerminateJobObject(hJob, 1)` upon `ide/idle_stop` (<8ms cancellation).
+  - LLM inference must use streaming SSE (`stream: true`) with token-level `is_paused()` yield checks (<25ms abortion).
+- **In-Memory Virtual Document Diffs**: Never write ephemeral candidate patches to temporary files on disk. The IDE shim must register a virtual document provider (`restrl-diff://`) and apply accepted changes via `vscode.workspace.applyEdit`.
+- **Mutation Testing Gate**: Mutation testing ($K=5$ AST mutants) must act as an adversarial certification gate ($M_{kill} \ge 0.5 \implies R=1.0$), not a scalar multiplier that drops passing solutions below the IDE's 1.0 presentation threshold.
 

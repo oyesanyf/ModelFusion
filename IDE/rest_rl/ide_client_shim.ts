@@ -36,12 +36,36 @@ export interface ResolutionPayload {
   passed: boolean;
 }
 
+/**
+ * In-memory virtual document provider for ReST-RL diff previews (restrl-diff://).
+ * Eliminates ephemeral file writes to disk and prevents race conditions with diff tabs.
+ */
+export class RestRlDiffContentProvider implements vscode.TextDocumentContentProvider {
+  private _onDidChange = new vscode.EventEmitter<vscode.Uri>();
+  public readonly onDidChange = this._onDidChange.event;
+  private _docs = new Map<string, string>();
+
+  public provideTextDocumentContent(uri: vscode.Uri): string {
+    return this._docs.get(uri.toString()) || '';
+  }
+
+  public setContent(uri: vscode.Uri, content: string): void {
+    this._docs.set(uri.toString(), content);
+    this._onDidChange.fire(uri);
+  }
+
+  public deleteContent(uri: vscode.Uri): void {
+    this._docs.delete(uri.toString());
+  }
+}
+
 export class RestRLIdeShim implements vscode.Disposable {
   private _debounceTimer: NodeJS.Timeout | null = null;
   private _pollTimer: NodeJS.Timeout | null = null;
   private _isIdle: boolean = false;
   private _lastActivityTime: number = Date.now();
   private _statusBarItem: vscode.StatusBarItem;
+  private _diffProvider: RestRlDiffContentProvider;
   private _disposables: vscode.Disposable[] = [];
   private _reqId: number = 0;
 
@@ -63,13 +87,19 @@ export class RestRLIdeShim implements vscode.Disposable {
     this._statusBarItem.show();
     this._disposables.push(this._statusBarItem);
 
-    // 2. Register IDE User Activity Hooks
+    // 2. Initialize In-Memory Virtual Document Provider for restrl-diff://
+    this._diffProvider = new RestRlDiffContentProvider();
+    this._disposables.push(
+      vscode.workspace.registerTextDocumentContentProvider('restrl-diff', this._diffProvider)
+    );
+
+    // 3. Register IDE User Activity Hooks
     this._registerEventHooks();
 
-    // 3. Register Commands (Diff Review, Accept, Reject)
+    // 4. Register Commands (Diff Review, Accept, Reject)
     this._registerCommands();
 
-    // 4. Start 45-second debounce & resolution polling
+    // 5. Start 45-second debounce & resolution polling
     this._scheduleDebounce();
     this._startResolutionPolling();
   }
@@ -144,10 +174,27 @@ export class RestRLIdeShim implements vscode.Disposable {
         'modelfusion.rest_rl.acceptPatch',
         async (targetFile: string, candidateCode: string) => {
           try {
-            await fs.promises.writeFile(targetFile, candidateCode, 'utf-8');
-            vscode.window.showInformationMessage(
-              `ReST-RL: Accepted patch for ${path.basename(targetFile)}`
+            const targetUri = vscode.Uri.file(targetFile);
+            const doc = await vscode.workspace.openTextDocument(targetUri);
+            const edit = new vscode.WorkspaceEdit();
+            const fullRange = new vscode.Range(
+              doc.positionAt(0),
+              doc.positionAt(doc.getText().length)
             );
+            edit.replace(targetUri, fullRange, candidateCode);
+            const applied = await vscode.workspace.applyEdit(edit);
+            if (applied) {
+              await doc.save();
+              vscode.window.showInformationMessage(
+                `ReST-RL: Accepted patch for ${path.basename(targetFile)}`
+              );
+            } else {
+              // Fallback to disk write if edit could not be applied
+              await fs.promises.writeFile(targetFile, candidateCode, 'utf-8');
+              vscode.window.showInformationMessage(
+                `ReST-RL: Accepted patch for ${path.basename(targetFile)}`
+              );
+            }
           } catch (err: any) {
             vscode.window.showErrorMessage(
               `ReST-RL: Failed to apply patch: ${err.message}`
@@ -270,25 +317,24 @@ export class RestRLIdeShim implements vscode.Disposable {
   }
 
   /**
-   * Opens the in-editor Side-by-Side Diff Viewer.
+   * Opens the in-editor Side-by-Side Diff Viewer using in-memory virtual documents.
+   * Prevents deletion race conditions and avoids temporary file writes to the workspace.
    */
   private async _showDiffViewer(res: ResolutionPayload): Promise<void> {
     const targetUri = vscode.Uri.file(res.target_file);
-    const tmpCandidatePath = path.join(
-      path.dirname(res.target_file),
-      `.restrl_candidate_${path.basename(res.target_file)}`
+    const safeFilename = path.basename(res.target_file);
+    const candidateUri = vscode.Uri.parse(
+      `restrl-diff://candidate/${encodeURIComponent(safeFilename)}?taskId=${encodeURIComponent(res.task_id)}`
     );
 
     try {
-      await fs.promises.writeFile(tmpCandidatePath, res.candidate_code, 'utf-8');
-      const candidateUri = vscode.Uri.file(tmpCandidatePath);
-
-      const title = `ReST-RL Patch Review: ${path.basename(res.target_file)} (Reward: 1.00)`;
+      this._diffProvider.setContent(candidateUri, res.candidate_code);
+      const title = `ReST-RL Patch Review: ${safeFilename} (Reward: 1.00)`;
       await vscode.commands.executeCommand('vscode.diff', targetUri, candidateUri, title);
 
       // Offer non-intrusive Accept / Reject prompt inside diff view
       const choice = await vscode.window.showInformationMessage(
-        `Apply ReST-RL patch to ${path.basename(res.target_file)}?`,
+        `Apply ReST-RL patch to ${safeFilename}?`,
         'Accept Patch',
         'Reject Patch'
       );
@@ -300,13 +346,10 @@ export class RestRLIdeShim implements vscode.Disposable {
           res.candidate_code
         );
       }
-    } finally {
-      // Clean up temporary candidate file
-      if (fs.existsSync(tmpCandidatePath)) {
-        try {
-          await fs.promises.unlink(tmpCandidatePath);
-        } catch {}
-      }
+    } catch (err: any) {
+      vscode.window.showErrorMessage(
+        `ReST-RL: Failed to display diff viewer: ${err.message}`
+      );
     }
   }
 

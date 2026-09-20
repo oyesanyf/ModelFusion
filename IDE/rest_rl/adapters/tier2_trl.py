@@ -17,6 +17,7 @@ from typing import Optional, Callable, Dict, Any, List
 from ..hardware_profiler import HardwareTier
 from ..sandbox import VerificationSandbox, SandboxResult
 from .base import BaseRLAdapter, RLTask, RolloutResult
+from .ollama_client import resolve_model_tag, query_ollama_streaming
 
 logger = logging.getLogger("rest_rl.adapters.tier2")
 
@@ -147,8 +148,11 @@ class TRLGRPOAdapter(BaseRLAdapter):
                     metadata={"framework": "TRL/Unsloth (GRPO)", "tier": 2, "paused": True},
                 )
 
-            # 2. Generate completion variant i
-            variant_code = self._generate_completion_variant(task, current_step)
+            # 2. Generate completion variant i with streaming preemption and error reflection
+            last_err = st.get("last_error")
+            variant_code = self._generate_completion_variant(
+                task, current_step, is_paused=is_paused, error_trace=last_err
+            )
 
             # 3. Preemption check before sandbox execution
             if is_paused():
@@ -177,6 +181,10 @@ class TRLGRPOAdapter(BaseRLAdapter):
                 target_filename=task.target_filename,
                 workspace_root=task.workspace_root,
             )
+
+            # Track error reflection trace for subsequent iterations
+            if res.reward < 1.0:
+                st["last_error"] = res.stderr or res.error_message or ""
 
             evaluated_group.append({
                 "index": current_step,
@@ -222,11 +230,17 @@ class TRLGRPOAdapter(BaseRLAdapter):
             },
         )
 
-    def _generate_completion_variant(self, task: RLTask, step_idx: int) -> str:
+    def _generate_completion_variant(
+        self,
+        task: RLTask,
+        step_idx: int,
+        is_paused: Optional[Callable[[], bool]] = None,
+        error_trace: Optional[str] = None,
+    ) -> str:
         """Generates candidate completion variant for step index."""
         # Check Ollama for first variant if running
         if step_idx == 0:
-            ollama_cand = self._query_ollama(task)
+            ollama_cand = self._query_ollama(task, is_paused=is_paused, error_trace=error_trace)
             if ollama_cand:
                 return ollama_cand
 
@@ -290,36 +304,26 @@ class TRLGRPOAdapter(BaseRLAdapter):
 
         return "\n".join(mutated)
 
-    def _query_ollama(self, task: RLTask) -> Optional[str]:
-        prompt = (
-            f"Fix or complete this Python code to pass the unit tests:\n\n"
-            f"```python\n{task.original_code}\n```\n"
-            f"Instruction: {task.instruction}\n"
-            f"Output ONLY valid Python code block."
+    def _query_ollama(
+        self,
+        task: RLTask,
+        is_paused: Optional[Callable[[], bool]] = None,
+        error_trace: Optional[str] = None,
+    ) -> Optional[str]:
+        """Queries local Ollama endpoint with dynamic model tag and streaming SSE."""
+        resolved_model = resolve_model_tag(
+            self.ollama_endpoint,
+            tier=2,
+            preferred_model=self.config.get("ollama_model"),
         )
-        payload = {
-            "model": "qwen2.5-coder:1.5b",
-            "prompt": prompt,
-            "stream": False,
-            "options": {"temperature": 0.6, "num_predict": 512},
-        }
-        try:
-            req = urllib.request.Request(
-                self.ollama_endpoint,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(req, timeout=0.6) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                response_text = data.get("response", "")
-                if "```python" in response_text:
-                    parts = response_text.split("```python")
-                    code_part = parts[1].split("```")[0]
-                    return code_part.strip()
-                elif "```" in response_text:
-                    parts = response_text.split("```")
-                    code_part = parts[1].split("```")[0]
-                    return code_part.strip()
-        except Exception:
-            pass
-        return None
+        return query_ollama_streaming(
+            endpoint=self.ollama_endpoint,
+            model=resolved_model,
+            task=task,
+            is_paused=is_paused,
+            timeout=3.0,
+            error_trace=error_trace,
+            temperature=self.temperature,
+            num_predict=self.max_completion_length,
+        )
+

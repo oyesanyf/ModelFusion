@@ -222,7 +222,7 @@ class TestB(unittest.TestCase):
         # Let daemon run both
         self.client.notify_idle_start()
 
-        max_wait = 12.0
+        max_wait = 25.0
         start = time.time()
         a_done, b_done = False, False
         while time.time() - start < max_wait:

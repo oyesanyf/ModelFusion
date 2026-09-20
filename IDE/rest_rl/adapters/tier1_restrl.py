@@ -18,6 +18,7 @@ from typing import Optional, Callable, Dict, Any, List
 from ..hardware_profiler import HardwareTier
 from ..sandbox import VerificationSandbox, SandboxResult
 from .base import BaseRLAdapter, RLTask, RolloutResult
+from .ollama_client import resolve_model_tag, query_ollama_streaming
 
 logger = logging.getLogger("rest_rl.adapters.tier1")
 
@@ -188,9 +189,10 @@ class ReSTRLAdapter(BaseRLAdapter):
             # 2. Select leaf node via UCB1
             node = self._select(root)
 
-            # 3. Expand node
+            # 3. Expand node with streaming preemption and error reflection
+            last_err = st.get("last_error")
             if not node.is_terminal and node.depth < self.max_depth:
-                expanded_child = self._expand(node, task)
+                expanded_child = self._expand(node, task, is_paused=is_paused, error_trace=last_err)
                 target_eval_node = expanded_child
             else:
                 target_eval_node = node
@@ -223,6 +225,10 @@ class ReSTRLAdapter(BaseRLAdapter):
             )
             target_eval_node.sandbox_result = eval_result
             target_eval_node.reward = eval_result.reward
+
+            # Track error reflection trace for subsequent iterations
+            if eval_result.reward < 1.0:
+                st["last_error"] = eval_result.stderr or eval_result.error_message or ""
 
             # Update best candidate
             if eval_result.reward > best_rew:
@@ -266,10 +272,18 @@ class ReSTRLAdapter(BaseRLAdapter):
             curr = max(curr.children, key=lambda c: c.ucb1(self.exploration_c))
         return curr
 
-    def _expand(self, node: MCTSNode, task: RLTask) -> MCTSNode:
+    def _expand(
+        self,
+        node: MCTSNode,
+        task: RLTask,
+        is_paused: Optional[Callable[[], bool]] = None,
+        error_trace: Optional[str] = None,
+    ) -> MCTSNode:
         """Generates a candidate branch node using mutation / reasoning transformation."""
         branch_idx = len(node.children)
-        candidate_code = self._synthesize_candidate(node.code, task, branch_idx)
+        candidate_code = self._synthesize_candidate(
+            node.code, task, branch_idx, is_paused=is_paused, error_trace=error_trace
+        )
         child = MCTSNode(code=candidate_code, parent=node, depth=node.depth + 1)
         node.children.append(child)
         return child
@@ -282,14 +296,21 @@ class ReSTRLAdapter(BaseRLAdapter):
             curr.value_sum += reward
             curr = curr.parent
 
-    def _synthesize_candidate(self, current_code: str, task: RLTask, branch_idx: int = 0) -> str:
+    def _synthesize_candidate(
+        self,
+        current_code: str,
+        task: RLTask,
+        branch_idx: int = 0,
+        is_paused: Optional[Callable[[], bool]] = None,
+        error_trace: Optional[str] = None,
+    ) -> str:
         """
         Synthesizes a repaired/optimized code candidate.
         Explores diverse branches via semantic reasoning heuristics and optional local Ollama.
         """
         # 1. Try Ollama if branch_idx == 0
         if branch_idx == 0:
-            ollama_cand = self._query_ollama(task)
+            ollama_cand = self._query_ollama(task, is_paused=is_paused, error_trace=error_trace)
             if ollama_cand:
                 return ollama_cand
 
@@ -382,37 +403,25 @@ class ReSTRLAdapter(BaseRLAdapter):
 
         return hypotheses
 
-    def _query_ollama(self, task: RLTask) -> Optional[str]:
-        """Queries local Ollama endpoint for quick candidate generation."""
-        prompt = (
-            f"Fix or complete this Python code to pass the unit tests:\n\n"
-            f"```python\n{task.original_code}\n```\n"
-            f"Instruction: {task.instruction}\n"
-            f"Output ONLY valid Python code block."
+    def _query_ollama(
+        self,
+        task: RLTask,
+        is_paused: Optional[Callable[[], bool]] = None,
+        error_trace: Optional[str] = None,
+    ) -> Optional[str]:
+        """Queries local Ollama endpoint with dynamic model tag and streaming SSE."""
+        resolved_model = resolve_model_tag(
+            self.ollama_endpoint,
+            tier=1,
+            preferred_model=self.config.get("ollama_model"),
         )
-        payload = {
-            "model": "qwen2.5-coder:7b",
-            "prompt": prompt,
-            "stream": False,
-            "options": {"temperature": 0.5, "num_predict": 512},
-        }
-        try:
-            req = urllib.request.Request(
-                self.ollama_endpoint,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(req, timeout=0.6) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                response_text = data.get("response", "")
-                if "```python" in response_text:
-                    parts = response_text.split("```python")
-                    code_part = parts[1].split("```")[0]
-                    return code_part.strip()
-                elif "```" in response_text:
-                    parts = response_text.split("```")
-                    code_part = parts[1].split("```")[0]
-                    return code_part.strip()
-        except Exception:
-            pass
-        return None
+        return query_ollama_streaming(
+            endpoint=self.ollama_endpoint,
+            model=resolved_model,
+            task=task,
+            is_paused=is_paused,
+            timeout=3.0,
+            error_trace=error_trace,
+            temperature=0.5,
+            num_predict=512,
+        )

@@ -17,6 +17,7 @@ from typing import Optional, Callable, Dict, Any, List
 from ..hardware_profiler import HardwareTier
 from ..sandbox import VerificationSandbox, SandboxResult
 from .base import BaseRLAdapter, RLTask, RolloutResult
+from .ollama_client import resolve_model_tag, query_ollama_streaming
 
 logger = logging.getLogger("rest_rl.adapters.tier3")
 
@@ -133,8 +134,11 @@ class MinimalGRPOAdapter(BaseRLAdapter):
                     metadata={"framework": "TinyZero/Minimal-GRPO", "tier": 3, "paused": True},
                 )
 
-            # Sample candidate via Ollama or rule-based heuristics
-            candidate = self._sample_candidate(task, current_sample)
+            # Sample candidate via Ollama or rule-based heuristics with streaming preemption and error reflection
+            last_err = st.get("last_error")
+            candidate = self._sample_candidate(
+                task, current_sample, is_paused=is_paused, error_trace=last_err
+            )
 
             if is_paused():
                 st["current_sample"] = current_sample
@@ -161,6 +165,10 @@ class MinimalGRPOAdapter(BaseRLAdapter):
                 workspace_root=task.workspace_root,
             )
 
+            # Track error reflection trace for subsequent iterations
+            if res.reward < 1.0:
+                st["last_error"] = res.stderr or res.error_message or ""
+
             if res.reward > best_rew:
                 best_rew = res.reward
                 best_cand = candidate
@@ -186,11 +194,17 @@ class MinimalGRPOAdapter(BaseRLAdapter):
             metadata={"framework": "TinyZero/Minimal-GRPO", "tier": 3},
         )
 
-    def _sample_candidate(self, task: RLTask, sample_idx: int) -> str:
+    def _sample_candidate(
+        self,
+        task: RLTask,
+        sample_idx: int,
+        is_paused: Optional[Callable[[], bool]] = None,
+        error_trace: Optional[str] = None,
+    ) -> str:
         """Attempts Ollama local generation; falls back to reasoning mutations."""
         # 1. Try local Ollama if available
         if sample_idx == 0:
-            ollama_code = self._query_ollama(task)
+            ollama_code = self._query_ollama(task, is_paused=is_paused, error_trace=error_trace)
             if ollama_code:
                 return ollama_code
 
@@ -253,37 +267,26 @@ class MinimalGRPOAdapter(BaseRLAdapter):
 
         return "\n".join(mutated)
 
-    def _query_ollama(self, task: RLTask) -> Optional[str]:
-        """Queries local Ollama endpoint with 0.6s timeout; returns code or None."""
-        prompt = (
-            f"Fix or complete this Python code to pass the unit tests:\n\n"
-            f"```python\n{task.original_code}\n```\n"
-            f"Instruction: {task.instruction}\n"
-            f"Output ONLY valid Python code block."
+    def _query_ollama(
+        self,
+        task: RLTask,
+        is_paused: Optional[Callable[[], bool]] = None,
+        error_trace: Optional[str] = None,
+    ) -> Optional[str]:
+        """Queries local Ollama endpoint with dynamic model tag and streaming SSE."""
+        resolved_model = resolve_model_tag(
+            self.ollama_endpoint,
+            tier=3,
+            preferred_model=self.ollama_model,
         )
-        payload = {
-            "model": self.ollama_model,
-            "prompt": prompt,
-            "stream": False,
-            "options": {"temperature": 0.5, "num_predict": 512},
-        }
-        try:
-            req = urllib.request.Request(
-                self.ollama_endpoint,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(req, timeout=0.6) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                response_text = data.get("response", "")
-                if "```python" in response_text:
-                    parts = response_text.split("```python")
-                    code_part = parts[1].split("```")[0]
-                    return code_part.strip()
-                elif "```" in response_text:
-                    parts = response_text.split("```")
-                    code_part = parts[1].split("```")[0]
-                    return code_part.strip()
-        except Exception:
-            pass
-        return None
+        return query_ollama_streaming(
+            endpoint=self.ollama_endpoint,
+            model=resolved_model,
+            task=task,
+            is_paused=is_paused,
+            timeout=3.0,
+            error_trace=error_trace,
+            temperature=0.5,
+            num_predict=512,
+        )
+
