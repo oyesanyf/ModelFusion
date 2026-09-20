@@ -120,7 +120,9 @@ Commands to fetch, check, and monitor system databases and cache files.
 |:---|:---:|:---:|:---|
 | `--stats` | None (Flag) | Off | Output database statistics (number of models, tasks, and file sizes). |
 | `--tasks [<FILTER>]` | `String` | None | List all supported HuggingFace tasks. Filterable by `audio`, `image`, or `text`. |
-| `--update` | None (Flag) | Off | Fetch the latest open-weights catalog directly from HuggingFace Hub. |
+| `--update` | None (Flag) | Off | **Fast Curated Engine**: Ingests top ~6,500 production workhorse models across all 45 tasks into SQLite, probes live available RAM/VRAM, auto-provisions the matching local Ollama model tier (e.g. `qwen2.5:14b`), and verifies Ollama daemon health. Used for daily syncs, IDE background watcher, and `@agent update`. |
+| `--updatedb` | None (Flag) | Off | **Full Registry Crawler (All 2M+ Models)**: Continuously traverses the entire Hugging Face Hub via cursor pagination (`limit=1000`, HTTP `Link: rel="next"`), streaming every model in the hub into SQLite at ~1,000 models/sec in transactional batches. |
+| `--max-models <N>` | `usize` | None | Caps total model ingestion when running `--updatedb` (e.g. `--max-models 50000`). |
 | `--restore` | None (Flag) | Off | Revert configurations and SQLite DB to the latest clean backup. |
 | `--decision-stats` | None (Flag) | Off | Print router routing logs and selection accuracy statistics. |
 | `--novel-ai-stats` | None (Flag) | Off | Print statistics for advanced AI models currently indexed. |
@@ -138,6 +140,24 @@ Commands to fetch, check, and monitor system databases and cache files.
 
 ---
 
+
+### 🔄 Database Update Architecture: `--update` vs `--updatedb`
+
+ModelFusion provides two distinct, non-aliased update commands for catalog management:
+
+1. **`--update` (Fast Curated Engine)**:
+   - **Target**: Top ~6,500 production workhorse models across all 45 tasks.
+   - **Hardware Auto-Provisioning**: Measures runtime available RAM and VRAM, dynamically provisions the optimal Ollama model tier (`qwen2.5:32b`, `14b`, `7b`, `3b`, `1.5b`), and ensures Ollama daemon lifecycle and permanent PATH persistence.
+   - **Execution Time**: ~15–30 seconds.
+   - **Syntax**: `cli.exe --update --db-path "IDE/db/hf_models.db"`
+
+2. **`--updatedb` (Full Registry Crawler - All 2M+ Models)**:
+   - **Target**: The complete Hugging Face Hub registry (over 2 million models, "whether junk or not").
+   - **Pagination Architecture**: Continuously traverses the Hub using cursor pagination (`limit=1000`, HTTP `Link: rel="next"`), committing 1,000 models per SQLite transaction at ~1,000 models/sec.
+   - **Execution Cap**: Optional `--max-models <N>` parameter to bound crawling depth.
+   - **Syntax**: `cli.exe --updatedb --db-path "IDE/db/hf_models.db" --max-models 50000`
+
+---
 ## 7. Execution Backends
 
 ModelFusion orchestrates multiple inference runtimes depending on task parameters.
@@ -145,7 +165,7 @@ ModelFusion orchestrates multiple inference runtimes depending on task parameter
 | Flag | Argument Type | Default Value | Description |
 |:---|:---:|:---:|:---|
 | `--fusion` | None (Flag) | Off | Enable multi-model consensus deliberation pipeline. |
-| `--fusion-models <N>` | `usize` | `10` | Size of the consensus panel (how many models run in parallel). |
+| `--fusion-models <N>` | `usize` | `0` | Size of the consensus panel (number of models evaluated in parallel). **`0` = Dynamic Hardware Allocation**: Evaluates runtime available RAM (`res.free_ram_gb`) and free VRAM (`res.free_vram_mb`) to dynamically determine panel size, preventing OOM aborts under concurrent workloads. |
 | `--fusion-mode <MODE>` | `String` | `multi-model` | Panel setup: `multi-model` (different models) or `multi-sample` (one model, N temp variations). |
 | `--ollama` | None (Flag) | Off | Run inference using a local Ollama daemon rather than HuggingFace. |
 | `--openvino` | None (Flag) | Off | Run inference on Intel hardware using OpenVINO optimization. |
@@ -278,10 +298,22 @@ These flags force task-level classification and route prompts to specialized Hug
 
 ## 12. CLI Usage Examples
 
-### Running Multi-Model Deliberation via Ollama
-Loads the top 10 models for `text-generation`, executes them in sequence, evaluates consensus, and writes the output:
+### Fast Curated Hub Sync & Local Model Provisioning
+Refreshes the top ~6,500 models across all 45 tasks and automatically provisions the matching Ollama model for your available memory:
 ```bash
-cli.exe --fusion --ollama --context-auto --prompt "How does Raft consensus handle log compaction?"
+cli.exe --update --db-path "IDE/db/hf_models.db"
+```
+
+### Full Registry Crawler across Hugging Face Hub
+Crawls the entire 2M+ model registry in 1,000-model batches, capped at 50,000 models:
+```bash
+cli.exe --updatedb --db-path "IDE/db/hf_models.db" --max-models 50000
+```
+
+### Running Multi-Model Deliberation with Dynamic Memory Sizing
+Dynamically evaluates runtime free RAM/VRAM (`--fusion-models 0`), loads hardware-appropriate models, and deliberates on consensus:
+```bash
+cli.exe --fusion --fusion-models 0 --ollama --context-auto --prompt "How does Raft consensus handle log compaction?"
 ```
 
 ### Running Fast Multi-Sample Deliberation

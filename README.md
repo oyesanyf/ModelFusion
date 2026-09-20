@@ -628,71 +628,178 @@ The fast path automatically selects the best system prompt based on what you're 
 | **Health** | symptom, vitamin, exercise, nutrition, disease... | 0.3 |
 | **General** | *everything else* | 0.3 |
 
-### 🔧 Slash Commands
+### 🔧 Slash Commands & @agent Directives
 
-Type `/` in the chat to see all available commands. These are powered by `.prompt.md` files in `.github/prompts/`.
+Type `/` or `@agent ` in the HugOS Chat input to see interactive autocomplete suggestions. All 71+ commands are processed natively by the ModelFusion Master CLI (`cli.exe`) with complete **1:1 command parity** between `/command` and `@agent command`.
 
-#### Inference Backends
+#### 1. Code Optimization & Evolution
+| Command | Aliases | Options | Description |
+|:---|:---|:---|:---|
+| `/evolve` | `/evolution`, `/avo` | `-n <N>`, `--iterations <N>`, `--strategy <auto\|builtin>` | Iterative code evolution cycling through bug fixes, performance, error handling, refactoring, and security. Auto-applies inline diff (`Ctrl+Shift+Y` / `Ctrl+Shift+N`). |
+| `/refactor` | — | `[instructions]` | Refactors code for modularity, clean architecture, and SOLID adherence. |
+| `/optimize` | `/workflow-optimization` | `--focus <cpu\|memory\|io>` | Analyzes hot paths and reduces algorithmic time/memory complexity ($O(N)$). |
+| `/fix` | — | `[error context]` | Automatically fixes syntax errors, type errors, and compiler diagnostics in active file. |
+| `/review` | `/audit` | `--severity <low\|med\|high>` | Conducts deep code review identifying architectural anti-patterns and flaws. |
+| `/tests` | — | `--framework <pytest\|jest\|cargo>` | Generates unit test suites, regression fixtures, and edge-case mocks. |
+| `/explain` | — | `--level <beginner\|expert>` | Step-by-step walkthrough explaining complex algorithms and data structures. |
+
+*Examples:*
+```text
+/evolve -n 5 Optimize this Rust buffer for zero allocations on the hot path
+/refactor Convert this monolithic function to an event-driven strategy handler
+/tests --framework cargo Generate tests for concurrent RwLock acquisition
+```
+
+#### 2. Code Quality, Security & Auditing
+| Command | Aliases | Options | Description |
+|:---|:---|:---|:---|
+| `/security` | `/code-vulnerability-detection` | `--deep`, `--framework <owasp\|cve>` | Runs ATLAS static security analysis scanning for OWASP Top 10, CWEs, and secret leaks. |
+| `/comment` | `/comments`, `/doc`, `/docs` | `--style <jsdoc\|rustdoc>` | Generates comprehensive docstrings, parameter types, and inline comments. |
+| `/pii-detection` | — | `--sanitize` | Scans files and prompts for credentials, IP addresses, and private user data. |
+| `/code-clone-detection` | — | `--threshold <0.1-1.0>` | Detects duplicate code fragments and semantic clones across the workspace. |
+
+*Examples:*
+```text
+/security --deep Audit this auth router for SQL injection, timing attacks, and JWT flaws
+/comment --style rustdoc Document all public structs, traits, errors, and safety invariants
+```
+
+#### 3. Multi-Model Consensus & Deliberation
+| Command | Aliases | Options | Description |
+|:---|:---|:---|:---|
+| `/fusion` | — | `on` / `off` | Toggles ModelFusion multi-model deliberation panel with consensus synthesis. |
+| `/fusion-models` | — | `<N>` (e.g. `0`, `3`, `5`) | Configures consensus panel size. **`0` = Auto Dynamic Sizing** (based on live available RAM/VRAM). |
+| `/fusion-mode` | — | `multi-model` \| `multi-sample` | `multi-model` (queries N distinct models) or `multi-sample` (N temperature seeds on top model). |
+| `/judge` | — | `on` / `off` | Activates LLM-as-a-Judge cross-evaluation and output quality grading. |
+| `/score` | — | `on` / `off` | Scores response accuracy, relevance, and formatting quality. |
+| `/plan` | — | `[goal]` | Directs the model to generate a structured sequential execution plan before modifying code. |
+| `/cot` | — | `on` / `off` | Enables Chain-of-Thought scratchpad reasoning before emitting answers. |
+| `/full` | — | — | Activates compound mode (CoT + Planning + Multi-Model Fusion + Judge). |
+
+*Examples:*
+```text
+/fusion Compare Kafka Event Sourcing vs Debezium CDC for high-throughput financial audits
+/fusion-models 0 Auto-size consensus panel based on live free RAM and deliberate on architecture
+/plan Plan migration from CommonJS to ESM across our entire TypeScript monorepo
+```
+
+#### 4. Hardware Acceleration & Engine Control
+| Command | Options | Description |
+|:---|:---|:---|
+| `/gpu` / `/cpu` | — | Forces inference to GPU (CUDA/Arc/ROCm) or CPU (AVX-512/AMX). |
+| `/ollama` | — | Routes inference to local Ollama daemon (`http://127.0.0.1:11434`). |
+| `/openvino` | — | Routes inference to Intel OpenVINO INT4/INT8 accelerated runtime. |
+| `/onnx` / `/vllm` | — | Routes inference to ONNX Runtime or vLLM engine (Linux). |
+| `/model <name>` | `<id>` (e.g. `qwen2.5:14b`) | Explicitly overrides the active model. |
+| `/budget <N>` | `<N>` (e.g. `1.5`, `7`, `14`) | Sets maximum model size cap in billions of parameters ($P \le N	ext{B}$). |
+
+*Examples:*
+```text
+/ollama /model qwen2.5:14b
+/budget 7 Run best local model fitting strictly within a 7B parameter footprint
+/openvino /gpu Run local inference on Intel Arc GPU
+```
+
+#### 5. Data Science, Notebooks & Binary Analysis
+| Command | Aliases | Description |
+|:---|:---|:---|
+| `/jupyter` | — | Activates interactive Jupyter Notebook mode with dataframe inspection. |
+| `/dataanalyst` | — | Data Analyst mode: parses CSV/Excel, calculates descriptive stats, detects anomalies. |
+| `/datascience` | `/data-science` | End-to-end data science pipeline with feature engineering and ML training. |
+| `/pe-header-extraction` | `/peheaderextraction` | Deep static analysis of Windows PE binaries (DOS/NT headers, sections, imports, entropy). |
+
+*Examples:*
+```text
+/dataanalyst Analyze sales_q3.csv, identify churn correlation, and plot distributions
+/pe-header-extraction target/release/cli.exe
+```
+
+#### 6. Live Web Research & Model Hub Sync
+| Command | Aliases | Description |
+|:---|:---|:---|
+| `/research <topic>` | `/reseach` | Live internet research: scrapes web docs, summarizes findings, provides source URLs. |
+| `/search <query>` | — | Fast real-time web search for current library versions and API signatures. |
+| `/update` | — | **Fast Curated Engine**: Syncs top ~6,500 models across 45 tasks + auto-provisions Ollama model. |
+| `/updatedb` | `/update-db` | **Full Registry Crawler**: Traverses all 2M+ Hugging Face models via cursor pagination into SQLite. |
+
+*Examples:*
+```text
+/research Best practices for React Server Actions with optimistic UI updates in Next.js 15
+/update
+/updatedb --max-models 25000
+```
+
+#### 7. NLP & Modality Directives
 | Command | Description |
-|:--------|:-----------|
-| `/gpu` | Force GPU-accelerated inference |
-| `/cpu` | Force CPU-only inference |
-| `/ollama` | Use local Ollama models |
-| `/openvino` | Use Intel OpenVINO optimized inference |
-| `/onnx` | Use ONNX Runtime |
-| `/vllm` | Use vLLM high-throughput inference (Linux) |
+|:---|:---|
+| `/sentiment` / `/financial-sentiment-analysis` | Sentiment classification with polarity and financial market indicators (bullish/bearish). |
+| `/ner` / `/financial-ner` / `/legal-ner` | Named entity extraction for general, financial (tickers/equities), and legal (statutes/cases) entities. |
+| `/summary` / `/scientific-abstract-summarization` | Multi-document summarization and scientific paper extraction. |
+| `/question` | Context-grounded extractive question answering against open documents. |
+| `/contract-clause-classification` | Audits agreements for indemnity, liability, and governing law terms. |
+| `/automatic-speech-recognition` / `/text-to-speech` | Speech-to-text (Whisper) transcription and speech audio synthesis. |
+| `/image-classification` / `/visual-question-answering` | Computer vision classification and multimodal Q&A on uploaded images. |
 
-#### Orchestration & Analysis
-| Command | Description |
-|:--------|:-----------|
-| `/fusion` | Enable multi-model fusion |
-| `/model <id>` | Select a specific model |
-| `/budget <N>` | Set execution budget (0-10) |
-| `/evolve` | Evolve code using OpenEvolve optimization |
-| `/security` | Run security analysis with MITRE ATT&CK |
-| `/plan` | Generate execution plan before running |
-| `/score` | Score response quality |
-| `/judge` | LLM-as-judge evaluation |
+#### 8. System Introspection & Diagnostics
+| Command | Aliases | Description |
+|:---|:---|:---|
+| `/sysinfo` | `/sys-info` | Real-time hardware discovery: CPU cores, available RAM, free VRAM, dynamic budget. |
+| `/active-model` | `/current-model`, `/ide-model` | Displays currently loaded model, backend engine, and device target. |
+| `/stats` / `/performance-stats` | Inference latency percentiles (p50/p95/p99), token throughput, and cache metrics. |
+| `/decision-stats` / `/cache-stats` | Model selection decision history logs and local disk cache breakdown. |
+| `/keys` | `/api-keys` | Displays status of configured API keys (`[LOADED]` or `[DISABLED]`). |
+| `/clearcache` | — | Flushes temporary model weights, cache artifacts, and scratch embeddings. |
+| `/export-pdf` | `/exportpdf` | Compiles active chat session, code diffs, and benchmark charts into a PDF report. |
+| `/commands` | `/command`, `/help` | Displays interactive quick-reference of all available commands. |
 
-#### Data Science & NLP
-| Command | Description |
-|:--------|:-----------|
-| `/jupyter` | Launch Jupyter notebook mode |
-| `/dataanalyst` | Data analyst mode for CSV/Excel |
-| `/datascience` | ML training pipeline |
-| `/sentiment` | Sentiment analysis |
-| `/ner` | Named entity recognition |
-| `/summary` | Text/code summarization |
-| `/pe-header-extraction` | Windows PE binary analysis |
+#### 🔄 @agent Directives Parity
+Every slash command can be invoked interchangeably as an `@agent` directive:
+```text
+@agent update                          # Runs Fast Curated Engine sync and model provisioning
+@agent evolve -n 5                     # Runs 5 iterative evolution passes with inline diff
+@agent fusion                          # Activates multi-model consensus deliberation
+@agent sysinfo                         # Displays live CPU, RAM, and GPU hardware metrics
+@agent security                        # Performs static vulnerability audit on active code
+@agent budget 14                       # Caps model selection budget at 14B parameters
+@agent research Rust axum WebSockets   # Conducts live web research
+```
 
-#### Configuration
-| Command | Description |
-|:--------|:-----------|
-| `/context <text>` | Add custom context |
-| `/context-auto` | Auto-detect workspace context |
-| `/cot` | Enable chain-of-thought reasoning |
-| `/verbose` | Show detailed logs |
-| `/debug` | Full diagnostic output |
-| `/stats` | Inference performance metrics |
-| `/update` | Update model database |
-| `/clearcache` | Clear inference cache |
+---
 
 ### ⚙️ IDE Settings
 
-Configure via **Settings** → search `hugos.modelfusion`:
+HugOS IDE provides **83 granular configuration settings** accessible via **Settings** (`Ctrl+,` → search `hugos.modelfusion` or browse **HugOS ModelFusion**). 
 
-| Setting | Default | Description |
-|:--------|:--------|:-----------|
-| `hugos.modelfusion.budget` | `1` | Inference budget (higher = more thorough) |
-| `hugos.modelfusion.selectionStrategy` | `multi_objective` | Model selection algorithm |
-| `hugos.modelfusion.device` | `auto` | Force `cpu` or `gpu` |
-| `hugos.modelfusion.fusion` | `false` | Enable multi-model fusion by default |
-| `hugos.modelfusion.fusionModels` | `3` | Number of models in fusion panel |
-| `hugos.modelfusion.fusionMode` | `multi-model` | `multi-model` or `multi-sample` |
-| `hugos.modelfusion.localBackend` | `openvino` | Default local backend |
-| `hugos.modelfusion.ovModelDir` | `~/.hugos-ide/ov_models` | OpenVINO model cache directory |
-| `hugos.modelfusion.getvino` | `false` | Background OpenVINO model downloads (24h cycle) |
-| `hugos.modelfusion.dbPath` | `~/.hugos-ide/db/hf_models.db` | Model database path |
+#### Core Production Defaults
+
+| Setting ID | Production Default | Description |
+|:---|:---:|:---|
+| `hugos.modelfusion.fusion` | **`true`** | **Multi-Model Fusion**: Enabled by default to deliver compound consensus deliberation. |
+| `hugos.modelfusion.fusionModels` | **`0`** | **Dynamic Memory Scaling**: `0` = Auto (dynamically scales panel size based on runtime available RAM/VRAM). |
+| `hugos.modelfusion.fusionMode` | `"multi-model"` | Deliberation execution mode: `multi-model` (diverse models) or `multi-sample`. |
+| `hugos.modelfusion.selectionStrategy` | `"multi_objective"` | Model ranking algorithm balancing speed, parameter size, and task accuracy. |
+| `hugos.modelfusion.localBackend` | **`"ollama"`** | **Default Local Backend**: Runs local Ollama engine with dynamic model tier provisioning (`qwen2.5:7b`/`14b`). |
+| `hugos.modelfusion.device` | `"auto"` | Hardware compute device: auto-detects GPU (CUDA/Arc) with CPU fallback. |
+| `hugos.modelfusion.budget` | `1` | Parameter budget cap in billions of parameters (auto-sized at launch). |
+| `hugos.modelfusion.openevolve.enabled` | **`true`** | Enables `/evolve` iterative code evolution in chat. |
+| `hugos.modelfusion.openevolve.autoApply` | **`true`** | Automatically opens inline diff with Accept (`Ctrl+Shift+Y`) / Reject (`Ctrl+Shift+N`). |
+| `hugos.modelfusion.openevolve.iterations` | `5` | Default number of evolution passes per `/evolve` run. |
+| `hugos.modelfusion.watcher.enabled` | **`true`** | Background catalog watcher keeping `hf_models.db` synchronized. |
+| `hugos.modelfusion.watcher.interval` | `86400` | Background update frequency in seconds (24 hours). |
+| `hugos.modelfusion.dbPath` | `""` | SQLite database path (defaults to `IDE/db/hf_models.db`). |
+| `hugos.modelfusion.ovModelDir` | `""` | OpenVINO IR model cache directory (defaults to `IDE/ov_models`). |
+| `hugos.modelfusion.getvino` | `false` | Background 24h OpenVINO pre-converted model download cycle. |
+
+#### Optional Hybrid Cloud API Keys (100% Private by Default)
+HugOS runs completely private and offline out-of-the-box. If desired, configure cloud provider API keys in Settings GUI (`Ctrl+,`) for hybrid cloud model routing:
+- `hugos.modelfusion.openaiApiKey`: OpenAI API Key (GPT-4o hybrid routing; `[DISABLED]` when empty).
+- `hugos.modelfusion.anthropicApiKey`: Anthropic API Key (Claude 3.5 Sonnet hybrid routing; `[DISABLED]` when empty).
+- `hugos.modelfusion.geminiApiKey`: Google Gemini API Key (Gemini 1.5/2.0 Flash and Pro; `[DISABLED]` when empty).
+- `hugos.modelfusion.huggingfaceApiKey`: Hugging Face User Access Token (`HF_TOKEN` for gated model downloads).
+
+*For the complete 83-setting reference across all 8 categories (Fusion, Engines, Cloud Keys, Evolution, SINQ Quantization, ML Intelligence, Advanced Reasoning & RAG, Diagnostics & Watcher), see the [HugOS IDE Guide](docs/HUGOS_IDE_GUIDE.md#complete-83-setting-ide-reference).*
+
+---
 
 ### 🏗️ Architecture
 
