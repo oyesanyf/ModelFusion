@@ -4426,7 +4426,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         || lower_user_seg.contains("require(")
                         || lower_user_seg.contains("#!/");
 
-                    // a) latest_user_segment starts with @agent, @command, @commands, @tasks, @task, @modelfusion, or @hugos (case-insensitive)
+                    // a) latest_user_segment starts with @agent, @command, @commands, @tasks, @task, @modelfusion, @hugos, @rl, @restrl, @rest-rl (case-insensitive)
                     let is_agent_prefixed = lower_user_seg.starts_with("@agent")
                         || lower_user_seg.starts_with("@command")
                         || lower_user_seg.starts_with("@commands")
@@ -4435,7 +4435,10 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         || lower_user_seg.starts_with("@comments")
                         || lower_user_seg.starts_with("@comment")
                         || lower_user_seg.starts_with("@modelfusion")
-                        || lower_user_seg.starts_with("@hugos");
+                        || lower_user_seg.starts_with("@hugos")
+                        || lower_user_seg.starts_with("@rl")
+                        || lower_user_seg.starts_with("@restrl")
+                        || lower_user_seg.starts_with("@rest-rl");
 
                     // b) OR latest_user_segment is a single-line command whose first non-whitespace token starts with / or -- or -
                     let is_single_line_slash_or_flag = !is_multiline && non_empty_lines.first().map(|line| {
@@ -4451,17 +4454,25 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                     // d) OR any line in the user segment contains an explicit command directive
                     let has_explicit_command_line = non_empty_lines.iter().any(|line| {
-                        let first_token = line.split_whitespace().next().unwrap_or("");
+                        let trimmed = line.trim();
+                        if trimmed.starts_with("//") || trimmed.starts_with("/*") || trimmed.starts_with('*') {
+                            return false;
+                        }
+                        let first_token = trimmed.split_whitespace().next().unwrap_or("");
                         let tok_low = first_token.to_lowercase();
-                        tok_low.starts_with("@agent") || tok_low.starts_with("@command") || tok_low.starts_with("@tasks")
-                            || tok_low.starts_with('/') || tok_low.starts_with("--")
-                            || canonicalize_command(first_token).is_some()
+                        tok_low.starts_with("@agent") || tok_low.starts_with("@command") || tok_low.starts_with("@task")
+                            || tok_low.starts_with("@comment") || tok_low.starts_with("@modelfusion") || tok_low.starts_with("@hugos")
+                            || tok_low.starts_with("@rl") || tok_low.starts_with("@restrl") || tok_low.starts_with("@rest-rl")
+                            || (tok_low.starts_with('/') && !tok_low.starts_with("//") && !tok_low.starts_with("/*") && tok_low.len() > 1 && tok_low.chars().nth(1).map_or(false, |c| c.is_alphabetic()))
+                            || (tok_low.starts_with("--") && tok_low.len() > 2)
+                            || (canonicalize_command(first_token).is_some() && !trimmed.contains('='))
                     });
 
-                    let should_run_interception = (is_agent_prefixed || is_single_line_slash_or_flag || is_single_command_word || has_explicit_command_line)
-                        && !(starts_with_conversational && !is_agent_prefixed && !is_single_line_slash_or_flag && !is_single_command_word && !has_explicit_command_line)
-                        && !has_code_blocks
-                        && !has_code_imports;
+                    let should_run_interception = if is_agent_prefixed || is_single_line_slash_or_flag || is_single_command_word || has_explicit_command_line {
+                        true
+                    } else {
+                        !starts_with_conversational && !has_code_blocks && !has_code_imports
+                    };
 
                     if should_run_interception {
                         // Split user segment into lines to handle multi-command batches
@@ -4476,13 +4487,46 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             if line.is_empty() { continue; }
 
                             let lower_line = line.to_lowercase();
+                            let is_rl_prefix = lower_line.starts_with("@rl")
+                                || lower_line.starts_with("@restrl")
+                                || lower_line.starts_with("@rest-rl");
+
+                            if is_rl_prefix {
+                                let stripped = if lower_line.starts_with("@rest-rl") {
+                                    &line[8..]
+                                } else if lower_line.starts_with("@restrl") {
+                                    &line[7..]
+                                } else {
+                                    &line[3..]
+                                };
+                                let args = stripped.trim_start_matches(|c: char| c.is_whitespace() || c == ':').trim();
+                                if !matched_cmds.iter().any(|(c, _)| c == "rest-rl") {
+                                    matched_cmds.push(("rest-rl".to_string(), args.to_string()));
+                                }
+                                continue;
+                            }
+
+                            let is_tasks_prefix = lower_line.starts_with("@tasks")
+                                || lower_line.starts_with("@task");
+
+                            if is_tasks_prefix {
+                                let stripped = if lower_line.starts_with("@tasks") {
+                                    &line[6..]
+                                } else {
+                                    &line[5..]
+                                };
+                                let args = stripped.trim_start_matches(|c: char| c.is_whitespace() || c == ':').trim();
+                                if !matched_cmds.iter().any(|(c, _)| c == "tasks") {
+                                    matched_cmds.push(("tasks".to_string(), args.to_string()));
+                                }
+                                continue;
+                            }
+
                             let is_explicit_agent_prefix = lower_line.starts_with("@agent")
                                 || lower_line.starts_with("@commands")
                                 || lower_line.starts_with("@command")
                                 || lower_line.starts_with("@comments")
                                 || lower_line.starts_with("@comment")
-                                || lower_line.starts_with("@tasks")
-                                || lower_line.starts_with("@task")
                                 || lower_line.starts_with("@modelfusion")
                                 || lower_line.starts_with("@hugos");
 
@@ -4499,10 +4543,6 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                     &line[9..]
                                 } else if lower_line.starts_with("@comment") {
                                     &line[8..]
-                                } else if lower_line.starts_with("@tasks") {
-                                    &line[6..]
-                                } else if lower_line.starts_with("@task") {
-                                    &line[5..]
                                 } else if lower_line.starts_with("@modelfusion") {
                                     &line[12..]
                                 } else if lower_line.starts_with("@hugos") {
