@@ -267,15 +267,24 @@ impl CodeGraphIndexer {
             let sym_id = symbol_map
                 .get(&imp.symbol_name)
                 .copied()
-                .unwrap_or(file_id);
+                .or_else(|| {
+                    tx.query_row(
+                        "SELECT id FROM symbols WHERE name = ?1 LIMIT 1",
+                        params![imp.symbol_name],
+                        |r| r.get(0),
+                    )
+                    .ok()
+                });
 
-            tx.execute(
-                r#"
-                INSERT INTO implementations (symbol_id, interface_name, target_type)
-                VALUES (?1, ?2, ?3)
-                "#,
-                params![sym_id, imp.interface_name, imp.target_type],
-            )?;
+            if let Some(s_id) = sym_id {
+                tx.execute(
+                    r#"
+                    INSERT INTO implementations (symbol_id, interface_name, target_type)
+                    VALUES (?1, ?2, ?3)
+                    "#,
+                    params![s_id, imp.interface_name, imp.target_type],
+                )?;
+            }
         }
 
         // Insert references
@@ -283,15 +292,24 @@ impl CodeGraphIndexer {
             let sym_id = symbol_map
                 .get(&rf.symbol_name)
                 .copied()
-                .unwrap_or(file_id);
+                .or_else(|| {
+                    tx.query_row(
+                        "SELECT id FROM symbols WHERE name = ?1 LIMIT 1",
+                        params![rf.symbol_name],
+                        |r| r.get(0),
+                    )
+                    .ok()
+                });
 
-            tx.execute(
-                r#"
-                INSERT INTO symbol_references (symbol_id, file_id, line, col, ref_kind)
-                VALUES (?1, ?2, ?3, ?4, ?5)
-                "#,
-                params![sym_id, file_id, rf.line as i64, rf.col as i64, rf.ref_kind],
-            )?;
+            if let Some(s_id) = sym_id {
+                tx.execute(
+                    r#"
+                    INSERT INTO symbol_references (symbol_id, file_id, line, col, ref_kind)
+                    VALUES (?1, ?2, ?3, ?4, ?5)
+                    "#,
+                    params![s_id, file_id, rf.line as i64, rf.col as i64, rf.ref_kind],
+                )?;
+            }
         }
 
         tx.commit()?;

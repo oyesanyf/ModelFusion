@@ -173,7 +173,14 @@ def main():
         all_match = True
         for tag_name, release_name in targets:
             print(f"\nVerifying remote assets for {tag_name}...")
-            rel = api_request(f"{API_URL}/releases/tags/{tag_name}", token=token)
+            try:
+                rel = api_request(f"{API_URL}/releases/tags/{tag_name}", token=token)
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    print(f"  [FAIL] Release tag {tag_name} does not exist on remote!")
+                    all_match = False
+                    continue
+                raise
             assets_by_name = {a["name"]: a for a in rel.get("assets", [])}
             for local_f, name in [(cli_path, "cli.exe"), (msi_path, "HugOS.msi")]:
                 local_sz = os.path.getsize(local_f)
