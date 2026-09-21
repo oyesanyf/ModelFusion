@@ -684,10 +684,11 @@ fn spawn_rest_rl_daemon() -> Result<(), String> {
         use std::os::windows::process::CommandExt;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
         const DETACHED_PROCESS: u32 = 0x00000008;
+        const IDLE_PRIORITY_CLASS: u32 = 0x00000040;
         let mut cmd = std::process::Command::new("python");
         cmd.arg(&daemon_script)
             .current_dir(&rl_dir)
-            .creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS)
+            .creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | IDLE_PRIORITY_CLASS)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());
@@ -711,7 +712,21 @@ pub async fn handle_rest_rl(args_list: &[String]) -> String {
     let clean_sub = subcmd.trim_start_matches('/').trim_start_matches('-').to_lowercase();
     match clean_sub.as_str() {
         "status" | "info" | "state" => {
-            match rpc_call_rest_rl("agent/status", serde_json::json!({})).await {
+            let mut status_result = rpc_call_rest_rl("agent/status", serde_json::json!({})).await;
+            let mut auto_started = false;
+            if status_result.is_err() {
+                let _ = spawn_rest_rl_daemon();
+                for _ in 0..10 {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+                    if let Ok(data) = rpc_call_rest_rl("agent/status", serde_json::json!({})).await {
+                        status_result = Ok(data);
+                        auto_started = true;
+                        break;
+                    }
+                }
+            }
+
+            match status_result {
                 Ok(data) => {
                     let ide_state = data.get("ide_state")
                         .and_then(|v| v.as_str())
@@ -727,6 +742,7 @@ pub async fn handle_rest_rl(args_list: &[String]) -> String {
                         .or_else(|| hw.get("tier_name").and_then(|v| v.as_str()))
                         .unwrap_or("TIER_1");
                     let adapter = data.get("adapter").and_then(|v| v.as_str()).unwrap_or("ReSTRLAdapter");
+                    let model = hw.get("recommended_model").and_then(|v| v.as_str()).unwrap_or("qwen2.5:32b");
                     let ram = hw.get("available_ram_gb").and_then(|v| v.as_f64()).unwrap_or(0.0);
                     let vram = hw.get("free_vram_mb").and_then(|v| v.as_f64()).unwrap_or(0.0);
                     let gpu = hw.get("gpu_name").and_then(|v| v.as_str()).unwrap_or("None");
@@ -738,18 +754,25 @@ pub async fn handle_rest_rl(args_list: &[String]) -> String {
                         .map(|s| format!("`{}`", s))
                         .unwrap_or_else(|| "None (Waiting for idle task)".to_string());
 
+                    let status_str = if auto_started {
+                        "- **Daemon Status**: 🟢 RUNNING (Dynamically Auto-Started on Demand)"
+                    } else {
+                        "- **Daemon Status**: 🟢 RUNNING (TCP 127.0.0.1:45454 / Named Pipe)"
+                    };
+
                     format!(
                         "🧠 **HugOS ReST-RL / GRPO Autonomous Reasoning Subsystem**\n\n\
-                        - **Daemon Status**: 🟢 RUNNING (TCP 127.0.0.1:45454 / Named Pipe)\n\
+                        {}\n\
                         - **IDE Activity State**: `{}`\n\
                         - **Hardware Tier**: Tier {} (`{}`)\n\
+                        - **Policy Model**: `{}`\n\
                         - **RL Reasoning Adapter**: `{}`\n\
                         - **Hardware Available**: {:.1} GB RAM | {:.0} MB VRAM ({})\n\
                         - **Active Task**: {}\n\
                         - **Queue Length**: {} task(s)\n\
                         - **Processed Tasks**: {}\n\n\
                         *Autonomous reinforcement learning reasoning active during debounced IDE idle periods.*",
-                        ide_state, tier, tier_name, adapter, ram, vram, gpu, running, q_len, proc_count
+                        status_str, ide_state, tier, tier_name, model, adapter, ram, vram, gpu, running, q_len, proc_count
                     )
                 }
                 Err(_) => {
