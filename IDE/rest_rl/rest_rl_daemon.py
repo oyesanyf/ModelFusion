@@ -82,6 +82,7 @@ class RestRLDaemon:
 
     def __init__(self, config_path: Optional[str] = None):
         self.config = self._load_config(config_path)
+        HardwareProfiler.apply_os_throttling()
         self.profiler = HardwareProfiler(
             tier1_min_ram_gb=self.config.get("resources", {}).get("tier1_min_available_ram_gb", 24.0),
             tier1_min_vram_gb=self.config.get("resources", {}).get("tier1_min_free_vram_gb", 14.0),
@@ -291,6 +292,7 @@ class RestRLDaemon:
 
     def start(self):
         """Starts IPC listeners and the background worker loop."""
+        HardwareProfiler.apply_os_throttling()
         self.running = True
 
         # Start TCP JSON-RPC listener
@@ -356,7 +358,7 @@ class RestRLDaemon:
         while self.running:
             # Yield if IDE is active (not idle) or paused
             if not self.is_idle or self.pause_event.is_set():
-                time.sleep(0.1)
+                time.sleep(0.5)
                 continue
 
             # Check for queued tasks
@@ -367,7 +369,7 @@ class RestRLDaemon:
                     task_to_run = self.tasks.get(tid)
 
             if not task_to_run:
-                time.sleep(0.2)
+                time.sleep(0.5)
                 continue
 
             self.current_task_id = task_to_run.task.task_id

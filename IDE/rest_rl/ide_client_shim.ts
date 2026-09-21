@@ -15,6 +15,7 @@ import * as vscode from 'vscode';
 import * as net from 'net';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as child_process from 'child_process';
 import { SpeculativeGhostTextProvider } from '../src/autocomplete/speculativeGhostText';
 
 export interface RpcResponse<T = any> {
@@ -191,6 +192,7 @@ export class RestRLIdeShim implements vscode.Disposable {
   private _diagnosticDebounceMs: number = 750;
   private _disposables: vscode.Disposable[] = [];
   private _reqId: number = 0;
+  private _lastAutoSpawnTime: number = 0;
 
   // Connection settings
   private _tcpHost: string = '127.0.0.1';
@@ -414,7 +416,8 @@ export class RestRLIdeShim implements vscode.Disposable {
       try {
         await this._callRpc('ide/idle_start');
       } catch (err: any) {
-        // Daemon might not be currently running
+        // Daemon might not be currently running - dynamically auto-spawn
+        this._ensureDaemonRunning();
       }
     }
   }
@@ -532,7 +535,9 @@ export class RestRLIdeShim implements vscode.Disposable {
       };
 
       // Ingest into daemon diagnostics table via diagnostics/report
-      await this._callRpc('diagnostics/report', payload).catch(() => {});
+      await this._callRpc('diagnostics/report', payload).catch(() => {
+        this._ensureDaemonRunning();
+      });
 
       // Enqueue autonomous compiler oracle repair task
       await this.enqueueTask(
@@ -694,4 +699,45 @@ export class RestRLIdeShim implements vscode.Disposable {
       });
     });
   }
+
+  /**
+   * Resolves the ModelFusion Master CLI path across canonical locations.
+   */
+  private _resolveCliPath(): string {
+    const candidates = [
+      path.resolve(__dirname, '../../../target/release/cli.exe'),
+      path.resolve(__dirname, '../../bin/cli.exe'),
+      path.resolve(__dirname, '../../VSCode-win32-x64/bin/cli.exe'),
+      path.resolve(process.env.LOCALAPPDATA || '', 'HugOS IDE/bin/cli.exe'),
+      path.resolve(__dirname, '../bin/cli.exe'),
+    ];
+    for (const c of candidates) {
+      if (fs.existsSync(c)) {
+        return c;
+      }
+    }
+    return 'cli.exe';
+  }
+
+  /**
+   * Dynamically auto-starts the ReST-RL daemon if it is stopped, throttled to at most once per 60s.
+   */
+  private _ensureDaemonRunning(): void {
+    const now = Date.now();
+    if (now - this._lastAutoSpawnTime > 60000) {
+      this._lastAutoSpawnTime = now;
+      try {
+        const cliPath = this._resolveCliPath();
+        const proc = child_process.spawn(cliPath, ['--rest-rl', 'start'], {
+          detached: true,
+          windowsHide: true,
+          stdio: 'ignore',
+        });
+        proc.unref();
+      } catch {
+        // Silently catch spawn errors
+      }
+    }
+  }
 }
+
