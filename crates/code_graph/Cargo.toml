@@ -1,0 +1,20 @@
+[package]
+name = "code_graph"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow         = { workspace = true }
+thiserror      = { workspace = true }
+serde          = { workspace = true }
+serde_json     = { workspace = true }
+rusqlite       = { version = "0.31", features = ["bundled-full"] }
+sha2           = { workspace = true }
+hex            = { workspace = true }
+walkdir        = { workspace = true }
+log            = { workspace = true }
+task_detection = { path = "../task_detection" }
+tree-sitter    = "0.22"
+tree-sitter-rust = "0.21"
+tree-sitter-typescript = "0.21"
+tree-sitter-python = "0.21"

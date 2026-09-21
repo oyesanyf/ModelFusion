@@ -1493,6 +1493,24 @@ struct Args {
 
     #[arg(long, help = "Specific VSCode git tag to clone (e.g., '1.96.0')")]
     vscode_tag: Option<String>,
+
+    // ---------------------------------------------------------
+    // Semantic Knowledge Graph Flags
+    // ---------------------------------------------------------
+    #[arg(long, help = "Index codebase AST into SQLite semantic knowledge graph")]
+    graph_index: bool,
+
+    #[arg(long, help = "Query semantic codebase knowledge graph")]
+    graph_query: Option<String>,
+
+    #[arg(long, help = "Target workspace directory for knowledge graph operations")]
+    workspace: Option<String>,
+
+    #[arg(long, default_value = "all", help = "Query type: all, symbol, calls, callees, callers, impls, refs, search")]
+    query_type: String,
+
+    #[arg(long, help = "Force re-indexing of all files ignoring cache")]
+    force: bool,
 }
 
 fn main() -> Result<()> {
@@ -1534,6 +1552,126 @@ fn main() -> Result<()> {
             "disks": disks_info,
         });
         println!("{}", serde_json::to_string(&info).unwrap_or_else(|_| "{}".to_string()));
+        return Ok(());
+    }
+
+    if args.graph_index {
+        let ws_str = args.workspace.clone().unwrap_or_else(|| ".".to_string());
+        let ws_path = std::path::Path::new(&ws_str);
+        let db_path_str = args.db_path.clone().unwrap_or_else(|| "IDE/db/code_graph.db".to_string());
+        let db_path = std::path::Path::new(&db_path_str);
+
+        println!("🔍 [CODE GRAPH] Indexing workspace AST into: {}", db_path.display());
+        let mut db = match code_graph::CodeGraphDb::open(db_path) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("❌ Failed to open knowledge graph database: {:?}", e);
+                return Err(e);
+            }
+        };
+
+        let mut indexer = match code_graph::CodeGraphIndexer::new() {
+            Ok(idx) => idx,
+            Err(e) => {
+                eprintln!("❌ Failed to initialize AST indexer: {:?}", e);
+                return Err(e);
+            }
+        };
+
+        match indexer.index_workspace(&mut db, ws_path, args.force) {
+            Ok(report) => {
+                println!("✅ [CODE GRAPH] Indexing complete in {:.2}ms", report.elapsed_ms);
+                println!("📊 Files scanned: {}, Indexed: {}, Skipped (cached): {}, Deleted: {}",
+                    report.files_scanned, report.files_indexed, report.files_skipped, report.files_deleted);
+                println!("🧠 Knowledge Graph Entities: {} Symbols, {} Calls, {} Implementations, {} References",
+                    report.total_symbols, report.total_calls, report.total_implementations, report.total_references);
+                println!("{}", serde_json::to_string_pretty(&report).unwrap_or_default());
+            }
+            Err(e) => {
+                eprintln!("❌ Error indexing workspace: {:?}", e);
+                return Err(e);
+            }
+        }
+        return Ok(());
+    }
+
+    if let Some(ref query_symbol) = args.graph_query {
+        let ws_str = args.workspace.clone().unwrap_or_else(|| ".".to_string());
+        let ws_path = std::path::Path::new(&ws_str);
+        let db_path_str = args.db_path.clone().unwrap_or_else(|| "IDE/db/code_graph.db".to_string());
+        let db_path = std::path::Path::new(&db_path_str);
+
+        let mut db = match code_graph::CodeGraphDb::open(db_path) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("❌ Failed to open knowledge graph database: {:?}", e);
+                return Err(e);
+            }
+        };
+
+        let stats = db.stats().unwrap_or(code_graph::GraphStats {
+            file_count: 0, symbol_count: 0, call_count: 0, impl_count: 0, ref_count: 0
+        });
+        if stats.file_count == 0 {
+            println!("ℹ️  [CODE GRAPH] Database is empty. Auto-indexing workspace: {}", ws_path.display());
+            if let Ok(mut indexer) = code_graph::CodeGraphIndexer::new() {
+                let _ = indexer.index_workspace(&mut db, ws_path, false);
+            }
+        }
+
+        let engine = code_graph::CodeGraphQueryEngine::new(&db);
+        match engine.query(query_symbol, &args.query_type, 10) {
+            Ok(resp) => {
+                println!("🔍 [CODE GRAPH] Query: '{}' (Type: '{}') executed in {:.2}ms",
+                    resp.query, resp.query_type, resp.elapsed_ms);
+                if !resp.symbols.is_empty() {
+                    println!("\n📌 Symbol Definitions ({}):", resp.symbols.len());
+                    for s in &resp.symbols {
+                        println!("  - [{}] {} ({}:{})", s.kind, s.qualified_name, s.relative_path, s.start_line);
+                        if let Some(ref sig) = s.signature {
+                            println!("    Signature: {}", sig);
+                        }
+                    }
+                }
+                if let Some(ref ch) = resp.call_hierarchy {
+                    println!("\n📞 Call Hierarchy (Callees) ({} nodes, {:.2}ms):", ch.total_nodes, ch.elapsed_ms);
+                    for node in &ch.nodes {
+                        let indent = "  ".repeat(node.depth + 1);
+                        println!("{}- {} [{}] ({}:{})", indent, node.name, node.kind, node.relative_path, node.line);
+                    }
+                }
+                if let Some(ref callers) = resp.callers {
+                    println!("\n📱 Callers ({} nodes, {:.2}ms):", callers.total_nodes, callers.elapsed_ms);
+                    for node in &callers.nodes {
+                        let indent = "  ".repeat(node.depth + 1);
+                        println!("{}- {} [{}] ({}:{})", indent, node.name, node.kind, node.relative_path, node.line);
+                    }
+                }
+                if !resp.implementations.is_empty() {
+                    println!("\n🧩 Implementations ({}):", resp.implementations.len());
+                    for i in &resp.implementations {
+                        println!("  - {} implements {} ({}:{})", i.symbol_name, i.interface_name, i.relative_path, i.line);
+                    }
+                }
+                if !resp.references.is_empty() {
+                    println!("\n🔗 References ({}):", resp.references.len());
+                    for r in &resp.references {
+                        println!("  - {} [{}] ({}:{})", r.symbol_name, r.ref_kind, r.relative_path, r.line);
+                    }
+                }
+                if !resp.search_results.is_empty() {
+                    println!("\n🎯 Hybrid Search Results ({}):", resp.search_results.len());
+                    for sr in &resp.search_results {
+                        println!("  - [{:.3}] {} ({}:{})", sr.score, sr.symbol.qualified_name, sr.symbol.relative_path, sr.symbol.start_line);
+                    }
+                }
+                println!("\n{}", serde_json::to_string_pretty(&resp).unwrap_or_default());
+            }
+            Err(e) => {
+                eprintln!("❌ Error querying knowledge graph: {:?}", e);
+                return Err(e);
+            }
+        }
         return Ok(());
     }
 
@@ -4070,6 +4208,43 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
             }
 
             let result_content = match if is_openai_compat { "/orchestrate" } else { request_path.as_str() } {
+                "/api/graph/index" | "/graph/index" => {
+                    let ws_str = request_json["workspace"].as_str().unwrap_or(".").to_string();
+                    let force = request_json["force"].as_bool().unwrap_or(false);
+                    let db_path_str = request_json["db_path"].as_str().unwrap_or("IDE/db/code_graph.db");
+
+                    match code_graph::CodeGraphDb::open(std::path::Path::new(db_path_str)) {
+                        Ok(mut db) => {
+                            match code_graph::CodeGraphIndexer::new() {
+                                Ok(mut indexer) => {
+                                    match indexer.index_workspace(&mut db, std::path::Path::new(&ws_str), force) {
+                                        Ok(report) => serde_json::to_string_pretty(&report).unwrap_or_default(),
+                                        Err(e) => format!("{{\"error\":\"{}\"}}", e),
+                                    }
+                                }
+                                Err(e) => format!("{{\"error\":\"{}\"}}", e),
+                            }
+                        }
+                        Err(e) => format!("{{\"error\":\"{}\"}}", e),
+                    }
+                }
+                "/api/graph/query" | "/graph/query" => {
+                    let query_str = request_json["query"].as_str().unwrap_or("").to_string();
+                    let query_type = request_json["type"].as_str().unwrap_or("all");
+                    let limit = request_json["limit"].as_u64().unwrap_or(10) as usize;
+                    let db_path_str = request_json["db_path"].as_str().unwrap_or("IDE/db/code_graph.db");
+
+                    match code_graph::CodeGraphDb::open(std::path::Path::new(db_path_str)) {
+                        Ok(db) => {
+                            let engine = code_graph::CodeGraphQueryEngine::new(&db);
+                            match engine.query(&query_str, query_type, limit) {
+                                Ok(resp) => serde_json::to_string_pretty(&resp).unwrap_or_default(),
+                                Err(e) => format!("{{\"error\":\"{}\"}}", e),
+                            }
+                        }
+                        Err(e) => format!("{{\"error\":\"{}\"}}", e),
+                    }
+                }
                 "/orchestrate" => {
                     let mut prompt = request_json["prompt"].as_str().unwrap_or("").to_string();
                     let mut strategy = request_json["selection_strategy"].as_str().unwrap_or("multi_objective").to_string();
