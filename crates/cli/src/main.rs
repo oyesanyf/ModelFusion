@@ -3230,6 +3230,382 @@ pub fn extract_latest_user_query(prompt: &str) -> String {
     }
 }
 
+/// Extracts attached code context from XML metadata tags (`<attachment>`, `<selection>`, `<codesnippet>`)
+/// or disk files explicitly referenced in the prompt.
+/// Returns a list of (file_identifier, code_content).
+pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> {
+    let mut results: Vec<(String, String)> = Vec::new();
+    let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    let tag_names = ["attachment", "selection", "codesnippet", "context"];
+
+    for tag in &tag_names {
+        let open_needle = format!("<{}", tag);
+        let close_needle = format!("</{}>", tag);
+
+        let mut search_idx = 0;
+        while let Some(rel_start) = find_case_insensitive(&raw_prompt[search_idx..], &open_needle) {
+            let start = search_idx + rel_start;
+            let after_open = start + open_needle.len();
+
+            // Ensure the character after `<tag` is a delimiter (space, '>', '/', '\n', '\r', '\t')
+            // This prevents matching `<attachments>` as `<attachment>`.
+            if after_open < raw_prompt.len() {
+                let next_char = raw_prompt.as_bytes()[after_open] as char;
+                if next_char != ' ' && next_char != '>' && next_char != '/' && next_char != '\n' && next_char != '\r' && next_char != '\t' {
+                    search_idx = after_open;
+                    continue;
+                }
+            }
+
+            // Find end of opening tag '>'
+            let tag_header_end = match raw_prompt[start..].find('>') {
+                Some(pos) => start + pos,
+                None => {
+                    search_idx = after_open;
+                    continue;
+                }
+            };
+
+            let tag_header = &raw_prompt[start..=tag_header_end];
+            let content_start = tag_header_end + 1;
+
+            // Find closing tag `</tag>`
+            let (content_end, next_search) = match find_case_insensitive(&raw_prompt[content_start..], &close_needle) {
+                Some(rel_end) => {
+                    (content_start + rel_end, content_start + rel_end + close_needle.len())
+                }
+                None => {
+                    // If no closing tag, scan until next tag or end of section
+                    let next_tag = raw_prompt[content_start..].find('<').map(|p| content_start + p).unwrap_or(raw_prompt.len());
+                    (next_tag, next_tag)
+                }
+            };
+
+            search_idx = next_search;
+            let inner_raw = &raw_prompt[content_start..content_end];
+
+            // 1. Extract file identifier from attributes: id, name, file, path, uri
+            let mut file_id = String::new();
+            for attr in &["id=", "name=", "file=", "path=", "uri="] {
+                if let Some(pos) = find_case_insensitive(tag_header, attr) {
+                    let val_start = pos + attr.len();
+                    let after_attr = &tag_header[val_start..];
+                    let trimmed_after = after_attr.trim_start();
+                    let quote_char = trimmed_after.chars().next();
+                    if quote_char == Some('"') || quote_char == Some('\'') {
+                        let q = quote_char.unwrap();
+                        let inner_val = &trimmed_after[1..];
+                        if let Some(q_end) = inner_val.find(q) {
+                            file_id = inner_val[..q_end].trim().to_string();
+                            break;
+                        }
+                    } else {
+                        // Unquoted attribute value
+                        let val_end = trimmed_after.find(|c: char| c.is_whitespace() || c == '>').unwrap_or(trimmed_after.len());
+                        file_id = trimmed_after[..val_end].trim().to_string();
+                        break;
+                    }
+                }
+            }
+
+            // Normalize file identifier (strip file:///, file://, file:)
+            file_id = file_id.trim().to_string();
+            if file_id.to_lowercase().starts_with("file:///") {
+                file_id = file_id[8..].to_string();
+            } else if file_id.to_lowercase().starts_with("file://") {
+                file_id = file_id[7..].to_string();
+            } else if file_id.to_lowercase().starts_with("file:") {
+                file_id = file_id[5..].to_string();
+            } else if file_id.to_lowercase().starts_with("selection:") {
+                file_id = file_id[10..].to_string();
+            }
+            // On Windows: /D:/foo -> D:/foo or \D:\foo -> D:\foo
+            if (file_id.starts_with('/') || file_id.starts_with('\\')) && file_id.len() >= 3 && file_id.chars().nth(2) == Some(':') {
+                file_id = file_id[1..].to_string();
+            }
+
+            let mut code_content = inner_raw.trim().to_string();
+
+            // If file_id is empty, try to detect filename from inner text like "Excerpt from foo.py:"
+            if file_id.is_empty() {
+                for line in code_content.lines() {
+                    let line_t = line.trim();
+                    let lower_l = line_t.to_lowercase();
+                    if lower_l.starts_with("excerpt from ") {
+                        let name_part = line_t[13..].trim_end_matches(':').trim();
+                        if !name_part.is_empty() {
+                            file_id = name_part.to_string();
+                            break;
+                        }
+                    } else if lower_l.starts_with("file: ") || lower_l.starts_with("file:") {
+                        let name_part = line_t[5..].trim_start_matches(':').trim();
+                        if !name_part.is_empty() {
+                            file_id = name_part.to_string();
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if file_id.is_empty() {
+                if tag == &"context" && !inner_raw.contains("```") && !inner_raw.to_lowercase().contains("import ") && !inner_raw.to_lowercase().contains("fn ") && !inner_raw.to_lowercase().contains("def ") {
+                    continue;
+                }
+                file_id = "attachment".to_string();
+            }
+
+            // If inner content contains code fences ```...```, extract code inside fences
+            if let Some(fence_start) = code_content.find("```") {
+                let after_fence = &code_content[fence_start + 3..];
+                let code_start = after_fence.find('\n').map(|p| fence_start + 3 + p + 1).unwrap_or(fence_start + 3);
+                if let Some(fence_end) = code_content[code_start..].rfind("```") {
+                    code_content = code_content[code_start..code_start + fence_end].trim().to_string();
+                }
+            } else {
+                // Strip common header lines if present
+                let mut lines: Vec<&str> = code_content.lines().collect();
+                while !lines.is_empty() {
+                    let first_lower = lines[0].trim().to_lowercase();
+                    if first_lower.starts_with("user's active selection")
+                        || first_lower.starts_with("user active selection")
+                        || first_lower.starts_with("excerpt from ")
+                        || first_lower.starts_with("selected lines:") {
+                        lines.remove(0);
+                    } else {
+                        break;
+                    }
+                }
+                code_content = lines.join("\n").trim().to_string();
+            }
+
+            // If code content is empty or short header only, and file exists on disk, read up to 100KB from disk
+            if (code_content.is_empty() || code_content.len() < 30) && file_id != "attachment" {
+                let p = std::path::Path::new(&file_id);
+                if p.is_file() {
+                    if let Ok(bytes) = std::fs::read(p) {
+                        let limit = bytes.len().min(100 * 1024);
+                        code_content = String::from_utf8_lossy(&bytes[..limit]).to_string();
+                    }
+                }
+            }
+
+            if !code_content.trim().is_empty() {
+                seen_ids.insert(file_id.to_lowercase());
+                if let Some(name) = std::path::Path::new(&file_id).file_name().and_then(|n| n.to_str()) {
+                    seen_ids.insert(name.to_lowercase());
+                }
+                results.push((file_id, code_content));
+            }
+        }
+    }
+
+    // Also support reading from disk if the user query explicitly mentions a file (e.g. pq.py or ./pq.py) that exists on disk
+    let raw_tokens: Vec<&str> = raw_prompt.split_whitespace().collect();
+    for token in raw_tokens {
+        let clean = token.trim_matches(|c: char| c == '\'' || c == '"' || c == '`' || c == ',' || c == ';' || c == ':' || c == '(' || c == ')' || c == '[' || c == ']' || c == '<' || c == '>');
+        if clean.contains('.') && !clean.contains("://") {
+            let clean_lower = clean.to_lowercase();
+            let base_name = std::path::Path::new(clean).file_name().and_then(|n| n.to_str()).unwrap_or(clean).to_lowercase();
+            if !seen_ids.contains(&clean_lower) && !seen_ids.contains(&base_name) {
+                let p = std::path::Path::new(clean);
+                if p.is_file() {
+                    if let Ok(bytes) = std::fs::read(p) {
+                        let limit = bytes.len().min(100 * 1024);
+                        let disk_content = String::from_utf8_lossy(&bytes[..limit]).to_string();
+                        if !disk_content.trim().is_empty() {
+                            seen_ids.insert(clean_lower);
+                            seen_ids.insert(base_name);
+                            results.push((clean.to_string(), disk_content));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    results
+}
+
+/// Resolves code content for slash commands (/explain, /review, /tests, /audit, /optimize, /fix, /edit)
+/// from prompt XML attachments, or from disk if arguments mention a file path that exists.
+pub fn resolve_code_for_command(args: &str, prompt: &str) -> String {
+    let attached = extract_attached_code_context(prompt);
+    let trimmed_args = args.trim();
+
+    // 1. If we have attached code context from XML tags:
+    if !attached.is_empty() {
+        let clean_arg_target = trimmed_args.trim_matches(|c: char| c == '\'' || c == '"' || c == '`');
+        let mut matching = Vec::new();
+        if !clean_arg_target.is_empty() {
+            let target_lower = clean_arg_target.to_lowercase();
+            let target_name = std::path::Path::new(&target_lower)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&target_lower);
+            for (filename, code) in &attached {
+                let fn_lower = filename.to_lowercase();
+                let fn_name = std::path::Path::new(&fn_lower)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(&fn_lower);
+                if fn_lower == target_lower || fn_name == target_name || target_lower.contains(&fn_lower) || fn_lower.contains(&target_lower) {
+                    matching.push((filename.clone(), code.clone()));
+                }
+            }
+        }
+        let list_to_use = if !matching.is_empty() {
+            matching
+        } else {
+            attached
+        };
+
+        let mut out = trimmed_args.to_string();
+        for (filename, code) in list_to_use {
+            let ext = std::path::Path::new(&filename)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("txt");
+            out.push_str(&format!("\n\n--- Attached File: {} ---\n```{}\n{}\n```", filename, ext, code.trim()));
+        }
+        return out;
+    }
+
+    // 2. If args_owned mentions a file on disk:
+    let candidates: Vec<&str> = trimmed_args
+        .split_whitespace()
+        .map(|w| w.trim_matches(|c: char| c == '\'' || c == '"' || c == '`' || c == ',' || c == ';' || c == ':'))
+        .collect();
+
+    let mut disk_files = Vec::new();
+    for cand in candidates {
+        let p = std::path::Path::new(cand);
+        if p.is_file() {
+            if let Ok(bytes) = std::fs::read(p) {
+                let limit = bytes.len().min(100 * 1024);
+                let content = String::from_utf8_lossy(&bytes[..limit]).to_string();
+                if !content.trim().is_empty() {
+                    disk_files.push((cand.to_string(), content));
+                }
+            }
+        }
+    }
+
+    if !disk_files.is_empty() {
+        let mut out = trimmed_args.to_string();
+        for (filename, code) in disk_files {
+            let ext = std::path::Path::new(&filename)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("txt");
+            out.push_str(&format!("\n\n--- File: {} ---\n```{}\n{}\n```", filename, ext, code.trim()));
+        }
+        return out;
+    }
+
+    trimmed_args.to_string()
+}
+
+/// Returns true if the query contains programming keywords or common code file extensions.
+pub fn is_coding_query_detected(query: &str) -> bool {
+    let lower = query.to_lowercase();
+    let file_extensions = [
+        ".py", ".rs", ".js", ".ts", ".cpp", ".c", ".h", ".cs",
+        ".go", ".java", ".html", ".css", ".sql", ".json", ".yaml",
+        ".toml", ".sh", ".bat", ".ps1"
+    ];
+    let has_file_ext = file_extensions.iter().any(|ext| lower.contains(ext));
+
+    let coding_terms = [
+        "code", "function", "bug", "error", "compile", "syntax",
+        "python", "rust", "javascript", "java ", "c++", "html",
+        "css", "sql", " api", "git ", "regex", "algorithm",
+        "typescript", "golang", "swift", "kotlin", "docker", "class ",
+        "review", "explain", "optimize", "audit", "test", "tests",
+        "inspect", "patch", "benchmark", "refactor", "fix", "debug",
+        "analyze", "check"
+    ];
+    let has_coding_term = coding_terms.iter().any(|term| lower.contains(term));
+    has_coding_term || has_file_ext
+}
+
+/// Enriches the extracted user query with attached file code context if applicable.
+/// Invariant: Anytime a file is on the chat and a command is given, it must use that file
+/// unless the file is not applicable to the command (e.g. pure system commands or pure general QA).
+pub fn enrich_prompt_with_attached_context(prompt: &str, user_query: &str) -> (String, bool) {
+    let lower = user_query.to_lowercase();
+    let prompt_lower = prompt.to_lowercase();
+    let has_attachment_tags = prompt_lower.contains("<attachment")
+        || prompt_lower.contains("<selection>")
+        || prompt_lower.contains("<codesnippet>");
+
+    let file_extensions = [
+        ".py", ".rs", ".js", ".ts", ".cpp", ".c", ".h", ".cs",
+        ".go", ".java", ".html", ".css", ".sql", ".json", ".yaml",
+        ".toml", ".sh", ".bat", ".ps1"
+    ];
+    let has_file_ext = file_extensions.iter().any(|ext| lower.contains(ext));
+
+    let coding_terms = [
+        "code", "function", "bug", "error", "compile", "syntax",
+        "python", "rust", "javascript", "java ", "c++", "html",
+        "css", "sql", " api", "git ", "regex", "algorithm",
+        "typescript", "golang", "swift", "kotlin", "docker", "class ",
+        "review", "explain", "optimize", "audit", "test", "tests",
+        "inspect", "patch", "benchmark", "refactor", "fix", "debug",
+        "analyze", "check"
+    ];
+    let has_coding_term = coding_terms.iter().any(|term| lower.contains(term));
+
+    let has_code_context_intent = has_attachment_tags && (
+        has_coding_term || has_file_ext || lower.contains("file") 
+        || lower.contains("attached") || lower.contains("this") 
+        || lower.contains("above") || lower.contains("here")
+    );
+
+    let is_coding_query = has_coding_term || has_file_ext || (has_attachment_tags && (has_coding_term || has_file_ext));
+
+    let is_pure_system_cmd = {
+        let clean_cmd = lower.trim_start_matches(|c: char| c == '/' || c == '@' || c == '-').trim();
+        clean_cmd.starts_with("stats") || clean_cmd.starts_with("sysinfo") || clean_cmd.starts_with("sys-info")
+            || clean_cmd.starts_with("keys") || clean_cmd.starts_with("update") || clean_cmd.starts_with("updatedb")
+            || clean_cmd.starts_with("version") || clean_cmd.starts_with("clearcache") || clean_cmd.starts_with("clear-cache")
+            || clean_cmd.starts_with("mcp") || clean_cmd.starts_with("restore")
+    };
+    let words: Vec<&str> = lower.split_whitespace()
+        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()))
+        .collect();
+    let has_pronoun_ref = words.iter().any(|&w| w == "this" || w == "here" || w == "it" || w == "above" || w == "file" || w == "line" || w == "code" || w == "script" || w == "function");
+    let is_pure_general_qa = !has_coding_term && !has_file_ext
+        && !has_pronoun_ref
+        && (lower.starts_with("who was") || lower.starts_with("who is")
+            || lower.starts_with("what is the capital") || lower.starts_with("capital of")
+            || lower.starts_with("tell me a story") || lower.starts_with("write a poem")
+            || lower.contains("president of") || lower.contains("capital of"));
+    let is_file_applicable = (has_attachment_tags || has_file_ext) && !is_pure_system_cmd && !is_pure_general_qa;
+
+    let should_attach = !is_pure_system_cmd && !is_pure_general_qa && (is_file_applicable || is_coding_query || has_code_context_intent);
+    let mut enriched = user_query.to_string();
+    let mut attached_any = false;
+
+    if should_attach {
+        let attached = extract_attached_code_context(prompt);
+        if !attached.is_empty() {
+            for (filename, code) in &attached {
+                let ext = std::path::Path::new(filename)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("txt");
+                let block = format!("\n\n--- Attached File: {} ---\n```{}\n{}\n```", filename, ext, code.trim());
+                enriched.push_str(&block);
+            }
+            attached_any = true;
+        }
+    }
+
+    (enriched, is_coding_query || attached_any)
+}
+
 /// Canonicalizes any CLI flag, slash command, or @agent directive into its canonical command identifier.
 /// Hyphens, underscores, slashes, and leading dashes are ignored during resolution.
 pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
@@ -4625,10 +5001,12 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         if !matched_cmds.is_empty() {
                             eprintln!("[SERVER] ⚡ Multi-Thread Interception: Spawning {} concurrent command thread(s) for {:?}", matched_cmds.len(), matched_cmds);
                             let db_path_arc = std::sync::Arc::new(db_path_clone.clone());
+                            let prompt_arc = std::sync::Arc::new(prompt.clone());
                             let mut handles = Vec::new();
 
                             for (idx, (cmd_owned, args_owned)) in matched_cmds.clone().into_iter().enumerate() {
                                 let db_path_ref = db_path_arc.clone();
+                                let prompt_for_cmd = prompt_arc.clone();
                                 let model_override_opt = model_override.clone();
                                 let handle = tokio::spawn(async move {
                                     // Normalize aliases to canonical MCP tool names
@@ -5051,10 +5429,11 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                                     // ── Coding & Task Slash Directives ──
                                     "edit" => {
-                                        if args_owned.is_empty() {
+                                        if args_owned.is_empty() && !prompt_for_cmd.contains("<attachment") && !prompt_for_cmd.contains("<selection") {
                                             (idx, "✏️ **ModelFusion Code Editor**: Active.\n\nSpecify the target file and instructions to edit code.".to_string())
                                         } else {
-                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), args_owned.clone()];
+                                            let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
+                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), code_payload];
                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
                                                 cmd_args.push("--ollama".to_string());
                                             }
@@ -5063,10 +5442,11 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         }
                                     },
                                     "fix" => {
-                                        if args_owned.is_empty() {
+                                        if args_owned.is_empty() && !prompt_for_cmd.contains("<attachment") && !prompt_for_cmd.contains("<selection") {
                                             (idx, "🔧 **ModelFusion Code Fixer**: Active.\n\nProvide the code and error details to analyze and generate fixes.".to_string())
                                         } else {
-                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Fix the following code issue: {}", args_owned)];
+                                            let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
+                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Fix the following code issue: {}", code_payload)];
                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
                                                 cmd_args.push("--ollama".to_string());
                                             }
@@ -5075,10 +5455,11 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         }
                                     },
                                     "explain" => {
-                                        if args_owned.is_empty() {
+                                        if args_owned.is_empty() && !prompt_for_cmd.contains("<attachment") && !prompt_for_cmd.contains("<selection") {
                                             (idx, "💡 **ModelFusion Code Explainer**: Active.\n\nProvide code or concepts to generate clear step-by-step explanations.".to_string())
                                         } else {
-                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Explain the following code: {}", args_owned)];
+                                            let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
+                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Explain the following code: {}", code_payload)];
                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
                                                 cmd_args.push("--ollama".to_string());
                                             }
@@ -5087,10 +5468,11 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         }
                                     },
                                     "review" => {
-                                        if args_owned.is_empty() {
+                                        if args_owned.is_empty() && !prompt_for_cmd.contains("<attachment") && !prompt_for_cmd.contains("<selection") {
                                             (idx, "🔍 **ModelFusion Code Reviewer**: Active.\n\nProvide code to perform a thorough review of architecture, readability, and performance.".to_string())
                                         } else {
-                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Review the following code: {}", args_owned)];
+                                            let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
+                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Review the following code: {}", code_payload)];
                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
                                                 cmd_args.push("--ollama".to_string());
                                             }
@@ -5099,10 +5481,11 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         }
                                     },
                                     "tests" => {
-                                        if args_owned.is_empty() {
+                                        if args_owned.is_empty() && !prompt_for_cmd.contains("<attachment") && !prompt_for_cmd.contains("<selection") {
                                             (idx, "🧪 **ModelFusion Test Generator**: Active.\n\nProvide code to generate comprehensive unit and integration tests.".to_string())
                                         } else {
-                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Generate unit tests for the following code: {}", args_owned)];
+                                            let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
+                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Generate unit tests for the following code: {}", code_payload)];
                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
                                                 cmd_args.push("--ollama".to_string());
                                             }
@@ -5111,41 +5494,43 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         }
                                     },
                                     "audit" => {
-                                        if args_owned.is_empty() {
+                                        if args_owned.is_empty() && !prompt_for_cmd.contains("<attachment") && !prompt_for_cmd.contains("<selection") {
                                             (idx, "🛡️ **ModelFusion Security & Code Auditor**: Active.\n\nProvide code or repository context to perform a comprehensive vulnerability and quality audit.".to_string())
                                         } else {
-                                             let mut cmd_args = vec!["--spam-detection".to_string(), "--prompt".to_string(), format!("Audit for security vulnerabilities: {}", args_owned)];
-                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
-                                                 cmd_args.push("--ollama".to_string());
-                                             }
-                                             let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                             (idx, format!("🛡️ **Code Audit**\n\n{}", result))
-                                         }
-                                     },
-                                     "generate" => {
-                                         if args_owned.is_empty() {
-                                             (idx, "⚡ **ModelFusion Code Generator**: Active.\n\nSpecify the requirements to generate production-ready implementation code.".to_string())
-                                         } else {
-                                             let mut cmd_args = vec!["--prompt".to_string(), args_owned.clone()];
-                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
-                                                 cmd_args.push("--ollama".to_string());
-                                             }
-                                             let (result, _ctx, _arm) = route_and_execute(&args_owned, db_resolved, &cmd_args).await;
-                                             (idx, format!("⚡ **Generated Code**\n\n{}", result))
-                                         }
-                                     },
-                                     "optimize" => {
-                                         if args_owned.is_empty() {
-                                             (idx, "⚡ **ModelFusion Performance Optimizer**: Active.\n\nProvide code or algorithms to optimize for speed and memory efficiency.".to_string())
-                                         } else {
-                                             let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Optimize the following code: {}", args_owned)];
-                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
-                                                 cmd_args.push("--ollama".to_string());
-                                             }
-                                             let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                             (idx, format!("⚡ **Code Optimization**\n\n{}", result))
-                                         }
-                                     },
+                                            let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
+                                            let mut cmd_args = vec!["--spam-detection".to_string(), "--prompt".to_string(), format!("Audit for security vulnerabilities: {}", code_payload)];
+                                            if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                cmd_args.push("--ollama".to_string());
+                                            }
+                                            let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                            (idx, format!("🛡️ **Code Audit**\n\n{}", result))
+                                        }
+                                    },
+                                    "generate" => {
+                                        if args_owned.is_empty() {
+                                            (idx, "⚡ **ModelFusion Code Generator**: Active.\n\nSpecify the requirements to generate production-ready implementation code.".to_string())
+                                        } else {
+                                            let mut cmd_args = vec!["--prompt".to_string(), args_owned.clone()];
+                                            if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                cmd_args.push("--ollama".to_string());
+                                            }
+                                            let (result, _ctx, _arm) = route_and_execute(&args_owned, db_resolved, &cmd_args).await;
+                                            (idx, format!("⚡ **Generated Code**\n\n{}", result))
+                                        }
+                                    },
+                                    "optimize" => {
+                                        if args_owned.is_empty() && !prompt_for_cmd.contains("<attachment") && !prompt_for_cmd.contains("<selection") {
+                                            (idx, "⚡ **ModelFusion Performance Optimizer**: Active.\n\nProvide code or algorithms to optimize for speed and memory efficiency.".to_string())
+                                        } else {
+                                            let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
+                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Optimize the following code: {}", code_payload)];
+                                            if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                cmd_args.push("--ollama".to_string());
+                                            }
+                                            let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                            (idx, format!("⚡ **Code Optimization**\n\n{}", result))
+                                        }
+                                    },
                                      "export-pdf" => {
                                          let mut cmd_args = vec!["--export-pdf".to_string()];
                                          if !args_owned.is_empty() {
@@ -5486,30 +5871,90 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         let user_msg_for_check = {
                             extract_latest_user_query(&prompt)
                         };
-                        
+
+                        let lower = user_msg_for_check.to_lowercase();
+                        let prompt_lower = prompt.to_lowercase();
+                        let has_attachment_tags = prompt_lower.contains("<attachment")
+                            || prompt_lower.contains("<selection>")
+                            || prompt_lower.contains("<codesnippet>");
+
+                        let file_extensions = [
+                            ".py", ".rs", ".js", ".ts", ".cpp", ".c", ".h", ".cs",
+                            ".go", ".java", ".html", ".css", ".sql", ".json", ".yaml",
+                            ".toml", ".sh", ".bat", ".ps1"
+                        ];
+                        let has_file_ext = file_extensions.iter().any(|ext| lower.contains(ext));
+
+                        let coding_terms = [
+                            "code", "function", "bug", "error", "compile", "syntax",
+                            "python", "rust", "javascript", "java ", "c++", "html",
+                            "css", "sql", " api", "git ", "regex", "algorithm",
+                            "typescript", "golang", "swift", "kotlin", "docker", "class ",
+                            "review", "explain", "optimize", "audit", "test", "tests",
+                            "inspect", "patch", "benchmark", "refactor", "fix", "debug",
+                            "analyze", "check"
+                        ];
+                        let has_coding_term = coding_terms.iter().any(|term| lower.contains(term));
+
+                        let has_code_context_intent = has_attachment_tags && (has_coding_term || has_file_ext || lower.contains("file") || lower.contains("attached") || lower.contains("this") || lower.contains("above") || lower.contains("here"));
+
+                        let is_pure_system_cmd = {
+                            let clean_cmd = lower.trim_start_matches(|c: char| c == '/' || c == '@' || c == '-').trim();
+                            clean_cmd.starts_with("stats") || clean_cmd.starts_with("sysinfo") || clean_cmd.starts_with("sys-info")
+                                || clean_cmd.starts_with("keys") || clean_cmd.starts_with("update") || clean_cmd.starts_with("updatedb")
+                                || clean_cmd.starts_with("version") || clean_cmd.starts_with("clearcache") || clean_cmd.starts_with("clear-cache")
+                                || clean_cmd.starts_with("mcp") || clean_cmd.starts_with("restore")
+                        };
+                        let words: Vec<&str> = lower.split_whitespace()
+                            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()))
+                            .collect();
+                        let has_pronoun_ref = words.iter().any(|&w| w == "this" || w == "here" || w == "it" || w == "above" || w == "file" || w == "line" || w == "code" || w == "script" || w == "function");
+                        let is_pure_general_qa = !has_coding_term && !has_file_ext
+                            && !has_pronoun_ref
+                            && (lower.starts_with("who was") || lower.starts_with("who is")
+                                || lower.starts_with("what is the capital") || lower.starts_with("capital of")
+                                || lower.starts_with("tell me a story") || lower.starts_with("write a poem")
+                                || lower.contains("president of") || lower.contains("capital of"));
+                        let is_file_applicable = has_attachment_tags && !is_pure_system_cmd && !is_pure_general_qa;
+
+                        let mut is_coding_query = has_coding_term || has_file_ext || (has_attachment_tags && (has_coding_term || has_file_ext)) || is_file_applicable;
+
                         let mut is_complex = user_msg_for_check.len() > 300
-                            || {
-                                let lower = user_msg_for_check.to_lowercase();
-                                lower.contains("implement") || lower.contains("refactor") 
-                                || lower.contains("debug") || lower.contains("write a function")
-                                || lower.contains("create a") || lower.contains("cretae a")
-                                || lower.contains("create ") || lower.contains("cretae ")
-                                || lower.contains("build a") || lower.contains("build ")
-                                || lower.contains("create file") || lower.contains("make a file")
-                                || lower.contains("write a file") || lower.contains("generate file")
-                                || lower.contains("new file") || lower.contains("add a file")
-                                || lower.contains("python file") || lower.contains("rust file")
-                                || lower.contains("script") || lower.contains("circuit")
-                                || lower.contains("fix this") || lower.contains("code review")
-                                || lower.contains("analyze this code") || lower.contains("```")
-                                || lower.contains("class ") || lower.contains("def ")
-                                || lower.contains("function") || lower.contains("struct ")
-                                || lower.contains("write code") || lower.contains("generate code")
-                            };
+                            || lower.contains("implement") || lower.contains("refactor") 
+                            || lower.contains("debug") || lower.contains("write a function")
+                            || lower.contains("create a") || lower.contains("cretae a")
+                            || lower.contains("create ") || lower.contains("cretae ")
+                            || lower.contains("build a") || lower.contains("build ")
+                            || lower.contains("create file") || lower.contains("make a file")
+                            || lower.contains("write a file") || lower.contains("generate file")
+                            || lower.contains("new file") || lower.contains("add a file")
+                            || lower.contains("python file") || lower.contains("rust file")
+                            || lower.contains("script") || lower.contains("circuit")
+                            || lower.contains("fix this") || lower.contains("code review")
+                            || lower.contains("analyze this code") || lower.contains("```")
+                            || lower.contains("class ") || lower.contains("def ")
+                            || lower.contains("function") || lower.contains("struct ")
+                            || lower.contains("write code") || lower.contains("generate code")
+                            || lower.contains("review") || lower.contains("explain")
+                            || lower.contains("optimize") || lower.contains("audit")
+                            || lower.contains("test") || lower.contains("tests")
+                            || lower.contains("inspect") || lower.contains("patch")
+                            || lower.contains("benchmark") || lower.contains("fix")
+                            || lower.contains("analyze") || lower.contains("check")
+                            || has_file_ext
+                            || has_code_context_intent
+                            || is_file_applicable;
 
                         let lower_check = user_msg_for_check.to_lowercase();
                         if lower_check.contains("progress messages") || lower_check.contains("progress message") {
                             is_complex = false;
+                        }
+
+                        let (enriched_msg, attached_applied) = enrich_prompt_with_attached_context(&prompt, &user_msg_for_check);
+                        let user_msg = enriched_msg.clone();
+                        let clean_prompt = enriched_msg;
+                        if attached_applied {
+                            is_coding_query = true;
                         }
                         
                         eprintln!("[SERVER] 📝 Extracted user query (len={}): {:?} → is_complex={}", 
@@ -5533,19 +5978,18 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         let mut _heavy_permit = None;
                         let mut _file_lock = None;
 
-                        if ollama && !is_complex {
+                        let explicit_fusion_in_json = request_json.get("fusion").and_then(|v| v.as_bool());
+                        let explicit_fusion_in_opts = orchestration_options.get("fusion").map(|v| v.as_str() == "true");
+                        let is_explicit_false = explicit_fusion_in_json == Some(false)
+                            || explicit_fusion_in_opts == Some(false);
+
+                        if ollama && (!is_complex || is_explicit_false || !fusion || lower.contains("review") || lower.contains("explain")) {
                             let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
                                 .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
                             let dynamic_model = resolve_dynamic_ollama_model(model_override.as_deref(), budget <= 0.5, &endpoint).await;
                             let ollama_model = dynamic_model.as_str();
 
                             let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
-
-                            // Use the already-cleaned user message (XML tags and attachments stripped).
-                            // CRITICAL: Do NOT re-parse from the raw `prompt` — it contains 20KB of
-                            // IDE context, file attachments, and workspace info that cause the LLM
-                            // to generate unsolicited code even for simple Q&A questions.
-                            let user_msg = user_msg_for_check.clone();
 
                             // Scale num_predict based on input size and complexity
                             let user_len = user_msg.len();
@@ -5560,21 +6004,12 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             // in the IDE chat.
                             const NO_CODE_GUARD: &str = " Do NOT generate, write, or suggest any code, code blocks, or programming examples unless the user explicitly asks for code.";
 
-                            let is_coding_query = lower_user.contains("code") || lower_user.contains("function") 
-                                || lower_user.contains("bug") || lower_user.contains("error")
-                                || lower_user.contains("compile") || lower_user.contains("syntax")
-                                || lower_user.contains("python") || lower_user.contains("rust")
-                                || lower_user.contains("javascript") || lower_user.contains("java ")
-                                || lower_user.contains("c++") || lower_user.contains("html")
-                                || lower_user.contains("css") || lower_user.contains("sql")
-                                || lower_user.contains(" api") || lower_user.contains("git ")
-                                || lower_user.contains("regex") || lower_user.contains("algorithm")
-                                || lower_user.contains("typescript") || lower_user.contains("golang")
-                                || lower_user.contains("swift") || lower_user.contains("kotlin")
-                                || lower_user.contains("docker") || lower_user.contains("class ");
-
                             let fast_sys = if is_coding_query {
-                                "You are an expert programming assistant. Give clear, correct code examples with explanations. Use markdown code blocks.".to_string()
+                                if lower_user.contains("review") || prompt.contains("Senior Code Reviewer") {
+                                    "You are an expert programming assistant and senior code reviewer. Perform a rigorous, thorough code review covering architecture, bug detection, edge cases, performance, readability, and security. Provide clear explanations and code improvements with markdown code blocks.".to_string()
+                                } else {
+                                    "You are an expert programming assistant. Give clear, correct code examples with explanations. Use markdown code blocks.".to_string()
+                                }
                             // Math & Statistics
                             } else if lower_user.contains("math") || lower_user.contains("calcul")
                                 || lower_user.contains("equation") || lower_user.contains("formula")
@@ -5806,7 +6241,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         // Strip IDE's restrictive system prompt before orchestrator
                         // The orchestrator/models have their own prompting — the IDE's
                         // "programming assistant" system prompt causes refusals for non-coding Qs
-                        let clean_prompt = user_msg_for_check.clone();
+                        // Note: clean_prompt was already enriched with attached code context if coding/complex.
 
                         // Check if client explicitly requested or disabled fusion
                         let explicit_fusion_in_json = request_json.get("fusion").and_then(|v| v.as_bool());
@@ -9802,6 +10237,66 @@ User: @agent --active-model";
             resolved, "deepseek-r1:1.5b",
             "Must NOT use 7b when RAM is insufficient, even if 7b is present in tags"
         );
+    }
+
+    #[test]
+    fn test_extract_attached_code_context() {
+        let prompt = "System: Assistant\nuser: <attachments>\n<attachment id=\"file:pq.py\">\nclass PriorityQueue:\n    def __init__(self):\n        self.items = []\n</attachment>\n</attachments>\nreview pq.py";
+        let extracted = super::extract_attached_code_context(prompt);
+        assert_eq!(extracted.len(), 1, "Must extract exactly 1 attachment");
+        assert_eq!(extracted[0].0, "pq.py");
+        assert!(extracted[0].1.contains("class PriorityQueue:"));
+
+        // Multiple attachments with selection
+        let multi_prompt = "user: <attachment id=\"file:src/lib.rs\">pub fn add(a: i32, b: i32) -> i32 { a + b }</attachment>\n<selection id=\"selection:src/main.rs\">fn main() {}</selection>\nexplain";
+        let multi_extracted = super::extract_attached_code_context(multi_prompt);
+        assert_eq!(multi_extracted.len(), 2, "Must extract both attachment and selection");
+        assert_eq!(multi_extracted[0].0, "src/lib.rs");
+        assert_eq!(multi_extracted[1].0, "src/main.rs");
+    }
+
+    #[test]
+    fn test_review_with_attachments_preserves_code() {
+        let prompt = "System: You are HugOS AI.\nuser: <attachments>\n<attachment id=\"file:pq.py\">\nExcerpt from pq.py:\nclass PriorityQueue:\n    def pop(self):\n        return self.items.pop()\n</attachment>\n</attachments>\n@agent review pq.py";
+        let user_query = super::extract_latest_user_query(prompt);
+        assert!(user_query.contains("review pq.py"), "User query must contain command text");
+        let (enriched, is_coding) = super::enrich_prompt_with_attached_context(prompt, &user_query);
+        assert!(is_coding, "Must be classified as coding query");
+        assert!(enriched.contains("--- Attached File: pq.py ---"), "Enriched prompt must include attached file header");
+        assert!(enriched.contains("class PriorityQueue:"), "Enriched prompt must include the actual file code");
+        assert!(enriched.contains("def pop(self):"), "Enriched prompt must include code lines");
+    }
+
+    #[test]
+    fn test_non_coding_qa_strips_code_context() {
+        let prompt = "System: Assistant\nuser: <attachments>\n<attachment id=\"file:pq.py\">\nclass PriorityQueue: pass\n</attachment>\n</attachments>\nWhat is the capital of France?";
+        let user_query = super::extract_latest_user_query(prompt);
+        let (enriched, is_coding) = super::enrich_prompt_with_attached_context(prompt, &user_query);
+        assert!(!is_coding, "General QA must not be marked as coding query");
+        assert!(!enriched.contains("--- Attached File:"), "General QA must not attach code context");
+        assert!(!enriched.contains("class PriorityQueue"), "General QA must strip code context");
+        assert_eq!(enriched.trim(), "What is the capital of France?");
+
+        // System command test (/stats)
+        let sys_prompt = "user: <attachment id=\"file:pq.py\">class PriorityQueue: pass</attachment>\n/stats";
+        let sys_query = super::extract_latest_user_query(sys_prompt);
+        let (sys_enriched, sys_coding) = super::enrich_prompt_with_attached_context(sys_prompt, &sys_query);
+        assert!(!sys_coding, "System command must not be marked as coding query");
+        assert!(!sys_enriched.contains("--- Attached File:"), "System command must not attach code context");
+    }
+
+    #[test]
+    fn test_is_coding_query_with_review_and_py() {
+        assert!(super::is_coding_query_detected("review pq.py"), "review pq.py must be detected as coding query");
+        assert!(super::is_coding_query_detected("/review pq.py"), "slash review must be detected as coding query");
+        assert!(super::is_coding_query_detected("@agent explain main.rs"), "explain main.rs must be detected as coding query");
+        assert!(super::is_coding_query_detected("audit security.py"), "audit security.py must be detected as coding query");
+        assert!(super::is_coding_query_detected("optimize helper.js"), "optimize helper.js must be detected as coding query");
+        assert!(super::is_coding_query_detected("tests pq.py"), "tests pq.py must be detected as coding query");
+        assert!(super::is_coding_query_detected("inspect buffer.c"), "inspect buffer.c must be detected as coding query");
+        assert!(super::is_coding_query_detected("patch memory leak in engine.cpp"), "patch must be detected as coding query");
+        assert!(!super::is_coding_query_detected("what is the weather today"), "general weather QA is not coding query");
+        assert!(!super::is_coding_query_detected("tell me a story about mountains"), "story QA is not coding query");
     }
 }
 
