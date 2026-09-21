@@ -228,6 +228,123 @@ def patch_extension_js(ext_js_path, node_path):
         changed = True
         print("  [APPLIED] Completion status logging to output channel on watcher close.")
 
+    # -------------------------------------------------------------------------
+    # 6. Silent Auto-Installation of Ollama (no user prompt, silent background setup)
+    # -------------------------------------------------------------------------
+    prompt_match = re.search(
+        r'const choice = await vscode15\.window\.showInformationMessage\(\s*[\'"][^\'"]*Ollama is not installed[\s\S]*?vscode15\.window\.showInformationMessage\([^\)]*Downloading Ollama installer\.\.\.[^\)]*\);',
+        content
+    )
+    if prompt_match:
+        silent_install_code = '''this._outputChannel.appendLine("[OLLAMA] Ollama not found. Starting silent automatic background installation...");
+        vscode15.window.showInformationMessage("\\u{1F999} Installing Ollama for local AI in background...");'''
+        content = content[:prompt_match.start()] + silent_install_code + content[prompt_match.end():]
+        changed = True
+        print("  [APPLIED] Made Ollama installation 100% automatic and silent.")
+    elif "Starting silent automatic background installation" in content:
+        print("  [OK] Silent Ollama auto-installation already present.")
+
+    # -------------------------------------------------------------------------
+    # 7. Dynamic model adoption in _ensureModelPulled(ollamaPath)
+    # -------------------------------------------------------------------------
+    if "this._outputChannel.appendLine(`[OLLAMA] Dynamically adopting available model:" in content:
+        print("  [OK] _ensureModelPulled() already adopts available Ollama models.")
+    else:
+        old_no_qwen = '''              } else if (models.length > 0) {
+                const modelNames = models.map((m10) => m10.name).join(", ");
+                this._outputChannel.appendLine(`[OLLAMA] Models available (no Qwen): ${modelNames}`);
+              } else {'''
+        new_no_qwen = '''              } else if (models.length > 0) {
+                const modelNames = models.map((m10) => m10.name).join(", ");
+                this._outputChannel.appendLine(`[OLLAMA] Models available (no Qwen): ${modelNames}`);
+                const firstModel = models[0].name.replace(/:latest$/, "");
+                this._outputChannel.appendLine(`[OLLAMA] Dynamically adopting available model: ${firstModel}`);
+                this._dynamicOllamaModel = firstModel;
+              } else {'''
+        if old_no_qwen in content:
+            content = content.replace(old_no_qwen, new_no_qwen, 1)
+            changed = True
+            print("  [APPLIED] Added dynamic model adoption to _ensureModelPulled().")
+        else:
+            print("  [WARN] Could not match old_no_qwen pattern in _ensureModelPulled().")
+
+        old_qwen_avail = 'this._outputChannel.appendLine(`[OLLAMA] Qwen model(s) available: ${qwenModels.join(", ")}`);'
+        new_qwen_avail = 'this._outputChannel.appendLine(`[OLLAMA] Qwen model(s) available: ${qwenModels.join(", ")}`);\n                this._dynamicOllamaModel = qwenModels[0].replace(/:latest$/, "");'
+        if old_qwen_avail in content and "this._dynamicOllamaModel = qwenModels[0]" not in content:
+            content = content.replace(old_qwen_avail, new_qwen_avail, 1)
+            changed = True
+            print("  [APPLIED] Set _dynamicOllamaModel for available Qwen models.")
+
+    # -------------------------------------------------------------------------
+    # 8. Dynamic ollamaModel resolution (replacing hardcoded "qwen2.5:7b" defaults)
+    # -------------------------------------------------------------------------
+    # 8a: Direct ollamaModel2 in slash commands
+    old_sl_m = 'const ollamaModel2 = config4.get("ollamaModel", "qwen2.5:7b");'
+    new_sl_m = '''const configuredOllamaModel = (config4.get("ollamaModel", "") || "").trim();
+            const ollamaModel2 = (configuredOllamaModel && configuredOllamaModel !== "auto" && configuredOllamaModel !== "default")
+              ? configuredOllamaModel
+              : (this._dynamicOllamaModel || this._selectModelForSystem().model);'''
+    if old_sl_m in content:
+        content = content.replace(old_sl_m, new_sl_m, 1)
+        changed = True
+        print("  [APPLIED] Dynamically resolved ollamaModel2 in slash commands.")
+
+    # 8b: config4.get("ollamaModel", "qwen2.5:7b")
+    old_c4_m = 'config4.get("ollamaModel", "qwen2.5:7b"),'
+    new_c4_m = '((c) => (c && c !== "auto" && c !== "default") ? c : (this._dynamicOllamaModel || this._selectModelForSystem().model))((config4.get("ollamaModel", "") || "").trim()),'
+    if old_c4_m in content:
+        content = content.replace(old_c4_m, new_c4_m, 1)
+        changed = True
+        print("  [APPLIED] Dynamically resolved config4.get ollamaModel.")
+
+    # 8c: selectedModel = ollamaModel || "qwen2.5:7b";
+    old_sel_m = 'selectedModel = ollamaModel || "qwen2.5:7b";'
+    new_sel_m = 'selectedModel = (ollamaModel && ollamaModel !== "auto" && ollamaModel !== "default") ? ollamaModel : (this._dynamicOllamaModel || this._selectModelForSystem().model);'
+    if old_sel_m in content:
+        content = content.replace(old_sel_m, new_sel_m)
+        changed = True
+        print("  [APPLIED] Dynamically resolved selectedModel fallback.")
+
+    # 8d: const modelName = match3 ? match3[1] : "qwen2.5:7b";
+    old_m3_m = 'const modelName = match3 ? match3[1] : "qwen2.5:7b";'
+    new_m3_m = 'const modelName = match3 ? match3[1] : (this._dynamicOllamaModel || this._selectModelForSystem().model);'
+    if old_m3_m in content:
+        content = content.replace(old_m3_m, new_m3_m, 1)
+        changed = True
+        print("  [APPLIED] Dynamically resolved modelName fallback in error recovery.")
+
+    # 8e: Evolution / avo loops: const ollamaModel = configuredOllamaModel || "qwen2.5:7b";
+    old_avo_m = 'const ollamaModel = configuredOllamaModel || "qwen2.5:7b";'
+    new_avo_m = 'const ollamaModel = (configuredOllamaModel && configuredOllamaModel !== "auto" && configuredOllamaModel !== "default") ? configuredOllamaModel : (this._dynamicOllamaModel || this._selectModelForSystem().model);'
+    if old_avo_m in content:
+        content = content.replace(old_avo_m, new_avo_m)
+        changed = True
+        print("  [APPLIED] Dynamically resolved ollamaModel in evolution loops.")
+
+    # -------------------------------------------------------------------------
+    # 9. Multi-model fusion defaults to true (never reset to false)
+    # -------------------------------------------------------------------------
+    if 'await config3.update("fusion", false, vscode15.ConfigurationTarget.Global);' in content:
+        content = content.replace(
+            'await config3.update("fusion", false, vscode15.ConfigurationTarget.Global);',
+            'await config3.update("fusion", true, vscode15.ConfigurationTarget.Global);'
+        )
+        changed = True
+        print("  [APPLIED] Updated auto-config to keep fusion=true enabled by default.")
+
+    if 'let fusion = false;\n          const gpuLower = gpuName.toLowerCase();' in content:
+        content = content.replace(
+            'let fusion = false;\n          const gpuLower = gpuName.toLowerCase();',
+            'let fusion = true;\n          const gpuLower = gpuName.toLowerCase();'
+        )
+        changed = True
+        print("  [APPLIED] Updated local heuristic fallback fusion to true.")
+
+    if 'fusion=false, panel=1' in content:
+        content = content.replace('fusion=false, panel=1', 'fusion=true, panel=1')
+        changed = True
+        print("  [APPLIED] Updated config log to fusion=true.")
+
     if changed:
         with open(ext_js_path, "w", encoding="utf-8") as f:
             f.write(content)
@@ -264,6 +381,7 @@ def main():
 
     targets = [
         os.path.join(pack_dir, "resources", "app", "extensions", "copilot", "dist", "extension.js"),
+        os.path.join(script_dir, "vscode", "extensions", "copilot", "dist", "extension.js"),
     ]
 
     base_dirs = [pack_dir]
