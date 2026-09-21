@@ -599,7 +599,63 @@ if (Test-Path $patchOllamaScript) {
         Write-Host "[ERROR] patch_ollama_path script failed! Aborting MSI build." -ForegroundColor Red
         Exit 1
     }
-    Write-Host "[OK] Applied Ollama PATH and hardware scaling patches" -ForegroundColor Green
+}
+
+# 4.98 Ensure 100% parity and presence across all versioned runtime directories
+Write-Host "[INFO] Synchronizing all configuration, settings, extensions, and ReST-RL to versioned runtime directories..." -ForegroundColor Yellow
+$versionedDirs = @(Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' })
+foreach ($vDir in $versionedDirs) {
+    $vAppDir = Join-Path $vDir.FullName "resources\app"
+    $vCopilotDir = Join-Path $vAppDir "extensions\copilot"
+    $vCopilotDistDir = Join-Path $vCopilotDir "dist"
+    $vRestRlDir = Join-Path $vAppDir "rest_rl"
+    $vOutVsDir = Join-Path $vAppDir "out\vs\workbench"
+    
+    # Ensure all target parent directories exist
+    @($vAppDir, $vCopilotDir, $vCopilotDistDir, $vRestRlDir, $vOutVsDir) | ForEach-Object {
+        if (-not (Test-Path $_)) { New-Item -ItemType Directory -Force -Path $_ | Out-Null }
+    }
+    
+    # 1. Authoritative product.json
+    $srcPj = Join-Path $vsCodePackDir "resources\app\product.json"
+    if (Test-Path $srcPj) {
+        Copy-Item -Path $srcPj -Destination (Join-Path $vAppDir "product.json") -Force
+    } elseif (Test-Path $authoritativeProductJson) {
+        Copy-Item -Path $authoritativeProductJson -Destination (Join-Path $vAppDir "product.json") -Force
+    }
+    
+    # 2. product-default-settings.json
+    $srcPds = Join-Path $vsCodePackDir "resources\app\product-default-settings.json"
+    if (Test-Path $srcPds) {
+        Copy-Item -Path $srcPds -Destination (Join-Path $vAppDir "product-default-settings.json") -Force
+    } elseif ($defaultSettings) {
+        $defaultSettings | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $vAppDir "product-default-settings.json") -Encoding UTF8
+    }
+    
+    # 3. Copilot package.json
+    $srcPkg = Join-Path $vsCodePackDir "resources\app\extensions\copilot\package.json"
+    if (Test-Path $srcPkg) {
+        Copy-Item -Path $srcPkg -Destination (Join-Path $vCopilotDir "package.json") -Force
+    }
+    
+    # 4. Copilot dist/extension.js
+    $srcExt = Join-Path $vsCodePackDir "resources\app\extensions\copilot\dist\extension.js"
+    if (Test-Path $srcExt) {
+        Copy-Item -Path $srcExt -Destination (Join-Path $vCopilotDistDir "extension.js") -Force
+    }
+    
+    # 5. Workbench main js
+    $srcWb = Join-Path $vsCodePackDir "resources\app\out\vs\workbench\workbench.desktop.main.js"
+    if (Test-Path $srcWb) {
+        Copy-Item -Path $srcWb -Destination (Join-Path $vOutVsDir "workbench.desktop.main.js") -Force
+    }
+    
+    # 6. ReST-RL subsystem
+    $srcRestRl = Join-Path $vsCodePackDir "resources\app\rest_rl"
+    if (Test-Path $srcRestRl) {
+        Copy-Item -Path "$srcRestRl\*" -Destination $vRestRlDir -Recurse -Force
+    }
+    Write-Host "[OK] Fully synchronized versioned runtime directory: $($vDir.Name)" -ForegroundColor Green
 }
 
 

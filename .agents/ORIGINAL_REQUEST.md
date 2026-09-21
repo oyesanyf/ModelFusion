@@ -57,3 +57,46 @@ Produce an actionable, structured review report summarizing verified findings, a
 - [ ] All designated source modules (crates, src, IDE components) are audited.
 - [ ] Explicit findings for memory management, concurrency safety, and error handling are documented.
 - [ ] Independent verification criteria confirmed.
+
+## 2026-09-21T02:40:48Z
+
+Architect and implement the next-generation autonomous capabilities for HugOS IDE and ModelFusion Master CLI, transforming the IDE into a proactive, self-healing, multi-modal developer operating system featuring real-time diagnostic auto-patching, speculative low-latency autocomplete, semantic AST knowledge graphs, multi-modal visual synthesis, and distributed local hardware mesh.
+
+Working directory: d:\harfile\ModelFusion
+Integrity mode: development
+
+## Requirements
+
+### R1. Real-Time Self-Healing LSP Diagnostic Auto-Patcher ("Continuous Code Repair")
+Implement an event-driven background watcher on `vscode.languages.onDidChangeDiagnostics`. When compilation errors, syntax issues, or type mismatches are detected in the active workspace, the background daemon automatically synthesizes a candidate patch, verifies it against AST mutation and test criteria ($R=1.00$), and surfaces an in-editor CodeLens / QuickFix action: `[🤖 Verified Fix Available (Score: 1.00) — Review Virtual Diff]`.
+
+### R2. Speculative Ensemble Ghost Text (120+ Tok/s Local Autocomplete)
+Develop an ultra-low-latency speculative decoding pipeline for in-editor completions. A lightweight 0.5B draft model (e.g. `qwen2.5-coder:0.5b` via OpenVINO CPU/NPU or Ollama) speculatively drafts token sequences, while the background policy model verifies AST integrity, rendering fluid multi-line ghost text within 150ms of typing pauses without cloud lag.
+
+### R3. Semantic Codebase Knowledge Graph (`code_graph.db`)
+Create an incremental Tree-Sitter symbol dependency graph and vector index stored in local SQLite (`code_graph.db`). Index call hierarchies, type definitions, interface implementations, and cross-file references. Enable `@agent` and `/orchestrate` to retrieve precise structural context rather than relying solely on keyword text matching.
+
+### R4. Native Multi-Modal Visual Canvas & UI Synthesis
+Integrate local multi-modal models from ModelFusion's 45-task catalog (e.g. `qwen2-vl` or Florence-2) to support drag-and-drop screenshots, UI wireframes, and architecture diagrams in the chat panel, automatically synthesizing matching frontend components and diagnosing visual layout bugs.
+
+### R5. Distributed Local AI Mesh (P2P Hardware Aggregation)
+Provide peer-to-peer mDNS discovery allowing lightweight developer machines (e.g. laptops) to discover and offload heavy 32B model arbitration and ReST-RL computation sweeps to local network workstations with dedicated GPUs over encrypted local mTLS.
+
+## Acceptance Criteria
+
+### Continuous Repair & Autocomplete
+- [ ] LSP diagnostics trigger non-blocking background repair generation without editor latency.
+- [ ] In-editor CodeLens / QuickFix appears only when verification score reaches 1.00.
+- [ ] Speculative ghost text responds within 150ms of typing pause.
+
+### Knowledge Graph & Context Retrieval
+- [ ] Tree-Sitter symbol indexer creates and incrementally updates `code_graph.db`.
+- [ ] Symbol dependencies and call hierarchy lookups resolve in under 25ms.
+
+### Multi-Modal & Mesh Capabilities
+- [ ] Multi-modal image attachment drop-zone accepts images and passes them to local vision models.
+- [ ] Local mesh discovery protocol detects remote ModelFusion instances over LAN.
+
+### Packaging & Parity
+- [ ] Master CLI compiles release binary with 100% 4-way parity across all locations.
+- [ ] Packages, Authenticode-signs, and verifies the final MSI installer (`HugOS.msi`).

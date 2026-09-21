@@ -15,6 +15,7 @@ import * as vscode from 'vscode';
 import * as net from 'net';
 import * as fs from 'fs';
 import * as path from 'path';
+import { SpeculativeGhostTextProvider } from '../src/autocomplete/speculativeGhostText';
 
 export interface RpcResponse<T = any> {
   jsonrpc: string;
@@ -59,6 +60,123 @@ export class RestRlDiffContentProvider implements vscode.TextDocumentContentProv
   }
 }
 
+/**
+ * CodeLens provider that displays verified patch recommendations directly in the editor.
+ * Surfaces: [🤖 Verified Fix Available (Score: 1.00) — Review Virtual Diff]
+ * Only surfaces when R=1.00 and mutation certified (M_kill >= 0.50).
+ */
+export class VerifiedFixCodeLensProvider implements vscode.CodeLensProvider {
+  private _onDidChangeCodeLenses = new vscode.EventEmitter<void>();
+  public readonly onDidChangeCodeLenses = this._onDidChangeCodeLenses.event;
+  private _resolutions = new Map<string, ResolutionPayload>();
+
+  public setResolution(filePath: string, resolution: ResolutionPayload): void {
+    const normalized = path.normalize(filePath);
+    this._resolutions.set(normalized, resolution);
+    this.refresh();
+  }
+
+  public removeResolution(filePath: string): void {
+    const normalized = path.normalize(filePath);
+    if (this._resolutions.delete(normalized)) {
+      this.refresh();
+    }
+  }
+
+  public clear(): void {
+    this._resolutions.clear();
+    this.refresh();
+  }
+
+  public refresh(): void {
+    this._onDidChangeCodeLenses.fire();
+  }
+
+  public provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
+    const normalized = path.normalize(document.uri.fsPath);
+    const res = this._resolutions.get(normalized);
+    if (!res) {
+      return [];
+    }
+
+    // Strict gate: Reward must be >= 1.00 and mutation certified (M_kill >= 0.50)
+    const isCertified = (res as any).mutation_certified === true && typeof (res as any).kill_ratio === 'number' && (res as any).kill_ratio >= 0.5;
+    if (!res.passed || res.reward < 1.0 || !isCertified) {
+      return [];
+    }
+
+    const targetLine = (res as any).target_line ? Math.max(0, (res as any).target_line - 1) : 0;
+    const range = new vscode.Range(targetLine, 0, targetLine, 0);
+
+    return [
+      new vscode.CodeLens(range, {
+        title: `[🤖 Verified Fix Available (Score: ${res.reward.toFixed(2)}) — Review Virtual Diff]`,
+        command: 'modelfusion.rest_rl.reviewPatch',
+        arguments: [res],
+      }),
+    ];
+  }
+}
+
+/**
+ * QuickFix CodeActionProvider that surfaces 1-click atomic apply action:
+ * Surfaces: 🤖 Apply Verified Fix (Score: 1.00)
+ */
+export class VerifiedFixQuickFixProvider implements vscode.CodeActionProvider {
+  public static readonly providedCodeActionKinds = [vscode.CodeActionKind.QuickFix];
+  private _resolutions = new Map<string, ResolutionPayload>();
+
+  public setResolution(filePath: string, resolution: ResolutionPayload): void {
+    const normalized = path.normalize(filePath);
+    this._resolutions.set(normalized, resolution);
+  }
+
+  public removeResolution(filePath: string): void {
+    const normalized = path.normalize(filePath);
+    this._resolutions.delete(normalized);
+  }
+
+  public clear(): void {
+    this._resolutions.clear();
+  }
+
+  public provideCodeActions(
+    document: vscode.TextDocument,
+    range: vscode.Range | vscode.Selection,
+    context: vscode.CodeActionContext
+  ): vscode.CodeAction[] {
+    const normalized = path.normalize(document.uri.fsPath);
+    const res = this._resolutions.get(normalized);
+    if (!res) {
+      return [];
+    }
+
+    const isCertified = (res as any).mutation_certified === true && typeof (res as any).kill_ratio === 'number' && (res as any).kill_ratio >= 0.5;
+    if (!res.passed || res.reward < 1.0 || !isCertified) {
+      return [];
+    }
+
+    const action = new vscode.CodeAction(
+      `🤖 Apply Verified Fix (Score: ${res.reward.toFixed(2)})`,
+      vscode.CodeActionKind.QuickFix
+    );
+
+    action.isPreferred = true;
+    action.command = {
+      title: 'Apply Verified Fix',
+      command: 'modelfusion.rest_rl.acceptPatch',
+      arguments: [res.target_file, res.candidate_code],
+    };
+
+    const errorDiags = context.diagnostics.filter((d) => d.severity === vscode.DiagnosticSeverity.Error);
+    if (errorDiags.length > 0) {
+      action.diagnostics = errorDiags;
+    }
+
+    return [action];
+  }
+}
+
 export class RestRLIdeShim implements vscode.Disposable {
   private _debounceTimer: NodeJS.Timeout | null = null;
   private _pollTimer: NodeJS.Timeout | null = null;
@@ -66,6 +184,11 @@ export class RestRLIdeShim implements vscode.Disposable {
   private _lastActivityTime: number = Date.now();
   private _statusBarItem: vscode.StatusBarItem;
   private _diffProvider: RestRlDiffContentProvider;
+  private _codeLensProvider: VerifiedFixCodeLensProvider;
+  private _quickFixProvider: VerifiedFixQuickFixProvider;
+  private _ghostTextProvider: SpeculativeGhostTextProvider;
+  private _diagnosticTimers = new Map<string, NodeJS.Timeout>();
+  private _diagnosticDebounceMs: number = 750;
   private _disposables: vscode.Disposable[] = [];
   private _reqId: number = 0;
 
@@ -93,13 +216,38 @@ export class RestRLIdeShim implements vscode.Disposable {
       vscode.workspace.registerTextDocumentContentProvider('restrl-diff', this._diffProvider)
     );
 
-    // 3. Register IDE User Activity Hooks
+    // 3. Initialize CodeLens Provider ([🤖 Verified Fix Available (Score: 1.00) — Review Virtual Diff])
+    this._codeLensProvider = new VerifiedFixCodeLensProvider();
+    this._disposables.push(
+      vscode.languages.registerCodeLensProvider({ pattern: '**' }, this._codeLensProvider)
+    );
+
+    // 4. Initialize QuickFix CodeActionProvider (🤖 Apply Verified Fix (Score: 1.00))
+    this._quickFixProvider = new VerifiedFixQuickFixProvider();
+    this._disposables.push(
+      vscode.languages.registerCodeActionsProvider(
+        { pattern: '**' },
+        this._quickFixProvider,
+        { providedCodeActionKinds: VerifiedFixQuickFixProvider.providedCodeActionKinds }
+      )
+    );
+
+    // 5. Initialize Speculative Ghost Text Inline Completion Provider (<150ms SLA)
+    this._ghostTextProvider = new SpeculativeGhostTextProvider();
+    this._disposables.push(
+      vscode.languages.registerInlineCompletionItemProvider(
+        { pattern: '**' },
+        this._ghostTextProvider
+      )
+    );
+
+    // 6. Register IDE User Activity Hooks and Diagnostic Watcher
     this._registerEventHooks();
 
-    // 4. Register Commands (Diff Review, Accept, Reject)
+    // 7. Register Commands (Diff Review, Accept, Reject)
     this._registerCommands();
 
-    // 5. Start 45-second debounce & resolution polling
+    // 8. Start 45-second debounce & resolution polling
     this._scheduleDebounce();
     this._startResolutionPolling();
   }
@@ -116,6 +264,11 @@ export class RestRLIdeShim implements vscode.Disposable {
       clearInterval(this._pollTimer);
       this._pollTimer = null;
     }
+    for (const timer of this._diagnosticTimers.values()) {
+      clearTimeout(timer);
+    }
+    this._diagnosticTimers.clear();
+    this._ghostTextProvider.dispose();
     this._disposables.forEach((d) => d.dispose());
   }
 
@@ -154,6 +307,13 @@ export class RestRLIdeShim implements vscode.Disposable {
         }
       })
     );
+
+    // Event-driven LSP diagnostic changes (750ms debounce window)
+    this._disposables.push(
+      vscode.languages.onDidChangeDiagnostics((e: vscode.DiagnosticChangeEvent) => {
+        this._handleDiagnosticsChange(e);
+      })
+    );
   }
 
   /**
@@ -185,12 +345,16 @@ export class RestRLIdeShim implements vscode.Disposable {
             const applied = await vscode.workspace.applyEdit(edit);
             if (applied) {
               await doc.save();
+              this._codeLensProvider.removeResolution(targetFile);
+              this._quickFixProvider.removeResolution(targetFile);
               vscode.window.showInformationMessage(
                 `ReST-RL: Accepted patch for ${path.basename(targetFile)}`
               );
             } else {
               // Fallback to disk write if edit could not be applied
               await fs.promises.writeFile(targetFile, candidateCode, 'utf-8');
+              this._codeLensProvider.removeResolution(targetFile);
+              this._quickFixProvider.removeResolution(targetFile);
               vscode.window.showInformationMessage(
                 `ReST-RL: Accepted patch for ${path.basename(targetFile)}`
               );
@@ -283,7 +447,12 @@ export class RestRLIdeShim implements vscode.Disposable {
         const resp = await this._callRpc('agent/poll_resolutions');
         const resolutions: ResolutionPayload[] = resp?.resolutions || [];
         for (const res of resolutions) {
-          if (res.passed || res.reward >= 1.0) {
+          const isCertified =
+            (res as any).mutation_certified !== false &&
+            ((res as any).kill_ratio === undefined || (res as any).kill_ratio >= 0.5);
+          if ((res.passed || res.reward >= 1.0) && isCertified) {
+            this._codeLensProvider.setResolution(res.target_file, res);
+            this._quickFixProvider.setResolution(res.target_file, res);
             this._promptResolutionReview(res);
           }
         }
@@ -291,6 +460,90 @@ export class RestRLIdeShim implements vscode.Disposable {
         // Silently ignore connection blips
       }
     }, 2500);
+  }
+
+  /**
+   * Event-driven LSP diagnostic change handler with 750ms debounce window.
+   */
+  private _handleDiagnosticsChange(e: vscode.DiagnosticChangeEvent): void {
+    for (const uri of e.uris) {
+      if (uri.scheme !== 'file') continue;
+      const uriStr = uri.toString();
+
+      const existingTimer = this._diagnosticTimers.get(uriStr);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+      }
+
+      const timer = setTimeout(async () => {
+        this._diagnosticTimers.delete(uriStr);
+        await this._processFileDiagnostics(uri);
+      }, this._diagnosticDebounceMs);
+
+      this._diagnosticTimers.set(uriStr, timer);
+    }
+  }
+
+  /**
+   * Processes harvested LSP diagnostics for a single file:
+   * 1. Filters for Error diagnostics.
+   * 2. Clears active CodeLens/QuickFix if all errors resolved.
+   * 3. Dispatches diagnostics/report JSON-RPC over Named Pipe / TCP.
+   * 4. Enqueues background repair task to ReST-RL daemon.
+   */
+  private async _processFileDiagnostics(uri: vscode.Uri): Promise<void> {
+    try {
+      const allDiags = vscode.languages.getDiagnostics(uri);
+      const errorDiags = allDiags.filter((d) => d.severity === vscode.DiagnosticSeverity.Error);
+
+      if (errorDiags.length === 0) {
+        this._codeLensProvider.removeResolution(uri.fsPath);
+        this._quickFixProvider.removeResolution(uri.fsPath);
+        return;
+      }
+
+      let doc: vscode.TextDocument;
+      try {
+        doc = await vscode.workspace.openTextDocument(uri);
+      } catch {
+        return;
+      }
+
+      const firstErrorLine = errorDiags[0]?.range?.start?.line ?? 0;
+      const taskId = `repair_${path.basename(uri.fsPath)}_${Date.now()}`;
+
+      const payload = {
+        task_id: taskId,
+        file_path: uri.fsPath,
+        target_line: firstErrorLine + 1,
+        code: doc.getText(),
+        diagnostics: errorDiags.map((d) => ({
+          line_number: d.range.start.line + 1,
+          column: d.range.start.character,
+          severity: 'Error',
+          source: d.source || 'lsp',
+          code: typeof d.code === 'object' ? String(d.code?.value) : String(d.code || ''),
+          message: d.message,
+          range: {
+            start: { line: d.range.start.line + 1, character: d.range.start.character },
+            end: { line: d.range.end.line + 1, character: d.range.end.character },
+          },
+        })),
+      };
+
+      // Ingest into daemon diagnostics table via diagnostics/report
+      await this._callRpc('diagnostics/report', payload).catch(() => {});
+
+      // Enqueue autonomous compiler oracle repair task
+      await this.enqueueTask(
+        taskId,
+        uri.fsPath,
+        '# Compiler oracle self-healing validation',
+        `Fix ${errorDiags.length} compiler diagnostic error(s)`
+      ).catch(() => {});
+    } catch {
+      // Non-blocking background watcher
+    }
   }
 
   /**

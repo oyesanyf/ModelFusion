@@ -292,15 +292,15 @@ class AdversarialCertificationGate:
         """
         mutant_specs = self.mutator.generate_mutants(candidate_code, max_mutants=self.k_mutants)
         if not mutant_specs:
-            # Code was too minimal to mutate; certify with neutral ratio
+            # Candidate code contains no mutable AST statements (e.g. empty pass); cannot certify
             return CertificationResult(
-                is_certified=True,
-                certified_reward=1.0,
-                kill_ratio=1.0,
+                is_certified=False,
+                certified_reward=0.50,
+                kill_ratio=0.0,
                 total_mutants=0,
                 killed_count=0,
                 mutants=[],
-                rejection_reason=None,
+                rejection_reason="No mutable AST statements found in candidate patch.",
             )
 
         mutant_records: List[MutantRecord] = []

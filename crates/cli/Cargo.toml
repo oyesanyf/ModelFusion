@@ -20,4 +20,6 @@ walkdir         = { workspace = true }
 chrono          = { workspace = true }
 reqwest         = { workspace = true }
 sysinfo         = { workspace = true }
+code_graph      = { path = "../code_graph" }
+mesh            = { path = "../mesh" }
 
