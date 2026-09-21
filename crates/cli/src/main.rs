@@ -193,13 +193,30 @@ pub fn query_system_resources() -> SystemResourceSummary {
     }
 }
 
-/// Detects system RAM, VRAM, and CPU to pick the optimal Ollama model fit based on available memory.
-/// Prints a formatted debug log banner showing detected resources.
-fn select_ollama_model_for_hardware(is_low_budget: bool) -> &'static str {
+/// Helper to select optimal Ollama model from an already queried system resource summary.
+pub fn select_ollama_model_from_sys(is_low_budget: bool, res: &SystemResourceSummary) -> &'static str {
     if is_low_budget {
         return "qwen2.5:1.5b";
     }
 
+    if res.free_ram_gb >= 48.0 || res.free_vram_mb >= 22_000 {
+        "qwen2.5:32b"
+    } else if res.free_ram_gb >= 24.0 || res.free_vram_mb >= 12_000 {
+        "qwen2.5:14b"
+    } else if res.free_ram_gb >= 12.0 || res.free_vram_mb >= 5_500 {
+        "qwen2.5:7b"
+    } else if res.free_ram_gb >= 6.0 || res.free_vram_mb >= 2_500 {
+        "qwen2.5:3b"
+    } else if res.free_ram_gb >= 3.0 {
+        "qwen2.5:1.5b"
+    } else {
+        "qwen2.5:0.5b"
+    }
+}
+
+/// Detects system RAM, VRAM, and CPU to pick the optimal Ollama model fit based on available memory.
+/// Prints a formatted debug log banner showing detected resources.
+pub fn select_ollama_model_for_hardware(is_low_budget: bool) -> &'static str {
     let res = query_system_resources();
 
     // Print resource debug banner
@@ -216,25 +233,161 @@ fn select_ollama_model_for_hardware(is_low_budget: bool) -> &'static str {
     eprintln!("  Max Free Disk        : {:.2} GB", res.free_disk_gb);
 
     // Runtime Available/Free Memory-aware model fit logic (protects against concurrent process usage)
-    let chosen_model = if res.free_ram_gb >= 48.0 || res.free_vram_mb >= 22_000 {
-        "qwen2.5:32b"
-    } else if res.free_ram_gb >= 24.0 || res.free_vram_mb >= 12_000 {
-        "qwen2.5:14b"
-    } else if res.free_ram_gb >= 12.0 || res.free_vram_mb >= 5_500 {
-        "qwen2.5:7b"
-    } else if res.free_ram_gb >= 6.0 || res.free_vram_mb >= 2_500 {
-        "qwen2.5:3b"
-    } else if res.free_ram_gb >= 3.0 {
-        "qwen2.5:1.5b"
-    } else {
-        "qwen2.5:0.5b"
-    };
+    let chosen_model = select_ollama_model_from_sys(is_low_budget, &res);
 
     eprintln!("  BEST MODEL FIT (Based on runtime AVAILABLE memory): {}", chosen_model);
     eprintln!("============================================================");
 
     chosen_model
 }
+
+/// Evaluates whether a requested or candidate model fits within runtime available/free memory.
+/// Memory fit rule: If model has "7b" or "14b" or "32b", require at least 5.0 GB free RAM or 4.0 GB free VRAM.
+/// If free RAM is < 4.0 GB and no GPU, it DOES NOT fit.
+pub fn model_fits_memory(model_name: &str, free_ram_gb: f64, free_vram_mb: u64, has_gpu: bool) -> bool {
+    let lower = model_name.to_lowercase();
+    if lower.contains("32b") || lower.contains("70b") {
+        free_ram_gb >= 24.0 || free_vram_mb >= 16_000
+    } else if lower.contains("14b") {
+        free_ram_gb >= 10.0 || free_vram_mb >= 8_000
+    } else if lower.contains("7b") || lower.contains("8b") {
+        if !has_gpu && free_ram_gb < 4.0 {
+            false
+        } else {
+            free_ram_gb >= 5.0 || free_vram_mb >= 4_000
+        }
+    } else if lower.contains("3b") || lower.contains("4b") {
+        free_ram_gb >= 2.5 || free_vram_mb >= 2_000
+    } else {
+        // 1.5b, 0.5b, 1b fit on any machine
+        true
+    }
+}
+
+/// Resolves the optimal Ollama model from installed models and system resources without network calls.
+pub fn resolve_dynamic_ollama_model_from_state(
+    requested_model: Option<&str>,
+    is_low_budget: bool,
+    installed_models: &std::collections::HashSet<String>,
+    sys: &SystemResourceSummary,
+) -> String {
+    let is_installed = |name: &str| -> bool {
+        installed_models.contains(name)
+            || installed_models.contains(&format!("{}:latest", name))
+            || name.strip_suffix(":latest").map_or(false, |b| installed_models.contains(b))
+    };
+
+    let rec_hardware_model = select_ollama_model_from_sys(is_low_budget, sys);
+
+    if let Some(req) = requested_model {
+        let req_clean = req.trim();
+        if !req_clean.is_empty() && req_clean != "auto" && req_clean != "default" {
+            let fits = model_fits_memory(req_clean, sys.free_ram_gb, sys.free_vram_mb, sys.has_gpu);
+            let installed = is_installed(req_clean);
+
+            if installed && fits {
+                return req_clean.to_string();
+            }
+
+            eprintln!(
+                "[SERVER] 🔄 Model '{:?}' not found in Ollama or exceeds available RAM ({:.2} GB free, {} MB free VRAM). Dynamically adapting...",
+                Some(req_clean),
+                sys.free_ram_gb,
+                sys.free_vram_mb
+            );
+        }
+    }
+
+    // Search installed_models for any installed model that fits the hardware
+    let candidates: Vec<&str> = if sys.free_ram_gb >= 6.0 || sys.free_vram_mb >= 2_500 {
+        vec![
+            "qwen2.5:32b",
+            "qwen2.5:14b",
+            "qwen2.5:7b",
+            "deepseek-r1:14b",
+            "deepseek-r1:7b",
+            "qwen2.5:3b",
+            "qwen2.5:1.5b",
+            "deepseek-r1:1.5b",
+            "qwen2.5:0.5b",
+            "llama3.2:3b",
+            "llama3.2:1b",
+        ]
+    } else {
+        vec![
+            "qwen2.5:3b",
+            "qwen2.5:1.5b",
+            "deepseek-r1:1.5b",
+            "qwen2.5:0.5b",
+            "llama3.2:3b",
+            "llama3.2:1b",
+        ]
+    };
+
+    for cand in &candidates {
+        if is_installed(cand) && model_fits_memory(cand, sys.free_ram_gb, sys.free_vram_mb, sys.has_gpu) {
+            eprintln!("[SERVER] 🎯 Dynamically selected installed Ollama model: {}", cand);
+            return cand.to_string();
+        }
+    }
+
+    // Or any model in installed_models where name contains "1.5b" or "0.5b" or "1b" or "3b"
+    let mut all_installed: Vec<&String> = installed_models.iter().collect();
+    all_installed.sort();
+    for inst in all_installed {
+        let lower = inst.to_lowercase();
+        if (lower.contains("1.5b") || lower.contains("0.5b") || lower.contains("1b") || lower.contains("3b"))
+            && model_fits_memory(inst, sys.free_ram_gb, sys.free_vram_mb, sys.has_gpu)
+        {
+            let matched = inst.strip_suffix(":latest").unwrap_or(inst.as_str());
+            eprintln!("[SERVER] 🎯 Dynamically selected installed Ollama model: {}", matched);
+            return matched.to_string();
+        }
+    }
+
+    // If no installed model fits, return the hardware recommended model
+    rec_hardware_model.to_string()
+}
+
+/// Dynamically resolves the optimal Ollama model for the request and runtime hardware.
+/// Queries GET {endpoint}/api/tags with a 1500ms timeout to discover installed local models.
+pub async fn resolve_dynamic_ollama_model(
+    requested_model: Option<&str>,
+    is_low_budget: bool,
+    endpoint: &str,
+) -> String {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(1500))
+        .build()
+        .unwrap_or_default();
+
+    let tags_url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
+    let mut installed_models = std::collections::HashSet::new();
+
+    if let Ok(resp) = client.get(&tags_url).send().await {
+        if resp.status().is_success() {
+            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                if let Some(models) = json.get("models").and_then(|m| m.as_array()) {
+                    for m in models {
+                        if let Some(name) = m.get("name").and_then(|n| n.as_str()) {
+                            let trimmed = name.trim();
+                            installed_models.insert(trimmed.to_string());
+                            if let Some(base) = trimmed.strip_suffix(":latest") {
+                                installed_models.insert(base.to_string());
+                            } else if !trimmed.contains(':') {
+                                installed_models.insert(format!("{}:latest", trimmed));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let sys = query_system_resources();
+    resolve_dynamic_ollama_model_from_state(requested_model, is_low_budget, &installed_models, &sys)
+}
+
 
 /// Dynamically determine the optimal context window (num_ctx) for the chosen Ollama model.
 /// Balances context size against the physical RAM constraints to prevent OOM/slowdowns.
@@ -5143,15 +5296,11 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         let mut _file_lock = None;
 
                         if ollama && !is_complex {
-                            // Simple question → fast path with 1.5b
-                            let ollama_model = if let Some(ref m) = model_override {
-                                m.as_str()
-                            } else {
-                                select_ollama_model_for_hardware(budget <= 0.5)
-                            };
-
                             let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
                                 .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+                            let dynamic_model = resolve_dynamic_ollama_model(model_override.as_deref(), budget <= 0.5, &endpoint).await;
+                            let ollama_model = dynamic_model.as_str();
+
                             let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
 
                             // Use the already-cleaned user message (XML tags and attachments stripped).
@@ -5376,8 +5525,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                     eprintln!("[SERVER] ⚠️ Ollama fast path failed: {}. Falling back to orchestrator.", e);
                                 }
                             }
-                            // If fast path fails, fall through to full orchestrator below
-                            fusion = false;
+                            // If fast path fails, fall through to full orchestrator below with fusion preserved
                             gpu = true;
                         } else if is_complex {
                             // Complex/coding task → skip fast path, use full pipeline
@@ -9323,6 +9471,99 @@ User: @agent --active-model";
             raw_five
         };
         assert_eq!(explicit_five, 5);
+    }
+
+    #[test]
+    fn test_resolve_dynamic_ollama_model_low_ram_routes_to_1_5b() {
+        let mut installed = std::collections::HashSet::new();
+        installed.insert("deepseek-r1:1.5b".to_string());
+        installed.insert("deepseek-r1:1.5b:latest".to_string());
+
+        let sys = super::SystemResourceSummary {
+            cpu_name: "Mock Low RAM CPU".to_string(),
+            logical_cores: 4,
+            total_ram_gb: 16.0,
+            free_ram_gb: 1.8, // Low RAM < 3GB
+            gpu_name: "".to_string(),
+            total_vram_mb: 0,
+            free_vram_mb: 0,
+            has_gpu: false,
+            free_disk_gb: 50.0,
+            total_disk_gb: 500.0,
+            disks: vec![],
+        };
+
+        // Asking for qwen2.5:7b when deepseek-r1:1.5b is installed on low RAM system:
+        let resolved = super::resolve_dynamic_ollama_model_from_state(
+            Some("qwen2.5:7b"),
+            false,
+            &installed,
+            &sys,
+        );
+        assert_eq!(
+            resolved, "deepseek-r1:1.5b",
+            "On low RAM (<3GB free), asking for qwen2.5:7b when deepseek-r1:1.5b is installed must route to deepseek-r1:1.5b"
+        );
+    }
+
+    #[test]
+    fn test_resolve_dynamic_ollama_model_high_ram_uses_requested_7b() {
+        let mut installed = std::collections::HashSet::new();
+        installed.insert("qwen2.5:7b".to_string());
+
+        let sys = super::SystemResourceSummary {
+            cpu_name: "Mock High RAM CPU".to_string(),
+            logical_cores: 16,
+            total_ram_gb: 64.0,
+            free_ram_gb: 32.0, // High RAM
+            gpu_name: "".to_string(),
+            total_vram_mb: 0,
+            free_vram_mb: 0,
+            has_gpu: false,
+            free_disk_gb: 200.0,
+            total_disk_gb: 1000.0,
+            disks: vec![],
+        };
+
+        let resolved = super::resolve_dynamic_ollama_model_from_state(
+            Some("qwen2.5:7b"),
+            false,
+            &installed,
+            &sys,
+        );
+        assert_eq!(resolved, "qwen2.5:7b");
+    }
+
+    #[test]
+    fn test_resolve_dynamic_ollama_model_prevents_7b_on_insufficient_ram_even_if_installed() {
+        let mut installed = std::collections::HashSet::new();
+        installed.insert("qwen2.5:7b".to_string());
+        installed.insert("deepseek-r1:1.5b".to_string());
+
+        let sys = super::SystemResourceSummary {
+            cpu_name: "Mock Low RAM CPU".to_string(),
+            logical_cores: 4,
+            total_ram_gb: 16.0,
+            free_ram_gb: 1.8, // Insufficient RAM (<4GB, no GPU)
+            gpu_name: "".to_string(),
+            total_vram_mb: 0,
+            free_vram_mb: 0,
+            has_gpu: false,
+            free_disk_gb: 50.0,
+            total_disk_gb: 500.0,
+            disks: vec![],
+        };
+
+        let resolved = super::resolve_dynamic_ollama_model_from_state(
+            Some("qwen2.5:7b"),
+            false,
+            &installed,
+            &sys,
+        );
+        assert_eq!(
+            resolved, "deepseek-r1:1.5b",
+            "Must NOT use 7b when RAM is insufficient, even if 7b is present in tags"
+        );
     }
 }
 
