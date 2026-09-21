@@ -10,6 +10,8 @@ members = [
     "crates/security",
     "crates/monitoring",
     "crates/utils",
+    "crates/code_graph",
+    "crates/mesh",
 ]
 
 [workspace.dependencies]

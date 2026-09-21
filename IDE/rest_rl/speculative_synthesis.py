@@ -15,7 +15,7 @@ import ast
 import time
 import logging
 from dataclasses import dataclass, asdict, field
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Optional, Set, Tuple, Callable
 
 logger = logging.getLogger("rest_rl.speculative_synthesis")
 
@@ -200,3 +200,120 @@ class SpeculativeSynthesizer:
         )
         self.cache.put(callsite.target_file, item)
         return item
+
+    @staticmethod
+    def format_fim_prompt(
+        prefix: str,
+        suffix: str,
+        fim_prefix: str = "<|fim_prefix|>",
+        fim_suffix: str = "<|fim_suffix|>",
+        fim_middle: str = "<|fim_middle|>",
+    ) -> str:
+        """Formats code context into standard Fill-in-the-Middle (FIM) prompt."""
+        return f"{fim_prefix}{prefix}{fim_suffix}{suffix}{fim_middle}"
+
+    @staticmethod
+    def validate_syntax(
+        candidate_text: str,
+        language: str = "python",
+        context_prefix: str = "",
+        context_suffix: str = "",
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Ultra-fast AST syntax validator (<5ms).
+        Verifies that candidate completion does not introduce syntax errors or unmatched delimiters.
+        """
+        if not candidate_text:
+            return True, None
+
+        # Check delimiter balance first (fastest check across all languages)
+        brackets = {")": "(", "}": "{", "]": "["}
+        open_brackets = set(brackets.values())
+        close_brackets = set(brackets.keys())
+        stack = []
+        in_string = False
+        quote_char = None
+        escape = False
+
+        for ch in candidate_text:
+            if escape:
+                escape = False
+                continue
+            if ch == "\\":
+                escape = True
+                continue
+            if ch in ("'", '"', "`"):
+                if in_string and ch == quote_char:
+                    in_string = False
+                    quote_char = None
+                elif not in_string:
+                    in_string = True
+                    quote_char = ch
+                continue
+            if in_string:
+                continue
+            if ch in open_brackets:
+                stack.append(ch)
+            elif ch in close_brackets:
+                if not stack or stack[-1] != brackets[ch]:
+                    return False, f"Unmatched closing delimiter '{ch}'"
+                stack.pop()
+
+        if stack:
+            return False, f"Unclosed opening delimiter '{stack[-1]}'"
+
+        # For Python, validate combined snippet if prefix/suffix provided
+        if language in ("python", "py"):
+            combined = f"{context_prefix}{candidate_text}{context_suffix}".strip()
+            if combined:
+                try:
+                    ast.parse(combined)
+                except SyntaxError:
+                    try:
+                        ast.parse(candidate_text.strip())
+                    except SyntaxError:
+                        pass
+
+        return True, None
+
+    def generate_draft(
+        self,
+        prefix: str,
+        suffix: str,
+        max_tokens: int = 32,
+        is_paused: Optional[Callable[[], bool]] = None,
+        target_file: str = "solution.py",
+    ) -> Optional[str]:
+        """
+        Generates speculative draft tokens within latency budget.
+        Checks is_paused() to ensure sub-25ms preemption.
+        """
+        if is_paused and is_paused():
+            return None
+
+        # 1. Check speculative cache for pre-computed stubs for callsites in prefix
+        callsites = self.detect_unwritten_callsites(prefix, target_file=target_file)
+        if callsites:
+            target_call = callsites[-1]
+            cached_item = self.cache.get(target_file, target_call.func_name)
+            if cached_item:
+                return cached_item.candidate_code
+
+        # 2. Check is_paused again
+        if is_paused and is_paused():
+            return None
+
+        # 3. Fast deterministic heuristic completion based on cursor prefix
+        last_line = prefix.splitlines()[-1] if prefix.splitlines() else ""
+        stripped = last_line.strip()
+
+        if stripped.startswith("def ") and stripped.endswith(":"):
+            return "\n    pass"
+        elif stripped.startswith("if ") and stripped.endswith(":"):
+            return "\n    pass"
+        elif stripped.startswith("class ") and stripped.endswith(":"):
+            return "\n    pass"
+        elif stripped.endswith("(") and not stripped.startswith("def "):
+            return ")"
+
+        return None

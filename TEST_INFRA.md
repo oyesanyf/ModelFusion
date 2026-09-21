@@ -1,112 +1,129 @@
-# E2E Test Infrastructure: ModelFusion & HugOS IDE Comprehensive 4-Tier Suite
+# ModelFusion & HugOS IDE Next-Generation Autonomous Test Infrastructure
 
-## Test Philosophy & Methodology
-- **Opaque-Box & Requirement-Driven**: Tests derive strictly from `PROJECT.md` (19 features across Rust Core, MCP Server, Model Selection Engine, Extension Host, and WiX MSI Packaging) and `ORIGINAL_REQUEST.md`.
-- **4-Tier Test Architecture**:
-  1. **Tier 1 (Feature Coverage)**: ≥5 test cases per feature covering the primary happy path and core functionality (19 features × 5 = 95 tests).
-  2. **Tier 2 (Boundary & Corner Cases)**: ≥5 test cases per feature covering extreme inputs, empty inputs, max lengths, malformed payloads, zero/negative bounds, and edge cases (19 features × 5 = 95 tests).
-  3. **Tier 3 (Cross-Feature Combinations)**: Pairwise combinatorial interactions between participant commands, slash routing, XML sanitization, MCP tools, anti-hype scoring, dynamic hardware profiling, adaptive timeouts, concurrency locks, chunked streaming, and WiX/Authenticode signing (20 tests).
-  4. **Tier 4 (Real-World Application Scenarios)**: Realistic end-to-end multi-step application workflows (8 comprehensive scenarios).
-- **Total Test Cases**: **218 tests** (100% deterministic, zero-flakiness, sub-second execution).
+## Overview
 
----
+This document outlines the test architecture, methodology, execution procedures, and verification criteria for the next-generation autonomous developer operating system capabilities (R1–R5) implemented across ModelFusion Master CLI and HugOS IDE:
 
-## 19-Feature Coverage Matrix
-
-| # | Feature | Scope / Milestone | Tier 1 (Happy Path) | Tier 2 (Boundaries) | Tier 3 (Interactions) | Tier 4 (Workloads) | Total Tests |
-|---|---------|:-----------------:|:-------------------:|:-------------------:|:---------------------:|:------------------:|:-----------:|
-| F01 | Participant Commands & Directives | M1 / R1 | 5 tests (F01-01..05) | 5 tests (F01-B01..B05) | ✓ | ✓ | 12+ |
-| F02 | Slash Command Router | M1 / R1 | 5 tests (F02-01..05) | 5 tests (F02-B01..B05) | ✓ | ✓ | 12+ |
-| F03 | XML & User Request Sanitization | M1 / R1 | 5 tests (F03-01..05) | 5 tests (F03-B01..B05) | ✓ | ✓ | 12+ |
-| F04 | OpenEvolve / AVO Integration | M1 / R1 | 5 tests (F04-01..05) | 5 tests (F04-B01..B05) | ✓ | ✓ | 12+ |
-| F05 | Concurrency Locks & Permits | M1 / R1 | 5 tests (F05-01..05) | 5 tests (F05-B01..B05) | ✓ | ✓ | 12+ |
-| F06 | Non-blocking Host Execution | M1 / R1 | 5 tests (F06-01..05) | 5 tests (F06-B01..B05) | ✓ | ✓ | 12+ |
-| F07 | MCP 91-Tool Registration & Schemas | M2 / R2 | 5 tests (F07-01..05) | 5 tests (F07-B01..B05) | ✓ | ✓ | 12+ |
-| F08 | MCP In-Process & Subcommand Handlers | M2 / R2 | 5 tests (F08-01..05) | 5 tests (F08-B01..B05) | ✓ | ✓ | 12+ |
-| F09 | MCP `--ollama` Propagation | M2 / R2 | 5 tests (F09-01..05) | 5 tests (F09-B01..B05) | ✓ | ✓ | 12+ |
-| F10 | MCP Automated Standalone Test Harness | M2 / R2 | 5 tests (F10-01..05) | 5 tests (F10-B01..B05) | ✓ | ✓ | 12+ |
-| F11 | Dynamic Hardware Profiling | M3 / R3 | 5 tests (F11-01..05) | 5 tests (F11-B01..B05) | ✓ | ✓ | 12+ |
-| F12 | Anti-Hype Model Scoring Engine | M3 / R3 | 5 tests (F12-01..05) | 5 tests (F12-B01..B05) | ✓ | ✓ | 12+ |
-| F13 | Adaptive Token-Based Timeouts | M3 / R3 | 5 tests (F13-01..05) | 5 tests (F13-B01..B05) | ✓ | ✓ | 12+ |
-| F14 | Non-Blocking IPC & Disconnect Detection | M3 / R3 | 5 tests (F14-01..05) | 5 tests (F14-B01..B05) | ✓ | ✓ | 12+ |
-| F15 | WiX Manifest Generation | M4 / R4 | 5 tests (F15-01..05) | 5 tests (F15-B01..B05) | ✓ | ✓ | 12+ |
-| F16 | Authenticode Protection & Binary Signing | M4 / R4 | 5 tests (F16-01..05) | 5 tests (F16-B01..B05) | ✓ | ✓ | 12+ |
-| F17 | Dependency Bundling & MSI Generation | M4 / R4 | 5 tests (F17-01..05) | 5 tests (F17-B01..B05) | ✓ | ✓ | 12+ |
-| F18 | Dual-Track E2E Test Suite (Tiers 1-4) | M-E2E | 5 tests (F18-01..05) | 5 tests (F18-B01..B05) | ✓ | ✓ | 12+ |
-| F19 | Final E2E Test Pass & Adversarial Hardening | M-FINAL | 5 tests (F19-01..05) | 5 tests (F19-B01..B05) | ✓ | ✓ | 12+ |
-| **Sum**| **All 19 Features** | **All Milestones** | **95 tests** | **95 tests** | **20 tests** | **8 tests** | **218 tests** |
+1. **R1: Real-Time Self-Healing LSP Diagnostic Auto-Patcher ("Continuous Code Repair")**
+2. **R2: Speculative Ensemble Ghost Text (120+ Tok/s Local Autocomplete)**
+3. **R3: Semantic Codebase Knowledge Graph (`code_graph.db`)**
+4. **R4: Native Multi-Modal Visual Canvas & UI Synthesis**
+5. **R5: Distributed Local AI Mesh (mDNS & mTLS Compute Offloading)**
 
 ---
 
-## Test Directory Structure & Runners
+## 1. Test Architecture & 4-Tier Taxonomy
+
+The test suite employs a strict, opaque-box, category-partition methodology divided into 4 complementary tiers:
 
 ```
-ModelFusion/
-├── tests/
-│   └── e2e/
-│       ├── __init__.py
-│       ├── test_e2e_harness.py        # Python test harness & mock adapters
-│       ├── test_tier1_features.py     # Tier 1 Python tests (95 tests)
-│       ├── test_tier2_boundaries.py   # Tier 2 Python tests (95 tests)
-│       ├── test_tier3_interactions.py # Tier 3 Python tests (20 tests)
-│       ├── test_tier4_scenarios.py    # Tier 4 Python tests (8 scenarios)
-│       ├── run_all_e2e.py             # Python master test runner
-│       ├── test_e2e_harness.mjs       # Node.js ESM test harness
-│       ├── tier1_features.test.mjs    # Tier 1 Node tests
-│       ├── tier2_boundaries.test.mjs  # Tier 2 Node tests
-│       ├── tier3_interactions.test.mjs# Tier 3 Node tests
-│       ├── tier4_scenarios.test.mjs   # Tier 4 Node tests
-│       ├── test_suite_all.mjs         # 218 test case declarations
-│       ├── run_standalone_e2e.mjs     # Standalone in-process test runner
-│       └── run_all_e2e.mjs            # Master Node ESM test runner
-├── IDE/
-│   ├── test_e2e_suite.py              # IDE proxy runner (Python)
-│   ├── test_e2e_suite.mjs             # IDE proxy runner (Node.js)
-│   └── vscode/extensions/copilot/test/e2e_all/
-│       ├── testHarness.mjs            # Extension host test harness
-│       ├── tier1_features.test.mjs    # Extension host Tier 1 tests
-│       ├── tier2_boundaries.test.mjs  # Extension host Tier 2 tests
-│       ├── tier3_interactions.test.mjs# Extension host Tier 3 tests
-│       ├── tier4_scenarios.test.mjs   # Extension host Tier 4 tests
-│       └── run_all_tests.mjs          # Native node --test master runner
+┌────────────────────────────────────────────────────────────────────────┐
+│                        COMPREHENSIVE TEST SUITE                        │
+├────────────────────────────────┬───────────────────────────────────────┤
+│ Tier 1: Feature Coverage       │ Happy-path requirement verification   │
+│ (45 Tests: R1-F01 to R5-F45)   │ Core functional contracts for R1–R5   │
+├────────────────────────────────┼───────────────────────────────────────┤
+│ Tier 2: Boundary & Corner      │ Stress testing, vacuous test defense, │
+│ (45 Tests: R1-B01 to R5-B45)   │ SLAs, timeouts, preemption, invalid   │
+├────────────────────────────────┼───────────────────────────────────────┤
+│ Tier 3: Pairwise Interactions  │ Inter-capability cross-dependencies   │
+│ (20 Tests: INT-01 to INT-20)   │ Concurrency, pipeline handoffs, state │
+├────────────────────────────────┼───────────────────────────────────────┤
+│ Tier 4: Real-World Scenarios   │ End-to-end user workflows, lifecycle, │
+│ (10 Tests: SCENARIO-01 to 10)  │ Resilience, full-stack loop           │
+└────────────────────────────────┴───────────────────────────────────────┘
+```
+
+Total: **120 Tests** (100% Deterministic, Opaque-Box, Zero-Flake).
+
+---
+
+## 2. Capability Matrix & Verification Contracts
+
+### R1: Real-Time Self-Healing LSP Diagnostic Auto-Patcher
+- **Ingestion & Debounce**: Ingests `vscode.languages.onDidChangeDiagnostics` via JSON-RPC `diagnostics/report`. Only errors (`DiagnosticSeverity.Error`) trigger repairs. Debounce window of 750ms ensures active typing is never interrupted.
+- **Background Synthesis**: Runs at `IDLE_PRIORITY_CLASS` with compiler oracles (`py_compile`, `tsc`, `cargo check`).
+- **AST Mutation Testing Certification Gate**: $K=5$ AST mutants (ROR, AOR, LOR, SDL, RVR). A patch is certified ONLY when $M_{kill} \ge 0.50 \implies R=1.00$. Vacuous test suites where $M_{kill} = 0.00$ are strictly rejected with $R=0.00$.
+- **4-Tier Graduated Reward Evaluator**: Dense scoring formula:
+  $$R(c) = 0.15 S_{ast} + 0.25 S_{diag} + 0.25 S_{reg} + 0.35 S_{test}$$
+  Hard security gate: forbidden imports/calls (`os.system`, `subprocess.Popen`, `eval`) yield $S_{ast} = 0 \implies R=0$.
+- **In-Editor CodeLens & QuickFix**: Surfaces `[🤖 Verified Fix Available (Score: 1.00) — Review Virtual Diff]` and `🤖 Apply Verified Fix (Score: 1.00)` CodeAction.
+- **In-Memory Virtual Diff**: `restrl-diff://candidate/...` diff provider and atomic `vscode.workspace.applyEdit` without creating temporary files on disk.
+
+### R2: Speculative Ensemble Ghost Text (120+ Tok/s Local Autocomplete)
+- **Latency SLA Budget**: $\le 150\text{ ms}$ total from typing pause:
+  - 40ms: Typing pause debounce
+  - 75ms: Speculative token drafting (0.5B model >120 tok/s)
+  - 20ms: AST syntax integrity verification
+  - 15ms: VS Code editor rendering
+- **Fill-in-the-Middle (FIM)**: Standardized `<|fim_prefix|>${prefix}<|fim_suffix|>${suffix}<|fim_middle|>` prompt formatting.
+- **AST Syntax Integrity Check**: Verifies completion candidates using Tree-Sitter grammars. Syntactically invalid tokens (unclosed brackets, illegal keywords) are dropped.
+- **Instant Preemption**: Cancels drafting within $<25\text{ ms}$ when user resumes typing (`token.isCancellationRequested`).
+
+### R3: Semantic Codebase Knowledge Graph (`code_graph.db`)
+- **Multi-Language Tree-Sitter Extraction**: Extracts symbol definitions, calls, implementations, and references across Rust, TypeScript, and Python.
+- **SQLite Storage & Schema**: `files`, `symbols`, `calls`, `implementations`, `symbol_references`, and FTS5 virtual table `symbols_fts`. Configured with WAL mode and B-Tree indexes.
+- **Sub-25ms Query Engine**:
+  - Single symbol definition lookup: $<1.0\text{ ms}$
+  - Recursive CTE 3-hop call hierarchy traversal: $<5.0\text{ ms}$
+  - FTS5 + TermVector hybrid search: $<10.0\text{ ms}$
+- **Structural Context Injection**: `injectStructuralContext(prompt, activeFile, activeSymbol)` enriches chat prompts for `@agent` and `/orchestrate`.
+
+### R4: Native Multi-Modal Visual Canvas & UI Synthesis
+- **Webview Dropzone & Clipboard**: Accepts `.png`, `.jpg`, `.jpeg`, `.webp`, `.svg`, and clipboard paste (`Win+Shift+S`). Rejects non-image files.
+- **Base64 Encoding**: `FileReader.readAsDataURL` $\rightarrow$ `{ type: 'attachVisualAsset', asset: { id, filename, mimeType, base64Data, width, height } }`.
+- **Local VLM Routing**: Routes image attachments to local OpenVINO Qwen2-VL or Ollama `qwen2-vl` via `/api/chat` with `images: [base64]`. Zero external cloud leakage.
+- **Visual Workflows**:
+  - Component Synthesis: Mockup/wireframe screenshot $\rightarrow$ React JSX + Tailwind CSS code.
+  - Layout Bug Diagnosis: Layout screenshot $\rightarrow$ CSS box model & flexbox/grid misalignment diagnosis + patch.
+
+### R5: Distributed Local AI Mesh (mDNS & mTLS)
+- **mDNS Discovery**: P2P advertisement on `_hugos-mesh._tcp.local.` with TXT records (`node_id`, `hostname`, `free_ram_gb`, `gpu_name`, `free_vram_mb`, `capabilities`).
+- **Encrypted mTLS**: Mutual TLS 1.3 authentication using self-signed cluster certificates (`CN=<node_id>.hugos.local`). SHA-256 fingerprint verified against mDNS advertisement.
+- **Hardware Sizing & Offloading**:
+  - Available RAM $\ge 24\text{ GB}$ or Free VRAM $\ge 14\text{ GB} \implies$ local execution of 32B model / ReST-RL sweep.
+  - Lightweight nodes (e.g. laptops with 8 GB RAM) offload heavy 32B model arbitration and ReST-RL sweeps to LAN workstation peers.
+  - Resilient fallback: If no LAN peer satisfies capacity requirements, falls back to local degraded model (1.5B) without error.
+
+---
+
+## 3. How to Run the Tests
+
+### Command Line Execution
+```powershell
+# Run the complete test suite (All 120 tests across 4 tiers)
+& "D:\tools\nodejs\node.exe" tests/e2e/test_nextgen_autonomous.mjs
+
+# Run with quiet mode (summary only)
+& "D:\tools\nodejs\node.exe" tests/e2e/test_nextgen_autonomous.mjs --quiet
+
+# Run in JSON machine-readable mode
+& "D:\tools\nodejs\node.exe" tests/e2e/test_nextgen_autonomous.mjs --json
+
+# Run specific tier only
+& "D:\tools\nodejs\node.exe" tests/e2e/test_nextgen_autonomous.mjs --tier 1
+& "D:\tools\nodejs\node.exe" tests/e2e/test_nextgen_autonomous.mjs --tier 2
+& "D:\tools\nodejs\node.exe" tests/e2e/test_nextgen_autonomous.mjs --tier 3
+& "D:\tools\nodejs\node.exe" tests/e2e/test_nextgen_autonomous.mjs --tier 4
 ```
 
 ---
 
-## Execution Commands
+## 4. Expected Output Derivation & Verification Oracles
 
-### 1. Primary Node.js ESM Test Runner (Recommended)
-```powershell
-node D:\harfile\ModelFusion\IDE\vscode\extensions\copilot\test\e2e_all\run_all_tests.mjs
-```
-
-### 2. Standalone In-Process Runner
-```powershell
-node D:\harfile\ModelFusion\tests\e2e\run_standalone_e2e.mjs
-```
-
-### 3. Python Test Runner
-```powershell
-python D:\harfile\ModelFusion\tests\e2e\run_all_e2e.py
-```
-
-### 4. Single-Tier Filtering
-```powershell
-node D:\harfile\ModelFusion\tests\e2e\run_standalone_e2e.mjs --tier 1
-node D:\harfile\ModelFusion\tests\e2e\run_standalone_e2e.mjs --tier 2
-node D:\harfile\ModelFusion\tests\e2e\run_standalone_e2e.mjs --tier 3
-node D:\harfile\ModelFusion\tests\e2e\run_standalone_e2e.mjs --tier 4
-```
+| Capability | Test Input | Authoritative Oracle | Verification Method |
+|---|---|---|---|
+| R1 Auto-Patcher | Rust/TS/Python compiler error diagnostics | Compiler oracles (`cargo check`, `tsc`, `py_compile`), `GraduatedRewardEvaluator`, `AdversarialCertificationGate` | Reward must equal 1.00, $M_{kill} \ge 0.50$, CodeLens title matches pattern, `restrl-diff://` content matches candidate, no temp disk files. |
+| R2 Ghost Text | Document prefix/suffix and cursor position | FIM grammar specification, INT4 0.5B token generation, Tree-Sitter syntax parser | Latency $\le 150\text{ ms}$, syntax errors dropped, cancellation $<25\text{ ms}$, indentation preserved. |
+| R3 Knowledge Graph | Multi-language source code | Tree-Sitter AST grammars, SQLite B-Tree index & FTS5 virtual table | Response time $<25\text{ ms}$, single-symbol $<1\text{ ms}$, call hierarchy $<5\text{ ms}$, schema integrity verified. |
+| R4 Visual Canvas | PNG/JPEG/WEBP/SVG image buffers | Base64 MIME spec, local VLM chat API contract (`openvino_genai` / Ollama) | Valid Base64 data URL, thumbnail chip emitted, React/Tailwind code or CSS patch synthesized. |
+| R5 Local AI Mesh | Node telemetry and arbitration request | RFC 6762 (mDNS), TLS 1.3 mTLS handshake, `FusionArbiter` dynamic sizing matrix | Valid TXT records, cert fingerprint match, 32B offloaded to workstation with fallback. |
 
 ---
 
-## Real-World Workload Scenarios (Tier 4)
+## 5. Adversarial Verification Gates
 
-1. **SCENARIO-01: Complete Code Evolution Workflow**: User prompt `@agent /evolve`, hardware check (70% memory margin), multi-objective model selection, generation steps with monotonic fitness gain, candidate diff inspection, and atomic workspace patch application.
-2. **SCENARIO-02: High-Concurrency Multi-Task Storm**: Simultaneous requests across fast-path `/stats`, MCP telemetry tools, and heavy inference requests. Verifies permit acquisition, fast-path lock bypass, and queue drainage.
-3. **SCENARIO-03: Full MCP 91-Tool Automated Standalone Audit & Benchmarking**: Handshake initialization, schema compliance of all 91 tools, execution of categorized tools, and latency SLA compliance (<500ms).
-4. **SCENARIO-04: Robust Network Interruption & Disconnect Auto-Abort**: HTTP chunked transfer with 5s keepalive heartbeats, abrupt client TCP RST disconnection, and automatic worker cancellation and permit release within 100ms.
-5. **SCENARIO-05: End-to-End WiX MSI Installer Build, Signing & Verification**: Packaged directory scanning, XML manifest generation, Authenticode SHA256 code signing of `cli.exe` and `HugOS.msi`, and digital signature validation.
-6. **SCENARIO-06: Complex Context Sanitization & Participant Delegation**: Deeply nested XML user request, fake command examples inside code blocks, `@agent @workspace` chained directives, and clean extraction and routing.
-7. **SCENARIO-07: Dynamic Hardware-Constrained Model Selection & Adaptive Timeout Scaling**: Low-VRAM system probe, anti-hype scoring selecting quantized Ollama Q4 model, and exact formula-based token timeout calculation ($120 + \text{prompt}/40 + \text{tokens}/10$).
-8. **SCENARIO-08: Extension Host Non-blocking Maintenance & Workspace Recovery**: Background cache clearing and file snapshotting while typing and thought streaming remain smooth at 60fps, with clean atomic rollback.
+1. **Vacuous Test Suite Defense**: A candidate patch tested against unit tests with zero assertion sensitivity (e.g. `assert True`) will have all mutants survive ($M_{kill} = 0.00$). The certification gate detects this and rejects the patch with $R=0.00$.
+2. **Security Sandbox Escape Barrier**: Any candidate attempting code injection, command execution (`os.system`, `eval`, `subprocess.Popen`), or memory tampering triggers an immediate AST security block ($S_{ast} = 0 \implies R=0$).
+3. **Sub-25ms Preemption Under Stress**: Typing interrupts streaming token drafting in $<25\text{ ms}$, with zero orphaned child processes or leaked socket descriptors.
+4. **Resilient LAN Partition Handling**: When a remote mesh node disconnects or drops packets mid-arbitration, `FusionArbiter` catches socket errors within timeout and transparently falls back to local degraded models.

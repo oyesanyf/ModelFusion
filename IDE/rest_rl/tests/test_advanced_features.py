@@ -222,6 +222,95 @@ class TestLSPDiagnosticRepair(unittest.TestCase):
         self.assertEqual(task.task_id, "fix_foo")
         self.assertIn("SyntaxError", task.instruction)
 
+    def test_handle_diagnostic_report(self):
+        repair_loop = CompilerOracleRepairLoop()
+        payload = {
+            "task_id": "repair_mod_1",
+            "file_path": "calculator.py",
+            "code": "def calc(a, b):\n    return a +\n",
+            "diagnostics": [
+                {
+                    "severity": 1,
+                    "range": {"start": {"line": 2, "character": 12}},
+                    "source": "py_compile",
+                    "code": "SyntaxError",
+                    "message": "invalid syntax",
+                }
+            ],
+        }
+        task, diags = repair_loop.handle_diagnostic_report(payload)
+        self.assertIsNotNone(task)
+        self.assertEqual(task.task_id, "repair_mod_1")
+        self.assertEqual(task.target_file, "calculator.py")
+        self.assertEqual(len(diags), 1)
+
+    def test_evaluate_candidate_patch_certified_and_vacuous(self):
+        repair_loop = CompilerOracleRepairLoop()
+        diags = [
+            LSPDiagnostic(
+                file_path="math_service.py",
+                line_number=2,
+                column=4,
+                severity="Error",
+                source="py_compile",
+                code="SyntaxError",
+                message="invalid syntax",
+            )
+        ]
+
+        # 1. Candidate with comprehensive unit tests killing AST mutants -> certified R=1.00
+        passing_code = "def is_positive(x):\n    if x > 0:\n        return True\n    return False\n"
+        effective_tests = """import unittest
+from math_service import is_positive
+
+class TestPos(unittest.TestCase):
+    def test_pos(self):
+        self.assertTrue(is_positive(10))
+        self.assertFalse(is_positive(-5))
+        self.assertFalse(is_positive(0))
+"""
+        eval_pass = repair_loop.evaluate_candidate_patch(
+            file_path="math_service.py",
+            original_code="",
+            candidate_code=passing_code,
+            initial_diagnostics=diags,
+            test_source=effective_tests,
+        )
+        self.assertTrue(eval_pass["passed"])
+        self.assertEqual(eval_pass["reward"], 1.0)
+        self.assertTrue(eval_pass["is_certified"])
+        self.assertGreaterEqual(eval_pass["kill_ratio"], 0.5)
+
+        # 2. Candidate with vacuous tests -> rejected by mutation gate
+        vacuous_tests = """import unittest
+from math_service import is_positive
+
+class TestPos(unittest.TestCase):
+    def test_vacuous(self):
+        is_positive(10)
+"""
+        eval_vacuous = repair_loop.evaluate_candidate_patch(
+            file_path="math_service.py",
+            original_code="",
+            candidate_code=passing_code,
+            initial_diagnostics=diags,
+            test_source=vacuous_tests,
+        )
+        self.assertFalse(eval_vacuous["passed"])
+        self.assertFalse(eval_vacuous["is_certified"])
+        self.assertEqual(eval_vacuous["kill_ratio"], 0.0)
+
+        # 3. Candidate with syntax error -> rejected immediately
+        syntax_err_code = "def is_positive(x\n    return False\n"
+        eval_syntax = repair_loop.evaluate_candidate_patch(
+            file_path="math_service.py",
+            original_code="",
+            candidate_code=syntax_err_code,
+            initial_diagnostics=diags,
+        )
+        self.assertFalse(eval_syntax["passed"])
+        self.assertEqual(eval_syntax["reward"], 0.0)
+
 
 class TestSpeculativeSynthesis(unittest.TestCase):
     def test_detect_unwritten_callsites(self):
@@ -250,6 +339,35 @@ def process(data):
         self.assertEqual(retrieved.candidate_code, "return 1")
 
         self.assertIsNone(cache.get("mod.py", "nonexistent"))
+
+    def test_format_fim_prompt(self):
+        synth = SpeculativeSynthesizer()
+        prompt = synth.format_fim_prompt("def add(a, b):\n", "\nprint(add(1, 2))")
+        self.assertTrue(prompt.startswith("<|fim_prefix|>"))
+        self.assertIn("<|fim_suffix|>", prompt)
+        self.assertTrue(prompt.endswith("<|fim_middle|>"))
+
+    def test_validate_syntax(self):
+        synth = SpeculativeSynthesizer()
+        # Balanced delimiters
+        valid, err = synth.validate_syntax("    return a + b\n", language="python")
+        self.assertTrue(valid)
+        self.assertIsNone(err)
+
+        # Unbalanced delimiter
+        invalid, err2 = synth.validate_syntax("    return (a + b\n", language="python")
+        self.assertFalse(invalid)
+        self.assertIsNotNone(err2)
+
+    def test_generate_draft_heuristic_and_preemption(self):
+        synth = SpeculativeSynthesizer()
+        # Normal generation
+        draft = synth.generate_draft("def multiply(x, y):", "")
+        self.assertEqual(draft, "\n    pass")
+
+        # Sub-25ms preemption with is_paused
+        paused_draft = synth.generate_draft("def multiply(x, y):", "", is_paused=lambda: True)
+        self.assertIsNone(paused_draft)
 
 
 class TestDependencyMigration(unittest.TestCase):

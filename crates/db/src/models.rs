@@ -95,7 +95,7 @@ impl HuggingFaceModelDatabase {
             .with_context(|| format!("Cannot open DB at {}", self.db_path.display()))?;
         conn.busy_timeout(std::time::Duration::from_secs(30))?;
         for pragma in schema::STARTUP_PRAGMAS {
-            conn.execute_batch(pragma)?;
+            let _ = conn.query_row(pragma, [], |_| Ok(()));
         }
         Ok(conn)
     }

@@ -29,12 +29,14 @@ pub struct ArbitrationResult {
 }
 
 /// Arbiter executing multi-model consensus and synthesis.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FusionArbiter {
     pub endpoint: String,
     pub tier1_model: String,
     pub tier2_model: String,
     pub timeout_secs: u64,
+    pub mesh_registry: Option<std::sync::Arc<mesh::PeerRegistry>>,
+    pub mesh_client: Option<mesh::MeshClient>,
 }
 
 impl Default for FusionArbiter {
@@ -46,6 +48,8 @@ impl Default for FusionArbiter {
             tier1_model: "deepseek-r1:7b".to_string(),
             tier2_model: "deepseek-r1:1.5b".to_string(),
             timeout_secs: 15,
+            mesh_registry: None,
+            mesh_client: None,
         }
     }
 }
@@ -62,7 +66,19 @@ impl FusionArbiter {
             tier1_model: tier1_model.into(),
             tier2_model: tier2_model.into(),
             timeout_secs,
+            mesh_registry: None,
+            mesh_client: None,
         }
+    }
+
+    pub fn with_mesh(
+        mut self,
+        registry: std::sync::Arc<mesh::PeerRegistry>,
+        client: mesh::MeshClient,
+    ) -> Self {
+        self.mesh_registry = Some(registry);
+        self.mesh_client = Some(client);
+        self
     }
 
     /// Arbitrates between candidate solutions using deterministic gates or DeepSeek-R1 synthesis.
@@ -136,8 +152,81 @@ impl FusionArbiter {
             };
         }
 
-        // Gate 4: Synthesis via DeepSeek-R1 (Tier 1: 7B, Tier 2/3: 1.5B)
-        let arbiter_model = if hardware_tier == 1 {
+        // Gate 4: Synthesis via Distributed Mesh Offload or Local DeepSeek-R1
+        let sys_mem = model_selection::memory::SystemMemory::detect_live();
+        let free_vram_mb = (sys_mem.gpu_vram_free_gb * 1024.0) as u64;
+        let free_ram_gb = sys_mem.free_ram_gb;
+
+        let needs_heavy_arbitration = hardware_tier == 1 || self.tier1_model.contains("32b");
+        let local_is_constrained = free_vram_mb < 14_000 && free_ram_gb < 24.0;
+
+        // If local hardware is constrained and 32B/Tier 1 arbitration is required, check mesh registry
+        if needs_heavy_arbitration && local_is_constrained {
+            if let (Some(ref reg), Some(ref client)) = (&self.mesh_registry, &self.mesh_client) {
+                if let Some(peer) = reg.find_offload_peer(14_000, 24.0, "32b") {
+                    eprintln!(
+                        "[MESH] Local hardware constrained ({:.1} GB RAM, {} MB VRAM). Offloading 32B arbitration to remote LAN workstation '{}' ({}:{})",
+                        free_ram_gb, free_vram_mb, peer.node_id, peer.ip, peer.port
+                    );
+
+                    let req = mesh::ArbitrateTaskRequest {
+                        task_description: task_description.to_string(),
+                        candidates: candidates
+                            .iter()
+                            .map(|c| mesh::CandidateSolutionPayload {
+                                id: c.id.clone(),
+                                model: c.model.clone(),
+                                code: c.code.clone(),
+                                verification_score: c.verification_score,
+                                test_output: c.test_output.clone(),
+                            })
+                            .collect(),
+                        hardware_tier,
+                        target_model: Some("qwen2.5:32b".to_string()),
+                    };
+
+                    let offload_res = match tokio::runtime::Handle::try_current() {
+                        Ok(handle) => tokio::task::block_in_place(|| {
+                            handle.block_on(client.offload_arbitration(&peer, &req))
+                        }),
+                        Err(_) => {
+                            let rt = tokio::runtime::Runtime::new().ok();
+                            if let Some(r) = rt {
+                                r.block_on(client.offload_arbitration(&peer, &req))
+                            } else {
+                                Err(anyhow::anyhow!("Failed to spawn tokio runtime for mesh offload"))
+                            }
+                        }
+                    };
+
+                    match offload_res {
+                        Ok(resp) => {
+                            return ArbitrationResult {
+                                selected_candidate_id: resp.result.selected_candidate_id,
+                                resolved_code: resp.result.resolved_code,
+                                reasoning: format!(
+                                    "[Mesh Offload: {} ({})] {}",
+                                    resp.offloaded_to, peer.gpu_name, resp.result.reasoning
+                                ),
+                                was_arbitrated: true,
+                            };
+                        }
+                        Err(err) => {
+                            eprintln!(
+                                "[MESH] Mesh offload to '{}' failed ({}). Falling back to local degraded model.",
+                                peer.node_id, err
+                            );
+                        }
+                    }
+                } else {
+                    eprintln!(
+                        "[MESH] No LAN workstation with >=14GB VRAM or >=24GB RAM found in peer registry. Falling back to local degraded model."
+                    );
+                }
+            }
+        }
+
+        let arbiter_model = if hardware_tier == 1 && !local_is_constrained {
             &self.tier1_model
         } else {
             &self.tier2_model
@@ -410,5 +499,37 @@ mod tests {
         let (reasoning, code) = FusionArbiter::extract_think_and_code(raw);
         assert_eq!(reasoning, "Candidate 1 forgot edge cases. Candidate 2 had right logic.");
         assert_eq!(code, "def solve():\n    return 42");
+    }
+
+    #[test]
+    fn test_mesh_offload_routing_with_fallback() {
+        use std::sync::Arc;
+        let registry = Arc::new(mesh::PeerRegistry::new());
+        let client_id = mesh::MeshIdentity::generate("client-node").unwrap();
+        let client = mesh::MeshClient::new(client_id);
+
+        let arbiter = FusionArbiter::new("http://127.0.0.1:59999", "deepseek-r1:7b", "deepseek-r1:1.5b", 1)
+            .with_mesh(registry, client);
+
+        let candidates = vec![
+            CandidateSolution {
+                id: "c1".to_string(),
+                model: "qwen2.5:1.5b".to_string(),
+                code: "def solve(): return 1".to_string(),
+                verification_score: 0.5,
+                test_output: None,
+            },
+            CandidateSolution {
+                id: "c2".to_string(),
+                model: "qwen2.5:7b".to_string(),
+                code: "def solve(): return 2".to_string(),
+                verification_score: 0.9,
+                test_output: None,
+            },
+        ];
+
+        let result = arbiter.arbitrate("Compute", &candidates, 1);
+        assert!(!result.resolved_code.is_empty());
+        assert_eq!(result.selected_candidate_id, "c2");
     }
 }
