@@ -166,6 +166,36 @@ def patch_product_file(file_path, proposals):
             auth_access[provider] = cur_list
         data["trustedExtensionAuthAccess"] = auth_access
 
+        # 4. Neutralize/strip upstream Microsoft update URLs and quality to prevent accidental overwrites
+        if "updateUrl" in data:
+            del data["updateUrl"]
+            changed = True
+        if "quality" in data:
+            del data["quality"]
+            changed = True
+
+        # 5. Enforce configurationDefaults for update.mode: none and disable auto updates
+        cfg_defaults = data.get("configurationDefaults") or {}
+        if not isinstance(cfg_defaults, dict):
+            cfg_defaults = {}
+            changed = True
+        if cfg_defaults.get("update.mode") != "none":
+            cfg_defaults["update.mode"] = "none"
+            changed = True
+        if cfg_defaults.get("update.enableWindowsBackgroundUpdates") is not False:
+            cfg_defaults["update.enableWindowsBackgroundUpdates"] = False
+            changed = True
+        if cfg_defaults.get("update.showReleaseNotes") is not False:
+            cfg_defaults["update.showReleaseNotes"] = False
+            changed = True
+        if cfg_defaults.get("extensions.autoCheckUpdates") is not False:
+            cfg_defaults["extensions.autoCheckUpdates"] = False
+            changed = True
+        if cfg_defaults.get("extensions.autoUpdate") is not False:
+            cfg_defaults["extensions.autoUpdate"] = False
+            changed = True
+        data["configurationDefaults"] = cfg_defaults
+
         if changed:
             try:
                 with open(file_path, "w", encoding="utf-8") as f:

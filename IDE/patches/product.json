@@ -391,5 +391,12 @@
             "toolInvocationApproveCombination",
             "workspaceTrust"
         ]
+    },
+    "configurationDefaults": {
+        "update.mode": "none",
+        "update.enableWindowsBackgroundUpdates": false,
+        "update.showReleaseNotes": false,
+        "extensions.autoCheckUpdates": false,
+        "extensions.autoUpdate": false
     }
 }

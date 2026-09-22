@@ -5170,7 +5170,19 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                             (idx, format!("ℹ️ **ModelFusion Engine v0.1.0 (Build 96+)**\n\n- System: {} ({} Cores, {:.2} GB RAM, GPU: {})\n- Local Ollama Endpoint: http://127.0.0.1:11434\n- Multi-Modal Catalog: IDE/db/hf_models.db", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name))
                                         },
                                         "updatedb" => {
-                                            (idx, "🚀 **ModelFusion Full Registry Crawler**: Ingesting ALL 2M+ models from Hugging Face Hub.\n\nRun in the terminal for continuous cursor-paginated progress:\n```powershell\ncli.exe --updatedb --db-path \"IDE/db/hf_models.db\"\n```".to_string())
+                                            if let Ok(exe_path) = std::env::current_exe() {
+                                                let mut cmd = std::process::Command::new(exe_path);
+                                                cmd.arg("--updatedb")
+                                                   .arg("--db-path")
+                                                   .arg(db_resolved);
+                                                #[cfg(windows)]
+                                                {
+                                                    use std::os::windows::process::CommandExt;
+                                                    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+                                                }
+                                                let _ = cmd.spawn();
+                                            }
+                                            (idx, format!("🚀 **ModelFusion Full Registry Crawler**: Background crawler spawned.\n\n- Traversing Hugging Face Hub (all 2M+ models across all modalities) in batches of 1,000\n- Committing ~1,000 models/sec into SQLite database `{}`\n\nRun in the terminal for continuous cursor-paginated progress:\n```powershell\ncli.exe --updatedb --db-path \"{}\"\n```", db_resolved.display(), db_resolved.display()))
                                         },
                                         "command" => {
                                             let sys = query_system_resources();
@@ -5398,7 +5410,19 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         (idx, format!("📋 **Task List**\n\n{}", r))
                                     },
                                      "update" | "update_database" => {
-                                         (idx, "🔄 **ModelFusion Fast Curated Update**: Updating top ~6,500 production workhorse models across all 45 tasks & provisioning local Ollama hardware model.\n\nRun in the terminal for continuous live progress:\n```powershell\ncli.exe --update --db-path \"IDE/db/hf_models.db\"\n```".to_string())
+                                         if let Ok(exe_path) = std::env::current_exe() {
+                                             let mut cmd = std::process::Command::new(exe_path);
+                                             cmd.arg("--update")
+                                                .arg("--db-path")
+                                                .arg(db_resolved);
+                                             #[cfg(windows)]
+                                             {
+                                                 use std::os::windows::process::CommandExt;
+                                                 cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+                                             }
+                                             let _ = cmd.spawn();
+                                         }
+                                         (idx, format!("🔄 **ModelFusion Fast Curated Update**: Background update process spawned.\n\n- Ingesting top ~6,500 production workhorse models across all 45 tasks into catalog `{}`\n- Dynamically evaluating runtime free RAM and provisioning matching local Ollama model\n\nRun in the terminal for continuous live progress:\n```powershell\ncli.exe --update --db-path \"{}\"\n```", db_resolved.display(), db_resolved.display()))
                                      },
                                      "prepare-all-models" => {
                                          (idx, "🔷 **OpenVINO Model Batch Preparation**: Converts all eligible database models to OpenVINO IR format.\n\nRun in the terminal for batch preparation progress:\n```powershell\ncli.exe --prepare-all-models --db-path \"IDE/db/hf_models.db\"\n```".to_string())

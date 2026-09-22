@@ -440,10 +440,18 @@ def patch_file(file_path):
                     set_block = new_content[idx:end_set]
                     missing = [cmd for cmd in required_fast_cmds if f'"{cmd}"' not in set_block and f"'{cmd}'" not in set_block]
                     if missing:
-                        insert_text = "".join([f'            "{cmd}",\n' for cmd in missing])
-                        new_content = new_content[:end_set] + insert_text + new_content[end_set:]
+                        before = new_content[:end_set]
+                        trimmed = before.rstrip()
+                        if not trimmed.endswith(",") and not trimmed.endswith("["):
+                            comma_idx = len(trimmed)
+                            insert_text = ",\n" + "".join([f'            "{cmd}",\n' for cmd in missing])
+                            new_content = before[:comma_idx] + insert_text + new_content[end_set:]
+                        else:
+                            insert_text = "".join([f'            "{cmd}",\n' for cmd in missing])
+                            new_content = new_content[:end_set] + insert_text + new_content[end_set:]
                         print(f"  Added {len(missing)} missing commands to fastInfoCommands in {file_path}")
                 break
+        new_content = re.sub(r'("version")(\s+)("updatedb")', r'\1,\2\3', new_content)
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(new_content)
         print(f"  PATCHED (unminified format, {len(UNMINIFIED_BLOCK)} chars): {file_path}")
