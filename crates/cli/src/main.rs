@@ -5058,8 +5058,10 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         other => other,
                                     };
 
-                                    let db_path_str = db_path_ref.as_deref().filter(|s| !s.trim().is_empty()).unwrap_or("IDE/db/hf_models.db");
-                                    let db_resolved = std::path::Path::new(db_path_str);
+                                    let db_path_opt = db_path_ref.as_deref().filter(|s| !s.trim().is_empty());
+                                    let db_resolved_buf = resolve_db_path(db_path_opt);
+                                    let db_resolved = db_resolved_buf.as_path();
+                                    let db_path_str = db_resolved.to_string_lossy();
 
                                     match canonical {
                                         "unknown" => {

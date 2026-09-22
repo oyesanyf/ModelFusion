@@ -213,6 +213,67 @@ def patch_product_file(file_path, proposals):
         print(f"  [ERROR] Unexpected error while patching {file_path}: {e}")
         return False, False
 
+DEFAULT_SETTINGS = {
+    "workbench.accounts.experimental.showEntitlements": False,
+    "extensions.autoUpdate": False,
+    "hugos.modelfusion.fusionModels": 0,
+    "chat.utilitySmallModel": "modelfusion/modelfusion-local",
+    "github.copilot.enable": {
+        "*": False
+    },
+    "extensions.autoCheckUpdates": False,
+    "git.autofetch": False,
+    "hugos.modelfusion.fusion": True,
+    "update.showReleaseNotes": False,
+    "chat.utilityModel": "modelfusion/modelfusion-local",
+    "github.gitAuthentication": False,
+    "update.enableWindowsBackgroundUpdates": False,
+    "update.mode": "none",
+    "telemetry.telemetryLevel": "off",
+    "chat.agent.enabled": True,
+    "workbench.enableExperiments": False
+}
+
+def ensure_product_default_settings(app_dir):
+    """
+    Ensures product-default-settings.json exists in app_dir, is clean BOM-free UTF-8,
+    and enforces update.mode = none, auto-updates disabled, etc.
+    """
+    settings_file = os.path.join(app_dir, "product-default-settings.json")
+    has_bom = False
+    data = {}
+    if os.path.isfile(settings_file):
+        try:
+            with open(settings_file, "rb") as f:
+                head = f.read(4)
+                if head.startswith(b"\xef\xbb\xbf") or head[:2] in (b"\xff\xfe", b"\xfe\xff"):
+                    has_bom = True
+            with open(settings_file, "r", encoding="utf-8-sig") as f:
+                data = json.load(f)
+        except Exception:
+            data = dict(DEFAULT_SETTINGS)
+            has_bom = True
+    else:
+        data = dict(DEFAULT_SETTINGS)
+        has_bom = True
+
+    changed = has_bom
+    for k, v in DEFAULT_SETTINGS.items():
+        if data.get(k) != v:
+            data[k] = v
+            changed = True
+
+    if changed or not os.path.isfile(settings_file):
+        try:
+            with open(settings_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4)
+            print(f"  [OK] Enforced default settings: {settings_file}")
+            return True
+        except Exception as e:
+            print(f"  [ERROR] Failed to write {settings_file}: {e}")
+            return False
+    return True
+
 def main():
     print("============================================================")
     print("[HUGOS] Patching product.json (defaultChatAgent & ApiProposals)")
@@ -258,6 +319,9 @@ def main():
     for t in targets:
         if t and t not in seen and os.path.isfile(t):
             seen.add(t)
+            parent_dir = os.path.dirname(t)
+            if os.path.basename(parent_dir) == "app":
+                ensure_product_default_settings(parent_dir)
             success, changed = patch_product_file(t, proposals)
             if not success:
                 error_count += 1

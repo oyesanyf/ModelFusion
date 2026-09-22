@@ -23,6 +23,12 @@ def find_node_executable():
         r"C:\Program Files\nodejs\node.exe",
         r"C:\Program Files (x86)\nodejs\node.exe",
     ]
+    local_app_data = os.environ.get("LOCALAPPDATA", "")
+    if local_app_data:
+        cua_base = os.path.join(local_app_data, "OpenAI", "Codex", "runtimes", "cua_node")
+        if os.path.isdir(cua_base):
+            for entry in os.listdir(cua_base):
+                candidate_paths.append(os.path.join(cua_base, entry, "bin", "node.exe"))
     for p in candidate_paths:
         if p and os.path.isfile(p):
             return os.path.abspath(p)
@@ -333,193 +339,197 @@ def patch_main_js_content(content):
     """
     Neutralizes Electron main process UpdateService so it never contacts Microsoft servers
     or attempts background updates. Connects manual update checks to HugOS official channel.
+    Uses exact method boundary replacement to prevent regex spillover across class definitions.
     """
+    if "update#doCheckForUpdates - Querying HugOS official release channel..." in content:
+        return content, False
+
     changed = False
 
     # 1. Menubar getUpdateMenuItems - always show "Check for Updates..." and NEVER "Restart to Update" or "Downloading Update..."
-    menubar_orig_pat = r'getUpdateMenuItems\(\)\s*\{\s*const state = this\.updateService\.state;\s*switch\s*\(state\.type\)\s*\{[\s\S]*?default:\s*return\s*\[\];\s*\}\s*\}'
-    menubar_repl = (
-        'getUpdateMenuItems() {\n'
-        '        const state = this.updateService.state;\n'
-        '        if (state.type === "checking for updates" /* CheckingForUpdates */) {\n'
-        '          return [new MenuItem3({ label: localize(2655, null), enabled: false })];\n'
-        '        }\n'
-        '        return [new MenuItem3({\n'
-        '          label: this.mnemonicLabel(localize(2654, null)),\n'
-        '          click: () => setTimeout(() => {\n'
-        '            this.reportMenuActionTelemetry("CheckForUpdate");\n'
-        '            this.updateService.checkForUpdates(true);\n'
-        '          }, 0)\n'
-        '        })];\n'
-        '      }'
-    )
-    if re.search(menubar_orig_pat, content):
-        content = re.sub(menubar_orig_pat, menubar_repl, content)
-        changed = True
-
-    # 2. Disable periodic background timer in AbstractUpdateService
-    sched_orig_pat = r'scheduleCheckForUpdates\(delay = 60 \* 60 \* 1e3\)\s*\{\s*return timeout\(delay\)[\s\S]*?return this\.scheduleCheckForUpdates\(60 \* 60 \* 1e3\);\s*\}\);\s*\}'
-    sched_repl = 'scheduleCheckForUpdates(delay = 60 * 60 * 1e3) {\n        return Promise.resolve();\n      }'
-    if re.search(sched_orig_pat, content):
-        content = re.sub(sched_orig_pat, sched_repl, content)
-        changed = True
-
-    # 3. Neutralize buildUpdateFeedUrl across all update services (Win32, Darwin, Linux)
-    buf_pat = r'buildUpdateFeedUrl\(quality, commit, options\)\s*\{[\s\S]*?return createUpdateURL\([^;]+;\s*\}'
-    buf_repl = 'buildUpdateFeedUrl(quality, commit, options) {\n        return void 0;\n      }'
-    if re.search(buf_pat, content):
-        content = re.sub(buf_pat, buf_repl, content)
-        changed = True
-
-    # 4. Neutralize DarwinUpdateService.doCheckForUpdates
-    d_check_pat = r'doCheckForUpdates\(explicit, pendingCommit\)\s*\{\s*this\.logService\.info\("update#doCheckForUpdates - Microsoft updates permanently disabled in HugOS IDE"\);\s*this\.setState\(State\.Idle\(getUpdateType\(\)\)\);\s*return;\s*if \(!this\.quality\) \{'
-    d_orig_pat = r'doCheckForUpdates\(explicit, pendingCommit\)\s*\{\s*if \(!this\.quality\) \{[\s\S]*?updateService\.darwin\.checkForUpdates[\s\S]*?electron\d*\.autoUpdater\.checkForUpdates\(\);\s*\}'
-    if re.search(d_check_pat, content):
-        content = re.sub(d_check_pat, 'doCheckForUpdates(explicit, pendingCommit) {\n        this.logService.info("update#doCheckForUpdates - Upstream Darwin updates disabled in HugOS IDE");\n        this.setState(State.Idle(getUpdateType()));\n        return;\n      }\n      _unused_d() { if (!this.quality) {', content)
-        changed = True
-    elif re.search(d_orig_pat, content):
-        content = re.sub(d_orig_pat, 'doCheckForUpdates(explicit, pendingCommit) {\n        this.logService.info("update#doCheckForUpdates - Upstream Darwin updates disabled in HugOS IDE");\n        this.setState(State.Idle(getUpdateType()));\n        return;\n      }', content)
-        changed = True
-
-    # 5. Neutralize LinuxUpdateService.doCheckForUpdates
-    l_orig_pat = r'doCheckForUpdates\(explicit, _pendingCommit\)\s*\{\s*if \(!this\.quality\) \{[\s\S]*?updateService\.linux\.checkForUpdates[\s\S]*?this\.setState\(State\.Idle\(1 /\* Archive \*/, err\.message \|\| err\);\s*\}\);\s*\}'
-    if re.search(l_orig_pat, content):
-        content = re.sub(l_orig_pat, 'doCheckForUpdates(explicit, _pendingCommit) {\n        this.logService.info("update#doCheckForUpdates - Upstream Linux updates disabled in HugOS IDE");\n        this.setState(State.Idle(1 /* Archive */));\n        return;\n      }', content)
-        changed = True
-
-    # 6. Wire HugOS official release channel into Win32UpdateService.doCheckForUpdates
-    win32_target_start = 'doCheckForUpdates(explicit, pendingCommit) {\n        if (!this.quality) {\n          return;\n        }\n        const internalOrg = this.getInternalOrg();\n        const background = !explicit && !internalOrg;\n        const url = this.buildUpdateFeedUrl(this.quality, pendingCommit ?? this.productService.commit, { background, internalOrg });\n        if (this.state.type !== "overwriting"'
-    win32_check_repl = (
-        'doCheckForUpdates(explicit, pendingCommit) {\n'
-        '        if (!explicit) {\n'
-        '          this.setState(State.Idle(getUpdateType()));\n'
-        '          return;\n'
-        '        }\n'
-        '        this.logService.info("update#doCheckForUpdates - Querying HugOS official release channel...");\n'
-        '        this.setState(State.CheckingForUpdates(true));\n'
-        '        try {\n'
-        '          const https = require("https");\n'
-        '          const req = https.get("https://api.github.com/repos/oyesanyf/ModelFusion/releases/latest", {\n'
-        '            headers: {\n'
-        '              "User-Agent": "HugOS-IDE",\n'
-        '              "Accept": "application/vnd.github.v3+json"\n'
-        '            },\n'
-        '            timeout: 10000\n'
-        '          }, (res) => {\n'
-        '            let data = "";\n'
-        '            res.on("data", (chunk) => { data += chunk; });\n'
-        '            res.on("end", () => {\n'
-        '              this.setState(State.Idle(getUpdateType()));\n'
-        '              let releaseTag = "v1.0.0-beta";\n'
-        '              let htmlUrl = "https://github.com/oyesanyf/ModelFusion/releases";\n'
-        '              try {\n'
-        '                const parsed = JSON.parse(data);\n'
-        '                if (parsed && parsed.tag_name) {\n'
-        '                  releaseTag = parsed.tag_name;\n'
-        '                  htmlUrl = parsed.html_url || htmlUrl;\n'
-        '                }\n'
-        '              } catch (e) {}\n'
-        '              const { shell, dialog } = require("electron");\n'
-        '              if (dialog && typeof dialog.showMessageBox === "function") {\n'
-        '                dialog.showMessageBox({\n'
-        '                  type: "info",\n'
-        '                  title: "HugOS IDE Update",\n'
-        '                  message: `HugOS IDE Official Release Channel\\n\\nLatest Release: ${releaseTag}\\n\\nOfficial signed releases and MSI packages are available at:\\n${htmlUrl}`,\n'
-        '                  buttons: ["Open Download Page", "OK"],\n'
-        '                  defaultId: 0,\n'
-        '                  cancelId: 1\n'
-        '                }).then((btnResult) => {\n'
-        '                  if (btnResult && btnResult.response === 0) {\n'
-        '                    if (shell && typeof shell.openExternal === "function") {\n'
-        '                      shell.openExternal(htmlUrl);\n'
-        '                    } else {\n'
-        '                      this.nativeHostMainService.openExternal(void 0, htmlUrl);\n'
-        '                    }\n'
-        '                  }\n'
-        '                }).catch(() => {\n'
-        '                  this.nativeHostMainService.openExternal(void 0, htmlUrl);\n'
-        '                });\n'
-        '              } else {\n'
-        '                this.nativeHostMainService.openExternal(void 0, htmlUrl);\n'
-        '              }\n'
-        '            });\n'
-        '          });\n'
-        '          req.on("error", (err) => {\n'
-        '            this.logService.warn("update#doCheckForUpdates - GitHub request error, opening releases page:", err);\n'
-        '            this.setState(State.Idle(getUpdateType()));\n'
-        '            const releasesUrl = "https://github.com/oyesanyf/ModelFusion/releases";\n'
-        '            const { shell } = require("electron");\n'
-        '            if (shell && typeof shell.openExternal === "function") {\n'
-        '              shell.openExternal(releasesUrl);\n'
-        '            } else {\n'
-        '              this.nativeHostMainService.openExternal(void 0, releasesUrl);\n'
-        '            }\n'
-        '          });\n'
-        '          req.on("timeout", () => {\n'
-        '            req.destroy();\n'
-        '            this.setState(State.Idle(getUpdateType()));\n'
-        '            const releasesUrl = "https://github.com/oyesanyf/ModelFusion/releases";\n'
-        '            const { shell } = require("electron");\n'
-        '            if (shell && typeof shell.openExternal === "function") {\n'
-        '              shell.openExternal(releasesUrl);\n'
-        '            } else {\n'
-        '              this.nativeHostMainService.openExternal(void 0, releasesUrl);\n'
-        '            }\n'
-        '          });\n'
-        '        } catch (e) {\n'
-        '          this.logService.error("update#doCheckForUpdates error:", e);\n'
-        '          this.setState(State.Idle(getUpdateType()));\n'
-        '          this.nativeHostMainService.openExternal(void 0, "https://github.com/oyesanyf/ModelFusion/releases");\n'
-        '        }\n'
-        '      }\n      '
-    )
-    if win32_target_start in content:
-        w_start = content.find(win32_target_start)
-        w_end = content.find('async doDownloadUpdate', w_start)
-        if w_start != -1 and w_end != -1:
-            content = content[:w_start] + win32_check_repl + content[w_end:]
+    menubar_orig = 'getUpdateMenuItems() {\n        const state = this.updateService.state;\n        switch (state.type) {'
+    menubar_end_anchor = 'default:\n            return [];\n        }\n      }'
+    m_s = content.find(menubar_orig)
+    if m_s != -1:
+        m_e = content.find(menubar_end_anchor, m_s)
+        if m_e != -1:
+            m_e += len(menubar_end_anchor)
+            m_repl = (
+                'getUpdateMenuItems() {\n'
+                '        const state = this.updateService.state;\n'
+                '        if (state.type === "checking for updates" /* CheckingForUpdates */) {\n'
+                '          return [new MenuItem3({ label: localize(2655, null), enabled: false })];\n'
+                '        }\n'
+                '        return [new MenuItem3({\n'
+                '          label: this.mnemonicLabel(localize(2654, null)),\n'
+                '          click: () => setTimeout(() => {\n'
+                '            this.reportMenuActionTelemetry("CheckForUpdate");\n'
+                '            this.updateService.checkForUpdates(true);\n'
+                '          }, 0)\n'
+                '        })];\n'
+                '      }'
+            )
+            content = content[:m_s] + m_repl + content[m_e:]
             changed = True
 
-    # 7. Neutralize doDownloadUpdate in Win32UpdateService
-    dl_pat = r'async\s+doDownloadUpdate\s*\(state\)\s*\{[\s\S]*?this\.setState\(State\.Idle\(getUpdateType\(\)\)\);\s*\}'
-    dl_repl = (
-        'async doDownloadUpdate(state) {\n'
-        '        this.logService.info("update#doDownloadUpdate - Upstream download neutralized in HugOS IDE");\n'
-        '        this.nativeHostMainService.openExternal(void 0, "https://github.com/oyesanyf/ModelFusion/releases");\n'
-        '        this.setState(State.Idle(getUpdateType()));\n'
-        '        return;\n'
-        '      }'
-    )
-    if re.search(dl_pat, content):
-        content = re.sub(dl_pat, dl_repl, content)
-        changed = True
+    # 2. Disable periodic background timer in AbstractUpdateService
+    sched_orig = 'scheduleCheckForUpdates(delay = 60 * 60 * 1e3) {\n        return timeout(delay)'
+    sched_end_anchor = 'return this.scheduleCheckForUpdates(60 * 60 * 1e3);\n        });\n      }'
+    s_s = content.find(sched_orig)
+    if s_s != -1:
+        s_e = content.find(sched_end_anchor, s_s)
+        if s_e != -1:
+            s_e += len(sched_end_anchor)
+            sched_repl = 'scheduleCheckForUpdates(delay = 60 * 60 * 1e3) {\n        return Promise.resolve();\n      }'
+            content = content[:s_s] + sched_repl + content[s_e:]
+            changed = True
 
-    # 8. Neutralize doApplyUpdate in Win32UpdateService
-    apply_pat = r'async\s+doApplyUpdate\s*\(\)\s*\{[\s\S]*?cancelTimeout\.dispose\(\);[\s\S]*?cts\.dispose\(\);\s*\}\);\s*\}'
-    apply_repl = (
-        'async doApplyUpdate() {\n'
-        '        this.logService.info("update#doApplyUpdate - Upstream update apply neutralized in HugOS IDE");\n'
-        '        this.setState(State.Idle(getUpdateType()));\n'
-        '        return Promise.resolve(void 0);\n'
-        '      }'
-    )
-    if re.search(apply_pat, content):
-        content = re.sub(apply_pat, apply_repl, content)
-        changed = True
+    # 3. Neutralize DarwinUpdateService.buildUpdateFeedUrl & doCheckForUpdates
+    d_idx = content.find('DarwinUpdateService = class extends AbstractUpdateService')
+    if d_idx != -1:
+        d_buf_s = content.find('buildUpdateFeedUrl(quality, commit, options) {', d_idx)
+        d_buf_e = content.find('doCheckForUpdates', d_buf_s)
+        if d_buf_s != -1 and d_buf_e != -1:
+            d_buf_repl = 'buildUpdateFeedUrl(quality, commit, options) {\n        return void 0;\n      }\n      '
+            content = content[:d_buf_s] + d_buf_repl + content[d_buf_e:]
+            changed = True
 
-    # 9. Neutralize doQuitAndInstall in Win32UpdateService
-    quit_pat = r'doQuitAndInstall\s*\(\)\s*\{[\s\S]*?env:\s*\{\s*\.\.\.process\.env,\s*__COMPAT_LAYER:\s*"RunAsInvoker"\s*\}\s*\}\);\s*\}\s*\}'
-    quit_repl = (
-        'doQuitAndInstall() {\n'
-        '        this.logService.info("update#doQuitAndInstall - Upstream restart to update neutralized in HugOS IDE");\n'
-        '        this.nativeHostMainService.openExternal(void 0, "https://github.com/oyesanyf/ModelFusion/releases");\n'
-        '        this.setState(State.Idle(getUpdateType()));\n'
-        '        return;\n'
-        '      }'
-    )
-    if re.search(quit_pat, content):
-        content = re.sub(quit_pat, quit_repl, content)
-        changed = True
+        d_chk_s = content.find('doCheckForUpdates(explicit, pendingCommit) {', d_idx)
+        d_chk_e = content.find('doDownloadUpdate', d_chk_s)
+        if d_chk_s != -1 and d_chk_e != -1:
+            d_chk_repl = (
+                'doCheckForUpdates(explicit, pendingCommit) {\n'
+                '        this.logService.info("update#doCheckForUpdates - Upstream Darwin updates disabled in HugOS IDE");\n'
+                '        this.setState(State.Idle(getUpdateType()));\n'
+                '        return;\n'
+                '      }\n      '
+            )
+            content = content[:d_chk_s] + d_chk_repl + content[d_chk_e:]
+            changed = True
+
+    # 4. Neutralize LinuxUpdateService.buildUpdateFeedUrl & doCheckForUpdates
+    l_idx = content.find('LinuxUpdateService = class extends AbstractUpdateService')
+    if l_idx != -1:
+        l_buf_s = content.find('buildUpdateFeedUrl(quality, commit, options) {', l_idx)
+        l_buf_e = content.find('doCheckForUpdates', l_buf_s)
+        if l_buf_s != -1 and l_buf_e != -1:
+            l_buf_repl = 'buildUpdateFeedUrl(quality, commit, options) {\n        return void 0;\n      }\n      '
+            content = content[:l_buf_s] + l_buf_repl + content[l_buf_e:]
+            changed = True
+
+        l_chk_s = content.find('doCheckForUpdates(explicit, _pendingCommit) {', l_idx)
+        l_chk_e = content.find('async doDownloadUpdate', l_chk_s)
+        if l_chk_s != -1 and l_chk_e != -1:
+            l_chk_repl = (
+                'doCheckForUpdates(explicit, _pendingCommit) {\n'
+                '        this.logService.info("update#doCheckForUpdates - Upstream Linux updates disabled in HugOS IDE");\n'
+                '        this.setState(State.Idle(1 /* Archive */));\n'
+                '        return;\n'
+                '      }\n      '
+            )
+            content = content[:l_chk_s] + l_chk_repl + content[l_chk_e:]
+            changed = True
+
+    # 5. Rewire Win32UpdateService
+    w_idx = content.find('Win32UpdateService = class extends AbstractUpdateService')
+    if w_idx != -1:
+        # a) buildUpdateFeedUrl
+        w_buf_s = content.find('buildUpdateFeedUrl(quality, commit, options) {', w_idx)
+        w_buf_e = content.find('doCheckForUpdates', w_buf_s)
+        if w_buf_s != -1 and w_buf_e != -1:
+            w_buf_repl = 'buildUpdateFeedUrl(quality, commit, options) {\n        return void 0;\n      }\n      '
+            content = content[:w_buf_s] + w_buf_repl + content[w_buf_e:]
+            changed = True
+
+        # b) doCheckForUpdates -> ModelFusion official GitHub release channel
+        w_chk_s = content.find('doCheckForUpdates(explicit, pendingCommit) {', w_idx)
+        w_chk_e = content.find('async doDownloadUpdate', w_chk_s)
+        if w_chk_s != -1 and w_chk_e != -1:
+            w_chk_repl = (
+                'doCheckForUpdates(explicit, pendingCommit) {\n'
+                '        if (!explicit) {\n'
+                '          this.setState(State.Idle(getUpdateType()));\n'
+                '          return;\n'
+                '        }\n'
+                '        this.logService.info("update#doCheckForUpdates - Querying HugOS official release channel...");\n'
+                '        this.setState(State.CheckingForUpdates(true));\n'
+                '        const releasesUrl = "https://github.com/oyesanyf/ModelFusion/releases";\n'
+                '        const apiUrl = "https://api.github.com/repos/oyesanyf/ModelFusion/releases/latest";\n'
+                '        this.requestService.request({\n'
+                '          url: apiUrl,\n'
+                '          headers: { "User-Agent": "HugOS-IDE", "Accept": "application/vnd.github.v3+json" },\n'
+                '          callSite: "updateService.win32.checkForUpdates"\n'
+                '        }, CancellationToken.None).then(asJson).then((release) => {\n'
+                '          this.setState(State.Idle(getUpdateType()));\n'
+                '          const tag = (release && release.tag_name) ? release.tag_name : "v1.0.0-beta";\n'
+                '          const htmlUrl = (release && release.html_url) ? release.html_url : releasesUrl;\n'
+                '          this.nativeHostMainService.showMessageBox({\n'
+                '            type: "info",\n'
+                '            title: "HugOS IDE Update",\n'
+                '            message: "HugOS IDE Official Release Channel\\n\\nLatest Release: " + tag + "\\n\\nOfficial signed releases and MSI packages are available at:\\n" + htmlUrl,\n'
+                '            buttons: ["Open Download Page", "OK"],\n'
+                '            defaultId: 0,\n'
+                '            cancelId: 1\n'
+                '          }).then((res) => {\n'
+                '            if (res && res.response === 0) {\n'
+                '              this.nativeHostMainService.openExternal(void 0, htmlUrl);\n'
+                '            }\n'
+                '          }).catch(() => {\n'
+                '            this.nativeHostMainService.openExternal(void 0, htmlUrl);\n'
+                '          });\n'
+                '        }).catch((err) => {\n'
+                '          this.logService.warn("update#doCheckForUpdates - GitHub request error:", err);\n'
+                '          this.setState(State.Idle(getUpdateType()));\n'
+                '          this.nativeHostMainService.openExternal(void 0, releasesUrl);\n'
+                '        });\n'
+                '      }\n      '
+            )
+            content = content[:w_chk_s] + w_chk_repl + content[w_chk_e:]
+            changed = True
+
+        # c) doDownloadUpdate -> Neutralize
+        w_dl_s = content.find('async doDownloadUpdate(state) {', w_idx)
+        w_dl_e = content.find('async getUpdatePackagePath', w_dl_s)
+        if w_dl_s != -1 and w_dl_e != -1:
+            w_dl_repl = (
+                'async doDownloadUpdate(state) {\n'
+                '        this.logService.info("update#doDownloadUpdate - Upstream download neutralized in HugOS IDE");\n'
+                '        this.nativeHostMainService.openExternal(void 0, "https://github.com/oyesanyf/ModelFusion/releases");\n'
+                '        this.setState(State.Idle(getUpdateType()));\n'
+                '        return;\n'
+                '      }\n      '
+            )
+            content = content[:w_dl_s] + w_dl_repl + content[w_dl_e:]
+            changed = True
+
+        # d) doApplyUpdate -> Neutralize
+        w_app_s = content.find('async doApplyUpdate() {', w_idx)
+        w_app_e = content.find('async cancelPendingUpdate', w_app_s)
+        if w_app_s != -1 and w_app_e != -1:
+            w_app_repl = (
+                'async doApplyUpdate() {\n'
+                '        this.logService.info("update#doApplyUpdate - Upstream update apply neutralized in HugOS IDE");\n'
+                '        this.setState(State.Idle(getUpdateType()));\n'
+                '        return Promise.resolve(void 0);\n'
+                '      }\n      '
+            )
+            content = content[:w_app_s] + w_app_repl + content[w_app_e:]
+            changed = True
+
+        # e) doQuitAndInstall -> Neutralize
+        w_quit_s = content.find('doQuitAndInstall() {', w_idx)
+        w_quit_e = content.find('async saveUpdateMetadata', w_quit_s)
+        if w_quit_s != -1 and w_quit_e != -1:
+            w_quit_repl = (
+                'doQuitAndInstall() {\n'
+                '        this.logService.info("update#doQuitAndInstall - Upstream restart to update neutralized in HugOS IDE");\n'
+                '        this.nativeHostMainService.openExternal(void 0, "https://github.com/oyesanyf/ModelFusion/releases");\n'
+                '        this.setState(State.Idle(getUpdateType()));\n'
+                '        return;\n'
+                '      }\n      '
+            )
+            content = content[:w_quit_s] + w_quit_repl + content[w_quit_e:]
+            changed = True
 
     return content, changed
 
