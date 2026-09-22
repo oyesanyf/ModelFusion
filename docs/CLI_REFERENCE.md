@@ -137,6 +137,10 @@ Commands to fetch, check, and monitor system databases and cache files.
 | `--server` | None (Flag) | Off | Launch ModelFusion as an HTTP API REST server. |
 | `--port <N>` | `u16` | `5000` | Port to run the HTTP API server on. |
 | `--mcp` | None (Flag) | Off | Run ModelFusion as an MCP (Model Context Protocol) server. |
+| `--patch-ide` | None (Flag) | Off | Upstream maintenance tool: clones upstream VS Code from GitHub, applies HugOS branding and source patches, compiles from source, brands the Electron binary, and verifies runtime integrity. |
+| `--ide-src-dir <PATH>` | `String` | `IDE/src` | Target directory where upstream VS Code is cloned and patched. |
+| `--shallow` | None (Flag) | Off | Shallow git clone (`--depth 1`) of VS Code to save bandwidth and disk space. |
+| `--vscode-tag <TAG>` | `String` | None | Specific upstream VS Code release tag to clone and rebase onto (e.g. `1.126.0`). |
 
 ---
 
@@ -156,6 +160,77 @@ ModelFusion provides two distinct, non-aliased update commands for catalog manag
    - **Pagination Architecture**: Continuously traverses the Hub using cursor pagination (`limit=1000`, HTTP `Link: rel="next"`), committing 1,000 models per SQLite transaction at ~1,000 models/sec.
    - **Execution Cap**: Optional `--max-models <N>` parameter to bound crawling depth.
    - **Syntax**: `cli.exe --updatedb --db-path "IDE/db/hf_models.db" --max-models 50000`
+
+---
+
+### 🛠️ Upstream IDE Rebase & Compilation Pipeline: `--patch-ide`
+
+`cli.exe --patch-ide` is the automated end-to-end pipeline for rebasing HugOS IDE onto newer upstream Microsoft Visual Studio Code releases.
+
+> [!IMPORTANT]
+> **Upstream Maintenance Tool vs. Daily Packaging:**
+> - `--patch-ide` is **NOT** used for day-to-day compilation or installer packaging. It requires a complete Node/C++ native build toolchain (`yarn`, `gulp`, `node-gyp`, Visual Studio C++ Build Tools, Python) and compiles the entire Code-OSS workspace from source (~10–15 minutes).
+> - Day-to-day packaging, MSI generation, and digital signing are executed via `powershell -ExecutionPolicy Bypass -File .\IDE\build_msi.ps1`, which operates directly on the pre-compiled `IDE/VSCode-win32-x64` tree without recompiling VS Code itself.
+> - Run `--patch-ide` only when upgrading or rebasing HugOS onto a newer upstream Microsoft VS Code release tag (e.g., jumping from `1.96.0` to `1.126.0`).
+
+#### The 10-Step Automated Workflow
+
+When invoked, `patch_ide_workflow()` in `crates/cli/src/main.rs` executes the following 10 sequential stages:
+
+1. **Clone VS Code Repository**:
+   - Clones `https://github.com/microsoft/vscode.git` into the directory specified by `--ide-src-dir` (default: `IDE/src`).
+   - Supports `--shallow` (`--depth 1`) to minimize download size and disk footprint.
+   - Supports `--vscode-tag <TAG>` (e.g. `--vscode-tag 1.126.0`) to target a specific upstream release branch or tag.
+   - If the target directory already exists, git cloning is safely skipped, and patches are applied directly to the existing tree.
+2. **Replace `product.json`**:
+   - Copies `IDE/patches/product.json` into the root of the cloned tree.
+   - Injects HugOS product branding, application identity (`"applicationName": "hugos"`, `"nameShort": "HugOS"`, `"nameLong": "HugOS IDE"`), and the API proposal whitelists necessary for ModelFusion language model provider integration.
+3. **Patch `package.json`**:
+   - Parses the root `package.json` into a JSON AST and updates root metadata:
+     - `"name": "hugos"`
+     - `"displayName": "HugOS"`
+     - `"description": "HugOS - Custom AI-Powered Code-OSS IDE"`
+     - `"author": { "name": "HugOS Team" }`
+4. **Apply Source Code Patches (Copilot -> ModelFusion)**:
+   - Systematically performs search-and-replace transformations across 8+ core TypeScript source files in `src/` to decouple proprietary Microsoft Copilot dependencies and route chat/agent interactions natively to ModelFusion:
+     - `src/main.ts`: Updates command-line argument configuration comments (`"VS Code"` -> `"HugOS"`).
+     - `src/vs/platform/product/common/product.ts`: Replaces `defaultChatAgent` extension identifiers (`extensionId: 'GitHub.copilot'` -> `'HugOS.modelfusion'`, `chatExtensionId: 'GitHub.copilot-chat'` -> `'HugOS.modelfusion'`).
+     - `src/vs/platform/dataChannel/browser/forwardingTelemetryService.ts`: Modifies `isCopilotLikeExtension` checks to inspect `hugos.modelfusion`.
+     - `src/vs/workbench/contrib/chat/browser/aiCustomization/mcpListWidget.ts`: Redirects `COPILOT_EXTENSION_IDS` to `hugos.modelfusion`.
+     - `src/vs/workbench/contrib/chat/browser/chatSetup/chatSetupProviders.ts`: Increases local server timeout from 20s to 60s to accommodate local ModelFusion engine and Ollama startup times.
+     - `src/vs/workbench/contrib/editTelemetry/browser/telemetry/editSourceTrackingFeature.ts` & `editSourceTrackingImpl.ts`: Patches telemetry source tracking to track `HugOS.modelfusion`.
+     - `src/vs/workbench/contrib/terminal/browser/terminalMenus.ts`: Updates AI profile contributions to `hugos.modelfusion`.
+     - `src/vs/workbench/contrib/preferences/browser/settingsLayout.ts`: Replaces Copilot settings shortcuts with `HugOS.modelfusion.manageExtension`.
+     - `src/vs/workbench/contrib/mcp/common/mcpRegistry.ts`: Injects a server definition filter into `registerCollection` so only ModelFusion MCP servers (`*.modelfusion` or label `modelfusion`) are exposed, preventing third-party MCP pollution.
+     - `src/vs/workbench/contrib/chat/common/languageModels.ts`: Automatically injects startup auto-registration of the `modelfusion` Language Models Provider Group (`ModelFusion Local Panel`).
+5. **Copy ModelFusion Extension**:
+   - Recursively copies `IDE/vscode/extensions/modelfusion` into the tree under `extensions/modelfusion/`, ensuring the built-in extension is baked directly into the distribution package.
+6. **Copy HugOS Icon Artwork**:
+   - Replaces all stock Code-OSS icons with official HugOS branding:
+     - `icons/win32/code.ico` -> `resources/win32/code.ico`
+     - `icons/win32/code_150x150.png` -> `resources/win32/code_150x150.png`
+     - `icons/win32/code_70x70.png` -> `resources/win32/code_70x70.png`
+     - `icons/darwin/code.icns` -> `resources/darwin/code.icns`
+     - `icons/linux/code.png` -> `resources/linux/code.png`
+7. **Patch Development Configuration**:
+   - `.vscode/launch.json`: Adds `${workspaceFolder}/extensions/modelfusion/dist/**/*.js` to `outFiles` for integrated debugging.
+   - `.vscode/tasks.json`: Replaces legacy build task targets referencing `copilot` with `modelfusion`.
+8. **Build IDE from Source (`gulp vscode-win32-x64`)**:
+   - Runs `yarn install --frozen-lockfile` to restore validated dependencies.
+   - Executes `gulp vscode-win32-x64` to compile the TypeScript sources and package Electron for Windows x64 (~10–15 minutes).
+9. **Brand Electron Binary with `rcedit.exe`**:
+   - Locates `rcedit-x64.exe` inside the build tree and updates the PE resource table of the resulting executable (`HugOS.exe`):
+     - `ProductName`: `"HugOS IDE"`
+     - `FileDescription`: `"HugOS IDE"`
+     - `CompanyName`: `"HugOS Team"`
+     - `InternalName`: `"HugOS"`
+     - `OriginalFilename`: `"HugOS.exe"`
+     - `LegalCopyright`: `"Copyright (C) 2026 HugOS Team"`
+     - `--set-product-version` & `--set-file-version`: `"1.126.0"`
+     - `--set-icon`: `IDE/hugos.ico`
+10. **Runtime Integrity & Signature Check**:
+    - **ICU Descriptor Guard**: Verifies the presence of the versioned Electron hash subdirectory (e.g. `7e7950df89/`). Without this directory, Electron crashes on startup with `Invalid file descriptor to ICU data received` (see `IDE/INCIDENT_SIGNING_2026-07-16.md`).
+    - **Authenticode Verification**: Validates the signature state of `HugOS.exe` to prevent self-signed certificate corruption that breaks the Electron ICU data loader.
 
 ---
 ## 7. Execution Backends
@@ -339,3 +414,16 @@ Serves model selection queries on port `8080`:
 ```bash
 cli.exe --server --port 8080
 ```
+
+### Upstream VS Code Rebase and Source Compilation
+Rebases HugOS onto a specific upstream VS Code release tag (`1.126.0`) with shallow cloning:
+```bash
+cli.exe --patch-ide --shallow --vscode-tag 1.126.0
+```
+
+### Upstream Rebase into Custom Source Tree
+Clones and patches VS Code into a custom staging directory:
+```bash
+cli.exe --patch-ide --ide-src-dir "IDE/upstream_vscode" --shallow
+```
+

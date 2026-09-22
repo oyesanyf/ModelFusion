@@ -198,11 +198,53 @@ The ModelFusion binary `cli.exe` (located in the IDE `bin` directory) supports c
 * **`--gpu`**: Requests CUDA/GPU execution for local transformers.
 * **`--cpu`**: Forces CPU fallback for local transformers.
 
+### Upstream Rebase & Compilation Flags (`--patch-ide`)
+* **`--patch-ide`**: Clones upstream Microsoft VS Code from GitHub, applies HugOS branding and proposal whitelists, applies 8+ TypeScript source patches (routing Copilot to ModelFusion), copies extensions and icons, compiles from source via `yarn` and `gulp vscode-win32-x64`, brands the PE executable with `rcedit.exe`, and verifies ICU runtime directory integrity.
+* **`--ide-src-dir <path>`**: Target destination directory for the cloned and patched VS Code source tree (default: `IDE/src`).
+* **`--shallow`**: Performs a shallow git clone (`--depth 1`) of upstream VS Code to save bandwidth and disk space.
+* **`--vscode-tag <tag>`**: Specific upstream VS Code git release tag to clone and rebase onto (e.g. `1.126.0`).
+
 ### Deactivated or Unsupported CLI Flags in HugOS IDE
 * **`--use-openai`**: Configured via user settings (`hugos.modelfusion.openaiApiKey`) rather than CLI flags. HugOS guarantees 100% private local execution by default while optionally enabling hybrid cloud routing when API keys are configured.
 * **`--vllm`**: **Linux-only.** Cannot be used on Windows IDE installations.
 * **`--config` / `--api-keys`**: Managed automatically by the HugOS extension and user settings; manually overriding these via CLI flags is unsupported inside the IDE environment.
 * **`--save-model` / `--load-model` / `--ml-retrain`**: CLI-only tools for developer experimentation; these will not work inside the IDE's read-only production environment.
+
+---
+
+## 🛠️ Developer Build Workflows: Upstream VS Code Rebase vs. Daily Packaging
+
+HugOS IDE distinguishes clearly between upstream source rebase compilation and day-to-day installer packaging:
+
+### 1. Daily Packaging & MSI Generation (`build_msi.ps1`)
+For everyday bug fixes, extension updates, or ModelFusion CLI enhancements, developers run:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\IDE\build_msi.ps1
+```
+* **Scope**: Operates directly on the pre-compiled `IDE/VSCode-win32-x64` tree.
+* **Execution**: Re-synchronizes `cli.exe` across 4 distribution locations, auto-increments the build number in `IDE/build_number.txt` and `IDE/HugOS.wxs`, digitally signs all binaries and DLLs with `hugos-signing-cert.pfx` via DigiCert timestamping, and packages the complete self-contained installer (`IDE/HugOS.msi`).
+* **Duration**: ~2–3 minutes.
+
+### 2. Upstream Rebase & Compilation Pipeline (`cli.exe --patch-ide`)
+Used **strictly when rebasing HugOS onto a newer upstream Microsoft VS Code release** (e.g., upgrading from `1.96.0` to `1.126.0`):
+```bash
+cli.exe --patch-ide --shallow --vscode-tag 1.126.0
+```
+* **Toolchain Requirements**: Requires full C++/Node build chains: Node.js (v20+), `yarn`, `gulp`, `node-gyp`, Visual Studio C++ Build Tools, and Python.
+* **Duration**: ~10–15 minutes on first run.
+* **The 10-Step Automated Workflow**:
+  1. **Clone VSCode**: Clones `https://github.com/microsoft/vscode.git` (supports `--shallow` and `--vscode-tag <tag>`; skips clone if target directory exists).
+  2. **Product Branding**: Replaces `product.json` with HugOS branding (`"applicationName": "hugos"`) and ModelFusion proposal whitelists.
+  3. **Package Metadata**: Updates `package.json` (`name: "hugos"`, `displayName: "HugOS"`, description, and author).
+  4. **Source Code Patches**: Systematically decouples Copilot across 8+ TypeScript files (`src/main.ts`, `product.ts`, `forwardingTelemetryService.ts`, `mcpListWidget.ts`, `chatSetupProviders.ts`, `editSourceTrackingFeature.ts`, `editSourceTrackingImpl.ts`, `terminalMenus.ts`, `settingsLayout.ts`, `mcpRegistry.ts`, `languageModels.ts`).
+  5. **Copy Extension**: Copies `IDE/vscode/extensions/modelfusion` into `extensions/modelfusion/`.
+  6. **Copy Artwork**: Injects HugOS icons across Windows (`code.ico`), macOS (`code.icns`), and Linux (`code.png`).
+  7. **Dev Configuration**: Updates `.vscode/launch.json` (`modelfusion` outFiles) and `.vscode/tasks.json`.
+  8. **Build from Source**: Executes `yarn install --frozen-lockfile` followed by `gulp vscode-win32-x64` to build `IDE/VSCode-win32-x64/`.
+  9. **PE Binary Branding**: Uses `rcedit.exe` to brand `HugOS.exe` PE resource tables (ProductName, FileDescription, CompanyName, icon, and version `1.126.0`).
+  10. **Runtime Integrity Check**: Validates the versioned Electron ICU runtime directory (e.g. `7e7950df89/`) to prevent ICU descriptor crashes (`IDE/INCIDENT_SIGNING_2026-07-16.md`) and verifies Authenticode signatures.
+
+Once `--patch-ide` completes successfully, the compiled output in `IDE/VSCode-win32-x64` is ready for standard daily packaging via `build_msi.ps1`.
 
 ---
 
