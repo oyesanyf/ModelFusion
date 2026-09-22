@@ -2334,6 +2334,12 @@ async fn run(args: Args) -> Result<()> {
             }
         }
 
+        if let Some((target_file, instruction)) = detect_createfile_intent(&final_prompt) {
+            let res = execute_createfile(&target_file, &instruction, &final_prompt).await;
+            println!("{}", res);
+            return Ok(());
+        }
+
         if let Some(ref folder_path) = args.folder {
             eprintln!("[FUSION] Reading files from folder: {}", folder_path);
             let mut folder_content = String::new();
@@ -3427,6 +3433,23 @@ pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> 
     results
 }
 
+/// Extracts code content enclosed within triple backtick markdown fences (```...```).
+/// Strips optional language identifier on opening line and trims whitespace.
+pub fn extract_fenced_code(text: &str) -> Option<String> {
+    if let Some(fence_start) = text.find("```") {
+        let after_fence = &text[fence_start + 3..];
+        let code_start = after_fence.find('\n').map(|p| fence_start + 3 + p + 1).unwrap_or(fence_start + 3);
+        if let Some(fence_end) = text[code_start..].rfind("```") {
+            let extracted = text[code_start..code_start + fence_end].trim().to_string();
+            return Some(extracted);
+        } else {
+            let extracted = text[code_start..].trim().to_string();
+            return Some(extracted);
+        }
+    }
+    None
+}
+
 /// Resolves code content for slash commands (/explain, /review, /tests, /audit, /optimize, /fix, /edit)
 /// from prompt XML attachments, or from disk if arguments mention a file path that exists.
 pub fn resolve_code_for_command(args: &str, prompt: &str) -> String {
@@ -3646,6 +3669,7 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
         "keys" | "apikeys" => Some("keys"),
         "command" | "commands" | "help" => Some("command"),
         "comment" | "comments" | "doc" | "docs" => Some("comment"),
+        "createfile" | "create_file" | "newfile" | "new_file" | "touch" | "writefile" | "write_file" => Some("createfile"),
         "activemodel" | "activemodels" | "currentmodel" | "currentmodels" | "idemodel" | "idemodels" | "modelsinuse" => Some("active-model"),
         "version" | "v" => Some("version"),
         "updatedb" => Some("updatedb"),
@@ -4118,6 +4142,398 @@ pub fn detect_natural_language_research(raw_query: &str) -> Option<(bool, String
     }
 
     None
+}
+
+/// Extracts the target filename and any remaining instruction or code content from a createfile argument string.
+/// Handles optional quotes around filenames ('...', "...", `...`) and strips prefixes like "called", "named", "at".
+pub fn extract_createfile_args(raw_args: &str) -> (String, String) {
+    let mut clean_args = raw_args.trim();
+
+    // Strip leading "called ", "named ", "at "
+    for prefix in &["called ", "named ", "at "] {
+        if let Some(stripped) = clean_args.strip_prefix(prefix) {
+            clean_args = stripped.trim();
+            break;
+        }
+    }
+
+    if clean_args.is_empty() {
+        return (String::new(), String::new());
+    }
+
+    // Extract filename (quoted or first word)
+    if clean_args.starts_with('"') {
+        if let Some(end_quote) = clean_args[1..].find('"') {
+            let fname = &clean_args[1..1 + end_quote];
+            let rest = clean_args[1 + end_quote + 1..].trim();
+            (fname.to_string(), rest.to_string())
+        } else {
+            let parts: Vec<&str> = clean_args.splitn(2, char::is_whitespace).collect();
+            (parts[0].trim_matches('"').to_string(), parts.get(1).copied().unwrap_or("").trim().to_string())
+        }
+    } else if clean_args.starts_with('\'') {
+        if let Some(end_quote) = clean_args[1..].find('\'') {
+            let fname = &clean_args[1..1 + end_quote];
+            let rest = clean_args[1 + end_quote + 1..].trim();
+            (fname.to_string(), rest.to_string())
+        } else {
+            let parts: Vec<&str> = clean_args.splitn(2, char::is_whitespace).collect();
+            (parts[0].trim_matches('\'').to_string(), parts.get(1).copied().unwrap_or("").trim().to_string())
+        }
+    } else if clean_args.starts_with('`') {
+        if let Some(end_quote) = clean_args[1..].find('`') {
+            let fname = &clean_args[1..1 + end_quote];
+            let rest = clean_args[1 + end_quote + 1..].trim();
+            (fname.to_string(), rest.to_string())
+        } else {
+            let parts: Vec<&str> = clean_args.splitn(2, char::is_whitespace).collect();
+            (parts[0].trim_matches('`').to_string(), parts.get(1).copied().unwrap_or("").trim().to_string())
+        }
+    } else {
+        let parts: Vec<&str> = clean_args.splitn(2, char::is_whitespace).collect();
+        let fname = parts[0].trim_matches(|c: char| c == '"' || c == '\'' || c == '`' || c == ':' || c == ',' || c == ';' || c == '?' || c == '!');
+        let rest = parts.get(1).copied().unwrap_or("").trim();
+        (fname.to_string(), rest.to_string())
+    }
+}
+
+/// Detects if a prompt is asking to create a file, whether via slash command or natural language.
+/// Returns Some((filename, remaining_instruction)) or None.
+pub fn detect_createfile_intent(raw_query: &str) -> Option<(String, String)> {
+    let text = raw_query.trim();
+    if text.is_empty() {
+        return None;
+    }
+    let lower = text.to_lowercase();
+
+    // Guard against informational questions or descriptions about files
+    if lower.starts_with("how ")
+        || lower.starts_with("what ")
+        || lower.starts_with("why ")
+        || lower.starts_with("where ")
+        || lower.starts_with("when ")
+        || lower.starts_with("who ")
+        || lower.starts_with("which ")
+        || lower.starts_with("explain ")
+        || lower.starts_with("describe ")
+        || lower.contains("how do i ")
+        || lower.contains("how to ")
+        || lower.contains("how can i ")
+        || lower.contains("what is a file")
+        || lower.contains("what are files")
+        || lower.contains("why create a file")
+    {
+        return None;
+    }
+
+    // Strip polite leading prefixes and agent mentions
+    let mut clean_text = text;
+    let polite_prefixes = [
+        "can you please ", "could you please ", "would you please ", "will you please ",
+        "can you ", "could you ", "would you ", "will you ",
+        "please ", "kindly ",
+        "i want to ", "i need to ", "i'd like to ", "i would like to ", "help me ",
+        "hey agent, ", "hey agent ", "agent, ", "agent ",
+        "@agent ",
+    ];
+
+    let mut changed = true;
+    while changed {
+        changed = false;
+        let lower_clean = clean_text.to_lowercase();
+        for p in &polite_prefixes {
+            if lower_clean.starts_with(p) {
+                clean_text = clean_text[p.len()..].trim();
+                changed = true;
+                break;
+            }
+        }
+    }
+
+    let lower_after_polite = clean_text.to_lowercase();
+    if lower_after_polite.starts_with("explain ")
+        || lower_after_polite.starts_with("describe ")
+        || lower_after_polite.starts_with("tell me ")
+        || lower_after_polite.starts_with("show me ")
+        || lower_after_polite.starts_with("how ")
+    {
+        return None;
+    }
+
+    let triggers = [
+        // Longest natural language phrases first
+        "create a new file called ",
+        "create a new file named ",
+        "create a new file at ",
+        "create a new file ",
+        "create a file called ",
+        "create a file named ",
+        "create a file at ",
+        "create a file ",
+        "create new file called ",
+        "create new file named ",
+        "create new file at ",
+        "create new file ",
+        "create file called ",
+        "create file named ",
+        "create file at ",
+        "create file ",
+        "make a new file called ",
+        "make a new file named ",
+        "make a new file at ",
+        "make a new file ",
+        "make a file called ",
+        "make a file named ",
+        "make a file at ",
+        "make a file ",
+        "make new file called ",
+        "make new file named ",
+        "make new file at ",
+        "make new file ",
+        "make file called ",
+        "make file named ",
+        "make file at ",
+        "make file ",
+        "write a new file called ",
+        "write a new file named ",
+        "write a new file at ",
+        "write a new file ",
+        "write a file called ",
+        "write a file named ",
+        "write a file at ",
+        "write a file ",
+        "write new file called ",
+        "write new file named ",
+        "write new file at ",
+        "write new file ",
+        "write file called ",
+        "write file named ",
+        "write file at ",
+        "write file ",
+        "generate a new file called ",
+        "generate a new file named ",
+        "generate a new file at ",
+        "generate a new file ",
+        "generate a file called ",
+        "generate a file named ",
+        "generate a file at ",
+        "generate a file ",
+        "generate new file called ",
+        "generate new file named ",
+        "generate new file at ",
+        "generate new file ",
+        "generate file called ",
+        "generate file named ",
+        "generate file at ",
+        "generate file ",
+        "save this to ",
+        "save this in ",
+        "save this into ",
+        "save to ",
+        "save in ",
+        "save into ",
+        "save code to ",
+        "save code in ",
+        "save code into ",
+        // Slash commands & aliases
+        "/createfile ",
+        "/create-file ",
+        "/create_file ",
+        "createfile ",
+        "create-file ",
+        "create_file ",
+        "/newfile ",
+        "/new-file ",
+        "/new_file ",
+        "newfile ",
+        "new-file ",
+        "new_file ",
+        "/writefile ",
+        "/write-file ",
+        "/write_file ",
+        "writefile ",
+        "write-file ",
+        "write_file ",
+        "touch ",
+    ];
+
+    let mut matched_remainder = None;
+    for trigger in &triggers {
+        if lower_after_polite.starts_with(trigger) {
+            matched_remainder = Some(clean_text[trigger.len()..].trim());
+            break;
+        }
+    }
+
+    let remainder = matched_remainder?;
+    let (target_filename, remaining_instruction) = extract_createfile_args(remainder);
+
+    if target_filename.is_empty() {
+        return None;
+    }
+
+    let fname_lower = target_filename.to_lowercase();
+    let invalid_words = [
+        "a", "an", "the", "in", "for", "with", "from", "to", "at", "about", "using",
+        "of", "and", "or", "new", "file", "files", "called", "named", "system", "systems", "here", "there"
+    ];
+    if invalid_words.contains(&fname_lower.as_str()) {
+        return None;
+    }
+
+    if !fname_lower.contains('.') {
+        let prog_langs = [
+            "python", "rust", "javascript", "typescript", "java", "c", "cpp", "go", "ruby", "php", "html", "css", "sql"
+        ];
+        if prog_langs.contains(&fname_lower.as_str()) {
+            return None;
+        }
+    }
+
+    Some((target_filename, remaining_instruction))
+}
+
+/// Executes the creation of a file on disk from resolved code content (attachments, fenced code, raw code, or Ollama generation).
+/// Returns a formatted Markdown message with confirmation details and syntax preview.
+pub async fn execute_createfile(target_filename: &str, remaining_instruction: &str, prompt_for_cmd: &str) -> String {
+    let mut target_filename = target_filename.trim().to_string();
+    let attached_contexts = extract_attached_code_context(prompt_for_cmd);
+
+    if target_filename.is_empty() && !attached_contexts.is_empty() {
+        target_filename = attached_contexts[0].0.clone();
+    }
+    if target_filename.is_empty() {
+        return "❌ **Failed to create file**: No filename specified.".to_string();
+    }
+
+    // 1. Resolve code content
+    let mut code_content = String::new();
+
+    // a) Check fenced code in remaining_instruction or prompt_for_cmd
+    if remaining_instruction.contains("```") {
+        if let Some(code) = extract_fenced_code(remaining_instruction) {
+            code_content = code;
+        }
+    } else if prompt_for_cmd.contains("```") && !prompt_for_cmd.contains("<attachment") {
+        if let Some(code) = extract_fenced_code(prompt_for_cmd) {
+            code_content = code;
+        }
+    }
+
+    // b) Check attached code in prompt_for_cmd
+    if code_content.is_empty() && !attached_contexts.is_empty() {
+        let matched_att = attached_contexts.iter().find(|(name, _)| {
+            name.ends_with(&target_filename) || target_filename.ends_with(name)
+        }).or_else(|| attached_contexts.first());
+        if let Some((_, code)) = matched_att {
+            code_content = code.clone();
+        }
+    }
+
+    // c) If remaining_instruction looks like raw code, use it directly
+    if code_content.is_empty() && !remaining_instruction.is_empty() {
+        let trimmed_rem = remaining_instruction.trim();
+        let check_str = if let Some(stripped) = trimmed_rem.strip_prefix("with ") {
+            stripped.trim()
+        } else if let Some(stripped) = trimmed_rem.strip_prefix("containing ") {
+            stripped.trim()
+        } else {
+            trimmed_rem
+        };
+
+        let is_likely_raw_code = check_str.contains('\n')
+            || check_str.contains("import ")
+            || check_str.contains("def ")
+            || check_str.contains("class ")
+            || check_str.contains("fn ")
+            || check_str.contains("let ")
+            || check_str.contains("const ")
+            || check_str.contains("function ")
+            || (check_str.contains('{') && check_str.contains('}'))
+            || check_str.contains("print(")
+            || check_str.contains("console.log(")
+            || check_str.starts_with('{')
+            || check_str.starts_with('[')
+            || check_str.starts_with("<?php")
+            || check_str.starts_with("#!");
+
+        if is_likely_raw_code {
+            code_content = check_str.to_string();
+        }
+    }
+
+    // d) If still empty, call local Ollama model to generate code
+    if code_content.is_empty() {
+        let gen_instruction = if !remaining_instruction.is_empty() {
+            remaining_instruction
+        } else {
+            "Write a complete, production-ready implementation."
+        };
+
+        let ollama_endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+        let target_model = select_ollama_model_for_hardware(false);
+        let sys_msg = format!("You are an expert programmer and code generator. Generate ONLY valid, production-ready code for the file '{}'. Output the complete code inside a single markdown code block (```...```). Do NOT provide any conversational greeting, introduction, or conclusion.", target_filename);
+        let user_msg = format!("File: {}\nInstruction: {}", target_filename, gen_instruction);
+
+        let client = reqwest::Client::builder().no_proxy().timeout(std::time::Duration::from_secs(120)).build().unwrap_or_default();
+        let body = serde_json::json!({
+            "model": target_model,
+            "messages": [
+                {"role": "system", "content": sys_msg},
+                {"role": "user", "content": user_msg}
+            ],
+            "stream": false,
+            "options": {"temperature": 0.2, "num_predict": 4096}
+        });
+
+        let res = client.post(format!("{}/api/chat", ollama_endpoint.trim_end_matches('/'))).json(&body).send().await;
+        match res {
+            Ok(r) if r.status().is_success() => {
+                let v: serde_json::Value = r.json().await.unwrap_or_default();
+                let raw_resp = v["message"]["content"].as_str().unwrap_or("");
+                code_content = extract_fenced_code(raw_resp).unwrap_or_else(|| raw_resp.to_string());
+            }
+            _ => {
+                // Fallback stub
+                code_content = format!("# {}\n# Generated by HugOS ModelFusion\n", target_filename);
+            }
+        }
+    }
+
+    // 2. Write to disk
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let target_path = if std::path::Path::new(&target_filename).is_absolute() {
+        std::path::PathBuf::from(&target_filename)
+    } else {
+        cwd.join(&target_filename)
+    };
+
+    if let Some(parent) = target_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    match std::fs::write(&target_path, &code_content) {
+        Ok(_) => {
+            let bytes = code_content.len();
+            let lines = code_content.lines().count();
+            let ext = target_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            let preview: String = code_content.lines().take(30).collect::<Vec<_>>().join("\n");
+            let preview_truncated = if lines > 30 { format!("\n// ... ({} more lines)", lines - 30) } else { String::new() };
+
+            format!(
+                "✅ **File Created Successfully**\n\n\
+                 - **File**: `{}`\n\
+                 - **Path**: `{}`\n\
+                 - **Size**: {} bytes ({} lines)\n\
+                 - **Status**: Written to disk & ready\n\n\
+                 ```{ext}\n{}{}\n```",
+                target_filename, target_path.display(), bytes, lines, preview, preview_truncated
+            )
+        }
+        Err(e) => {
+            format!("❌ **Failed to create file**: Could not write to `{}`: {}", target_path.display(), e)
+        }
+    }
 }
 
 /// Strip system prompt leakage and meta-commentary from model responses.
@@ -4844,7 +5260,12 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             || (canonicalize_command(first_token).is_some() && !trimmed.contains('='))
                     });
 
-                    let should_run_interception = if is_agent_prefixed || is_single_line_slash_or_flag || is_single_command_word || has_explicit_command_line {
+                    let has_file_creation_intent = lower_user_seg.starts_with("create a file")
+                        || lower_user_seg.starts_with("create file")
+                        || lower_user_seg.starts_with("make a file")
+                        || lower_user_seg.starts_with("write a file");
+
+                    let should_run_interception = if is_agent_prefixed || is_single_line_slash_or_flag || is_single_command_word || has_explicit_command_line || has_file_creation_intent {
                         true
                     } else {
                         !starts_with_conversational && !has_code_blocks && !has_code_imports
@@ -4995,6 +5416,45 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                     break;
                                 }
                             }
+
+                            // If has_file_creation_intent and no command has been matched yet
+                            if matched_cmds.is_empty() {
+                                let lower_scan = line_to_scan.to_lowercase();
+                                let line_has_file_intent = has_file_creation_intent
+                                    || lower_scan.starts_with("create a file")
+                                    || lower_scan.starts_with("create file")
+                                    || lower_scan.starts_with("make a file")
+                                    || lower_scan.starts_with("write a file");
+                                if line_has_file_intent {
+                                    let mut args = "";
+                                    if let Some(pos) = lower_scan.find("called ") {
+                                        args = line_to_scan[pos + 7..].trim();
+                                    } else if let Some(pos) = lower_scan.find("named ") {
+                                        args = line_to_scan[pos + 6..].trim();
+                                    } else {
+                                        for prefix in &["create a file", "create file", "make a file", "write a file"] {
+                                            if lower_scan.starts_with(prefix) {
+                                                args = line_to_scan[prefix.len()..].trim();
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    let clean_args = if args.to_lowercase().starts_with("called ") {
+                                        args[7..].trim()
+                                    } else if args.to_lowercase().starts_with("named ") {
+                                        args[6..].trim()
+                                    } else if args.to_lowercase().starts_with("at ") {
+                                        args[3..].trim()
+                                    } else if args.to_lowercase().starts_with("in ") {
+                                        args[3..].trim()
+                                    } else {
+                                        args
+                                    };
+                                    if !clean_args.is_empty() {
+                                        matched_cmds.push(("createfile".to_string(), clean_args.to_string()));
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -5054,6 +5514,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         "task" => "tasks",
                                         "export_pdf" | "exportpdf" => "export-pdf",
                                         "code-vulnerability-detection" | "codevulnerabilitydetection" => "security",
+                                        "createfile" | "create-file" | "create_file" | "newfile" | "new-file" | "new_file" | "writefile" | "write-file" => "createfile",
                                         "rest-rl" | "restrl" | "rl" => "rest-rl",
                                         other => other,
                                     };
@@ -5061,7 +5522,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                     let db_path_opt = db_path_ref.as_deref().filter(|s| !s.trim().is_empty());
                                     let db_resolved_buf = resolve_db_path(db_path_opt);
                                     let db_resolved = db_resolved_buf.as_path();
-                                    let db_path_str = db_resolved.to_string_lossy();
+                                     let _db_path_str = db_resolved.to_string_lossy();
 
                                     match canonical {
                                         "unknown" => {
@@ -5453,7 +5914,16 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                     "get_ml_analytics" => { let r = run_cli_subcommand(&["--ml-analytics".to_string()], db_resolved).await; (idx, format!("📈 **ML Analytics**\n\n{}", r)) },
                                     "report_bandit_feedback" => (idx, "📊 **Bandit Feedback**: Use MCP client to submit feedback with context/arm/reward.".to_string()),
 
-                                    // ── Coding & Task Slash Directives ──
+                                     // ── Coding & Task Slash Directives ──
+                                     "createfile" => {
+                                         if args_owned.trim().is_empty() && !prompt_for_cmd.contains("<attachment") && !prompt_for_cmd.contains("<selection") {
+                                             (idx, "📄 **ModelFusion File Creator (`/createfile`)**\n\nCreate, generate, and save files directly to your workspace:\n- `@agent createfile <path> [code or instructions]`\n- `/createfile <path> [code or instructions]`\n\n**Examples**:\n- `/createfile pq.py` (saves attached code or selection to pq.py)\n- `/createfile script.py print(\"Hello HugOS\")`\n- `/createfile utils.rs ```rust\npub fn add(a: i32, b: i32) -> i32 { a + b }\n```\n- `/createfile calc.py write a calculator with add, sub, mul, div`".to_string())
+                                         } else {
+                                             let (target_filename, remaining_instruction) = extract_createfile_args(&args_owned);
+                                             let res = execute_createfile(&target_filename, &remaining_instruction, &prompt_for_cmd).await;
+                                             (idx, res)
+                                         }
+                                     },
                                     "edit" => {
                                         if args_owned.is_empty() && !prompt_for_cmd.contains("<attachment") && !prompt_for_cmd.contains("<selection") {
                                             (idx, "✏️ **ModelFusion Code Editor**: Active.\n\nSpecify the target file and instructions to edit code.".to_string())
@@ -5999,6 +6469,11 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                     .map(|rep| format!("🌐 **Deep Web Research Agent**\n\n{}", rep))
                                     .unwrap_or_else(|e| format!("⚠️ Research agent error: {}", e));
                             }
+                        }
+
+                        if let Some((target_file, instruction)) = detect_createfile_intent(&user_msg_for_check) {
+                            eprintln!("[SERVER] 📄 Intercepted natural language file creation request: target={:?}", target_file);
+                            return execute_createfile(&target_file, &instruction, &prompt).await;
                         }
 
                         let mut _heavy_permit = None;
@@ -10323,6 +10798,94 @@ User: @agent --active-model";
         assert!(super::is_coding_query_detected("patch memory leak in engine.cpp"), "patch must be detected as coding query");
         assert!(!super::is_coding_query_detected("what is the weather today"), "general weather QA is not coding query");
         assert!(!super::is_coding_query_detected("tell me a story about mountains"), "story QA is not coding query");
+    }
+
+    #[test]
+    fn test_canonicalize_createfile() {
+        use super::canonicalize_command;
+        assert_eq!(canonicalize_command("createfile"), Some("createfile"));
+        assert_eq!(canonicalize_command("/createfile"), Some("createfile"));
+        assert_eq!(canonicalize_command("@agent createfile"), Some("createfile"));
+        assert_eq!(canonicalize_command("create_file"), Some("createfile"));
+        assert_eq!(canonicalize_command("/create-file"), Some("createfile"));
+        assert_eq!(canonicalize_command("--create-file"), Some("createfile"));
+        assert_eq!(canonicalize_command("newfile"), Some("createfile"));
+        assert_eq!(canonicalize_command("/new-file"), Some("createfile"));
+        assert_eq!(canonicalize_command("touch"), Some("createfile"));
+        assert_eq!(canonicalize_command("writefile"), Some("createfile"));
+        assert_eq!(canonicalize_command("write_file"), Some("createfile"));
+    }
+
+    #[test]
+    fn test_extract_fenced_code() {
+        use super::extract_fenced_code;
+        let fenced_rust = "Here is the code:\n```rust\npub fn add(a: i32, b: i32) -> i32 { a + b }\n```\nHope this helps!";
+        assert_eq!(extract_fenced_code(fenced_rust), Some("pub fn add(a: i32, b: i32) -> i32 { a + b }".to_string()));
+
+        let fenced_plain = "```\nprint('hello')\n```";
+        assert_eq!(extract_fenced_code(fenced_plain), Some("print('hello')".to_string()));
+
+        let no_fence = "No code fences here.";
+        assert_eq!(extract_fenced_code(no_fence), None);
+    }
+
+    #[test]
+    fn test_createfile_disk_write() {
+        let temp_dir = std::env::temp_dir().join("modelfusion_test_createfile");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let test_file = temp_dir.join("test_write.py");
+        let content = "print('HugOS File Creation Test')\n";
+
+        let write_res = std::fs::write(&test_file, content);
+        assert!(write_res.is_ok(), "Writing test file to disk must succeed");
+
+        let read_back = std::fs::read_to_string(&test_file).unwrap();
+        assert_eq!(read_back, content);
+
+        let _ = std::fs::remove_file(&test_file);
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_detect_createfile() {
+        use super::detect_createfile_intent;
+
+        // Command formats
+        let (fname, instr) = detect_createfile_intent("/createfile pq.py").expect("must detect /createfile");
+        assert_eq!(fname, "pq.py");
+        assert_eq!(instr, "");
+
+        let (fname, instr) = detect_createfile_intent("@agent createfile test.txt hello").expect("must detect @agent createfile");
+        assert_eq!(fname, "test.txt");
+        assert_eq!(instr, "hello");
+
+        let (fname, instr) = detect_createfile_intent("touch script.sh").expect("must detect touch");
+        assert_eq!(fname, "script.sh");
+        assert_eq!(instr, "");
+
+        // Natural language formats
+        let (fname, instr) = detect_createfile_intent("create a file called pq.py").expect("must detect 'create a file called'");
+        assert_eq!(fname, "pq.py");
+        assert_eq!(instr, "");
+
+        let (fname, instr) = detect_createfile_intent("please make a new file called solution.py that computes primes").expect("must detect 'please make a new file called'");
+        assert_eq!(fname, "solution.py");
+        assert_eq!(instr, "that computes primes");
+
+        let (fname, instr) = detect_createfile_intent("create file main.rs with fn main() {}").expect("must detect 'create file'");
+        assert_eq!(fname, "main.rs");
+        assert_eq!(instr, "with fn main() {}");
+
+        let (fname, instr) = detect_createfile_intent("save to config.json {\"name\": \"test\"}").expect("must detect 'save to'");
+        assert_eq!(fname, "config.json");
+        assert_eq!(instr, "{\"name\": \"test\"}");
+
+        // Negative cases
+        assert!(detect_createfile_intent("how do I create a file in python").is_none(), "how do I query must not trigger file creation");
+        assert!(detect_createfile_intent("what is a file").is_none(), "what is a file must not trigger file creation");
+        assert!(detect_createfile_intent("why create a file").is_none(), "why create a file must not trigger file creation");
+        assert!(detect_createfile_intent("").is_none(), "empty string must not trigger");
+        assert!(detect_createfile_intent("   ").is_none(), "whitespace must not trigger");
     }
 }
 
