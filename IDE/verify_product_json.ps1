@@ -355,6 +355,82 @@ foreach ($file in $targetFiles) {
     }
 }
 
+# 4.5 Verify product-default-settings.json across packaging and versioned runtime directories
+$pdsTargets = @()
+$rootPds = Join-Path $PackDir "resources\app\product-default-settings.json"
+if (Test-Path (Split-Path $rootPds -Parent)) {
+    $pdsTargets += $rootPds
+}
+foreach ($d in $packVersionedDirs) {
+    $vPds = Join-Path $d.FullName "resources\app\product-default-settings.json"
+    if (Test-Path (Split-Path $vPds -Parent)) {
+        $pdsTargets += $vPds
+    }
+}
+if ($shouldCheckInstalled -and $env:LOCALAPPDATA) {
+    $instBase = Join-Path $env:LOCALAPPDATA "HugOS IDE"
+    if (Test-Path $instBase) {
+        $instRootPds = Join-Path $instBase "resources\app\product-default-settings.json"
+        if (Test-Path (Split-Path $instRootPds -Parent)) {
+            $pdsTargets += $instRootPds
+        }
+        $instVerDirs = @(Get-ChildItem $instBase -Directory | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' })
+        foreach ($ivd in $instVerDirs) {
+            $instVPds = Join-Path $ivd.FullName "resources\app\product-default-settings.json"
+            if (Test-Path (Split-Path $instVPds -Parent)) {
+                $pdsTargets += $instVPds
+            }
+        }
+    }
+}
+
+foreach ($pdsFile in $pdsTargets) {
+    Write-Host "`n------------------------------------------------------------" -ForegroundColor DarkGray
+    Write-Host "[CHECKING SETTINGS] $pdsFile" -ForegroundColor Cyan
+    Write-Host "------------------------------------------------------------" -ForegroundColor DarkGray
+
+    if (-not (Test-Path $pdsFile)) {
+        Write-Host "  [FAIL] Missing product-default-settings.json: $pdsFile" -ForegroundColor Red
+        $failureCount++
+        continue
+    }
+
+    # Check BOM
+    $bytes = [System.IO.File]::ReadAllBytes($pdsFile)
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+        Write-Host "  [FAIL] File contains UTF-8 BOM: $pdsFile" -ForegroundColor Red
+        $failureCount++
+    } else {
+        Write-Host "  [PASS] File encoding is clean BOM-free UTF-8" -ForegroundColor Green
+    }
+
+    try {
+        $rawText = [System.IO.File]::ReadAllText($pdsFile, [System.Text.Encoding]::UTF8)
+        $pds = $rawText | ConvertFrom-Json
+        if ($pds."update.mode" -ne "none") {
+            Write-Host "  [FAIL] update.mode is '$($pds."update.mode")', expected 'none'" -ForegroundColor Red
+            $failureCount++
+        } else {
+            Write-Host "  [PASS] update.mode is 'none'" -ForegroundColor Green
+        }
+        if ($pds."update.enableWindowsBackgroundUpdates" -ne $false) {
+            Write-Host "  [FAIL] update.enableWindowsBackgroundUpdates is not false" -ForegroundColor Red
+            $failureCount++
+        } else {
+            Write-Host "  [PASS] update.enableWindowsBackgroundUpdates is false" -ForegroundColor Green
+        }
+        if ($pds."update.showReleaseNotes" -ne $false) {
+            Write-Host "  [FAIL] update.showReleaseNotes is not false" -ForegroundColor Red
+            $failureCount++
+        } else {
+            Write-Host "  [PASS] update.showReleaseNotes is false" -ForegroundColor Green
+        }
+    } catch {
+        Write-Host "  [FAIL] Failed to parse JSON in ${pdsFile}: $_" -ForegroundColor Red
+        $failureCount++
+    }
+}
+
 # 5. Final Report
 Write-Host "`n============================================================" -ForegroundColor Cyan
 if ($failureCount -eq 0) {

@@ -444,7 +444,8 @@ $defaultSettings = @{
     "extensions.autoCheckUpdates" = $false
     "extensions.autoUpdate" = $false
 }
-$defaultSettings | ConvertTo-Json -Depth 10 | Set-Content $machineSettingsPath -Encoding UTF8
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($machineSettingsPath, ($defaultSettings | ConvertTo-Json -Depth 10), $utf8NoBom)
 Write-Host "[OK] Injected default settings to suppress login prompts: $machineSettingsPath" -ForegroundColor Green
 
 # Also deploy product-default-settings.json to all versioned runtime directories
@@ -453,7 +454,7 @@ foreach ($vd in $verDirsForPds) {
     $vSettingsDir = Join-Path $vd.FullName "resources\app"
     if (Test-Path $vSettingsDir) {
         $vSettingsPath = Join-Path $vSettingsDir "product-default-settings.json"
-        $defaultSettings | ConvertTo-Json -Depth 10 | Set-Content $vSettingsPath -Encoding UTF8
+        [System.IO.File]::WriteAllText($vSettingsPath, ($defaultSettings | ConvertTo-Json -Depth 10), $utf8NoBom)
         Write-Host "[OK] Injected default settings to versioned runtime: $vSettingsPath" -ForegroundColor Green
     }
 }
@@ -631,7 +632,8 @@ foreach ($vDir in $versionedDirs) {
     if (Test-Path $srcPds) {
         Copy-Item -Path $srcPds -Destination (Join-Path $vAppDir "product-default-settings.json") -Force
     } elseif ($defaultSettings) {
-        $defaultSettings | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $vAppDir "product-default-settings.json") -Encoding UTF8
+        $pdsPath = Join-Path $vAppDir "product-default-settings.json"
+        [System.IO.File]::WriteAllText($pdsPath, ($defaultSettings | ConvertTo-Json -Depth 10), $utf8NoBom)
     }
     
     # 3. Copilot package.json
