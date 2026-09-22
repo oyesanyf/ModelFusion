@@ -3,6 +3,7 @@
 ## Table of Contents
 - [Architecture Overview](#architecture-overview)
 - [Build Guide (Step-by-Step)](#build-guide-step-by-step)
+  - [Upstream VS Code Rebase Pipeline (--patch-ide)](#upstream-vs-code-rebase-pipeline---patch-ide)
 - [Chat Slash Commands & @agent Directives Reference](#chat-slash-commands--agent-directives-reference)
   - [Autocomplete & Interactive Discovery](#autocomplete--interactive-discovery)
   - [Category 1: Code Optimization & Evolution](#category-1-code-optimization--evolution)
@@ -135,7 +136,9 @@ if (Test-Path "$env:LOCALAPPDATA\HugOS IDEin") {
 }
 ```
 
-### Step 4: Build the VS Code Fork
+### Step 4: Build the VS Code Fork & Upstream Rebase Automation
+
+When working with an existing checkout of the VS Code fork (`IDE/vscode/`), compiling the distribution build is done using `yarn` and `gulp`:
 
 ```bash
 cd IDE/vscode
@@ -151,6 +154,54 @@ This produces `IDE/VSCode-win32-x64/` — the source-built IDE with HugOS brandi
 
 > [!IMPORTANT]
 > The source build produces `HugOS.exe` natively. Never rename `Code.exe` to `HugOS.exe`.
+
+---
+
+### Upstream VS Code Rebase Pipeline (`--patch-ide`)
+
+When upgrading or rebasing HugOS onto a newer upstream Microsoft VS Code release tag (e.g., rebasing onto `1.126.0`), ModelFusion provides the fully automated `--patch-ide` engine in the Master CLI (`crates/cli/src/main.rs`).
+
+#### Architectural Purpose: Upstream Maintenance Tool, NOT Daily Packaging
+- **Heavy Toolchain Requirement**: `--patch-ide` automates the entire clone, patch, dependency restoration, and source compilation sequence. It requires complete C++ and Node build chains (`yarn`, `gulp`, `node-gyp`, Visual Studio C++ Build Tools, Python) and takes ~10–15 minutes.
+- **Daily Packaging Separation**: Day-to-day packaging does **not** invoke `--patch-ide`. Instead, developers run `powershell -ExecutionPolicy Bypass -File .\IDE\build_msi.ps1`, which operates directly on the pre-compiled `IDE/VSCode-win32-x64` tree to sync `cli.exe`, auto-increment build numbers, sign binaries with DigiCert timestamping, and generate `HugOS.msi`.
+- **When to Use**: Run `--patch-ide` strictly when tracking or rebasing against a new upstream release tag from Microsoft.
+
+#### The 10-Step Automated Workflow
+
+The pipeline executes the following 10 steps sequentially:
+
+1. **Clone VS Code Repository**: Clones `https://github.com/microsoft/vscode.git` into `--ide-src-dir` (default: `IDE/src`). Supports `--shallow` (`--depth 1`) and `--vscode-tag <tag>` (e.g. `1.126.0`). If the target directory already exists, cloning is skipped and patches are applied to the existing tree.
+2. **Replace `product.json`**: Replaces `product.json` with HugOS branding from `IDE/patches/product.json`, setting `applicationName: "hugos"`, `nameShort: "HugOS"`, `nameLong: "HugOS IDE"`, and unlocking required API proposal whitelists.
+3. **Patch `package.json`**: Modifies package manifest metadata (`name: "hugos"`, `displayName: "HugOS"`, `description: "HugOS - Custom AI-Powered Code-OSS IDE"`, `author: { "name": "HugOS Team" }`).
+4. **Source Code Patches (Copilot -> ModelFusion)**: Systematically updates 8+ TypeScript files in `src/` to decouple proprietary Copilot endpoints and connect directly to ModelFusion:
+   - `src/main.ts` (CLI argument comments)
+   - `src/vs/platform/product/common/product.ts` (`defaultChatAgent` extension IDs)
+   - `src/vs/platform/dataChannel/browser/forwardingTelemetryService.ts` (`isCopilotLikeExtension`)
+   - `src/vs/workbench/contrib/chat/browser/aiCustomization/mcpListWidget.ts` (`COPILOT_EXTENSION_IDS`)
+   - `src/vs/workbench/contrib/chat/browser/chatSetup/chatSetupProviders.ts` (timeout increased from 20s to 60s for local ModelFusion server)
+   - `src/vs/workbench/contrib/editTelemetry/browser/telemetry/editSourceTrackingFeature.ts` & `editSourceTrackingImpl.ts`
+   - `src/vs/workbench/contrib/terminal/browser/terminalMenus.ts`
+   - `src/vs/workbench/contrib/preferences/browser/settingsLayout.ts`
+   - `src/vs/workbench/contrib/mcp/common/mcpRegistry.ts` (injects ModelFusion collection filter)
+   - `src/vs/workbench/contrib/chat/common/languageModels.ts` (auto-registers ModelFusion provider group on startup)
+5. **Copy ModelFusion Extension**: Recursively copies `IDE/vscode/extensions/modelfusion` into `extensions/modelfusion/`.
+6. **Copy HugOS Icon Artwork**: Copies official platform icons to `resources/win32/code.ico`, `code_150x150.png`, `code_70x70.png`, `resources/darwin/code.icns`, and `resources/linux/code.png`.
+7. **Patch Dev Configuration**: Injects ModelFusion dist paths into `.vscode/launch.json` and updates `.vscode/tasks.json`.
+8. **Build from Source (`gulp vscode-win32-x64`)**: Runs `yarn install --frozen-lockfile` and invokes `gulp vscode-win32-x64` to build the full distribution tree in `IDE/VSCode-win32-x64/`.
+9. **Brand Electron Binary (`rcedit.exe`)**: Uses `rcedit-x64.exe` to update the PE resource headers of `HugOS.exe` (ProductName, FileDescription, CompanyName, icon, and version `1.126.0`).
+10. **Runtime Integrity Check**: Validates the versioned Electron ICU runtime directory (e.g. `7e7950df89/`) to prevent ICU descriptor crashes (`IDE/INCIDENT_SIGNING_2026-07-16.md`) and verifies Authenticode signatures.
+
+#### Command Syntax & Examples
+
+```bash
+# Standard shallow rebase onto upstream release tag 1.126.0
+cli.exe --patch-ide --shallow --vscode-tag 1.126.0
+
+# Clone and patch into a custom staging workspace
+cli.exe --patch-ide --ide-src-dir "IDE/src_rebase" --shallow --vscode-tag 1.126.0
+```
+
+---
 
 ### Step 5: Build the ModelFusion Copilot Extension
 
@@ -925,25 +976,73 @@ powershell -ExecutionPolicy Bypass -File build_msi.ps1
 
 ## Key Patches Applied to VS Code
 
-HugOS IDE applies specific source patches to upstream Code-OSS:
+HugOS IDE applies systematic transformations to stock upstream Microsoft VS Code (Code-OSS) via the automated `cli.exe --patch-ide` pipeline:
 
-### 1. Language Model Whitelist Bypass
+### 1. Language Model Whitelist Bypass & Provider Auto-Registration
 **File**: `src/vs/workbench/contrib/chat/common/languageModels.ts`
-- Stripped hardcoded vendor whitelist that historically restricted default models to Microsoft Copilot.
+- Stripped hardcoded vendor whitelist that historically restricted default language models to Microsoft Copilot.
 - Configured `isDefault: true` for the `modelfusion` vendor provider, enabling local offline models to serve as default chat engines.
+- Injected startup auto-registration: checks `getLanguageModelsProviderGroups()`, and if `modelfusion` is absent, automatically registers the `ModelFusion Local Panel` provider group on workbench initialization.
 
-### 2. Extension Host Vendor Support
-**File**: `extensionHostProcess.js`
-- Extended `getDefaultLanguageModel()` to recognize and route queries to `modelfusion` without requiring cloud authentication or telemetry handshakes.
+### 2. MCP Registry Isolation & Server Filtering
+**File**: `src/vs/workbench/contrib/mcp/common/mcpRegistry.ts`
+- Injected dynamic server definition filtering into `registerCollection()`.
+- Filters registered collections so that only servers ending in `.modelfusion` or labeled `modelfusion` are exposed to the IDE thinking agent.
+- Prevents rogue or unverified third-party MCP servers from polluting the local orchestration context.
 
-### 3. Default Provider Locations
-**File**: `extensions/copilot/src/extension/byok/vscode-node/modelFusionProvider.ts`
-- Registered `isDefaultForLocation: { panel: true, inline: true, terminal: true }`.
-- Ensures ModelFusion is immediately active across the main Chat panel, inline editor (`Ctrl+I`), and terminal chat.
+### 3. Chat Provider Timeout Accommodation
+**File**: `src/vs/workbench/contrib/chat/browser/chatSetup/chatSetupProviders.ts`
+- Replaced the default 20-second connection timeout with a 60-second window:
+  ```typescript
+  this.environmentService.remoteAuthority ? 60000 : 60000 /* 60s — accommodates local ModelFusion server startup */
+  ```
+- Accommodates cold-start hardware initialization for the local ModelFusion daemon and Ollama model weights.
 
-### 4. Native Application Branding
-**File**: `product.json`
-- `applicationName: "hugos"`
-- `nameShort: "HugOS"`
-- `nameLong: "HugOS IDE"`
-- Replaced Code-OSS icons with custom HugOS vector artwork across Windows, macOS, and Linux resource bundles.
+### 4. Copilot Telemetry & Widget Decoupling (8+ TypeScript Files)
+Systematically redirected Copilot telemetry hooks, settings menus, and editor widgets to ModelFusion:
+- **`src/main.ts`**: Replaced `"VS Code"` with `"HugOS"` in persistent `argv.json` argument descriptions and rendering comments.
+- **`src/vs/platform/product/common/product.ts`**: Replaced `defaultChatAgent` extension identifiers (`'GitHub.copilot'` -> `'HugOS.modelfusion'`, `'GitHub.copilot-chat'` -> `'HugOS.modelfusion'`).
+- **`src/vs/platform/dataChannel/browser/forwardingTelemetryService.ts`**: Updated `isCopilotLikeExtension` check to match `hugos.modelfusion`.
+- **`src/vs/workbench/contrib/chat/browser/aiCustomization/mcpListWidget.ts`**: Redirected `COPILOT_EXTENSION_IDS` array to `['hugos.modelfusion', 'hugos.modelfusion']`.
+- **`src/vs/workbench/contrib/editTelemetry/browser/telemetry/editSourceTrackingFeature.ts` & `editSourceTrackingImpl.ts`**: Updated telemetry source tracking IDs from GitHub Copilot to HugOS ModelFusion.
+- **`src/vs/workbench/contrib/terminal/browser/terminalMenus.ts`**: Replaced terminal AI profile contributor identifiers with `hugos.modelfusion`.
+- **`src/vs/workbench/contrib/preferences/browser/settingsLayout.ts`**: Updated common settings shortcuts to point to `HugOS.modelfusion.manageExtension`.
+
+### 5. Native Product Identity & Package Metadata
+**Files**: `product.json` and `package.json`
+- `product.json`: Configures `applicationName: "hugos"`, `nameShort: "HugOS"`, `nameLong: "HugOS IDE"`, and injects API proposal whitelists for language model providers.
+- `package.json`: Replaced root manifest metadata (`name: "hugos"`, `displayName: "HugOS"`, `description: "HugOS - Custom AI-Powered Code-OSS IDE"`, `author: { "name": "HugOS Team" }`).
+
+### 6. Built-in ModelFusion Extension Integration
+**Destination**: `extensions/modelfusion/`
+- Recursively copies `IDE/vscode/extensions/modelfusion` into the built-in extensions directory.
+- Bakes the custom chat participant, inline diff manager, and slash/@agent parser directly into the distribution without requiring external marketplace downloads.
+
+### 7. Custom Vector Artwork & Icons
+**Destination**: `resources/`
+- Replaces stock Code-OSS icons with official HugOS branding across all platforms:
+  - Windows: `resources/win32/code.ico`, `code_150x150.png`, `code_70x70.png`
+  - macOS: `resources/darwin/code.icns`
+  - Linux: `resources/linux/code.png`
+
+### 8. Developer Debugging Manifests
+**Files**: `.vscode/launch.json` & `.vscode/tasks.json`
+- `.vscode/launch.json`: Injects `${workspaceFolder}/extensions/modelfusion/dist/**/*.js` into `outFiles` for seamless source-level debugging of the ModelFusion extension.
+- `.vscode/tasks.json`: Replaces references to `extensions/copilot` with `extensions/modelfusion`.
+
+### 9. PE Binary Resource Branding via `rcedit.exe`
+**Target**: `IDE/VSCode-win32-x64/HugOS.exe`
+- Modifies the Portable Executable (PE) resource table of the compiled Electron binary using `rcedit-x64.exe`:
+  - `ProductName` & `FileDescription`: `"HugOS IDE"`
+  - `CompanyName`: `"HugOS Team"`
+  - `InternalName`: `"HugOS"`
+  - `OriginalFilename`: `"HugOS.exe"`
+  - `LegalCopyright`: `"Copyright (C) 2026 HugOS Team"`
+  - Product/File Version: `"1.126.0"`
+  - Main Window & Explorer Icon: `IDE/hugos.ico`
+
+### 10. Electron Runtime Integrity & Authenticode Signature Protection
+**Target**: `IDE/VSCode-win32-x64/`
+- **ICU Descriptor Guard**: Code.exe/HugOS.exe in Electron loads ICU internationalization data from a versioned hash subdirectory (e.g. `7e7950df89/`), NOT from the root folder. The pipeline verifies that this directory exists, preventing startup crashes with `Invalid file descriptor to ICU data received`.
+- **Authenticode Signature Verification**: Verifies that the built executable has not been corrupted with an invalid self-signed certificate, enforcing the safety protections detailed in `IDE/INCIDENT_SIGNING_2026-07-16.md`.
+
