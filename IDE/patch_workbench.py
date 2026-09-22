@@ -700,6 +700,15 @@ def main():
                         v_main = os.path.join(sub, "resources", "app", "out", "main.js")
                         if v_main not in main_targets:
                             main_targets.append(v_main)
+                        # Sync NLS localization tables from root out directory to versioned out directory
+                        root_out = os.path.join(b, "resources", "app", "out")
+                        v_out = os.path.join(sub, "resources", "app", "out")
+                        if os.path.isdir(root_out) and os.path.isdir(v_out):
+                            for nls_name in ["nls.messages.js", "nls.metadata.json"]:
+                                src_nls = os.path.join(root_out, nls_name)
+                                dst_nls = os.path.join(v_out, nls_name)
+                                if os.path.isfile(src_nls):
+                                    shutil.copy2(src_nls, dst_nls)
 
     seen = set()
     error_count = 0
