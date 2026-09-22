@@ -224,6 +224,19 @@ foreach ($vDir in $versionedDirs) {
     }
     Copy-Item -Path $authoritativeProductJson -Destination $vProductJson -Force -ErrorAction Stop
     Write-Host "[OK] Deployed authoritative product.json to versioned dir: $vProductJson" -ForegroundColor Green
+
+    # CRITICAL: Deploy authoritative nls.messages.js and nls.metadata.json to versioned dir
+    # to guarantee exact 1:1 index alignment with workbench.desktop.main.js
+    foreach ($nlsFile in @('nls.messages.js', 'nls.metadata.json')) {
+        $rootNls = Join-Path $vsCodePackDir "resources\app\out\$nlsFile"
+        $vNls = Join-Path $vDir.FullName "resources\app\out\$nlsFile"
+        if (Test-Path $rootNls) {
+            $vNlsDir = Split-Path $vNls -Parent
+            if (-not (Test-Path $vNlsDir)) { New-Item -ItemType Directory -Force -Path $vNlsDir | Out-Null }
+            Copy-Item -Path $rootNls -Destination $vNls -Force -ErrorAction Stop
+            Write-Host "[OK] Deployed authoritative $nlsFile to versioned dir: $vNls" -ForegroundColor Green
+        }
+    }
 }
 
 # 4.5 Copy Pre-populated HF Models Database (hf_models.db) into the packaged folder
