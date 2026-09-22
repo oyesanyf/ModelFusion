@@ -331,6 +331,28 @@ foreach ($file in $targetFiles) {
             Write-Host "  [PASS] Branding field '$field' = '$actualVal'" -ForegroundColor Green
         }
     }
+
+    # Check (f): Upstream Microsoft updates must be completely eliminated / neutralized
+    if ($pj.PSObject.Properties['updateUrl'] -and -not [string]::IsNullOrWhiteSpace("$($pj.updateUrl)")) {
+        Write-Host "  [FAIL] Upstream updateUrl is active: '$($pj.updateUrl)'. Must be completely removed/neutralized." -ForegroundColor Red
+        $failureCount++
+    } else {
+        Write-Host "  [PASS] Upstream updateUrl is absent / neutralized" -ForegroundColor Green
+    }
+
+    if ($pj.PSObject.Properties['quality'] -and -not [string]::IsNullOrWhiteSpace("$($pj.quality)")) {
+        Write-Host "  [FAIL] Upstream quality is active: '$($pj.quality)'. Must be completely removed/neutralized." -ForegroundColor Red
+        $failureCount++
+    } else {
+        Write-Host "  [PASS] Upstream quality is absent / neutralized" -ForegroundColor Green
+    }
+
+    if (-not $pj.configurationDefaults -or ($pj.configurationDefaults."update.mode" -ne "none")) {
+        Write-Host "  [FAIL] configurationDefaults.update.mode is not set to 'none'" -ForegroundColor Red
+        $failureCount++
+    } else {
+        Write-Host "  [PASS] configurationDefaults.update.mode is 'none'" -ForegroundColor Green
+    }
 }
 
 # 5. Final Report

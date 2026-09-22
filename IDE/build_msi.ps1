@@ -439,6 +439,8 @@ $defaultSettings = @{
     "workbench.enableExperiments" = $false
     "telemetry.telemetryLevel" = "off"
     "update.mode" = "none"
+    "update.enableWindowsBackgroundUpdates" = $false
+    "update.showReleaseNotes" = $false
     "extensions.autoCheckUpdates" = $false
     "extensions.autoUpdate" = $false
 }
@@ -648,6 +650,14 @@ foreach ($vDir in $versionedDirs) {
     $srcWb = Join-Path $vsCodePackDir "resources\app\out\vs\workbench\workbench.desktop.main.js"
     if (Test-Path $srcWb) {
         Copy-Item -Path $srcWb -Destination (Join-Path $vOutVsDir "workbench.desktop.main.js") -Force
+    }
+    
+    # 5.1 Main entry point js (electron main process)
+    $srcMain = Join-Path $vsCodePackDir "resources\app\out\main.js"
+    if (Test-Path $srcMain) {
+        $vOutMainDir = Join-Path $vAppDir "out"
+        if (-not (Test-Path $vOutMainDir)) { New-Item -ItemType Directory -Path $vOutMainDir -Force | Out-Null }
+        Copy-Item -Path $srcMain -Destination (Join-Path $vOutMainDir "main.js") -Force
     }
     
     # 6. ReST-RL subsystem
