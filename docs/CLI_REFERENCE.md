@@ -427,3 +427,14 @@ Clones and patches VS Code into a custom staging directory:
 cli.exe --patch-ide --ide-src-dir "IDE/upstream_vscode" --shallow
 ```
 
+### Direct Workspace File Creation (`/createfile` / `@agent createfile`)
+Creates, generates, and writes files directly to the active workspace on disk from code snippets, markdown blocks, or Ollama instructions:
+```bash
+# Standalone CLI execution
+cli.exe --prompt "/createfile test_script.py print('Hello HugOS')"
+
+# Chat directive in HugOS IDE
+@agent createfile calc.py write a calculator with add, sub, mul, div
+```
+
+

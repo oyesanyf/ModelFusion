@@ -338,39 +338,24 @@ def patch_workbench_file(file_path, node_path):
 def patch_main_js_content(content):
     """
     Neutralizes Electron main process UpdateService so it never contacts Microsoft servers
-    or attempts background updates. Connects manual update checks to HugOS official channel.
+    or attempts background updates. Completely suppresses "Check for Updates..." menubar item.
     Uses exact method boundary replacement to prevent regex spillover across class definitions.
     """
-    if "update#doCheckForUpdates - Querying HugOS official release channel..." in content:
-        return content, False
-
     changed = False
 
-    # 1. Menubar getUpdateMenuItems - always show "Check for Updates..." and NEVER "Restart to Update" or "Downloading Update..."
-    menubar_orig = 'getUpdateMenuItems() {\n        const state = this.updateService.state;\n        switch (state.type) {'
-    menubar_end_anchor = 'default:\n            return [];\n        }\n      }'
-    m_s = content.find(menubar_orig)
-    if m_s != -1:
-        m_e = content.find(menubar_end_anchor, m_s)
-        if m_e != -1:
-            m_e += len(menubar_end_anchor)
-            m_repl = (
-                'getUpdateMenuItems() {\n'
-                '        const state = this.updateService.state;\n'
-                '        if (state.type === "checking for updates" /* CheckingForUpdates */) {\n'
-                '          return [new MenuItem3({ label: localize(2655, null), enabled: false })];\n'
-                '        }\n'
-                '        return [new MenuItem3({\n'
-                '          label: this.mnemonicLabel(localize(2654, null)),\n'
-                '          click: () => setTimeout(() => {\n'
-                '            this.reportMenuActionTelemetry("CheckForUpdate");\n'
-                '            this.updateService.checkForUpdates(true);\n'
-                '          }, 0)\n'
-                '        })];\n'
-                '      }'
-            )
-            content = content[:m_s] + m_repl + content[m_e:]
-            changed = True
+    # 1. Menubar getUpdateMenuItems - completely suppress "Check for Updates..." menubar item
+    m_start = content.find('getUpdateMenuItems() {')
+    if m_start != -1:
+        c_next = content.find('createMenuItem(', m_start)
+        if c_next != -1:
+            m_end = content.rfind('}', m_start, c_next)
+            if m_end != -1:
+                m_end += 1
+                current_method = content[m_start:m_end]
+                m_suppressed = 'getUpdateMenuItems() {\n        return [];\n      }'
+                if current_method.strip() != m_suppressed.strip():
+                    content = content[:m_start] + m_suppressed + content[m_end:]
+                    changed = True
 
     # 2. Disable periodic background timer in AbstractUpdateService
     sched_orig = 'scheduleCheckForUpdates(delay = 60 * 60 * 1e3) {\n        return timeout(delay)'

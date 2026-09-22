@@ -1,0 +1,15 @@
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld"
+rustflags = [
+    "-L", "native=D:/tools/xwin-crt/crt/lib/x64",
+    "-L", "native=D:/tools/xwin-crt/sdk/lib/um/x64",
+    "-L", "native=D:/tools/xwin-crt/sdk/lib/ucrt/x64",
+]
+
+[build]
+rustflags = [
+    "-C", "linker=rust-lld",
+    "-L", "native=D:/tools/xwin-crt/crt/lib/x64",
+    "-L", "native=D:/tools/xwin-crt/sdk/lib/um/x64",
+    "-L", "native=D:/tools/xwin-crt/sdk/lib/ucrt/x64",
+]

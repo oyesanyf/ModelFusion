@@ -257,6 +257,7 @@ HugOS Chat supports over 71 interactive commands with complete **1:1 parity** be
 | Category | Slash Command | @agent Directive | Description & Real-World Example |
 |:---|:---|:---|:---|
 | **Code Evolution** | `/evolve -n 5` | `@agent evolve -n 5` | Multi-pass code evolution with inline diff (`Ctrl+Shift+Y` / `Ctrl+Shift+N`).<br>`/evolve -n 5 Eliminate allocations in hot parsing loop` |
+| **File Creation** | `/createfile <path>` | `@agent createfile <path>` | Creates and writes new files directly to disk from instructions, attachments, or code blocks.<br>`/createfile pq.py` / `@agent createfile script.py print("Hello HugOS")` |
 | **Refactoring** | `/refactor` | `@agent refactor` | Clean architecture, modularity, and SOLID design.<br>`/refactor Decouple this handler with dependency injection` |
 | **Security Audit** | `/security --deep` | `@agent security --deep` | ATLAS static vulnerability and OWASP Top 10 taint analysis.<br>`/security Audit auth router for SQLi and timing attacks` |
 | **Consensus Deliberation** | `/fusion` | `@agent fusion` | Multi-model deliberation with consensus answer synthesis.<br>`/fusion Compare Kafka vs Debezium CDC for financial ledgers` |
