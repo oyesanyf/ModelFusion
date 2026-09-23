@@ -137,7 +137,81 @@ impl UniversalTaskProcessor {
                 temperature: 0.1,
             },
         );
- 
+
+        // Code and Data Science Tasks
+        task_configs.insert(
+            "code-summary-generation".to_string(),
+            TaskConfig {
+                description: "Summarize, review, or transform code".to_string(),
+                default_model: "meta-llama/Llama-3.1-8B-Instruct".to_string(),
+                max_tokens: 1500,
+                temperature: 0.2,
+            },
+        );
+        task_configs.insert(
+            "code-vulnerability-detection".to_string(),
+            TaskConfig {
+                description: "Detect security vulnerabilities in code".to_string(),
+                default_model: "meta-llama/Llama-3.1-8B-Instruct".to_string(),
+                max_tokens: 1000,
+                temperature: 0.1,
+            },
+        );
+        task_configs.insert(
+            "code-generation".to_string(),
+            TaskConfig {
+                description: "Generate implementation code".to_string(),
+                default_model: "meta-llama/Llama-3.1-8B-Instruct".to_string(),
+                max_tokens: 2000,
+                temperature: 0.2,
+            },
+        );
+        task_configs.insert(
+            "data-science".to_string(),
+            TaskConfig {
+                description: "Data science and statistical analysis".to_string(),
+                default_model: "meta-llama/Llama-3.1-8B-Instruct".to_string(),
+                max_tokens: 1500,
+                temperature: 0.2,
+            },
+        );
+        task_configs.insert(
+            "data-analyst".to_string(),
+            TaskConfig {
+                description: "Data analytics and visualization guidance".to_string(),
+                default_model: "meta-llama/Llama-3.1-8B-Instruct".to_string(),
+                max_tokens: 1500,
+                temperature: 0.2,
+            },
+        );
+        task_configs.insert(
+            "table-question-answering".to_string(),
+            TaskConfig {
+                description: "Tabular data QA and schema reasoning".to_string(),
+                default_model: "meta-llama/Llama-3.1-8B-Instruct".to_string(),
+                max_tokens: 1000,
+                temperature: 0.1,
+            },
+        );
+        task_configs.insert(
+            "feature-extraction".to_string(),
+            TaskConfig {
+                description: "Extract high-dimensional features and embeddings".to_string(),
+                default_model: "meta-llama/Llama-3.1-8B-Instruct".to_string(),
+                max_tokens: 500,
+                temperature: 0.0,
+            },
+        );
+        task_configs.insert(
+            "token-classification".to_string(),
+            TaskConfig {
+                description: "Token-level entity and label classification".to_string(),
+                default_model: "meta-llama/Llama-3.1-8B-Instruct".to_string(),
+                max_tokens: 500,
+                temperature: 0.1,
+            },
+        );
+
         Self {
             providers: Mutex::new(HashMap::new()),
             task_configs,
@@ -158,24 +232,20 @@ impl UniversalTaskProcessor {
         let normalized_task = task_name.trim().to_lowercase().replace('_', "-");
         let lookup_name = match normalized_task.as_str() {
             "text-analysis" | "text_analysis" => "text-classification",
-            "code-analysis" | "code_analysis" => "text-generation",
+            "code-analysis" | "code_analysis" => "code-summary-generation",
+            "datascience" => "data-science",
+            "dataanalyst" | "jupyter" => "data-analyst",
             other => other,
         };
 
-        let task_config = match self.task_configs.get(lookup_name) {
-            Some(cfg) => cfg.clone(),
-            None => {
-                return TaskResult {
-                    content: format!("Unknown task: {}", task_name),
-                    tokens_used: 0,
-                    cost: 0.0,
-                    latency_ms: start.elapsed().as_millis() as f64,
-                    model_used: "unknown".to_string(),
-                    status: "error".to_string(),
-                    error_message: Some(format!("Task '{}' not supported", task_name)),
-                }
+        let task_config = self.task_configs.get(lookup_name).cloned().unwrap_or_else(|| {
+            TaskConfig {
+                description: format!("Dynamic execution for task {}", task_name),
+                default_model: "meta-llama/Llama-3.1-8B-Instruct".to_string(),
+                max_tokens: 1000,
+                temperature: 0.7,
             }
-        };
+        });
 
         let final_model_id = model_id.unwrap_or(&task_config.default_model).to_string();
 
@@ -272,18 +342,19 @@ impl UniversalTaskProcessor {
             .to_lowercase();
 
         match ext.as_str() {
-            "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp" => {
+            "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp" | "svg" => {
                 let image_prompt = format!("Analyze this image: {}\n\n{}", file_path.display(), prompt);
                 self.process_task(task_name, &image_prompt, model_id, None, None, options).await
             }
-            "mp3" | "wav" | "m4a" | "flac" => {
+            "mp3" | "wav" | "m4a" | "flac" | "ogg" | "aac" => {
                 let audio_prompt = format!("Analyze this audio file: {}\n\n{}", file_path.display(), prompt);
                 self.process_task(task_name, &audio_prompt, model_id, None, None, options).await
             }
-            "txt" | "md" | "py" | "js" | "html" | "css" | "rs" => {
-                match std::fs::read_to_string(file_path) {
-                    Ok(content) => {
-                        let combined_prompt = format!("File content:\n{}\n\n{}", content, prompt);
+            _ => {
+                match std::fs::read(file_path) {
+                    Ok(bytes) => {
+                        let content = format_file_content(file_path, &bytes);
+                        let combined_prompt = format!("File ({}):\n{}\n\n{}", file_path.display(), content, prompt);
                         self.process_task(task_name, &combined_prompt, model_id, None, None, options).await
                     }
                     Err(e) => TaskResult {
@@ -297,15 +368,6 @@ impl UniversalTaskProcessor {
                     },
                 }
             }
-            _ => TaskResult {
-                content: format!("Unsupported file extension: {}", ext),
-                tokens_used: 0,
-                cost: 0.0,
-                latency_ms: 0.0,
-                model_used: "unknown".to_string(),
-                status: "error".to_string(),
-                error_message: Some(format!("Unsupported file extension: {}", ext)),
-            },
         }
     }
 
@@ -412,3 +474,83 @@ impl UniversalTaskProcessor {
         }
     }
 }
+
+/// Helper to extract clean content/metadata from diverse file types (notebooks, parquet, excel, code, text)
+pub fn format_file_content(file_path: &Path, bytes: &[u8]) -> String {
+    let filename = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let lower = filename.to_lowercase();
+    let limit = bytes.len().min(256 * 1024);
+    let slice = &bytes[..limit];
+
+    if lower.ends_with(".ipynb") {
+        if let Ok(val) = serde_json::from_slice::<serde_json::Value>(slice) {
+            if let Some(cells) = val.get("cells").and_then(|c| c.as_array()) {
+                let mut notebook_repr = format!("Jupyter Notebook: {} (Total cells: {})\n\n", filename, cells.len());
+                for (idx, cell) in cells.iter().enumerate() {
+                    let cell_type = cell.get("cell_type").and_then(|t| t.as_str()).unwrap_or("code");
+                    let source = cell.get("source")
+                        .map(|s| {
+                            if let Some(arr) = s.as_array() {
+                                arr.iter().filter_map(|l| l.as_str()).collect::<Vec<_>>().join("")
+                            } else if let Some(st) = s.as_str() {
+                                st.to_string()
+                            } else {
+                                String::new()
+                            }
+                        })
+                        .unwrap_or_default();
+                    if !source.trim().is_empty() {
+                        notebook_repr.push_str(&format!("--- [Cell {} ({})] ---\n{}\n\n", idx + 1, cell_type, source.trim()));
+                    }
+                }
+                return notebook_repr;
+            }
+        }
+        return String::from_utf8_lossy(slice).to_string();
+    }
+
+    if lower.ends_with(".parquet") {
+        let mut strings = Vec::new();
+        let mut curr = String::new();
+        for &b in slice {
+            if b.is_ascii_graphic() || b == b' ' {
+                curr.push(b as char);
+            } else {
+                if curr.len() >= 3 && !curr.chars().all(|c| c.is_ascii_punctuation()) {
+                    strings.push(curr.clone());
+                }
+                curr.clear();
+            }
+        }
+        if curr.len() >= 3 && !curr.chars().all(|c| c.is_ascii_punctuation()) {
+            strings.push(curr);
+        }
+        let mut seen = std::collections::HashSet::new();
+        let unique_strings: Vec<String> = strings.into_iter().filter(|s| seen.insert(s.clone())).take(60).collect();
+        return format!("Parquet Dataset: {} (Size: {} bytes)\nSchema / Column Tokens Extracted:\n{}", filename, bytes.len(), unique_strings.join(", "));
+    }
+
+    if lower.ends_with(".xlsx") || lower.ends_with(".xls") {
+        let mut strings = Vec::new();
+        let mut curr = String::new();
+        for &b in slice {
+            if b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.' {
+                curr.push(b as char);
+            } else {
+                if curr.len() >= 4 {
+                    strings.push(curr.clone());
+                }
+                curr.clear();
+            }
+        }
+        if curr.len() >= 4 {
+            strings.push(curr);
+        }
+        let mut seen = std::collections::HashSet::new();
+        let unique_strings: Vec<String> = strings.into_iter().filter(|s| seen.insert(s.clone())).take(60).collect();
+        return format!("Excel Workbook: {} (Size: {} bytes)\nWorkbook / Sheet / Field Tokens Extracted:\n{}", filename, bytes.len(), unique_strings.join(", "));
+    }
+
+    String::from_utf8_lossy(slice).to_string()
+}
+

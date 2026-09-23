@@ -1833,7 +1833,7 @@ async fn run(args: Args) -> Result<()> {
         anyhow::bail!("Paid models (including OpenAI) have been disabled and removed per system requirements.");
     }
 
-    if args.jupyter {
+    if args.jupyter && args.prompt.is_none() && args.query.is_none() && args.file.is_none() {
         println!("🚀 Launching Jupyter Notebook: data_analyst_workflow.ipynb");
         let status = std::process::Command::new("python")
             .args(&["-m", "notebook", "data_analyst_workflow.ipynb"])
@@ -2160,7 +2160,9 @@ async fn run(args: Args) -> Result<()> {
     }
 
     if args.pe_header_extraction {
-        let file_path = args.file.as_deref().unwrap_or("test.exe");
+        let raw_file = args.file.as_deref().unwrap_or("test.exe");
+        let resolved_buf = resolve_existing_file_path(raw_file);
+        let file_path = resolved_buf.as_deref().map(|p| p.to_str().unwrap_or(raw_file)).unwrap_or(raw_file);
         let prompt = args.prompt.as_deref().unwrap_or("Perform PE analysis");
         handler.handle_pe_analysis(file_path, prompt);
         return Ok(());
@@ -2285,9 +2287,10 @@ async fn run(args: Args) -> Result<()> {
             .unwrap_or_default();
 
         if let Some(ref file_path) = args.file {
-            let p = std::path::Path::new(file_path);
-            if p.is_file() {
-                if let Ok(bytes) = std::fs::read(p) {
+            let resolved_opt = resolve_existing_file_path(file_path);
+            let p_to_read = resolved_opt.as_deref().unwrap_or_else(|| std::path::Path::new(file_path));
+            if p_to_read.is_file() {
+                if let Ok(bytes) = std::fs::read(p_to_read) {
                     let formatted = format_file_content_for_llm(file_path, &bytes);
                     if !final_prompt.contains(&formatted) {
                         if final_prompt.trim().is_empty() {
@@ -2796,6 +2799,7 @@ fn determine_task_override(args: &Args) -> Option<String> {
     if args.feature_ranking { return Some("feature-ranking".to_string()); }
     if args.dataanalyst { return Some("data-analyst".to_string()); }
     if args.datascience { return Some("data-science".to_string()); }
+    if args.jupyter { return Some("data-analyst".to_string()); }
     
     args.task.clone()
 }
@@ -3249,11 +3253,71 @@ pub fn extract_latest_user_query(prompt: &str) -> String {
 
 /// Formats file bytes for LLM consumption, extracting clean schema/column tokens for binary datasets
 /// (.parquet, .xlsx) and text/cells for code and notebooks (.ipynb, .csv, .json, .py, etc.).
+/// Resolves a file path across current working directory and candidate workspace directories.
+pub fn resolve_existing_file_path(file_path: &str) -> Option<std::path::PathBuf> {
+    let trimmed = file_path.trim().trim_matches(|c: char| c == '\'' || c == '"' || c == '`');
+    if trimmed.is_empty() {
+        return None;
+    }
+    let p = std::path::Path::new(trimmed);
+    if p.is_file() {
+        return Some(p.to_path_buf());
+    }
+    let candidate_paths = [
+        format!(r"D:\dataset\Seaborn All Built-in Datasets\{}", trimmed),
+        format!("IDE/{}", trimmed),
+        format!("IDE/db/{}", trimmed),
+        format!("crates/cli/{}", trimmed),
+        format!("./{}", trimmed),
+    ];
+    for cp in &candidate_paths {
+        let cp_p = std::path::Path::new(cp);
+        if cp_p.is_file() {
+            return Some(cp_p.to_path_buf());
+        }
+    }
+    if let Ok(mut exe_path) = std::env::current_exe() {
+        exe_path.pop();
+        let cp = exe_path.join(trimmed);
+        if cp.is_file() {
+            return Some(cp);
+        }
+    }
+    None
+}
+
+/// Formats file bytes for LLM consumption, extracting clean schema/column tokens for binary datasets
+/// (.parquet, .xlsx) and text/cells for code and notebooks (.ipynb, .csv, .json, .py, etc.).
 pub fn format_file_content_for_llm(filename: &str, bytes: &[u8]) -> String {
     let lower = filename.to_lowercase();
     let limit = bytes.len().min(100 * 1024);
     let slice = &bytes[..limit];
-    if lower.ends_with(".parquet") {
+    if lower.ends_with(".ipynb") {
+        if let Ok(val) = serde_json::from_slice::<serde_json::Value>(slice) {
+            if let Some(cells) = val.get("cells").and_then(|c| c.as_array()) {
+                let mut notebook_repr = format!("Jupyter Notebook: {} (Total cells: {})\n\n", filename, cells.len());
+                for (idx, cell) in cells.iter().enumerate() {
+                    let cell_type = cell.get("cell_type").and_then(|t| t.as_str()).unwrap_or("code");
+                    let source = cell.get("source")
+                        .map(|s| {
+                            if let Some(arr) = s.as_array() {
+                                arr.iter().filter_map(|l| l.as_str()).collect::<Vec<_>>().join("")
+                            } else if let Some(st) = s.as_str() {
+                                st.to_string()
+                            } else {
+                                String::new()
+                            }
+                        })
+                        .unwrap_or_default();
+                    if !source.trim().is_empty() {
+                        notebook_repr.push_str(&format!("--- [Cell {} ({})] ---\n{}\n\n", idx + 1, cell_type, source.trim()));
+                    }
+                }
+                return notebook_repr;
+            }
+        }
+        String::from_utf8_lossy(slice).to_string()
+    } else if lower.ends_with(".parquet") {
         let mut strings = Vec::new();
         let mut curr = String::new();
         for &b in slice {
@@ -3716,7 +3780,8 @@ pub fn resolve_code_for_command(args: &str, prompt: &str) -> String {
 
     let mut disk_files = Vec::new();
     for cand in candidates {
-        let p = std::path::Path::new(cand);
+        let resolved_opt = resolve_existing_file_path(cand);
+        let p = resolved_opt.as_deref().unwrap_or_else(|| std::path::Path::new(cand));
         if p.is_file() {
             if let Ok(bytes) = std::fs::read(p) {
                 let content = format_file_content_for_llm(cand, &bytes);
@@ -11412,5 +11477,182 @@ class CNN: pass
         let _ = std::fs::remove_file(&test_file);
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
+    #[test]
+    fn test_resolve_existing_file_path() {
+        use super::resolve_existing_file_path;
+
+        let temp_dir = std::env::temp_dir().join("modelfusion_path_res_test");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let test_file = temp_dir.join("test_data.csv");
+        std::fs::write(&test_file, "a,b,c\n1,2,3\n").unwrap();
+
+        let resolved = resolve_existing_file_path(test_file.to_str().unwrap());
+        assert!(resolved.is_some(), "Must resolve direct file path");
+        assert_eq!(resolved.unwrap(), test_file);
+
+        assert!(resolve_existing_file_path("").is_none());
+        assert!(resolve_existing_file_path("non_existent_file_xyz_12345.notfound").is_none());
+
+        let _ = std::fs::remove_file(&test_file);
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_data_science_all_attachment_types() {
+        use super::{extract_attached_code_context, resolve_code_for_command, format_file_content_for_llm};
+
+        // 1. CSV dataset
+        let p_csv = "<attachment id=\"data.csv\">col1,col2,col3\n10,20,30\n</attachment>\n@agent datascience correlation analysis";
+        let att_csv = extract_attached_code_context(p_csv);
+        assert_eq!(att_csv[0].0, "data.csv");
+        let res_csv = resolve_code_for_command("correlation analysis", p_csv);
+        assert!(res_csv.contains("data.csv"));
+        assert!(res_csv.contains("col1,col2,col3"));
+
+        // 2. JSON dataset
+        let p_json = "<attachment id=\"metrics.json\">{\"accuracy\": 0.95, \"loss\": 0.05}</attachment>\n/dataanalyst summarize metrics";
+        let att_json = extract_attached_code_context(p_json);
+        assert_eq!(att_json[0].0, "metrics.json");
+        let res_json = resolve_code_for_command("summarize metrics", p_json);
+        assert!(res_json.contains("metrics.json"));
+        assert!(res_json.contains("accuracy"));
+
+        // 3. Parquet simulated dataset
+        let mut fake_pq = b"PAR1".to_vec();
+        fake_pq.extend_from_slice(b" id  timestamp  temperature_c  humidity PAR1");
+        let fmt_pq = format_file_content_for_llm("sensors.parquet", &fake_pq);
+        assert!(fmt_pq.contains("Parquet Dataset: sensors.parquet"));
+        assert!(fmt_pq.contains("temperature_c"));
+
+        // 4. Excel XLSX simulated workbook
+        let mut fake_xlsx = b"PK  ".to_vec();
+        fake_xlsx.extend_from_slice(b" Q1_Sales  Q2_Sales  GrossMargin ");
+        let fmt_xlsx = format_file_content_for_llm("budget.xlsx", &fake_xlsx);
+        assert!(fmt_xlsx.contains("Excel Workbook: budget.xlsx"));
+        assert!(fmt_xlsx.contains("GrossMargin"));
+
+        // 5. Jupyter Notebook IPYNB
+        let notebook_json = serde_json::json!({
+            "cells": [
+                {
+                    "cell_type": "markdown",
+                    "source": ["# Sales Analysis\n", "Initial exploratory data analysis."]
+                },
+                {
+                    "cell_type": "code",
+                    "source": ["import pandas as pd\n", "df = pd.read_csv('sales.csv')\n", "df.describe()"]
+                }
+            ]
+        });
+        let nb_bytes = serde_json::to_vec(&notebook_json).unwrap();
+        let fmt_nb = format_file_content_for_llm("workflow.ipynb", &nb_bytes);
+        assert!(fmt_nb.contains("Jupyter Notebook: workflow.ipynb"));
+        assert!(fmt_nb.contains("Cell 1 (markdown)"));
+        assert!(fmt_nb.contains("Cell 2 (code)"));
+        assert!(fmt_nb.contains("pd.read_csv"));
+
+        // 6. Jupyter command with attachment
+        let p_jup = format!("<attachment id=\"workflow.ipynb\">{}</attachment>\n/jupyter analyze notebook", fmt_nb);
+        let res_jup = resolve_code_for_command("analyze notebook", &p_jup);
+        assert!(res_jup.contains("workflow.ipynb"));
+        assert!(res_jup.contains("Cell 2 (code)"));
+    }
+
+    #[test]
+    fn test_code_analysis_all_commands_with_attachments() {
+        use super::{extract_attached_code_context, resolve_code_for_command, canonicalize_command};
+
+        let commands = [
+            ("review", "Review the following code:"),
+            ("explain", "Explain the following code:"),
+            ("fix", "Fix the following code issue:"),
+            ("optimize", "Optimize the following code:"),
+            ("test", "Generate unit tests for the following code:"),
+            ("tests", "Generate unit tests for the following code:"),
+            ("audit", "Audit for security vulnerabilities:"),
+            ("security", "Audit the following code for security vulnerabilities"),
+            ("comment", "Add comprehensive inline comments"),
+            ("generate", "Generate implementation code"),
+        ];
+
+        let snippet = "<attachment id=\"solution.rs\">\npub fn solve(n: u64) -> u64 { n * 2 }\n</attachment>";
+
+        for (cmd, _desc) in &commands {
+            assert!(canonicalize_command(cmd).is_some(), "Command '{}' must canonicalize", cmd);
+
+            let prompt = format!("{}\n/{} check correctness", snippet, cmd);
+            let att = extract_attached_code_context(&prompt);
+            assert_eq!(att.len(), 1, "Must extract 1 attachment for command {}", cmd);
+            assert_eq!(att[0].0, "solution.rs");
+
+            let resolved = resolve_code_for_command("check correctness", &prompt);
+            assert!(resolved.contains("solution.rs"), "Resolved payload must contain filename for {}", cmd);
+            assert!(resolved.contains("pub fn solve"), "Resolved payload must contain code for {}", cmd);
+        }
+    }
+
+    #[test]
+    fn test_specialized_tools_with_attachments() {
+        use super::{extract_attached_code_context, resolve_code_for_command, canonicalize_command};
+
+        // 1. PE Header Extraction /pe
+        assert_eq!(canonicalize_command("pe"), Some("pe-header-extraction"));
+        assert_eq!(canonicalize_command("pe-header-extraction"), Some("pe-header-extraction"));
+        let p_pe = "<attachment id=\"C:\\Windows\\System32\\notepad.exe\">\nPE binary\n</attachment>\n/pe extract headers";
+        let att_pe = extract_attached_code_context(p_pe);
+        assert_eq!(att_pe[0].0, "C:\\Windows\\System32\\notepad.exe");
+        let res_pe = resolve_code_for_command("extract headers", p_pe);
+        assert!(res_pe.contains("notepad.exe"));
+
+        // 2. Createfile /createfile
+        assert_eq!(canonicalize_command("createfile"), Some("createfile"));
+        let p_cf = "<attachment id=\"utils.py\">\ndef add(a, b): return a + b\n</attachment>\n/createfile utils.py";
+        let att_cf = extract_attached_code_context(p_cf);
+        assert_eq!(att_cf[0].0, "utils.py");
+        assert!(att_cf[0].1.contains("def add"));
+    }
+
+    #[test]
+    fn test_all_hf_tasks_with_attachments() {
+        use super::{extract_attached_code_context, resolve_code_for_command, canonicalize_command};
+
+        let hf_tasks = [
+            "text-classification", "token-classification", "question-answering",
+            "text-generation", "summarization", "translation", "fill-mask",
+            "text2text-generation", "language-detection", "grammar-correction",
+            "paraphrase-generation", "causal-language-modeling", "zero-shot-classification",
+            "feature-extraction", "sentence-similarity", "anonymization",
+            "coreference-resolution", "spam-detection", "malware-text-detection",
+            "phishing-detection", "pii-detection", "hate-speech-detection",
+            "cyberbullying-detection", "fake-news-detection", "legal-judgment-classification",
+            "contract-clause-classification", "case-outcome-prediction",
+            "financial-ner", "legal-ner", "biomedical-ner", "chemical-reaction-ner",
+            "financial-sentiment-analysis", "scientific-abstract-summarization",
+            "emotion-detection", "sarcasm-detection", "stance-detection",
+            "bias-detection", "hallucination-detection", "reading-level-assessment",
+            "generation-groundedness", "citation-intent-classification",
+            "code-summary-generation", "code-clone-detection",
+            "image-classification", "object-detection", "image-segmentation",
+            "visual-question-answering", "document-question-answering",
+            "zero-shot-image-classification", "depth-estimation", "image-feature-extraction",
+            "automatic-speech-recognition", "audio-classification", "voice-activity-detection",
+            "emotion-recognition", "video-classification", "text-to-speech",
+            "text-to-image", "image-super-resolution", "table-question-answering",
+            "feature-ranking"
+        ];
+
+        let snippet = "<attachment id=\"input_data.txt\">\nSample input content for Hugging Face task pipeline.\n</attachment>";
+
+        for task in &hf_tasks {
+            assert!(canonicalize_command(task).is_some(), "HF task '{}' must canonicalize", task);
+            let prompt = format!("{}\n/{} process input", snippet, task);
+            let att = extract_attached_code_context(&prompt);
+            assert_eq!(att.len(), 1, "Must extract attachment for HF task {}", task);
+            let resolved = resolve_code_for_command("process input", &prompt);
+            assert!(resolved.contains("input_data.txt"), "Payload must contain file for HF task {}", task);
+            assert!(resolved.contains("Sample input content"), "Payload must contain content for HF task {}", task);
+        }
+    }
+
 }
 
