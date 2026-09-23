@@ -622,17 +622,25 @@ def cleanup_appdata():
     except Exception as e:
         print(f"[ENFORCE WARN] Failed to write Machine settings {machine_settings_path}: {e}")
 
-    cached_dir = os.path.join(hugos_dir, "CachedProfilesData")
-    if os.path.isdir(cached_dir):
-        for root, _, files in os.walk(cached_dir):
-            for file in files:
-                if "cache" in file.lower():
-                    fp = os.path.join(root, file)
-                    try:
-                        os.remove(fp)
-                        print(f"[CLEANUP] Removed cache file: {fp}")
-                    except Exception as e:
-                        print(f"[CLEANUP WARN] Could not remove {fp}: {e}")
+    # Purge V8 bytecode, code caches, and UI profile data to prevent stale script execution
+    cache_dirs_to_clean = [
+        "CachedData",
+        "Code Cache",
+        "CachedProfilesData",
+        "CachedConfigurations",
+        "Cache",
+        "GPUCache",
+        "DawnGraphiteCache",
+        "DawnWebGPUCache",
+    ]
+    for cname in cache_dirs_to_clean:
+        cdir = os.path.join(hugos_dir, cname)
+        if os.path.isdir(cdir):
+            try:
+                shutil.rmtree(cdir, ignore_errors=True)
+                print(f"[CLEANUP] Purged cache directory: {cdir}")
+            except Exception as e:
+                print(f"[CLEANUP WARN] Could not purge {cdir}: {e}")
 
     # Clean temporary update caches and flag files in %TEMP%
     temp_dir = os.environ.get("TEMP", "")
@@ -648,6 +656,55 @@ def cleanup_appdata():
                     print(f"[CLEANUP] Removed temporary update cache: {p}")
                 except Exception:
                     pass
+
+EXPECTED_NLS_INDICES = {
+    5440: "&&Edit",
+    5441: "&&File",
+    5442: "&&Go",
+    5443: "&&Help",
+    5444: "&&Preferences",
+    5445: "&&Selection",
+    5446: "&&Terminal",
+    5447: "&&View",
+    5448: "Check for &&Updates...",
+    5449: "Checking for Updates...",
+    5450: "D&&ownload Update",
+    5451: "Downloading Update...",
+    5453: "Open Settings",
+    11486: "&&Run",
+}
+
+def validate_nls_tables(out_dir):
+    """Validate that nls.messages.json in out_dir has exact 1:1 index alignment with workbench."""
+    json_path = os.path.join(out_dir, "nls.messages.json")
+    if not os.path.isfile(json_path):
+        print(f"  [ERROR] NLS messages file missing: {json_path}")
+        return False
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            arr = json.load(f)
+    except Exception as e:
+        print(f"  [ERROR] Cannot parse {json_path}: {e}")
+        return False
+
+    if not isinstance(arr, list):
+        print(f"  [ERROR] {json_path} root is not a list!")
+        return False
+
+    mismatches = []
+    for idx, expected_str in EXPECTED_NLS_INDICES.items():
+        actual_str = arr[idx] if idx < len(arr) else None
+        if actual_str != expected_str:
+            mismatches.append(f"Index {idx}: expected '{expected_str}', found '{actual_str}'")
+
+    if mismatches:
+        print(f"  [FATAL NLS ERROR] String table misalignment detected in {json_path}:")
+        for m in mismatches:
+            print(f"    - {m}")
+        return False
+
+    print(f"  [PASS] NLS table verified in {out_dir} ({len(arr)} strings, menubar indices 100% aligned).")
+    return True
 
 def main():
     print("============================================================")
@@ -679,6 +736,12 @@ def main():
         os.path.join(pack_dir, "resources", "app", "out", "main.js"),
     ]
 
+    out_dirs_to_validate = set()
+    root_pack_out = os.path.join(pack_dir, "resources", "app", "out")
+    has_authoritative_nls = os.path.isfile(os.path.join(root_pack_out, "nls.messages.json"))
+    if has_authoritative_nls:
+        out_dirs_to_validate.add(root_pack_out)
+
     base_dirs = [pack_dir]
     local_app_data = os.environ.get("LOCALAPPDATA", "")
     if local_app_data and not skip_installed:
@@ -686,6 +749,12 @@ def main():
         base_dirs.append(hugos_installed)
         targets.append(os.path.join(hugos_installed, "resources", "app", "out", "vs", "workbench", "workbench.desktop.main.js"))
         main_targets.append(os.path.join(hugos_installed, "resources", "app", "out", "main.js"))
+        inst_root_out = os.path.join(hugos_installed, "resources", "app", "out")
+        if has_authoritative_nls and os.path.isdir(inst_root_out):
+            out_dirs_to_validate.add(inst_root_out)
+
+    authoritative_out = root_pack_out
+    nls_file_names = ["nls.messages.js", "nls.messages.json", "nls.metadata.json", "nls.keys.json"]
 
     # Scan for versioned runtime directories ([0-9a-f]{7,40})
     for b in base_dirs:
@@ -700,15 +769,30 @@ def main():
                         v_main = os.path.join(sub, "resources", "app", "out", "main.js")
                         if v_main not in main_targets:
                             main_targets.append(v_main)
-                        # Sync NLS localization tables from root out directory to versioned out directory
-                        root_out = os.path.join(b, "resources", "app", "out")
+                        # Sync ALL authoritative NLS localization tables to versioned out directory
                         v_out = os.path.join(sub, "resources", "app", "out")
-                        if os.path.isdir(root_out) and os.path.isdir(v_out):
-                            for nls_name in ["nls.messages.js", "nls.metadata.json"]:
-                                src_nls = os.path.join(root_out, nls_name)
-                                dst_nls = os.path.join(v_out, nls_name)
-                                if os.path.isfile(src_nls):
-                                    shutil.copy2(src_nls, dst_nls)
+                        if os.path.isdir(v_out):
+                            os.makedirs(v_out, exist_ok=True)
+                            if has_authoritative_nls:
+                                out_dirs_to_validate.add(v_out)
+                                for nls_name in nls_file_names:
+                                    src_nls = os.path.join(authoritative_out, nls_name)
+                                    dst_nls = os.path.join(v_out, nls_name)
+                                    if os.path.isfile(src_nls):
+                                        shutil.copy2(src_nls, dst_nls)
+                                        print(f"  [NLS SYNC] Deployed {nls_name} -> {dst_nls}")
+
+    # If installed HugOS exists and not skipped, also copy authoritative NLS to installed root out
+    if local_app_data and not skip_installed and has_authoritative_nls:
+        hugos_installed = os.path.join(local_app_data, "HugOS IDE")
+        inst_root_out = os.path.join(hugos_installed, "resources", "app", "out")
+        if os.path.isdir(inst_root_out):
+            for nls_name in nls_file_names:
+                src_nls = os.path.join(authoritative_out, nls_name)
+                dst_nls = os.path.join(inst_root_out, nls_name)
+                if os.path.isfile(src_nls):
+                    shutil.copy2(src_nls, dst_nls)
+                    print(f"  [NLS SYNC] Deployed {nls_name} -> {dst_nls}")
 
     seen = set()
     error_count = 0
@@ -734,6 +818,12 @@ def main():
 
     # AppData state DB and profile caches cleanup & update.mode enforcement
     cleanup_appdata()
+
+    # Validate NLS tables across all collected out directories
+    print("\n[HUGOS] Validating NLS menubar string alignments...")
+    for out_dir in sorted(out_dirs_to_validate):
+        if not validate_nls_tables(out_dir):
+            error_count += 1
 
     if error_count > 0:
         print(f"\n[ERROR] workbench/main.js patching failed with {error_count} error(s)!")

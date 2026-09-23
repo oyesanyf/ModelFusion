@@ -225,9 +225,9 @@ foreach ($vDir in $versionedDirs) {
     Copy-Item -Path $authoritativeProductJson -Destination $vProductJson -Force -ErrorAction Stop
     Write-Host "[OK] Deployed authoritative product.json to versioned dir: $vProductJson" -ForegroundColor Green
 
-    # CRITICAL: Deploy authoritative nls.messages.js and nls.metadata.json to versioned dir
+    # CRITICAL: Deploy authoritative NLS localization tables to versioned dir
     # to guarantee exact 1:1 index alignment with workbench.desktop.main.js
-    foreach ($nlsFile in @('nls.messages.js', 'nls.metadata.json')) {
+    foreach ($nlsFile in @('nls.messages.js', 'nls.messages.json', 'nls.metadata.json', 'nls.keys.json')) {
         $rootNls = Join-Path $vsCodePackDir "resources\app\out\$nlsFile"
         $vNls = Join-Path $vDir.FullName "resources\app\out\$nlsFile"
         if (Test-Path $rootNls) {
@@ -674,6 +674,18 @@ foreach ($vDir in $versionedDirs) {
         if (-not (Test-Path $vOutMainDir)) { New-Item -ItemType Directory -Path $vOutMainDir -Force | Out-Null }
         Copy-Item -Path $srcMain -Destination (Join-Path $vOutMainDir "main.js") -Force
     }
+
+    # 5.2 Deploy authoritative NLS localization tables
+    foreach ($nlsFile in @('nls.messages.js', 'nls.messages.json', 'nls.metadata.json', 'nls.keys.json')) {
+        $srcNls = Join-Path $vsCodePackDir "resources\app\out\$nlsFile"
+        $dstNls = Join-Path $vAppDir "out\$nlsFile"
+        if (Test-Path $srcNls) {
+            $vNlsDir = Split-Path $dstNls -Parent
+            if (-not (Test-Path $vNlsDir)) { New-Item -ItemType Directory -Force -Path $vNlsDir | Out-Null }
+            Copy-Item -Path $srcNls -Destination $dstNls -Force -ErrorAction Stop
+            Write-Host "[OK] Deployed authoritative $nlsFile to versioned dir: $dstNls" -ForegroundColor Green
+        }
+    }
     
     # 6. ReST-RL subsystem
     $srcRestRl = Join-Path $vsCodePackDir "resources\app\rest_rl"
@@ -682,6 +694,36 @@ foreach ($vDir in $versionedDirs) {
     }
     Write-Host "[OK] Fully synchronized versioned runtime directory: $($vDir.Name)" -ForegroundColor Green
 }
+
+# 4.99 Validate NLS index alignment across all packaging directories
+Write-Host "[INFO] Validating NLS localization indices across all packaging directories..." -ForegroundColor Yellow
+$nlsCheckPy = "
+import sys, os, json
+pack_dir = sys.argv[1]
+expected = {5440:'&&Edit', 5441:'&&File', 5442:'&&Go', 5443:'&&Help', 5444:'&&Preferences', 5445:'&&Selection', 5446:'&&Terminal', 5447:'&&View', 5448:'Check for &&Updates...', 5449:'Checking for Updates...', 5450:'D&&ownload Update', 5451:'Downloading Update...', 5453:'Open Settings', 11486:'&&Run'}
+dirs = [os.path.join(pack_dir, 'resources', 'app', 'out')]
+for e in os.listdir(pack_dir):
+    v = os.path.join(pack_dir, e, 'resources', 'app', 'out')
+    if os.path.isdir(v): dirs.append(v)
+
+for d in dirs:
+    jp = os.path.join(d, 'nls.messages.json')
+    if not os.path.isfile(jp):
+        print(f'MISSING: {jp}', file=sys.stderr); sys.exit(1)
+    with open(jp, 'r', encoding='utf-8') as f: arr = json.load(f)
+    for idx, exp in expected.items():
+        val = arr[idx] if idx < len(arr) else 'EOF'
+        if val != exp:
+            print(f'MISMATCH in {jp} at {idx}: expected {exp}, got {val}', file=sys.stderr)
+            sys.exit(1)
+print(f'Validated NLS indices across {len(dirs)} packaging directories: 100% aligned.')
+"
+python -c "$nlsCheckPy" "$vsCodePackDir"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[ERROR] NLS index alignment verification failed! Aborting MSI build." -ForegroundColor Red
+    Exit 1
+}
+Write-Host "[OK] NLS index alignment verified successfully" -ForegroundColor Green
 
 
 
