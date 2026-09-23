@@ -36,9 +36,14 @@ Write-Host "[OK] Resolved packaged VS Code directory at $vsCodePackDir" -Foregro
 $signtoolPath = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe"
 if (-not (Test-Path $signtoolPath)) {
     Write-Host "[INFO] Signtool not found at default path, searching Windows Kits..." -ForegroundColor Yellow
-    $signtoolPath = Get-ChildItem -Path 'C:\Program Files (x86)\Windows Kits', 'C:\Program Files\Windows Kits', 'D:\tools' -Filter signtool.exe -Recurse -Depth 4 -ErrorAction SilentlyContinue | 
-                    Where-Object { $_.FullName -like "*x64*" } | 
-                    Select-Object -ExpandProperty FullName -First 1
+    $candidatePaths = @('C:\Program Files (x86)\Windows Kits', 'C:\Program Files\Windows Kits') | Where-Object { Test-Path $_ }
+    if ($candidatePaths) {
+        $signtoolPath = Get-ChildItem -Path $candidatePaths -Filter signtool.exe -Recurse -Depth 4 -ErrorAction SilentlyContinue | 
+                        Where-Object { $_.FullName -like "*x64*" } | 
+                        Select-Object -ExpandProperty FullName -First 1
+    } else {
+        $signtoolPath = $null
+    }
 }
 
 if ($signtoolPath) {
@@ -372,7 +377,12 @@ if (Test-Path $ovSrcPath) {
 # "modelfusion" vendor from being found as the default. This patch removes that vendor
 # check so any model with isDefaultForLocation.panel = true becomes the default model.
 Write-Host "[INFO] Patching extensionHostProcess.js to accept ModelFusion vendor..." -ForegroundColor Yellow
-$ejsPatterns = Get-ChildItem -Path $vsCodePackDir -Filter "extensionHostProcess.js" -Recurse
+$versionedDirs = @(Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' })
+$ejsCandidates = @(Join-Path $vsCodePackDir "resources\app\out\vs\workbench\api\node\extensionHostProcess.js")
+foreach ($vd in $versionedDirs) {
+    $ejsCandidates += (Join-Path $vd.FullName "resources\app\out\vs\workbench\api\node\extensionHostProcess.js")
+}
+$ejsPatterns = $ejsCandidates | Where-Object { Test-Path $_ } | Get-Item
 foreach ($ejsFile in $ejsPatterns) {
     $ejsContent = Get-Content $ejsFile.FullName -Raw
     $vendorCheckOld = 'r.metadata.isDefaultForLocation.panel&&r.metadata.vendor===Yl'
@@ -390,8 +400,11 @@ foreach ($ejsFile in $ejsPatterns) {
 # When product.json contains a checksums block, VS Code validates file hashes at startup.
 # Our patches naturally change file hashes, so we remove the block to avoid false alarms.
 Write-Host "[INFO] Stripping checksums from product.json..." -ForegroundColor Yellow
-$productJsonFiles = Get-ChildItem -Path $vsCodePackDir -Filter "product.json" -Recurse |
-    Where-Object { $_.FullName -like "*resources\app\product.json" }
+$pjCandidates = @(Join-Path $vsCodePackDir "resources\app\product.json")
+foreach ($vd in $versionedDirs) {
+    $pjCandidates += (Join-Path $vd.FullName "resources\app\product.json")
+}
+$productJsonFiles = $pjCandidates | Where-Object { Test-Path $_ } | Get-Item
 foreach ($pjFile in $productJsonFiles) {
     $pjObj = Get-Content $pjFile.FullName -Raw | ConvertFrom-Json
     if ($pjObj.checksums) {
