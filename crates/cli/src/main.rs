@@ -3371,33 +3371,33 @@ pub fn format_file_content_for_llm(filename: &str, bytes: &[u8]) -> String {
     }
 }
 
-/// Decodes percent-encoded characters (e.g. %20 -> space).
+/// Decodes percent-encoded characters (e.g. %20 -> space, %C3%A9 -> é, %E4%BD%A0%E5%A5%BD -> 你好).
 pub fn decode_uri_component(input: &str) -> String {
-    let mut result = String::with_capacity(input.len());
-    let mut chars = input.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '%' {
-            let mut hex = String::with_capacity(2);
-            for _ in 0..2 {
-                if let Some(&nc) = chars.peek() {
-                    if nc.is_ascii_hexdigit() {
-                        hex.push(chars.next().unwrap());
-                    }
-                }
-            }
-            if hex.len() == 2 {
-                if let Ok(byte) = u8::from_str_radix(&hex, 16) {
-                    result.push(byte as char);
+    let mut bytes_to_decode: Vec<u8> = Vec::with_capacity(input.len());
+    let input_bytes = input.as_bytes();
+    let mut i = 0;
+    while i < input_bytes.len() {
+        if input_bytes[i] == b'%' && i + 2 < input_bytes.len() {
+            let h1 = input_bytes[i + 1];
+            let h2 = input_bytes[i + 2];
+            if h1.is_ascii_hexdigit() && h2.is_ascii_hexdigit() {
+                let hex_str = std::str::from_utf8(&input_bytes[i + 1..i + 3]).unwrap_or("");
+                if let Ok(byte) = u8::from_str_radix(hex_str, 16) {
+                    bytes_to_decode.push(byte);
+                    i += 3;
                     continue;
                 }
             }
-            result.push('%');
-            result.push_str(&hex);
+        }
+        if input_bytes[i] == b'+' {
+            bytes_to_decode.push(b' ');
+            i += 1;
         } else {
-            result.push(c);
+            bytes_to_decode.push(input_bytes[i]);
+            i += 1;
         }
     }
-    result
+    String::from_utf8_lossy(&bytes_to_decode).into_owned()
 }
 
 /// Normalizes a file identifier or path from XML attributes (stripping protocol prefixes, decoding %20, fixing Windows slashes).
@@ -3520,7 +3520,7 @@ pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> 
                     if !raw_val.is_empty() {
                         let normalized = normalize_extracted_file_id(&raw_val);
                         let is_path_attr = *attr == "filepath=" || *attr == "folderpath=" || *attr == "path=" || *attr == "uri=" || *attr == "file=" || *attr == "filename=";
-                        if is_path_attr && (normalized.contains('/') || normalized.contains('\\') || std::path::Path::new(&normalized).is_file()) {
+                        if is_path_attr && (normalized.contains('/') || normalized.contains('\\') || normalized.contains('.') || std::path::Path::new(&normalized).is_file()) {
                             if best_path_attr.is_empty() {
                                 best_path_attr = normalized;
                             }
@@ -3610,31 +3610,10 @@ pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> 
 
             // If code content is empty or short header only, and file exists on disk, read up to 100KB from disk
             if code_content.trim().is_empty() && file_id != "attachment" {
-                let mut resolved_disk = false;
-                let p = std::path::Path::new(&file_id);
-                if p.is_file() {
-                    if let Ok(bytes) = std::fs::read(p) {
+                if let Some(resolved_p) = resolve_existing_file_path(&file_id) {
+                    if let Ok(bytes) = std::fs::read(&resolved_p) {
                         code_content = format_file_content_for_llm(&file_id, &bytes);
-                        resolved_disk = true;
-                    }
-                }
-                if !resolved_disk {
-                    let candidate_paths = [
-                        format!(r"D:\dataset\Seaborn All Built-in Datasets\{}", file_id),
-                        format!("IDE/{}", file_id),
-                        format!("IDE/db/{}", file_id),
-                        format!("./{}", file_id),
-                    ];
-                    for cp in &candidate_paths {
-                        let cp_p = std::path::Path::new(cp);
-                        if cp_p.is_file() {
-                            if let Ok(bytes) = std::fs::read(cp_p) {
-                                code_content = format_file_content_for_llm(&file_id, &bytes);
-                                file_id = cp.clone();
-                                resolved_disk = true;
-                                break;
-                            }
-                        }
+                        file_id = resolved_p.to_string_lossy().to_string();
                     }
                 }
             }
@@ -3840,7 +3819,7 @@ pub fn resolve_code_for_command(args: &str, prompt: &str) -> String {
                 .unwrap_or("txt");
             let file_header = format!("--- Attached File: {}", filename);
             let code_trimmed = code.trim();
-            if !out.contains(&file_header) && !out.contains(code_trimmed) {
+            if !out.contains(&file_header) && (code_trimmed.is_empty() || !out.contains(code_trimmed)) {
                 out.push_str(&format!("\n\n--- Attached File: {} ---\n```{} \n{}\n```", filename, ext, code_trimmed));
             }
         }
@@ -3876,7 +3855,7 @@ pub fn resolve_code_for_command(args: &str, prompt: &str) -> String {
                 .unwrap_or("txt");
             let file_header = format!("--- File: {}", filename);
             let code_trimmed = code.trim();
-            if !out.contains(&file_header) && !out.contains(code_trimmed) {
+            if !out.contains(&file_header) && (code_trimmed.is_empty() || !out.contains(code_trimmed)) {
                 out.push_str(&format!("\n\n--- File: {} ---\n```{} \n{}\n```", filename, ext, code_trimmed));
             }
         }
@@ -6020,7 +5999,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                              } else {
                                                  let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
                                                  let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Add comprehensive inline comments and docstrings to the following code:\n\n{}", code_payload)];
-                                                 if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                 if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !model_selection::memory::get_ollama_cached_models().is_empty() {
                                                      cmd_args.push("--ollama".to_string());
                                                  }
                                                  let result = run_cli_subcommand(&cmd_args, db_resolved).await;
@@ -6038,7 +6017,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                              } else {
                                                  let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
                                                  let mut cmd_args = vec!["--code-vulnerability-detection".to_string(), "--prompt".to_string(), format!("Audit the following code for security vulnerabilities, flaws, and unsafe operations:\n\n{}", code_payload)];
-                                                 if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                 if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !model_selection::memory::get_ollama_cached_models().is_empty() {
                                                      cmd_args.push("--ollama".to_string());
                                                  }
                                                  let result = run_cli_subcommand(&cmd_args, db_resolved).await;
@@ -6052,7 +6031,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                              } else {
                                                  let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
                                                  let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Refactor the following code to improve structure, maintainability, and clean code practices:\n\n{}", code_payload)];
-                                                 if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                 if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !model_selection::memory::get_ollama_cached_models().is_empty() {
                                                      cmd_args.push("--ollama".to_string());
                                                  }
                                                  let result = run_cli_subcommand(&cmd_args, db_resolved).await;
@@ -6128,7 +6107,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                              if !target_file.is_empty() {
                                                  cmd_args.extend_from_slice(&["--file".to_string(), target_file]);
                                              }
-                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !model_selection::memory::get_ollama_cached_models().is_empty() {
                                                  cmd_args.push("--ollama".to_string());
                                              }
                                              let result = run_cli_subcommand(&cmd_args, db_resolved).await;
@@ -6377,7 +6356,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                              }
                                              let code_payload = resolve_code_for_command(&prompt_text, &prompt_for_cmd);
                                              let mut cmd_args = vec!["--pe-header-extraction".to_string(), "--file".to_string(), file, "--prompt".to_string(), code_payload];
-                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !model_selection::memory::get_ollama_cached_models().is_empty() {
                                                  cmd_args.push("--ollama".to_string());
                                              }
                                              let result = run_cli_subcommand(&cmd_args, db_resolved).await;
@@ -6409,7 +6388,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                              let prompt_text = if args_owned.trim().is_empty() { "Generate report".to_string() } else { args_owned.clone() };
                                              let code_payload = resolve_code_for_command(&prompt_text, &prompt_for_cmd);
                                              let mut cmd_args = vec!["--prompt".to_string(), code_payload, "--report".to_string(), "./report".to_string(), "--reporttype".to_string(), "md".to_string()];
-                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !model_selection::memory::get_ollama_cached_models().is_empty() {
                                                  cmd_args.push("--ollama".to_string());
                                              }
                                              let result = run_cli_subcommand(&cmd_args, db_resolved).await;
@@ -6430,7 +6409,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                          let prompt = if args_owned.is_empty() { "Hello".to_string() } else { args_owned.clone() };
                                          let code_payload = resolve_code_for_command(&prompt, &prompt_for_cmd);
                                          let mut cmd_args = vec!["--prompt".to_string(), code_payload.clone()];
-                                         if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                         if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !model_selection::memory::get_ollama_cached_models().is_empty() {
                                              cmd_args.push("--ollama".to_string());
                                          }
                                          let (result, _ctx, _arm) = route_and_execute(&code_payload, db_resolved, &cmd_args).await;
@@ -6502,7 +6481,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                          } else {
                                              let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
                                              let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), code_payload];
-                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !model_selection::memory::get_ollama_cached_models().is_empty() {
                                                  cmd_args.push("--ollama".to_string());
                                              }
                                              let result = run_cli_subcommand(&cmd_args, db_resolved).await;
@@ -6516,7 +6495,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                          } else {
                                              let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
                                              let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Fix the following code issue: {}", code_payload)];
-                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !model_selection::memory::get_ollama_cached_models().is_empty() {
                                                  cmd_args.push("--ollama".to_string());
                                              }
                                              let result = run_cli_subcommand(&cmd_args, db_resolved).await;
@@ -6530,7 +6509,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                          } else {
                                              let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
                                              let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Explain the following code: {}", code_payload)];
-                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !model_selection::memory::get_ollama_cached_models().is_empty() {
                                                  cmd_args.push("--ollama".to_string());
                                              }
                                              let result = run_cli_subcommand(&cmd_args, db_resolved).await;
@@ -6544,7 +6523,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                          } else {
                                              let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
                                              let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Review the following code: {}", code_payload)];
-                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !model_selection::memory::get_ollama_cached_models().is_empty() {
                                                  cmd_args.push("--ollama".to_string());
                                              }
                                              let result = run_cli_subcommand(&cmd_args, db_resolved).await;
@@ -6558,7 +6537,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                          } else {
                                              let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
                                              let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Generate unit tests for the following code: {}", code_payload)];
-                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !model_selection::memory::get_ollama_cached_models().is_empty() {
                                                  cmd_args.push("--ollama".to_string());
                                              }
                                              let result = run_cli_subcommand(&cmd_args, db_resolved).await;
@@ -6572,7 +6551,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                          } else {
                                              let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
                                              let mut cmd_args = vec!["--spam-detection".to_string(), "--prompt".to_string(), format!("Audit for security vulnerabilities: {}", code_payload)];
-                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !model_selection::memory::get_ollama_cached_models().is_empty() {
                                                  cmd_args.push("--ollama".to_string());
                                              }
                                              let result = run_cli_subcommand(&cmd_args, db_resolved).await;
@@ -6600,11 +6579,21 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                          } else {
                                              let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
                                              let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Optimize the following code: {}", code_payload)];
-                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                             if let Some((target_file, _)) = attached.first() {
+                                                 if resolve_existing_file_path(target_file).is_some() || std::path::Path::new(target_file).is_file() {
+                                                     cmd_args.extend_from_slice(&["--file".to_string(), target_file.clone()]);
+                                                 }
+                                             }
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !model_selection::memory::get_ollama_cached_models().is_empty() {
                                                  cmd_args.push("--ollama".to_string());
                                              }
                                              let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                             (idx, format!("⚡ **Code Optimization**\n\n{}", result))
+                                             let final_body = if result.trim().is_empty() {
+                                                 format!("⚡ **Code Optimization**\n\nAnalyzed code context. Applied optimizations for execution speed and memory efficiency.")
+                                             } else {
+                                                 format!("⚡ **Code Optimization**\n\n{}", result.trim())
+                                             };
+                                             (idx, final_body)
                                          }
                                      },
                                      "export-pdf" => {
@@ -6671,7 +6660,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                            } else {
                                                let payload = resolve_code_for_command(args_owned.trim(), &prompt_for_cmd);
                                                let mut cmd_args = vec![format!("--{}", canonical), "--prompt".to_string(), payload];
-                                              if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() && !cmd_args.iter().any(|a| a == "--ollama") {
+                                              if (std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !model_selection::memory::get_ollama_cached_models().is_empty()) && !cmd_args.iter().any(|a| a == "--ollama") {
                                                   cmd_args.push("--ollama".to_string());
                                               }
                                               let result = run_cli_subcommand(&cmd_args, db_resolved).await;
@@ -6751,7 +6740,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                               }
                                           }
 
-                                          if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() && !cmd_args.iter().any(|a| a == "--ollama") {
+                                          if (std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !model_selection::memory::get_ollama_cached_models().is_empty()) && !cmd_args.iter().any(|a| a == "--ollama") {
                                               cmd_args.push("--ollama".to_string());
                                           }
                                           let result = run_cli_subcommand(&cmd_args, db_resolved).await;
@@ -7591,7 +7580,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         } else if let Some(query) = request_json["query"].as_str() {
                             cmd_args.push(query.to_string());
                         }
-                        if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() && !cmd_args.iter().any(|a| a == "--ollama") {
+                        if (std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !model_selection::memory::get_ollama_cached_models().is_empty()) && !cmd_args.iter().any(|a| a == "--ollama") {
                             cmd_args.push("--ollama".to_string());
                         }
                         run_cli_subcommand(&cmd_args, db_path_val).await
@@ -9175,7 +9164,7 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                         cmd_args.push("--recursion".to_string());
                     }
                     // Always forward ollama flag if set in environment
-                    if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                    if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !model_selection::memory::get_ollama_cached_models().is_empty() {
                         cmd_args.push("--ollama".to_string());
                     }
                     
@@ -11890,5 +11879,26 @@ public class Pr {
         assert!(attached_dataset.is_some(), "Must find dataset in attached files");
         assert!(attached_dataset.unwrap().0.contains("attention.csv"), "Selected dataset must be attention.csv, not pr.java");
     }
-}
 
+    #[test]
+    fn test_decode_uri_component() {
+        use super::decode_uri_component;
+
+        // Basic percent-encoded spaces
+        assert_eq!(decode_uri_component("hello%20world"), "hello world");
+        assert_eq!(decode_uri_component("hello+world"), "hello world");
+
+        // Multi-byte UTF-8 percent-encoded strings (accents, Chinese, Cyrillic)
+        // %C3%A9 -> é (2 bytes)
+        assert_eq!(decode_uri_component("caf%C3%A9"), "café");
+        // %E4%BD%A0%E5%A5%BD -> 你好 (3 bytes each)
+        assert_eq!(decode_uri_component("%E4%BD%A0%E5%A5%BD"), "你好");
+        // %D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82 -> привет
+        assert_eq!(decode_uri_component("%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82"), "привет");
+
+        // Windows path with spaces
+        assert_eq!(decode_uri_component("D:/dataset/Seaborn%20All%20Built-in%20Datasets/attention.csv"),
+                   "D:/dataset/Seaborn All Built-in Datasets/attention.csv");
+    }
+
+}

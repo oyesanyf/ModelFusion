@@ -280,7 +280,7 @@ pub(crate) fn is_ollama_model_in_list(target: &str, list: &[String]) -> bool {
         }
         if let Some((m_base, m_tag)) = m_lower.split_once(':') {
             if m_base == target_base {
-                return m_tag == target_tag || m_tag.starts_with(target_tag) || target_tag == "latest";
+                return m_tag == target_tag || m_tag.starts_with(target_tag);
             }
         } else if m_lower == target_base {
             return true;
@@ -1137,4 +1137,51 @@ pub fn extract_media_from_prompt(prompt: &str) -> (String, Vec<String>, Vec<Stri
     }
     
     (clean_prompt, images, audio_clips)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_ollama_model_in_list() {
+        let installed = vec![
+            "qwen2.5:32b".to_string(),
+            "qwen2.5:7b".to_string(),
+            "deepseek-r1:1.5b".to_string(),
+        ];
+
+        // Exact match
+        assert!(is_ollama_model_in_list("qwen2.5:32b", &installed));
+        assert!(is_ollama_model_in_list("qwen2.5:7b", &installed));
+        assert!(is_ollama_model_in_list("deepseek-r1:1.5b", &installed));
+
+        // Missing tags must return false so fallback logic is triggered
+        assert!(!is_ollama_model_in_list("qwen2.5:0.5b", &installed));
+        assert!(!is_ollama_model_in_list("qwen2.5:14b", &installed));
+        assert!(!is_ollama_model_in_list("qwen2.5", &installed)); // latest not installed
+        assert!(!is_ollama_model_in_list("qwen2.5:latest", &installed));
+        assert!(!is_ollama_model_in_list("llama3.1:8b", &installed));
+    }
+
+    #[test]
+    fn test_pick_best_ollama_fallback() {
+        let installed = vec![
+            "qwen2.5:32b".to_string(),
+            "qwen2.5:7b".to_string(),
+            "deepseek-r1:1.5b".to_string(),
+        ];
+
+        // qwen2.5:0.5b falls back to the best matching installed qwen2.5 model (32b prioritized)
+        let fallback = pick_best_ollama_fallback("qwen2.5:0.5b", &installed);
+        assert_eq!(fallback, Some("qwen2.5:32b".to_string()));
+
+        // qwen2.5 falls back to 32b
+        let fallback_base = pick_best_ollama_fallback("qwen2.5", &installed);
+        assert_eq!(fallback_base, Some("qwen2.5:32b".to_string()));
+
+        // deepseek falls back to installed deepseek-r1:1.5b
+        let fallback_ds = pick_best_ollama_fallback("deepseek-r1:32b", &installed);
+        assert_eq!(fallback_ds, Some("deepseek-r1:1.5b".to_string()));
+    }
 }
