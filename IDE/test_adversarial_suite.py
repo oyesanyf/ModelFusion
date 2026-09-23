@@ -368,8 +368,10 @@ try:
     t26_dir = os.path.join(temp_root, "t26")
     t26_out = os.path.join(t26_dir, "resources", "app", "out")
     os.makedirs(t26_out, exist_ok=True)
+    with open(os.path.join(t26_out, "nls.messages.js"), "w", encoding="utf-8") as f:
+        f.write("globalThis._VSCODE_NLS_MESSAGES=[];")
     # 26a: Valid table passes
-    valid_nls = [""] * 12000
+    valid_nls = [""] * 15000
     for idx, s in EXPECTED_NLS_INDICES.items():
         valid_nls[idx] = s
     with open(os.path.join(t26_out, "nls.messages.json"), "w", encoding="utf-8") as f:
@@ -377,7 +379,7 @@ try:
     t26a_ok = validate_nls_tables(t26_out)
 
     # 26b: Shifted table (+6 shift like in the reported bug) fails
-    shifted_nls = [""] * 12000
+    shifted_nls = [""] * 15000
     for idx, s in EXPECTED_NLS_INDICES.items():
         shifted_nls[idx + 6] = s  # offset by +6
     with open(os.path.join(t26_out, "nls.messages.json"), "w", encoding="utf-8") as f:

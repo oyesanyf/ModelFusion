@@ -672,13 +672,18 @@ EXPECTED_NLS_INDICES = {
     5451: "Downloading Update...",
     5453: "Open Settings",
     11486: "&&Run",
+    12864: "Explorer",
 }
 
 def validate_nls_tables(out_dir):
     """Validate that nls.messages.json in out_dir has exact 1:1 index alignment with workbench."""
     json_path = os.path.join(out_dir, "nls.messages.json")
+    js_path = os.path.join(out_dir, "nls.messages.js")
     if not os.path.isfile(json_path):
-        print(f"  [ERROR] NLS messages file missing: {json_path}")
+        print(f"  [ERROR] NLS messages JSON file missing: {json_path}")
+        return False
+    if not os.path.isfile(js_path) or os.path.getsize(js_path) == 0:
+        print(f"  [ERROR] NLS messages JS file missing or empty: {js_path}")
         return False
     try:
         with open(json_path, "r", encoding="utf-8") as f:

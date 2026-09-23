@@ -700,7 +700,7 @@ Write-Host "[INFO] Validating NLS localization indices across all packaging dire
 $nlsCheckPy = "
 import sys, os, json
 pack_dir = sys.argv[1]
-expected = {5440:'&&Edit', 5441:'&&File', 5442:'&&Go', 5443:'&&Help', 5444:'&&Preferences', 5445:'&&Selection', 5446:'&&Terminal', 5447:'&&View', 5448:'Check for &&Updates...', 5449:'Checking for Updates...', 5450:'D&&ownload Update', 5451:'Downloading Update...', 5453:'Open Settings', 11486:'&&Run'}
+expected = {5440:'&&Edit', 5441:'&&File', 5442:'&&Go', 5443:'&&Help', 5444:'&&Preferences', 5445:'&&Selection', 5446:'&&Terminal', 5447:'&&View', 5448:'Check for &&Updates...', 5449:'Checking for Updates...', 5450:'D&&ownload Update', 5451:'Downloading Update...', 5453:'Open Settings', 11486:'&&Run', 12864:'Explorer'}
 dirs = [os.path.join(pack_dir, 'resources', 'app', 'out')]
 for e in os.listdir(pack_dir):
     v = os.path.join(pack_dir, e, 'resources', 'app', 'out')

@@ -203,6 +203,51 @@ def verify_workbench_main_js(path, label, failures):
     except Exception as e:
         failures.append(f"[{label}] Failed reading workbench.desktop.main.js: {e}")
 
+EXPECTED_NLS_INDICES = {
+    5440: "&&Edit",
+    5441: "&&File",
+    5442: "&&Go",
+    5443: "&&Help",
+    5444: "&&Preferences",
+    5445: "&&Selection",
+    5446: "&&Terminal",
+    5447: "&&View",
+    5448: "Check for &&Updates...",
+    5449: "Checking for Updates...",
+    5450: "D&&ownload Update",
+    5451: "Downloading Update...",
+    5453: "Open Settings",
+    11486: "&&Run",
+    12864: "Explorer",
+}
+
+def verify_nls_messages_json(path, label, failures):
+    """Validate nls.messages.json existence, size, and menubar index alignment."""
+    if not os.path.isfile(path):
+        failures.append(f"[{label}] Missing nls.messages.json at: {path}")
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            arr = json.load(f)
+        if not isinstance(arr, list):
+            failures.append(f"[{label}] nls.messages.json root is not a list")
+            return
+        if len(arr) < 12000:
+            failures.append(f"[{label}] nls.messages.json has too few entries ({len(arr)})")
+            return
+        mismatches = []
+        for idx, expected_str in EXPECTED_NLS_INDICES.items():
+            actual_str = arr[idx] if idx < len(arr) else None
+            if actual_str != expected_str:
+                mismatches.append(f"Index {idx}: expected '{expected_str}', found '{actual_str}'")
+        if mismatches:
+            for m in mismatches:
+                failures.append(f"[{label}] NLS misalignment: {m}")
+        else:
+            print(f"  [PASS] {label} verified ({len(arr)} strings, 100% aligned)")
+    except Exception as e:
+        failures.append(f"[{label}] Failed reading nls.messages.json: {e}")
+
 def verify_binary_file(path, label, min_size, failures):
     """Validate binary file existence and minimum size."""
     if not os.path.isfile(path):
@@ -265,6 +310,8 @@ def verify_via_msi_database(msi_path):
                 ("product.json", 100),
                 ("product-default-settings.json", 100),
                 ("workbench.desktop.main.js", 1_000_000),
+                ("nls.messages.json", 500_000),
+                ("nls.messages.js", 500_000),
                 ("critic_evaluator.py", 500),
                 ("rest_rl_daemon.py", 1000),
                 ("sandbox.py", 1000),
@@ -365,6 +412,7 @@ def main():
         verify_copilot_package_json(os.path.join(install_root, "resources", "app", "extensions", "copilot", "package.json"), "Root copilot package.json", failures)
         verify_copilot_extension_js(os.path.join(install_root, "resources", "app", "extensions", "copilot", "dist", "extension.js"), "Root copilot extension.js", failures)
         verify_workbench_main_js(os.path.join(install_root, "resources", "app", "out", "vs", "workbench", "workbench.desktop.main.js"), "Root workbench.desktop.main.js", failures)
+        verify_nls_messages_json(os.path.join(install_root, "resources", "app", "out", "nls.messages.json"), "Root nls.messages.json", failures)
         verify_rest_rl_subsystem(install_root, "Root", failures)
 
         print("\n--- 2. Versioned Runtime Files & Payloads ---")
@@ -373,6 +421,7 @@ def main():
         verify_copilot_package_json(os.path.join(v_root, "resources", "app", "extensions", "copilot", "package.json"), f"Versioned ({versioned_dir_name}) copilot package.json", failures)
         verify_copilot_extension_js(os.path.join(v_root, "resources", "app", "extensions", "copilot", "dist", "extension.js"), f"Versioned ({versioned_dir_name}) copilot extension.js", failures)
         verify_workbench_main_js(os.path.join(v_root, "resources", "app", "out", "vs", "workbench", "workbench.desktop.main.js"), f"Versioned ({versioned_dir_name}) workbench.desktop.main.js", failures)
+        verify_nls_messages_json(os.path.join(v_root, "resources", "app", "out", "nls.messages.json"), f"Versioned ({versioned_dir_name}) nls.messages.json", failures)
         verify_rest_rl_subsystem(v_root, f"Versioned ({versioned_dir_name})", failures)
 
         print("\n--- 3. Core Engine Binaries & Database ---")
