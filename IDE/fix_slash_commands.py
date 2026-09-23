@@ -408,6 +408,14 @@ def patch_file(file_path):
 
     # Clean bogus context config mapping if present in M
     bad_ctx = 'context:{key:"hugos.modelfusion.context",type:"string"},'
+    bad_opt1 = '"optimize": "hugos.modelfusion.workflowOptimization",'
+    bad_opt2 = 'optimize: "hugos.modelfusion.workflowOptimization",'
+    if bad_opt1 in content:
+        content = content.replace(bad_opt1, '')
+        print(f"  Removed {bad_opt1} from {file_path}")
+    if bad_opt2 in content:
+        content = content.replace(bad_opt2, '')
+        print(f"  Removed {bad_opt2} from {file_path}")
     if bad_ctx in content:
         content = content.replace(bad_ctx, '')
         print(f"  Removed invalid {bad_ctx} from settings mapping in {file_path}")
@@ -435,7 +443,8 @@ def patch_file(file_path):
         required_fast_cmds = [
             "rest-rl", "restrl", "rl", "active-model", "active-models", "activemodels",
             "version", "updatedb", "update", "clearcache",
-            "createfile", "create-file", "create_file", "newfile"
+            "createfile", "create-file", "create_file", "newfile",
+            "optimize", "boost", "booster"
         ]
         for pattern in ["const fastInfoCommands = /* @__PURE__ */ new Set([", "const fastInfoCommands = new Set(["]:
             idx = new_content.find(pattern)

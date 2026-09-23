@@ -721,30 +721,36 @@ pub fn get_ollama_cached_models() -> Vec<String> {
 
     let mut fetched_tags: Vec<String> = Vec::new();
 
-    // 1. Try reqwest::blocking with no_proxy and timeout
-    if let Ok(client) = reqwest::blocking::Client::builder()
-        .no_proxy()
-        .timeout(std::time::Duration::from_millis(2000))
-        .build()
-    {
-        if let Ok(res) = client.get(&tags_url).send() {
-            if res.status().is_success() {
-                if let Ok(json) = res.json::<serde_json::Value>() {
-                    if let Some(models) = json["models"].as_array() {
-                        fetched_tags = models
-                            .iter()
-                            .filter_map(|m| m["name"].as_str().map(|s| s.to_lowercase()))
-                            .collect();
+    // 1. Try reqwest::blocking inside a dedicated thread so it never conflicts with an async Tokio runtime
+    let tags_url_clone = tags_url.clone();
+    if let Ok(thread_tags) = std::thread::spawn(move || -> Vec<String> {
+        if let Ok(client) = reqwest::blocking::Client::builder()
+            .no_proxy()
+            .timeout(std::time::Duration::from_millis(1500))
+            .build()
+        {
+            if let Ok(res) = client.get(&tags_url_clone).send() {
+                if res.status().is_success() {
+                    if let Ok(json) = res.json::<serde_json::Value>() {
+                        if let Some(models) = json["models"].as_array() {
+                            return models
+                                .iter()
+                                .filter_map(|m| m["name"].as_str().map(|s| s.to_lowercase()))
+                                .collect();
+                        }
                     }
                 }
             }
         }
+        Vec::new()
+    }).join() {
+        fetched_tags = thread_tags;
     }
 
-    // 2. Fallback to curl if reqwest was empty
+    // 2. Fallback to curl with proxy bypass and timeout if reqwest was empty
     if fetched_tags.is_empty() {
         let result = std::process::Command::new("curl")
-            .args(["-s", &tags_url])
+            .args(["-s", "--noproxy", "*", "--max-time", "2", &tags_url])
             .output();
 
         if let Ok(o) = result {
@@ -756,6 +762,22 @@ pub fn get_ollama_cached_models() -> Vec<String> {
                             .iter()
                             .filter_map(|m| m["name"].as_str().map(|s| s.to_lowercase()))
                             .collect();
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Fallback to `ollama list` CLI if HTTP endpoints did not return models
+    if fetched_tags.is_empty() {
+        if let Ok(o) = std::process::Command::new("ollama").args(["list"]).output() {
+            if o.status.success() {
+                let stdout_str = String::from_utf8_lossy(&o.stdout);
+                for line in stdout_str.lines().skip(1) {
+                    if let Some(name) = line.split_whitespace().next() {
+                        if !name.trim().is_empty() {
+                            fetched_tags.push(name.to_lowercase());
+                        }
                     }
                 }
             }
@@ -789,7 +811,7 @@ pub fn is_ollama_model_cached(model_id: &str) -> bool {
         if let Some((m_base, m_tag)) = m_lower.split_once(':') {
             if m_base == target_base {
                 match target_tag {
-                    Some(tt) => m_tag == tt || m_tag.starts_with(tt) || tt == "latest",
+                    Some(tt) => m_tag == tt || m_tag.starts_with(tt),
                     None => true,
                 }
             } else {
