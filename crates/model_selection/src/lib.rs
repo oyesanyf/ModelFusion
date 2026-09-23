@@ -424,21 +424,40 @@ impl EnhancedModelSelector {
         // Sort candidates by final score descending (safe against NaN values)
         candidates.sort_by(|a, b| b.final_score.partial_cmp(&a.final_score).unwrap_or(std::cmp::Ordering::Equal));
 
-        // When using Ollama, only keep models that have known Ollama equivalents
+        // When using Ollama, keep models that are installed in Ollama OR match known Ollama equivalents
         if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
             let ollama_models: &[&str] = &[
+                "Qwen2.5-72B-Instruct", "Qwen2.5-32B-Instruct", "Qwen2.5-14B-Instruct",
                 "Qwen2.5-7B-Instruct", "Qwen2.5-3B-Instruct", "Qwen2.5-1.5B-Instruct",
-                "Qwen2.5-0.5B-Instruct", "Qwen2.5-14B-Instruct", "Qwen2.5-Coder-7B-Instruct",
-                "Qwen3-8B", "Qwen3-4B", "Qwen3-1.7B",
-                "Llama-3.1-8B-Instruct", "Llama-3.2-3B-Instruct", "Llama-3.2-1B-Instruct",
+                "Qwen2.5-0.5B-Instruct", "Qwen2.5-Coder-32B-Instruct", "Qwen2.5-Coder-14B-Instruct",
+                "Qwen2.5-Coder-7B-Instruct", "Qwen3-8B", "Qwen3-4B", "Qwen3-1.7B",
+                "Llama-3.1-70B-Instruct", "Llama-3.1-8B-Instruct", "Llama-3.2-3B-Instruct", "Llama-3.2-1B-Instruct",
                 "DeepSeek-R1-Distill-Qwen-1.5B", "DeepSeek-R1-Distill-Qwen-7B",
                 "DeepSeek-R1-Distill-Qwen-14B", "DeepSeek-R1-Distill-Qwen-32B",
-                "DeepSeek-R1-Distill-Llama-8B",
-                "gemma-2-2b-it", "gemma-2-9b-it", "gemma-3-4b-it", "gemma-3-12b-it",
-                "Phi-3-mini-4k-instruct", "Phi-4-mini-instruct",
+                "DeepSeek-R1-Distill-Llama-8B", "DeepSeek-R1-Distill-Llama-70B",
+                "gemma-2-2b-it", "gemma-2-9b-it", "gemma-2-27b-it", "gemma-3-4b-it", "gemma-3-12b-it",
+                "Phi-3-mini-4k-instruct", "Phi-4-mini-instruct", "Phi-4",
                 "Mistral-7B-Instruct", "Mixtral-8x7B-Instruct",
             ];
-            candidates.retain(|c| ollama_models.iter().any(|m| c.model_id.contains(m)));
+            candidates.retain(|c| memory::is_ollama_model_cached(&c.model_id) || ollama_models.iter().any(|m| c.model_id.contains(m)));
+
+            // Apply a major boost to candidates that are already installed / cached in Ollama
+            for c in &mut candidates {
+                if memory::is_ollama_model_cached(&c.model_id) {
+                    c.final_score = (c.final_score + 0.40).min(1.0);
+                }
+            }
+
+            // Re-sort so installed models appear first
+            candidates.sort_by(|a, b| {
+                let a_cached = memory::is_ollama_model_cached(&a.model_id);
+                let b_cached = memory::is_ollama_model_cached(&b.model_id);
+                match (a_cached, b_cached) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => b.final_score.partial_cmp(&a.final_score).unwrap_or(std::cmp::Ordering::Equal),
+                }
+            });
         }
 
         let is_local = std::env::var("MODELFUSION_USE_TRANSFORMERS").is_ok()

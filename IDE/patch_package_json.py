@@ -19,6 +19,7 @@ commands_to_add = [
     {"name": "security", "description": "Perform cybersecurity audit and fix vulnerabilities in active code"},
     {"name": "refactor", "description": "Refactor code for readability, performance, and structure"},
     {"name": "optimize", "description": "Optimize code algorithms and memory performance"},
+    {"name": "boost", "description": "Optimize code algorithms and memory performance (alias for /optimize)"},
     {"name": "doc", "description": "Generate comprehensive technical documentation and docstrings"},
     {"name": "dataanalyst", "description": "Run Data Analyst workflow on CSV/Excel datasets"},
     {"name": "datascience", "description": "Run comprehensive Data Science machine learning pipeline"},

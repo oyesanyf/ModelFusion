@@ -3371,6 +3371,68 @@ pub fn format_file_content_for_llm(filename: &str, bytes: &[u8]) -> String {
     }
 }
 
+/// Decodes percent-encoded characters (e.g. %20 -> space).
+pub fn decode_uri_component(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            let mut hex = String::with_capacity(2);
+            for _ in 0..2 {
+                if let Some(&nc) = chars.peek() {
+                    if nc.is_ascii_hexdigit() {
+                        hex.push(chars.next().unwrap());
+                    }
+                }
+            }
+            if hex.len() == 2 {
+                if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                    result.push(byte as char);
+                    continue;
+                }
+            }
+            result.push('%');
+            result.push_str(&hex);
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+/// Normalizes a file identifier or path from XML attributes (stripping protocol prefixes, decoding %20, fixing Windows slashes).
+pub fn normalize_extracted_file_id(raw: &str) -> String {
+    let trimmed = raw.trim().trim_matches(|c: char| c == '"' || c == '\'' || c == '`');
+    let decoded = decode_uri_component(trimmed);
+    let mut file_id = decoded.trim().to_string();
+
+    let fid_lower = file_id.to_lowercase();
+    if fid_lower.starts_with("file:///") {
+        file_id = file_id[8..].to_string();
+    } else if fid_lower.starts_with("file://") {
+        file_id = file_id[7..].to_string();
+    } else if fid_lower.starts_with("file:") {
+        file_id = file_id[5..].to_string();
+    } else if fid_lower.starts_with("selection:") {
+        file_id = file_id[10..].to_string();
+    } else if fid_lower.starts_with("attachment:") {
+        file_id = file_id[11..].to_string();
+    } else if fid_lower.starts_with("vscode-file:") {
+        file_id = file_id[12..].to_string();
+    } else if fid_lower.starts_with("vscode-remote:") {
+        file_id = file_id[14..].to_string();
+    } else if fid_lower.starts_with("workspace:") {
+        file_id = file_id[10..].to_string();
+    }
+
+    // On Windows: /D:/foo -> D:/foo or \D:\foo -> D:\foo
+    if (file_id.starts_with('/') || file_id.starts_with('\\')) && file_id.len() >= 3 && file_id.chars().nth(2) == Some(':') {
+        file_id = file_id[1..].to_string();
+    }
+
+    file_id.trim().to_string()
+}
+
 /// Extracts attached code context from XML metadata tags (`<attachment>`, `<selection>`, `<codesnippet>`, `<context>`)
 /// or disk files explicitly referenced in the prompt.
 /// Returns a list of (file_identifier, code_content).
@@ -3431,54 +3493,45 @@ pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> 
             search_idx = next_search;
             let inner_raw = if is_self_closing { "" } else { &raw_prompt[content_start..content_end] };
 
-            // 1. Extract file identifier from attributes: id, name, file, path, uri, filename, filepath, title, url, source
-            let mut file_id = String::new();
-            for attr in &["id=", "name=", "file=", "path=", "uri=", "filename=", "filepath=", "title=", "url=", "source="] {
+            // 1. Extract file identifier and file path from attributes
+            let mut best_path_attr = String::new();
+            let mut fallback_id = String::new();
+
+            // Scan all possible attributes: filePath, folderPath, path, uri, file, filename, url, id, name, title, source
+            for attr in &["filepath=", "folderpath=", "path=", "uri=", "file=", "filename=", "url=", "id=", "name=", "title=", "source="] {
                 if let Some(pos) = find_case_insensitive(tag_header, attr) {
                     let val_start = pos + attr.len();
                     let after_attr = &tag_header[val_start..];
                     let trimmed_after = after_attr.trim_start();
                     let quote_char = trimmed_after.chars().next();
-                    if quote_char == Some('"') || quote_char == Some('\'') {
+                    let raw_val = if quote_char == Some('"') || quote_char == Some('\'') {
                         let q = quote_char.unwrap();
                         let inner_val = &trimmed_after[1..];
                         if let Some(q_end) = inner_val.find(q) {
-                            file_id = inner_val[..q_end].trim().to_string();
-                            break;
+                            inner_val[..q_end].trim().to_string()
+                        } else {
+                            String::new()
                         }
                     } else {
-                        // Unquoted attribute value
                         let val_end = trimmed_after.find(|c: char| c.is_whitespace() || c == '>').unwrap_or(trimmed_after.len());
-                        file_id = trimmed_after[..val_end].trim().to_string();
-                        break;
+                        trimmed_after[..val_end].trim().to_string()
+                    };
+
+                    if !raw_val.is_empty() {
+                        let normalized = normalize_extracted_file_id(&raw_val);
+                        let is_path_attr = *attr == "filepath=" || *attr == "folderpath=" || *attr == "path=" || *attr == "uri=" || *attr == "file=" || *attr == "filename=";
+                        if is_path_attr && (normalized.contains('/') || normalized.contains('\\') || std::path::Path::new(&normalized).is_file()) {
+                            if best_path_attr.is_empty() {
+                                best_path_attr = normalized;
+                            }
+                        } else if fallback_id.is_empty() {
+                            fallback_id = normalized;
+                        }
                     }
                 }
             }
 
-            // Normalize file identifier (strip file:///, file://, file:, selection:, attachment:, etc.)
-            file_id = file_id.trim().to_string();
-            let fid_lower = file_id.to_lowercase();
-            if fid_lower.starts_with("file:///") {
-                file_id = file_id[8..].to_string();
-            } else if fid_lower.starts_with("file://") {
-                file_id = file_id[7..].to_string();
-            } else if fid_lower.starts_with("file:") {
-                file_id = file_id[5..].to_string();
-            } else if fid_lower.starts_with("selection:") {
-                file_id = file_id[10..].to_string();
-            } else if fid_lower.starts_with("attachment:") {
-                file_id = file_id[11..].to_string();
-            } else if fid_lower.starts_with("vscode-file:") {
-                file_id = file_id[12..].to_string();
-            } else if fid_lower.starts_with("vscode-remote:") {
-                file_id = file_id[14..].to_string();
-            } else if fid_lower.starts_with("workspace:") {
-                file_id = file_id[10..].to_string();
-            }
-            // On Windows: /D:/foo -> D:/foo or \D:\foo -> D:\foo
-            if (file_id.starts_with('/') || file_id.starts_with('\\')) && file_id.len() >= 3 && file_id.chars().nth(2) == Some(':') {
-                file_id = file_id[1..].to_string();
-            }
+            let mut file_id = if !best_path_attr.is_empty() { best_path_attr } else { fallback_id };
 
             let mut code_content = inner_raw.trim().to_string();
 
@@ -3490,19 +3543,19 @@ pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> 
                     if lower_l.starts_with("excerpt from ") {
                         let name_part = line_t[13..].trim_end_matches(':').trim();
                         if !name_part.is_empty() {
-                            file_id = name_part.to_string();
+                            file_id = normalize_extracted_file_id(name_part);
                             break;
                         }
                     } else if lower_l.starts_with("file: ") || lower_l.starts_with("file:") {
                         let name_part = line_t[5..].trim_start_matches(':').trim();
                         if !name_part.is_empty() {
-                            file_id = name_part.to_string();
+                            file_id = normalize_extracted_file_id(name_part);
                             break;
                         }
                     } else if lower_l.starts_with("# save as: ") || lower_l.starts_with("# save as:") {
                         let name_part = line_t[11..].trim();
                         if !name_part.is_empty() {
-                            file_id = name_part.to_string();
+                            file_id = normalize_extracted_file_id(name_part);
                             break;
                         }
                     } else if lower_l.starts_with("# file: ") || lower_l.starts_with("// file: ") || lower_l.starts_with("/* file: ") {
@@ -3511,13 +3564,13 @@ pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> 
                             .trim_end_matches("*/")
                             .trim();
                         if !name_part.is_empty() {
-                            file_id = name_part.to_string();
+                            file_id = normalize_extracted_file_id(name_part);
                             break;
                         }
                     } else if lower_l.starts_with("dataset: ") || lower_l.starts_with("dataset:") {
                         let name_part = line_t[8..].trim_start_matches(':').trim();
                         if !name_part.is_empty() {
-                            file_id = name_part.to_string();
+                            file_id = normalize_extracted_file_id(name_part);
                             break;
                         }
                     }
@@ -3556,7 +3609,7 @@ pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> 
             }
 
             // If code content is empty or short header only, and file exists on disk, read up to 100KB from disk
-            if (code_content.is_empty() || code_content.len() < 30) && file_id != "attachment" {
+            if code_content.trim().is_empty() && file_id != "attachment" {
                 let mut resolved_disk = false;
                 let p = std::path::Path::new(&file_id);
                 if p.is_file() {
@@ -3570,7 +3623,6 @@ pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> 
                         format!(r"D:\dataset\Seaborn All Built-in Datasets\{}", file_id),
                         format!("IDE/{}", file_id),
                         format!("IDE/db/{}", file_id),
-                        format!("crates/cli/{}", file_id),
                         format!("./{}", file_id),
                     ];
                     for cp in &candidate_paths {
@@ -3578,6 +3630,8 @@ pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> 
                         if cp_p.is_file() {
                             if let Ok(bytes) = std::fs::read(cp_p) {
                                 code_content = format_file_content_for_llm(&file_id, &bytes);
+                                file_id = cp.clone();
+                                resolved_disk = true;
                                 break;
                             }
                         }
@@ -3585,12 +3639,16 @@ pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> 
                 }
             }
 
-            if !code_content.trim().is_empty() {
-                seen_ids.insert(file_id.to_lowercase());
-                if let Some(name) = std::path::Path::new(&file_id).file_name().and_then(|n| n.to_str()) {
-                    seen_ids.insert(name.to_lowercase());
+            let has_meaningful_file = file_id != "attachment" && (file_id.contains('.') || std::path::Path::new(&file_id).is_file());
+            if !code_content.trim().is_empty() || has_meaningful_file {
+                let lower_fid = file_id.to_lowercase();
+                if !seen_ids.contains(&lower_fid) {
+                    seen_ids.insert(lower_fid);
+                    if let Some(name) = std::path::Path::new(&file_id).file_name().and_then(|n| n.to_str()) {
+                        seen_ids.insert(name.to_lowercase());
+                    }
+                    results.push((file_id, code_content));
                 }
-                results.push((file_id, code_content));
             }
         }
     }
@@ -3647,13 +3705,15 @@ pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> 
     // Also support reading from disk if the user query explicitly mentions a file (e.g. pq.py, titanic.csv, test.ipynb) that exists on disk
     let raw_tokens: Vec<&str> = raw_prompt.split_whitespace().collect();
     for token in raw_tokens {
-        let clean = token.trim_matches(|c: char| c == '\'' || c == '"' || c == '`' || c == ',' || c == ';' || c == ':' || c == '(' || c == ')' || c == '[' || c == ']' || c == '<' || c == '>');
+        let clean_raw = token.trim_matches(|c: char| c == '\'' || c == '"' || c == '`' || c == ',' || c == ';' || c == ':' || c == '(' || c == ')' || c == '[' || c == ']' || c == '<' || c == '>');
+        let clean = decode_uri_component(clean_raw);
         if clean.contains('.') && !clean.contains("://") {
             let clean_lower = clean.to_lowercase();
-            let base_name = std::path::Path::new(clean).file_name().and_then(|n| n.to_str()).unwrap_or(clean).to_lowercase();
+            let base_name = std::path::Path::new(&clean).file_name().and_then(|n| n.to_str()).unwrap_or(&clean).to_lowercase();
             if !seen_ids.contains(&clean_lower) && !seen_ids.contains(&base_name) {
                 let mut found_bytes: Option<Vec<u8>> = None;
-                let p = std::path::Path::new(clean);
+                let mut resolved_path = clean.clone();
+                let p = std::path::Path::new(&clean);
                 if p.is_file() {
                     found_bytes = std::fs::read(p).ok();
                 } else {
@@ -3669,17 +3729,18 @@ pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> 
                         if cp_p.is_file() {
                             if let Ok(b) = std::fs::read(cp_p) {
                                 found_bytes = Some(b);
+                                resolved_path = cp.clone();
                                 break;
                             }
                         }
                     }
                 }
                 if let Some(bytes) = found_bytes {
-                    let disk_content = format_file_content_for_llm(clean, &bytes);
+                    let disk_content = format_file_content_for_llm(&clean, &bytes);
                     if !disk_content.trim().is_empty() {
                         seen_ids.insert(clean_lower);
                         seen_ids.insert(base_name);
-                        results.push((clean.to_string(), disk_content));
+                        results.push((resolved_path, disk_content));
                     }
                 }
             }
@@ -3991,7 +4052,7 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
         "tests" | "test" => Some("tests"),
         "audit" => Some("audit"),
         "generate" => Some("generate"),
-        "optimize" => Some("optimize"),
+        "optimize" | "boost" | "booster" => Some("optimize"),
         "exportpdf" => Some("export-pdf"),
         "agent" | "modelfusion" | "hugos" => Some("agent"),
         "quickanswer" | "qa" => Some("quick_answer"),
@@ -5816,6 +5877,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         "code-vulnerability-detection" | "codevulnerabilitydetection" => "security",
                                         "createfile" | "create-file" | "create_file" | "newfile" | "new-file" | "new_file" | "writefile" | "write-file" => "createfile",
                                         "rest-rl" | "restrl" | "rl" => "rest-rl",
+                                        "boost" | "booster" => "optimize",
                                         other => other,
                                     };
 
@@ -6221,14 +6283,21 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                              (idx, guide)
                                          } else {
                                              let mut target_file = String::new();
+                                             let clean_arg_trimmed = clean_args.trim_matches(|c: char| c == '"' || c == '\'' || c == '`');
                                              let (candidate_file, rest_prompt) = extract_createfile_args(clean_args);
                                              let candidate_clean = candidate_file.trim_matches(|c: char| c == '"' || c == '\'' || c == '`');
-                                             let mut prompt_text = if !candidate_clean.is_empty() && (candidate_clean.contains('.') || std::path::Path::new(candidate_clean).is_file()) {
+                                             let mut prompt_text = if !clean_arg_trimmed.is_empty() && (std::path::Path::new(clean_arg_trimmed).is_file() || is_dataset_or_nb(clean_arg_trimmed)) {
+                                                 target_file = clean_arg_trimmed.to_string();
+                                                 String::new()
+                                             } else if !candidate_clean.is_empty() && is_dataset_or_nb(candidate_clean) {
                                                  target_file = candidate_clean.to_string();
                                                  rest_prompt
                                              } else if let Some((ds_path, _)) = attached_dataset {
                                                  target_file = ds_path.clone();
                                                  clean_args.to_string()
+                                             } else if !candidate_clean.is_empty() && (candidate_clean.contains('.') || std::path::Path::new(candidate_clean).is_file()) {
+                                                 target_file = candidate_clean.to_string();
+                                                 rest_prompt
                                              } else if !attached.is_empty() {
                                                  target_file = attached[0].0.clone();
                                                  clean_args.to_string()
@@ -6255,7 +6324,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                              }
                                              let code_payload = resolve_code_for_command(&prompt_text, &prompt_for_cmd);
                                              cmd_args.extend_from_slice(&["--prompt".to_string(), code_payload]);
-                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !model_selection::memory::get_ollama_cached_models().is_empty() {
                                                  cmd_args.push("--ollama".to_string());
                                              }
                                              let result = run_cli_subcommand(&cmd_args, db_resolved).await;
@@ -6517,7 +6586,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                          } else {
                                              let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
                                              let mut cmd_args = vec!["--prompt".to_string(), code_payload.clone()];
-                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !model_selection::memory::get_ollama_cached_models().is_empty() {
                                                  cmd_args.push("--ollama".to_string());
                                              }
                                              let (result, _ctx, _arm) = route_and_execute(&code_payload, db_resolved, &cmd_args).await;
@@ -11780,5 +11849,46 @@ class CNN: pass
         }
     }
 
+
+    #[test]
+    fn test_boost_and_dataset_selection_with_code_context() {
+        use super::{canonicalize_command, extract_attached_code_context};
+
+        // 1. /boost and /booster canonicalize to "optimize"
+        assert_eq!(canonicalize_command("boost"), Some("optimize"));
+        assert_eq!(canonicalize_command("booster"), Some("optimize"));
+        assert_eq!(canonicalize_command("/boost"), Some("optimize"));
+        assert_eq!(canonicalize_command("/booster"), Some("optimize"));
+
+        // 2. Attached dataset with URL-encoded spaces and self-closing/empty tag
+        let prompt_with_url_spaces = r#"<attachment id="file:attention.csv" filePath="D:/dataset/Seaborn%20All%20Built-in%20Datasets/attention.csv" />
+<attachment id="file:pr.java" filePath="D:/project/pr.java">
+public class Pr {
+    public static void main(String[] args) {}
+}
+</attachment>
+/datascience"#;
+
+        let attached = extract_attached_code_context(prompt_with_url_spaces);
+        assert!(attached.len() >= 2, "Both attention.csv and pr.java should be extracted, got {}", attached.len());
+
+        let has_attention = attached.iter().any(|(name, _)| name.contains("attention.csv"));
+        let has_pr = attached.iter().any(|(name, _)| name.contains("pr.java"));
+        assert!(has_attention, "Must extract attention.csv even if tag is self-closing/empty");
+        assert!(has_pr, "Must extract pr.java");
+
+        // Verify dataset identification selects attention.csv over pr.java
+        let is_dataset_or_nb = |path: &str| -> bool {
+            let l = path.to_lowercase();
+            l.ends_with(".csv") || l.ends_with(".tsv") || l.ends_with(".parquet")
+                || l.ends_with(".xlsx") || l.ends_with(".xls") || l.ends_with(".json")
+                || l.ends_with(".jsonl") || l.ends_with(".arrow") || l.ends_with(".feather")
+                || l.ends_with(".h5") || l.ends_with(".hdf5") || l.ends_with(".ipynb")
+                || l.ends_with(".sqlite") || l.ends_with(".db")
+        };
+        let attached_dataset = attached.iter().find(|(path, _)| is_dataset_or_nb(path));
+        assert!(attached_dataset.is_some(), "Must find dataset in attached files");
+        assert!(attached_dataset.unwrap().0.contains("attention.csv"), "Selected dataset must be attention.csv, not pr.java");
+    }
 }
 
