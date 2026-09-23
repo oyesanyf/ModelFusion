@@ -740,40 +740,31 @@ Write-Host "[OK] NLS index alignment verified successfully" -ForegroundColor Gre
 
 
 
-# 5. Sign the binaries
-Write-Host "[INFO] Signing executables, DLLs, and native modules inside packaged folder..." -ForegroundColor Yellow
-# IMPORTANT: Do NOT sign Electron binaries or GPU/DirectX DLLs.
-# - HugOS.exe uses Code.exe from VSCode which has a valid Microsoft signature — do not overwrite it.
-# - GPU/DirectX DLLs must keep their original signatures or Electron's renderer won't start.
-$dllExcludeList = @(
-    'HugOS.exe',          # Main Electron binary — uses Microsoft-signed Code.exe
-    'dxil.dll',           # DirectX IL runtime — requires Microsoft signature
-    'd3dcompiler_47.dll', # DirectX compiler — validated by Windows
-    'dxcompiler.dll',     # DX compiler runtime
-    'vk_swiftshader.dll', # Vulkan SwiftShader — Khronos/Google signed
-    'libEGL.dll',         # ANGLE EGL — Google signed
-    'libGLESv2.dll',      # ANGLE GLES2 — Google signed
-    'ffmpeg.dll'          # FFmpeg — Chromium signed
-)
-$filesToSign = Get-ChildItem -Path $vsCodePackDir -Include *.exe, *.dll, *.node -Recurse |
-    Where-Object {
-        $dllExcludeList -notcontains $_.Name -and
-        $_.FullName -notmatch 'darwin' -and
-        $_.FullName -notmatch 'linux' -and
-        $_.FullName -notmatch 'alpine'
-    } |
+# 5. Clean untrusted signatures from VS Code native modules and sign ModelFusion binaries
+Write-Host "[INFO] Cleaning untrusted signatures from official VS Code native modules/binaries..." -ForegroundColor Yellow
+$cleanSigScript = Join-Path $PSScriptRoot "clean_untrusted_signatures.py"
+if (Test-Path $cleanSigScript) {
+    python "$cleanSigScript" "$vsCodePackDir"
+}
+
+Write-Host "[INFO] Signing ModelFusion custom binaries (bin directory only)..." -ForegroundColor Yellow
+# Only sign ModelFusion's own binaries inside bin/ (e.g., cli.exe, mcp-cli.exe, custom DLLs)
+# IMPORTANT: Do NOT sign Electron binaries, native Node modules (.node), or official VS Code DLLs.
+# - Signing official VS Code native modules (.node) with an untrusted self-signed certificate causes
+#   Windows Defender / Smart App Control to flag untrusted code within Microsoft-signed HugOS.exe and block them (e.g. keymapping.node).
+$filesToSign = Get-ChildItem -Path (Join-Path $vsCodePackDir "bin") -Include *.exe, *.dll -File -ErrorAction SilentlyContinue |
     Select-Object -ExpandProperty FullName
 
-
 $count = 0
-foreach ($file in $filesToSign) {
-    # Skip files that are already signed or fail to sign (like some readonly or system files)
-    Write-Host "Signing: $file"
-    if (Sign-FileWithCert $file) {
-        $count++
+if ($filesToSign) {
+    foreach ($file in $filesToSign) {
+        Write-Host "Signing ModelFusion binary: $file"
+        if (Sign-FileWithCert $file) {
+            $count++
+        }
     }
 }
-Write-Host "[OK] Signed $count files inside the packaging directory." -ForegroundColor Green
+Write-Host "[OK] Signed $count ModelFusion binaries inside bin/." -ForegroundColor Green
 
 # Force garbage collection and allow file system handles to settle
 [System.GC]::Collect()

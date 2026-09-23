@@ -2304,7 +2304,18 @@ async fn run(args: Args) -> Result<()> {
         }
 
         if final_prompt.trim().is_empty() {
-            final_prompt = "Review the code in this folder, identify any bugs, vulnerabilities, or optimization opportunities, and suggest improvements.".to_string();
+            let task_override_opt = determine_task_override(&args);
+            final_prompt = match task_override_opt.as_deref() {
+                Some("data-analyst") | Some("data-science") => {
+                    "Perform comprehensive data analysis. Summarize dataset structure, calculate descriptive statistics, identify patterns and correlations, detect anomalies or missing values, and suggest key insights.".to_string()
+                }
+                Some("pe-header-extraction") => {
+                    "Perform PE binary header extraction and malware threat analysis.".to_string()
+                }
+                _ => {
+                    "Review the code in this folder, identify any bugs, vulnerabilities, or optimization opportunities, and suggest improvements.".to_string()
+                }
+            };
         }
 
         // Initialize mutable hardware/fusion flags and parse slash commands from prompt
@@ -2693,6 +2704,9 @@ async fn run(args: Args) -> Result<()> {
             eprintln!("\n[ERROR] Orchestration Failed!\n");
             if let Some(err) = res.error_message {
                 eprintln!("Error: {}", err);
+                println!("⚠️ Orchestration failed: {}", err);
+            } else {
+                println!("⚠️ Orchestration failed to complete.");
             }
             if run_bandit_learning {
                 let db_dir = db_path.parent().unwrap_or_else(|| std::path::Path::new("db"));
@@ -6146,12 +6160,65 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                      "data_science" => {
                                          let attached = extract_attached_code_context(&prompt_for_cmd);
                                          let clean_args = args_owned.trim();
-                                         if clean_args.is_empty() && attached.is_empty() {
-                                             if cmd_owned == "jupyter" {
-                                                 (idx, "🚀 **ModelFusion Jupyter Notebook**: Launch interactive data analysis workspace:\n```powershell\ncli.exe --jupyter\n```\n\nAttach a notebook (`.ipynb`) or dataset (`.csv`, `.json`, `.parquet`, `.xlsx`) to inspect and execute analysis.".to_string())
+
+                                         // Check if a path points to a tabular dataset or Jupyter notebook
+                                         let is_dataset_or_nb = |path: &str| -> bool {
+                                             let l = path.to_lowercase();
+                                             l.ends_with(".csv") || l.ends_with(".tsv") || l.ends_with(".parquet")
+                                                 || l.ends_with(".xlsx") || l.ends_with(".xls") || l.ends_with(".json")
+                                                 || l.ends_with(".jsonl") || l.ends_with(".arrow") || l.ends_with(".feather")
+                                                 || l.ends_with(".h5") || l.ends_with(".hdf5") || l.ends_with(".ipynb")
+                                                 || l.ends_with(".sqlite") || l.ends_with(".db")
+                                         };
+
+                                         let attached_dataset = attached.iter().find(|(path, _)| is_dataset_or_nb(path));
+                                         let attached_any = attached.first();
+
+                                         // If arguments are empty AND no dataset file is attached, provide an actionable guide
+                                         if clean_args.is_empty() && attached_dataset.is_none() {
+                                             let active_note = if let Some((active_name, _)) = attached_any {
+                                                 format!("\n\n*Current Active Workspace File*: `{}` (Not a recognized tabular dataset or notebook). Provide a dataset file or specify an analysis query to run.", active_name)
                                              } else {
-                                                 (idx, "📊 **ModelFusion Data Science & Analytics**: Active (<1ms Fast Interception).\n\nAnalyze datasets, tabular data, or notebooks:\n- `@agent --datascience <dataset.csv>`\n- `/dataanalyst <data.json>`\n- `/jupyter` to launch interactive Jupyter workspace".to_string())
-                                             }
+                                                 String::new()
+                                             };
+
+                                             let is_science = cmd_owned.contains("science");
+                                             let header = if cmd_owned == "jupyter" {
+                                                 "🚀 **ModelFusion Jupyter Notebook**"
+                                             } else if is_science {
+                                                 "📊 **ModelFusion Data Science & ML Pipeline**"
+                                             } else {
+                                                 "📊 **ModelFusion Data Analyst**"
+                                             };
+
+                                             let slash_cmd = if is_science { "/datascience" } else { "/dataanalyst" };
+                                             let flag_cmd = if is_science { "@agent --datascience" } else { "@agent --dataanalyst" };
+
+                                             let guide = if cmd_owned == "jupyter" {
+                                                 format!(
+                                                     "{header}: Active (<1ms Fast Interception).\n\n\
+                                                     Launch an interactive Jupyter workspace or inspect notebooks:\n\
+                                                     ```powershell\n\
+                                                     cli.exe --jupyter\n\
+                                                     ```\n\n\
+                                                     **Commands & Usage**:\n\
+                                                     - `/jupyter <notebook.ipynb>` — Inspect and execute notebook cells\n\
+                                                     - `/jupyter <dataset.csv>` — Create an analysis notebook from tabular data\n\
+                                                     - `@agent --jupyter` — Launch interactive notebook workspace{active_note}"
+                                                 )
+                                             } else {
+                                                 format!(
+                                                     "{header}: Active (<1ms Fast Interception).\n\n\
+                                                     **Automated Tabular Data Analysis & Machine Learning**:\n\
+                                                     - **Inspect Dataset**: `{slash_cmd} <dataset.csv>`\n\
+                                                     - **Custom Analysis**: `{slash_cmd} <dataset.csv> analyze correlations and plot distributions`\n\
+                                                     - **Agent Directive**: `{flag_cmd} <data.parquet>`\n\
+                                                     - **Interactive Notebook**: `/jupyter` (launches interactive workspace)\n\n\
+                                                     *Supported Formats*: CSV, TSV, Parquet, JSON, Excel (.xlsx/.xls), Arrow, Feather, HDF5, and Jupyter (.ipynb).{active_note}"
+                                                 )
+                                             };
+
+                                             (idx, guide)
                                          } else {
                                              let mut target_file = String::new();
                                              let mut prompt_text = String::new();
@@ -6161,6 +6228,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                                  if parts.len() > 1 {
                                                      prompt_text = parts[1].to_string();
                                                  }
+                                             } else if let Some((ds_path, _)) = attached_dataset {
+                                                 target_file = ds_path.clone();
+                                                 prompt_text = clean_args.to_string();
                                              } else if !attached.is_empty() {
                                                  target_file = attached[0].0.clone();
                                                  prompt_text = clean_args.to_string();
@@ -6181,7 +6251,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                                  prompt_text = if cmd_owned == "jupyter" {
                                                      format!("Inspect and analyze notebook/dataset {}", target_file)
                                                  } else {
-                                                     format!("Analyze dataset {}", target_file)
+                                                     format!("Perform exploratory data analysis, calculate descriptive statistics, and identify anomalies or patterns in {}", target_file)
                                                  };
                                              }
                                              let code_payload = resolve_code_for_command(&prompt_text, &prompt_for_cmd);
@@ -6191,7 +6261,25 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                              }
                                              let result = run_cli_subcommand(&cmd_args, db_resolved).await;
                                              let header = if cmd_owned == "jupyter" { "🚀 **Jupyter Analysis**" } else { "📊 **Data Science**" };
-                                             (idx, format!("{}\n\n{}", header, result))
+                                             let trimmed_result = result.trim();
+                                             let final_body = if trimmed_result.is_empty() {
+                                                 format!(
+                                                     "Active (<1ms Fast Interception).\n\n\
+                                                     Completed automated data analysis dispatch for `{}`.\n\n\
+                                                     **Next Steps**:\n\
+                                                     - View in terminal: `cli.exe {} --file \"{}\"`\n\
+                                                     - Run interactive notebook: `/jupyter`\n\
+                                                     - Specify custom analysis: `{} \"{}\" <query>`",
+                                                     if target_file.is_empty() { "dataset" } else { &target_file },
+                                                     flag,
+                                                     if target_file.is_empty() { "data.csv" } else { &target_file },
+                                                     if cmd_owned.contains("science") { "/datascience" } else { "/dataanalyst" },
+                                                     if target_file.is_empty() { "data.csv" } else { &target_file }
+                                                 )
+                                             } else {
+                                                 trimmed_result.to_string()
+                                             };
+                                             (idx, format!("{}\n\n{}", header, final_body))
                                          }
                                      },
                                      "pe_header_extraction" => {
@@ -6951,6 +7039,8 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 format!("You are a math expert. Show step-by-step solutions. Use clear notation and explain each step.{}", NO_CODE_GUARD)
                             // Data Science & ML
                             } else if lower_user.contains("dataset") || lower_user.contains("data science")
+                                || lower_user.contains("data analyst") || lower_user.contains("data-analyst")
+                                || lower_user.contains("dataanalyst") || lower_user.contains("datascience")
                                 || lower_user.contains("machine learning") || lower_user.contains("neural net")
                                 || lower_user.contains("model training") || lower_user.contains("pandas")
                                 || lower_user.contains("numpy") || lower_user.contains("tensorflow")
@@ -7474,7 +7564,19 @@ async fn run_cli_subcommand(cmd_args: &[String], db_path: &std::path::Path) -> S
                 let stdout_str = String::from_utf8_lossy(&out.stdout).to_string();
                 let stderr_str = String::from_utf8_lossy(&out.stderr).to_string();
                 if out.status.success() {
-                    stdout_str
+                    let trimmed_stdout = stdout_str.trim();
+                    if trimmed_stdout.is_empty() && !stderr_str.trim().is_empty() {
+                        let err_lines: Vec<&str> = stderr_str.lines()
+                            .filter(|l| l.contains("Error:") || l.contains("[ERROR]") || l.contains("⚠️") || l.contains("WARN"))
+                            .collect();
+                        if !err_lines.is_empty() {
+                            format!("⚠️ Execution notice:\n{}", err_lines.join("\n"))
+                        } else {
+                            stderr_str.trim().to_string()
+                        }
+                    } else {
+                        stdout_str
+                    }
                 } else {
                     format!("Error running ModelFusion CLI:\nExit code: {}\nStdout: {}\nStderr: {}", out.status, stdout_str, stderr_str)
                 }
