@@ -1833,7 +1833,7 @@ async fn run(args: Args) -> Result<()> {
         anyhow::bail!("Paid models (including OpenAI) have been disabled and removed per system requirements.");
     }
 
-    if args.jupyter {
+    if args.jupyter && args.prompt.is_none() && args.query.is_none() && args.file.is_none() {
         println!("🚀 Launching Jupyter Notebook: data_analyst_workflow.ipynb");
         let status = std::process::Command::new("python")
             .args(&["-m", "notebook", "data_analyst_workflow.ipynb"])
@@ -2160,7 +2160,9 @@ async fn run(args: Args) -> Result<()> {
     }
 
     if args.pe_header_extraction {
-        let file_path = args.file.as_deref().unwrap_or("test.exe");
+        let raw_file = args.file.as_deref().unwrap_or("test.exe");
+        let resolved_buf = resolve_existing_file_path(raw_file);
+        let file_path = resolved_buf.as_deref().map(|p| p.to_str().unwrap_or(raw_file)).unwrap_or(raw_file);
         let prompt = args.prompt.as_deref().unwrap_or("Perform PE analysis");
         handler.handle_pe_analysis(file_path, prompt);
         return Ok(());
@@ -2282,16 +2284,28 @@ async fn run(args: Args) -> Result<()> {
     if args.prompt.is_some() || args.query.is_some() || args.folder.is_some() || args.file.is_some() || determine_task_override(&args).is_some() {
         let mut final_prompt = args.prompt.clone()
             .or_else(|| args.query.clone())
-            .or_else(|| {
-                if let Some(ref file_path) = args.file {
-                    std::fs::read_to_string(file_path).ok()
-                } else {
-                    None
+            .unwrap_or_default();
+
+        if let Some(ref file_path) = args.file {
+            let resolved_opt = resolve_existing_file_path(file_path);
+            let p_to_read = resolved_opt.as_deref().unwrap_or_else(|| std::path::Path::new(file_path));
+            if p_to_read.is_file() {
+                if let Ok(bytes) = std::fs::read(p_to_read) {
+                    let formatted = format_file_content_for_llm(file_path, &bytes);
+                    if !final_prompt.contains(&formatted) {
+                        if final_prompt.trim().is_empty() {
+                            final_prompt = format!("Review the following attached file:\n\n--- Attached File: {} ---\n{}\n", file_path, formatted);
+                        } else {
+                            final_prompt.push_str(&format!("\n\n--- Attached File: {} ---\n{}\n", file_path, formatted));
+                        }
+                    }
                 }
-            })
-            .unwrap_or_else(|| {
-                "Review the code in this folder, identify any bugs, vulnerabilities, or optimization opportunities, and suggest improvements.".to_string()
-            });
+            }
+        }
+
+        if final_prompt.trim().is_empty() {
+            final_prompt = "Review the code in this folder, identify any bugs, vulnerabilities, or optimization opportunities, and suggest improvements.".to_string();
+        }
 
         // Initialize mutable hardware/fusion flags and parse slash commands from prompt
         let mut gpu = args.gpu;
@@ -2785,6 +2799,7 @@ fn determine_task_override(args: &Args) -> Option<String> {
     if args.feature_ranking { return Some("feature-ranking".to_string()); }
     if args.dataanalyst { return Some("data-analyst".to_string()); }
     if args.datascience { return Some("data-science".to_string()); }
+    if args.jupyter { return Some("data-analyst".to_string()); }
     
     args.task.clone()
 }
@@ -3236,7 +3251,113 @@ pub fn extract_latest_user_query(prompt: &str) -> String {
     }
 }
 
-/// Extracts attached code context from XML metadata tags (`<attachment>`, `<selection>`, `<codesnippet>`)
+/// Formats file bytes for LLM consumption, extracting clean schema/column tokens for binary datasets
+/// (.parquet, .xlsx) and text/cells for code and notebooks (.ipynb, .csv, .json, .py, etc.).
+/// Resolves a file path across current working directory and candidate workspace directories.
+pub fn resolve_existing_file_path(file_path: &str) -> Option<std::path::PathBuf> {
+    let trimmed = file_path.trim().trim_matches(|c: char| c == '\'' || c == '"' || c == '`');
+    if trimmed.is_empty() {
+        return None;
+    }
+    let p = std::path::Path::new(trimmed);
+    if p.is_file() {
+        return Some(p.to_path_buf());
+    }
+    let candidate_paths = [
+        format!(r"D:\dataset\Seaborn All Built-in Datasets\{}", trimmed),
+        format!("IDE/{}", trimmed),
+        format!("IDE/db/{}", trimmed),
+        format!("crates/cli/{}", trimmed),
+        format!("./{}", trimmed),
+    ];
+    for cp in &candidate_paths {
+        let cp_p = std::path::Path::new(cp);
+        if cp_p.is_file() {
+            return Some(cp_p.to_path_buf());
+        }
+    }
+    if let Ok(mut exe_path) = std::env::current_exe() {
+        exe_path.pop();
+        let cp = exe_path.join(trimmed);
+        if cp.is_file() {
+            return Some(cp);
+        }
+    }
+    None
+}
+
+/// Formats file bytes for LLM consumption, extracting clean schema/column tokens for binary datasets
+/// (.parquet, .xlsx) and text/cells for code and notebooks (.ipynb, .csv, .json, .py, etc.).
+pub fn format_file_content_for_llm(filename: &str, bytes: &[u8]) -> String {
+    let lower = filename.to_lowercase();
+    let limit = bytes.len().min(100 * 1024);
+    let slice = &bytes[..limit];
+    if lower.ends_with(".ipynb") {
+        if let Ok(val) = serde_json::from_slice::<serde_json::Value>(slice) {
+            if let Some(cells) = val.get("cells").and_then(|c| c.as_array()) {
+                let mut notebook_repr = format!("Jupyter Notebook: {} (Total cells: {})\n\n", filename, cells.len());
+                for (idx, cell) in cells.iter().enumerate() {
+                    let cell_type = cell.get("cell_type").and_then(|t| t.as_str()).unwrap_or("code");
+                    let source = cell.get("source")
+                        .map(|s| {
+                            if let Some(arr) = s.as_array() {
+                                arr.iter().filter_map(|l| l.as_str()).collect::<Vec<_>>().join("")
+                            } else if let Some(st) = s.as_str() {
+                                st.to_string()
+                            } else {
+                                String::new()
+                            }
+                        })
+                        .unwrap_or_default();
+                    if !source.trim().is_empty() {
+                        notebook_repr.push_str(&format!("--- [Cell {} ({})] ---\n{}\n\n", idx + 1, cell_type, source.trim()));
+                    }
+                }
+                return notebook_repr;
+            }
+        }
+        String::from_utf8_lossy(slice).to_string()
+    } else if lower.ends_with(".parquet") {
+        let mut strings = Vec::new();
+        let mut curr = String::new();
+        for &b in slice {
+            if b.is_ascii_graphic() || b == b' ' {
+                curr.push(b as char);
+            } else {
+                if curr.len() >= 3 && !curr.chars().all(|c| c.is_ascii_punctuation()) {
+                    strings.push(curr.clone());
+                }
+                curr.clear();
+            }
+        }
+        if curr.len() >= 3 && !curr.chars().all(|c| c.is_ascii_punctuation()) {
+            strings.push(curr);
+        }
+        let mut seen = std::collections::HashSet::new();
+        let unique_strings: Vec<String> = strings.into_iter().filter(|s| seen.insert(s.clone())).take(50).collect();
+        format!("Parquet Dataset: {} (Size: {} bytes)\nSchema / Column Tokens Extracted:\n{}", filename, bytes.len(), unique_strings.join(", "))
+    } else if lower.ends_with(".xlsx") {
+        let mut strings = Vec::new();
+        let mut curr = String::new();
+        for &b in slice {
+            if b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.' {
+                curr.push(b as char);
+            } else {
+                if curr.len() >= 4 {
+                    strings.push(curr.clone());
+                }
+                curr.clear();
+            }
+        }
+        let mut seen = std::collections::HashSet::new();
+        let unique_strings: Vec<String> = strings.into_iter().filter(|s| seen.insert(s.clone())).take(50).collect();
+        format!("Excel Workbook: {} (Size: {} bytes)\nWorkbook / Sheet / Field Tokens Extracted:\n{}", filename, bytes.len(), unique_strings.join(", "))
+    } else {
+        String::from_utf8_lossy(slice).to_string()
+    }
+}
+
+/// Extracts attached code context from XML metadata tags (`<attachment>`, `<selection>`, `<codesnippet>`, `<context>`)
 /// or disk files explicitly referenced in the prompt.
 /// Returns a list of (file_identifier, code_content).
 pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> {
@@ -3274,26 +3395,31 @@ pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> 
             };
 
             let tag_header = &raw_prompt[start..=tag_header_end];
+            let is_self_closing = tag_header.trim_end_matches('>').trim_end().ends_with('/');
             let content_start = tag_header_end + 1;
 
-            // Find closing tag `</tag>`
-            let (content_end, next_search) = match find_case_insensitive(&raw_prompt[content_start..], &close_needle) {
-                Some(rel_end) => {
-                    (content_start + rel_end, content_start + rel_end + close_needle.len())
-                }
-                None => {
-                    // If no closing tag, scan until next tag or end of section
-                    let next_tag = raw_prompt[content_start..].find('<').map(|p| content_start + p).unwrap_or(raw_prompt.len());
-                    (next_tag, next_tag)
+            // Find closing tag `</tag>` if not self-closing
+            let (content_end, next_search) = if is_self_closing {
+                (content_start, content_start)
+            } else {
+                match find_case_insensitive(&raw_prompt[content_start..], &close_needle) {
+                    Some(rel_end) => {
+                        (content_start + rel_end, content_start + rel_end + close_needle.len())
+                    }
+                    None => {
+                        // If no closing tag, scan until next tag or end of section
+                        let next_tag = raw_prompt[content_start..].find('<').map(|p| content_start + p).unwrap_or(raw_prompt.len());
+                        (next_tag, next_tag)
+                    }
                 }
             };
 
             search_idx = next_search;
-            let inner_raw = &raw_prompt[content_start..content_end];
+            let inner_raw = if is_self_closing { "" } else { &raw_prompt[content_start..content_end] };
 
-            // 1. Extract file identifier from attributes: id, name, file, path, uri
+            // 1. Extract file identifier from attributes: id, name, file, path, uri, filename, filepath, title, url, source
             let mut file_id = String::new();
-            for attr in &["id=", "name=", "file=", "path=", "uri="] {
+            for attr in &["id=", "name=", "file=", "path=", "uri=", "filename=", "filepath=", "title=", "url=", "source="] {
                 if let Some(pos) = find_case_insensitive(tag_header, attr) {
                     let val_start = pos + attr.len();
                     let after_attr = &tag_header[val_start..];
@@ -3315,15 +3441,24 @@ pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> 
                 }
             }
 
-            // Normalize file identifier (strip file:///, file://, file:)
+            // Normalize file identifier (strip file:///, file://, file:, selection:, attachment:, etc.)
             file_id = file_id.trim().to_string();
-            if file_id.to_lowercase().starts_with("file:///") {
+            let fid_lower = file_id.to_lowercase();
+            if fid_lower.starts_with("file:///") {
                 file_id = file_id[8..].to_string();
-            } else if file_id.to_lowercase().starts_with("file://") {
+            } else if fid_lower.starts_with("file://") {
                 file_id = file_id[7..].to_string();
-            } else if file_id.to_lowercase().starts_with("file:") {
+            } else if fid_lower.starts_with("file:") {
                 file_id = file_id[5..].to_string();
-            } else if file_id.to_lowercase().starts_with("selection:") {
+            } else if fid_lower.starts_with("selection:") {
+                file_id = file_id[10..].to_string();
+            } else if fid_lower.starts_with("attachment:") {
+                file_id = file_id[11..].to_string();
+            } else if fid_lower.starts_with("vscode-file:") {
+                file_id = file_id[12..].to_string();
+            } else if fid_lower.starts_with("vscode-remote:") {
+                file_id = file_id[14..].to_string();
+            } else if fid_lower.starts_with("workspace:") {
                 file_id = file_id[10..].to_string();
             }
             // On Windows: /D:/foo -> D:/foo or \D:\foo -> D:\foo
@@ -3346,6 +3481,27 @@ pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> 
                         }
                     } else if lower_l.starts_with("file: ") || lower_l.starts_with("file:") {
                         let name_part = line_t[5..].trim_start_matches(':').trim();
+                        if !name_part.is_empty() {
+                            file_id = name_part.to_string();
+                            break;
+                        }
+                    } else if lower_l.starts_with("# save as: ") || lower_l.starts_with("# save as:") {
+                        let name_part = line_t[11..].trim();
+                        if !name_part.is_empty() {
+                            file_id = name_part.to_string();
+                            break;
+                        }
+                    } else if lower_l.starts_with("# file: ") || lower_l.starts_with("// file: ") || lower_l.starts_with("/* file: ") {
+                        let name_part = line_t.trim_start_matches(|c: char| c == '#' || c == '/' || c == '*' || c == ' ')
+                            .trim_start_matches("file:")
+                            .trim_end_matches("*/")
+                            .trim();
+                        if !name_part.is_empty() {
+                            file_id = name_part.to_string();
+                            break;
+                        }
+                    } else if lower_l.starts_with("dataset: ") || lower_l.starts_with("dataset:") {
+                        let name_part = line_t[8..].trim_start_matches(':').trim();
                         if !name_part.is_empty() {
                             file_id = name_part.to_string();
                             break;
@@ -3387,11 +3543,30 @@ pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> 
 
             // If code content is empty or short header only, and file exists on disk, read up to 100KB from disk
             if (code_content.is_empty() || code_content.len() < 30) && file_id != "attachment" {
+                let mut resolved_disk = false;
                 let p = std::path::Path::new(&file_id);
                 if p.is_file() {
                     if let Ok(bytes) = std::fs::read(p) {
-                        let limit = bytes.len().min(100 * 1024);
-                        code_content = String::from_utf8_lossy(&bytes[..limit]).to_string();
+                        code_content = format_file_content_for_llm(&file_id, &bytes);
+                        resolved_disk = true;
+                    }
+                }
+                if !resolved_disk {
+                    let candidate_paths = [
+                        format!(r"D:\dataset\Seaborn All Built-in Datasets\{}", file_id),
+                        format!("IDE/{}", file_id),
+                        format!("IDE/db/{}", file_id),
+                        format!("crates/cli/{}", file_id),
+                        format!("./{}", file_id),
+                    ];
+                    for cp in &candidate_paths {
+                        let cp_p = std::path::Path::new(cp);
+                        if cp_p.is_file() {
+                            if let Ok(bytes) = std::fs::read(cp_p) {
+                                code_content = format_file_content_for_llm(&file_id, &bytes);
+                                break;
+                            }
+                        }
                     }
                 }
             }
@@ -3406,7 +3581,56 @@ pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> 
         }
     }
 
-    // Also support reading from disk if the user query explicitly mentions a file (e.g. pq.py or ./pq.py) that exists on disk
+    // Check if raw_prompt contains <attachments>...</attachments> directly without inner <attachment>
+    if !raw_prompt.contains("<attachment") {
+        if let Some(s) = find_case_insensitive(raw_prompt, "<attachments>") {
+            let after = s + "<attachments>".len();
+            if let Some(e) = find_case_insensitive(&raw_prompt[after..], "</attachments>") {
+                let inner = raw_prompt[after..after + e].trim();
+                if !inner.is_empty() {
+                    let mut file_id = "attachment".to_string();
+                    for line in inner.lines() {
+                        let line_t = line.trim();
+                        let lower_l = line_t.to_lowercase();
+                        if lower_l.starts_with("excerpt from ") {
+                            let name_part = line_t[13..].trim_end_matches(':').trim();
+                            if !name_part.is_empty() {
+                                file_id = name_part.to_string();
+                                break;
+                            }
+                        } else if lower_l.starts_with("file: ") || lower_l.starts_with("file:") {
+                            let name_part = line_t[5..].trim_start_matches(':').trim();
+                            if !name_part.is_empty() {
+                                file_id = name_part.to_string();
+                                break;
+                            }
+                        } else if lower_l.starts_with("# file: ") || lower_l.starts_with("// file: ") || lower_l.starts_with("/* file: ") {
+                            let name_part = line_t.trim_start_matches(|c: char| c == '#' || c == '/' || c == '*' || c == ' ')
+                                .trim_start_matches("file:")
+                                .trim_end_matches("*/")
+                                .trim();
+                            if !name_part.is_empty() {
+                                file_id = name_part.to_string();
+                                break;
+                            }
+                        } else if lower_l.starts_with("dataset: ") || lower_l.starts_with("dataset:") {
+                            let name_part = line_t[8..].trim_start_matches(':').trim();
+                            if !name_part.is_empty() {
+                                file_id = name_part.to_string();
+                                break;
+                            }
+                        }
+                    }
+                    if !seen_ids.contains(&file_id.to_lowercase()) {
+                        seen_ids.insert(file_id.to_lowercase());
+                        results.push((file_id, inner.to_string()));
+                    }
+                }
+            }
+        }
+    }
+
+    // Also support reading from disk if the user query explicitly mentions a file (e.g. pq.py, titanic.csv, test.ipynb) that exists on disk
     let raw_tokens: Vec<&str> = raw_prompt.split_whitespace().collect();
     for token in raw_tokens {
         let clean = token.trim_matches(|c: char| c == '\'' || c == '"' || c == '`' || c == ',' || c == ';' || c == ':' || c == '(' || c == ')' || c == '[' || c == ']' || c == '<' || c == '>');
@@ -3414,19 +3638,69 @@ pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> 
             let clean_lower = clean.to_lowercase();
             let base_name = std::path::Path::new(clean).file_name().and_then(|n| n.to_str()).unwrap_or(clean).to_lowercase();
             if !seen_ids.contains(&clean_lower) && !seen_ids.contains(&base_name) {
+                let mut found_bytes: Option<Vec<u8>> = None;
                 let p = std::path::Path::new(clean);
                 if p.is_file() {
-                    if let Ok(bytes) = std::fs::read(p) {
-                        let limit = bytes.len().min(100 * 1024);
-                        let disk_content = String::from_utf8_lossy(&bytes[..limit]).to_string();
-                        if !disk_content.trim().is_empty() {
-                            seen_ids.insert(clean_lower);
-                            seen_ids.insert(base_name);
-                            results.push((clean.to_string(), disk_content));
+                    found_bytes = std::fs::read(p).ok();
+                } else {
+                    let candidate_paths = [
+                        format!(r"D:\dataset\Seaborn All Built-in Datasets\{}", clean),
+                        format!("IDE/{}", clean),
+                        format!("IDE/db/{}", clean),
+                        format!("crates/cli/{}", clean),
+                        format!("./{}", clean),
+                    ];
+                    for cp in &candidate_paths {
+                        let cp_p = std::path::Path::new(cp);
+                        if cp_p.is_file() {
+                            if let Ok(b) = std::fs::read(cp_p) {
+                                found_bytes = Some(b);
+                                break;
+                            }
                         }
                     }
                 }
+                if let Some(bytes) = found_bytes {
+                    let disk_content = format_file_content_for_llm(clean, &bytes);
+                    if !disk_content.trim().is_empty() {
+                        seen_ids.insert(clean_lower);
+                        seen_ids.insert(base_name);
+                        results.push((clean.to_string(), disk_content));
+                    }
+                }
             }
+        }
+    }
+
+    // Fallback: If no structured tags matched, check if prompt has markdown fenced code with a file header
+    if results.is_empty() {
+        if let Some(fenced) = extract_fenced_code(raw_prompt) {
+            let mut detected_filename = String::new();
+            for line in raw_prompt.lines() {
+                let lt = line.trim();
+                let lower_l = lt.to_lowercase();
+                if lower_l.starts_with("excerpt from ") {
+                    detected_filename = lt[13..].trim_end_matches(':').trim().to_string();
+                    break;
+                } else if lower_l.starts_with("file: ") || lower_l.starts_with("file:") {
+                    detected_filename = lt[5..].trim_start_matches(':').trim().to_string();
+                    break;
+                } else if lower_l.starts_with("# file: ") || lower_l.starts_with("// file: ") || lower_l.starts_with("/* file: ") {
+                    detected_filename = lt.trim_start_matches(|c: char| c == '#' || c == '/' || c == '*' || c == ' ')
+                        .trim_start_matches("file:")
+                        .trim_end_matches("*/")
+                        .trim()
+                        .to_string();
+                    break;
+                } else if lower_l.starts_with("dataset: ") || lower_l.starts_with("dataset:") {
+                    detected_filename = lt[8..].trim_start_matches(':').trim().to_string();
+                    break;
+                }
+            }
+            if detected_filename.is_empty() {
+                detected_filename = "attachment".to_string();
+            }
+            results.push((detected_filename, fenced));
         }
     }
 
@@ -3489,7 +3763,11 @@ pub fn resolve_code_for_command(args: &str, prompt: &str) -> String {
                 .extension()
                 .and_then(|e| e.to_str())
                 .unwrap_or("txt");
-            out.push_str(&format!("\n\n--- Attached File: {} ---\n```{}\n{}\n```", filename, ext, code.trim()));
+            let file_header = format!("--- Attached File: {}", filename);
+            let code_trimmed = code.trim();
+            if !out.contains(&file_header) && !out.contains(code_trimmed) {
+                out.push_str(&format!("\n\n--- Attached File: {} ---\n```{} \n{}\n```", filename, ext, code_trimmed));
+            }
         }
         return out;
     }
@@ -3502,11 +3780,11 @@ pub fn resolve_code_for_command(args: &str, prompt: &str) -> String {
 
     let mut disk_files = Vec::new();
     for cand in candidates {
-        let p = std::path::Path::new(cand);
+        let resolved_opt = resolve_existing_file_path(cand);
+        let p = resolved_opt.as_deref().unwrap_or_else(|| std::path::Path::new(cand));
         if p.is_file() {
             if let Ok(bytes) = std::fs::read(p) {
-                let limit = bytes.len().min(100 * 1024);
-                let content = String::from_utf8_lossy(&bytes[..limit]).to_string();
+                let content = format_file_content_for_llm(cand, &bytes);
                 if !content.trim().is_empty() {
                     disk_files.push((cand.to_string(), content));
                 }
@@ -3521,7 +3799,11 @@ pub fn resolve_code_for_command(args: &str, prompt: &str) -> String {
                 .extension()
                 .and_then(|e| e.to_str())
                 .unwrap_or("txt");
-            out.push_str(&format!("\n\n--- File: {} ---\n```{}\n{}\n```", filename, ext, code.trim()));
+            let file_header = format!("--- File: {}", filename);
+            let code_trimmed = code.trim();
+            if !out.contains(&file_header) && !out.contains(code_trimmed) {
+                out.push_str(&format!("\n\n--- File: {} ---\n```{} \n{}\n```", filename, ext, code_trimmed));
+            }
         }
         return out;
     }
@@ -3535,7 +3817,8 @@ pub fn is_coding_query_detected(query: &str) -> bool {
     let file_extensions = [
         ".py", ".rs", ".js", ".ts", ".cpp", ".c", ".h", ".cs",
         ".go", ".java", ".html", ".css", ".sql", ".json", ".yaml",
-        ".toml", ".sh", ".bat", ".ps1"
+        ".toml", ".sh", ".bat", ".ps1", ".csv", ".tsv", ".parquet",
+        ".xlsx", ".ipynb", ".xml", ".txt", ".db", ".sqlite", ".md", ".log"
     ];
     let has_file_ext = file_extensions.iter().any(|ext| lower.contains(ext));
 
@@ -3559,13 +3842,16 @@ pub fn enrich_prompt_with_attached_context(prompt: &str, user_query: &str) -> (S
     let lower = user_query.to_lowercase();
     let prompt_lower = prompt.to_lowercase();
     let has_attachment_tags = prompt_lower.contains("<attachment")
-        || prompt_lower.contains("<selection>")
-        || prompt_lower.contains("<codesnippet>");
+        || prompt_lower.contains("<selection")
+        || prompt_lower.contains("<codesnippet")
+        || prompt_lower.contains("<attachments")
+        || prompt_lower.contains("<context");
 
     let file_extensions = [
         ".py", ".rs", ".js", ".ts", ".cpp", ".c", ".h", ".cs",
         ".go", ".java", ".html", ".css", ".sql", ".json", ".yaml",
-        ".toml", ".sh", ".bat", ".ps1"
+        ".toml", ".sh", ".bat", ".ps1", ".csv", ".tsv", ".parquet",
+        ".xlsx", ".ipynb", ".xml", ".txt", ".db", ".sqlite", ".md", ".log"
     ];
     let has_file_ext = file_extensions.iter().any(|ext| lower.contains(ext));
 
@@ -3685,6 +3971,7 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
         "security" => Some("security"),
         "refactor" => Some("refactor"),
         "fix" => Some("fix"),
+        "edit" => Some("edit"),
         "review" => Some("review"),
         "explain" => Some("explain"),
         "tests" | "test" => Some("tests"),
@@ -5485,8 +5772,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         "semantic-search" | "semantic_search" => "semantic_search",
                                         "research" | "reseach" => "research",
                                         "search" | "serarch" | "serarch-query" | "serarch_query" | "serarchquery" => "search",
-                                        "data-science" | "datascience" | "dataanalyst" | "data-analyst" => "data_science",
-                                        "jupyter" => "jupyter",
+                                        "data-science" | "datascience" | "dataanalyst" | "data-analyst" | "jupyter" => "data_science",
                                         "pe-header" | "pe" | "pe-header-extraction" | "peheaderextraction" => "pe_header_extraction",
                                         "model-management" => "model_management",
                                         "report" => "reporting",
@@ -5652,226 +5938,351 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                             (idx, format!("🤖 **ModelFusion Commands & System Directory**\n\n- **Engine**: Active & Operational (<1ms Fast Interception)\n- **System**: {} ({} Cores), {:.2} GB RAM free\n- **GPU**: {} ({} MB free VRAM)\n\n### Available Slash Commands & CLI Directives:\n- `/active-model` (or `--active-model`) — All models currently in use by the IDE (Ollama runtime, SQLite pipelines, OpenVINO cache)\n- `/research <topic>` (or `--research`) — Autonomous deep web research using open-weight models (Qwen 2.5 / DeepSeek-R1) and DuckDuckGo search\n- `/search <query>` (or `--search`) — Live web search and snippet extraction\n- `/stats` (or `--stats`) — Real-time system resource allocation and database metrics\n- `/sysinfo` (or `--sys-info`) — Detailed hardware specifications, CPU cores, RAM, and disk drives\n- `/tasks` (or `--tasks [category]`) — Multi-modal task capabilities and top database models (audio, vision, nlp, security, legal)\n- `/keys` (or `--keys`) — Cloud API key configuration (OpenAI, Anthropic, Gemini, HF)\n- `/comment` — Add inline explanations and docstrings to code\n- `/evolve` — OpenEvolve iterative code optimization\n- `/security` — CyberSecurity audit and vulnerability fixes\n- `/refactor` — Code structure refactoring\n- `/optimize` — Performance optimization\n- `/version` (or `-v`) — Engine and build version\n- `/rl [status|start|stop|enqueue]` (or `/restrl`, `--rest-rl`) — HugOS ReST-RL / GRPO recursive reinforcement learning and idle preemption engine\n- `/update` — Fast curated update (~6,500 models) and local Ollama hardware model provisioning\n- `/updatedb` — Full registry crawler for all 2M+ Hugging Face models", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb))
                                         },
                                         "comment" | "doc" => {
-                                            (idx, "📝 **ModelFusion Code Commenting & Documentation Engine**: Active.\n\nProvide or attach code to generate comprehensive inline explanations and docstrings.".to_string())
-                                        },
-                                        "cache-stats" => (idx, "💾 **ModelCache Statistics**: Local model cache active, 0 stale entries.".to_string()),
-                                        "performance-stats" => (idx, "⚡ **Performance Statistics**: Fast path latency < 10ms across parallel worker threads.".to_string()),
-                                        "decision-stats" => (idx, "🎯 **Decision Statistics**: Multi-objective strategy active.".to_string()),
-                                        "evolve" | "evovle" | "evove" | "evoce" | "evolv" | "evolution" => (idx, "❌ **OpenEvolve Routing Error**: The ModelFusion backend intercepted an `/evolve` iterative optimization request. OpenEvolve must be executed by the VS Code extension. If you are seeing this, the IDE extension failed to intercept the command before sending it to the backend. Please try running it again or restarting the extension.".to_string()),
-                                        "security" => (idx, "🛡️ **CyberSecurity Audit**: Active security inspection thread scanning code.".to_string()),
-                                        "refactor" => (idx, "🔧 **Refactoring Engine**: Code structure optimization thread ready.".to_string()),
-                                        "rest-rl" => {
-                                            let parts: Vec<String> = args_owned.split_whitespace().map(|s| s.to_string()).collect();
-                                            let res = handle_rest_rl(&parts).await;
-                                            (idx, res)
-                                        },
+                                             let attached = extract_attached_code_context(&prompt_for_cmd);
+                                             if args_owned.trim().is_empty() && attached.is_empty() {
+                                                 (idx, "📝 **ModelFusion Code Commenting & Documentation Engine**: Active.\n\nProvide or attach code to generate comprehensive inline explanations and docstrings.".to_string())
+                                             } else {
+                                                 let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
+                                                 let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Add comprehensive inline comments and docstrings to the following code:\n\n{}", code_payload)];
+                                                 if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                     cmd_args.push("--ollama".to_string());
+                                                 }
+                                                 let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                                 (idx, format!("📝 **Code Comments & Documentation**\n\n{}", result))
+                                             }
+                                         },
+                                         "cache-stats" => (idx, "💾 **ModelCache Statistics**: Local model cache active, 0 stale entries.".to_string()),
+                                         "performance-stats" => (idx, "⚡ **Performance Statistics**: Fast path latency < 10ms across parallel worker threads.".to_string()),
+                                         "decision-stats" => (idx, "🎯 **Decision Statistics**: Multi-objective strategy active.".to_string()),
+                                         "evolve" | "evovle" | "evove" | "evoce" | "evolv" | "evolution" => (idx, "❌ **OpenEvolve Routing Error**: The ModelFusion backend intercepted an `/evolve` iterative optimization request. OpenEvolve must be executed by the VS Code extension. If you are seeing this, the IDE extension failed to intercept the command before sending it to the backend. Please try running it again or restarting the extension.".to_string()),
+                                         "security" => {
+                                             let attached = extract_attached_code_context(&prompt_for_cmd);
+                                             if args_owned.trim().is_empty() && attached.is_empty() {
+                                                 (idx, "🛡️ **CyberSecurity Audit**: Active security inspection thread scanning code.".to_string())
+                                             } else {
+                                                 let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
+                                                 let mut cmd_args = vec!["--code-vulnerability-detection".to_string(), "--prompt".to_string(), format!("Audit the following code for security vulnerabilities, flaws, and unsafe operations:\n\n{}", code_payload)];
+                                                 if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                     cmd_args.push("--ollama".to_string());
+                                                 }
+                                                 let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                                 (idx, format!("🛡️ **Security Audit**\n\n{}", result))
+                                             }
+                                         },
+                                         "refactor" => {
+                                             let attached = extract_attached_code_context(&prompt_for_cmd);
+                                             if args_owned.trim().is_empty() && attached.is_empty() {
+                                                 (idx, "🔧 **Refactoring Engine**: Code structure optimization thread ready.".to_string())
+                                             } else {
+                                                 let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
+                                                 let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Refactor the following code to improve structure, maintainability, and clean code practices:\n\n{}", code_payload)];
+                                                 if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                     cmd_args.push("--ollama".to_string());
+                                                 }
+                                                 let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                                 (idx, format!("🔧 **Code Refactor**\n\n{}", result))
+                                             }
+                                         },
+                                         "rest-rl" => {
+                                             let parts: Vec<String> = args_owned.split_whitespace().map(|s| s.to_string()).collect();
+                                             let res = handle_rest_rl(&parts).await;
+                                             (idx, res)
+                                         },
 
-                                    // ── MCP tools routed through CLI ──
-                                    "quick_answer" => {
-                                        let question = if args_owned.is_empty() { "Hello".to_string() } else { args_owned.clone() };
-                                        let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
-                                            .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
-                                        let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
-                                        let body = serde_json::json!({
-                                            "model": "qwen2.5:3b",
-                                            "messages": [
-                                                {"role": "system", "content": "Answer the question directly and concisely. Do NOT generate code unless explicitly asked."},
-                                                {"role": "user", "content": &question}
-                                            ],
-                                            "stream": false,
-                                            "options": { "temperature": 0.3, "num_predict": 1024 }
-                                        });
-                                        let custom_timeout = std::env::var("MODELFUSION_TIMEOUT")
-                                            .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
-                                            .unwrap_or(120);
-                                        let client = reqwest::Client::builder().no_proxy()
-                                            .connect_timeout(std::time::Duration::from_secs(3))
-                                            .timeout(std::time::Duration::from_secs(custom_timeout))
-                                            .build().unwrap();
-                                        match client.post(&url).json(&body).send().await {
-                                            Ok(res) if res.status().is_success() => {
-                                                let data: serde_json::Value = res.json().await.unwrap_or_default();
-                                                let answer = data["message"]["content"].as_str().unwrap_or("No response").to_string();
-                                                (idx, format!("💡 **Quick Answer**\n\n{}", answer))
-                                            }
-                                            Ok(res) => (idx, format!("⚠️ Ollama error: {}", res.text().await.unwrap_or_default())),
-                                            Err(e) => (idx, format!("⚠️ Ollama connection failed: {}. Is Ollama running?", e)),
-                                        }
-                                    },
-                                    "execute" => {
-                                        let args: Vec<String> = args_owned.split_whitespace().map(|s| s.to_string()).collect();
-                                        let result = run_cli_subcommand(&args, db_resolved).await;
-                                        (idx, format!("⚙️ **Execute**\n\n{}", result))
-                                    },
-                                    "analyze_file" => {
-                                        if args_owned.trim().is_empty() {
-                                            (idx, "📄 **ModelFusion File Analyzer**: Active (<1ms Fast Interception).\n\nAnalyze code, configurations, or documents:\n- `@agent --file <path> <instructions>`\n- `/analyze-file <path> <instructions>`".to_string())
-                                        } else {
-                                            let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
-                                            let file = parts.first().copied().unwrap_or("").to_string();
-                                            let prompt = if parts.len() > 1 { parts[1].to_string() } else { "Analyze this file".to_string() };
-                                            let cmd_args = vec!["--file".to_string(), file, "--prompt".to_string(), prompt];
-                                            let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                            (idx, format!("📄 **File Analysis**\n\n{}", result))
-                                        }
-                                    },
-                                    "analyze_folder" => {
-                                        if args_owned.trim().is_empty() {
-                                            (idx, "📁 **ModelFusion Folder & Repository Analyzer**: Active (<1ms Fast Interception).\n\nAnalyze directory structures and codebases:\n- `@agent --folder <path> <instructions>`\n- `/analyze-folder <path> <instructions>`".to_string())
-                                        } else {
-                                            let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
-                                            let folder = parts.first().copied().unwrap_or("").to_string();
-                                            let prompt = if parts.len() > 1 { parts[1].to_string() } else { "Analyze this folder".to_string() };
-                                            let cmd_args = vec!["--folder".to_string(), folder, "--prompt".to_string(), prompt];
-                                            let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                            (idx, format!("📁 **Folder Analysis**\n\n{}", result))
-                                        }
-                                    },
-                                    "nlp_task" => {
-                                        let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
-                                        let task = parts.first().copied().unwrap_or("text-classification").to_string();
-                                        let text = if parts.len() > 1 { parts[1].to_string() } else { String::new() };
-                                        let cmd_args = vec![format!("--{}", task), "--prompt".to_string(), text];
-                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                        (idx, format!("🔤 **NLP Task**\n\n{}", result))
-                                    },
-                                    "security_analysis" => {
-                                        let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
-                                        let task = parts.first().copied().unwrap_or("spam-detection").to_string();
-                                        let text = if parts.len() > 1 { parts[1].to_string() } else { String::new() };
-                                        let cmd_args = vec![format!("--{}", task), "--prompt".to_string(), text];
-                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                        (idx, format!("🛡️ **Security Analysis**\n\n{}", result))
-                                    },
-                                    "code_task" => {
-                                        let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
-                                        let task = parts.first().copied().unwrap_or("code-summary-generation").to_string();
-                                        let text = if parts.len() > 1 { parts[1].to_string() } else { String::new() };
-                                        let cmd_args = vec![format!("--{}", task), "--prompt".to_string(), text];
-                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                        (idx, format!("💻 **Code Task**\n\n{}", result))
-                                    },
-                                    "domain_task" => {
-                                        let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
-                                        let task = parts.first().copied().unwrap_or("financial-sentiment-analysis").to_string();
-                                        let text = if parts.len() > 1 { parts[1].to_string() } else { String::new() };
-                                        let cmd_args = vec![format!("--{}", task), "--prompt".to_string(), text];
-                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                        (idx, format!("🏢 **Domain Task**\n\n{}", result))
-                                    },
-                                    "multimodal_task" => {
-                                        let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
-                                        let task = parts.first().copied().unwrap_or("image-classification").to_string();
-                                        let cmd_args = vec![format!("--{}", task)];
-                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                        (idx, format!("🎨 **Multimodal Task**\n\n{}", result))
-                                    },
-                                    "semantic_search" => {
-                                        let mut cmd_args = vec!["--enable-hyde".to_string()];
-                                        if !args_owned.is_empty() {
-                                            cmd_args.push("--search-query".to_string());
-                                            cmd_args.push(args_owned.clone());
-                                        }
-                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                        (idx, format!("🔍 **Semantic Search**\n\n{}", result))
-                                    },
-                                    "research" => {
-                                        let topic = args_owned.trim();
-                                        if topic.is_empty() {
-                                            (idx, "🌐 **ModelFusion Deep Web Research Agent**: Active & Operational (<1ms Fast Interception).\n\nSpecify a research topic:\n- `@agent --research <topic>`\n- `/research <topic>`\n\n*Example*: `/research latest advancements in small reasoning models`".to_string())
-                                        } else {
-                                            let report = modelfusion_core::run_deep_research(topic, 8, model_override_opt.as_deref()).await
-                                                .unwrap_or_else(|e| format!("⚠️ Research agent error: {}", e));
-                                            (idx, format!("🌐 **Deep Web Research Agent**\n\n{}", report))
-                                        }
-                                    },
-                                    "search" => {
-                                        let query = args_owned.trim();
-                                        if query.is_empty() {
-                                            (idx, "🔍 **ModelFusion Live Web Search**: Active & Operational (<1ms Fast Interception).\n\nSpecify a search query:\n- `@agent --search <query>`\n- `/search <query>`\n\n*Example*: `/search open-weight models Hugging Face`".to_string())
-                                        } else {
-                                            let results = modelfusion_core::run_web_search_only(query, 6).await
-                                                .unwrap_or_else(|e| format!("⚠️ Web search error: {}", e));
-                                            (idx, format!("🔍 **Live Web Search**\n\n{}", results))
-                                        }
-                                    },
-                                     "data_science" => {
+                                     // ── MCP tools routed through CLI ──
+                                     "quick_answer" => {
+                                         let question = if args_owned.is_empty() { "Hello".to_string() } else { args_owned.clone() };
+                                         let code_payload = resolve_code_for_command(&question, &prompt_for_cmd);
+                                         let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
+                                             .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+                                         let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
+                                         let body = serde_json::json!({
+                                             "model": "qwen2.5:3b",
+                                             "messages": [
+                                                 {"role": "system", "content": "Answer the question directly and concisely. Do NOT generate code unless explicitly asked."},
+                                                 {"role": "user", "content": &code_payload}
+                                             ],
+                                             "stream": false,
+                                             "options": { "temperature": 0.3, "num_predict": 1024 }
+                                         });
+                                         let custom_timeout = std::env::var("MODELFUSION_TIMEOUT")
+                                             .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))
+                                             .unwrap_or(120);
+                                         let client = reqwest::Client::builder().no_proxy()
+                                             .connect_timeout(std::time::Duration::from_secs(3))
+                                             .timeout(std::time::Duration::from_secs(custom_timeout))
+                                             .build().unwrap();
+                                         match client.post(&url).json(&body).send().await {
+                                             Ok(res) if res.status().is_success() => {
+                                                 let data: serde_json::Value = res.json().await.unwrap_or_default();
+                                                 let answer = data["message"]["content"].as_str().unwrap_or("No response").to_string();
+                                                 (idx, format!("💡 **Quick Answer**\n\n{}", answer))
+                                             }
+                                             Ok(res) => (idx, format!("⚠️ Ollama error: {}", res.text().await.unwrap_or_default())),
+                                             Err(e) => (idx, format!("⚠️ Ollama connection failed: {}. Is Ollama running?", e)),
+                                         }
+                                     },
+                                     "execute" => {
+                                         let args: Vec<String> = args_owned.split_whitespace().map(|s| s.to_string()).collect();
+                                         let result = run_cli_subcommand(&args, db_resolved).await;
+                                         (idx, format!("⚙️ **Execute**\n\n{}", result))
+                                     },
+                                     "analyze_file" => {
+                                         let attached = extract_attached_code_context(&prompt_for_cmd);
+                                         if args_owned.trim().is_empty() && attached.is_empty() {
+                                             (idx, "📄 **ModelFusion File Analyzer**: Active (<1ms Fast Interception).\n\nAnalyze code, configurations, or documents:\n- `@agent --file <path> <instructions>`\n- `/analyze-file <path> <instructions>`".to_string())
+                                         } else {
+                                             let mut target_file = String::new();
+                                             let mut instructions = String::new();
+                                             let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
+                                             if !parts.is_empty() && (parts[0].contains('.') || std::path::Path::new(parts[0]).is_file()) {
+                                                 target_file = parts[0].to_string();
+                                                 if parts.len() > 1 { instructions = parts[1].to_string(); }
+                                             } else if !attached.is_empty() {
+                                                 target_file = attached[0].0.clone();
+                                                 instructions = args_owned.trim().to_string();
+                                             } else {
+                                                 instructions = args_owned.trim().to_string();
+                                             }
+                                             if instructions.is_empty() {
+                                                 instructions = "Analyze this file in detail".to_string();
+                                             }
+                                             let code_payload = resolve_code_for_command(&instructions, &prompt_for_cmd);
+                                             let mut cmd_args = vec!["--prompt".to_string(), code_payload];
+                                             if !target_file.is_empty() {
+                                                 cmd_args.extend_from_slice(&["--file".to_string(), target_file]);
+                                             }
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                 cmd_args.push("--ollama".to_string());
+                                             }
+                                             let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                             (idx, format!("📄 **File Analysis**\n\n{}", result))
+                                         }
+                                     },
+                                     "analyze_folder" => {
                                          if args_owned.trim().is_empty() {
-                                             (idx, "📊 **ModelFusion Data Science & Analytics**: Active (<1ms Fast Interception).\n\nAnalyze datasets, tabular data, or notebooks:\n- `@agent --datascience <dataset.csv>`\n- `/dataanalyst <data.json>`\n- `/jupyter` to launch interactive Jupyter workspace".to_string())
+                                             (idx, "📁 **ModelFusion Folder & Repository Analyzer**: Active (<1ms Fast Interception).\n\nAnalyze directory structures and codebases:\n- `@agent --folder <path> <instructions>`\n- `/analyze-folder <path> <instructions>`".to_string())
                                          } else {
                                              let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
-                                             let file = parts.first().copied().unwrap_or("").to_string();
-                                             let mut cmd_args = vec!["--dataanalyst".to_string()];
-                                             if !file.is_empty() { cmd_args.extend_from_slice(&["--file".to_string(), file]); }
+                                             let folder = parts.first().copied().unwrap_or("").to_string();
+                                             let prompt = if parts.len() > 1 { parts[1].to_string() } else { "Analyze this folder".to_string() };
+                                             let cmd_args = vec!["--folder".to_string(), folder, "--prompt".to_string(), prompt];
                                              let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                             (idx, format!("📊 **Data Science**\n\n{}", result))
+                                             (idx, format!("📁 **Folder Analysis**\n\n{}", result))
+                                         }
+                                     },
+                                     "nlp_task" => {
+                                         let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
+                                         let task = parts.first().copied().unwrap_or("text-classification").to_string();
+                                         let text = if parts.len() > 1 { parts[1].to_string() } else { String::new() };
+                                         let code_payload = resolve_code_for_command(&text, &prompt_for_cmd);
+                                         let cmd_args = vec![format!("--{}", task), "--prompt".to_string(), code_payload];
+                                         let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                         (idx, format!("🔤 **NLP Task**\n\n{}", result))
+                                     },
+                                     "security_analysis" => {
+                                         let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
+                                         let task = parts.first().copied().unwrap_or("spam-detection").to_string();
+                                         let text = if parts.len() > 1 { parts[1].to_string() } else { String::new() };
+                                         let code_payload = resolve_code_for_command(&text, &prompt_for_cmd);
+                                         let cmd_args = vec![format!("--{}", task), "--prompt".to_string(), code_payload];
+                                         let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                         (idx, format!("🛡️ **Security Analysis**\n\n{}", result))
+                                     },
+                                     "code_task" => {
+                                         let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
+                                         let task = parts.first().copied().unwrap_or("code-summary-generation").to_string();
+                                         let text = if parts.len() > 1 { parts[1].to_string() } else { String::new() };
+                                         let code_payload = resolve_code_for_command(&text, &prompt_for_cmd);
+                                         let cmd_args = vec![format!("--{}", task), "--prompt".to_string(), code_payload];
+                                         let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                         (idx, format!("💻 **Code Task**\n\n{}", result))
+                                     },
+                                     "domain_task" => {
+                                         let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
+                                         let task = parts.first().copied().unwrap_or("financial-sentiment-analysis").to_string();
+                                         let text = if parts.len() > 1 { parts[1].to_string() } else { String::new() };
+                                         let code_payload = resolve_code_for_command(&text, &prompt_for_cmd);
+                                         let cmd_args = vec![format!("--{}", task), "--prompt".to_string(), code_payload];
+                                         let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                         (idx, format!("🏢 **Domain Task**\n\n{}", result))
+                                     },
+                                     "multimodal_task" => {
+                                         let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
+                                         let task = parts.first().copied().unwrap_or("image-classification").to_string();
+                                         let cmd_args = vec![format!("--{}", task)];
+                                         let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                         (idx, format!("🎨 **Multimodal Task**\n\n{}", result))
+                                     },
+                                     "semantic_search" => {
+                                         let mut cmd_args = vec!["--enable-hyde".to_string()];
+                                         if !args_owned.is_empty() {
+                                             cmd_args.push("--search-query".to_string());
+                                             cmd_args.push(args_owned.clone());
+                                         }
+                                         let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                         (idx, format!("🔍 **Semantic Search**\n\n{}", result))
+                                     },
+                                     "research" => {
+                                         let topic = args_owned.trim();
+                                         if topic.is_empty() {
+                                             (idx, "🌐 **ModelFusion Deep Web Research Agent**: Active & Operational (<1ms Fast Interception).\n\nSpecify a research topic:\n- `@agent --research <topic>`\n- `/research <topic>`\n\n*Example*: `/research latest advancements in small reasoning models`".to_string())
+                                         } else {
+                                             let report = modelfusion_core::run_deep_research(topic, 8, model_override_opt.as_deref()).await
+                                                 .unwrap_or_else(|e| format!("⚠️ Research agent error: {}", e));
+                                             (idx, format!("🌐 **Deep Web Research Agent**\n\n{}", report))
+                                         }
+                                     },
+                                     "search" => {
+                                         let query = args_owned.trim();
+                                         if query.is_empty() {
+                                             (idx, "🔍 **ModelFusion Live Web Search**: Active & Operational (<1ms Fast Interception).\n\nSpecify a search query:\n- `@agent --search <query>`\n- `/search <query>`\n\n*Example*: `/search open-weight models Hugging Face`".to_string())
+                                         } else {
+                                             let results = modelfusion_core::run_web_search_only(query, 6).await
+                                                 .unwrap_or_else(|e| format!("⚠️ Web search error: {}", e));
+                                             (idx, format!("🔍 **Live Web Search**\n\n{}", results))
+                                         }
+                                     },
+                                     "data_science" => {
+                                         let attached = extract_attached_code_context(&prompt_for_cmd);
+                                         let clean_args = args_owned.trim();
+                                         if clean_args.is_empty() && attached.is_empty() {
+                                             if cmd_owned == "jupyter" {
+                                                 (idx, "🚀 **ModelFusion Jupyter Notebook**: Launch interactive data analysis workspace:\n```powershell\ncli.exe --jupyter\n```\n\nAttach a notebook (`.ipynb`) or dataset (`.csv`, `.json`, `.parquet`, `.xlsx`) to inspect and execute analysis.".to_string())
+                                             } else {
+                                                 (idx, "📊 **ModelFusion Data Science & Analytics**: Active (<1ms Fast Interception).\n\nAnalyze datasets, tabular data, or notebooks:\n- `@agent --datascience <dataset.csv>`\n- `/dataanalyst <data.json>`\n- `/jupyter` to launch interactive Jupyter workspace".to_string())
+                                             }
+                                         } else {
+                                             let mut target_file = String::new();
+                                             let mut prompt_text = String::new();
+                                             let parts: Vec<&str> = clean_args.splitn(2, ' ').collect();
+                                             if !parts.is_empty() && (parts[0].contains('.') || std::path::Path::new(parts[0]).is_file()) {
+                                                 target_file = parts[0].to_string();
+                                                 if parts.len() > 1 {
+                                                     prompt_text = parts[1].to_string();
+                                                 }
+                                             } else if !attached.is_empty() {
+                                                 target_file = attached[0].0.clone();
+                                                 prompt_text = clean_args.to_string();
+                                             } else {
+                                                 prompt_text = clean_args.to_string();
+                                             }
+
+                                             let flag = if cmd_owned.contains("science") {
+                                                 "--datascience"
+                                             } else {
+                                                 "--dataanalyst"
+                                             };
+                                             let mut cmd_args = vec![flag.to_string()];
+                                             if !target_file.is_empty() {
+                                                 cmd_args.extend_from_slice(&["--file".to_string(), target_file.clone()]);
+                                             }
+                                             if prompt_text.is_empty() {
+                                                 prompt_text = if cmd_owned == "jupyter" {
+                                                     format!("Inspect and analyze notebook/dataset {}", target_file)
+                                                 } else {
+                                                     format!("Analyze dataset {}", target_file)
+                                                 };
+                                             }
+                                             let code_payload = resolve_code_for_command(&prompt_text, &prompt_for_cmd);
+                                             cmd_args.extend_from_slice(&["--prompt".to_string(), code_payload]);
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                 cmd_args.push("--ollama".to_string());
+                                             }
+                                             let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                             let header = if cmd_owned == "jupyter" { "🚀 **Jupyter Analysis**" } else { "📊 **Data Science**" };
+                                             (idx, format!("{}\n\n{}", header, result))
                                          }
                                      },
                                      "pe_header_extraction" => {
-                                         if args_owned.trim().is_empty() {
+                                         let attached = extract_attached_code_context(&prompt_for_cmd);
+                                         let clean_args = args_owned.trim();
+                                         if clean_args.is_empty() && attached.is_empty() {
                                              (idx, "🔬 **ModelFusion PE Header Analysis**: Active (<1ms Fast Interception).\n\nAnalyze Windows Portable Executable (PE) binaries and extract header metadata:\n- `@agent --pe-header-extraction <path/to/binary.exe>`\n- `/pe <path/to/binary.exe>`".to_string())
                                          } else {
-                                             let file = args_owned.trim().to_string();
-                                             let cmd_args = vec!["--pe-header-extraction".to_string(), "--file".to_string(), file, "--prompt".to_string(), "Perform PE analysis".to_string()];
+                                             let parts: Vec<&str> = clean_args.splitn(2, ' ').collect();
+                                             let (file, mut prompt_text) = if !parts.is_empty() && (parts[0].ends_with(".exe") || parts[0].ends_with(".dll") || parts[0].ends_with(".sys") || parts[0].contains('.') || std::path::Path::new(parts[0]).is_file()) {
+                                                 let f = parts[0].to_string();
+                                                 let p = if parts.len() > 1 { parts[1].to_string() } else { String::new() };
+                                                 (f, p)
+                                             } else if !attached.is_empty() {
+                                                 (attached[0].0.clone(), clean_args.to_string())
+                                             } else {
+                                                 (clean_args.to_string(), String::new())
+                                             };
+                                             if prompt_text.is_empty() {
+                                                 prompt_text = "Perform PE analysis".to_string();
+                                             }
+                                             let code_payload = resolve_code_for_command(&prompt_text, &prompt_for_cmd);
+                                             let mut cmd_args = vec!["--pe-header-extraction".to_string(), "--file".to_string(), file, "--prompt".to_string(), code_payload];
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                 cmd_args.push("--ollama".to_string());
+                                             }
                                              let result = run_cli_subcommand(&cmd_args, db_resolved).await;
                                              (idx, format!("🔬 **PE Header Analysis**\n\n{}", result))
                                          }
                                      },
-                                    "model_management" => {
-                                        let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
-                                        let action = parts.first().copied().unwrap_or("prepare");
-                                        let mut cmd_args = Vec::new();
-                                        match action {
-                                            "prepare-all" => cmd_args.push("--prepare-all-models".to_string()),
-                                            "sinq" => cmd_args.push("--sinq".to_string()),
-                                            _ => {
-                                                if !action.is_empty() {
-                                                    cmd_args.push("--prepare-model".to_string());
-                                                    cmd_args.push(action.to_string());
-                                                }
-                                            }
-                                        }
-                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                        (idx, format!("🔧 **Model Management**\n\n{}", result))
-                                    },
+                                     "model_management" => {
+                                         let parts: Vec<&str> = args_owned.splitn(2, ' ').collect();
+                                         let action = parts.first().copied().unwrap_or("prepare");
+                                         let mut cmd_args = Vec::new();
+                                         match action {
+                                             "prepare-all" => cmd_args.push("--prepare-all-models".to_string()),
+                                             "sinq" => cmd_args.push("--sinq".to_string()),
+                                             _ => {
+                                                 if !action.is_empty() {
+                                                     cmd_args.push("--prepare-model".to_string());
+                                                     cmd_args.push(action.to_string());
+                                                 }
+                                             }
+                                         }
+                                         let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                         (idx, format!("🔧 **Model Management**\n\n{}", result))
+                                     },
                                      "reporting" => {
-                                         if args_owned.trim().is_empty() {
+                                         let attached = extract_attached_code_context(&prompt_for_cmd);
+                                         if args_owned.trim().is_empty() && attached.is_empty() {
                                              (idx, "📝 **ModelFusion Reporting Engine**: Active (<1ms Fast Interception).\n\nGenerate analytical reports and documentation:\n- `@agent --report <output_path> <prompt>`\n- `/report <output_path> <prompt>`\n\nFormat options: `--reporttype md|pdf|json`".to_string())
                                          } else {
-                                             let prompt = args_owned.clone();
-                                             let cmd_args = vec!["--prompt".to_string(), prompt, "--report".to_string(), "./report".to_string(), "--reporttype".to_string(), "md".to_string()];
+                                             let prompt_text = if args_owned.trim().is_empty() { "Generate report".to_string() } else { args_owned.clone() };
+                                             let code_payload = resolve_code_for_command(&prompt_text, &prompt_for_cmd);
+                                             let mut cmd_args = vec!["--prompt".to_string(), code_payload, "--report".to_string(), "./report".to_string(), "--reporttype".to_string(), "md".to_string()];
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                 cmd_args.push("--ollama".to_string());
+                                             }
                                              let result = run_cli_subcommand(&cmd_args, db_resolved).await;
                                              (idx, format!("📝 **Report**\n\n{}", result))
                                          }
                                      },
-                                    "ml_management" => {
-                                        let action = if args_owned.is_empty() { "analytics" } else { args_owned.trim() };
-                                        let cmd_args = match action {
-                                            "retrain" => vec!["--ml-retrain".to_string()],
-                                            "cleanup" => vec!["--ml-cleanup".to_string(), "30".to_string()],
-                                            _ => vec!["--ml-analytics".to_string()],
-                                        };
-                                        let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                        (idx, format!("🤖 **ML Management**\n\n{}", result))
-                                    },
-                                    "orchestrate" => {
-                                        let prompt = if args_owned.is_empty() { "Hello".to_string() } else { args_owned.clone() };
-                                        let mut cmd_args = vec!["--prompt".to_string(), prompt.clone()];
-                                        if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
-                                            cmd_args.push("--ollama".to_string());
-                                        }
-                                        let (result, _ctx, _arm) = route_and_execute(&prompt, db_resolved, &cmd_args).await;
-                                        (idx, format!("🎯 **Orchestrate**\n\n{}", result))
-                                    },
+                                     "ml_management" => {
+                                         let action = if args_owned.is_empty() { "analytics" } else { args_owned.trim() };
+                                         let cmd_args = match action {
+                                             "retrain" => vec!["--ml-retrain".to_string()],
+                                             "cleanup" => vec!["--ml-cleanup".to_string(), "30".to_string()],
+                                             _ => vec!["--ml-analytics".to_string()],
+                                         };
+                                         let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                         (idx, format!("🤖 **ML Management**\n\n{}", result))
+                                     },
+                                     "orchestrate" => {
+                                         let prompt = if args_owned.is_empty() { "Hello".to_string() } else { args_owned.clone() };
+                                         let code_payload = resolve_code_for_command(&prompt, &prompt_for_cmd);
+                                         let mut cmd_args = vec!["--prompt".to_string(), code_payload.clone()];
+                                         if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                             cmd_args.push("--ollama".to_string());
+                                         }
+                                         let (result, _ctx, _arm) = route_and_execute(&code_payload, db_resolved, &cmd_args).await;
+                                         (idx, format!("🎯 **Orchestrate**\n\n{}", result))
+                                     },
 
-                                    // ── Simple CLI-passthrough commands ──
-                                    "get_system_info" => { let r = run_cli_subcommand(&["--sys-info".to_string()], db_resolved).await; (idx, format!("💻 **System Info**\n\n{}", r)) },
-                                    "get_database_stats" => { let r = run_cli_subcommand(&["--stats".to_string()], db_resolved).await; (idx, format!("📊 **DB Stats**\n\n{}", r)) },
-                                    "list_tasks" => {
-                                        let cat = if args_owned.is_empty() { "all".to_string() } else { args_owned.clone() };
-                                        let r = run_cli_subcommand(&["--tasks".to_string(), cat], db_resolved).await;
-                                        (idx, format!("📋 **Task List**\n\n{}", r))
-                                    },
+                                     // ── Simple CLI-passthrough commands ──
+                                     "get_system_info" => { let r = run_cli_subcommand(&["--sys-info".to_string()], db_resolved).await; (idx, format!("💻 **System Info**\n\n{}", r)) },
+                                     "get_database_stats" => { let r = run_cli_subcommand(&["--stats".to_string()], db_resolved).await; (idx, format!("📊 **DB Stats**\n\n{}", r)) },
+                                     "list_tasks" => {
+                                         let cat = if args_owned.is_empty() { "all".to_string() } else { args_owned.clone() };
+                                         let r = run_cli_subcommand(&["--tasks".to_string(), cat], db_resolved).await;
+                                         (idx, format!("📋 **Task List**\n\n{}", r))
+                                     },
                                      "update" | "update_database" => {
                                          if let Ok(exe_path) = std::env::current_exe() {
                                              let mut cmd = std::process::Command::new(exe_path);
@@ -5893,30 +6304,28 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                      "getvino" => {
                                          (idx, "🔷 **OpenVINO Background Sync (`getvino`)**: Active background synchronization engine.\n- Sync Interval: 24h (configurable via `--getvino-interval <hours>`)".to_string())
                                      },
-                                     "jupyter" => {
-                                         (idx, "🚀 **ModelFusion Jupyter Notebook**: Launch interactive data analysis workspace:\n```powershell\ncli.exe --jupyter\n```".to_string())
-                                     },
-                                    "clear_cache" => { let r = run_cli_subcommand(&["--clearcache".to_string()], db_resolved).await; (idx, format!("🧹 **Cache Cleared**\n\n{}", r)) },
+                                     "clear_cache" => { let r = run_cli_subcommand(&["--clearcache".to_string()], db_resolved).await; (idx, format!("🧹 **Cache Cleared**\n\n{}", r)) },
                                      "restore" | "restore_backup" => { let r = run_cli_subcommand(&["--restore".to_string()], db_resolved).await; (idx, format!("🚑 **Database Restored**\n\n{}", r)) },
                                      "use-openai" | "use_openai" => {
                                          (idx, "ℹ️ **ModelFusion Provider Notice**: Paid proprietary cloud models (including OpenAI) are disabled per system policy. ModelFusion operates exclusively with high-performance local open-weight models via Ollama and OpenVINO.".to_string())
                                      },
-                                    "get_decision_stats" => { let r = run_cli_subcommand(&["--decision-stats".to_string()], db_resolved).await; (idx, format!("🎯 **Decision Stats**\n\n{}", r)) },
-                                    "get_novel_ai_stats" => { let r = run_cli_subcommand(&["--novel-ai-stats".to_string()], db_resolved).await; (idx, format!("🧠 **Novel AI Stats**\n\n{}", r)) },
-                                    "get_performance_stats" => { let r = run_cli_subcommand(&["--performance-stats".to_string()], db_resolved).await; (idx, format!("⚡ **Performance Stats**\n\n{}", r)) },
-                                    "get_cache_stats" => { let r = run_cli_subcommand(&["--cache-stats".to_string()], db_resolved).await; (idx, format!("💾 **Cache Stats**\n\n{}", r)) },
-                                    "get_model_recommendations" => { let r = run_cli_subcommand(&["--model-recommendations".to_string()], db_resolved).await; (idx, format!("💡 **Model Recommendations**\n\n{}", r)) },
-                                    "get_model_ranking" => {
-                                        let cat = if args_owned.is_empty() { "text-generation".to_string() } else { args_owned.clone() };
-                                        let r = run_cli_subcommand(&["--model-ranking".to_string(), cat], db_resolved).await;
-                                        (idx, format!("🏆 **Model Ranking**\n\n{}", r))
-                                    },
-                                    "get_ml_analytics" => { let r = run_cli_subcommand(&["--ml-analytics".to_string()], db_resolved).await; (idx, format!("📈 **ML Analytics**\n\n{}", r)) },
-                                    "report_bandit_feedback" => (idx, "📊 **Bandit Feedback**: Use MCP client to submit feedback with context/arm/reward.".to_string()),
+                                     "get_decision_stats" => { let r = run_cli_subcommand(&["--decision-stats".to_string()], db_resolved).await; (idx, format!("🎯 **Decision Stats**\n\n{}", r)) },
+                                     "get_novel_ai_stats" => { let r = run_cli_subcommand(&["--novel-ai-stats".to_string()], db_resolved).await; (idx, format!("🧠 **Novel AI Stats**\n\n{}", r)) },
+                                     "get_performance_stats" => { let r = run_cli_subcommand(&["--performance-stats".to_string()], db_resolved).await; (idx, format!("⚡ **Performance Stats**\n\n{}", r)) },
+                                     "get_cache_stats" => { let r = run_cli_subcommand(&["--cache-stats".to_string()], db_resolved).await; (idx, format!("💾 **Cache Stats**\n\n{}", r)) },
+                                     "get_model_recommendations" => { let r = run_cli_subcommand(&["--model-recommendations".to_string()], db_resolved).await; (idx, format!("💡 **Model Recommendations**\n\n{}", r)) },
+                                     "get_model_ranking" => {
+                                         let cat = if args_owned.is_empty() { "text-generation".to_string() } else { args_owned.clone() };
+                                         let r = run_cli_subcommand(&["--model-ranking".to_string(), cat], db_resolved).await;
+                                         (idx, format!("🏆 **Model Ranking**\n\n{}", r))
+                                     },
+                                     "get_ml_analytics" => { let r = run_cli_subcommand(&["--ml-analytics".to_string()], db_resolved).await; (idx, format!("📈 **ML Analytics**\n\n{}", r)) },
+                                     "report_bandit_feedback" => (idx, "📊 **Bandit Feedback**: Use MCP client to submit feedback with context/arm/reward.".to_string()),
 
                                      // ── Coding & Task Slash Directives ──
                                      "createfile" => {
-                                         if args_owned.trim().is_empty() && !prompt_for_cmd.contains("<attachment") && !prompt_for_cmd.contains("<selection") {
+                                         let attached = extract_attached_code_context(&prompt_for_cmd);
+                                         if args_owned.trim().is_empty() && attached.is_empty() {
                                              (idx, "📄 **ModelFusion File Creator (`/createfile`)**\n\nCreate, generate, and save files directly to your workspace:\n- `@agent createfile <path> [code or instructions]`\n- `/createfile <path> [code or instructions]`\n\n**Examples**:\n- `/createfile pq.py` (saves attached code or selection to pq.py)\n- `/createfile script.py print(\"Hello HugOS\")`\n- `/createfile utils.rs ```rust\npub fn add(a: i32, b: i32) -> i32 { a + b }\n```\n- `/createfile calc.py write a calculator with add, sub, mul, div`".to_string())
                                          } else {
                                              let (target_filename, remaining_instruction) = extract_createfile_args(&args_owned);
@@ -5924,114 +6333,124 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                              (idx, res)
                                          }
                                      },
-                                    "edit" => {
-                                        if args_owned.is_empty() && !prompt_for_cmd.contains("<attachment") && !prompt_for_cmd.contains("<selection") {
-                                            (idx, "✏️ **ModelFusion Code Editor**: Active.\n\nSpecify the target file and instructions to edit code.".to_string())
-                                        } else {
-                                            let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
-                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), code_payload];
-                                            if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
-                                                cmd_args.push("--ollama".to_string());
-                                            }
-                                            let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                            (idx, format!("✏️ **Code Edit**\n\n{}", result))
-                                        }
-                                    },
-                                    "fix" => {
-                                        if args_owned.is_empty() && !prompt_for_cmd.contains("<attachment") && !prompt_for_cmd.contains("<selection") {
-                                            (idx, "🔧 **ModelFusion Code Fixer**: Active.\n\nProvide the code and error details to analyze and generate fixes.".to_string())
-                                        } else {
-                                            let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
-                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Fix the following code issue: {}", code_payload)];
-                                            if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
-                                                cmd_args.push("--ollama".to_string());
-                                            }
-                                            let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                            (idx, format!("🔧 **Code Fix**\n\n{}", result))
-                                        }
-                                    },
-                                    "explain" => {
-                                        if args_owned.is_empty() && !prompt_for_cmd.contains("<attachment") && !prompt_for_cmd.contains("<selection") {
-                                            (idx, "💡 **ModelFusion Code Explainer**: Active.\n\nProvide code or concepts to generate clear step-by-step explanations.".to_string())
-                                        } else {
-                                            let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
-                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Explain the following code: {}", code_payload)];
-                                            if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
-                                                cmd_args.push("--ollama".to_string());
-                                            }
-                                            let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                            (idx, format!("💡 **Code Explanation**\n\n{}", result))
-                                        }
-                                    },
-                                    "review" => {
-                                        if args_owned.is_empty() && !prompt_for_cmd.contains("<attachment") && !prompt_for_cmd.contains("<selection") {
-                                            (idx, "🔍 **ModelFusion Code Reviewer**: Active.\n\nProvide code to perform a thorough review of architecture, readability, and performance.".to_string())
-                                        } else {
-                                            let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
-                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Review the following code: {}", code_payload)];
-                                            if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
-                                                cmd_args.push("--ollama".to_string());
-                                            }
-                                            let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                            (idx, format!("🔍 **Code Review**\n\n{}", result))
-                                        }
-                                    },
-                                    "tests" => {
-                                        if args_owned.is_empty() && !prompt_for_cmd.contains("<attachment") && !prompt_for_cmd.contains("<selection") {
-                                            (idx, "🧪 **ModelFusion Test Generator**: Active.\n\nProvide code to generate comprehensive unit and integration tests.".to_string())
-                                        } else {
-                                            let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
-                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Generate unit tests for the following code: {}", code_payload)];
-                                            if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
-                                                cmd_args.push("--ollama".to_string());
-                                            }
-                                            let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                            (idx, format!("🧪 **Test Generation**\n\n{}", result))
-                                        }
-                                    },
-                                    "audit" => {
-                                        if args_owned.is_empty() && !prompt_for_cmd.contains("<attachment") && !prompt_for_cmd.contains("<selection") {
-                                            (idx, "🛡️ **ModelFusion Security & Code Auditor**: Active.\n\nProvide code or repository context to perform a comprehensive vulnerability and quality audit.".to_string())
-                                        } else {
-                                            let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
-                                            let mut cmd_args = vec!["--spam-detection".to_string(), "--prompt".to_string(), format!("Audit for security vulnerabilities: {}", code_payload)];
-                                            if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
-                                                cmd_args.push("--ollama".to_string());
-                                            }
-                                            let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                            (idx, format!("🛡️ **Code Audit**\n\n{}", result))
-                                        }
-                                    },
-                                    "generate" => {
-                                        if args_owned.is_empty() {
-                                            (idx, "⚡ **ModelFusion Code Generator**: Active.\n\nSpecify the requirements to generate production-ready implementation code.".to_string())
-                                        } else {
-                                            let mut cmd_args = vec!["--prompt".to_string(), args_owned.clone()];
-                                            if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
-                                                cmd_args.push("--ollama".to_string());
-                                            }
-                                            let (result, _ctx, _arm) = route_and_execute(&args_owned, db_resolved, &cmd_args).await;
-                                            (idx, format!("⚡ **Generated Code**\n\n{}", result))
-                                        }
-                                    },
-                                    "optimize" => {
-                                        if args_owned.is_empty() && !prompt_for_cmd.contains("<attachment") && !prompt_for_cmd.contains("<selection") {
-                                            (idx, "⚡ **ModelFusion Performance Optimizer**: Active.\n\nProvide code or algorithms to optimize for speed and memory efficiency.".to_string())
-                                        } else {
-                                            let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
-                                            let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Optimize the following code: {}", code_payload)];
-                                            if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
-                                                cmd_args.push("--ollama".to_string());
-                                            }
-                                            let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                            (idx, format!("⚡ **Code Optimization**\n\n{}", result))
-                                        }
-                                    },
+                                     "edit" => {
+                                         let attached = extract_attached_code_context(&prompt_for_cmd);
+                                         if args_owned.trim().is_empty() && attached.is_empty() {
+                                             (idx, "✏️ **ModelFusion Code Editor**: Active.\n\nSpecify the target file and instructions to edit code.".to_string())
+                                         } else {
+                                             let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
+                                             let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), code_payload];
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                 cmd_args.push("--ollama".to_string());
+                                             }
+                                             let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                             (idx, format!("✏️ **Code Edit**\n\n{}", result))
+                                         }
+                                     },
+                                     "fix" => {
+                                         let attached = extract_attached_code_context(&prompt_for_cmd);
+                                         if args_owned.trim().is_empty() && attached.is_empty() {
+                                             (idx, "🔧 **ModelFusion Code Fixer**: Active.\n\nProvide the code and error details to analyze and generate fixes.".to_string())
+                                         } else {
+                                             let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
+                                             let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Fix the following code issue: {}", code_payload)];
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                 cmd_args.push("--ollama".to_string());
+                                             }
+                                             let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                             (idx, format!("🔧 **Code Fix**\n\n{}", result))
+                                         }
+                                     },
+                                     "explain" => {
+                                         let attached = extract_attached_code_context(&prompt_for_cmd);
+                                         if args_owned.trim().is_empty() && attached.is_empty() {
+                                             (idx, "💡 **ModelFusion Code Explainer**: Active.\n\nProvide code or concepts to generate clear step-by-step explanations.".to_string())
+                                         } else {
+                                             let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
+                                             let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Explain the following code: {}", code_payload)];
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                 cmd_args.push("--ollama".to_string());
+                                             }
+                                             let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                             (idx, format!("💡 **Code Explanation**\n\n{}", result))
+                                         }
+                                     },
+                                     "review" => {
+                                         let attached = extract_attached_code_context(&prompt_for_cmd);
+                                         if args_owned.trim().is_empty() && attached.is_empty() {
+                                             (idx, "🔍 **ModelFusion Code Reviewer**: Active.\n\nProvide code to perform a thorough review of architecture, readability, and performance.".to_string())
+                                         } else {
+                                             let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
+                                             let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Review the following code: {}", code_payload)];
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                 cmd_args.push("--ollama".to_string());
+                                             }
+                                             let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                             (idx, format!("🔍 **Code Review**\n\n{}", result))
+                                         }
+                                     },
+                                     "tests" => {
+                                         let attached = extract_attached_code_context(&prompt_for_cmd);
+                                         if args_owned.trim().is_empty() && attached.is_empty() {
+                                             (idx, "🧪 **ModelFusion Test Generator**: Active.\n\nProvide code to generate comprehensive unit and integration tests.".to_string())
+                                         } else {
+                                             let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
+                                             let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Generate unit tests for the following code: {}", code_payload)];
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                 cmd_args.push("--ollama".to_string());
+                                             }
+                                             let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                             (idx, format!("🧪 **Test Generation**\n\n{}", result))
+                                         }
+                                     },
+                                     "audit" => {
+                                         let attached = extract_attached_code_context(&prompt_for_cmd);
+                                         if args_owned.trim().is_empty() && attached.is_empty() {
+                                             (idx, "🛡️ **ModelFusion Security & Code Auditor**: Active.\n\nProvide code or repository context to perform a comprehensive vulnerability and quality audit.".to_string())
+                                         } else {
+                                             let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
+                                             let mut cmd_args = vec!["--spam-detection".to_string(), "--prompt".to_string(), format!("Audit for security vulnerabilities: {}", code_payload)];
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                 cmd_args.push("--ollama".to_string());
+                                             }
+                                             let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                             (idx, format!("🛡️ **Code Audit**\n\n{}", result))
+                                         }
+                                     },
+                                     "generate" => {
+                                         let attached = extract_attached_code_context(&prompt_for_cmd);
+                                         if args_owned.trim().is_empty() && attached.is_empty() {
+                                             (idx, "⚡ **ModelFusion Code Generator**: Active.\n\nSpecify the requirements to generate production-ready implementation code.".to_string())
+                                         } else {
+                                             let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
+                                             let mut cmd_args = vec!["--prompt".to_string(), code_payload.clone()];
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                 cmd_args.push("--ollama".to_string());
+                                             }
+                                             let (result, _ctx, _arm) = route_and_execute(&code_payload, db_resolved, &cmd_args).await;
+                                             (idx, format!("⚡ **Generated Code**\n\n{}", result))
+                                         }
+                                     },
+                                     "optimize" => {
+                                         let attached = extract_attached_code_context(&prompt_for_cmd);
+                                         if args_owned.trim().is_empty() && attached.is_empty() {
+                                             (idx, "⚡ **ModelFusion Performance Optimizer**: Active.\n\nProvide code or algorithms to optimize for speed and memory efficiency.".to_string())
+                                         } else {
+                                             let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
+                                             let mut cmd_args = vec!["--code-summary-generation".to_string(), "--prompt".to_string(), format!("Optimize the following code: {}", code_payload)];
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                                                 cmd_args.push("--ollama".to_string());
+                                             }
+                                             let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                             (idx, format!("⚡ **Code Optimization**\n\n{}", result))
+                                         }
+                                     },
                                      "export-pdf" => {
+                                         let code_payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
                                          let mut cmd_args = vec!["--export-pdf".to_string()];
-                                         if !args_owned.is_empty() {
+                                         if !code_payload.is_empty() {
                                              cmd_args.push("--prompt".to_string());
-                                             cmd_args.push(args_owned.clone());
+                                             cmd_args.push(code_payload);
                                          }
                                          let result = run_cli_subcommand(&cmd_args, db_resolved).await;
                                          (idx, format!("📄 **Export PDF**\n\n{}", result))
@@ -6070,24 +6489,26 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                               "summary" => "summarization",
                                               t => t,
                                           };
-                                          if args_owned.trim().is_empty() {
-                                              let db_path_str = db_path_ref.as_deref().filter(|s| !s.is_empty()).unwrap_or("IDE/db/hf_models.db");
-                                              let top_models = if let Ok(db) = db::HuggingFaceModelDatabase::open(db_path_str) {
-                                                  db.get_by_task(clean_task, 3).unwrap_or_default()
-                                              } else {
-                                                  Vec::new()
-                                              };
-                                              let mut msg = format!("📋 **ModelFusion Task (`{}`)**\n\n- **Status**: Active & Registered in Multi-Modal Catalog (<1ms Fast Interception)\n- **Task**: `{}`\n", canonical, clean_task);
-                                              if !top_models.is_empty() {
-                                                  msg.push_str("- **Top Selected Models in Database**:\n");
-                                                  for m in &top_models {
-                                                      msg.push_str(&format!("  - `{}` (Decision Score: {:.2}, {} downloads)\n", m.model_id, m.decision_score, m.downloads));
-                                                  }
-                                              }
-                                              msg.push_str(&format!("\nTo execute this task with a prompt:\n- `@agent --{} \"<text to process>\"`\n- `/{}` \"<text to process>\"", canonical, canonical));
-                                              (idx, msg)
-                                          } else {
-                                              let mut cmd_args = vec![format!("--{}", canonical), "--prompt".to_string(), args_owned.trim().to_string()];
+                                          let attached = extract_attached_code_context(&prompt_for_cmd);
+                                           if args_owned.trim().is_empty() && attached.is_empty() {
+                                               let db_path_str = db_path_ref.as_deref().filter(|s| !s.is_empty()).unwrap_or("IDE/db/hf_models.db");
+                                               let top_models = if let Ok(db) = db::HuggingFaceModelDatabase::open(db_path_str) {
+                                                   db.get_by_task(clean_task, 3).unwrap_or_default()
+                                               } else {
+                                                   Vec::new()
+                                               };
+                                               let mut msg = format!("📋 **ModelFusion Task (`{}`)**\n\n- **Status**: Active & Registered in Multi-Modal Catalog (<1ms Fast Interception)\n- **Task**: `{}`\n", canonical, clean_task);
+                                               if !top_models.is_empty() {
+                                                   msg.push_str("- **Top Selected Models in Database**:\n");
+                                                   for m in &top_models {
+                                                       msg.push_str(&format!("  - `{}` (Decision Score: {:.2}, {} downloads)\n", m.model_id, m.decision_score, m.downloads));
+                                                   }
+                                               }
+                                               msg.push_str(&format!("\nTo execute this task with a prompt:\n- `@agent --{} \"<text to process>\"`\n- `/{}` \"<text to process>\"", canonical, canonical));
+                                               (idx, msg)
+                                           } else {
+                                               let payload = resolve_code_for_command(args_owned.trim(), &prompt_for_cmd);
+                                               let mut cmd_args = vec![format!("--{}", canonical), "--prompt".to_string(), payload];
                                               if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() && !cmd_args.iter().any(|a| a == "--ollama") {
                                                   cmd_args.push("--ollama".to_string());
                                               }
@@ -6158,9 +6579,12 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                                               cmd_args.push(part.to_string());
                                                           }
                                                       } else {
-                                                          cmd_args.push("--prompt".to_string());
-                                                          cmd_args.push(trimmed_args.to_string());
-                                                      }
+                                                           let payload = resolve_code_for_command(trimmed_args, &prompt_for_cmd);
+                                                           if !payload.is_empty() {
+                                                               cmd_args.push("--prompt".to_string());
+                                                               cmd_args.push(payload);
+                                                           }
+                                                       }
                                                   }
                                               }
                                           }
@@ -6284,8 +6708,11 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             || lower.contains("/sysinfo")
                             || lower.contains("/comment")
                             || lower.contains("/command")
-                            || lower.contains("<attachments>")
-                            || lower.contains("<attachment>")
+                            || lower.contains("<attachments")
+                            || lower.contains("<attachment")
+                            || lower.contains("<selection")
+                            || lower.contains("<codesnippet")
+                            || lower.contains("<context")
                             || lower.contains("<user_request>")
                             || lower.contains("<userrequest>")
                         {
@@ -6371,13 +6798,16 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         let lower = user_msg_for_check.to_lowercase();
                         let prompt_lower = prompt.to_lowercase();
                         let has_attachment_tags = prompt_lower.contains("<attachment")
-                            || prompt_lower.contains("<selection>")
-                            || prompt_lower.contains("<codesnippet>");
+                            || prompt_lower.contains("<selection")
+                            || prompt_lower.contains("<codesnippet")
+                            || prompt_lower.contains("<attachments")
+                            || prompt_lower.contains("<context");
 
                         let file_extensions = [
                             ".py", ".rs", ".js", ".ts", ".cpp", ".c", ".h", ".cs",
                             ".go", ".java", ".html", ".css", ".sql", ".json", ".yaml",
-                            ".toml", ".sh", ".bat", ".ps1"
+                            ".toml", ".sh", ".bat", ".ps1", ".csv", ".tsv", ".parquet",
+                            ".xlsx", ".ipynb", ".xml", ".txt", ".db", ".sqlite", ".md", ".log"
                         ];
                         let has_file_ext = file_extensions.iter().any(|ext| lower.contains(ext));
 
@@ -10887,7 +11317,342 @@ User: @agent --active-model";
         assert!(detect_createfile_intent("").is_none(), "empty string must not trigger");
         assert!(detect_createfile_intent("   ").is_none(), "whitespace must not trigger");
     }
+
+    #[test]
+    fn test_extract_attached_code_context_comprehensive() {
+        use super::{extract_attached_code_context, resolve_code_for_command, format_file_content_for_llm};
+
+        // 1. <attachment id="...">
+        let p1 = r#"<attachments>
+<attachment id="file:titanic.csv">
+PassengerId,Survived,Pclass,Name
+1,0,3,"Braund, Mr. Owen Harris"
+</attachment>
+</attachments>
+@agent datascience train model"#;
+        let res1 = extract_attached_code_context(p1);
+        assert_eq!(res1.len(), 1);
+        assert_eq!(res1[0].0, "titanic.csv");
+        assert!(res1[0].1.contains("Braund"));
+
+        // 2. <selection file="...">
+        let p2 = r#"<selection file="Calculator.java">
+public class Calculator {
+    public int divide(int a, int b) { return a / b; }
 }
+</selection>
+@agent review check division by zero"#;
+        let res2 = extract_attached_code_context(p2);
+        assert_eq!(res2.len(), 1);
+        assert_eq!(res2[0].0, "Calculator.java");
+        assert!(res2[0].1.contains("Calculator"));
 
+        // 3. <codesnippet id="...">
+        let p3 = r#"<codesnippet id="fib.py">
+def fib(n):
+    return n if n <= 1 else fib(n-1) + fib(n-2)
+</codesnippet>
+@agent fix memoize this"#;
+        let res3 = extract_attached_code_context(p3);
+        assert_eq!(res3.len(), 1);
+        assert_eq!(res3[0].0, "fib.py");
+        assert!(res3[0].1.contains("fib"));
 
+        // 4. <context file="...">
+        let p4 = r#"<context file="utils.ts">
+export function add(a: number, b: number): number {
+    return a + b;
+}
+</context>
+@agent test generate tests"#;
+        let res4 = extract_attached_code_context(p4);
+        assert_eq!(res4.len(), 1);
+        assert_eq!(res4[0].0, "utils.ts");
+        assert!(res4[0].1.contains("export function add"));
+
+        // 5. Bare <attachments> wrapper
+        let p5 = r#"<attachments>
+Excerpt from model.py:
+```python
+class CNN: pass
+```
+</attachments>
+@agent explain this model"#;
+        let res5 = extract_attached_code_context(p5);
+        assert!(!res5.is_empty());
+        assert_eq!(res5[0].0, "model.py");
+
+        // 6. resolve_code_for_command with empty args
+        let resolved_empty = resolve_code_for_command("", p1);
+        assert!(resolved_empty.contains("titanic.csv"));
+        assert!(resolved_empty.contains("Braund"));
+
+        // 7. resolve_code_for_command with user prompt + attached code
+        let resolved_prompt = resolve_code_for_command("check edge cases", p2);
+        assert!(resolved_prompt.starts_with("check edge cases"));
+        assert!(resolved_prompt.contains("Calculator.java"));
+        assert!(resolved_prompt.contains("Calculator"));
+
+        // 8. format_file_content_for_llm on binary parquet simulated data
+        let mut fake_parquet = b"PAR1".to_vec();
+        fake_parquet.extend_from_slice(b"  user_id  session_token  click_count PAR1");
+        let formatted_pq = format_file_content_for_llm("dataset.parquet", &fake_parquet);
+        assert!(formatted_pq.contains("Parquet Dataset: dataset.parquet"));
+        assert!(formatted_pq.contains("user_id"));
+        assert!(formatted_pq.contains("session_token"));
+
+        // 9. format_file_content_for_llm on excel workbook simulated data
+        let mut fake_xlsx = b"PK".to_vec();
+        fake_xlsx.extend_from_slice(b"  Sheet1  Revenue_Q1  Expenses ");
+        let formatted_xlsx = format_file_content_for_llm("financials.xlsx", &fake_xlsx);
+        assert!(formatted_xlsx.contains("Excel Workbook: financials.xlsx"));
+        assert!(formatted_xlsx.contains("Sheet1"));
+        assert!(formatted_xlsx.contains("Revenue_Q1"));
+    }
+
+    #[test]
+    fn test_canonicalize_all_file_commands() {
+        use super::canonicalize_command;
+
+        // Code analysis & transformation
+        assert_eq!(canonicalize_command("review"), Some("review"));
+        assert_eq!(canonicalize_command("explain"), Some("explain"));
+        assert_eq!(canonicalize_command("fix"), Some("fix"));
+        assert_eq!(canonicalize_command("edit"), Some("edit"));
+        assert_eq!(canonicalize_command("optimize"), Some("optimize"));
+        assert_eq!(canonicalize_command("test"), Some("tests"));
+        assert_eq!(canonicalize_command("tests"), Some("tests"));
+        assert_eq!(canonicalize_command("audit"), Some("audit"));
+        assert_eq!(canonicalize_command("security"), Some("security"));
+        assert_eq!(canonicalize_command("comment"), Some("comment"));
+        assert_eq!(canonicalize_command("comments"), Some("comment"));
+        assert_eq!(canonicalize_command("generate"), Some("generate"));
+        assert_eq!(canonicalize_command("refactor"), Some("refactor"));
+
+        // Data science & analytics
+        assert_eq!(canonicalize_command("datascience"), Some("datascience"));
+        assert_eq!(canonicalize_command("dataanalyst"), Some("dataanalyst"));
+        assert_eq!(canonicalize_command("jupyter"), Some("jupyter"));
+
+        // Specialized tools
+        assert_eq!(canonicalize_command("pe"), Some("pe-header-extraction"));
+        assert_eq!(canonicalize_command("pe-header-extraction"), Some("pe-header-extraction"));
+        assert_eq!(canonicalize_command("createfile"), Some("createfile"));
+
+        // HF tasks
+        assert_eq!(canonicalize_command("summarization"), Some("summarization"));
+        assert_eq!(canonicalize_command("text-classification"), Some("text-classification"));
+        assert_eq!(canonicalize_command("table-question-answering"), Some("table-question-answering"));
+    }
+
+    #[test]
+    fn test_cli_file_prompt_resolution() {
+        use super::format_file_content_for_llm;
+
+        let temp_dir = std::env::temp_dir().join("modelfusion_cli_file_test");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let test_file = temp_dir.join("sample.py");
+        std::fs::write(&test_file, "def greet():\n    return 'hello world'\n").unwrap();
+
+        // 1. When prompt + file provided
+        let mut final_prompt = "Review this code".to_string();
+        let bytes = std::fs::read(&test_file).unwrap();
+        let formatted = format_file_content_for_llm(test_file.to_str().unwrap(), &bytes);
+        if !final_prompt.contains(&formatted) {
+            final_prompt.push_str(&format!("\n\n--- Attached File: {} ---\n{}\n", test_file.to_str().unwrap(), formatted));
+        }
+        assert!(final_prompt.starts_with("Review this code"));
+        assert!(final_prompt.contains("sample.py"));
+        assert!(final_prompt.contains("greet()"));
+
+        // 2. When only file provided
+        let mut prompt_empty = String::new();
+        if prompt_empty.trim().is_empty() {
+            prompt_empty = format!("Review the following attached file:\n\n--- Attached File: {} ---\n{}\n", test_file.to_str().unwrap(), formatted);
+        }
+        assert!(prompt_empty.starts_with("Review the following attached file:"));
+        assert!(prompt_empty.contains("sample.py"));
+        assert!(prompt_empty.contains("greet()"));
+
+        let _ = std::fs::remove_file(&test_file);
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+    #[test]
+    fn test_resolve_existing_file_path() {
+        use super::resolve_existing_file_path;
+
+        let temp_dir = std::env::temp_dir().join("modelfusion_path_res_test");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let test_file = temp_dir.join("test_data.csv");
+        std::fs::write(&test_file, "a,b,c\n1,2,3\n").unwrap();
+
+        let resolved = resolve_existing_file_path(test_file.to_str().unwrap());
+        assert!(resolved.is_some(), "Must resolve direct file path");
+        assert_eq!(resolved.unwrap(), test_file);
+
+        assert!(resolve_existing_file_path("").is_none());
+        assert!(resolve_existing_file_path("non_existent_file_xyz_12345.notfound").is_none());
+
+        let _ = std::fs::remove_file(&test_file);
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_data_science_all_attachment_types() {
+        use super::{extract_attached_code_context, resolve_code_for_command, format_file_content_for_llm};
+
+        // 1. CSV dataset
+        let p_csv = "<attachment id=\"data.csv\">col1,col2,col3\n10,20,30\n</attachment>\n@agent datascience correlation analysis";
+        let att_csv = extract_attached_code_context(p_csv);
+        assert_eq!(att_csv[0].0, "data.csv");
+        let res_csv = resolve_code_for_command("correlation analysis", p_csv);
+        assert!(res_csv.contains("data.csv"));
+        assert!(res_csv.contains("col1,col2,col3"));
+
+        // 2. JSON dataset
+        let p_json = "<attachment id=\"metrics.json\">{\"accuracy\": 0.95, \"loss\": 0.05}</attachment>\n/dataanalyst summarize metrics";
+        let att_json = extract_attached_code_context(p_json);
+        assert_eq!(att_json[0].0, "metrics.json");
+        let res_json = resolve_code_for_command("summarize metrics", p_json);
+        assert!(res_json.contains("metrics.json"));
+        assert!(res_json.contains("accuracy"));
+
+        // 3. Parquet simulated dataset
+        let mut fake_pq = b"PAR1".to_vec();
+        fake_pq.extend_from_slice(b" id  timestamp  temperature_c  humidity PAR1");
+        let fmt_pq = format_file_content_for_llm("sensors.parquet", &fake_pq);
+        assert!(fmt_pq.contains("Parquet Dataset: sensors.parquet"));
+        assert!(fmt_pq.contains("temperature_c"));
+
+        // 4. Excel XLSX simulated workbook
+        let mut fake_xlsx = b"PK  ".to_vec();
+        fake_xlsx.extend_from_slice(b" Q1_Sales  Q2_Sales  GrossMargin ");
+        let fmt_xlsx = format_file_content_for_llm("budget.xlsx", &fake_xlsx);
+        assert!(fmt_xlsx.contains("Excel Workbook: budget.xlsx"));
+        assert!(fmt_xlsx.contains("GrossMargin"));
+
+        // 5. Jupyter Notebook IPYNB
+        let notebook_json = serde_json::json!({
+            "cells": [
+                {
+                    "cell_type": "markdown",
+                    "source": ["# Sales Analysis\n", "Initial exploratory data analysis."]
+                },
+                {
+                    "cell_type": "code",
+                    "source": ["import pandas as pd\n", "df = pd.read_csv('sales.csv')\n", "df.describe()"]
+                }
+            ]
+        });
+        let nb_bytes = serde_json::to_vec(&notebook_json).unwrap();
+        let fmt_nb = format_file_content_for_llm("workflow.ipynb", &nb_bytes);
+        assert!(fmt_nb.contains("Jupyter Notebook: workflow.ipynb"));
+        assert!(fmt_nb.contains("Cell 1 (markdown)"));
+        assert!(fmt_nb.contains("Cell 2 (code)"));
+        assert!(fmt_nb.contains("pd.read_csv"));
+
+        // 6. Jupyter command with attachment
+        let p_jup = format!("<attachment id=\"workflow.ipynb\">{}</attachment>\n/jupyter analyze notebook", fmt_nb);
+        let res_jup = resolve_code_for_command("analyze notebook", &p_jup);
+        assert!(res_jup.contains("workflow.ipynb"));
+        assert!(res_jup.contains("Cell 2 (code)"));
+    }
+
+    #[test]
+    fn test_code_analysis_all_commands_with_attachments() {
+        use super::{extract_attached_code_context, resolve_code_for_command, canonicalize_command};
+
+        let commands = [
+            ("review", "Review the following code:"),
+            ("explain", "Explain the following code:"),
+            ("fix", "Fix the following code issue:"),
+            ("optimize", "Optimize the following code:"),
+            ("test", "Generate unit tests for the following code:"),
+            ("tests", "Generate unit tests for the following code:"),
+            ("audit", "Audit for security vulnerabilities:"),
+            ("security", "Audit the following code for security vulnerabilities"),
+            ("comment", "Add comprehensive inline comments"),
+            ("generate", "Generate implementation code"),
+        ];
+
+        let snippet = "<attachment id=\"solution.rs\">\npub fn solve(n: u64) -> u64 { n * 2 }\n</attachment>";
+
+        for (cmd, _desc) in &commands {
+            assert!(canonicalize_command(cmd).is_some(), "Command '{}' must canonicalize", cmd);
+
+            let prompt = format!("{}\n/{} check correctness", snippet, cmd);
+            let att = extract_attached_code_context(&prompt);
+            assert_eq!(att.len(), 1, "Must extract 1 attachment for command {}", cmd);
+            assert_eq!(att[0].0, "solution.rs");
+
+            let resolved = resolve_code_for_command("check correctness", &prompt);
+            assert!(resolved.contains("solution.rs"), "Resolved payload must contain filename for {}", cmd);
+            assert!(resolved.contains("pub fn solve"), "Resolved payload must contain code for {}", cmd);
+        }
+    }
+
+    #[test]
+    fn test_specialized_tools_with_attachments() {
+        use super::{extract_attached_code_context, resolve_code_for_command, canonicalize_command};
+
+        // 1. PE Header Extraction /pe
+        assert_eq!(canonicalize_command("pe"), Some("pe-header-extraction"));
+        assert_eq!(canonicalize_command("pe-header-extraction"), Some("pe-header-extraction"));
+        let p_pe = "<attachment id=\"C:\\Windows\\System32\\notepad.exe\">\nPE binary\n</attachment>\n/pe extract headers";
+        let att_pe = extract_attached_code_context(p_pe);
+        assert_eq!(att_pe[0].0, "C:\\Windows\\System32\\notepad.exe");
+        let res_pe = resolve_code_for_command("extract headers", p_pe);
+        assert!(res_pe.contains("notepad.exe"));
+
+        // 2. Createfile /createfile
+        assert_eq!(canonicalize_command("createfile"), Some("createfile"));
+        let p_cf = "<attachment id=\"utils.py\">\ndef add(a, b): return a + b\n</attachment>\n/createfile utils.py";
+        let att_cf = extract_attached_code_context(p_cf);
+        assert_eq!(att_cf[0].0, "utils.py");
+        assert!(att_cf[0].1.contains("def add"));
+    }
+
+    #[test]
+    fn test_all_hf_tasks_with_attachments() {
+        use super::{extract_attached_code_context, resolve_code_for_command, canonicalize_command};
+
+        let hf_tasks = [
+            "text-classification", "token-classification", "question-answering",
+            "text-generation", "summarization", "translation", "fill-mask",
+            "text2text-generation", "language-detection", "grammar-correction",
+            "paraphrase-generation", "causal-language-modeling", "zero-shot-classification",
+            "feature-extraction", "sentence-similarity", "anonymization",
+            "coreference-resolution", "spam-detection", "malware-text-detection",
+            "phishing-detection", "pii-detection", "hate-speech-detection",
+            "cyberbullying-detection", "fake-news-detection", "legal-judgment-classification",
+            "contract-clause-classification", "case-outcome-prediction",
+            "financial-ner", "legal-ner", "biomedical-ner", "chemical-reaction-ner",
+            "financial-sentiment-analysis", "scientific-abstract-summarization",
+            "emotion-detection", "sarcasm-detection", "stance-detection",
+            "bias-detection", "hallucination-detection", "reading-level-assessment",
+            "generation-groundedness", "citation-intent-classification",
+            "code-summary-generation", "code-clone-detection",
+            "image-classification", "object-detection", "image-segmentation",
+            "visual-question-answering", "document-question-answering",
+            "zero-shot-image-classification", "depth-estimation", "image-feature-extraction",
+            "automatic-speech-recognition", "audio-classification", "voice-activity-detection",
+            "emotion-recognition", "video-classification", "text-to-speech",
+            "text-to-image", "image-super-resolution", "table-question-answering",
+            "feature-ranking"
+        ];
+
+        let snippet = "<attachment id=\"input_data.txt\">\nSample input content for Hugging Face task pipeline.\n</attachment>";
+
+        for task in &hf_tasks {
+            assert!(canonicalize_command(task).is_some(), "HF task '{}' must canonicalize", task);
+            let prompt = format!("{}\n/{} process input", snippet, task);
+            let att = extract_attached_code_context(&prompt);
+            assert_eq!(att.len(), 1, "Must extract attachment for HF task {}", task);
+            let resolved = resolve_code_for_command("process input", &prompt);
+            assert!(resolved.contains("input_data.txt"), "Payload must contain file for HF task {}", task);
+            assert!(resolved.contains("Sample input content"), "Payload must contain content for HF task {}", task);
+        }
+    }
+
+}
 

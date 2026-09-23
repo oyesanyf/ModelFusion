@@ -121,7 +121,15 @@ impl EnhancedModelSelector {
         let pipeline_tag = self.map_task_to_tag(task_name);
         
         // Load candidates from the DB (load a larger set to allow filtering)
-        let db_models = self.db.get_by_task(&pipeline_tag, 100)?;
+        let mut db_models = self.db.get_by_task(&pipeline_tag, 100)?;
+
+        if db_models.is_empty() && pipeline_tag != "text-generation" {
+            if let Ok(fallback_models) = self.db.get_by_task("text-generation", 100) {
+                if !fallback_models.is_empty() {
+                    db_models = fallback_models;
+                }
+            }
+        }
 
         if db_models.is_empty() {
             anyhow::bail!("No models found in database for pipeline tag: {}", pipeline_tag);
@@ -152,6 +160,23 @@ impl EnhancedModelSelector {
                 }
             }
             filtered_models.push(m);
+        }
+
+        if filtered_models.is_empty() && pipeline_tag != "text-generation" {
+            if let Ok(fallback_models) = self.db.get_by_task("text-generation", 100) {
+                for m in fallback_models {
+                    if no_simulation && is_fictional_or_non_chat(&m.model_id) {
+                        continue;
+                    }
+                    if let Some(max_params) = max_model_params_b {
+                        let est = estimate_params_billions(&m.model_id).unwrap_or(0.0);
+                        if est > 0.0 && est > max_params + 1.0 {
+                            continue;
+                        }
+                    }
+                    filtered_models.push(m);
+                }
+            }
         }
 
         if filtered_models.is_empty() {
@@ -506,15 +531,16 @@ impl EnhancedModelSelector {
     /// Map higher-level task name to database pipeline_tag.
     fn map_task_to_tag(&self, task_name: &str) -> String {
         match task_name.to_lowercase().as_str() {
-            "text-classification" | "sentiment" | "sentiment-analysis" | "spam" => "text-classification".to_string(),
+            "text-classification" | "sentiment" | "sentiment-analysis" | "spam" | "spam-detection" => "text-classification".to_string(),
             "question-answering" | "qa" | "question" => "question-answering".to_string(),
             "summarization" | "summary" => "summarization".to_string(),
             "translation" => "translation".to_string(),
             "image-classification" => "image-classification".to_string(),
             "object-detection" => "object-detection".to_string(),
             "automatic-speech-recognition" | "speech-recognition" | "asr" => "automatic-speech-recognition".to_string(),
-            "code-analysis" => "text-generation".to_string(), // Text-generation is the backend tag for general LLM coding
-            "malware-detection" => "text-classification".to_string(),
+            "code-analysis" | "code-summary-generation" | "code-generation" | "code_task" | "code-clone-detection" => "text-generation".to_string(),
+            "code-vulnerability-detection" | "security_analysis" | "malware-detection" | "pii-detection" | "phishing-detection" => "text-classification".to_string(),
+            "data-science" | "datascience" | "data-analyst" | "dataanalyst" | "jupyter" | "data_science" | "table-question-answering" => "text-generation".to_string(),
             other => other.to_string(),
         }
     }
