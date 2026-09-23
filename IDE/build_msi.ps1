@@ -555,6 +555,11 @@ if (Test-Path $fixSlashScript) {
     python $fixSlashScript
     Write-Host "[OK] Applied slash command patches" -ForegroundColor Green
 }
+$patchDataScienceScript = Join-Path $PSScriptRoot "patch_data_science_commands.py"
+if (Test-Path $patchDataScienceScript) {
+    python $patchDataScienceScript
+    Write-Host "[OK] Applied data science fast interception patches" -ForegroundColor Green
+}
 $patchEvolveScript = Join-Path $PSScriptRoot "patch_evolve_save.py"
 if (Test-Path $patchEvolveScript) {
     python $patchEvolveScript
@@ -744,7 +749,12 @@ Write-Host "[OK] NLS index alignment verified successfully" -ForegroundColor Gre
 Write-Host "[INFO] Cleaning untrusted signatures from official VS Code native modules/binaries..." -ForegroundColor Yellow
 $cleanSigScript = Join-Path $PSScriptRoot "clean_untrusted_signatures.py"
 if (Test-Path $cleanSigScript) {
-    python "$cleanSigScript" "$vsCodePackDir"
+    $localAppHugOS = Join-Path $env:LOCALAPPDATA "HugOS IDE"
+    if (Test-Path $localAppHugOS) {
+        python "$cleanSigScript" "$vsCodePackDir" "$localAppHugOS"
+    } else {
+        python "$cleanSigScript" "$vsCodePackDir"
+    }
 }
 
 Write-Host "[INFO] Signing ModelFusion custom binaries (bin directory only)..." -ForegroundColor Yellow

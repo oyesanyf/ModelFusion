@@ -6221,24 +6221,23 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                              (idx, guide)
                                          } else {
                                              let mut target_file = String::new();
-                                             let mut prompt_text = String::new();
-                                             let parts: Vec<&str> = clean_args.splitn(2, ' ').collect();
-                                             if !parts.is_empty() && (parts[0].contains('.') || std::path::Path::new(parts[0]).is_file()) {
-                                                 target_file = parts[0].to_string();
-                                                 if parts.len() > 1 {
-                                                     prompt_text = parts[1].to_string();
-                                                 }
+                                             let (candidate_file, rest_prompt) = extract_createfile_args(clean_args);
+                                             let candidate_clean = candidate_file.trim_matches(|c: char| c == '"' || c == '\'' || c == '`');
+                                             let mut prompt_text = if !candidate_clean.is_empty() && (candidate_clean.contains('.') || std::path::Path::new(candidate_clean).is_file()) {
+                                                 target_file = candidate_clean.to_string();
+                                                 rest_prompt
                                              } else if let Some((ds_path, _)) = attached_dataset {
                                                  target_file = ds_path.clone();
-                                                 prompt_text = clean_args.to_string();
+                                                 clean_args.to_string()
                                              } else if !attached.is_empty() {
                                                  target_file = attached[0].0.clone();
-                                                 prompt_text = clean_args.to_string();
+                                                 clean_args.to_string()
                                              } else {
-                                                 prompt_text = clean_args.to_string();
-                                             }
+                                                 clean_args.to_string()
+                                             };
 
-                                             let flag = if cmd_owned.contains("science") {
+                                             let is_science = cmd_owned.contains("science");
+                                             let flag = if is_science {
                                                  "--datascience"
                                              } else {
                                                  "--dataanalyst"
@@ -6260,7 +6259,13 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                                  cmd_args.push("--ollama".to_string());
                                              }
                                              let result = run_cli_subcommand(&cmd_args, db_resolved).await;
-                                             let header = if cmd_owned == "jupyter" { "🚀 **Jupyter Analysis**" } else { "📊 **Data Science**" };
+                                             let header = if cmd_owned == "jupyter" {
+                                                 "🚀 **Jupyter Analysis**"
+                                             } else if is_science {
+                                                 "📊 **Data Science**"
+                                             } else {
+                                                 "📊 **ModelFusion Data Analyst**"
+                                             };
                                              let trimmed_result = result.trim();
                                              let final_body = if trimmed_result.is_empty() {
                                                  format!(
@@ -9987,10 +9992,10 @@ pub fn parse_slash_commands_in_prompt(
             "/jupyter" => {
                 std::env::set_var("MODELFUSION_JUPYTER", "true");
             }
-            "/dataanalyst" => {
+            "/dataanalyst" | "/data-analyst" => {
                 std::env::set_var("MODELFUSION_DATAANALYST", "true");
             }
-            "/datascience" => {
+            "/datascience" | "/data-science" => {
                 std::env::set_var("MODELFUSION_DATASCIENCE", "true");
             }
             "/export-pdf" => {
@@ -11658,6 +11663,25 @@ class CNN: pass
         let res_jup = resolve_code_for_command("analyze notebook", &p_jup);
         assert!(res_jup.contains("workflow.ipynb"));
         assert!(res_jup.contains("Cell 2 (code)"));
+
+        // 7. Quoted dataset path parsing
+        let (f, r) = super::extract_createfile_args("\"sales data 2026.csv\" compute summary");
+        assert_eq!(f, "sales data 2026.csv");
+        assert_eq!(r, "compute summary");
+
+        // 8. Slash command environment variable extraction
+        let _lock = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("MODELFUSION_DATAANALYST");
+        std::env::remove_var("MODELFUSION_DATASCIENCE");
+        let mut p_da = "User: /data-analyst".to_string();
+        let (mut gpu, mut cpu, mut openvino, mut fusion) = (false, false, false, false);
+        super::parse_slash_commands_in_prompt(&mut p_da, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
+        assert_eq!(std::env::var("MODELFUSION_DATAANALYST").unwrap(), "true");
+
+        let mut p_ds = "User: /data-science".to_string();
+        let (mut gpu, mut cpu, mut openvino, mut fusion) = (false, false, false, false);
+        super::parse_slash_commands_in_prompt(&mut p_ds, &mut gpu, &mut cpu, &mut openvino, &mut fusion);
+        assert_eq!(std::env::var("MODELFUSION_DATASCIENCE").unwrap(), "true");
     }
 
     #[test]
