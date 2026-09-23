@@ -40,7 +40,16 @@ VALID_PRODUCT_JSON = {
     },
     "trustedExtensionAuthAccess": {
         "github": ["GitHub.copilot-chat"]
+    },
+    "configurationDefaults": {
+        "update.mode": "none"
     }
+}
+
+VALID_PDS = {
+    "update.mode": "none",
+    "update.enableWindowsBackgroundUpdates": False,
+    "update.showReleaseNotes": False
 }
 
 def setup_mock_pack_dir(base_dir, ver_hash="7e7950df89", product_obj=None, pkg_obj=None):
@@ -53,6 +62,8 @@ def setup_mock_pack_dir(base_dir, ver_hash="7e7950df89", product_obj=None, pkg_o
     os.makedirs(root_app, exist_ok=True)
     with open(os.path.join(root_app, "product.json"), "w", encoding="utf-8") as f:
         json.dump(p_data, f, indent=4)
+    with open(os.path.join(root_app, "product-default-settings.json"), "w", encoding="utf-8") as f:
+        json.dump(VALID_PDS, f, indent=4)
 
     # Extension
     ext_dir = os.path.join(root_app, "extensions", "copilot")
@@ -66,6 +77,8 @@ def setup_mock_pack_dir(base_dir, ver_hash="7e7950df89", product_obj=None, pkg_o
         os.makedirs(ver_app, exist_ok=True)
         with open(os.path.join(ver_app, "product.json"), "w", encoding="utf-8") as f:
             json.dump(p_data, f, indent=4)
+        with open(os.path.join(ver_app, "product-default-settings.json"), "w", encoding="utf-8") as f:
+            json.dump(VALID_PDS, f, indent=4)
         ver_ext = os.path.join(ver_app, "extensions", "copilot")
         os.makedirs(ver_ext, exist_ok=True)
         with open(os.path.join(ver_ext, "package.json"), "w", encoding="utf-8") as f:
@@ -349,6 +362,29 @@ try:
               p25_2.returncode == 0 and
               "Already patched" in p25_2.stdout)
     record_result("Test 25: patch_workbench strips DIAG logs and is idempotent", t25_ok, f"rc1={p25_1.returncode}, rc2={p25_2.returncode}")
+
+    # Test 26: NLS menubar table verification and drift protection
+    from patch_workbench import validate_nls_tables, EXPECTED_NLS_INDICES
+    t26_dir = os.path.join(temp_root, "t26")
+    t26_out = os.path.join(t26_dir, "resources", "app", "out")
+    os.makedirs(t26_out, exist_ok=True)
+    # 26a: Valid table passes
+    valid_nls = [""] * 12000
+    for idx, s in EXPECTED_NLS_INDICES.items():
+        valid_nls[idx] = s
+    with open(os.path.join(t26_out, "nls.messages.json"), "w", encoding="utf-8") as f:
+        json.dump(valid_nls, f)
+    t26a_ok = validate_nls_tables(t26_out)
+
+    # 26b: Shifted table (+6 shift like in the reported bug) fails
+    shifted_nls = [""] * 12000
+    for idx, s in EXPECTED_NLS_INDICES.items():
+        shifted_nls[idx + 6] = s  # offset by +6
+    with open(os.path.join(t26_out, "nls.messages.json"), "w", encoding="utf-8") as f:
+        json.dump(shifted_nls, f)
+    t26b_ok = not validate_nls_tables(t26_out)
+
+    record_result("Test 26: NLS menubar alignment validation and drift rejection", t26a_ok and t26b_ok, f"valid={t26a_ok}, shifted_rejected={t26b_ok}")
 
 finally:
     shutil.rmtree(temp_root, ignore_errors=True)
