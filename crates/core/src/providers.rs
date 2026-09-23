@@ -231,6 +231,64 @@ impl LLMProvider for GeminiProvider {
     }
 }
 
+pub(crate) fn pick_best_ollama_fallback(target: &str, list: &[String]) -> Option<String> {
+    if list.is_empty() {
+        return None;
+    }
+    let target_lower = target.to_lowercase();
+    let family = if target_lower.contains("qwen2.5") {
+        "qwen2.5"
+    } else if target_lower.contains("qwen") {
+        "qwen"
+    } else if target_lower.contains("llama") {
+        "llama"
+    } else if target_lower.contains("deepseek") {
+        "deepseek"
+    } else if target_lower.contains("mistral") {
+        "mistral"
+    } else if target_lower.contains("phi") {
+        "phi"
+    } else if target_lower.contains("gemma") {
+        "gemma"
+    } else {
+        ""
+    };
+
+    if !family.is_empty() {
+        let matching: Vec<&String> = list.iter().filter(|m| m.contains(family)).collect();
+        if !matching.is_empty() {
+            return matching.iter().find(|m| m.contains("32b"))
+                .or_else(|| matching.iter().find(|m| m.contains("14b")))
+                .or_else(|| matching.iter().find(|m| m.contains("7b")))
+                .or_else(|| matching.first())
+                .map(|s| (*s).clone());
+        }
+    }
+
+    list.iter().find(|m| m.contains("qwen") || m.contains("llama") || m.contains("deepseek") || m.contains("mistral") || m.contains("gemma") || m.contains("phi"))
+        .or_else(|| list.first())
+        .cloned()
+}
+
+pub(crate) fn is_ollama_model_in_list(target: &str, list: &[String]) -> bool {
+    let target_lower = target.to_lowercase();
+    let (target_base, target_tag) = target_lower.split_once(':').unwrap_or((&target_lower, "latest"));
+    list.iter().any(|m| {
+        let m_lower = m.to_lowercase();
+        if m_lower == target_lower {
+            return true;
+        }
+        if let Some((m_base, m_tag)) = m_lower.split_once(':') {
+            if m_base == target_base {
+                return m_tag == target_tag || m_tag.starts_with(target_tag) || target_tag == "latest";
+            }
+        } else if m_lower == target_base {
+            return true;
+        }
+        false
+    })
+}
+
 // ==========================================
 // HuggingFace Provider
 // ==========================================
@@ -404,16 +462,41 @@ impl HuggingFaceProvider {
     }
 
     async fn execute_ollama(&self, prompt: &str, start: &Instant) -> Result<ProviderResult> {
-        let mut ollama_model = map_hf_to_ollama(&self.config.model_id);
-        let cached = model_selection::memory::get_ollama_cached_models();
-        if !cached.is_empty() && !model_selection::memory::is_ollama_model_cached(&self.config.model_id) {
-            if let Some(fallback) = cached.iter().find(|m| m.contains("qwen") || m.contains("llama") || m.contains("deepseek")).or_else(|| cached.first()) {
-                log::info!("Ollama model '{}' not installed. Using installed fallback '{}'", ollama_model, fallback);
-                ollama_model = fallback.clone();
-            }
-        }
         let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
             .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+        
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(self.config.timeout_seconds.max(180)))
+            .build()?;
+
+        let mut ollama_model = map_hf_to_ollama(&self.config.model_id);
+
+        // Discover live installed models from Ollama API
+        let tags_url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
+        let mut installed_models: Vec<String> = Vec::new();
+        if let Ok(tags_res) = client.get(&tags_url).timeout(std::time::Duration::from_millis(2000)).send().await {
+            if tags_res.status().is_success() {
+                if let Ok(json) = tags_res.json::<serde_json::Value>().await {
+                    if let Some(models) = json["models"].as_array() {
+                        installed_models = models.iter()
+                            .filter_map(|m| m["name"].as_str().map(|s| s.to_lowercase()))
+                            .collect();
+                    }
+                }
+            }
+        }
+        if installed_models.is_empty() {
+            installed_models = model_selection::memory::get_ollama_cached_models();
+        }
+
+        if !installed_models.is_empty() && !is_ollama_model_in_list(&ollama_model, &installed_models) {
+            if let Some(fallback) = pick_best_ollama_fallback(&ollama_model, &installed_models) {
+                log::info!("Ollama target model '{}' not installed. Live dynamically falling back to installed '{}'", ollama_model, fallback);
+                ollama_model = fallback;
+            }
+        }
         
         let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
         let mut messages = Vec::new();
@@ -443,12 +526,6 @@ impl HuggingFaceProvider {
             }
         });
 
-        let client = reqwest::Client::builder()
-            .no_proxy()
-            .connect_timeout(std::time::Duration::from_secs(10))
-            .timeout(std::time::Duration::from_secs(self.config.timeout_seconds.max(180)))
-            .build()?;
-
         let res = client.post(&url).json(&body).send().await?;
         if res.status().is_success() {
             let data: serde_json::Value = res.json().await?;
@@ -466,10 +543,13 @@ impl HuggingFaceProvider {
             })
         } else {
             let err_text = res.text().await.unwrap_or_default();
-            if err_text.contains("not found") && !cached.is_empty() {
-                if let Some(fallback) = cached.iter().find(|m| m.contains("qwen") || m.contains("llama") || m.contains("deepseek")).or_else(|| cached.first()) {
-                    if fallback != &ollama_model {
-                        log::info!("Model '{}' not found in Ollama, retrying with '{}'", ollama_model, fallback);
+            if err_text.contains("not found") {
+                if installed_models.is_empty() {
+                    installed_models = model_selection::memory::get_ollama_cached_models();
+                }
+                if let Some(fallback) = pick_best_ollama_fallback(&ollama_model, &installed_models) {
+                    if fallback != ollama_model {
+                        log::info!("Model '{}' not found in Ollama, retrying with live fallback '{}'", ollama_model, fallback);
                         let mut body_retry = body.clone();
                         body_retry["model"] = serde_json::json!(fallback);
                         if let Ok(res_retry) = client.post(&url).json(&body_retry).send().await {
@@ -783,10 +863,29 @@ impl LLMProvider for LocalProvider {
         let (clean_prompt, images, _audio) = extract_media_from_prompt(prompt);
 
         let mut model_to_use = self.config.model_id.clone();
-        let cached = model_selection::memory::get_ollama_cached_models();
-        if !cached.is_empty() && !cached.iter().any(|m| m == &model_to_use || model_to_use.starts_with(m)) {
-            if let Some(fallback) = cached.iter().find(|m| m.contains("qwen") || m.contains("llama") || m.contains("deepseek")).or_else(|| cached.first()) {
-                model_to_use = fallback.clone();
+
+        // Discover live installed models from Ollama API
+        let tags_url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
+        let mut installed_models: Vec<String> = Vec::new();
+        if let Ok(tags_res) = self.client.get(&tags_url).timeout(std::time::Duration::from_millis(2000)).send().await {
+            if tags_res.status().is_success() {
+                if let Ok(json) = tags_res.json::<serde_json::Value>().await {
+                    if let Some(models) = json["models"].as_array() {
+                        installed_models = models.iter()
+                            .filter_map(|m| m["name"].as_str().map(|s| s.to_lowercase()))
+                            .collect();
+                    }
+                }
+            }
+        }
+        if installed_models.is_empty() {
+            installed_models = model_selection::memory::get_ollama_cached_models();
+        }
+
+        if !installed_models.is_empty() && !is_ollama_model_in_list(&model_to_use, &installed_models) {
+            if let Some(fallback) = pick_best_ollama_fallback(&model_to_use, &installed_models) {
+                log::info!("LocalProvider model '{}' not installed. Live dynamically falling back to '{}'", model_to_use, fallback);
+                model_to_use = fallback;
             }
         }
 
@@ -824,10 +923,13 @@ impl LLMProvider for LocalProvider {
                     })
                 } else {
                     let err_text = res.text().await.unwrap_or_default();
-                    if err_text.contains("not found") && !cached.is_empty() {
-                        if let Some(fallback) = cached.iter().find(|m| m.contains("qwen") || m.contains("llama") || m.contains("deepseek")).or_else(|| cached.first()) {
-                            if fallback != &model_to_use {
-                                log::info!("Model '{}' not found in Ollama, retrying with '{}'", model_to_use, fallback);
+                    if err_text.contains("not found") {
+                        if installed_models.is_empty() {
+                            installed_models = model_selection::memory::get_ollama_cached_models();
+                        }
+                        if let Some(fallback) = pick_best_ollama_fallback(&model_to_use, &installed_models) {
+                            if fallback != model_to_use {
+                                log::info!("Model '{}' not found in Ollama, retrying with live fallback '{}'", model_to_use, fallback);
                                 body["model"] = serde_json::json!(fallback);
                                 if let Ok(res_retry) = self.client.post(&url).json(&body).send().await {
                                     if res_retry.status().is_success() {

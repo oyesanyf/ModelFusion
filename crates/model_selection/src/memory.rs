@@ -702,38 +702,74 @@ fn map_hf_to_ollama(hf_model_id: &str) -> String {
     else { hf_model_id.to_string() }
 }
 
-/// Check if the model is cached/downloaded in Ollama.
-/// Cached Ollama model list — queried once, reused for the lifetime of the process.
-/// This avoids spawning a `curl` subprocess for every single candidate model.
-static OLLAMA_CACHED_TAGS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+/// Cached Ollama model list — cached with a short TTL (10s), never permanently caching empty results.
+/// This prevents stale empty results if queried before Ollama was ready.
+static OLLAMA_CACHED_TAGS: std::sync::RwLock<Option<(std::time::Instant, Vec<String>)>> = std::sync::RwLock::new(None);
 
-pub fn get_ollama_cached_models() -> &'static Vec<String> {
-    OLLAMA_CACHED_TAGS.get_or_init(|| {
-        let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
-            .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
-
-        let result = std::process::Command::new("curl")
-            .args(["-s", &format!("{}/api/tags", endpoint)])
-            .output();
-
-        let stdout_str = match result {
-            Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
-            _ => return Vec::new(),
-        };
-
-        // Parse model names from JSON response
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout_str) {
-            if let Some(models) = json["models"].as_array() {
-                return models
-                    .iter()
-                    .filter_map(|m| m["name"].as_str().map(|s| s.to_lowercase()))
-                    .collect();
+pub fn get_ollama_cached_models() -> Vec<String> {
+    if let Ok(guard) = OLLAMA_CACHED_TAGS.read() {
+        if let Some((instant, tags)) = guard.as_ref() {
+            if !tags.is_empty() && instant.elapsed().as_secs() < 10 {
+                return tags.clone();
             }
         }
+    }
 
-        // Fallback: simple string matching
-        vec![stdout_str.to_lowercase()]
-    })
+    let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
+        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+    let tags_url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
+
+    let mut fetched_tags: Vec<String> = Vec::new();
+
+    // 1. Try reqwest::blocking with no_proxy and timeout
+    if let Ok(client) = reqwest::blocking::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_millis(2000))
+        .build()
+    {
+        if let Ok(res) = client.get(&tags_url).send() {
+            if res.status().is_success() {
+                if let Ok(json) = res.json::<serde_json::Value>() {
+                    if let Some(models) = json["models"].as_array() {
+                        fetched_tags = models
+                            .iter()
+                            .filter_map(|m| m["name"].as_str().map(|s| s.to_lowercase()))
+                            .collect();
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Fallback to curl if reqwest was empty
+    if fetched_tags.is_empty() {
+        let result = std::process::Command::new("curl")
+            .args(["-s", &tags_url])
+            .output();
+
+        if let Ok(o) = result {
+            if o.status.success() {
+                let stdout_str = String::from_utf8_lossy(&o.stdout);
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout_str) {
+                    if let Some(models) = json["models"].as_array() {
+                        fetched_tags = models
+                            .iter()
+                            .filter_map(|m| m["name"].as_str().map(|s| s.to_lowercase()))
+                            .collect();
+                    }
+                }
+            }
+        }
+    }
+
+    // Only cache if non-empty
+    if !fetched_tags.is_empty() {
+        if let Ok(mut guard) = OLLAMA_CACHED_TAGS.write() {
+            *guard = Some((std::time::Instant::now(), fetched_tags.clone()));
+        }
+    }
+
+    fetched_tags
 }
 
 pub fn is_ollama_model_cached(model_id: &str) -> bool {
