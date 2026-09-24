@@ -2366,41 +2366,109 @@ async fn run(args: Args) -> Result<()> {
             }
         }
 
-        let is_acdso = args.acdso || determine_task_override(&args).as_deref() == Some("acdso");
+        let lower_lead = final_prompt.to_lowercase();
+        let prompt_triggers_acdso = lower_lead.starts_with("@agent acdso")
+            || lower_lead.starts_with("@agent /acdso")
+            || lower_lead.starts_with("@acdso")
+            || lower_lead.starts_with("/acdso")
+            || lower_lead.starts_with("@agent automl")
+            || lower_lead.starts_with("@agent /automl")
+            || lower_lead.starts_with("@automl")
+            || lower_lead.starts_with("/automl")
+            || lower_lead == "acdso"
+            || lower_lead.starts_with("acdso ");
+
+        let is_acdso = args.acdso || determine_task_override(&args).as_deref() == Some("acdso") || prompt_triggers_acdso;
         if is_acdso {
-            let target_file = args.file.as_deref().unwrap_or("dataset");
+            let parsed_from_prompt = if prompt_triggers_acdso && !args.acdso {
+                let stripped = if lower_lead.starts_with("@agent /acdso") {
+                    &final_prompt[13..]
+                } else if lower_lead.starts_with("@agent /automl") {
+                    &final_prompt[14..]
+                } else if lower_lead.starts_with("@agent acdso") {
+                    &final_prompt[12..]
+                } else if lower_lead.starts_with("@agent automl") {
+                    &final_prompt[13..]
+                } else if lower_lead.starts_with("@acdso") {
+                    &final_prompt[6..]
+                } else if lower_lead.starts_with("/acdso") {
+                    &final_prompt[6..]
+                } else if lower_lead.starts_with("@automl") {
+                    &final_prompt[7..]
+                } else if lower_lead.starts_with("/automl") {
+                    &final_prompt[7..]
+                } else if lower_lead.starts_with("acdso ") {
+                    &final_prompt[6..]
+                } else {
+                    ""
+                };
+                Some(parse_acdso_cmd_args(stripped.trim()))
+            } else {
+                None
+            };
+
+            let target_file_from_parsed = parsed_from_prompt.as_ref().map(|p| p.target_file.clone()).unwrap_or_default();
+            let effective_file = if !target_file_from_parsed.is_empty() {
+                Some(target_file_from_parsed)
+            } else {
+                args.file.clone()
+            };
+
+            let effective_target = parsed_from_prompt.as_ref().and_then(|p| p.target.clone()).or_else(|| args.target.clone());
+            let effective_predict = parsed_from_prompt.as_ref().and_then(|p| p.predict.clone()).or_else(|| args.predict.clone());
+            let effective_best_score = parsed_from_prompt.as_ref().map(|p| p.best_score).unwrap_or(false) || args.best_score;
+            let effective_timeseries = parsed_from_prompt.as_ref().map(|p| p.timeseries).unwrap_or(false) || args.timeseries;
+            let effective_datetime_col = parsed_from_prompt.as_ref().and_then(|p| p.datetime_col.clone()).or_else(|| args.datetime_col.clone());
+            let effective_horizon = parsed_from_prompt.as_ref().and_then(|p| p.horizon).unwrap_or(args.horizon);
+            let effective_decision = parsed_from_prompt.as_ref().map(|p| p.decision).unwrap_or(false) || args.decision;
+            let effective_treatment = parsed_from_prompt.as_ref().and_then(|p| p.treatment.clone()).or_else(|| args.treatment.clone());
+
+            if effective_file.is_none() && effective_target.is_none() && effective_predict.is_none() && !effective_timeseries && !effective_decision {
+                println!("🧠 **ACDSO Risk-Aware AutoML Engine** (<1ms Fast Interception).\n\n\
+                Adaptive Contextual Data Science Optimization with 5-dimension Pareto knee-point model selection (Accuracy, Cost, Memory, Latency, Risk):\n\n\
+                **Syntax & Quick-Start Examples**:\n\
+                - `@agent acdso <dataset.csv> --target <col>`\n\
+                - `/acdso \"data.csv\" --predict price --benchmark`\n\
+                - `/acdso \"sales.csv\" --timeseries --datetime-col date`\n\
+                - `/acdso \"churn.csv\" --decision --target churn --treatment incentive`\n\n\
+                *Key Flags*: `--target <col>`, `--predict <col>`, `--best-score`, `--timeseries`, `--datetime-col <col>`, `--horizon <N>`, `--decision`, `--treatment <col>`.\n\
+                *Supported Formats*: CSV, TSV, Parquet, Excel (.xlsx/.xls), Feather, JSON, Arrow, SQLite/DB.");
+                return Ok(());
+            }
+
+            let target_file = effective_file.as_deref().unwrap_or("dataset");
             let mut prompt_lead = format!(
                 "Run ACDSO Risk-Aware AutoML on dataset {}. Perform 5-dimension optimization (Accuracy, Training Cost, Memory, Latency, Risk), automated leakage detection, and synthesize complete, runnable Python code.",
                 target_file
             );
-            if let Some(ref t) = args.target {
+            if let Some(ref t) = effective_target {
                 prompt_lead.push_str(&format!(" Target column(s): {}.", t));
             }
-            if let Some(ref p) = args.predict {
+            if let Some(ref p) = effective_predict {
                 prompt_lead.push_str(&format!(" Predict target(s): {}.", p));
             }
-            if args.best_score {
+            if effective_best_score {
                 prompt_lead.push_str(" Optimization mode: Select model with best CV score instead of multi-objective knee-point.");
             }
-            if args.timeseries {
+            if effective_timeseries {
                 prompt_lead.push_str(" Mode: Auto Time Series forecasting.");
-                if let Some(ref dt) = args.datetime_col {
+                if let Some(ref dt) = effective_datetime_col {
                     prompt_lead.push_str(&format!(" Datetime column: {}.", dt));
                 }
-                prompt_lead.push_str(&format!(" Forecast horizon: {}.", args.horizon));
+                prompt_lead.push_str(&format!(" Forecast horizon: {}.", effective_horizon));
             }
-            if args.decision {
+            if effective_decision {
                 prompt_lead.push_str(" Mode: Decision Intelligence (causal analysis and uplift modeling).");
-                if let Some(ref tr) = args.treatment {
+                if let Some(ref tr) = effective_treatment {
                     prompt_lead.push_str(&format!(" Treatment column: {}.", tr));
                 }
             }
             if let Some(ref user_p) = args.prompt.as_ref().or(args.query.as_ref()) {
-                if !user_p.trim().is_empty() {
+                if !user_p.trim().is_empty() && !prompt_triggers_acdso {
                     prompt_lead.push_str(&format!("\nUser Query: {}", user_p.trim()));
                 }
             }
-            if let Some(ref file_path) = args.file {
+            if let Some(ref file_path) = effective_file {
                 let resolved_opt = resolve_existing_file_path(file_path);
                 let p_to_read = resolved_opt.as_deref().unwrap_or_else(|| std::path::Path::new(file_path));
                 if p_to_read.is_file() {
