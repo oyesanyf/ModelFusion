@@ -10,6 +10,7 @@ $password = "HugOSPassword123!"
 $toolDirs = @(
     "D:\tools\nodejs",
     "D:\tools\wix\PFiles64\WiX Toolset v5.0\bin",
+    "C:\Users\oyesanyf\wix_tools\PFiles64\WiX Toolset v5.0\bin",
     "D:\tools\gh\bin",
     "C:\Program Files\dotnet",
     "C:\Users\oyesanyf\AppData\Local\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.POSIX.MSVCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\mingw64\bin"
@@ -813,8 +814,22 @@ Stop-Process -Name wix, wixnative -Force -ErrorAction SilentlyContinue
 Remove-Item "$env:LOCALAPPDATA\Temp\#cab*" -Force -Recurse -ErrorAction SilentlyContinue
 Remove-Item "$env:TEMP\#cab*" -Force -Recurse -ErrorAction SilentlyContinue
 
+# Ensure Windows Installer service is running for WiX native database operations
+Start-Service -Name msiserver -ErrorAction SilentlyContinue
+
+# Resolve WiX toolset binary explicitly
+$wixExe = "D:\tools\wix\PFiles64\WiX Toolset v5.0\bin\wix.exe"
+if (-not (Test-Path $wixExe)) {
+    $wixExe = "C:\Users\oyesanyf\wix_tools\PFiles64\WiX Toolset v5.0\bin\wix.exe"
+}
+if (-not (Test-Path $wixExe)) {
+    $wixCmd = Get-Command wix -ErrorAction SilentlyContinue
+    $wixExe = if ($wixCmd) { $wixCmd.Source } else { "wix" }
+}
+Write-Host "[INFO] Using WiX Toolset at: $wixExe" -ForegroundColor Yellow
+
 # Run wix build with multi-threaded cabinet compression and bind path
-& wix build -b $PSScriptRoot -arch x64 -ct 4 $wxsPath -out $msiPath
+& $wixExe build -b $PSScriptRoot -arch x64 -ct 4 $wxsPath -out $msiPath
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] WiX build failed." -ForegroundColor Red
     Exit 1
