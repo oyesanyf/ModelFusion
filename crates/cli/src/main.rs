@@ -4988,12 +4988,14 @@ async fn query_local_router(system_prompt: &str, user_prompt: &str) -> Option<St
     if let Some(ref client) = client {
         // Try models in order of preference
         let candidates = vec![
-            "qwen2.5:1.5b",
-            "qwen2.5:7b-instruct",
+            "qwen2.5:32b",
+            "qwen2.5:14b",
+            "qwen2.5:7b",
             "qwen2.5:3b",
+            "qwen2.5:1.5b",
+            "llama3.1:8b",
             "llama3.2:3b",
             "llama3.2:1b",
-            "deepseek-r1:1.5b",
             "phi4-mini:latest"
         ];
         
@@ -5719,7 +5721,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 let is_slash_prefixed = word.starts_with('/') || (word.starts_with('(') && word[1..].starts_with('/')) || (word.starts_with('[') && word[1..].starts_with('/'));
                                 let is_prefixed = is_slash_prefixed || is_flag_prefixed;
                                 // STRICT REQUIREMENT: Only consider as command if starts with '/' or '--'/'-' OR it is the first token of an @agent line OR it is a single standalone command word on its line!
-                                if !is_prefixed && !is_single_word_line && !(is_agent_line && w_idx == 0) {
+                                if !is_prefixed && !is_single_word_line && !(is_agent_line && w_idx == 0) && !(w_idx == 0 && canonicalize_command(word).is_some()) {
                                     continue;
                                 }
 
@@ -6303,7 +6305,13 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                              }
                                              let code_payload = resolve_code_for_command(&prompt_text, &prompt_for_cmd);
                                              cmd_args.extend_from_slice(&["--prompt".to_string(), code_payload]);
-                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !model_selection::memory::get_ollama_cached_models().is_empty() {
+                                             cmd_args.push("--no-fusion".to_string());
+                                             let cached_ollama = model_selection::memory::get_ollama_cached_models();
+                                             let sys = query_system_resources();
+                                             if cached_ollama.iter().any(|m| m.contains("7b")) || sys.free_vram_mb < 14336 {
+                                                 cmd_args.extend_from_slice(&["--model".to_string(), "qwen2.5:7b".to_string()]);
+                                             }
+                                             if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !cached_ollama.is_empty() {
                                                  cmd_args.push("--ollama".to_string());
                                              }
                                              let result = run_cli_subcommand(&cmd_args, db_resolved).await;
@@ -9355,7 +9363,13 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                     if arguments["export_pdf"].as_bool().unwrap_or(false) {
                         cmd_args.push("--export-pdf".to_string());
                     }
-                    if arguments["ollama"].as_bool().unwrap_or(false) || std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                    cmd_args.push("--no-fusion".to_string());
+                    let cached_ollama = model_selection::memory::get_ollama_cached_models();
+                    let sys = query_system_resources();
+                    if cached_ollama.iter().any(|m| m.contains("7b")) || sys.free_vram_mb < 14336 {
+                        cmd_args.extend_from_slice(&["--model".to_string(), "qwen2.5:7b".to_string()]);
+                    }
+                    if arguments["ollama"].as_bool().unwrap_or(false) || std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !cached_ollama.is_empty() {
                         cmd_args.push("--ollama".to_string());
                     }
                     run_cli_subcommand(&cmd_args, &db_path_resolved).await
@@ -11901,4 +11915,34 @@ public class Pr {
                    "D:/dataset/Seaborn All Built-in Datasets/attention.csv");
     }
 
+    #[test]
+    fn test_canonicalize_and_command_matching_with_args() {
+        use super::canonicalize_command;
+
+        // 1. Direct canonicalize_command resolution
+        assert_eq!(canonicalize_command("datascience"), Some("datascience"));
+        assert_eq!(canonicalize_command("/datascience"), Some("datascience"));
+        assert_eq!(canonicalize_command("@agent datascience"), Some("datascience"));
+        assert_eq!(canonicalize_command("dataanalyst"), Some("dataanalyst"));
+        assert_eq!(canonicalize_command("/data-science"), Some("datascience"));
+
+        // 2. Command matching with args as in the command scanner
+        let input_line = r#"datascience "D:\dataset\Seaborn All Built-in Datasets\attention.csv""#;
+        let words: Vec<&str> = input_line.split_whitespace().collect();
+        assert!(!words.is_empty());
+        let w_idx = 0;
+        let word = words[w_idx];
+        let is_prefixed = word.starts_with('/') || word.starts_with("--");
+        let is_single_word_line = words.len() == 1;
+        let is_agent_line = false;
+
+        // Verify the scanner condition does NOT continue (i.e. accepts the command)
+        let should_continue = !is_prefixed && !is_single_word_line && !(is_agent_line && w_idx == 0) && !(w_idx == 0 && canonicalize_command(word).is_some());
+        assert!(!should_continue, "Command scanner must recognize un-prefixed command at start of line with args");
+
+        let canonical = canonicalize_command(word);
+        assert_eq!(canonical, Some("datascience"));
+        let args_text = words[w_idx + 1..].join(" ");
+        assert_eq!(args_text, r#""D:\dataset\Seaborn All Built-in Datasets\attention.csv""#);
+    }
 }
