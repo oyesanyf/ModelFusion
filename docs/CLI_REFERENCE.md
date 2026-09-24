@@ -1,7 +1,7 @@
-# ModelFusion Master CLI Reference Manual (All 161 Flags)
+# ModelFusion Master CLI Reference Manual (All 170 Production Flags)
 
 This document is the exhaustive, authoritative reference for the **ModelFusion Master CLI** (`cli.exe` or `cargo run --release --bin cli`).
-Every single one of the **161 production CLI flags** is documented below with its argument type, default value, functional category, behavioral explanation, and a **concrete executable command example**.
+Every single one of the **170 production CLI flags** is documented below with its argument type, default value, functional category, behavioral explanation, and a **concrete executable command example**.
 
 > [!IMPORTANT]
 > **Functional Architecture: Flags as Executable Commands**  
@@ -10,7 +10,7 @@ Every single one of the **161 production CLI flags** is documented below with it
 ---
 
 ## 📖 Table of Contents
-- [Master Summary Table (All 161 Flags)](#-master-summary-table-all-161-flags)
+- [Master Summary Table (All 170 Flags)](#-master-summary-table-all-170-flags)
 - [1. Global Execution & Resource Flags (#1 - #19)](#1-global-execution--resource-flags)
 - [2. Machine Learning Model Selection (#20 - #26)](#2-machine-learning-model-selection)
 - [3. SINQ Quantization Engine (#27 - #31)](#3-sinq-quantization-engine)
@@ -22,11 +22,13 @@ Every single one of the **161 production CLI flags** is documented below with it
 - [9. Binary & PE Executable Analysis (#94)](#9-binary--pe-executable-analysis)
 - [10. Multi-Modal Task Routing Flags (#95 - #156)](#10-multi-modal-task-routing-flags)
 - [11. Server & Database Commands (#157 - #161)](#11-server--database-commands)
+- [12. ACDSO Risk-Aware AutoML Flags (#162 - #170)](#12-acdso-risk-aware-automl-flags-162---170)
+- [13. Universal Agent Directives & Slash Commands](#13-universal-agent-directives--slash-commands)
 - [Appendix: Developer Tooling, Source Patching & Legacy Aliases](#appendix-developer-tooling-source-patching--legacy-aliases)
 
 ---
 
-## 📋 Master Summary Table (All 161 Flags)
+## 📋 Master Summary Table (All 170 Flags)
 
 | # | Flag & Aliases | Type | Default | Category | Description |
 |:---:|:---|:---:|:---:|:---|:---|
@@ -191,6 +193,15 @@ Every single one of the **161 production CLI flags** is documented below with it
 | 159 | `--enable-slash-commands` | `bool` | `false` | Server & Database Commands | Enables parsing of interactive IDE slash commands (/datascience, /search, /jupyter, /evolve) from raw prompts. |
 | 160 | `--port <VALUE>` | `u16` | `5000` | Server & Database Commands | Specifies the TCP port on which the ModelFusion HTTP API server listens (default: 5000). |
 | 161 | `--mcp` | `bool` | `false` | Server & Database Commands | Runs ModelFusion as a Model Context Protocol (MCP) server communicating over standard input/output (stdio). |
+| 162 | `--acdso`<br><small>Aliases: `--automl`, `--riskautoml`, `--risk-automl`</small> | `bool` | `false` | ACDSO Risk-Aware AutoML | Run ACDSO (Adaptive Contextual Data Science Optimization) Risk-Aware AutoML with 5-dimension optimization. |
+| 163 | `--target <TARGET>` | `String` | `None` | ACDSO Risk-Aware AutoML | Target column(s) for ACDSO AutoML (e.g., 'price' or 'price,quantity'). |
+| 164 | `--predict <PREDICT>` | `String` | `None` | ACDSO Risk-Aware AutoML | Train model(s) and predict target column(s) with ACDSO. |
+| 165 | `--best-score` | `bool` | `false` | ACDSO Risk-Aware AutoML | Select model with best CV score instead of multi-objective knee-point. |
+| 166 | `--timeseries` | `bool` | `false` | ACDSO Risk-Aware AutoML | Run ACDSO Time Series forecasting mode. |
+| 167 | `--datetime-col <DATETIME-COL>` | `String` | `None` | ACDSO Risk-Aware AutoML | Datetime column for ACDSO time series (e.g., 'date'). |
+| 168 | `--horizon <HORIZON>` | `usize` | `7` | ACDSO Risk-Aware AutoML | Forecast horizon for ACDSO time series (default: 7). |
+| 169 | `--decision` | `bool` | `false` | ACDSO Risk-Aware AutoML | Run ACDSO Decision Intelligence (causal analysis & uplift modeling). |
+| 170 | `--treatment <TREATMENT>` | `String` | `None` | ACDSO Risk-Aware AutoML | Treatment column for ACDSO decision intelligence. |
 
 ---
 
@@ -2197,7 +2208,122 @@ cli.exe --mcp --db-path "IDE/db/hf_models.db"
 
 ---
 
-## 12. Universal Agent Directives & Slash Commands
+## 12. ACDSO Risk-Aware AutoML Flags (#162 - #170)
+
+This section details the **9 flags** powering **ACDSO (Adaptive Contextual Data Science Optimization)**, ModelFusion's risk-aware, multi-objective AutoML, causal decision intelligence, and automated time series forecasting engine.
+
+### #162. `--acdso`
+- **Category:** ACDSO Risk-Aware AutoML
+- **Argument Type:** `bool`
+- **Default Value:** `false`
+- **Aliases:** `--automl`, `--riskautoml`, `--risk-automl`
+- **Accepted Parameters:** Boolean switch (no value)
+- **Description:** Runs ACDSO (Adaptive Contextual Data Science Optimization) Risk-Aware AutoML. Performs 5-dimension optimization (Accuracy, Training Cost, Memory, Latency, Risk), automated leakage detection, and synthesizes complete, runnable Python code.
+
+```powershell
+# Example for #162: --acdso
+cli.exe --acdso --file "data/credit_risk.csv" --target default --no-fusion
+```
+
+### #163. `--target <TARGET>`
+- **Category:** ACDSO Risk-Aware AutoML
+- **Argument Type:** `String`
+- **Default Value:** `None`
+- **Accepted Parameters:** Target column name or comma-separated column names (e.g. `'price'` or `'price,quantity'`)
+- **Description:** Specifies the target label column(s) for supervised classification, regression, or multi-target AutoML modeling.
+
+```powershell
+# Example for #163: --target
+cli.exe --acdso --file "data/housing.csv" --target "median_house_value"
+```
+
+### #164. `--predict <PREDICT>`
+- **Category:** ACDSO Risk-Aware AutoML
+- **Argument Type:** `String`
+- **Default Value:** `None`
+- **Accepted Parameters:** Target column name to train and generate predictive inferences for
+- **Description:** Trains optimal models and outputs predictions for the designated target column(s).
+
+```powershell
+# Example for #164: --predict
+cli.exe --acdso --file "data/customer_churn.csv" --predict churn --no-fusion
+```
+
+### #165. `--best-score`
+- **Category:** ACDSO Risk-Aware AutoML
+- **Argument Type:** `bool`
+- **Default Value:** `false`
+- **Accepted Parameters:** Boolean switch (no value)
+- **Description:** Overrides multi-objective knee-point Pareto selection to choose the candidate model with the strictly highest cross-validation metric score regardless of latency or memory complexity.
+
+```powershell
+# Example for #165: --best-score
+cli.exe --acdso --file "data/financial_fraud.csv" --target is_fraud --best-score
+```
+
+### #166. `--timeseries`
+- **Category:** ACDSO Risk-Aware AutoML
+- **Argument Type:** `bool`
+- **Default Value:** `false`
+- **Accepted Parameters:** Boolean switch (no value)
+- **Description:** Activates ACDSO Auto Time Series forecasting mode with rolling-window cross validation, trend/seasonality decomposition, and multi-step lookahead.
+
+```powershell
+# Example for #166: --timeseries
+cli.exe --acdso --file "data/store_sales.csv" --timeseries --datetime-col "date" --horizon 14
+```
+
+### #167. `--datetime-col <DATETIME-COL>`
+- **Category:** ACDSO Risk-Aware AutoML
+- **Argument Type:** `String`
+- **Default Value:** `None`
+- **Accepted Parameters:** Column name containing timestamp or date values
+- **Description:** Specifies the datetime or timestamp column for ACDSO time-series ordering and temporal split cross-validation.
+
+```powershell
+# Example for #167: --datetime-col
+cli.exe --acdso --file "data/energy_load.csv" --timeseries --datetime-col "timestamp" --horizon 24
+```
+
+### #168. `--horizon <HORIZON>`
+- **Category:** ACDSO Risk-Aware AutoML
+- **Argument Type:** `usize`
+- **Default Value:** `7`
+- **Accepted Parameters:** Positive integer representing number of future time steps to forecast
+- **Description:** Configures the forecasting horizon window for ACDSO time series models (default: 7).
+
+```powershell
+# Example for #168: --horizon
+cli.exe --acdso --file "data/daily_demand.csv" --timeseries --datetime-col "day" --horizon 30
+```
+
+### #169. `--decision`
+- **Category:** ACDSO Risk-Aware AutoML
+- **Argument Type:** `bool`
+- **Default Value:** `false`
+- **Accepted Parameters:** Boolean switch (no value)
+- **Description:** Runs ACDSO Decision Intelligence mode, performing causal inference, uplift modeling, propensity score weighting, and counterfactual policy simulation.
+
+```powershell
+# Example for #169: --decision
+cli.exe --acdso --file "data/marketing_campaign.csv" --decision --target conversion --treatment incentive_offered
+```
+
+### #170. `--treatment <TREATMENT>`
+- **Category:** ACDSO Risk-Aware AutoML
+- **Argument Type:** `String`
+- **Default Value:** `None`
+- **Accepted Parameters:** Binary or categorical treatment assignment column
+- **Description:** Specifies the intervention/treatment feature column for causal uplift and heterogeneous treatment effect (HTE) estimation.
+
+```powershell
+# Example for #170: --treatment
+cli.exe --acdso --file "data/clinical_trial.csv" --decision --target recovery_rate --treatment drug_dosage
+```
+
+---
+
+## 13. Universal Agent Directives & Slash Commands
 
 HugOS IDE and ModelFusion integrate **10 universal compound agent directives** matching full Antigravity operating system capabilities:
 
