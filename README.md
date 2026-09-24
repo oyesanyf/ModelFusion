@@ -598,14 +598,14 @@ python canned_benchmark/draco_evaluator.py --no-fallback --bootstraps 1000
 
 ---
 
-## 💻 CLI Reference & Capabilities (All 161 Flags)
+## 💻 CLI Reference & Capabilities (All 170 Flags)
 
-ModelFusion's Master CLI (`cli.exe`) is the single authoritative execution engine powering both standalone terminal workflows and the embedded HugOS IDE runtime. In accordance with ModelFusion's command architecture, **all 161 CLI flags function as direct executable capability directives** rather than passive configuration options.
+ModelFusion's Master CLI (`cli.exe`) is the single authoritative execution engine powering both standalone terminal workflows and the embedded HugOS IDE runtime. In accordance with ModelFusion's command architecture, **all 170 CLI flags function as direct executable capability directives** rather than passive configuration options.
 
 > [!TIP]
-> **Complete Authoritative Documentation**: For the full numbered master table (#1 to #161), detailed parameter specifications, and concrete executable examples for every single flag, see the dedicated [**docs/CLI_REFERENCE.md**](docs/CLI_REFERENCE.md).
+> **Complete Authoritative Documentation**: For the full numbered master table (#1 to #170), detailed parameter specifications, and concrete executable examples for every single flag, see the dedicated [**docs/CLI_REFERENCE.md**](docs/CLI_REFERENCE.md).
 
-### Functional Category Matrix (All 161 Production Flags)
+### Functional Category Matrix (All 170 Production Flags)
 
 | # | Category | Flag Range | Total | Core Capabilities & Key Directives | Concrete Execution Example |
 |:---:|:---|:---:|:---:|:---|:---|
@@ -620,6 +620,7 @@ ModelFusion's Master CLI (`cli.exe`) is the single authoritative execution engin
 | **9** | **Binary & PE Executable Analysis** | `#94` | 1 | Windows PE executable header inspection, import/export symbol tables, digital Authenticode signatures | `cli.exe --pe-header-extraction --file "cli.exe"` |
 | **10** | **Multi-Modal Task Routing Flags** | `#95 – #156` | 62 | All 45+ Hugging Face tasks spanning Vision, Audio, NLP, Code, Document QA, Tabular, and Domain pipelines | `cli.exe --text-generation --prompt "..."` |
 | **11** | **Server & Database Commands** | `#157 – #161` | 5 | Custom SQLite database path (`--db-path`), HTTP REST server (`--server`, `--port`), MCP stdio protocol (`--mcp`) | `cli.exe --server --port 5000 --db-path "IDE/db/hf_models.db"` |
+| **12** | **ACDSO Risk-Aware AutoML** | `#162 – #170` | 9 | Multi-objective knee-point AutoML (`--acdso`), supervised modeling (`--target`, `--predict`, `--best-score`), auto time-series forecasting (`--timeseries`, `--datetime-col`, `--horizon`), causal decision intelligence (`--decision`, `--treatment`) | `cli.exe --acdso --file "data.csv" --target score` |
 
 ---
 
@@ -793,11 +794,13 @@ Type `/` or `@agent ` in the HugOS Chat input to see interactive autocomplete su
 | `/jupyter` | — | Activates interactive Jupyter Notebook mode with dataframe inspection. |
 | `/dataanalyst` | — | Data Analyst mode: parses CSV/Excel, calculates descriptive stats, detects anomalies. |
 | `/datascience` | `/data-science` | End-to-end data science pipeline with feature engineering and ML training. |
+| `/acdso` | `/automl`, `/risk-automl`, `/riskautoml` | Adaptive Contextual Data Science Optimization: Risk-aware AutoML, multi-objective knee-point model selection, and time series. |
 | `/pe-header-extraction` | `/peheaderextraction` | Deep static analysis of Windows PE binaries (DOS/NT headers, sections, imports, entropy). |
 
 *Examples:*
 ```text
 /dataanalyst Analyze sales_q3.csv, identify churn correlation, and plot distributions
+/acdso "credit_risk.csv" --target default --no-fusion
 /pe-header-extraction target/release/cli.exe
 ```
 

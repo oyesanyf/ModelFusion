@@ -169,18 +169,18 @@ impl UniversalTaskProcessor {
         task_configs.insert(
             "data-science".to_string(),
             TaskConfig {
-                description: "Data science and statistical analysis".to_string(),
+                description: "Data science, statistical modeling, and machine learning pipelines".to_string(),
                 default_model: "meta-llama/Llama-3.1-8B-Instruct".to_string(),
-                max_tokens: 1500,
+                max_tokens: 4096,
                 temperature: 0.2,
             },
         );
         task_configs.insert(
             "data-analyst".to_string(),
             TaskConfig {
-                description: "Data analytics and visualization guidance".to_string(),
+                description: "Data analytics, exploratory analysis, and visualization guidance".to_string(),
                 default_model: "meta-llama/Llama-3.1-8B-Instruct".to_string(),
-                max_tokens: 1500,
+                max_tokens: 4096,
                 temperature: 0.2,
             },
         );
@@ -467,6 +467,21 @@ impl UniversalTaskProcessor {
             "pii-detection" => {
                 format!(
                     "Identify any personally identifiable information (PII) in the following text. List each piece of PII and its type (email, phone, address, etc.):\n\n{}\n\nPII Found:",
+                    prompt
+                )
+            }
+            "data-science" | "data-analyst" => {
+                format!(
+                    "You are an expert Chief Data Scientist, Statistician, and Senior Machine Learning Engineer.\n\
+                    Perform an in-depth, rigorous, production-ready data science and machine learning analysis.\n\n\
+                    CRITICAL REQUIREMENTS:\n\
+                    1. Provide COMPLETE, fully functional, production-grade Python code with all necessary imports (pandas, numpy, scikit-learn, statsmodels, seaborn, matplotlib).\n\
+                    2. Address dataset structure, repeated measures, and data leakage (e.g. use GroupKFold if subject/group IDs are present).\n\
+                    3. Perform feature engineering, including categorical encodings, interaction terms, and baseline checks.\n\
+                    4. Train and benchmark multiple predictive models (e.g. Baseline Linear/Mixed Models, Random Forest, Gradient Boosting).\n\
+                    5. Evaluate with robust cross-validation, compute comprehensive metrics (RMSE, MAE, R-squared), and analyze feature importance.\n\
+                    6. Conclude with clear mathematical and practical interpretations of the results. Never cut off or provide partial stubs.\n\n\
+                    Dataset Context & Instructions:\n{}",
                     prompt
                 )
             }

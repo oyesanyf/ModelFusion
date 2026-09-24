@@ -1271,6 +1271,36 @@ struct Args {
     export_pdf: bool,
 
     // ---------------------------------------------------------
+    // ACDSO (Adaptive Contextual Data Science Optimization) Flags
+    // ---------------------------------------------------------
+    #[arg(long, help = "Run ACDSO (Adaptive Contextual Data Science Optimization) Risk-Aware AutoML")]
+    acdso: bool,
+
+    #[arg(long, help = "Target column(s) for ACDSO AutoML (e.g., 'price' or 'price,quantity')")]
+    target: Option<String>,
+
+    #[arg(long, help = "Train model(s) and predict target column(s) with ACDSO")]
+    predict: Option<String>,
+
+    #[arg(long, help = "Select model with best CV score instead of multi-objective knee-point")]
+    best_score: bool,
+
+    #[arg(long, help = "Run ACDSO Time Series forecasting mode")]
+    timeseries: bool,
+
+    #[arg(long, help = "Datetime column for ACDSO time series (e.g., 'date')")]
+    datetime_col: Option<String>,
+
+    #[arg(long, default_value = "7", help = "Forecast horizon for ACDSO time series")]
+    horizon: usize,
+
+    #[arg(long, help = "Run ACDSO Decision Intelligence (causal analysis & uplift modeling)")]
+    decision: bool,
+
+    #[arg(long, help = "Treatment column for ACDSO decision intelligence")]
+    treatment: Option<String>,
+
+    // ---------------------------------------------------------
     // Evaluation / Scoring Flags
     // ---------------------------------------------------------
     #[arg(long, help = "Enable response evaluation scoring")]
@@ -2336,7 +2366,52 @@ async fn run(args: Args) -> Result<()> {
             }
         }
 
-        if final_prompt.trim().is_empty() {
+        let is_acdso = args.acdso || determine_task_override(&args).as_deref() == Some("acdso");
+        if is_acdso {
+            let target_file = args.file.as_deref().unwrap_or("dataset");
+            let mut prompt_lead = format!(
+                "Run ACDSO Risk-Aware AutoML on dataset {}. Perform 5-dimension optimization (Accuracy, Training Cost, Memory, Latency, Risk), automated leakage detection, and synthesize complete, runnable Python code.",
+                target_file
+            );
+            if let Some(ref t) = args.target {
+                prompt_lead.push_str(&format!(" Target column(s): {}.", t));
+            }
+            if let Some(ref p) = args.predict {
+                prompt_lead.push_str(&format!(" Predict target(s): {}.", p));
+            }
+            if args.best_score {
+                prompt_lead.push_str(" Optimization mode: Select model with best CV score instead of multi-objective knee-point.");
+            }
+            if args.timeseries {
+                prompt_lead.push_str(" Mode: Auto Time Series forecasting.");
+                if let Some(ref dt) = args.datetime_col {
+                    prompt_lead.push_str(&format!(" Datetime column: {}.", dt));
+                }
+                prompt_lead.push_str(&format!(" Forecast horizon: {}.", args.horizon));
+            }
+            if args.decision {
+                prompt_lead.push_str(" Mode: Decision Intelligence (causal analysis and uplift modeling).");
+                if let Some(ref tr) = args.treatment {
+                    prompt_lead.push_str(&format!(" Treatment column: {}.", tr));
+                }
+            }
+            if let Some(ref user_p) = args.prompt.as_ref().or(args.query.as_ref()) {
+                if !user_p.trim().is_empty() {
+                    prompt_lead.push_str(&format!("\nUser Query: {}", user_p.trim()));
+                }
+            }
+            if let Some(ref file_path) = args.file {
+                let resolved_opt = resolve_existing_file_path(file_path);
+                let p_to_read = resolved_opt.as_deref().unwrap_or_else(|| std::path::Path::new(file_path));
+                if p_to_read.is_file() {
+                    if let Ok(bytes) = std::fs::read(p_to_read) {
+                        let formatted = format_file_content_for_llm(file_path, &bytes);
+                        prompt_lead.push_str(&format!("\n\n--- Attached Dataset: {} ---\n{}\n", file_path, formatted));
+                    }
+                }
+            }
+            final_prompt = prompt_lead;
+        } else if final_prompt.trim().is_empty() {
             let task_override_opt = determine_task_override(&args);
             final_prompt = match task_override_opt.as_deref() {
                 Some("data-analyst") | Some("data-science") => {
@@ -2440,7 +2515,10 @@ async fn run(args: Args) -> Result<()> {
         }
 
         let db_path = handler.db_path.clone();
-        let task_override = determine_task_override(&args);
+        let mut task_override = determine_task_override(&args);
+        if task_override.as_deref() == Some("acdso") || args.acdso {
+            task_override = Some("data-science".to_string());
+        }
         let selection_strategy = parse_selection_strategy(&args.selection_strategy);
 
         let mut is_fusion_needed = fusion && !args.no_fusion;
@@ -2847,6 +2925,7 @@ fn determine_task_override(args: &Args) -> Option<String> {
     if args.dataanalyst { return Some("data-analyst".to_string()); }
     if args.datascience { return Some("data-science".to_string()); }
     if args.jupyter { return Some("data-analyst".to_string()); }
+    if args.acdso { return Some("acdso".to_string()); }
     
     args.task.clone()
 }
@@ -4081,6 +4160,7 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
         "dataanalyst" | "datanalyst" => Some("dataanalyst"),
         "datascience" => Some("datascience"),
         "jupyter" => Some("jupyter"),
+        "acdso" | "automl" | "riskautoml" | "risk_automl" => Some("acdso"),
         "pe" | "peheader" | "peheaderextraction" => Some("pe-header-extraction"),
         "research" | "reseach" => Some("research"),
         "search" | "serarch" | "searchquery" | "serarchquery" => Some("search"),
@@ -4276,12 +4356,14 @@ pub fn get_cli_flag_info(flag_name: &str) -> (bool, Option<&'static str>) {
         "ide-src-dir" => (true, Some("IDE/src")),
         "ml-fallback" => (true, Some("true")),
         "rest-rl" | "rl" => (true, Some("status")),
+        "horizon" => (true, Some("7")),
 
         // Option<String> / Option<usize> flags (no default value)
         "file" | "folder" | "prompt" | "task" | "config" | "api-keys" | "load-model"
         | "add-documents" | "search-query" | "research" | "search" | "max-models"
         | "model" | "prepare-model" | "context" | "report" | "db-path" | "vscode-tag"
-        | "btw" | "goal" | "schedule" | "browser" | "learn" | "generative-ui" | "genui" => (true, None),
+        | "btw" | "goal" | "schedule" | "browser" | "learn" | "generative-ui" | "genui"
+        | "target" | "predict" | "datetime-col" | "treatment" => (true, None),
 
         // All other flags are boolean flags
         _ => (false, None),
@@ -4580,6 +4662,143 @@ pub fn extract_createfile_args(raw_args: &str) -> (String, String) {
         let rest = parts.get(1).copied().unwrap_or("").trim();
         (fname.to_string(), rest.to_string())
     }
+}
+
+/// Helper to parse ACDSO flags and dataset arguments from prompt/directive string.
+#[derive(Default, Debug, Clone)]
+pub struct AcdsoArgs {
+    pub target_file: String,
+    pub target: Option<String>,
+    pub predict: Option<String>,
+    pub best_score: bool,
+    pub timeseries: bool,
+    pub datetime_col: Option<String>,
+    pub horizon: Option<usize>,
+    pub decision: bool,
+    pub treatment: Option<String>,
+    pub benchmark: bool,
+}
+
+pub fn parse_acdso_cmd_args(raw: &str) -> AcdsoArgs {
+    let mut args = AcdsoArgs::default();
+    let mut tokens = Vec::new();
+    let mut chars = raw.chars().peekable();
+    while let Some(&c) = chars.peek() {
+        if c.is_whitespace() {
+            chars.next();
+            continue;
+        }
+        if c == '"' || c == '\'' || c == '`' {
+            let quote = c;
+            chars.next();
+            let mut s = String::new();
+            while let Some(&ch) = chars.peek() {
+                chars.next();
+                if ch == quote {
+                    break;
+                }
+                s.push(ch);
+            }
+            tokens.push(s);
+        } else {
+            let mut s = String::new();
+            while let Some(&ch) = chars.peek() {
+                if ch.is_whitespace() {
+                    break;
+                }
+                chars.next();
+                s.push(ch);
+            }
+            tokens.push(s);
+        }
+    }
+
+    let is_dataset = |p: &str| -> bool {
+        let l = p.to_lowercase();
+        l.ends_with(".csv") || l.ends_with(".tsv") || l.ends_with(".parquet")
+            || l.ends_with(".xlsx") || l.ends_with(".xls") || l.ends_with(".json")
+            || l.ends_with(".jsonl") || l.ends_with(".arrow") || l.ends_with(".feather")
+            || l.ends_with(".h5") || l.ends_with(".hdf5") || l.ends_with(".sqlite") || l.ends_with(".db")
+    };
+
+    let mut i = 0;
+    while i < tokens.len() {
+        let tok = &tokens[i];
+        let lower = tok.to_lowercase();
+        match lower.as_str() {
+            "--file" | "-f" => {
+                if i + 1 < tokens.len() {
+                    args.target_file = tokens[i + 1].clone();
+                    i += 2;
+                    continue;
+                }
+            }
+            "--target" | "-t" => {
+                if i + 1 < tokens.len() {
+                    args.target = Some(tokens[i + 1].clone());
+                    i += 2;
+                    continue;
+                }
+            }
+            "--predict" | "-p" => {
+                if i + 1 < tokens.len() {
+                    args.predict = Some(tokens[i + 1].clone());
+                    i += 2;
+                    continue;
+                }
+            }
+            "--best-score" | "--best_score" => {
+                args.best_score = true;
+                i += 1;
+                continue;
+            }
+            "--timeseries" | "-ts" | "--time-series" => {
+                args.timeseries = true;
+                i += 1;
+                continue;
+            }
+            "--datetime-col" | "--datetime_col" | "--datetime" => {
+                if i + 1 < tokens.len() {
+                    args.datetime_col = Some(tokens[i + 1].clone());
+                    i += 2;
+                    continue;
+                }
+            }
+            "--horizon" => {
+                if i + 1 < tokens.len() {
+                    if let Ok(h) = tokens[i + 1].parse::<usize>() {
+                        args.horizon = Some(h);
+                    }
+                    i += 2;
+                    continue;
+                }
+            }
+            "--decision" | "-d" => {
+                args.decision = true;
+                i += 1;
+                continue;
+            }
+            "--treatment" => {
+                if i + 1 < tokens.len() {
+                    args.treatment = Some(tokens[i + 1].clone());
+                    i += 2;
+                    continue;
+                }
+            }
+            "--benchmark" | "-b" => {
+                args.benchmark = true;
+                i += 1;
+                continue;
+            }
+            _ => {
+                if args.target_file.is_empty() && (tok.contains('.') || is_dataset(tok) || std::path::Path::new(tok).is_file()) {
+                    args.target_file = tok.clone();
+                }
+            }
+        }
+        i += 1;
+    }
+    args
 }
 
 /// Detects if a prompt is asking to create a file, whether via slash command or natural language.
@@ -5873,6 +6092,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         "research" | "reseach" => "research",
                                         "search" | "serarch" | "serarch-query" | "serarch_query" | "serarchquery" => "search",
                                         "data-science" | "datascience" | "dataanalyst" | "data-analyst" | "jupyter" => "data_science",
+                                        "acdso" | "automl" | "riskautoml" | "risk_automl" => "acdso",
                                         "pe-header" | "pe" | "pe-header-extraction" | "peheaderextraction" => "pe_header_extraction",
                                         "model-management" => "model_management",
                                         "report" => "reporting",
@@ -6387,6 +6607,89 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                              (idx, format!("{}\n\n{}", header, final_body))
                                          }
                                      },
+                                      "acdso" => {
+                                          let attached = extract_attached_code_context(&prompt_for_cmd);
+                                          let clean_args = args_owned.trim();
+
+                                          let is_dataset = |path: &str| -> bool {
+                                              let l = path.to_lowercase();
+                                              l.ends_with(".csv") || l.ends_with(".tsv") || l.ends_with(".parquet")
+                                                  || l.ends_with(".xlsx") || l.ends_with(".xls") || l.ends_with(".json")
+                                                  || l.ends_with(".jsonl") || l.ends_with(".arrow") || l.ends_with(".feather")
+                                                  || l.ends_with(".h5") || l.ends_with(".hdf5")
+                                                  || l.ends_with(".sqlite") || l.ends_with(".db")
+                                          };
+
+                                          let mut parsed = parse_acdso_cmd_args(clean_args);
+                                          if parsed.target_file.is_empty() {
+                                              if let Some((ds_path, _)) = attached.iter().find(|(path, _)| is_dataset(path)) {
+                                                  parsed.target_file = ds_path.clone();
+                                              } else if let Some((first_path, _)) = attached.first() {
+                                                  parsed.target_file = first_path.clone();
+                                              }
+                                          }
+
+                                          let header = "🧠 **ACDSO Risk-Aware AutoML Engine**";
+                                          if parsed.target_file.is_empty() && clean_args.is_empty() && attached.is_empty() {
+                                              let guide = format!(
+                                                  "{header}: Active (<1ms Fast Interception).\n\n                                                  Adaptive Contextual Data Science Optimization with 5-dimension Pareto knee-point model selection (Accuracy, Cost, Memory, Latency, Risk):\n\n                                                  **Syntax & Quick-Start Examples**:\n                                                  - `@agent acdso <dataset.csv> --target <col>`\n                                                  - `/acdso \"data.csv\" --predict price --benchmark`\n                                                  - `/acdso \"sales.csv\" --timeseries --datetime-col date`\n                                                  - `/acdso \"churn.csv\" --decision --target churn --treatment incentive`\n\n                                                  *Key Flags*: `--target <col>`, `--predict <col>`, `--best-score`, `--timeseries`, `--datetime-col <col>`, `--horizon <N>`, `--decision`, `--treatment <col>`.\n                                                  *Supported Formats*: CSV, TSV, Parquet, Excel (.xlsx/.xls), Feather, JSON, Arrow, SQLite/DB."
+                                              );
+                                              (idx, guide)
+                                          } else {
+                                              let mut cmd_args = vec!["--acdso".to_string()];
+                                              if !parsed.target_file.is_empty() {
+                                                  cmd_args.extend_from_slice(&["--file".to_string(), parsed.target_file.clone()]);
+                                              }
+                                              if let Some(ref t) = parsed.target {
+                                                  cmd_args.extend_from_slice(&["--target".to_string(), t.clone()]);
+                                              }
+                                              if let Some(ref p) = parsed.predict {
+                                                  cmd_args.extend_from_slice(&["--predict".to_string(), p.clone()]);
+                                              }
+                                              if parsed.best_score {
+                                                  cmd_args.push("--best-score".to_string());
+                                              }
+                                              if parsed.timeseries {
+                                                  cmd_args.push("--timeseries".to_string());
+                                              }
+                                              if let Some(ref dt) = parsed.datetime_col {
+                                                  cmd_args.extend_from_slice(&["--datetime-col".to_string(), dt.clone()]);
+                                              }
+                                              if let Some(h) = parsed.horizon {
+                                                  cmd_args.extend_from_slice(&["--horizon".to_string(), h.to_string()]);
+                                              }
+                                              if parsed.decision {
+                                                  cmd_args.push("--decision".to_string());
+                                              }
+                                              if let Some(ref tr) = parsed.treatment {
+                                                  cmd_args.extend_from_slice(&["--treatment".to_string(), tr.clone()]);
+                                              }
+
+                                              cmd_args.push("--no-fusion".to_string());
+
+                                              let cached_ollama = model_selection::memory::get_ollama_cached_models();
+                                              let sys = query_system_resources();
+                                              if cached_ollama.iter().any(|m| m.contains("7b")) || sys.free_vram_mb < 14336 {
+                                                  cmd_args.extend_from_slice(&["--model".to_string(), "qwen2.5:7b".to_string()]);
+                                              }
+                                              if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || !cached_ollama.is_empty() {
+                                                  cmd_args.push("--ollama".to_string());
+                                              }
+
+                                              let result = run_cli_subcommand(&cmd_args, db_resolved).await;
+                                              let trimmed = result.trim();
+                                              let final_body = if trimmed.is_empty() {
+                                                  format!(
+                                                      "Active (<1ms Fast Interception).\n\n                                                      Completed automated ACDSO risk-aware AutoML dispatch for `{}`.\n\n                                                      **Next Steps**:\n                                                      - Inspect via CLI: `cli.exe --acdso --file \"{}\" --no-fusion`",
+                                                      if parsed.target_file.is_empty() { "dataset" } else { &parsed.target_file },
+                                                      if parsed.target_file.is_empty() { "data.csv" } else { &parsed.target_file }
+                                                  )
+                                              } else {
+                                                  trimmed.to_string()
+                                              };
+                                              (idx, format!("{}\n\n{}", header, final_body))
+                                          }
+                                      },
                                      "pe_header_extraction" => {
                                          let attached = extract_attached_code_context(&prompt_for_cmd);
                                          let clean_args = args_owned.trim();
@@ -12140,5 +12443,77 @@ public class Pr {
         assert_eq!(canonical, Some("datascience"));
         let args_text = words[w_idx + 1..].join(" ");
         assert_eq!(args_text, r#""D:\dataset\Seaborn All Built-in Datasets\attention.csv""#);
+    }
+
+    #[test]
+    fn test_canonicalize_acdso_command() {
+        use super::canonicalize_command;
+
+        assert_eq!(canonicalize_command("acdso"), Some("acdso"));
+        assert_eq!(canonicalize_command("/acdso"), Some("acdso"));
+        assert_eq!(canonicalize_command("@agent acdso"), Some("acdso"));
+        assert_eq!(canonicalize_command("@agent /acdso"), Some("acdso"));
+        assert_eq!(canonicalize_command("--acdso"), Some("acdso"));
+        assert_eq!(canonicalize_command("automl"), Some("acdso"));
+        assert_eq!(canonicalize_command("/automl"), Some("acdso"));
+        assert_eq!(canonicalize_command("riskautoml"), Some("acdso"));
+        assert_eq!(canonicalize_command("risk_automl"), Some("acdso"));
+        assert_eq!(canonicalize_command("risk-automl"), Some("acdso"));
+        assert_eq!(canonicalize_command("/risk-automl"), Some("acdso"));
+        assert_eq!(canonicalize_command("@agent --acdso"), Some("acdso"));
+    }
+
+    #[test]
+    fn test_acdso_flag_canonicalization() {
+        use super::{canonicalize_command, determine_task_override, get_cli_flag_info, Args};
+        use clap::Parser;
+
+        assert_eq!(canonicalize_command("--acdso"), Some("acdso"));
+
+        // CLI flag info verification
+        assert_eq!(get_cli_flag_info("--target"), (true, None));
+        assert_eq!(get_cli_flag_info("--predict"), (true, None));
+        assert_eq!(get_cli_flag_info("--best-score"), (false, None));
+        assert_eq!(get_cli_flag_info("--timeseries"), (false, None));
+        assert_eq!(get_cli_flag_info("--datetime-col"), (true, None));
+        assert_eq!(get_cli_flag_info("--horizon"), (true, Some("7")));
+        assert_eq!(get_cli_flag_info("--decision"), (false, None));
+        assert_eq!(get_cli_flag_info("--treatment"), (true, None));
+
+        // Clap parsing and determine_task_override
+        let parsed = Args::try_parse_from([
+            "cli",
+            "--acdso",
+            "--file",
+            "data.csv",
+            "--target",
+            "score",
+            "--predict",
+            "score",
+            "--best-score",
+            "--timeseries",
+            "--datetime-col",
+            "date",
+            "--horizon",
+            "14",
+            "--decision",
+            "--treatment",
+            "group",
+            "--no-fusion",
+        ]).expect("Should parse ACDSO flags successfully");
+
+        assert!(parsed.acdso);
+        assert_eq!(parsed.file.as_deref(), Some("data.csv"));
+        assert_eq!(parsed.target.as_deref(), Some("score"));
+        assert_eq!(parsed.predict.as_deref(), Some("score"));
+        assert!(parsed.best_score);
+        assert!(parsed.timeseries);
+        assert_eq!(parsed.datetime_col.as_deref(), Some("date"));
+        assert_eq!(parsed.horizon, 14);
+        assert!(parsed.decision);
+        assert_eq!(parsed.treatment.as_deref(), Some("group"));
+        assert!(parsed.no_fusion);
+
+        assert_eq!(determine_task_override(&parsed), Some("acdso".to_string()));
     }
 }
