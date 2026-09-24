@@ -465,13 +465,14 @@ impl HuggingFaceProvider {
         let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
             .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
         
+        let mut ollama_model = map_hf_to_ollama(&self.config.model_id);
+        let timeout_secs = self.config.timeout_seconds.max(if ollama_model.contains("32b") || ollama_model.contains("70b") { 600 } else { 300 });
+
         let client = reqwest::Client::builder()
             .no_proxy()
             .connect_timeout(std::time::Duration::from_secs(10))
-            .timeout(std::time::Duration::from_secs(self.config.timeout_seconds.max(180)))
+            .timeout(std::time::Duration::from_secs(timeout_secs))
             .build()?;
-
-        let mut ollama_model = map_hf_to_ollama(&self.config.model_id);
 
         // Discover live installed models from Ollama API
         let tags_url = format!("{}/api/tags", endpoint.trim_end_matches('/'));

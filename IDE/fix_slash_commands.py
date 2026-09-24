@@ -444,7 +444,8 @@ def patch_file(file_path):
             "rest-rl", "restrl", "rl", "active-model", "active-models", "activemodels",
             "version", "updatedb", "update", "clearcache",
             "createfile", "create-file", "create_file", "newfile",
-            "optimize", "boost", "booster"
+            "optimize", "boost", "booster",
+            "dataanalyst", "data-analyst", "datascience", "data-science", "jupyter"
         ]
         for pattern in ["const fastInfoCommands = /* @__PURE__ */ new Set([", "const fastInfoCommands = new Set(["]:
             idx = new_content.find(pattern)
