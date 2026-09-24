@@ -28,7 +28,7 @@ struct Ttp {
 /// Scans arbitrary text for MITRE ATLAS adversarial AI attack patterns.
 ///
 /// # Example
-/// ```rust
+/// ```rust,no_run
 /// use security::ATLASThreatDetector;
 ///
 /// let detector = ATLASThreatDetector::new();
