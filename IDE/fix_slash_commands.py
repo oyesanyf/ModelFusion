@@ -64,13 +64,18 @@ UNMINIFIED_BLOCK = r'''
       "zero-shot-image-classification","depth-estimation","image-feature-extraction","automatic-speech-recognition",
       "audio-classification","voice-activity-detection","emotion-recognition","video-classification",
       "text-to-speech","text-to-image","image-super-resolution","table-question-answering","feature-ranking","error",
-      "research","reseach","search","rl","restrl","rest-rl","createfile","create-file","create_file","newfile","new-file","new_file"
+      "research","reseach","search","rl","restrl","rest-rl","createfile","create-file","create_file","newfile","new-file","new_file",
+      "btw","goal","schedule","browser","grill-me","grillme","teamwork-preview","teamworkpreview","learn","boost","generative_ui","generative-ui","genui","ui"
     ]);
     const normCmd = (cmd) => {
       if (!cmd) return "";
       const l = cmd.toLowerCase().trim();
       if (l === "rl" || l === "restrl") return "rest-rl";
       if (l === "create-file" || l === "create_file" || l === "newfile" || l === "new-file" || l === "new_file") return "createfile";
+      if (l === "grillme") return "grill-me";
+      if (l === "teamworkpreview") return "teamwork-preview";
+      if (l === "boost" || l === "booster") return "boost";
+      if (l === "generative-ui" || l === "genui" || l === "ui") return "generative_ui";
       if (l.startsWith("evol") || l.startsWith("evov") || l.startsWith("evoc") || l === "evolution" || l === "evovle") return "evolve";
       if (l === "avo") return "avo"; /* if(l==="avo")return"avo"; */
       if (l === "reseach") return "research";
@@ -84,7 +89,6 @@ UNMINIFIED_BLOCK = r'''
       if (l === "performancestats") return "performance-stats";
       if (l === "cachestats") return "cache-stats";
       if (l === "novelaistats") return "novel-ai-stats";
-      if (l === "boost" || l === "booster") return "optimize";
       if (l === "datascience" || l === "data-science") return "data-science";
       if (l === "dataanalyst" || l === "data-analyst") return "data-analyst";
       if (l === "peheaderextraction") return "pe-header-extraction";
@@ -445,7 +449,9 @@ def patch_file(file_path):
             "version", "updatedb", "update", "clearcache",
             "createfile", "create-file", "create_file", "newfile",
             "optimize", "boost", "booster",
-            "dataanalyst", "data-analyst", "datascience", "data-science", "jupyter"
+            "dataanalyst", "data-analyst", "datascience", "data-science", "jupyter",
+            "btw", "goal", "schedule", "browser", "plan", "grill-me", "grillme",
+            "teamwork-preview", "teamworkpreview", "learn", "generative_ui", "generative-ui", "genui", "ui"
         ]
         for pattern in ["const fastInfoCommands = /* @__PURE__ */ new Set([", "const fastInfoCommands = new Set(["]:
             idx = new_content.find(pattern)
