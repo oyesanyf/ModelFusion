@@ -32,6 +32,7 @@
   - [Tutorial 2: Multi-Model Consensus Deliberation with /fusion on Architecture](#tutorial-2-multi-model-consensus-deliberation-with-fusion-on-architecture)
   - [Tutorial 3: Automated Security Audit & Hardening with /security](#tutorial-3-automated-security-audit--hardening-with-security)
   - [Tutorial 4: Live Model Hub Updates & Local Auto-Provisioning with /update](#tutorial-4-live-model-hub-updates--local-auto-provisioning-with-update)
+  - [Tutorial 5: Risk-Aware AutoML & Time-Series Forecasting with /acdso](#tutorial-5-risk-aware-automl--time-series-forecasting-with-acdso)
 - [MSI Packaging](#msi-packaging)
 - [Key Patches Applied to VS Code](#key-patches-applied-to-vs-code)
 
@@ -426,8 +427,24 @@ Workflows for data analysts, CSV/Parquet manipulation, Jupyter interactive compu
 | `/table-question-answering` | — | `<query>` | Performs natural language question answering directly over tabular datasets (CSV, Parquet, SQLite). |
 | `/feature-ranking` | — | `--target <column>` | Computes feature importance rankings, correlation coefficients, and mutual information scores for predictive features. |
 | `/pe-header-extraction` | `/peheaderextraction` | `[file.exe]` | Parses Windows Portable Executable (PE) binaries: inspects DOS/NT headers, Section headers, Import Address Tables (IAT), and entropy. |
+| `/acdso` | `/automl`, `/risk-automl`, `/riskautoml` | `[file.csv]`, `--target <col>`, `--predict <col>`, `--best-score`, `--timeseries`, `--datetime-col <col>`, `--horizon <N>`, `--decision`, `--treatment <col>` | **ACDSO Risk-Aware AutoML**: Executes 5-objective Pareto AutoML (Accuracy, Cost, Memory, Latency, Risk), automated leakage detection, walk-forward time-series forecasting, and causal decision uplift modeling. |
 
 #### Real-World Chat Prompt Examples
+
+```text
+/acdso data/loan_risk.csv --target is_default
+Perform risk-aware AutoML classification on loan_risk.csv: detect target leakage, evaluate knee-point Pareto trade-offs, and generate a hardened Python inference script.
+```
+
+```text
+/acdso data/energy_grid.csv --timeseries --datetime-col timestamp --horizon 24
+Build an automated time-series forecasting pipeline predicting hourly demand with walk-forward CV and rolling lag statistics.
+```
+
+```text
+/acdso data/marketing_uplift.csv --decision --target converted --treatment promo_discount
+Execute causal decision intelligence and uplift modeling to calculate treatment effects and isolate persuadable customer segments.
+```
 
 ```text
 /dataanalyst
@@ -943,6 +960,48 @@ In chat, run:
 /active-model
 ```
 Confirm your provisioned model is active, hardware acceleration is engaged, and the catalog is 100% up to date.
+
+---
+
+### Tutorial 5: Risk-Aware AutoML & Time-Series Forecasting with /acdso
+
+**Scenario**: You have a customer dataset (`data/customer_churn.csv`) containing demographic features, account tenure, monthly usage, and historical churn outcomes. You need to build a hardened, production-ready classifier without data leakage, and subsequently forecast churn volume over a 30-day forward window.
+
+#### Step 1: Launch Supervised Risk-Aware AutoML
+Open the HugOS Chat panel (`Ctrl+Alt+I` or click the Copilot icon) and run:
+```text
+/acdso data/customer_churn.csv --target churn --predict churn
+```
+*(Or invoke via agent directive: `@agent acdso "data/customer_churn.csv" --target churn`)*
+
+#### Step 2: Automated Leakage & Collinearity Pruning
+ACDSO performs static data hygiene before fitting model pipelines:
+1. **Target Leakage Check**: Identifies and flags features with near-deterministic correlation ($I(X; Y) > 0.98$), such as `cancellation_timestamp` or `account_closure_reason`, preventing devastating out-of-sample failure.
+2. **Multicollinearity Pruning**: Scans correlation matrices and prunes collinear clusters ($\text{VIF} > 10$), retaining high-signal orthogonal predictors.
+3. **Partition Contamination**: Verifies zero row duplication across cross-validation splits.
+
+#### Step 3: 5-Objective Pareto Frontier & Knee-Point Selection
+ACDSO trains and benchmarks candidate models (LightGBM, XGBoost, CatBoost, Random Forest) across 5 simultaneous objectives:
+- **Predictive Accuracy**: Cross-validated ROC-AUC ($0.914$).
+- **Training Wall-Clock Time**: Rapid execution ($\tau_{\text{train}} = 1.4\text{s}$).
+- **Peak Memory Usage**: Lean footprint ($M_{\text{peak}} = 42\text{ MB}$).
+- **P99 Inference Latency**: Sub-millisecond response ($L_{\text{inf}} = 0.38\text{ms}$).
+- **Risk / Robustness Score**: Low cross-validation variance across folds ($\sigma_{\text{CV}} = 0.012$).
+
+Rather than selecting a bloated 500-tree stacking ensemble, ACDSO identifies the **Knee Point** minimizing normalized Euclidean distance to the theoretical Utopia point, achieving $99.1\%$ of peak score with $4\times$ lower inference latency.
+
+#### Step 4: Run Walk-Forward Time-Series Forecasting
+To forecast aggregate churn volume for the upcoming 30 days:
+```text
+/acdso data/churn_trends.csv --timeseries --datetime-col "report_date" --horizon 30
+```
+ACDSO automatically:
+1. Enforces temporal order without random shuffling (walk-forward CV).
+2. Generates lag predictors ($t-1, t-7, t-30$), cyclical day-of-week transforms, and rolling averages.
+3. Outputs forecasted values for the next 30 days complete with prediction intervals.
+
+#### Step 5: Export Self-Contained Python Inference Script
+ACDSO outputs a clean, standalone Python script (`pipeline_churn.py`) with complete scikit-learn / LightGBM pipeline code that runs locally with zero external cloud dependencies.
 
 ---
 

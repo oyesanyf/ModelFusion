@@ -7,7 +7,7 @@ import urllib.error
 import json
 
 REPO = "oyesanyf/ModelFusion"
-BRANCH = "feat/multi-objective-pareto-build-152"
+BRANCH = "docs/include-acdso-build-153"
 
 def get_token():
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
@@ -34,7 +34,7 @@ def main():
         print("[ERROR] No GitHub token found.")
         sys.exit(1)
 
-    commit_msg = "feat(pareto): fix knee-point inversion and dominance tolerance in ACDSO, port true 4-objective Pareto engine to ModelFusion, package signed MSI 152"
+    commit_msg = "docs: comprehensive ACDSO documentation across README, IDE guide, and interactive docs, package signed MSI 153"
 
     # 1. Push to remote
     print(f"[INFO] Pushing branch {BRANCH} to origin...")
@@ -45,7 +45,7 @@ def main():
     pr_url = f"https://api.github.com/repos/{REPO}/pulls"
     pr_data = {
         "title": commit_msg,
-        "body": "## Summary\n- Fix Pareto dominance epsilon tolerance (1e-9) and knee-point selection in ACDSO (`src/acdso/pareto.py`)\n- Add ACDSO unit tests covering dominance tolerance, single-dominant candidates, utopia distance, and collinear fallbacks\n- Port true 4-objective Pareto engine to ModelFusion (`crates/model_selection/src/pareto.rs`): Capability, Efficiency, Memory GB, Risk Penalty\n- Integrate Pareto front computation, knee-point selection, and candidate score boosting into `EnhancedModelSelector`\n- Verify 4-way cryptographic binary parity across target/release, IDE/bin, IDE/VSCode-win32-x64/bin, and %LOCALAPPDATA%/HugOS IDE/bin\n- Pass all 59 ReST-RL / GRPO reinforcement learning tests (59/59) and all 17 model_selection cargo unit tests\n- Auto-increment and build signed HugOS MSI Build 152 with Authenticode signature",
+        "body": "## Summary\n- Update README.md: Update CLI flag counts from 161 to 170 across all badges and documentation, add comprehensive section on ACDSO (Adaptive Contextual Data Science Optimization), covering 5-objective Pareto knee-point optimization, automated leakage guardrails, time-series forecasting, causal decision intelligence, zero paid models guarantee, and CLI/chat examples.\n- Update IDE/README.md: Add dedicated ACDSO Risk-Aware AutoML & Decision Intelligence section, add `/acdso` command to supported IDE flags and chat quick-reference table.\n- Update docs/HUGOS_IDE_GUIDE.md: Add `/acdso` to Category 5 commands and chat prompt examples, add Tutorial 5: Risk-Aware AutoML & Time-Series Forecasting with /acdso.\n- Update ModelFusion_Interactive_Docs.html: Bump to Build 153 and 170 flags, add ACDSO feature card to Core Pillars, add ACDSO Risk-Aware AutoML (9) filter button, append 9 ACDSO flags (#162 - #170) to the flags dataset.\n- Enforce 4-way cryptographic binary parity across target/release, IDE/bin, IDE/VSCode-win32-x64/bin, and %LOCALAPPDATA%/HugOS IDE/bin (SHA256: F898BD99F8DCE63D16D6455D4B1E8594DD34D1BE8F70A729C41493223151DDFB).\n- Verified 100% test pass rate across model_selection unit tests (17/17), cli unit tests (49/49), and ReST-RL / GRPO test suite (59/59).\n- Rebuild & Authenticode-sign HugOS MSI Build 153 (`IDE/HugOS.msi`, 1,510,301,696 bytes, SHA256: 4607C1F51A385F84077C8829E4799E626EF2B9D3DB34DCF71CD46A173ED830E0).",
         "head": BRANCH,
         "base": "main"
     }
