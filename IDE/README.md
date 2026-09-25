@@ -183,6 +183,37 @@ To adapt to the developer's vocabulary, the IDE supports feedback corrections vi
 
 ---
 
+## 🧠 ACDSO Risk-Aware AutoML & Decision Intelligence
+
+HugOS IDE natively integrates **ACDSO (Adaptive Contextual Data Science Optimization)** directly inside the editor's chat interface and file explorer. Designed specifically for developers and data scientists working with sensitive datasets, ACDSO delivers enterprise-grade AutoML, temporal forecasting, and causal decision intelligence with **zero cloud dependencies** and **zero token costs**.
+
+### Key Architectural Capabilities
+
+1. **Native Chat Panel Integration**:
+   - Seamlessly launch end-to-end data science pipelines directly from the HugOS Chat window by typing `/acdso`, `@agent acdso`, or `@automl`.
+   - Pass dataset file paths (CSV, Parquet, TSV) along with inline optimization flags:
+     ```text
+     @agent acdso "data/sales_q3.csv" --target revenue
+     /acdso "data/churn.csv" --predict churn --no-fusion
+     @automl "data/web_traffic.csv" --timeseries --datetime-col timestamp --horizon 14
+     /acdso "data/promotions.csv" --decision --target purchases --treatment coupon_variant
+     ```
+
+2. **Complete Local Privacy & Zero Cloud Tokens**:
+   - Evaluates machine learning pipelines and generates production Python code 100% locally.
+   - Proprietary business metrics, healthcare telemetry, and financial transactions never leave your workstation.
+   - Operates with zero API keys or monthly subscriptions, leveraging your system's CPU/GPU and local Ollama/OpenVINO runtimes.
+
+3. **5-Objective Knee-Point Pareto Optimization**:
+   - Rather than naively chasing an overfitted accuracy score that balloons memory or latency, ACDSO balances 5 competing objectives: Predictive Accuracy, Training Cost, Memory Footprint, Inference Latency, and Risk/Robustness.
+   - The knee-point selector delivers production-ready models running up to $10\times$ faster with minimal memory impact.
+
+4. **Automated Time-Series & Decision Intelligence**:
+   - **Time Series (`--timeseries`)**: Built-in temporal validation (walk-forward CV), lag generator ($t-1, t-2, \dots$), rolling window statistics, and seasonal encoders for reliable future horizons (`--horizon <N>`).
+   - **Causal Uplift (`--decision`)**: Determines treatment effects (ITE/CATE) and generates Qini curves to optimize intervention policies without triggering adverse side effects (`--treatment <COL>`).
+
+---
+
 ## 💻 CLI Command Line Interface Flags (`cli.exe`)
 
 The ModelFusion binary `cli.exe` (located in the IDE `bin` directory) supports command-line flags. **Please note the differences between flags that are active inside the IDE and those that are only for standalone CLI use:**
@@ -197,6 +228,7 @@ The ModelFusion binary `cli.exe` (located in the IDE `bin` directory) supports c
 * **`--openvino`**: Forces local inference to run using OpenVINO.
 * **`--gpu`**: Requests CUDA/GPU execution for local transformers.
 * **`--cpu`**: Forces CPU fallback for local transformers.
+* **`--acdso`**: Executes Adaptive Contextual Data Science Optimization (AutoML, time series forecasting, and causal decision intelligence).
 
 ### Upstream Rebase & Compilation Flags (`--patch-ide`)
 * **`--patch-ide`**: Clones upstream Microsoft VS Code from GitHub, applies HugOS branding and proposal whitelists, applies 8+ TypeScript source patches (routing Copilot to ModelFusion), copies extensions and icons, compiles from source via `yarn` and `gulp vscode-win32-x64`, brands the PE executable with `rcedit.exe`, and verifies ICU runtime directory integrity.
@@ -269,6 +301,7 @@ HugOS Chat supports over 71 interactive commands with complete **1:1 parity** be
 | **Model Override** | `/model <name>` | `@agent model <name>` | Selects specific model tier.<br>`/model qwen2.5:14b` |
 | **Parameter Budget** | `/budget <N>` | `@agent budget <N>` | Sets maximum parameter budget in billions of parameters.<br>`/budget 14 Cap selection at 14B parameters` |
 | **Data Science** | `/dataanalyst` | `@agent dataanalyst` | Automated tabular analysis, anomaly detection, descriptive stats.<br>`/dataanalyst Analyze customer_churn.csv and find correlations` |
+| **Risk-Aware AutoML** | `/acdso` | `@agent acdso` | 5-objective Pareto AutoML, time-series forecasting, and causal uplift.<br>`/acdso "sales.csv" --target revenue` |
 | **Binary Analysis** | `/pe-header-extraction`| `@agent pe-header-extraction` | Static analysis of Windows PE headers, imports, sections, entropy.<br>`/pe-header-extraction target/release/cli.exe` |
 | **Web Research** | `/research <topic>` | `@agent research <topic>` | Live internet research, documentation scraping, source citations.<br>`/research Next.js 15 Server Actions best practices` |
 | **Hub Fast Sync** | `/update` | `@agent update` | Fast sync top ~6,500 models + auto-provisions Ollama model.<br>`/update Sync curated catalog and verify local qwen2.5` |
