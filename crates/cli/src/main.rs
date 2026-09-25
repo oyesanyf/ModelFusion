@@ -6002,10 +6002,12 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             }
 
                             let is_automl_prefix = lower_line.starts_with("@automl")
-                                || lower_line.starts_with("@acdso");
+                                || lower_line.starts_with("@acdso")
+                                || lower_line.starts_with("/automl")
+                                || lower_line.starts_with("/acdso");
 
                             if is_automl_prefix {
-                                let stripped = if lower_line.starts_with("@automl") {
+                                let stripped = if lower_line.starts_with("@automl") || lower_line.starts_with("/automl") {
                                     &line[7..]
                                 } else {
                                     &line[6..]
