@@ -4,8 +4,10 @@
 //! and supports different selection strategies.
 
 pub mod memory;
+pub mod pareto;
 pub mod structured_router;
 
+pub use pareto::*;
 pub use structured_router::{RoutingDecision, StructuredRouter};
 
 use anyhow::Result;
@@ -421,8 +423,58 @@ impl EnhancedModelSelector {
             });
         }
 
+        let mut pareto_front_len = 0;
+        let mut pareto_knee_id: Option<String> = None;
+
+        if strategy == SelectionStrategy::MultiObjective && !candidates.is_empty() {
+            let directions = [
+                ObjectiveDirection::Maximize,
+                ObjectiveDirection::Maximize,
+                ObjectiveDirection::Minimize,
+                ObjectiveDirection::Minimize,
+            ];
+
+            let pareto_candidates: Vec<ParetoCandidate> = candidates
+                .iter()
+                .map(|c| ParetoCandidate {
+                    id: c.model_id.clone(),
+                    objectives: vec![
+                        c.capability_score,
+                        c.efficiency_score,
+                        c.estimated_memory_gb,
+                        1.0 - (c.decision_score / 10.0).clamp(0.0, 1.0),
+                    ],
+                })
+                .collect();
+
+            let front = pareto::compute_pareto_front(&pareto_candidates, &directions);
+            pareto_front_len = front.len();
+
+            if let Some(knee) = pareto::select_knee_point(&front, &directions) {
+                let front_ids: std::collections::HashSet<String> = front.iter().map(|f| f.id.clone()).collect();
+                for c in &mut candidates {
+                    if c.model_id == knee.id {
+                        c.final_score = 1.0;
+                    } else if front_ids.contains(&c.model_id) {
+                        c.final_score += 0.40;
+                    }
+                }
+                pareto_knee_id = Some(knee.id);
+            }
+        }
+
         // Sort candidates by final score descending (safe against NaN values)
-        candidates.sort_by(|a, b| b.final_score.partial_cmp(&a.final_score).unwrap_or(std::cmp::Ordering::Equal));
+        candidates.sort_by(|a, b| {
+            if let Some(ref knee_id) = pareto_knee_id {
+                if a.model_id == *knee_id {
+                    return std::cmp::Ordering::Less;
+                }
+                if b.model_id == *knee_id {
+                    return std::cmp::Ordering::Greater;
+                }
+            }
+            b.final_score.partial_cmp(&a.final_score).unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // When using Ollama, keep models that are installed in Ollama OR match known Ollama equivalents
         if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
@@ -527,15 +579,24 @@ impl EnhancedModelSelector {
         let best_model = candidates[0].clone();
         let optimization_time_ms = start_time.elapsed().as_millis() as u64;
 
-        let reasoning = format!(
-            "Selected '{}' because it ranked highest (score: {:.2}, downloads: {}, likes: {}) for tag '{}' using {} strategy.",
-            best_model.model_id,
-            best_model.final_score,
-            best_model.downloads,
-            best_model.likes,
-            pipeline_tag,
-            strategy
-        );
+        let reasoning = if strategy == SelectionStrategy::MultiObjective {
+            format!(
+                "Selected '{}' via Multi-Objective Pareto Search: optimal knee-point on non-dominated Pareto front ({} models evaluated, {} on front), balancing capability, latency, memory, and risk.",
+                best_model.model_id,
+                candidates.len(),
+                pareto_front_len
+            )
+        } else {
+            format!(
+                "Selected '{}' because it ranked highest (score: {:.2}, downloads: {}, likes: {}) for tag '{}' using {} strategy.",
+                best_model.model_id,
+                best_model.final_score,
+                best_model.downloads,
+                best_model.likes,
+                pipeline_tag,
+                strategy
+            )
+        };
 
         Ok(SelectionResult {
             best_model: best_model.clone(),
@@ -704,5 +765,74 @@ mod tests {
         let size_mb: f64 = 500.0;
         let fastest_score = (1.0f64 - (size_mb / 100_000.0f64)).clamp(0.01f64, 1.0f64);
         assert!(fastest_score <= 1.0 && fastest_score >= 0.0);
+    }
+
+    #[test]
+    fn test_multi_objective_pareto_selection() {
+        let temp_dir = std::env::temp_dir().join(format!("test_mf_pareto_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let db_path = temp_dir.join("test_models.db");
+        let db = HuggingFaceModelDatabase::new(&db_path).expect("Failed to create test db");
+
+        let m1 = ModelMetrics {
+            model_id: "org/model-capable".to_string(),
+            pipeline_tag: "text-generation".to_string(),
+            downloads: 10000,
+            likes: 500,
+            decision_score: 8.0,
+            capability_score: 9.5,
+            efficiency_score: 5.0,
+            size_mb: 16000.0,
+            license: "apache-2.0".to_string(),
+            last_modified: "2024-01-01T00:00:00Z".to_string(),
+            ..Default::default()
+        };
+
+        let m2 = ModelMetrics {
+            model_id: "org/model-balanced-knee".to_string(),
+            pipeline_tag: "text-generation".to_string(),
+            downloads: 20000,
+            likes: 1000,
+            decision_score: 9.0,
+            capability_score: 9.0,
+            efficiency_score: 9.0,
+            size_mb: 3000.0,
+            license: "mit".to_string(),
+            last_modified: "2024-01-01T00:00:00Z".to_string(),
+            ..Default::default()
+        };
+
+        let m3 = ModelMetrics {
+            model_id: "org/model-dominated".to_string(),
+            pipeline_tag: "text-generation".to_string(),
+            downloads: 100,
+            likes: 10,
+            decision_score: 3.0,
+            capability_score: 5.0,
+            efficiency_score: 4.0,
+            size_mb: 8000.0,
+            license: "mit".to_string(),
+            last_modified: "2024-01-01T00:00:00Z".to_string(),
+            ..Default::default()
+        };
+
+        db.upsert(&m1).expect("Failed to upsert m1");
+        db.upsert(&m2).expect("Failed to upsert m2");
+        db.upsert(&m3).expect("Failed to upsert m3");
+
+        let selector = EnhancedModelSelector::new(&db_path).expect("Failed to create selector");
+        let result = selector.select_best_model(
+            "text-generation",
+            "Generate Rust code",
+            SelectionStrategy::MultiObjective,
+            10,
+            None,
+        ).expect("Selection should succeed");
+
+        assert_eq!(result.strategy, SelectionStrategy::MultiObjective);
+        assert_eq!(result.best_model.final_score, 1.0);
+        assert!(result.reasoning.contains("via Multi-Objective Pareto Search: optimal knee-point"));
+        assert!(result.reasoning.contains("on front"));
+
+        let _ = std::fs::remove_dir_all(temp_dir);
     }
 }
