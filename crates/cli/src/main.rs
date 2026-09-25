@@ -2376,7 +2376,9 @@ async fn run(args: Args) -> Result<()> {
             || lower_lead.starts_with("@automl")
             || lower_lead.starts_with("/automl")
             || lower_lead == "acdso"
-            || lower_lead.starts_with("acdso ");
+            || lower_lead.starts_with("acdso ")
+            || lower_lead == "automl"
+            || lower_lead.starts_with("automl ");
 
         let is_acdso = args.acdso || determine_task_override(&args).as_deref() == Some("acdso") || prompt_triggers_acdso;
         if is_acdso {
@@ -2399,6 +2401,8 @@ async fn run(args: Args) -> Result<()> {
                     &final_prompt[7..]
                 } else if lower_lead.starts_with("acdso ") {
                     &final_prompt[6..]
+                } else if lower_lead.starts_with("automl ") {
+                    &final_prompt[7..]
                 } else {
                     ""
                 };
@@ -4163,7 +4167,8 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
     for prefix in &[
         "@agent", "agent", "@commands", "commands", "@command", "command",
         "@tasks", "tasks", "@task", "task", "@comments", "comments",
-        "@comment", "comment", "@modelfusion", "modelfusion", "@hugos", "hugos"
+        "@comment", "comment", "@modelfusion", "modelfusion", "@hugos", "hugos",
+        "@automl", "@acdso"
     ] {
         if lower.starts_with(prefix) {
             let rest = &s[prefix.len()..];
@@ -5904,7 +5909,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         || lower_user_seg.starts_with("@hugos")
                         || lower_user_seg.starts_with("@rl")
                         || lower_user_seg.starts_with("@restrl")
-                        || lower_user_seg.starts_with("@rest-rl");
+                        || lower_user_seg.starts_with("@rest-rl")
+                        || lower_user_seg.starts_with("@automl")
+                        || lower_user_seg.starts_with("@acdso");
 
                     // b) OR latest_user_segment is a single-line command whose first non-whitespace token starts with / or -- or -
                     let is_single_line_slash_or_flag = !is_multiline && non_empty_lines.first().map(|line| {
@@ -5929,6 +5936,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         tok_low.starts_with("@agent") || tok_low.starts_with("@command") || tok_low.starts_with("@task")
                             || tok_low.starts_with("@comment") || tok_low.starts_with("@modelfusion") || tok_low.starts_with("@hugos")
                             || tok_low.starts_with("@rl") || tok_low.starts_with("@restrl") || tok_low.starts_with("@rest-rl")
+                            || tok_low.starts_with("@automl") || tok_low.starts_with("@acdso")
                             || (tok_low.starts_with('/') && !tok_low.starts_with("//") && !tok_low.starts_with("/*") && tok_low.len() > 1 && tok_low.chars().nth(1).map_or(false, |c| c.is_alphabetic()))
                             || (tok_low.starts_with("--") && tok_low.len() > 2)
                             || (canonicalize_command(first_token).is_some() && !trimmed.contains('='))
@@ -5989,6 +5997,22 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 let args = stripped.trim_start_matches(|c: char| c.is_whitespace() || c == ':').trim();
                                 if !matched_cmds.iter().any(|(c, _)| c == "tasks") {
                                     matched_cmds.push(("tasks".to_string(), args.to_string()));
+                                }
+                                continue;
+                            }
+
+                            let is_automl_prefix = lower_line.starts_with("@automl")
+                                || lower_line.starts_with("@acdso");
+
+                            if is_automl_prefix {
+                                let stripped = if lower_line.starts_with("@automl") {
+                                    &line[7..]
+                                } else {
+                                    &line[6..]
+                                };
+                                let args = stripped.trim_start_matches(|c: char| c.is_whitespace() || c == ':').trim();
+                                if !matched_cmds.iter().any(|(c, _)| c == "acdso") {
+                                    matched_cmds.push(("acdso".to_string(), args.to_string()));
                                 }
                                 continue;
                             }
@@ -12519,7 +12543,10 @@ public class Pr {
 
         assert_eq!(canonicalize_command("acdso"), Some("acdso"));
         assert_eq!(canonicalize_command("/acdso"), Some("acdso"));
+        assert_eq!(canonicalize_command("@acdso"), Some("acdso"));
         assert_eq!(canonicalize_command("@agent acdso"), Some("acdso"));
+        assert_eq!(canonicalize_command("@automl"), Some("acdso"));
+        assert_eq!(canonicalize_command("@agent automl"), Some("acdso"));
         assert_eq!(canonicalize_command("@agent /acdso"), Some("acdso"));
         assert_eq!(canonicalize_command("--acdso"), Some("acdso"));
         assert_eq!(canonicalize_command("automl"), Some("acdso"));

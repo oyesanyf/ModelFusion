@@ -407,6 +407,380 @@ if(!c){let lmt=(l[l.length-1]||"").trim();let isCR=lmt.startsWith("Summarize the
 '''
 
 
+def patch_workspace_structure(content, file_path=""):
+    """
+    Wrap AgentMultirootWorkspaceStructure, MultirootWorkspaceStructure,
+    workspaceVisualFileTree, DirectoryStructure, WorkspaceStructure, and GitServiceImpl
+    in robust try/catch blocks with emptyTree fallbacks to prevent 'spawn UNKNOWN'
+    crashes inside TSX prompt tree during chat prompt assembly.
+    """
+    patched_count = 0
+
+    # 1. AgentMultirootWorkspaceStructure
+    orig_agent = (
+        'var AgentMultirootWorkspaceStructure = class extends MultirootWorkspaceStructure {\\n'
+        '  constructor(props, instantiationService) {\\n'
+        '    super(props, instantiationService);\\n'
+        '  }\\n'
+        '  async prepare(sizing, progress, token) {\\n'
+        '    if (!this.props.availableTools?.find((tool) => tool.name === "list_dir" /* ListDirectory */)) {\\n'
+        '      return [];\\n'
+        '    }\\n'
+        '    return super.prepare(sizing, progress, token);\\n'
+        '  }\\n'
+        '  render(state2, sizing) {\\n'
+        '    const base2 = super.render(state2, sizing);\\n'
+        '    if (!base2) {\\n'
+        '      return;\\n'
+        '    }\\n'
+        '    return /* @__PURE__ */ vscpp(vscppf, null, base2, /* @__PURE__ */ vscpp("br", null), "This is the state of the context at this point in the conversation. The view of the workspace structure may be truncated. You can use tools to collect more context if needed.");\\n'
+        '  }\\n'
+        '};'
+    ).replace('\\n', '\n')
+
+    safe_agent = (
+        'var AgentMultirootWorkspaceStructure = class extends MultirootWorkspaceStructure {\\n'
+        '  constructor(props, instantiationService) {\\n'
+        '    super(props, instantiationService);\\n'
+        '  }\\n'
+        '  async prepare(sizing, progress, token) {\\n'
+        '    try {\\n'
+        '      if (!this.props.availableTools?.find((tool) => tool.name === "list_dir" /* ListDirectory */)) {\\n'
+        '        return [];\\n'
+        '      }\\n'
+        '      const res = await super.prepare(sizing, progress, token);\\n'
+        '      return Array.isArray(res) ? res : [];\\n'
+        '    } catch (err) {\\n'
+        '      return [];\\n'
+        '    }\\n'
+        '  }\\n'
+        '  render(state2, sizing) {\\n'
+        '    try {\\n'
+        '      if (!state2 || !Array.isArray(state2) || !state2.length) {\\n'
+        '        return;\\n'
+        '      }\\n'
+        '      const base2 = super.render(state2, sizing);\\n'
+        '      if (!base2) {\\n'
+        '        return;\\n'
+        '      }\\n'
+        '      return /* @__PURE__ */ vscpp(vscppf, null, base2, /* @__PURE__ */ vscpp("br", null), "This is the state of the context at this point in the conversation. The view of the workspace structure may be truncated. You can use tools to collect more context if needed.");\\n'
+        '    } catch (err) {\\n'
+        '      return;\\n'
+        '    }\\n'
+        '  }\\n'
+        '};'
+    ).replace('\\n', '\n')
+
+    if orig_agent in content:
+        content = content.replace(orig_agent, safe_agent)
+        patched_count += 1
+
+    # 2. MultirootWorkspaceStructure
+    orig_multi = (
+        '  async prepare(sizing, progress, token) {\\n'
+        '    const workingDir = this.props.workingDir ?? this.instantiationService.createInstance(WorkingDirectory, void 0);\\n'
+        '    const folders = workingDir.getFolders();\\n'
+        '    return this.instantiationService.invokeFunction((accessor) => Promise.all(folders.map(async (folder) => ({\\n'
+        '      label: workingDir.getFolderName(folder),\\n'
+        '      tree: await workspaceVisualFileTree(accessor, folder, { maxLength: this.props.maxSize / folders.length, excludeDotFiles: this.props.excludeDotFiles }, token ?? CancellationToken.None)\\n'
+        '    }))));\\n'
+        '  }\\n'
+        '  render(state2, sizing) {\\n'
+        '    if (!state2.length) {\\n'
+        '      return;\\n'
+        '    }\\n'
+        '    let str2;\\n'
+        '    if (state2.length === 1) {\\n'
+        '      str2 = state2[0].tree.tree;\\n'
+        '    } else {\\n'
+        '      str2 = "";\\n'
+        '      for (const { label, tree } of state2) {\\n'
+        '        str2 += `${label}/\\n`;\\n'
+        '        for (const line of tree.tree.split("\\\\n")) {\\n'
+        '          str2 += `\\t${line}\\n`;\\n'
+        '        }\\n'
+        '      }\\n'
+        '    }\\n'
+        '    return /* @__PURE__ */ vscpp(vscppf, null, "I am working in a workspace that has the following structure:", /* @__PURE__ */ vscpp("br", null), /* @__PURE__ */ vscpp("meta", { value: new WorkspaceStructureMetadata(state2), local: true }), createFencedCodeBlock("", str2));\\n'
+        '  }\\n'
+        '};'
+    ).replace('\\n', '\n')
+
+    safe_multi = (
+        '  async prepare(sizing, progress, token) {\\n'
+        '    try {\\n'
+        '      const workingDir = this.props.workingDir ?? this.instantiationService.createInstance(WorkingDirectory, void 0);\\n'
+        '      const folders = workingDir.getFolders();\\n'
+        '      if (!folders || !folders.length) return [];\\n'
+        '      return await this.instantiationService.invokeFunction((accessor) => Promise.all(folders.map(async (folder) => {\\n'
+        '        try {\\n'
+        '          return {\\n'
+        '            label: workingDir.getFolderName(folder),\\n'
+        '            tree: await workspaceVisualFileTree(accessor, folder, { maxLength: this.props.maxSize / (folders.length || 1), excludeDotFiles: this.props.excludeDotFiles }, token ?? CancellationToken.None)\\n'
+        '          };\\n'
+        '        } catch {\\n'
+        '          return {\\n'
+        '            label: workingDir.getFolderName(folder),\\n'
+        '            tree: emptyTree()\\n'
+        '          };\\n'
+        '        }\\n'
+        '      })));\\n'
+        '    } catch (err) {\\n'
+        '      return [];\\n'
+        '    }\\n'
+        '  }\\n'
+        '  render(state2, sizing) {\\n'
+        '    try {\\n'
+        '      if (!state2 || !Array.isArray(state2) || !state2.length) {\\n'
+        '        return;\\n'
+        '      }\\n'
+        '      let str2;\\n'
+        '      if (state2.length === 1) {\\n'
+        '        str2 = state2[0]?.tree?.tree || "";\\n'
+        '      } else {\\n'
+        '        str2 = "";\\n'
+        '        for (const { label, tree } of state2) {\\n'
+        '          str2 += `${label}/\\n`;\\n'
+        '          for (const line of (tree?.tree || "").split("\\\\n")) {\\n'
+        '            str2 += `\\t${line}\\n`;\\n'
+        '          }\\n'
+        '        }\\n'
+        '      }\\n'
+        '      if (!str2.trim()) return;\\n'
+        '      return /* @__PURE__ */ vscpp(vscppf, null, "I am working in a workspace that has the following structure:", /* @__PURE__ */ vscpp("br", null), /* @__PURE__ */ vscpp("meta", { value: new WorkspaceStructureMetadata(state2), local: true }), createFencedCodeBlock("", str2));\\n'
+        '    } catch (err) {\\n'
+        '      return;\\n'
+        '    }\\n'
+        '  }\\n'
+        '};'
+    ).replace('\\n', '\n')
+
+    if orig_multi in content:
+        content = content.replace(orig_multi, safe_multi)
+        patched_count += 1
+
+    # 3. workspaceVisualFileTree
+    orig_wvft = (
+        'async function workspaceVisualFileTree(accessor, root5, options, token) {\\n'
+        '  const fs32 = accessor.get(IFileSystemService);\\n'
+        '  const ignoreService = accessor.get(IIgnoreService);\\n'
+        '  async function buildFileList(root6) {\\n'
+        '    let rootNodes;\\n'
+        '    try {\\n'
+        '      rootNodes = await fs32.readDirectory(root6);\\n'
+        '    } catch (err2) {\\n'
+        '      return [];\\n'
+        '    }\\n'
+        '    if (token.isCancellationRequested) {\\n'
+        '      return [];\\n'
+        '    }\\n'
+        '    rootNodes.sort((a6, b11) => {\\n'
+        '      if (a6[1] === b11[1]) {\\n'
+        '        return a6[0].localeCompare(b11[0]);\\n'
+        '      }\\n'
+        '      return a6[1] === 2 /* Directory */ ? 1 : -1;\\n'
+        '    });\\n'
+        '    return Promise.all(\\n'
+        '      rootNodes.map(async (x) => {\\n'
+        '        const uri = URI.joinPath(root6, x[0]);\\n'
+        '        return !(options.excludeDotFiles && x[0].startsWith(".")) && !shouldAlwaysIgnoreFile(uri) && !await ignoreService.isCopilotIgnored(uri) ? x : null;\\n'
+        '      })\\n'
+        '    ).then(\\n'
+        '      (entries) => entries.filter((entry) => !entry).map((entry) => {\\n'
+        '        const uri = URI.joinPath(root6, entry[0]);\\n'
+        '        if (entry[1] === 2 /* Directory */) {\\n'
+        '          return { type: 2 /* Directory */, uri, name: entry[0], getChildren: () => buildFileList(uri) };\\n'
+        '        } else {\\n'
+        '          return { type: 1 /* File */, uri, name: entry[0] };\\n'
+        '        }\\n'
+        '      })\\n'
+        '    );\\n'
+        '  }\\n'
+        '  await ignoreService.init();\\n'
+        '  if (token.isCancellationRequested) {\\n'
+        '    return emptyTree();\\n'
+        '  }\\n'
+        '  const rootFiles = await buildFileList(root5);\\n'
+        '  if (token.isCancellationRequested) {\\n'
+        '    return emptyTree();\\n'
+        '  }\\n'
+        '  return visualFileTree(rootFiles, options.maxLength, token);\\n'
+        '}\\n'
+    ).replace('!entry', '!!entry').replace('\\n', '\n')
+
+    safe_wvft = (
+        'async function workspaceVisualFileTree(accessor, root5, options, token) {\\n'
+        '  try {\\n'
+        '    const fs32 = accessor.get(IFileSystemService);\\n'
+        '    const ignoreService = accessor.get(IIgnoreService);\\n'
+        '    async function buildFileList(root6) {\\n'
+        '      let rootNodes;\\n'
+        '      try {\\n'
+        '        rootNodes = await fs32.readDirectory(root6);\\n'
+        '      } catch (err2) {\\n'
+        '        return [];\\n'
+        '      }\\n'
+        '      if (token.isCancellationRequested) {\\n'
+        '        return [];\\n'
+        '      }\\n'
+        '      rootNodes.sort((a6, b11) => {\\n'
+        '        if (a6[1] === b11[1]) {\\n'
+        '          return a6[0].localeCompare(b11[0]);\\n'
+        '        }\\n'
+        '        return a6[1] === 2 /* Directory */ ? 1 : -1;\\n'
+        '      });\\n'
+        '      return Promise.all(\\n'
+        '        rootNodes.map(async (x) => {\\n'
+        '          try {\\n'
+        '            const uri = URI.joinPath(root6, x[0]);\\n'
+        '            return !(options.excludeDotFiles && x[0].startsWith(".")) && !shouldAlwaysIgnoreFile(uri) && !await ignoreService.isCopilotIgnored(uri).catch(() => false) ? x : null;\\n'
+        '          } catch {\\n'
+        '            return null;\\n'
+        '          }\\n'
+        '        })\\n'
+        '      ).then(\\n'
+        '        (entries) => entries.filter((entry) => !entry).map((entry) => {\\n'
+        '          const uri = URI.joinPath(root6, entry[0]);\\n'
+        '          if (entry[1] === 2 /* Directory */) {\\n'
+        '            return { type: 2 /* Directory */, uri, name: entry[0], getChildren: () => buildFileList(uri) };\\n'
+        '          } else {\\n'
+        '            return { type: 1 /* File */, uri, name: entry[0] };\\n'
+        '          }\\n'
+        '        })\\n'
+        '      );\\n'
+        '    }\\n'
+        '    try {\\n'
+        '      await ignoreService.init();\\n'
+        '    } catch {}\\n'
+        '    if (token.isCancellationRequested) {\\n'
+        '      return emptyTree();\\n'
+        '    }\\n'
+        '    const rootFiles = await buildFileList(root5);\\n'
+        '    if (token.isCancellationRequested) {\\n'
+        '      return emptyTree();\\n'
+        '    }\\n'
+        '    return visualFileTree(rootFiles, options.maxLength, token);\\n'
+        '  } catch (err) {\\n'
+        '    return emptyTree();\\n'
+        '  }\\n'
+        '}\\n'
+    ).replace('!entry', '!!entry').replace('\\n', '\n')
+
+    if orig_wvft in content:
+        content = content.replace(orig_wvft, safe_wvft)
+        patched_count += 1
+
+    # 4. DirectoryStructure
+    orig_dir = (
+        '  async prepare(sizing, progress, token) {\\n'
+        '    return this._instantiationService.invokeFunction((accessor) => workspaceVisualFileTree(accessor, this.props.directory, { maxLength: this.props.maxSize }, token ?? CancellationToken.None));\\n'
+        '  }\\n'
+        '  render(state2, sizing) {\\n'
+        '    if (!state2) {\\n'
+        '      return;\\n'
+        '    }\\n'
+        '    return /* @__PURE__ */ vscpp(vscppf, null, "The folder `", this._promptPathRepresentationService.getFilePath(this.props.directory), "` has the following structure:", /* @__PURE__ */ vscpp("br", null), /* @__PURE__ */ vscpp("br", null), createFencedCodeBlock("", state2.tree));\\n'
+        '  }'
+    ).replace('\\n', '\n')
+
+    safe_dir = (
+        '  async prepare(sizing, progress, token) {\\n'
+        '    try {\\n'
+        '      return await this._instantiationService.invokeFunction((accessor) => workspaceVisualFileTree(accessor, this.props.directory, { maxLength: this.props.maxSize }, token ?? CancellationToken.None));\\n'
+        '    } catch {\\n'
+        '      return emptyTree();\\n'
+        '    }\\n'
+        '  }\\n'
+        '  render(state2, sizing) {\\n'
+        '    try {\\n'
+        '      if (!state2 || !state2.tree) {\\n'
+        '        return;\\n'
+        '      }\\n'
+        '      return /* @__PURE__ */ vscpp(vscppf, null, "The folder `", this._promptPathRepresentationService.getFilePath(this.props.directory), "` has the following structure:", /* @__PURE__ */ vscpp("br", null), /* @__PURE__ */ vscpp("br", null), createFencedCodeBlock("", state2.tree));\\n'
+        '    } catch {\\n'
+        '      return;\\n'
+        '    }\\n'
+        '  }'
+    ).replace('\\n', '\n')
+
+    if orig_dir in content:
+        content = content.replace(orig_dir, safe_dir)
+        patched_count += 1
+
+    # 5. WorkspaceStructure
+    orig_ws = (
+        '  async prepare(sizing, progress, token) {\\n'
+        '    const root5 = this.workspaceService.getWorkspaceFolders().at(0);\\n'
+        '    if (!root5) {\\n'
+        '      return;\\n'
+        '    }\\n'
+        '    return this.instantiationService.invokeFunction((accessor) => workspaceVisualFileTree(accessor, root5, { maxLength: this.props.maxSize, excludeDotFiles: this.props.excludeDotFiles }, token ?? CancellationToken.None));\\n'
+        '  }\\n'
+        '  render(state2, sizing) {\\n'
+        '    if (!state2) {\\n'
+        '      return;\\n'
+        '    }\\n'
+        '    return /* @__PURE__ */ vscpp(vscppf, null, "I am working in a workspace that has the following structure:", /* @__PURE__ */ vscpp("br", null), /* @__PURE__ */ vscpp("br", null), createFencedCodeBlock("", state2.tree));\\n'
+        '  }'
+    ).replace('\\n', '\n')
+
+    safe_ws = (
+        '  async prepare(sizing, progress, token) {\\n'
+        '    try {\\n'
+        '      const root5 = this.workspaceService.getWorkspaceFolders().at(0);\\n'
+        '      if (!root5) {\\n'
+        '        return;\\n'
+        '      }\\n'
+        '      return await this.instantiationService.invokeFunction((accessor) => workspaceVisualFileTree(accessor, root5, { maxLength: this.props.maxSize, excludeDotFiles: this.props.excludeDotFiles }, token ?? CancellationToken.None));\\n'
+        '    } catch {\\n'
+        '      return emptyTree();\\n'
+        '    }\\n'
+        '  }\\n'
+        '  render(state2, sizing) {\\n'
+        '    try {\\n'
+        '      if (!state2 || !state2.tree) {\\n'
+        '        return;\\n'
+        '      }\\n'
+        '      return /* @__PURE__ */ vscpp(vscppf, null, "I am working in a workspace that has the following structure:", /* @__PURE__ */ vscpp("br", null), /* @__PURE__ */ vscpp("br", null), createFencedCodeBlock("", state2.tree));\\n'
+        '    } catch {\\n'
+        '      return;\\n'
+        '    }\\n'
+        '  }'
+    ).replace('\\n', '\n')
+
+    if orig_ws in content:
+        content = content.replace(orig_ws, safe_ws)
+        patched_count += 1
+
+    # 6. GitServiceImpl exec windowsHide
+    orig_git_exec = (
+        '    try {\\n'
+        '      const result = await execFileAsync(gitPath, args2, {\\n'
+        '        cwd: cwd2.fsPath,\\n'
+        '        encoding: "utf8",\\n'
+        '        env: gitEnv\\n'
+        '      });'
+    ).replace('\\n', '\n')
+
+    safe_git_exec = (
+        '    try {\\n'
+        '      const result = await execFileAsync(gitPath, args2, {\\n'
+        '        cwd: cwd2.fsPath,\\n'
+        '        encoding: "utf8",\\n'
+        '        env: gitEnv,\\n'
+        '        windowsHide: true\\n'
+        '      });'
+    ).replace('\\n', '\n')
+
+    if orig_git_exec in content:
+        content = content.replace(orig_git_exec, safe_git_exec)
+        patched_count += 1
+
+    if patched_count > 0:
+        print(f"  Guarded workspace structure & git calls ({patched_count} components) against spawn UNKNOWN in {file_path}")
+    return content
+
+
 def patch_file(file_path):
     """Patch a single extension.js file."""
     with open(file_path, "r", encoding="utf-8") as f:
@@ -476,6 +850,7 @@ def patch_file(file_path):
                         print(f"  Added {len(missing)} missing commands to fastInfoCommands in {file_path}")
                 break
         new_content = re.sub(r'("version")(\s+)("updatedb")', r'\1,\2\3', new_content)
+        new_content = patch_workspace_structure(new_content, file_path)
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(new_content)
         print(f"  PATCHED (unminified format, {len(UNMINIFIED_BLOCK)} chars): {file_path}")
@@ -495,6 +870,7 @@ def patch_file(file_path):
             return False
         
         new_content = content[:si] + '\n' + MINIFIED_BLOCK.strip() + '\n' + content[ei:]
+        new_content = patch_workspace_structure(new_content, file_path)
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(new_content)
         print(f"  PATCHED (minified format, {len(MINIFIED_BLOCK)} chars): {file_path}")
