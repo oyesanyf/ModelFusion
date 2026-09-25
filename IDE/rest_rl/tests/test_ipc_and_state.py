@@ -130,10 +130,10 @@ class TestMult(unittest.TestCase):
         def on_change(new_state: str):
             state_changes.append(new_state)
 
-        # Fast 0.2s debounce for test
+        # Fast 0.5s debounce for test (prevents TCP RPC roundtrip race)
         tracker = IdleActivityTracker(
             client=self.client,
-            debounce_seconds=0.2,
+            debounce_seconds=0.5,
             on_state_change=on_change,
         )
         tracker.start()
@@ -143,7 +143,7 @@ class TestMult(unittest.TestCase):
             self.assertFalse(tracker.is_idle)
 
             # Wait for debounce to fire
-            time.sleep(0.35)
+            time.sleep(0.65)
             self.assertTrue(tracker.is_idle)
             self.assertIn("IDLE", state_changes)
 
