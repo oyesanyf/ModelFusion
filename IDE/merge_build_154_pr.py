@@ -7,7 +7,7 @@ import urllib.error
 import json
 
 REPO = "oyesanyf/ModelFusion"
-BRANCH = "docs/include-acdso-build-153"
+BRANCH = "fix/spawn-unknown-automl-prompt-patch"
 
 def get_token():
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
@@ -34,7 +34,7 @@ def main():
         print("[ERROR] No GitHub token found.")
         sys.exit(1)
 
-    commit_msg = "docs: comprehensive ACDSO documentation across README, IDE guide, and interactive docs, package signed MSI 153"
+    commit_msg = "fix(chat): guard workspace structure against spawn UNKNOWN, route @automl to ACDSO, package signed MSI 154"
 
     # 1. Push to remote
     print(f"[INFO] Pushing branch {BRANCH} to origin...")
@@ -45,7 +45,7 @@ def main():
     pr_url = f"https://api.github.com/repos/{REPO}/pulls"
     pr_data = {
         "title": commit_msg,
-        "body": "## Summary\n- Update README.md: Update CLI flag counts from 161 to 170 across all badges and documentation, add comprehensive section on ACDSO (Adaptive Contextual Data Science Optimization), covering 5-objective Pareto knee-point optimization, automated leakage guardrails, time-series forecasting, causal decision intelligence, zero paid models guarantee, and CLI/chat examples.\n- Update IDE/README.md: Add dedicated ACDSO Risk-Aware AutoML & Decision Intelligence section, add `/acdso` command to supported IDE flags and chat quick-reference table.\n- Update docs/HUGOS_IDE_GUIDE.md: Add `/acdso` to Category 5 commands and chat prompt examples, add Tutorial 5: Risk-Aware AutoML & Time-Series Forecasting with /acdso.\n- Update ModelFusion_Interactive_Docs.html: Bump to Build 153 and 170 flags, add ACDSO feature card to Core Pillars, add ACDSO Risk-Aware AutoML (9) filter button, append 9 ACDSO flags (#162 - #170) to the flags dataset.\n- Enforce 4-way cryptographic binary parity across target/release, IDE/bin, IDE/VSCode-win32-x64/bin, and %LOCALAPPDATA%/HugOS IDE/bin (SHA256: F898BD99F8DCE63D16D6455D4B1E8594DD34D1BE8F70A729C41493223151DDFB).\n- Verified 100% test pass rate across model_selection unit tests (17/17), cli unit tests (49/49), and ReST-RL / GRPO test suite (59/59).\n- Rebuild & Authenticode-sign HugOS MSI Build 153 (`IDE/HugOS.msi`, 1,510,301,696 bytes, SHA256: 4607C1F51A385F84077C8829E4799E626EF2B9D3DB34DCF71CD46A173ED830E0).",
+        "body": "## Summary\n- Fix `spawn UNKNOWN (at tsx element GlobalAgentContext > UserMessage74 > _Tag > TagInner > AgentMultirootWorkspaceStructure)` chat prompt assembly crash when running `@automl` or chat commands on Windows.\n- Guard `AgentMultirootWorkspaceStructure.prepare`/`render`, `MultirootWorkspaceStructure.prepare`/`render`, `DirectoryStructure.prepare`/`render`, `WorkspaceStructure.prepare`/`render`, and `workspaceVisualFileTree` against process spawn / git failures with `emptyTree()` fallbacks.\n- Add `windowsHide: true` to `GitServiceImpl.exec` to eliminate hidden window spawn aborts.\n- Route `@automl` and `@acdso` in `crates/cli/src/main.rs` and fastInfoCommands across prompt triggers, `/orchestrate` multi-command lines, and prefix-stripping canonicalizers.\n- Enforce 4-way cryptographic binary parity across `target/release/cli.exe`, `IDE/bin/cli.exe`, `IDE/VSCode-win32-x64/bin/cli.exe`, and `%LOCALAPPDATA%/HugOS IDE/bin/cli.exe` (SHA256: `DE06830A205C5EF85A0554E02A58BD711C38D9D2ACB55B897F2F6868DDD8178F`).\n- Verify 100% test pass rate across `model_selection` unit tests (17/17), `cli` unit tests (49/49), and ReST-RL / GRPO test suite (59/59).\n- Rebuild & Authenticode-sign HugOS MSI Build 154 (`IDE/HugOS.msi`, 1,510,326,272 bytes, SHA256: `1DA07FA5D247D1236FA65EBFA5641C1C6503ABB2C26D216B80E80CB983B4B396`).",
         "head": BRANCH,
         "base": "main"
     }
