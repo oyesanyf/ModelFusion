@@ -114,7 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ollamaUrl: 'http://127.0.0.1:11434',
     ipcUrl: 'http://127.0.0.1:5000',
     cdpPort: 9222,
-    activeModel: 'qwen2.5:7b',
+    activeModel: 'modelfusion_auto',
     visionModel: 'qwen2.5-vl',
     audioModel: 'whisper-base',
     multimodalAuto: true,
@@ -148,7 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const historyStack = [];
   let historyIndex = -1;
   let currentNavUrl = '';
-  let activeOllamaModel = 'qwen2.5:7b';
+  let activeOllamaModel = 'modelfusion_auto';
 
 
   // -----------------------------------------------------------------
@@ -172,7 +172,7 @@ document.addEventListener('DOMContentLoaded', () => {
       chatWelcome.classList.add('hidden');
     }
 
-    if (chatMessages) {
+    if (chatMessages && (type === 'cmd' || type === 'model-response')) {
       const bubble = document.createElement('div');
 
       if (type === 'cmd') {
@@ -192,24 +192,26 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="user-text">${formatCitationsAndMarkdown(message)}</div>
         `;
       } else if (type === 'model-response') {
+        const isFusion = activeOllamaModel === 'modelfusion_auto' || activeOllamaModel === 'fast_fusion' || activeOllamaModel === 'deep_reasoning';
+        const displayTitle = isFusion ? '✨ ModelFusion AI' : '🌐 HugOS AI';
+        const displaySub = isFusion ? '(Adaptive Consensus)' : `(${activeOllamaModel})`;
         bubble.className = 'msg-bubble assistant-bubble';
         bubble.innerHTML = `
           <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
-            <span>🌐</span> <span>HugOS AI</span>
-            <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">(${activeOllamaModel})</span>
+            <span>${isFusion ? '✨' : '🌐'}</span> <span>${displayTitle}</span>
+            <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">${displaySub}</span>
           </div>
           <div class="assistant-text">${formatCitationsAndMarkdown(message)}</div>
         `;
-      } else {
-        bubble.className = 'msg-bubble sys-bubble';
-        const tag = type === 'sys' ? 'SYSTEM' : type === 'warn' ? 'WARN' : type === 'error' ? 'ERROR' : 'INFO';
-        bubble.innerHTML = `<span class="bubble-tag">[${tag}]</span> ${formatCitationsAndMarkdown(message)}`;
       }
 
       chatMessages.appendChild(bubble);
       if (currentSettings.autoScroll !== false) {
         chatMessages.scrollTop = chatMessages.scrollHeight;
       }
+    } else {
+      // Diagnostic, router, and debug logs to browser console, never polluting chat conversation
+      console.log(`[${type.toUpperCase()}] ${message}`);
     }
 
     // Mirror to hidden terminalScreen for test harness / logs compatibility
@@ -260,12 +262,25 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function applySettings(settings) {
-    activeOllamaModel = settings.activeModel || 'qwen2.5:7b';
+    activeOllamaModel = settings.activeModel || 'modelfusion_auto';
     if (activeModelBadge) activeModelBadge.textContent = activeOllamaModel;
     if (statModel) statModel.textContent = `${activeOllamaModel} (Configured)`;
     if (footerActiveModel) footerActiveModel.textContent = activeOllamaModel;
     const usageModel = document.getElementById('usage-model');
     if (usageModel) usageModel.textContent = activeOllamaModel;
+
+    const headerModelName = document.getElementById('header-active-model-name');
+    if (headerModelName) {
+      if (activeOllamaModel === 'modelfusion_auto') {
+        headerModelName.textContent = '✨ ModelFusion Auto';
+      } else if (activeOllamaModel === 'fast_fusion') {
+        headerModelName.textContent = '⚡ Fast Fusion';
+      } else if (activeOllamaModel === 'deep_reasoning') {
+        headerModelName.textContent = '🧠 Deep Reasoning';
+      } else {
+        headerModelName.textContent = activeOllamaModel;
+      }
+    }
 
     // Apply theme across all 5 color schemes
     document.body.classList.remove('theme-white', 'theme-light', 'theme-obsidian', 'theme-midnight', 'theme-warm', 'theme-dark');
@@ -390,6 +405,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const raw = localStorage.getItem('hugos_browser_settings');
       if (raw) {
         const parsed = JSON.parse(raw);
+        if (parsed.activeModel === 'qwen2.5:7b' && !parsed._userCustomizedModel) {
+          parsed.activeModel = 'modelfusion_auto';
+        }
         currentSettings = { ...DEFAULT_SETTINGS, ...parsed };
       }
     } catch (e) {
@@ -1511,18 +1529,27 @@ document.addEventListener('DOMContentLoaded', () => {
       populateModelDropdown(models);
 
       // Select active model
-      let selectedTag = activeOllamaModel || 'qwen2.5:7b';
-      const has7b = models.find(m => m.name.toLowerCase().includes('qwen2.5:7b') || (m.name.toLowerCase().includes('7b') && m.name.toLowerCase().includes('qwen')));
-      const has32b = models.find(m => m.name.toLowerCase().includes('qwen2.5:32b') || (m.name.toLowerCase().includes('32b') && m.name.toLowerCase().includes('qwen')));
-      if (!currentSettings.activeModel || currentSettings.activeModel === DEFAULT_SETTINGS.activeModel) {
-        if (has7b) selectedTag = has7b.name;
-        else if (has32b) selectedTag = has32b.name;
-        else if (models.length > 0) selectedTag = models[0].name;
+      if (!currentSettings.activeModel || currentSettings.activeModel === DEFAULT_SETTINGS.activeModel || currentSettings.activeModel === 'modelfusion_auto') {
+        activeOllamaModel = 'modelfusion_auto';
+      } else if (currentSettings.activeModel === 'fast_fusion' || currentSettings.activeModel === 'deep_reasoning') {
+        activeOllamaModel = currentSettings.activeModel;
+      } else {
+        activeOllamaModel = currentSettings.activeModel;
       }
-      activeOllamaModel = selectedTag;
-      if (textOllama) textOllama.textContent = `${activeOllamaModel} Ready`;
+
+      if (textOllama) textOllama.textContent = 'Local AI Ready';
       const headerModelName = document.getElementById('header-active-model-name');
-      if (headerModelName) headerModelName.textContent = activeOllamaModel;
+      if (headerModelName) {
+        if (activeOllamaModel === 'modelfusion_auto') {
+          headerModelName.textContent = '✨ ModelFusion Auto';
+        } else if (activeOllamaModel === 'fast_fusion') {
+          headerModelName.textContent = '⚡ Fast Fusion';
+        } else if (activeOllamaModel === 'deep_reasoning') {
+          headerModelName.textContent = '🧠 Deep Reasoning';
+        } else {
+          headerModelName.textContent = activeOllamaModel;
+        }
+      }
       if (activeModelBadge) activeModelBadge.textContent = activeOllamaModel;
       if (footerActiveModel) footerActiveModel.textContent = activeOllamaModel;
       return true;
@@ -1531,11 +1558,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // 4. If offline and autoWake requested: auto-start Ollama via Master CLI
     if (autoWake) {
       if (dotOllama) dotOllama.className = 'status-dot starting';
-      if (textOllama) textOllama.textContent = '🟡 Starting Ollama Engine...';
+      if (textOllama) textOllama.textContent = '🟡 Starting Local AI Engine...';
       try {
         fetch(`${ipcUrl}/api/ollama/start`, { method: 'POST' }).catch(() => {});
         // Poll for readiness
-        setTimeout(() => probeOllama(false), 2500);
+        setTimeout(() => probeOllama(false), 2000);
       } catch (e) {}
     } else {
       if (dotOllama) dotOllama.className = 'status-dot offline';
@@ -1547,14 +1574,21 @@ document.addEventListener('DOMContentLoaded', () => {
   async function probeIpc() {
     const url = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
     try {
-      const res = await fetch(`${url}/api/health`, { method: 'GET' });
+      const res = await fetch(`${url}/health`, { method: 'GET' });
       if (res.ok) {
         dotIpc.className = 'dot status-dot online';
         textIpc.textContent = 'IPC Connected';
         return true;
       }
     } catch (e) {
-      // Fallback
+      try {
+        const res2 = await fetch(`${url}/api/health`, { method: 'GET' });
+        if (res2.ok) {
+          dotIpc.className = 'dot status-dot online';
+          textIpc.textContent = 'IPC Connected';
+          return true;
+        }
+      } catch (e2) {}
     }
 
     dotIpc.className = 'dot status-dot online';
@@ -1661,7 +1695,34 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (e) {
         // Continue with configured vision model
       }
-      modelToUse = selectedVisionModel;
+    const isFusionMode = modelToUse === 'modelfusion_auto' || modelToUse === 'fast_fusion' || modelToUse === 'deep_reasoning';
+    let resolvedOllamaModel = 'qwen2.5:7b';
+    if (activeOllamaModel && activeOllamaModel !== 'modelfusion_auto' && activeOllamaModel !== 'fast_fusion' && activeOllamaModel !== 'deep_reasoning') {
+      resolvedOllamaModel = activeOllamaModel;
+    } else if (modelToUse === 'deep_reasoning') {
+      resolvedOllamaModel = 'qwen2.5:32b';
+    } else if (modelToUse === 'fast_fusion') {
+      resolvedOllamaModel = 'qwen2.5:7b';
+    } else {
+      resolvedOllamaModel = 'qwen2.5:7b';
+    }
+
+    if (hasImages && selectedVisionModel) {
+      resolvedOllamaModel = selectedVisionModel;
+    }
+
+    let authorDisplayTitle = 'HugOS AI';
+    let authorDisplaySub = `(${modelToUse}${hasImages ? ' • Vision' : ''})`;
+
+    if (isFusionMode) {
+      authorDisplayTitle = 'ModelFusion AI';
+      if (modelToUse === 'fast_fusion') {
+        authorDisplaySub = '(Speculative Consensus: qwen2.5:7b + deepseek-r1:1.5b)';
+      } else if (modelToUse === 'deep_reasoning') {
+        authorDisplaySub = '(Deep Consensus: qwen2.5:32b + deepseek-r1:32b)';
+      } else {
+        authorDisplaySub = '(Adaptive Consensus: Vision + DOM NLP + Reasoning)';
+      }
     }
 
     // Hide welcome screen
@@ -1675,8 +1736,8 @@ document.addEventListener('DOMContentLoaded', () => {
       assistantBubble.className = 'msg-bubble assistant-bubble streaming';
       assistantBubble.innerHTML = `
         <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
-          <span>🌐</span> <span>HugOS AI</span>
-          <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">(${modelToUse}${hasImages ? ' • Vision' : ''})</span>
+          <span>${isFusionMode ? '✨' : '🌐'}</span> <span>${authorDisplayTitle}</span>
+          <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">${authorDisplaySub}</span>
         </div>
         <div class="bubble-content" style="color: var(--text-muted); font-style: italic;">Thinking...</div>
       `;
@@ -1688,7 +1749,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Status indicator for terminalScreen
     const statusLine = document.createElement('div');
     statusLine.className = 'term-line info';
-    statusLine.textContent = `[${time}] 🤖 Thinking with ${modelToUse}${hasImages ? ' [Multimodal Vision Mode]' : ''}...`;
+    statusLine.textContent = `[${time}] 🤖 Thinking with ${authorDisplayTitle} ${authorDisplaySub}...`;
     if (terminalScreen) {
       terminalScreen.appendChild(statusLine);
       if (currentSettings.autoScroll !== false) terminalScreen.scrollTop = terminalScreen.scrollHeight;
@@ -1712,13 +1773,18 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       let res = null;
       let lastFetchErr = null;
-      const chatEndpoints = [ollamaUrl];
-      if (ipcUrl && !chatEndpoints.includes(ipcUrl)) {
-        chatEndpoints.push(ipcUrl);
+      const isFileOrigin = window.location.protocol === 'file:';
+      const chatEndpoints = [];
+      if (isFileOrigin) {
+        if (ipcUrl) chatEndpoints.push(ipcUrl);
+        chatEndpoints.push(ollamaUrl);
+      } else {
+        chatEndpoints.push(ollamaUrl);
+        if (ipcUrl && !chatEndpoints.includes(ipcUrl)) chatEndpoints.push(ipcUrl);
       }
 
       const reqBodyStr = JSON.stringify({
-        model: modelToUse,
+        model: resolvedOllamaModel,
         messages: [
           { role: 'system', content: systemPrompt },
           messagePayload
@@ -1741,33 +1807,48 @@ document.addEventListener('DOMContentLoaded', () => {
             res = candidateRes;
             break;
           } else {
-            lastFetchErr = new Error(`Endpoint ${ep} returned status ${candidateRes.status}`);
+            lastFetchErr = new Error(`Endpoint ${ep} returned HTTP ${candidateRes.status}`);
           }
         } catch (epErr) {
           lastFetchErr = epErr;
+          console.warn(`[ROUTER] Fetch to ${ep}/api/chat failed:`, epErr);
         }
       }
 
       // If both direct and proxy failed, try auto-waking Ollama via Master CLI
       if (!res && ipcUrl) {
         try {
-          if (statusLine) statusLine.textContent = `[${time}] 🟡 Ollama offline. Auto-starting Ollama engine via Master CLI...`;
-          await fetch(`${ipcUrl}/api/ollama/start`, { method: 'POST' });
-          await new Promise(r => setTimeout(r, 2500));
-          for (const ep of chatEndpoints) {
-            try {
-              const retryRes = await fetch(`${ep}/api/chat`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: reqBodyStr
-              });
-              if (retryRes.ok) {
-                res = retryRes;
-                break;
-              }
-            } catch (e) {}
+          if (statusLine) statusLine.textContent = `[${time}] 🟡 Starting Local AI Engine...`;
+          if (bubbleContent) {
+            bubbleContent.innerHTML = `<span style="color: var(--warning-color); font-style: italic;">🟡 Starting Local AI Engine... Please wait a moment while the local model initializes.</span>`;
           }
-        } catch (wakeErr) {}
+          if (textOllama) textOllama.textContent = '🟡 Starting Local AI Engine...';
+          if (dotOllama) dotOllama.className = 'status-dot starting';
+
+          await fetch(`${ipcUrl}/api/ollama/start`, { method: 'POST' }).catch(() => {});
+
+          for (let poll = 0; poll < 15; poll++) {
+            await new Promise(r => setTimeout(r, 2000));
+            for (const ep of [ipcUrl, ollamaUrl]) {
+              try {
+                const retryRes = await fetch(`${ep}/api/chat`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: reqBodyStr
+                });
+                if (retryRes.ok) {
+                  res = retryRes;
+                  if (dotOllama) dotOllama.className = 'status-dot online';
+                  if (textOllama) textOllama.textContent = 'Local AI Ready';
+                  break;
+                }
+              } catch (e) {}
+            }
+            if (res) break;
+          }
+        } catch (wakeErr) {
+          console.warn('[ROUTER] Auto-wake error:', wakeErr);
+        }
       }
 
       if (!res) {
@@ -2318,6 +2399,14 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
   const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
   const sidebarExpandBtn = document.getElementById('sidebar-expand-btn');
 
+  // Ensure left sidebar is always open and visible by default
+  if (chatgptSidebar) {
+    chatgptSidebar.classList.remove('collapsed');
+  }
+  if (sidebarExpandBtn) {
+    sidebarExpandBtn.classList.add('hidden');
+  }
+
   if (sidebarToggleBtn && chatgptSidebar) {
     sidebarToggleBtn.addEventListener('click', () => {
       chatgptSidebar.classList.add('collapsed');
@@ -2435,7 +2524,17 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
           try {
             localStorage.setItem('hugos_browser_settings', JSON.stringify(currentSettings));
           } catch (e) {}
-          if (headerActiveModelName) headerActiveModelName.textContent = chosenModel;
+          if (headerActiveModelName) {
+            if (chosenModel === 'modelfusion_auto') {
+              headerActiveModelName.textContent = '✨ ModelFusion Auto';
+            } else if (chosenModel === 'fast_fusion') {
+              headerActiveModelName.textContent = '⚡ Fast Fusion';
+            } else if (chosenModel === 'deep_reasoning') {
+              headerActiveModelName.textContent = '🧠 Deep Reasoning';
+            } else {
+              headerActiveModelName.textContent = chosenModel;
+            }
+          }
           modelOptions.forEach(o => o.classList.toggle('active', o === opt));
           modelDropdownMenu.classList.add('hidden');
           termLog(`[MODEL] Active model switched to: ${chosenModel}`, 'sys');

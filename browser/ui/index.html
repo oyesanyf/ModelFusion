@@ -38,14 +38,14 @@
       </nav>
 
       <div class="sidebar-bottom-section">
+        <button type="button" class="sidebar-nav-item" id="sidebar-settings" title="Settings (Ctrl+,)">
+          <span class="nav-item-icon">⚙️</span>
+          <span class="nav-item-text">Settings</span>
+        </button>
         <button type="button" class="sidebar-nav-item" id="sidebar-models" title="See Hardware &amp; Local Model Recommendations">
           <span class="nav-item-icon">🌐</span>
           <span class="nav-item-text">See models &amp; hardware</span>
           <span class="nav-item-ext">↗</span>
-        </button>
-        <button type="button" class="sidebar-nav-item" id="sidebar-settings" title="Settings (Ctrl+,)">
-          <span class="nav-item-icon">⚙️</span>
-          <span class="nav-item-text">Settings</span>
         </button>
         <button type="button" class="sidebar-nav-item" id="sidebar-help" title="ModelFusion Documentation &amp; Help">
           <span class="nav-item-icon">❓</span>
@@ -69,25 +69,39 @@
           
           <div class="model-picker-wrapper" id="model-picker-wrapper">
             <button type="button" class="model-selector-btn" id="model-selector-dropdown">
-              <span id="header-active-model-name">HugOS AI</span>
+              <span id="header-active-model-name">✨ ModelFusion Auto</span>
               <span class="dropdown-chevron">⌄</span>
             </button>
             <div class="model-dropdown-menu hidden" id="model-dropdown-menu">
-              <div class="model-opt active" data-model="qwen2.5:7b">
+              <div class="model-opt active" data-model="modelfusion_auto">
+                <span class="opt-name">🌟 ModelFusion Auto (Default)</span>
+                <span class="opt-desc">Multi-Model Adaptive Consensus &amp; Specialist Routing</span>
+              </div>
+              <div class="model-opt" data-model="fast_fusion">
+                <span class="opt-name">⚡ ModelFusion Fast Fusion</span>
+                <span class="opt-desc">Dual-Model Speculative Consensus (qwen2.5:7b + deepseek-r1:1.5b)</span>
+              </div>
+              <div class="model-opt" data-model="deep_reasoning">
+                <span class="opt-name">🧠 ModelFusion Deep Reasoning</span>
+                <span class="opt-desc">High-Capacity Consensus (qwen2.5:32b + deepseek-r1:32b)</span>
+              </div>
+              <div class="model-dropdown-divider" style="height: 1px; background: var(--border-color); margin: 4px 0;"></div>
+              <div class="model-opt-header" style="font-size: 10px; text-transform: uppercase; color: var(--text-muted); padding: 4px 10px; font-weight: 600;">Single Model Overrides</div>
+              <div class="model-opt" data-model="qwen2.5:7b">
                 <span class="opt-name">qwen2.5:7b</span>
-                <span class="opt-desc">Balanced NLP &amp; DOM Reasoning (Default)</span>
+                <span class="opt-desc">Direct Single Model - High Speed</span>
               </div>
               <div class="model-opt" data-model="qwen2.5:32b">
                 <span class="opt-name">qwen2.5:32b</span>
-                <span class="opt-desc">Heavyweight Instruction &amp; Fusion</span>
+                <span class="opt-desc">Direct Single Model - Heavyweight</span>
               </div>
               <div class="model-opt" data-model="deepseek-r1:1.5b">
                 <span class="opt-name">deepseek-r1:1.5b</span>
-                <span class="opt-desc">Fast Reasoning &amp; Verification</span>
+                <span class="opt-desc">Direct Single Model - Fast Verification</span>
               </div>
               <div class="model-opt" data-model="deepseek-r1:32b">
                 <span class="opt-name">deepseek-r1:32b</span>
-                <span class="opt-desc">Deep Architectural Synthesis</span>
+                <span class="opt-desc">Direct Single Model - Deep Synthesis</span>
               </div>
             </div>
           </div>

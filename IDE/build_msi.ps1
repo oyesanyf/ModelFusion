@@ -677,13 +677,29 @@ foreach ($vDir in $versionedDirs) {
     # 4. Copilot dist/extension.js
     $srcExt = Join-Path $vsCodePackDir "resources\app\extensions\copilot\dist\extension.js"
     if (Test-Path $srcExt) {
-        Copy-Item -Path $srcExt -Destination (Join-Path $vCopilotDistDir "extension.js") -Force
+        $dstExt = Join-Path $vCopilotDistDir "extension.js"
+        for ($retry = 0; $retry -lt 5; $retry++) {
+            try {
+                Copy-Item -Path $srcExt -Destination $dstExt -Force -ErrorAction Stop
+                break
+            } catch {
+                Start-Sleep -Milliseconds 500
+            }
+        }
     }
     
     # 5. Workbench main js
     $srcWb = Join-Path $vsCodePackDir "resources\app\out\vs\workbench\workbench.desktop.main.js"
     if (Test-Path $srcWb) {
-        Copy-Item -Path $srcWb -Destination (Join-Path $vOutVsDir "workbench.desktop.main.js") -Force
+        $dstWb = Join-Path $vOutVsDir "workbench.desktop.main.js"
+        for ($retry = 0; $retry -lt 5; $retry++) {
+            try {
+                Copy-Item -Path $srcWb -Destination $dstWb -Force -ErrorAction Stop
+                break
+            } catch {
+                Start-Sleep -Milliseconds 500
+            }
+        }
     }
     
     # 5.1 Main entry point js (electron main process)
@@ -691,7 +707,15 @@ foreach ($vDir in $versionedDirs) {
     if (Test-Path $srcMain) {
         $vOutMainDir = Join-Path $vAppDir "out"
         if (-not (Test-Path $vOutMainDir)) { New-Item -ItemType Directory -Path $vOutMainDir -Force | Out-Null }
-        Copy-Item -Path $srcMain -Destination (Join-Path $vOutMainDir "main.js") -Force
+        $dstMain = Join-Path $vOutMainDir "main.js"
+        for ($retry = 0; $retry -lt 5; $retry++) {
+            try {
+                Copy-Item -Path $srcMain -Destination $dstMain -Force -ErrorAction Stop
+                break
+            } catch {
+                Start-Sleep -Milliseconds 500
+            }
+        }
     }
 
     # 5.2 Deploy authoritative NLS localization tables
@@ -807,14 +831,12 @@ if (Test-Path $msiPath) {
 # Allow file handles to settle before WiX packaging
 [System.GC]::Collect()
 [System.GC]::WaitForPendingFinalizers()
-Start-Sleep -Seconds 3
+Start-Sleep -Seconds 6
 
 # Kill any lingering wix or wixnative processes from previous runs
 Stop-Process -Name wix, wixnative -Force -ErrorAction SilentlyContinue
 Remove-Item "$env:LOCALAPPDATA\Temp\#cab*" -Force -Recurse -ErrorAction SilentlyContinue
 Remove-Item "$env:TEMP\#cab*" -Force -Recurse -ErrorAction SilentlyContinue
-
-# Ensure Windows Installer service is running for WiX native database operations
 Start-Service -Name msiserver -ErrorAction SilentlyContinue
 
 # Resolve WiX toolset binary explicitly
@@ -828,9 +850,12 @@ if (-not (Test-Path $wixExe)) {
 }
 Write-Host "[INFO] Using WiX Toolset at: $wixExe" -ForegroundColor Yellow
 
+# Ensure Windows Installer service is running before WiX database generation
+Start-Service -Name msiserver -ErrorAction SilentlyContinue
+
 # Run wix build with multi-threaded cabinet compression and bind path
 & $wixExe build -b $PSScriptRoot -arch x64 -ct 4 $wxsPath -out $msiPath
-if ($LASTEXITCODE -ne 0) {
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path $msiPath)) {
     Write-Host "[ERROR] WiX build failed." -ForegroundColor Red
     Exit 1
 }

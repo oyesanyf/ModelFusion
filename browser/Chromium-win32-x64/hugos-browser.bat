@@ -30,7 +30,8 @@ if exist "%SCRIPT_DIR%..\bin\cli.exe" (
     set "CLI_BIN=%LOCALAPPDATA%\HugOS IDE\bin\cli.exe"
 )
 
-REM 0a. Check & Auto-start Ollama Local AI Engine
+REM 0a. Check & Auto-start Ollama Local AI Engine with Open CORS
+set "OLLAMA_ORIGINS=*"
 curl -s -o nul --max-time 2 http://127.0.0.1:11434/api/tags
 if errorlevel 1 (
     echo [INFO] Ollama engine not responding. Auto-starting Ollama...
@@ -55,12 +56,19 @@ if errorlevel 1 (
 )
 
 REM 0c. Determine Startup URL (default to Master Server HTTP origin to prevent null CORS)
-set "START_URL=http://localhost:5000"
+set "START_URL=http://localhost:5000/index.html"
 if not "%~1"=="" (
     set "START_URL=%~1"
-) else (
-    curl -s -o nul --max-time 2 http://127.0.0.1:5000/health
-    if errorlevel 1 (
+)
+curl -s -o nul --max-time 2 http://127.0.0.1:5000/health
+if errorlevel 1 (
+    if "%START_URL%"=="http://localhost:5000" (
+        set "START_URL=file:///%HOME_FILE_PATH:\=/%"
+    )
+    if "%START_URL%"=="http://localhost:5000/index.html" (
+        set "START_URL=file:///%HOME_FILE_PATH:\=/%"
+    )
+    if "%START_URL%"=="http://127.0.0.1:5000/index.html" (
         set "START_URL=file:///%HOME_FILE_PATH:\=/%"
     )
 )

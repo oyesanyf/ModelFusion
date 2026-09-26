@@ -1986,10 +1986,10 @@ body.theme-warm .chat-input-box {
 
 /* 1. Layout Container */
 .chatgpt-app {
-  display: flex;
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden;
+  display: flex !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  overflow: hidden !important;
   background-color: var(--bg-canvas);
   color: var(--text-primary);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -1997,10 +1997,12 @@ body.theme-warm .chat-input-box {
 
 /* 2. Left Sidebar */
 .chatgpt-sidebar {
-  width: 260px;
-  min-width: 260px;
-  height: 100%;
-  display: flex;
+  width: 260px !important;
+  min-width: 260px !important;
+  max-width: 260px !important;
+  flex-shrink: 0 !important;
+  height: 100% !important;
+  display: flex !important;
   flex-direction: column;
   background-color: var(--bg-sidebar);
   border-right: 1px solid var(--border-color);
@@ -2013,12 +2015,14 @@ body.theme-warm .chat-input-box {
 .chatgpt-sidebar.collapsed {
   width: 0 !important;
   min-width: 0 !important;
+  max-width: 0 !important;
   padding: 0 !important;
-  margin-left: -260px;
-  opacity: 0;
-  overflow: hidden;
-  border-right: none;
-  pointer-events: none;
+  margin-left: -260px !important;
+  opacity: 0 !important;
+  overflow: hidden !important;
+  border-right: none !important;
+  pointer-events: none !important;
+  display: none !important;
 }
 
 .sidebar-top {
@@ -2513,33 +2517,81 @@ body.theme-warm .chat-input-box {
   line-height: 1.4;
 }
 
-/* 5. Clean Conversation View */
+/* 5. Clean Conversation View (Centered ChatGPT Column Width) */
 .chatgpt-conversation-view {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
 }
 
 .chatgpt-conversation-view .chat-messages {
-  flex: 1;
-  overflow-y: auto;
-  padding: 24px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  width: 100%;
-  max-width: 800px;
-  margin: 0 auto;
+  flex: 1 !important;
+  overflow-y: auto !important;
+  padding: 24px 16px 140px 16px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 20px !important;
+  width: 100% !important;
+  max-width: 768px !important;
+  margin: 0 auto !important;
+}
+
+.chat-messages .msg-bubble {
+  max-width: 85% !important;
+  font-size: 15px !important;
+  line-height: 1.6 !important;
+  border-radius: 18px !important;
+  padding: 12px 18px !important;
+  position: relative !important;
+  word-break: break-word !important;
+}
+
+.chat-messages .user-bubble {
+  align-self: flex-end !important;
+  background: #2f2f2f !important;
+  color: #ececec !important;
+  border-radius: 18px !important;
+  border: none !important;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1) !important;
+}
+
+body.theme-white .chat-messages .user-bubble,
+body.theme-light .chat-messages .user-bubble {
+  background: #f4f4f4 !important;
+  color: #0d0d0d !important;
+  border: 1px solid #e5e5e5 !important;
+}
+
+.chat-messages .assistant-bubble {
+  align-self: flex-start !important;
+  background: transparent !important;
+  border: none !important;
+  color: var(--text-primary) !important;
+  padding: 0 !important;
+  max-width: 100% !important;
+  width: 100% !important;
+  box-shadow: none !important;
+}
+
+.chat-messages .assistant-bubble .assistant-text {
+  font-size: 15px !important;
+  line-height: 1.6 !important;
+  color: var(--text-primary) !important;
+}
+
+/* HIDE all developer system spam pills from the chat! */
+.sys-bubble {
+  display: none !important;
 }
 
 .pinned-bottom-wrapper {
   padding: 12px 20px 16px;
-  width: 100%;
-  max-width: 760px;
-  margin: 0 auto;
+  width: 100% !important;
+  max-width: 768px !important;
+  margin: 0 auto !important;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
