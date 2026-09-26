@@ -71,6 +71,10 @@
           <span class="dot status-dot" id="dot-cdp"></span>
           <span class="status-text" id="text-cdp">CDP :9222</span>
         </div>
+        <button class="theme-toggle-btn" id="btn-theme-toggle" title="Toggle Theme (White / Dark / Midnight / Warm / Obsidian)">
+          <span class="theme-toggle-icon" id="theme-toggle-icon">☀️</span>
+          <span class="theme-toggle-text" id="theme-toggle-text">Theme</span>
+        </button>
         <button class="settings-nav-btn" id="btn-open-settings" title="HugOS Browser Settings (Ctrl+,)">
           <span class="settings-nav-icon">⚙️</span>
           <span class="settings-nav-text">Settings</span>
@@ -82,157 +86,54 @@
     <main class="main-viewport">
       <!-- 1. DASHBOARD VIEW (Default Home) -->
       <div class="view-panel" id="dashboard-view">
-        <div class="dashboard-scroll">
-          <!-- Privacy & Zero-Cloud Guarantee Banner -->
-          <div class="privacy-badge">
-            <span class="shield-icon">🛡️</span>
-            <div class="privacy-text">
-              <strong>Zero Cloud / Paid Models Guaranteed</strong>
-              <span>100% offline, privacy-first local AI execution powered by ModelFusion CLI & local Ollama engine.</span>
+        <div class="chat-container">
+          <div class="chat-welcome" id="chat-welcome">
+            <div class="welcome-badge">🛡️ Zero-Cloud Local Intelligence</div>
+            <div class="welcome-icon">🌐</div>
+            <h1 class="welcome-title">HugOS Intelligent Browser</h1>
+            <p class="welcome-subtitle">Ask anything, research the live web, analyze documents, or enter any URL in the omnibox above to browse.</p>
+          </div>
+
+          <div class="chat-messages" id="chat-messages">
+            <!-- Dynamic user and assistant message bubbles will render here -->
+            <div class="msg-bubble sys-bubble" id="initial-sys-msg">
+              <span class="bubble-tag">[SYSTEM]</span> HugOS Browser ready. Local AI engine active with real-time web search routing and multimodal fusion.
             </div>
           </div>
 
-          <!-- Hardware & Model Sizing Banner -->
-          <div class="hardware-card">
-            <div class="hw-header">
-              <div class="hw-title-group">
-                <span class="hw-icon">⚡</span>
-                <div>
-                  <h3 class="hw-heading">Active Hardware & Local Intelligence</h3>
-                  <p class="hw-sub">Dynamically scaled based on runtime available system memory</p>
-                </div>
-              </div>
-              <div class="hw-badge" id="active-model-badge">Qwen 2.5 (32B / 14B / 7B)</div>
-            </div>
-
-            <div class="hw-stats-grid">
-              <div class="hw-stat-item">
-                <span class="stat-label">Active Model Engine</span>
-                <span class="stat-value" id="stat-model">Auto-Detecting...</span>
-              </div>
-              <div class="hw-stat-item">
-                <span class="stat-label">Runtime Available RAM</span>
-                <span class="stat-value" id="stat-ram">Probing system...</span>
-              </div>
-              <div class="hw-stat-item">
-                <span class="stat-label">Detected VRAM</span>
-                <span class="stat-value" id="stat-vram">Probing GPU...</span>
-              </div>
-              <div class="hw-stat-item">
-                <span class="stat-label">Multi-Modal Tasks</span>
-                <span class="stat-value" id="stat-tasks">45 HF Tasks Supported</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Quick Launch Tiles -->
-          <section class="tiles-section">
-            <h2 class="section-title">Quick Launch & Discovery Workflows</h2>
-            <div class="tiles-grid">
-              <div class="launch-tile" id="tile-automl" data-url="https://raw.githubusercontent.com/mwaskom/seaborn-data/master/titanic.csv" data-action="acdso">
-                <div class="tile-icon">📊</div>
-                <div class="tile-content">
-                  <h4 class="tile-title">Data Science & AutoML</h4>
-                  <p class="tile-desc">Extract tabular datasets and launch 5-objective Pareto ACDSO (Accuracy, Cost, Memory, Latency, Risk).</p>
-                  <div class="tile-tags">
-                    <span class="tile-tag">Seaborn Datasets</span>
-                    <span class="tile-tag">Pareto Frontier</span>
-                    <span class="tile-tag">Kaggle Ready</span>
-                  </div>
-                </div>
-              </div>
-
-              <div class="launch-tile" id="tile-arxiv" data-url="https://arxiv.org/list/cs.AI/recent" data-action="summarize">
-                <div class="tile-icon">📄</div>
-                <div class="tile-content">
-                  <h4 class="tile-title">arXiv & Technical Docs</h4>
-                  <p class="tile-desc">Read academic papers, specifications, and docs with token-pruned semantic summaries & AST reduction.</p>
-                  <div class="tile-tags">
-                    <span class="tile-tag">arXiv CS.AI</span>
-                    <span class="tile-tag">90% Token Reduction</span>
-                    <span class="tile-tag">PDF / HTML</span>
-                  </div>
-                </div>
-              </div>
-
-              <div class="launch-tile" id="tile-scraper" data-url="https://en.wikipedia.org/wiki/Comparison_of_deep_learning_software" data-action="extract">
-                <div class="tile-icon">🌐</div>
-                <div class="tile-content">
-                  <h4 class="tile-title">Web Scraper & Crawler</h4>
-                  <p class="tile-desc">Structured HTML table, CSV, and interactive entity extractor with Set-of-Mark visual grounding.</p>
-                  <div class="tile-tags">
-                    <span class="tile-tag">Set-of-Mark</span>
-                    <span class="tile-tag">CSV Export</span>
-                    <span class="tile-tag">Semantic Parsing</span>
-                  </div>
-                </div>
-              </div>
-
-              <div class="launch-tile" id="tile-localhost" data-url="http://localhost:3000" data-action="devserver">
-                <div class="tile-icon">💻</div>
-                <div class="tile-content">
-                  <h4 class="tile-title">Localhost Dev Server</h4>
-                  <p class="tile-desc">Inspect local web applications with Chrome DevTools Protocol, live console errors, and HAR capture.</p>
-                  <div class="tile-tags">
-                    <span class="tile-tag">localhost:3000</span>
-                    <span class="tile-tag">CDP Inspection</span>
-                    <span class="tile-tag">HAR Logs</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <!-- Autonomous CLI Command Runner -->
-          <section class="cli-runner-section">
-            <div class="cli-header">
-              <div class="cli-title-group">
-                <span class="cli-icon">⚡</span>
-                <div>
-                  <h3 class="cli-heading">Autonomous Master CLI Command Runner</h3>
-                  <p class="cli-sub">Directly dispatch multi-agent browser directives to ModelFusion Master CLI</p>
-                </div>
-              </div>
-              <div class="cli-actions">
-                <button class="cli-btn-secondary" id="btn-clear-console">Clear Console</button>
-                <button class="cli-btn-secondary" id="btn-copy-logs">Copy Logs</button>
-              </div>
-            </div>
-
-            <!-- Suggestion Chips -->
-            <div class="command-chips">
-              <button class="cmd-chip" data-cmd="/browser https://en.wikipedia.org/wiki/Comparison_of_deep_learning_software">/browser wikipedia tables</button>
-              <button class="cmd-chip" data-cmd="/acdso https://raw.githubusercontent.com/mwaskom/seaborn-data/master/titanic.csv">/acdso titanic dataset</button>
-              <button class="cmd-chip" data-cmd="@agent browser find top trending vision-language models on hugging face">@agent browser trending VLMs</button>
-              <button class="cmd-chip" data-cmd="/som">/som (Set-of-Mark)</button>
-              <button class="cmd-chip" data-cmd="/summarize">/summarize</button>
-              <button class="cmd-chip" data-cmd="--sys-info">--sys-info</button>
-            </div>
-
-            <!-- File Attachment Tray -->
+          <!-- Floating Bottom Input Area -->
+          <div class="input-container-wrapper">
             <div class="attachment-tray hidden" id="attachment-tray"></div>
-
-            <!-- Terminal Input Line -->
-            <div class="terminal-input-bar">
-              <button type="button" class="cli-input-btn" id="btn-attach-file" title="Attach file (Code, CSV, Text, JSON, PDF, etc.)">📎</button>
-              <input type="file" id="file-picker" multiple class="hidden">
-              <button type="button" class="cli-input-btn web-mode-btn" id="btn-web-mode" title="Toggle Internet Search mode (Auto / On / Off)">
+            <div class="chat-input-box">
+              <button type="button" class="action-icon-btn" id="btn-attach-file" title="Attach image, dataset, code, or document">📎</button>
+              <input type="file" id="file-picker" style="display: none !important;" multiple accept="image/*,audio/*,.csv,.tsv,.parquet,.xlsx,.json,.pdf,.py,.rs,.js,.ts,.html,.css,.md,.txt">
+              <button type="button" class="web-mode-pill" id="btn-web-mode" title="Toggle Web Search Mode (Auto / On / Off)">
                 <span id="web-mode-icon">🌐</span>
                 <span id="web-mode-label">Web: Auto</span>
               </button>
-              <span class="prompt-sym">hugos-cli &gt;</span>
-              <input type="text" id="cli-prompt-input" placeholder="Type @agent browser &lt;task&gt;, /browser &lt;url&gt;, /acdso, or natural language prompt..." spellcheck="false">
-              <button class="cli-run-btn" id="btn-run-cli">Execute</button>
+              <textarea id="cli-prompt-input" rows="1" placeholder="Ask anything, search the web, or enter a prompt..." spellcheck="false"></textarea>
+              <button type="button" class="send-btn" id="btn-run-cli" title="Send message (Enter)">➔</button>
             </div>
+            <div class="input-footer-hint">
+              <span>Model: <strong id="footer-active-model">Qwen 2.5</strong></span>
+              <span>•</span>
+              <span>Press <strong>Enter</strong> to send, <strong>Shift+Enter</strong> for new line</span>
+              <span>•</span>
+              <span><strong>Ctrl+,</strong> for Settings</span>
+            </div>
+          </div>
+        </div>
 
-            <!-- Live Terminal Output Screen -->
-            <div class="terminal-screen" id="terminal-screen">
-              <div class="term-line sys">[SYSTEM] HugOS Intelligent Browser Environment Initialized.</div>
-              <div class="term-line sys">[INFO] Master CLI: cli.exe (Authoritative Build Target)</div>
-              <div class="term-line sys">[INFO] Chrome DevTools Protocol Target: localhost:9222</div>
-              <div class="term-line ready">[READY] Type a command above or enter any web URL in the omnibox to begin.</div>
-            </div>
-          </section>
+        <!-- Hidden DOM bridges for logging/compatibility -->
+        <div style="display: none !important;" aria-hidden="true">
+          <div id="terminal-screen"></div>
+          <button id="btn-clear-console"></button>
+          <button id="btn-copy-logs"></button>
+          <span id="active-model-badge"></span>
+          <span id="stat-model"></span>
+          <span id="stat-ram"></span>
+          <span id="stat-vram"></span>
+          <span id="stat-tasks"></span>
         </div>
       </div>
 
@@ -432,9 +333,11 @@
               </div>
               <div class="setting-control">
                 <select id="setting-theme" class="setting-select">
-                  <option value="dark-plus" selected>Dark+ (Default HugOS)</option>
+                  <option value="white">ChatGPT White (Clean Modern Light)</option>
+                  <option value="dark-plus" selected>ChatGPT Dark (Slate Dark)</option>
                   <option value="obsidian">Obsidian (Pure Pitch Black)</option>
                   <option value="midnight">Midnight (Deep Navy)</option>
+                  <option value="warm">Warm Reading (Sepia &amp; Cream)</option>
                 </select>
               </div>
             </div>
@@ -659,10 +562,38 @@
             <div class="setting-item">
               <div class="setting-info">
                 <label for="setting-vision-model" class="setting-label">Vision Specialist Model</label>
-                <span class="setting-desc">Specialized visual grounding model tag for Set-of-Mark and image analysis.</span>
+                <span class="setting-desc">Specialized visual grounding model for Set-of-Mark and image reasoning.</span>
               </div>
               <div class="setting-control">
-                <input type="text" id="setting-vision-model" class="setting-input" value="qwen2.5-vl" spellcheck="false">
+                <select id="setting-vision-model" class="setting-select">
+                  <option value="qwen2.5-vl" selected>qwen2.5-vl (Qwen 2.5 Vision-Language - Recommended)</option>
+                  <option value="llama3.2-vision">llama3.2-vision (Llama 3.2 Vision 11B)</option>
+                  <option value="llava">llava (LLaVA 1.6 7B/13B)</option>
+                  <option value="bakllava">bakllava (BakLLaVA Multimodal)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-audio-model" class="setting-label">Audio Specialist Model</label>
+                <span class="setting-desc">Speech recognition and acoustic transcription model tag (e.g. Whisper).</span>
+              </div>
+              <div class="setting-control">
+                <input type="text" id="setting-audio-model" class="setting-input" value="whisper-base" spellcheck="false">
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-multimodal-auto" class="setting-label">Multimodal Auto-Routing</label>
+                <span class="setting-desc">Automatically route prompts and attachments to specialized vision, audio, tabular, and reasoning panels.</span>
+              </div>
+              <div class="setting-control">
+                <label class="setting-toggle-label">
+                  <input type="checkbox" id="setting-multimodal-auto" checked>
+                  <span class="toggle-text">Multimodal Auto-Routing Enabled</span>
+                </label>
               </div>
             </div>
 
