@@ -114,7 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ollamaUrl: 'http://127.0.0.1:11434',
     ipcUrl: 'http://127.0.0.1:5000',
     cdpPort: 9222,
-    activeModel: 'qwen2.5:7b',
+    activeModel: 'modelfusion_auto',
     visionModel: 'qwen2.5-vl',
     audioModel: 'whisper-base',
     multimodalAuto: true,
@@ -1529,8 +1529,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       // Select active model
-      if (!currentSettings.activeModel || currentSettings.activeModel === DEFAULT_SETTINGS.activeModel) {
-        activeOllamaModel = 'qwen2.5:7b';
+      if (!currentSettings.activeModel || currentSettings.activeModel === DEFAULT_SETTINGS.activeModel || currentSettings.activeModel === 'modelfusion_auto') {
+        activeOllamaModel = 'modelfusion_auto';
       } else {
         activeOllamaModel = currentSettings.activeModel;
       }
