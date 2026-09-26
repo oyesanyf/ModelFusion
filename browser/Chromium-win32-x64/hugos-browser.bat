@@ -17,8 +17,53 @@ if not exist "%DEFAULT_HOME%" (
     )
 )
 for %%i in ("%DEFAULT_HOME%") do set "HOME_FILE_PATH=%%~fi"
-set "START_URL=file:///%HOME_FILE_PATH:\=/%"
-if not "%~1"=="" set "START_URL=%~1"
+
+REM 0. Discover ModelFusion Master CLI Binary
+set CLI_BIN=
+if exist "%SCRIPT_DIR%..\bin\cli.exe" (
+    set "CLI_BIN=%SCRIPT_DIR%..\bin\cli.exe"
+) else if exist "%SCRIPT_DIR%..\..\target\release\cli.exe" (
+    set "CLI_BIN=%SCRIPT_DIR%..\..\target\release\cli.exe"
+) else if exist "%LOCALAPPDATA%\HugOS Browser\bin\cli.exe" (
+    set "CLI_BIN=%LOCALAPPDATA%\HugOS Browser\bin\cli.exe"
+) else if exist "%LOCALAPPDATA%\HugOS IDE\bin\cli.exe" (
+    set "CLI_BIN=%LOCALAPPDATA%\HugOS IDE\bin\cli.exe"
+)
+
+REM 0a. Check & Auto-start Ollama Local AI Engine
+curl -s -o nul --max-time 2 http://127.0.0.1:11434/api/tags
+if errorlevel 1 (
+    echo [INFO] Ollama engine not responding. Auto-starting Ollama...
+    if not "%CLI_BIN%"=="" (
+        "%CLI_BIN%" --ensure-ollama
+    ) else (
+        where ollama >nul 2>&1
+        if not errorlevel 1 (
+            start /B "" "ollama" serve
+        )
+    )
+)
+
+REM 0b. Check & Auto-start ModelFusion Master Server on port 5000
+curl -s -o nul --max-time 2 http://127.0.0.1:5000/health
+if errorlevel 1 (
+    echo [INFO] ModelFusion Master Server offline on port 5000. Auto-starting server...
+    if not "%CLI_BIN%"=="" (
+        start /B "" "%CLI_BIN%" --server --port 5000
+        timeout /t 1 /nobreak >nul
+    )
+)
+
+REM 0c. Determine Startup URL (default to Master Server HTTP origin to prevent null CORS)
+set "START_URL=http://localhost:5000"
+if not "%~1"=="" (
+    set "START_URL=%~1"
+) else (
+    curl -s -o nul --max-time 2 http://127.0.0.1:5000/health
+    if errorlevel 1 (
+        set "START_URL=file:///%HOME_FILE_PATH:\=/%"
+    )
+)
 
 set USER_DATA_DIR=%LOCALAPPDATA%\HugOS Browser\User Data
 if not exist "%USER_DATA_DIR%" mkdir "%USER_DATA_DIR%"

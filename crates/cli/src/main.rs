@@ -1355,6 +1355,9 @@ struct Args {
     #[arg(long, help = "Launch interactive HugOS Browser with ModelFusion AI sidebar")]
     browser: bool,
 
+    #[arg(long, help = "Ensure Ollama engine is installed and running")]
+    ensure_ollama: bool,
+
     #[arg(long, help = "Autonomous goal-directed web navigation and data collection task")]
     browser_task: Option<String>,
 
@@ -1914,8 +1917,21 @@ async fn run(args: Args) -> Result<()> {
     }
 
     // Auto-start Ollama if it is not running
-    if args.prompt.is_some() || args.query.is_some() || args.server || args.mcp {
+    if args.prompt.is_some() || args.query.is_some() || args.server || args.mcp || args.browser || args.browser_task.is_some() || args.browser_extract.is_some() || args.ensure_ollama {
         let _ = model_selection::memory::ensure_ollama_running();
+    }
+
+    if args.ensure_ollama {
+        match model_selection::memory::ensure_ollama_running() {
+            Ok(_) => {
+                println!("✅ [OLLAMA] Ollama daemon is active and running.");
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("❌ [OLLAMA] Failed to start Ollama: {}", e);
+                std::process::exit(1);
+            }
+        }
     }
 
     if args.verbose || args.debug {
@@ -2481,6 +2497,14 @@ async fn run(args: Args) -> Result<()> {
                 return Ok(());
             }
         }
+
+        // Ensure Ollama daemon is active and running
+        if let Err(e) = model_selection::memory::ensure_ollama_running() {
+            eprintln!("⚠️ [WARN] Could not auto-start Ollama: {}", e);
+        }
+
+        // Ensure Master CLI server is active on port 5000 in background
+        ensure_server_running(5000).await;
 
         // Default: --browser without task -> Launch or report HugOS Browser
         println!("🌐 [BROWSER] HugOS Intelligent Browser");
@@ -5797,6 +5821,75 @@ pub fn parse_query_and_limit_from_request(raw_uri: &str, request_json: &serde_js
     (query.trim().to_string(), max_results)
 }
 
+/// Locates the `browser/ui` directory containing the HugOS Browser web assets.
+fn find_browser_ui_dir() -> Option<std::path::PathBuf> {
+    // 1. Current working directory
+    let cwd_candidates = ["browser/ui", "ui"];
+    for cand in cwd_candidates {
+        let p = std::path::PathBuf::from(cand);
+        if p.is_dir() && p.join("index.html").is_file() {
+            return Some(p);
+        }
+    }
+
+    // 2. Relative to current exe
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(dir) = exe_path.parent() {
+            let candidates = [
+                dir.join("../../browser/ui"),
+                dir.join("../browser/ui"),
+                dir.join("../ui"),
+                dir.join("ui"),
+            ];
+            for cand in candidates {
+                if cand.is_dir() && cand.join("index.html").is_file() {
+                    return Some(cand);
+                }
+            }
+        }
+    }
+
+    // 3. Installed production location
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        let p = std::path::PathBuf::from(local_app_data).join("HugOS Browser/ui");
+        if p.is_dir() && p.join("index.html").is_file() {
+            return Some(p);
+        }
+    }
+
+    None
+}
+
+/// Ensures the ModelFusion Master Server is responding on the given port, spawning it in the background if absent.
+async fn ensure_server_running(port: u16) {
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_millis(500))
+        .build()
+        .unwrap_or_default();
+    let health_url = format!("http://127.0.0.1:{}/health", port);
+    if let Ok(res) = client.get(&health_url).send().await {
+        if res.status().is_success() {
+            return;
+        }
+    }
+
+    if let Ok(exe_path) = std::env::current_exe() {
+        let _ = std::process::Command::new(exe_path)
+            .args(["--server", "--port", &port.to_string()])
+            .spawn();
+        for _ in 0..10 {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            if let Ok(res) = client.get(&health_url).send().await {
+                if res.status().is_success() {
+                    println!("🚀 [SERVER] ModelFusion Master Server auto-started on port {}", port);
+                    break;
+                }
+            }
+        }
+    }
+}
+
 async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: bool) -> Result<()> {
     // Set default runtime backend flags once at startup so they remain read-only during server lifetime
     std::env::set_var("MODELFUSION_USE_OLLAMA", "true");
@@ -5930,6 +6023,188 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
             let db_path_str = db_path_clone.clone().unwrap_or_else(|| "db/hf_models.db".to_string());
             let db_path_val = std::path::Path::new(&db_path_str);
+
+            // ── Static Web UI Files Serving (HugOS Browser UI) ──
+            if request_path == "/" || request_path == "/index.html" || request_path == "/styles.css" || request_path == "/app.js" || request_path.starts_with("/ui/") {
+                if let Some(ui_dir) = find_browser_ui_dir() {
+                    let file_name = if request_path == "/" || request_path == "/index.html" {
+                        "index.html"
+                    } else if request_path == "/styles.css" {
+                        "styles.css"
+                    } else if request_path == "/app.js" {
+                        "app.js"
+                    } else {
+                        request_path.trim_start_matches("/ui/").trim_start_matches('/')
+                    };
+                    let target_file = ui_dir.join(file_name);
+                    if target_file.is_file() {
+                        if let Ok(content) = std::fs::read(&target_file) {
+                            let mime = if file_name.ends_with(".html") {
+                                "text/html; charset=utf-8"
+                            } else if file_name.ends_with(".css") {
+                                "text/css; charset=utf-8"
+                            } else if file_name.ends_with(".js") {
+                                "application/javascript; charset=utf-8"
+                            } else if file_name.ends_with(".svg") {
+                                "image/svg+xml"
+                            } else if file_name.ends_with(".png") {
+                                "image/png"
+                            } else {
+                                "application/octet-stream"
+                            };
+                            let resp = format!(
+                                "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n",
+                                mime,
+                                content.len()
+                            );
+                            let _ = socket.write_all(resp.as_bytes()).await;
+                            let _ = socket.write_all(&content).await;
+                            let _ = socket.flush().await;
+                            return;
+                        }
+                    }
+                }
+            }
+
+            // ── Ollama Tags Proxy (/api/tags) ──
+            if request_path == "/api/tags" {
+                let client = reqwest::Client::builder()
+                    .no_proxy()
+                    .timeout(std::time::Duration::from_secs(5))
+                    .build()
+                    .unwrap_or_default();
+                let ollama_endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+                let tags_url = format!("{}/api/tags", ollama_endpoint.trim_end_matches('/'));
+                let resp_bytes = match client.get(&tags_url).send().await {
+                    Ok(res) if res.status().is_success() => res.bytes().await.unwrap_or_default().to_vec(),
+                    _ => b"{\"models\":[]}".to_vec(),
+                };
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    resp_bytes.len()
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.write_all(&resp_bytes).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Ollama Status Lifecycle (/api/ollama/status) ──
+            if request_path == "/api/ollama/status" {
+                let installed = model_selection::memory::is_ollama_installed();
+                let ollama_endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+                let running = model_selection::memory::is_ollama_responding(&ollama_endpoint);
+                let mut models_val = serde_json::json!([]);
+                if running {
+                    let client = reqwest::Client::builder()
+                        .no_proxy()
+                        .timeout(std::time::Duration::from_secs(3))
+                        .build()
+                        .unwrap_or_default();
+                    let tags_url = format!("{}/api/tags", ollama_endpoint.trim_end_matches('/'));
+                    if let Ok(res) = client.get(&tags_url).send().await {
+                        if let Ok(json) = res.json::<serde_json::Value>().await {
+                            if let Some(m) = json.get("models") {
+                                models_val = m.clone();
+                            }
+                        }
+                    }
+                }
+                let status_json = serde_json::json!({
+                    "installed": installed,
+                    "running": running,
+                    "endpoint": ollama_endpoint,
+                    "models": models_val
+                });
+                let status_body = serde_json::to_string(&status_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    status_body.len(),
+                    status_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Ollama Start Lifecycle (/api/ollama/start) ──
+            if request_path == "/api/ollama/start" {
+                let res = tokio::task::spawn_blocking(|| {
+                    model_selection::memory::ensure_ollama_running()
+                }).await;
+                let (status_code, body_json) = match res {
+                    Ok(Ok(_)) => (200, serde_json::json!({"status": "ok", "message": "Ollama daemon started successfully"})),
+                    Ok(Err(e)) => (500, serde_json::json!({"status": "error", "message": format!("Failed to start Ollama: {}", e)})),
+                    Err(e) => (500, serde_json::json!({"status": "error", "message": format!("Task failed: {}", e)})),
+                };
+                let body_str = serde_json::to_string(&body_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 {} OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    status_code,
+                    body_str.len(),
+                    body_str
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Ollama Chat Proxy (/api/chat) ──
+            if request_path == "/api/chat" {
+                let client = reqwest::Client::builder()
+                    .no_proxy()
+                    .timeout(std::time::Duration::from_secs(300))
+                    .build()
+                    .unwrap_or_default();
+                let ollama_endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+                let chat_url = format!("{}/api/chat", ollama_endpoint.trim_end_matches('/'));
+                let is_streaming = request_json.get("stream").and_then(|v| v.as_bool()).unwrap_or(false);
+
+                match client.post(&chat_url).header("Content-Type", "application/json").body(body.to_vec()).send().await {
+                    Ok(mut res) => {
+                        let status = res.status();
+                        if !is_streaming {
+                            let bytes = res.bytes().await.unwrap_or_default();
+                            let response = format!(
+                                "HTTP/1.1 {} {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                                status.as_u16(),
+                                status.canonical_reason().unwrap_or("OK"),
+                                bytes.len()
+                            );
+                            let _ = socket.write_all(response.as_bytes()).await;
+                            let _ = socket.write_all(&bytes).await;
+                            let _ = socket.flush().await;
+                        } else {
+                            let initial_resp = format!(
+                                "HTTP/1.1 {} {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/x-ndjson\r\nConnection: close\r\n\r\n",
+                                status.as_u16(),
+                                status.canonical_reason().unwrap_or("OK")
+                            );
+                            let _ = socket.write_all(initial_resp.as_bytes()).await;
+                            while let Ok(Some(chunk)) = res.chunk().await {
+                                if socket.write_all(&chunk).await.is_err() {
+                                    break;
+                                }
+                                let _ = socket.flush().await;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let err_json = serde_json::json!({
+                            "error": format!("Ollama proxy error: {}", e)
+                        });
+                        let err_body = serde_json::to_string(&err_json).unwrap_or_default();
+                        let response = format!(
+                            "HTTP/1.1 502 Bad Gateway\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                            err_body.len(),
+                            err_body
+                        );
+                        let _ = socket.write_all(response.as_bytes()).await;
+                        let _ = socket.flush().await;
+                    }
+                }
+                return;
+            }
 
             // ── Live Web Search Endpoint (/api/search and /websearch) ──
             if request_path == "/api/search" || request_path == "/websearch" {
@@ -13095,6 +13370,7 @@ public class Pr {
         use clap::Parser;
 
         assert_eq!(get_cli_flag_info("--browser"), (false, None));
+        assert_eq!(get_cli_flag_info("--ensure-ollama"), (false, None));
         assert_eq!(get_cli_flag_info("--browser-task"), (true, None));
         assert_eq!(get_cli_flag_info("--browser-extract"), (true, None));
         assert_eq!(get_cli_flag_info("--browser-port"), (true, Some("9222")));
@@ -13102,6 +13378,13 @@ public class Pr {
         let parsed_interactive = Args::try_parse_from(["cli", "--browser"]).expect("Should parse --browser");
         assert!(parsed_interactive.browser);
         assert_eq!(parsed_interactive.browser_port, 9222);
+
+        let parsed_ensure_ollama = Args::try_parse_from(["cli", "--ensure-ollama"]).expect("Should parse --ensure-ollama");
+        assert!(parsed_ensure_ollama.ensure_ollama);
+
+        let ui_dir = super::find_browser_ui_dir();
+        assert!(ui_dir.is_some(), "Should find browser UI directory");
+        assert!(ui_dir.unwrap().join("index.html").is_file(), "index.html must exist in UI dir");
 
         let parsed_task = Args::try_parse_from([
             "cli",

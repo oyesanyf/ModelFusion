@@ -7,168 +7,217 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="app-layout">
-    <!-- Top Navigation & Omnibox Bar -->
-    <header class="top-nav-bar">
-      <div class="nav-left">
-        <div class="brand" id="brand-home" title="HugOS Browser Home">
-          <span class="logo-icon">🌐</span>
-          <div class="brand-text">
-            <span class="brand-title">HugOS Browser</span>
-            <span class="brand-sub">ModelFusion AI Web Environment</span>
-          </div>
+  <div class="chatgpt-app">
+    <!-- Left Sidebar Matching ChatGPT Exactly -->
+    <aside class="chatgpt-sidebar" id="chatgpt-sidebar">
+      <div class="sidebar-top">
+        <div class="sidebar-brand-box" id="sidebar-brand-home" title="HugOS AI">
+          <span class="chatgpt-logo-icon">🌐</span>
+          <span class="sidebar-brand-title">HugOS AI</span>
         </div>
-
-        <div class="history-controls">
-          <button class="nav-btn" id="nav-back" title="Go Back">◀</button>
-          <button class="nav-btn" id="nav-forward" title="Go Forward">▶</button>
-          <button class="nav-btn" id="nav-reload" title="Reload Page">🔄</button>
-          <button class="nav-btn" id="nav-home" title="Return to Dashboard">🏠</button>
-        </div>
+        <button type="button" class="sidebar-toggle-btn" id="sidebar-toggle-btn" title="Close sidebar (Ctrl+[)">◫</button>
       </div>
 
-      <!-- Omnibox / Search & Action Center -->
-      <div class="omnibox-wrapper">
-        <div class="omnibox-inner">
-          <span class="omnibox-protocol" id="omnibox-protocol">https://</span>
-          <input type="text" id="omnibox-input" placeholder="Enter any URL (e.g. en.wikipedia.org, localhost:3000) or enter a research query..." autocomplete="off" spellcheck="false">
-          <button class="omnibox-clear" id="omnibox-clear" title="Clear">✕</button>
-          <button class="omnibox-go" id="omnibox-go" title="Navigate (Enter)">➔</button>
+      <nav class="sidebar-nav-list" aria-label="Main Navigation">
+        <button type="button" class="sidebar-nav-item active" id="sidebar-new-chat" title="New chat (Ctrl+N)">
+          <span class="nav-item-icon">📝</span>
+          <span class="nav-item-text">New chat</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" id="sidebar-images" title="Vision &amp; Image Generation">
+          <span class="nav-item-icon">🖼️</span>
+          <span class="nav-item-text">Images</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" id="sidebar-plugins" title="Specialized AI Plugins &amp; ACDSO">
+          <span class="nav-item-icon">@</span>
+          <span class="nav-item-text">Plugins</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" id="sidebar-deep-research" title="Autonomous Multi-Step Deep Research">
+          <span class="nav-item-icon">🔍</span>
+          <span class="nav-item-text">Deep research</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-bottom-section">
+        <button type="button" class="sidebar-nav-item" id="sidebar-models" title="See Hardware &amp; Local Model Recommendations">
+          <span class="nav-item-icon">🌐</span>
+          <span class="nav-item-text">See models &amp; hardware</span>
+          <span class="nav-item-ext">↗</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" id="sidebar-settings" title="Settings (Ctrl+,)">
+          <span class="nav-item-icon">⚙️</span>
+          <span class="nav-item-text">Settings</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" id="sidebar-help" title="ModelFusion Documentation &amp; Help">
+          <span class="nav-item-icon">❓</span>
+          <span class="nav-item-text">Help</span>
+          <span class="nav-item-ext">↗</span>
+        </button>
+
+        <div class="sidebar-privacy-card">
+          <div class="privacy-badge-title">🔒 100% Local &amp; Private</div>
+          <div class="privacy-badge-desc">Models run offline on your hardware with 0 cloud data leakage.</div>
         </div>
       </div>
+    </aside>
 
-      <!-- Quick Action Buttons -->
-      <div class="action-buttons">
-        <button class="action-btn" id="btn-som" title="Set-of-Mark visual tagging on interactive elements">
-          <span class="btn-icon">🏷️</span>
-          <span class="btn-label">Visual Mark</span>
-        </button>
-        <button class="action-btn" id="btn-acdso" title="Extract tables and route into 5-objective Pareto AutoML">
-          <span class="btn-icon">📊</span>
-          <span class="btn-label">ACDSO AutoML</span>
-        </button>
-        <button class="action-btn" id="btn-summarize" title="Generate semantic summary via local model">
-          <span class="btn-icon">📝</span>
-          <span class="btn-label">Summarize</span>
-        </button>
-        <button class="action-btn" id="btn-research" title="Autonomous multi-step deep research">
-          <span class="btn-icon">🔍</span>
-          <span class="btn-label">Deep Research</span>
-        </button>
-      </div>
-
-      <!-- Engine Status Indicators -->
-      <div class="engine-status-group">
-        <div class="status-pill" id="status-ipc" title="ModelFusion CLI IPC Daemon (Port 5000)">
-          <span class="dot status-dot" id="dot-ipc"></span>
-          <span class="status-text" id="text-ipc">IPC :5000</span>
-        </div>
-        <div class="status-pill" id="status-ollama" title="Local Offline Ollama Engine (Port 11434)">
-          <span class="dot status-dot" id="dot-ollama"></span>
-          <span class="status-text" id="text-ollama">Ollama :11434</span>
-        </div>
-        <div class="status-pill" id="status-cdp" title="Chrome DevTools Protocol (CDP Port 9222)">
-          <span class="dot status-dot" id="dot-cdp"></span>
-          <span class="status-text" id="text-cdp">CDP :9222</span>
-        </div>
-        <button class="theme-toggle-btn" id="btn-theme-toggle" title="Toggle Theme (White / Dark / Midnight / Warm / Obsidian)">
-          <span class="theme-toggle-icon" id="theme-toggle-icon">☀️</span>
-          <span class="theme-toggle-text" id="theme-toggle-text">Theme</span>
-        </button>
-        <button class="settings-nav-btn" id="btn-open-settings" title="HugOS Browser Settings (Ctrl+,)">
-          <span class="settings-nav-icon">⚙️</span>
-          <span class="settings-nav-text">Settings</span>
-        </button>
-      </div>
-    </header>
-
-    <!-- Main Viewport Area -->
-    <main class="main-viewport">
-      <!-- 1. DASHBOARD VIEW (Default Home) -->
-      <div class="view-panel" id="dashboard-view">
-        <div class="chat-container">
-          <div class="chat-welcome" id="chat-welcome">
-            <div class="welcome-badge">🛡️ Zero-Cloud Local Intelligence</div>
-            <div class="welcome-icon">🌐</div>
-            <h1 class="welcome-title">HugOS Intelligent Browser</h1>
-            <p class="welcome-subtitle">Ask anything, research the live web, analyze documents, or enter any URL in the omnibox above to browse.</p>
-          </div>
-
-          <div class="chat-messages" id="chat-messages">
-            <!-- Dynamic user and assistant message bubbles will render here -->
-            <div class="msg-bubble sys-bubble" id="initial-sys-msg">
-              <span class="bubble-tag">[SYSTEM]</span> HugOS Browser ready. Local AI engine active with real-time web search routing and multimodal fusion.
-            </div>
-          </div>
-
-          <!-- Floating Bottom Input Area -->
-          <div class="input-container-wrapper">
-            <div class="attachment-tray hidden" id="attachment-tray"></div>
-            <div class="chat-input-box">
-              <button type="button" class="action-icon-btn" id="btn-attach-file" title="Attach image, dataset, code, or document">📎</button>
-              <input type="file" id="file-picker" style="display: none !important;" multiple accept="image/*,audio/*,.csv,.tsv,.parquet,.xlsx,.json,.pdf,.py,.rs,.js,.ts,.html,.css,.md,.txt">
-              <button type="button" class="web-mode-pill" id="btn-web-mode" title="Toggle Web Search Mode (Auto / On / Off)">
-                <span id="web-mode-icon">🌐</span>
-                <span id="web-mode-label">Web: Auto</span>
-              </button>
-              <textarea id="cli-prompt-input" rows="1" placeholder="Ask anything, search the web, or enter a prompt..." spellcheck="false"></textarea>
-              <button type="button" class="send-btn" id="btn-run-cli" title="Send message (Enter)">➔</button>
-            </div>
-            <div class="input-footer-hint">
-              <span>Model: <strong id="footer-active-model">Qwen 2.5</strong></span>
-              <span>•</span>
-              <span>Press <strong>Enter</strong> to send, <strong>Shift+Enter</strong> for new line</span>
-              <span>•</span>
-              <span><strong>Ctrl+,</strong> for Settings</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Hidden DOM bridges for logging/compatibility -->
-        <div style="display: none !important;" aria-hidden="true">
-          <div id="terminal-screen"></div>
-          <button id="btn-clear-console"></button>
-          <button id="btn-copy-logs"></button>
-          <span id="active-model-badge"></span>
-          <span id="stat-model"></span>
-          <span id="stat-ram"></span>
-          <span id="stat-vram"></span>
-          <span id="stat-tasks"></span>
-        </div>
-      </div>
-
-      <!-- 2. WEBVIEW VIEW (Visible when navigating) -->
-      <div class="view-panel hidden" id="webview-view">
-        <div class="webview-toolbar">
-          <div class="wv-info">
-            <span class="wv-indicator">Browsing:</span>
-            <span class="wv-current-url" id="wv-current-url">about:blank</span>
-          </div>
-          <div class="wv-controls">
-            <button class="wv-btn" id="btn-wv-som">🏷️ Run SoM on Page</button>
-            <button class="wv-btn" id="btn-wv-tables">📊 Extract Tables to ACDSO</button>
-            <button class="wv-btn" id="btn-wv-summarize">📝 Summarize Page</button>
-            <button class="wv-btn" id="btn-wv-newtab" title="Open in Top-Level Tab">↗️ Open Direct</button>
-            <button class="wv-btn" id="btn-wv-home" title="Back to Dashboard">🏠 Dashboard</button>
-          </div>
-        </div>
-
-        <div class="webview-body">
-          <iframe id="browser-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals" src="about:blank"></iframe>
-          <div class="frame-fallback hidden" id="frame-fallback">
-            <div class="fallback-card">
-              <span class="fallback-icon">🛡️</span>
-              <h3>Cross-Origin Site Restriction</h3>
-              <p>This website prevents embedded iframe rendering via <code>X-Frame-Options: SAMEORIGIN</code> or Content Security Policy.</p>
-              <div class="fallback-buttons">
-                <button class="cli-run-btn" id="btn-open-toplevel">Open Directly in HugOS Browser</button>
-                <button class="cli-btn-secondary" id="btn-fallback-home">Return to Dashboard</button>
+    <!-- Main Content Area -->
+    <div class="chatgpt-main-content">
+      <!-- Main Top Navigation -->
+      <header class="chatgpt-top-header">
+        <div class="top-nav-left">
+          <button type="button" class="sidebar-open-btn hidden" id="sidebar-expand-btn" title="Open sidebar">◫</button>
+          
+          <div class="model-picker-wrapper" id="model-picker-wrapper">
+            <button type="button" class="model-selector-btn" id="model-selector-dropdown">
+              <span id="header-active-model-name">HugOS AI</span>
+              <span class="dropdown-chevron">⌄</span>
+            </button>
+            <div class="model-dropdown-menu hidden" id="model-dropdown-menu">
+              <div class="model-opt active" data-model="qwen2.5:7b">
+                <span class="opt-name">qwen2.5:7b</span>
+                <span class="opt-desc">Balanced NLP &amp; DOM Reasoning (Default)</span>
+              </div>
+              <div class="model-opt" data-model="qwen2.5:32b">
+                <span class="opt-name">qwen2.5:32b</span>
+                <span class="opt-desc">Heavyweight Instruction &amp; Fusion</span>
+              </div>
+              <div class="model-opt" data-model="deepseek-r1:1.5b">
+                <span class="opt-name">deepseek-r1:1.5b</span>
+                <span class="opt-desc">Fast Reasoning &amp; Verification</span>
+              </div>
+              <div class="model-opt" data-model="deepseek-r1:32b">
+                <span class="opt-name">deepseek-r1:32b</span>
+                <span class="opt-desc">Deep Architectural Synthesis</span>
               </div>
             </div>
           </div>
         </div>
-      </div>
-    </main>
+
+        <!-- Sleek Omnibox in Header for Browsing & Live Search -->
+        <div class="chatgpt-header-omnibox">
+          <span class="header-omnibox-icon">🌐</span>
+          <input type="text" id="omnibox-input" placeholder="Search web or enter URL (e.g. en.wikipedia.org)..." autocomplete="off" spellcheck="false">
+          <button type="button" class="header-omnibox-go" id="omnibox-go" title="Navigate (Enter)">➔</button>
+        </div>
+
+        <!-- Top Right Controls -->
+        <div class="top-nav-right">
+          <div class="engine-status-pill" id="status-engine-pill" title="Local AI Engine Status (Click to auto-start)">
+            <span class="dot status-dot" id="dot-ollama"></span>
+            <span class="status-text" id="text-ollama">Local AI Ready</span>
+          </div>
+
+          <button type="button" class="theme-toggle-btn" id="btn-theme-toggle" title="Toggle Theme (White / Dark / Midnight / Warm / Obsidian)">
+            <span class="theme-toggle-icon" id="theme-toggle-icon">☀️</span>
+            <span class="theme-toggle-text" id="theme-toggle-text">Theme</span>
+          </button>
+
+          <button type="button" class="settings-nav-btn" id="btn-open-settings" title="Settings (Ctrl+,)">
+            <span class="settings-nav-icon">⚙️</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Body Viewport -->
+      <main class="chatgpt-viewport" id="chatgpt-viewport">
+        <!-- 1. Centered Hero Section (Matching Screenshot media_1790454380732.png) -->
+        <div class="chatgpt-hero-section" id="chat-hero-section">
+          <h1 class="hero-title">Where should we begin?</h1>
+
+          <div class="hero-capsule-container">
+            <div class="attachment-tray hidden" id="attachment-tray"></div>
+            <div class="floating-input-capsule">
+              <button type="button" class="capsule-btn attach-btn" id="btn-attach" title="Attach image, dataset, code, or document">+</button>
+              <textarea id="cli-prompt-input" rows="1" placeholder="Ask HugOS..." spellcheck="false"></textarea>
+              <button type="button" class="capsule-pill" id="btn-web-mode" title="Toggle Web Search Mode">
+                <span id="web-mode-icon">🌐</span>
+                <span id="web-mode-label">Web</span>
+              </button>
+              <button type="button" class="capsule-send-btn" id="btn-send-prompt" title="Send message (Enter)">↑</button>
+            </div>
+          </div>
+
+          <button type="button" class="hero-chip" id="chip-what-can-you-do">What can you do?</button>
+
+          <div class="hero-disclaimer">HugOS AI is local and private. Models run on your hardware with 100% offline security.</div>
+        </div>
+
+        <!-- 2. Clean ChatGPT Conversation Stream View -->
+        <div class="chatgpt-conversation-view hidden" id="chat-conversation-view">
+          <div class="chat-messages" id="chat-messages">
+            <!-- Dynamic conversation messages stream here -->
+          </div>
+
+          <div class="pinned-bottom-wrapper">
+            <div class="hero-capsule-container pinned-capsule">
+              <div class="attachment-tray hidden" id="attachment-tray-pinned"></div>
+              <div class="floating-input-capsule">
+                <button type="button" class="capsule-btn attach-btn" id="btn-attach-pinned" title="Attach file or image">+</button>
+                <textarea id="cli-prompt-input-pinned" rows="1" placeholder="Ask HugOS..." spellcheck="false"></textarea>
+                <button type="button" class="capsule-pill" id="btn-web-mode-pinned" title="Toggle Web Search Mode">
+                  <span id="web-mode-icon-pinned">🌐</span>
+                  <span id="web-mode-label-pinned">Web</span>
+                </button>
+                <button type="button" class="capsule-send-btn" id="btn-send-prompt-pinned" title="Send message (Enter)">↑</button>
+              </div>
+            </div>
+            <div class="hero-disclaimer pinned-disclaimer">HugOS AI is local and private. Models run on your hardware with 100% offline security.</div>
+          </div>
+        </div>
+
+        <!-- 3. Webview View (Visible when navigating URLs) -->
+        <div class="view-panel hidden" id="webview-view">
+          <div class="webview-toolbar">
+            <div class="wv-info">
+              <span class="wv-indicator">Browsing:</span>
+              <span class="wv-current-url" id="wv-current-url">about:blank</span>
+            </div>
+            <div class="wv-controls">
+              <button class="wv-btn" id="btn-wv-som">🏷️ Run SoM on Page</button>
+              <button class="wv-btn" id="btn-wv-tables">📊 Extract Tables to ACDSO</button>
+              <button class="wv-btn" id="btn-wv-summarize">📝 Summarize Page</button>
+              <button class="wv-btn" id="btn-wv-newtab" title="Open in Top-Level Tab">↗️ Open Direct</button>
+              <button class="wv-btn" id="btn-wv-home" title="Return to Chat">🏠 Chat</button>
+            </div>
+          </div>
+
+          <div class="webview-body">
+            <iframe id="browser-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals" src="about:blank"></iframe>
+            <div class="frame-fallback hidden" id="frame-fallback">
+              <div class="fallback-card">
+                <span class="fallback-icon">🛡️</span>
+                <h3>Cross-Origin Site Restriction</h3>
+                <p>This website prevents embedded iframe rendering via <code>X-Frame-Options: SAMEORIGIN</code> or Content Security Policy.</p>
+                <div class="fallback-buttons">
+                  <button class="cli-run-btn" id="btn-open-toplevel">Open Directly in HugOS Browser</button>
+                  <button class="cli-btn-secondary" id="btn-fallback-home">Return to Chat</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hidden DOM Bridges for JS Compatibility -->
+        <input type="file" id="file-picker" style="display: none !important;" multiple accept="image/*,audio/*,.csv,.tsv,.parquet,.xlsx,.json,.pdf,.py,.rs,.js,.ts,.html,.css,.md,.txt">
+        <div style="display: none !important;" aria-hidden="true">
+          <div id="dashboard-view"></div>
+          <button id="btn-run-cli"></button>
+          <button id="btn-attach-file"></button>
+          <span id="footer-active-model"></span>
+          <span id="brand-home"></span>
+          <span id="nav-back"></span><span id="nav-forward"></span><span id="nav-reload"></span><span id="nav-home"></span>
+          <span id="omnibox-protocol"></span><span id="omnibox-clear"></span>
+          <span id="btn-som"></span><span id="btn-acdso"></span><span id="btn-summarize"></span><span id="btn-research"></span>
+          <span id="status-ipc"></span><span id="dot-ipc"></span><span id="text-ipc"></span>
+          <span id="status-ollama"></span>
+          <span id="status-cdp"></span><span id="dot-cdp"></span><span id="text-cdp"></span>
+          <span id="chat-welcome"></span>
+          <span id="terminal-screen"></span>
+          <button id="btn-clear-console"></button><button id="btn-copy-logs"></button>
+          <span id="active-model-badge"></span><span id="stat-model"></span><span id="stat-ram"></span><span id="stat-vram"></span><span id="stat-tasks"></span>
+        </div>
+      </main>
+    </div>
   </div>
 
   <!-- Settings Modal Dialog -->
