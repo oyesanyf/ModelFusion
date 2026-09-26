@@ -49,7 +49,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const statRam = document.getElementById('stat-ram');
   const statVram = document.getElementById('stat-vram');
 
-  // CLI runner elements
+  // Chat and CLI runner elements
+  const chatMessages = document.getElementById('chat-messages');
+  const chatWelcome = document.getElementById('chat-welcome');
+  const footerActiveModel = document.getElementById('footer-active-model');
   const cliPromptInput = document.getElementById('cli-prompt-input');
   const btnRunCli = document.getElementById('btn-run-cli');
   const terminalScreen = document.getElementById('terminal-screen');
@@ -68,6 +71,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnWebMode = document.getElementById('btn-web-mode');
   const webModeIcon = document.getElementById('web-mode-icon');
   const webModeLabel = document.getElementById('web-mode-label');
+
+  // Theme toggle button
+  const btnThemeToggle = document.getElementById('btn-theme-toggle');
+  const themeToggleIcon = document.getElementById('theme-toggle-icon');
+  const themeToggleText = document.getElementById('theme-toggle-text');
 
   // Settings modal elements
   const btnOpenSettings = document.getElementById('btn-open-settings');
@@ -144,24 +152,65 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
   // -----------------------------------------------------------------
-  // 1. Terminal Screen Logging Helper
+  // 1. Modern LLM Browser Message & Bubble Helper
   // -----------------------------------------------------------------
   function termLog(message, type = 'info') {
-    const line = document.createElement('div');
-    line.className = `term-line ${type}`;
-
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    if (type === 'cmd') {
-      line.textContent = `[${time}] > ${message}`;
-    } else if (type === 'sys') {
-      line.textContent = `[${time}] ${message}`;
-    } else {
-      line.textContent = `[${time}] ${message}`;
+
+    // Hide welcome banner when user issues a command or model responds
+    if (chatWelcome && (type === 'cmd' || type === 'model-response')) {
+      chatWelcome.classList.add('hidden');
     }
 
-    terminalScreen.appendChild(line);
-    if (currentSettings.autoScroll !== false) {
-      terminalScreen.scrollTop = terminalScreen.scrollHeight;
+    if (chatMessages) {
+      const bubble = document.createElement('div');
+
+      if (type === 'cmd') {
+        bubble.className = 'msg-bubble user-bubble';
+        let attHtml = '';
+        if (attachedFiles && attachedFiles.length > 0) {
+          attHtml = `<div class="bubble-attachments">` + attachedFiles.map(f => {
+            const icon = f.type === 'image' ? '🖼️' : f.type === 'audio' ? '🎙️' : f.type === 'tabular' ? '📊' : '📄';
+            return `<span class="attachment-chip-mini"><span>${icon}</span> <span>${f.name}</span></span>`;
+          }).join('') + `</div>`;
+        }
+        bubble.innerHTML = `
+          <div class="bubble-author" style="font-size: 11px; font-weight: 600; opacity: 0.85; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+            <span>👤</span> <span>You</span>
+          </div>
+          ${attHtml}
+          <div class="user-text">${formatCitationsAndMarkdown(message)}</div>
+        `;
+      } else if (type === 'model-response') {
+        bubble.className = 'msg-bubble assistant-bubble';
+        bubble.innerHTML = `
+          <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+            <span>🌐</span> <span>HugOS AI</span>
+            <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">(${activeOllamaModel})</span>
+          </div>
+          <div class="assistant-text">${formatCitationsAndMarkdown(message)}</div>
+        `;
+      } else {
+        bubble.className = 'msg-bubble sys-bubble';
+        const tag = type === 'sys' ? 'SYSTEM' : type === 'warn' ? 'WARN' : type === 'error' ? 'ERROR' : 'INFO';
+        bubble.innerHTML = `<span class="bubble-tag">[${tag}]</span> ${formatCitationsAndMarkdown(message)}`;
+      }
+
+      chatMessages.appendChild(bubble);
+      if (currentSettings.autoScroll !== false) {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+    }
+
+    // Mirror to hidden terminalScreen for test harness / logs compatibility
+    if (terminalScreen) {
+      const line = document.createElement('div');
+      line.className = `term-line ${type}`;
+      line.textContent = type === 'cmd' ? `[${time}] > ${message}` : `[${time}] ${message}`;
+      terminalScreen.appendChild(line);
+      if (currentSettings.autoScroll !== false) {
+        terminalScreen.scrollTop = terminalScreen.scrollHeight;
+      }
     }
   }
 
@@ -194,15 +243,32 @@ document.addEventListener('DOMContentLoaded', () => {
     activeOllamaModel = settings.activeModel || 'qwen2.5:7b';
     if (activeModelBadge) activeModelBadge.textContent = activeOllamaModel;
     if (statModel) statModel.textContent = `${activeOllamaModel} (Configured)`;
+    if (footerActiveModel) footerActiveModel.textContent = activeOllamaModel;
     const usageModel = document.getElementById('usage-model');
     if (usageModel) usageModel.textContent = activeOllamaModel;
 
-    // Apply theme
-    document.body.classList.remove('theme-obsidian', 'theme-midnight');
-    if (settings.theme === 'obsidian') {
+    // Apply theme across all 5 color schemes
+    document.body.classList.remove('theme-white', 'theme-light', 'theme-obsidian', 'theme-midnight', 'theme-warm', 'theme-dark');
+    const theme = settings.theme || 'dark-plus';
+    if (theme === 'white' || theme === 'light') {
+      document.body.classList.add('theme-white');
+      if (themeToggleIcon) themeToggleIcon.textContent = '🌙';
+      if (themeToggleText) themeToggleText.textContent = 'Dark';
+    } else if (theme === 'obsidian') {
       document.body.classList.add('theme-obsidian');
-    } else if (settings.theme === 'midnight') {
+      if (themeToggleIcon) themeToggleIcon.textContent = '☀️';
+      if (themeToggleText) themeToggleText.textContent = 'White';
+    } else if (theme === 'midnight') {
       document.body.classList.add('theme-midnight');
+      if (themeToggleIcon) themeToggleIcon.textContent = '☀️';
+      if (themeToggleText) themeToggleText.textContent = 'White';
+    } else if (theme === 'warm') {
+      document.body.classList.add('theme-warm');
+      if (themeToggleIcon) themeToggleIcon.textContent = '🌙';
+      if (themeToggleText) themeToggleText.textContent = 'Dark';
+    } else {
+      if (themeToggleIcon) themeToggleIcon.textContent = '☀️';
+      if (themeToggleText) themeToggleText.textContent = 'White';
     }
 
     // Apply font size to terminal
@@ -879,9 +945,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function termLogFusion(panel) {
-    if (!panel || !terminalScreen) return;
+    if (!panel) return;
     const card = document.createElement('div');
-    card.className = 'term-line fusion-banner';
+    card.className = 'fusion-banner';
     card.innerHTML = `
       <div class="fusion-banner-header">
         <span class="fusion-banner-icon">🎭</span>
@@ -894,9 +960,21 @@ document.addEventListener('DOMContentLoaded', () => {
         ${panel.specialists.map(s => `<span class="fusion-pill">${s}</span>`).join('')}
       </div>
     `;
-    terminalScreen.appendChild(card);
-    if (currentSettings.autoScroll !== false) {
-      terminalScreen.scrollTop = terminalScreen.scrollHeight;
+
+    if (chatMessages) {
+      chatMessages.appendChild(card);
+      if (currentSettings.autoScroll !== false) {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+    }
+
+    if (terminalScreen) {
+      const termClone = card.cloneNode(true);
+      termClone.className = 'term-line fusion-banner';
+      terminalScreen.appendChild(termClone);
+      if (currentSettings.autoScroll !== false) {
+        terminalScreen.scrollTop = terminalScreen.scrollHeight;
+      }
     }
   }
 
@@ -1040,7 +1118,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function formatCitationsAndMarkdown(text) {
     if (!text) return '';
-    let safe = text
+
+    // Extract fenced code blocks first to protect them from inline regex
+    const codeBlocks = [];
+    let processed = text.replace(/```([a-zA-Z0-9_\-\+]*)\n([\s\S]*?)```/g, (match, lang, code) => {
+      const token = `___CODEBLOCK_${codeBlocks.length}___`;
+      const escapedCode = code
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      codeBlocks.push(`<pre class="bubble-code-block"><code class="language-${lang || 'plaintext'}">${escapedCode}</code></pre>`);
+      return token;
+    });
+
+    let safe = processed
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
@@ -1055,8 +1146,16 @@ document.addEventListener('DOMContentLoaded', () => {
       return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="citation-link">${label}</a>`;
     });
 
+    // Format bold **text**
+    safe = safe.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
     // Format inline code `code`
     safe = safe.replace(/`([^`]+)`/g, '<code style="background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 4px; font-family: var(--mono-font);">$1</code>');
+
+    // Restore code blocks
+    codeBlocks.forEach((block, idx) => {
+      safe = safe.replace(`___CODEBLOCK_${idx}___`, block);
+    });
 
     return safe;
   }
@@ -1356,8 +1455,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (currentSettings.activeModel && currentSettings.activeModel !== DEFAULT_SETTINGS.activeModel) {
           activeOllamaModel = currentSettings.activeModel;
-          activeModelBadge.textContent = currentSettings.activeModel;
-          statModel.textContent = `${currentSettings.activeModel} (Configured)`;
+          if (activeModelBadge) activeModelBadge.textContent = currentSettings.activeModel;
+          if (statModel) statModel.textContent = `${currentSettings.activeModel} (Configured)`;
+          if (footerActiveModel) footerActiveModel.textContent = currentSettings.activeModel;
         } else {
           // Detect installed models. Prefer qwen2.5:7b for fast interactive responses, or qwen2.5:32b
           let selectedTag = 'qwen2.5:7b';
@@ -1386,8 +1486,9 @@ document.addEventListener('DOMContentLoaded', () => {
           }
 
           activeOllamaModel = selectedTag;
-          activeModelBadge.textContent = displayModel;
-          statModel.textContent = `${displayModel} (Local)`;
+          if (activeModelBadge) activeModelBadge.textContent = displayModel;
+          if (statModel) statModel.textContent = `${displayModel} (Local)`;
+          if (footerActiveModel) footerActiveModel.textContent = displayModel;
         }
         return true;
       }
@@ -1521,17 +1622,42 @@ document.addEventListener('DOMContentLoaded', () => {
       modelToUse = selectedVisionModel;
     }
 
-    // Status indicator
+    // Hide welcome screen
+    if (chatWelcome) chatWelcome.classList.add('hidden');
+
+    // Create assistant bubble in chatMessages
+    let assistantBubble = null;
+    let bubbleContent = null;
+    if (chatMessages) {
+      assistantBubble = document.createElement('div');
+      assistantBubble.className = 'msg-bubble assistant-bubble streaming';
+      assistantBubble.innerHTML = `
+        <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+          <span>🌐</span> <span>HugOS AI</span>
+          <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">(${modelToUse}${hasImages ? ' • Vision' : ''})</span>
+        </div>
+        <div class="bubble-content" style="color: var(--text-muted); font-style: italic;">Thinking...</div>
+      `;
+      chatMessages.appendChild(assistantBubble);
+      bubbleContent = assistantBubble.querySelector('.bubble-content');
+      if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    // Status indicator for terminalScreen
     const statusLine = document.createElement('div');
     statusLine.className = 'term-line info';
     statusLine.textContent = `[${time}] 🤖 Thinking with ${modelToUse}${hasImages ? ' [Multimodal Vision Mode]' : ''}...`;
-    terminalScreen.appendChild(statusLine);
-    if (currentSettings.autoScroll !== false) terminalScreen.scrollTop = terminalScreen.scrollHeight;
+    if (terminalScreen) {
+      terminalScreen.appendChild(statusLine);
+      if (currentSettings.autoScroll !== false) terminalScreen.scrollTop = terminalScreen.scrollHeight;
+    }
 
-    // Real response line
+    // Real response line for terminalScreen
     const responseLine = document.createElement('div');
     responseLine.className = 'term-line model-response';
-    terminalScreen.appendChild(responseLine);
+    if (terminalScreen) {
+      terminalScreen.appendChild(responseLine);
+    }
 
     const messagePayload = {
       role: 'user',
@@ -1568,7 +1694,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const fullResponse = data.message?.content || data.response || '';
         statusLine.textContent = `[${time}] 🤖 ModelFusion Engine (${modelToUse}) completed:`;
         responseLine.innerHTML = formatCitationsAndMarkdown(fullResponse);
-        if (currentSettings.autoScroll !== false) terminalScreen.scrollTop = terminalScreen.scrollHeight;
+        if (assistantBubble) {
+          assistantBubble.classList.remove('streaming');
+          if (bubbleContent) {
+            bubbleContent.innerHTML = formatCitationsAndMarkdown(fullResponse);
+          }
+        }
+        if (currentSettings.autoScroll !== false) {
+          if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+          if (terminalScreen) terminalScreen.scrollTop = terminalScreen.scrollHeight;
+        }
         return fullResponse;
       }
 
@@ -1595,8 +1730,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const chunk = parsed.message?.content || parsed.response || '';
             if (chunk) {
               fullResponse += chunk;
+              if (bubbleContent) {
+                bubbleContent.style.color = '';
+                bubbleContent.style.fontStyle = '';
+                bubbleContent.textContent = fullResponse;
+              }
               responseLine.textContent = fullResponse;
-              if (currentSettings.autoScroll !== false) terminalScreen.scrollTop = terminalScreen.scrollHeight;
+              if (currentSettings.autoScroll !== false) {
+                if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+                if (terminalScreen) terminalScreen.scrollTop = terminalScreen.scrollHeight;
+              }
             }
           } catch (e) {
             // Malformed fragment, skip
@@ -1617,7 +1760,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
       statusLine.textContent = `[${time}] 🤖 ModelFusion Engine (${modelToUse}) completed:`;
       responseLine.innerHTML = formatCitationsAndMarkdown(fullResponse);
-      if (currentSettings.autoScroll !== false) terminalScreen.scrollTop = terminalScreen.scrollHeight;
+      if (assistantBubble) {
+        assistantBubble.classList.remove('streaming');
+        if (bubbleContent) {
+          bubbleContent.innerHTML = formatCitationsAndMarkdown(fullResponse);
+        }
+      }
+      if (currentSettings.autoScroll !== false) {
+        if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+        if (terminalScreen) terminalScreen.scrollTop = terminalScreen.scrollHeight;
+      }
       return fullResponse;
     } catch (err) {
       statusLine.className = 'term-line warn';
@@ -1643,9 +1795,18 @@ document.addEventListener('DOMContentLoaded', () => {
           const data = await ipcRes.json();
           const text = data.response || data.output || JSON.stringify(data);
           responseLine.innerHTML = formatCitationsAndMarkdown(text);
+          if (assistantBubble) {
+            assistantBubble.classList.remove('streaming');
+            if (bubbleContent) {
+              bubbleContent.innerHTML = formatCitationsAndMarkdown(text);
+            }
+          }
           statusLine.className = 'term-line success';
           statusLine.textContent = `[${time}] Responded via Master CLI IPC fallback.`;
-          if (currentSettings.autoScroll !== false) terminalScreen.scrollTop = terminalScreen.scrollHeight;
+          if (currentSettings.autoScroll !== false) {
+            if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+            if (terminalScreen) terminalScreen.scrollTop = terminalScreen.scrollHeight;
+          }
           return text;
         }
       } catch (ipcErr) {
@@ -1654,6 +1815,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
       statusLine.className = 'term-line error';
       statusLine.textContent = `[${time}] Error connecting to local AI engine (${err.message}). Ensure Ollama is running at ${ollamaUrl} with ${modelToUse}.`;
+      if (assistantBubble) {
+        assistantBubble.classList.remove('streaming');
+        if (bubbleContent) {
+          bubbleContent.innerHTML = `<span style="color: var(--error-color);">⚠️ Connection Error: ${err.message}. Ensure Ollama is running at ${ollamaUrl} with ${modelToUse}.</span>`;
+        }
+      }
       responseLine.remove();
       return null;
     }
@@ -2043,63 +2210,110 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
   // Expose to window for external integration, CDP automation, and test runner
   window.executeCliCommand = executeCliCommand;
 
-  btnRunCli.addEventListener('click', () => {
-    executeCliCommand(cliPromptInput.value);
-  });
-
-  cliPromptInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      executeCliCommand(cliPromptInput.value);
-    }
-  });
-
-  // Suggestion chips click
-  cmdChips.forEach(chip => {
-    chip.addEventListener('click', () => {
-      const cmd = chip.getAttribute('data-cmd');
-      cliPromptInput.value = cmd;
-      cliPromptInput.focus();
+  // 1-Click Theme Switcher
+  if (btnThemeToggle) {
+    btnThemeToggle.addEventListener('click', () => {
+      const isLight = document.body.classList.contains('theme-white') || document.body.classList.contains('theme-light') || document.body.classList.contains('theme-warm');
+      const nextTheme = isLight ? 'dark-plus' : 'white';
+      currentSettings.theme = nextTheme;
+      try {
+        localStorage.setItem('hugos_browser_settings', JSON.stringify(currentSettings));
+      } catch (e) {}
+      applySettings(currentSettings);
+      termLog(`Theme switched to: ${nextTheme === 'white' ? 'ChatGPT White' : 'ChatGPT Dark'}`, 'sys');
     });
-  });
+  }
 
-  // Quick Launch tiles click
-  launchTiles.forEach(tile => {
-    tile.addEventListener('click', () => {
-      const url = tile.getAttribute('data-url');
-      const action = tile.getAttribute('data-action');
-      termLog(`Quick Launch triggered: ${tile.querySelector('.tile-title').textContent}`, 'info');
+  // Auto-expanding textarea & Enter/Shift+Enter key handling
+  if (cliPromptInput) {
+    cliPromptInput.addEventListener('input', () => {
+      cliPromptInput.style.height = 'auto';
+      cliPromptInput.style.height = Math.min(cliPromptInput.scrollHeight, 160) + 'px';
+    });
 
-      if (action === 'acdso') {
-        executeCliCommand(`/acdso ${url}`);
-      } else {
-        navigateTo(url);
+    cliPromptInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const val = cliPromptInput.value.trim();
+        if (val) {
+          cliPromptInput.value = '';
+          cliPromptInput.style.height = 'auto';
+          executeCliCommand(val);
+        }
       }
     });
-  });
+  }
+
+  if (btnRunCli) {
+    btnRunCli.addEventListener('click', () => {
+      const val = (cliPromptInput ? cliPromptInput.value : '').trim();
+      if (val) {
+        if (cliPromptInput) {
+          cliPromptInput.value = '';
+          cliPromptInput.style.height = 'auto';
+        }
+        executeCliCommand(val);
+      }
+    });
+  }
+
+  // Suggestion chips click (guarded)
+  if (cmdChips && cmdChips.length > 0) {
+    cmdChips.forEach(chip => {
+      chip.addEventListener('click', () => {
+        const cmd = chip.getAttribute('data-cmd');
+        if (cliPromptInput) {
+          cliPromptInput.value = cmd;
+          cliPromptInput.focus();
+        }
+      });
+    });
+  }
+
+  // Quick Launch tiles click (guarded)
+  if (launchTiles && launchTiles.length > 0) {
+    launchTiles.forEach(tile => {
+      tile.addEventListener('click', () => {
+        const url = tile.getAttribute('data-url');
+        const action = tile.getAttribute('data-action');
+        termLog(`Quick Launch triggered: ${tile.querySelector('.tile-title')?.textContent || url}`, 'info');
+
+        if (action === 'acdso') {
+          executeCliCommand(`/acdso ${url}`);
+        } else {
+          navigateTo(url);
+        }
+      });
+    });
+  }
 
   // Action buttons
-  btnSom.addEventListener('click', () => executeCliCommand('/som'));
-  btnAcdso.addEventListener('click', () => executeCliCommand(`/acdso ${currentNavUrl || ''}`));
-  btnSummarize.addEventListener('click', () => executeCliCommand('/summarize'));
-  btnResearch.addEventListener('click', () => executeCliCommand(`@agent browser deep research on ${currentNavUrl || 'top trending AI models'}`));
+  if (btnSom) btnSom.addEventListener('click', () => executeCliCommand('/som'));
+  if (btnAcdso) btnAcdso.addEventListener('click', () => executeCliCommand(`/acdso ${currentNavUrl || ''}`));
+  if (btnSummarize) btnSummarize.addEventListener('click', () => executeCliCommand('/summarize'));
+  if (btnResearch) btnResearch.addEventListener('click', () => executeCliCommand(`@agent browser deep research on ${currentNavUrl || 'top trending AI models'}`));
 
-  btnWvSom.addEventListener('click', () => executeCliCommand('/som'));
-  btnWvTables.addEventListener('click', () => executeCliCommand(`/acdso ${currentNavUrl}`));
-  btnWvSummarize.addEventListener('click', () => executeCliCommand('/summarize'));
+  if (btnWvSom) btnWvSom.addEventListener('click', () => executeCliCommand('/som'));
+  if (btnWvTables) btnWvTables.addEventListener('click', () => executeCliCommand(`/acdso ${currentNavUrl}`));
+  if (btnWvSummarize) btnWvSummarize.addEventListener('click', () => executeCliCommand('/summarize'));
 
-  // Clear & Copy Console
-  btnClearConsole.addEventListener('click', () => {
-    terminalScreen.innerHTML = '';
-    termLog('Console cleared. System ready.', 'sys');
-  });
-
-  btnCopyLogs.addEventListener('click', () => {
-    const text = terminalScreen.innerText;
-    navigator.clipboard.writeText(text).then(() => {
-      termLog('Terminal logs copied to clipboard!', 'success');
-    }).catch(() => {
-      termLog('Failed to copy logs to clipboard.', 'error');
+  // Clear & Copy Console / Chat
+  if (btnClearConsole) {
+    btnClearConsole.addEventListener('click', () => {
+      if (chatMessages) chatMessages.innerHTML = '';
+      if (terminalScreen) terminalScreen.innerHTML = '';
+      termLog('Chat messages and console cleared. Ready.', 'sys');
     });
-  });
+  }
+
+  if (btnCopyLogs) {
+    btnCopyLogs.addEventListener('click', () => {
+      const text = (chatMessages ? chatMessages.innerText : '') || (terminalScreen ? terminalScreen.innerText : '');
+      navigator.clipboard.writeText(text).then(() => {
+        termLog('Chat messages and logs copied to clipboard!', 'success');
+      }).catch(() => {
+        termLog('Failed to copy logs to clipboard.', 'error');
+      });
+    });
+  }
 });
