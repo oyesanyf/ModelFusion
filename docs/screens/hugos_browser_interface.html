@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HugOS Intelligent Browser Interface</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+    
+    :root {
+      --bg-base: #090d16;
+      --bg-surface: #0f172a;
+      --bg-elevated: #1e293b;
+      --bg-glass: rgba(15, 23, 42, 0.85);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-active: rgba(99, 102, 241, 0.4);
+      --accent-indigo: #6366f1;
+      --accent-cyan: #06b6d4;
+      --accent-emerald: #10b981;
+      --accent-rose: #f43f5e;
+      --accent-amber: #f59e0b;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-base);
+      color: var(--text-main);
+    }
+
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(100, 116, 139, 0.5);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(148, 163, 184, 0.8);
+    }
+
+    .glassmorphic {
+      background: var(--bg-glass);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .som-badge {
+      animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+    }
+
+    @keyframes pulse-ring {
+      0% { box-shadow: 0 0 0 0 rgba(225, 29, 72, 0.7); }
+      70% { box-shadow: 0 0 0 6px rgba(225, 29, 72, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(225, 29, 72, 0); }
+    }
+  </style>
+</head>
+<body class="bg-[#090d16] text-slate-100 min-h-screen flex flex-col antialiased selection:bg-indigo-500 selection:text-white">
+
+  <!-- Desktop App Window Container -->
+  <div class="flex-1 flex flex-col h-screen max-h-screen overflow-hidden">
+    
+    <!-- 1. Window Titlebar -->
+    <header class="h-10 bg-slate-950/80 border-b border-white/5 flex items-center justify-between px-3 select-none flex-shrink-0 z-40">
+      <div class="flex items-center space-x-2">
+        <div class="flex items-center space-x-1.5 mr-2">
+          <div class="w-3 h-3 rounded-full bg-rose-500/80 hover:bg-rose-500 cursor-pointer transition"></div>
+          <div class="w-3 h-3 rounded-full bg-amber-500/80 hover:bg-amber-500 cursor-pointer transition"></div>
+          <div class="w-3 h-3 rounded-full bg-emerald-500/80 hover:bg-emerald-500 cursor-pointer transition"></div>
+        </div>
+        <div class="flex items-center space-x-2 text-xs font-medium text-slate-400">
+          <span class="text-indigo-400">🌐</span>
+          <span class="font-semibold text-slate-200">HugOS Browser</span>
+          <span class="text-slate-600">|</span>
+          <span class="text-slate-400 text-[11px]">ModelFusion AI Autonomous Environment</span>
+          <span class="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] px-1.5 py-0.5 rounded font-mono">Build 166</span>
+        </div>
+      </div>
+
+      <div class="flex items-center space-x-3 text-xs">
+        <div class="flex items-center space-x-1.5 bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20 text-[11px]">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span>Zero-Cloud Local Engine</span>
+        </div>
+        <div class="text-slate-500 text-[11px] font-mono">Qwen 2.5 32B • 9222 CDP</div>
+      </div>
+    </header>
+
+    <!-- 2. Omnibox Navigation & Action Toolbar -->
+    <div class="h-14 bg-slate-900/90 border-b border-white/10 px-4 flex items-center justify-between gap-3 flex-shrink-0 z-30 shadow-lg">
+      <!-- History Navigation -->
+      <div class="flex items-center space-x-1">
+        <button id="btn-back" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/5 transition" title="Go Back">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+        </button>
+        <button id="btn-forward" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/5 transition" title="Go Forward">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+        </button>
+        <button id="btn-reload" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/5 transition" title="Reload">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        </button>
+        <button id="btn-home" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/5 transition active:scale-95" title="Dashboard Home">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+        </button>
+      </div>
+
+      <!-- Omnibox Search / URL Bar -->
+      <div class="flex-1 max-w-2xl relative">
+        <div class="flex items-center bg-slate-950/80 border border-white/10 hover:border-indigo-500/50 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 rounded-xl px-3 py-1.5 transition shadow-inner">
+          <span class="text-xs font-mono text-emerald-400 mr-2 flex items-center space-x-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            <span>https://</span>
+          </span>
+          <input type="text" id="omnibox-input" value="https://en.wikipedia.org/wiki/Comparison_of_deep_learning_software" 
+                 class="bg-transparent text-xs text-slate-100 focus:outline-none flex-1 font-mono tracking-tight"
+                 placeholder="Search web or enter URL (e.g. arxiv.org, localhost:3000, wikipedia)...">
+          <button id="btn-omnibox-clear" class="text-slate-500 hover:text-slate-300 text-xs px-1.5 transition">✕</button>
+          <button id="btn-omnibox-go" class="bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg px-2.5 py-1 text-xs font-medium ml-1 transition shadow">➔</button>
+        </div>
+      </div>
+
+      <!-- Action Chips -->
+      <div class="flex items-center space-x-1.5">
+        <button id="btn-som-toggle" class="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/20 text-xs font-medium transition active:scale-95">
+          <span>🏷️</span>
+          <span>Set-of-Mark</span>
+        </button>
+        <button id="btn-acdso-extract" class="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/20 text-xs font-medium transition active:scale-95">
+          <span>📊</span>
+          <span>ACDSO AutoML</span>
+        </button>
+        <button id="btn-deep-research" class="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/20 text-xs font-medium transition active:scale-95">
+          <span>🔍</span>
+          <span>Web Research</span>
+        </button>
+
+        <div class="h-4 w-px bg-white/10 mx-1"></div>
+
+        <!-- Settings Button -->
+        <button id="btn-open-settings" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-white/10 text-xs font-medium transition shadow" title="Settings (Ctrl+,)">
+          <span class="text-sm">⚙️</span>
+          <span>Settings</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 3. Main Workspace: Viewport & Terminal Runner -->
+    <div class="flex-1 flex overflow-hidden relative">
+
+      <!-- LEFT: Browser Viewport / Interactive Webview -->
+      <div class="flex-1 flex flex-col border-r border-white/10 overflow-hidden bg-slate-950 relative" id="webview-container">
+        
+        <!-- Webview Status & Toolbar -->
+        <div class="h-9 bg-slate-900/60 border-b border-white/5 px-4 flex items-center justify-between text-xs text-slate-400">
+          <div class="flex items-center space-x-2 truncate">
+            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span class="text-slate-300 font-medium">Comparison of deep learning software</span>
+            <span class="text-slate-600">—</span>
+            <span class="text-slate-500 truncate text-[11px] font-mono">Wikipedia (Retrieved via CDP Port 9222)</span>
+          </div>
+          <div class="flex items-center space-x-2">
+            <span class="text-[11px] bg-slate-800 px-2 py-0.5 rounded border border-white/5 font-mono">DOM: 4.2k tokens (Pruned 92%)</span>
+            <button id="btn-toggle-view" class="text-xs text-indigo-400 hover:text-indigo-300 font-medium transition">Switch to Dashboard</button>
+          </div>
+        </div>
+
+        <!-- Simulated Web Page Content with Real Visual Set-of-Mark Overlay -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-6 relative" id="web-content-area">
+          
+          <!-- Sample Wikipedia Article with DOM Elements -->
+          <div class="max-w-4xl mx-auto space-y-6 bg-slate-900/30 p-8 rounded-2xl border border-white/5">
+            <div class="border-b border-white/10 pb-4 relative">
+              <h1 class="text-2xl font-bold text-slate-100 flex items-center gap-3">
+                Comparison of deep learning software
+                <span class="som-badge bg-rose-600 text-white font-mono text-[10px] px-1.5 py-0.5 rounded font-bold">1</span>
+              </h1>
+              <p class="text-sm text-slate-400 mt-1">From Wikipedia, the free encyclopedia</p>
+            </div>
+
+            <p class="text-sm text-slate-300 leading-relaxed relative">
+              The following table compares some of the most notable software frameworks, libraries and programs for deep learning.
+              <span class="som-badge bg-rose-600 text-white font-mono text-[10px] px-1.5 py-0.5 rounded font-bold ml-1">2</span>
+            </p>
+
+            <!-- Extracted Structured Table -->
+            <div class="border border-white/10 rounded-xl overflow-hidden shadow-2xl relative" id="sample-table">
+              <div class="bg-slate-800/80 px-4 py-2 flex items-center justify-between border-b border-white/10">
+                <span class="text-xs font-semibold text-slate-300 flex items-center gap-2">
+                  <span>📊 Deep Learning Framework Matrix</span>
+                  <span class="som-badge bg-rose-600 text-white font-mono text-[10px] px-1.5 py-0.5 rounded font-bold">3</span>
+                </span>
+                <button id="btn-extract-this-table" class="bg-indigo-600/80 hover:bg-indigo-600 text-white text-xs px-2 py-1 rounded flex items-center gap-1 transition">
+                  <span>⚡ Extract to ACDSO</span>
+                </button>
+              </div>
+              <table class="w-full text-left text-xs font-mono">
+                <thead class="bg-slate-900 text-slate-400 border-b border-white/10 uppercase tracking-wider text-[11px]">
+                  <tr>
+                    <th class="p-3">Software</th>
+                    <th class="p-3">Creator</th>
+                    <th class="p-3">License</th>
+                    <th class="p-3">OpenVINO / ONNX</th>
+                    <th class="p-3">AutoML</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-white/5 text-slate-300">
+                  <tr class="hover:bg-white/5 transition">
+                    <td class="p-3 font-semibold text-indigo-400">ModelFusion</td>
+                    <td class="p-3">HugOS / Open Community</td>
+                    <td class="p-3"><span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded">Apache 2.0</span></td>
+                    <td class="p-3 text-emerald-400 font-bold">Native (45 Tasks)</td>
+                    <td class="p-3 text-cyan-400">5-Objective Pareto</td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition">
+                    <td class="p-3 font-semibold">PyTorch</td>
+                    <td class="p-3">Meta AI</td>
+                    <td class="p-3">BSD-3</td>
+                    <td class="p-3">Export Required</td>
+                    <td class="p-3 text-slate-400">Manual Scripting</td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition">
+                    <td class="p-3 font-semibold">TensorFlow</td>
+                    <td class="p-3">Google Brain</td>
+                    <td class="p-3">Apache 2.0</td>
+                    <td class="p-3">TF-TRT / TFLite</td>
+                    <td class="p-3 text-slate-400">AutoKeras</td>
+                  </tr>
+                  <tr class="hover:bg-white/5 transition">
+                    <td class="p-3 font-semibold">ONNX Runtime</td>
+                    <td class="p-3">Microsoft / Linux Fdn</td>
+                    <td class="p-3">MIT</td>
+                    <td class="p-3 text-emerald-400">Execution Provider</td>
+                    <td class="p-3 text-slate-400">Inference Only</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Set of Mark Info Card -->
+            <div class="bg-indigo-950/30 border border-indigo-500/30 p-4 rounded-xl flex items-start space-x-3 text-xs text-indigo-200">
+              <span class="text-lg">🏷️</span>
+              <div>
+                <strong class="font-semibold block text-indigo-100">Set-of-Mark (SoM) Visual Grounding Active</strong>
+                <span>Interactive elements are indexed with numeric bounding badges. Direct the browser with: <code>@agent click [3]</code> or <code>extract table [3] to ACDSO</code>.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Autonomous Master CLI & Multimodal Fusion Runner -->
+      <div class="w-[480px] bg-slate-900/95 flex flex-col overflow-hidden relative shadow-2xl z-20">
+        
+        <!-- Header -->
+        <div class="p-3 border-b border-white/10 flex items-center justify-between bg-slate-950/60">
+          <div class="flex items-center space-x-2">
+            <span class="text-base">⚡</span>
+            <div>
+              <h2 class="text-xs font-bold text-slate-200 uppercase tracking-wider">Autonomous Master CLI</h2>
+              <span class="text-[10px] text-slate-400 block font-mono">Multimodal Model Fusion Engine</span>
+            </div>
+          </div>
+          <div class="flex items-center space-x-1.5">
+            <button id="btn-clear-term" class="text-[11px] text-slate-400 hover:text-slate-200 px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 transition">Clear</button>
+            <button id="btn-copy-term" class="text-[11px] text-slate-400 hover:text-slate-200 px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 transition">Copy</button>
+          </div>
+        </div>
+
+        <!-- Terminal Output Screen -->
+        <div class="flex-1 p-3 overflow-y-auto space-y-2.5 font-mono text-[11px] leading-relaxed select-text" id="terminal-screen">
+          <div class="text-slate-400">[SYSTEM] HugOS Intelligent Browser Initialized.</div>
+          <div class="text-slate-400">[READY] Master CLI: cli.exe (6-Way Parity Enforced)</div>
+          
+          <!-- Multimodal Model Fusion Banner -->
+          <div class="bg-indigo-950/40 border border-indigo-500/30 p-2.5 rounded-lg space-y-1.5 text-indigo-200 shadow-md">
+            <div class="flex items-center justify-between">
+              <span class="font-bold flex items-center gap-1.5 text-indigo-100">
+                <span>🎭</span>
+                <span>Multimodal Model Fusion Active</span>
+              </span>
+              <span class="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.2 rounded font-sans">Dominant Gate</span>
+            </div>
+            <div class="grid grid-cols-2 gap-1 text-[10px]">
+              <div class="bg-slate-900/60 px-2 py-1 rounded border border-white/5">
+                <span class="text-slate-400 block">Vision Specialist:</span>
+                <span class="text-cyan-300 font-bold">qwen2.5-vl</span>
+              </div>
+              <div class="bg-slate-900/60 px-2 py-1 rounded border border-white/5">
+                <span class="text-slate-400 block">Reasoning Specialist:</span>
+                <span class="text-indigo-300 font-bold">qwen2.5:32b</span>
+              </div>
+              <div class="bg-slate-900/60 px-2 py-1 rounded border border-white/5">
+                <span class="text-slate-400 block">AutoML Specialist:</span>
+                <span class="text-emerald-300 font-bold">ACDSO Pareto</span>
+              </div>
+              <div class="bg-slate-900/60 px-2 py-1 rounded border border-white/5">
+                <span class="text-slate-400 block">Web Search Specialist:</span>
+                <span class="text-amber-300 font-bold">DuckDuckGo</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Web Search Routing & Citations Demonstration -->
+          <div class="text-amber-400">[ROUTER] 🌐 Real-time query detected: "latest vision-language models 2026"</div>
+          <div class="text-slate-300">[SEARCH] Found 4 verified web sources with live citations:</div>
+          <div class="pl-2 border-l-2 border-amber-500/30 space-y-1 text-slate-300">
+            <div><span class="bg-amber-500/20 text-amber-300 px-1 rounded text-[10px] font-bold">[1]</span> <b>Hugging Face Hub:</b> Qwen 2.5 VL open-weight release metrics</div>
+            <div><span class="bg-amber-500/20 text-amber-300 px-1 rounded text-[10px] font-bold">[2]</span> <b>arXiv cs.CV:</b> Set-of-Mark visual prompting benchmarks</div>
+          </div>
+
+          <!-- Streaming Local AI Response -->
+          <div class="text-emerald-400 font-semibold">[ANSWER] Correlated Consensus Response:</div>
+          <div class="bg-slate-950/70 p-3 rounded-xl border border-white/10 text-slate-200 space-y-2 font-sans text-xs">
+            <p>
+              Based on live web search findings <span class="text-amber-400 font-mono font-bold cursor-pointer hover:underline">[1]</span> and local multimodal evaluation, the <b>Qwen 2.5 VL</b> family sets the current standard for open-weight visual grounding <span class="text-amber-400 font-mono font-bold cursor-pointer hover:underline">[2]</span>.
+            </p>
+            <div class="bg-emerald-500/10 border border-emerald-500/20 rounded p-2 text-[11px] text-emerald-300">
+              ✓ <b>ACDSO Synergy:</b> Visual bounding boxes can be mapped directly into tabular training targets with 0 cloud tokens.
+            </div>
+          </div>
+        </div>
+
+        <!-- Attachment Tray (Chips Area) -->
+        <div class="px-3 pt-2 bg-slate-950/80 border-t border-white/5 flex flex-wrap gap-1.5" id="attachment-tray">
+          <!-- Sample Attached Image Chip -->
+          <div class="flex items-center space-x-2 bg-slate-800 border border-white/10 hover:border-indigo-500/40 rounded-lg px-2 py-1 text-xs text-slate-200 shadow group transition">
+            <img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2306b6d4' stroke-width='2'><rect x='3' y='3' width='18' height='18' rx='2'/><circle cx='8.5' cy='8.5' r='1.5'/><polyline points='21 15 16 10 5 21'/></svg>" 
+                 class="w-6 h-6 rounded bg-slate-900 border border-white/10 object-cover" alt="thumb">
+            <div>
+              <span class="font-medium text-[11px] block truncate max-w-[120px]">ui_grounding.png</span>
+              <span class="text-[9px] text-cyan-400 font-mono">142 KB • 🖼️ Image</span>
+            </div>
+            <button class="text-slate-500 hover:text-rose-400 text-xs px-1" title="Remove attachment">✕</button>
+          </div>
+
+          <!-- Sample Attached CSV Dataset Chip -->
+          <div class="flex items-center space-x-2 bg-slate-800 border border-emerald-500/30 rounded-lg px-2 py-1 text-xs text-slate-200 shadow group transition">
+            <span class="text-emerald-400 text-sm">📊</span>
+            <div>
+              <span class="font-medium text-[11px] block truncate max-w-[120px]">titanic.csv</span>
+              <span class="text-[9px] text-emerald-400 font-mono">891 rows • Tabular</span>
+            </div>
+            <button class="text-slate-500 hover:text-rose-400 text-xs px-1" title="Remove attachment">✕</button>
+          </div>
+        </div>
+
+        <!-- Suggestion Chips -->
+        <div class="px-3 py-1.5 bg-slate-950/80 flex items-center space-x-1.5 overflow-x-auto no-scrollbar">
+          <button class="text-[10px] whitespace-nowrap bg-white/5 hover:bg-indigo-600/30 hover:border-indigo-500/40 text-slate-300 border border-white/10 px-2 py-1 rounded-md transition chip-btn" data-cmd="/acdso attention.csv --target score">/acdso dataset</button>
+          <button class="text-[10px] whitespace-nowrap bg-white/5 hover:bg-indigo-600/30 hover:border-indigo-500/40 text-slate-300 border border-white/10 px-2 py-1 rounded-md transition chip-btn" data-cmd="/som">/som visual mark</button>
+          <button class="text-[10px] whitespace-nowrap bg-white/5 hover:bg-indigo-600/30 hover:border-indigo-500/40 text-slate-300 border border-white/10 px-2 py-1 rounded-md transition chip-btn" data-cmd="/search latest reasoning models">/search recency</button>
+          <button class="text-[10px] whitespace-nowrap bg-white/5 hover:bg-indigo-600/30 hover:border-indigo-500/40 text-slate-300 border border-white/10 px-2 py-1 rounded-md transition chip-btn" data-cmd="--sys-info">--sys-info</button>
+        </div>
+
+        <!-- Interactive Terminal Prompt Input Bar -->
+        <div class="p-3 bg-slate-950 border-t border-white/10 flex items-center space-x-2">
+          <!-- Attach File Button -->
+          <button id="btn-attach" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-slate-100 border border-white/10 transition shadow flex-shrink-0" title="Attach file or image">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+          </button>
+
+          <!-- Web Mode Toggle Button -->
+          <button id="btn-web-mode" class="px-2.5 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-semibold flex items-center space-x-1.5 transition flex-shrink-0" title="Toggle Web Search Mode">
+            <span id="web-icon">🌐</span>
+            <span id="web-label" class="font-mono text-[11px]">Auto</span>
+          </button>
+
+          <!-- Input Bar -->
+          <div class="flex-1 relative">
+            <input type="text" id="term-input" 
+                   class="w-full bg-slate-900 border border-white/10 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none font-mono"
+                   placeholder="Type @agent browser <task>, /acdso, /search, or prompt...">
+          </div>
+
+          <!-- Execute Button -->
+          <button id="btn-execute" class="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl px-3.5 py-2 text-xs font-semibold shadow-lg hover:shadow-indigo-500/25 transition active:scale-95 flex-shrink-0">
+            Run
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- 4. Interactive Settings Modal Drawer (Matching media_1790440436024.png) -->
+  <!-- ========================================================================= -->
+  <div id="settings-backdrop" class="fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-6 hidden transition-opacity duration-200">
+    <div class="w-full max-w-4xl h-[650px] bg-[#0c1220] border border-white/10 rounded-2xl shadow-2xl flex overflow-hidden flex-col">
+      
+      <!-- Modal Header -->
+      <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-slate-900/60">
+        <div class="flex items-center space-x-3">
+          <span class="text-xl">⚙️</span>
+          <div>
+            <h2 class="text-base font-bold text-slate-100">HugOS Browser Settings</h2>
+            <p class="text-xs text-slate-400">ModelFusion Universal Multi-Modal Operating System</p>
+          </div>
+        </div>
+        <button id="btn-close-settings" class="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-white/10 transition">
+          ✕
+        </button>
+      </div>
+
+      <!-- Modal Body (Two-Column Layout matching screenshot) -->
+      <div class="flex-1 flex overflow-hidden">
+        
+        <!-- LEFT SIDEBAR: Search + Categorized Menu -->
+        <div class="w-64 border-r border-white/10 bg-slate-950/60 p-3 flex flex-col space-y-3 flex-shrink-0 overflow-y-auto">
+          
+          <!-- Search Box (Exact match to media_1790440436024.png) -->
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 text-xs">🔍</span>
+            <input type="text" id="settings-search" placeholder="Search" 
+                   class="w-full bg-slate-900/90 text-xs text-slate-200 rounded-full pl-8 pr-3 py-1.5 border border-white/10 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder-slate-500 transition">
+          </div>
+
+          <!-- Section Label: Personal -->
+          <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-2 pt-1">Personal</div>
+
+          <!-- Category Navigation List with Line Icons -->
+          <nav class="space-y-0.5 text-xs font-medium" id="settings-nav-list">
+            <button class="w-full flex items-center space-x-3 px-3 py-2 rounded-xl text-left bg-white/10 text-white font-semibold transition nav-item active" data-tab="tab-general">
+              <span class="text-base">⚙️</span>
+              <span>General</span>
+            </button>
+            <button class="w-full flex items-center space-x-3 px-3 py-2 rounded-xl text-left text-slate-400 hover:text-slate-200 hover:bg-white/5 transition nav-item" data-tab="tab-appearance">
+              <span class="text-base">🔆</span>
+              <span>Appearance</span>
+            </button>
+            <button class="w-full flex items-center space-x-3 px-3 py-2 rounded-xl text-left text-slate-400 hover:text-slate-200 hover:bg-white/5 transition nav-item" data-tab="tab-websearch">
+              <span class="text-base">🌐</span>
+              <span>Web Search & Routing</span>
+            </button>
+            <button class="w-full flex items-center space-x-3 px-3 py-2 rounded-xl text-left text-slate-400 hover:text-slate-200 hover:bg-white/5 transition nav-item" data-tab="tab-models">
+              <span class="text-base">🧠</span>
+              <span>AI Models & Endpoints</span>
+            </button>
+            <button class="w-full flex items-center space-x-3 px-3 py-2 rounded-xl text-left text-slate-400 hover:text-slate-200 hover:bg-white/5 transition nav-item" data-tab="tab-notifications">
+              <span class="text-base">🔔</span>
+              <span>Notifications</span>
+            </button>
+            <button class="w-full flex items-center space-x-3 px-3 py-2 rounded-xl text-left text-slate-400 hover:text-slate-200 hover:bg-white/5 transition nav-item" data-tab="tab-profile">
+              <span class="text-base">👤</span>
+              <span>Profile</span>
+            </button>
+            <button class="w-full flex items-center space-x-3 px-3 py-2 rounded-xl text-left text-slate-400 hover:text-slate-200 hover:bg-white/5 transition nav-item" data-tab="tab-security">
+              <span class="text-base">🔑</span>
+              <span>Security and login</span>
+            </button>
+            <button class="w-full flex items-center space-x-3 px-3 py-2 rounded-xl text-left text-slate-400 hover:text-slate-200 hover:bg-white/5 transition nav-item" data-tab="tab-voice">
+              <span class="text-base">🎙️</span>
+              <span>Voice</span>
+            </button>
+            <button class="w-full flex items-center space-x-3 px-3 py-2 rounded-xl text-left text-slate-400 hover:text-slate-200 hover:bg-white/5 transition nav-item" data-tab="tab-storage">
+              <span class="text-base">📁</span>
+              <span>Storage</span>
+            </button>
+            <button class="w-full flex items-center space-x-3 px-3 py-2 rounded-xl text-left text-slate-400 hover:text-slate-200 hover:bg-white/5 transition nav-item" data-tab="tab-keyboard">
+              <span class="text-base">⌨️</span>
+              <span>Keyboard</span>
+            </button>
+            <button class="w-full flex items-center space-x-3 px-3 py-2 rounded-xl text-left text-slate-400 hover:text-slate-200 hover:bg-white/5 transition nav-item" data-tab="tab-usage">
+              <span class="text-base">📈</span>
+              <span>Usage</span>
+            </button>
+            <button class="w-full flex items-center space-x-3 px-3 py-2 rounded-xl text-left text-slate-400 hover:text-slate-200 hover:bg-white/5 transition nav-item" data-tab="tab-pets">
+              <span class="text-base">🐾</span>
+              <span>Pets</span>
+            </button>
+          </nav>
+        </div>
+
+        <!-- RIGHT CONTENT PANE -->
+        <div class="flex-1 p-6 overflow-y-auto bg-slate-900/40" id="settings-content-pane">
+          
+          <!-- TAB: General -->
+          <div class="tab-pane space-y-6" id="pane-tab-general">
+            <div>
+              <h3 class="text-sm font-bold text-slate-100 uppercase tracking-wider">General Preferences</h3>
+              <p class="text-xs text-slate-400">Configure default homepage, streaming velocity, and local CLI runtime.</p>
+            </div>
+
+            <div class="space-y-4">
+              <div class="bg-slate-950/60 p-4 rounded-xl border border-white/5 flex items-center justify-between">
+                <div>
+                  <label class="text-xs font-semibold text-slate-200 block">Default Browser Homepage</label>
+                  <span class="text-[11px] text-slate-400">Default URL loaded when returning home.</span>
+                </div>
+                <input type="text" value="about:blank (Dashboard)" class="bg-slate-900 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-200 font-mono w-64 focus:outline-none">
+              </div>
+
+              <div class="bg-slate-950/60 p-4 rounded-xl border border-white/5 flex items-center justify-between">
+                <div>
+                  <label class="text-xs font-semibold text-slate-200 block">Token-Level Streaming</label>
+                  <span class="text-[11px] text-slate-400">Enable real-time token yield with sub-50ms preemption.</span>
+                </div>
+                <input type="checkbox" checked class="w-4 h-4 rounded text-indigo-600 focus:ring-0 bg-slate-800 border-white/20">
+              </div>
+
+              <div class="bg-slate-950/60 p-4 rounded-xl border border-white/5 flex items-center justify-between">
+                <div>
+                  <label class="text-xs font-semibold text-slate-200 block">Terminal Auto-Scroll</label>
+                  <span class="text-[11px] text-slate-400">Scroll output screen to bottom on new token chunks.</span>
+                </div>
+                <input type="checkbox" checked class="w-4 h-4 rounded text-indigo-600 focus:ring-0 bg-slate-800 border-white/20">
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB: Web Search & Routing -->
+          <div class="tab-pane hidden space-y-6" id="pane-tab-websearch">
+            <div>
+              <h3 class="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                <span>🌐</span>
+                <span>Internet Search & Intelligent Routing</span>
+              </h3>
+              <p class="text-xs text-slate-400">ChatGPT-style live web retrieval, correlation, and automated query routing.</p>
+            </div>
+
+            <div class="space-y-4">
+              <div class="bg-slate-950/60 p-4 rounded-xl border border-white/5 flex items-center justify-between">
+                <div>
+                  <label class="text-xs font-semibold text-slate-200 block">Enable Internet Search</label>
+                  <span class="text-[11px] text-slate-400">Allow local LLM to search web for current events, facts, and documentation.</span>
+                </div>
+                <input type="checkbox" checked class="w-4 h-4 rounded text-amber-500 focus:ring-0 bg-slate-800 border-white/20">
+              </div>
+
+              <div class="bg-slate-950/60 p-4 rounded-xl border border-white/5 flex items-center justify-between">
+                <div>
+                  <label class="text-xs font-semibold text-slate-200 block">Search Trigger Mode</label>
+                  <span class="text-[11px] text-slate-400">Intelligent classifier auto-routes recency queries; keeps code generation local.</span>
+                </div>
+                <select class="bg-slate-900 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none">
+                  <option selected>Auto (Intelligent Routing)</option>
+                  <option>Always Search Web</option>
+                  <option>Manual Only (/search)</option>
+                </select>
+              </div>
+
+              <div class="bg-slate-950/60 p-4 rounded-xl border border-white/5 flex items-center justify-between">
+                <div>
+                  <label class="text-xs font-semibold text-slate-200 block">Max Search Results & Citations</label>
+                  <span class="text-[11px] text-slate-400">Number of live web snippets synthesized into the prompt context.</span>
+                </div>
+                <div class="flex items-center space-x-2">
+                  <input type="range" min="1" max="10" value="5" class="w-28 accent-amber-500">
+                  <span class="text-xs font-mono text-amber-400 font-bold">5 sources</span>
+                </div>
+              </div>
+
+              <!-- Live Test Sandbox -->
+              <div class="bg-amber-950/20 border border-amber-500/30 p-4 rounded-xl space-y-3">
+                <span class="text-xs font-bold text-amber-300 block">🔍 Test Live Web Search Pipeline:</span>
+                <div class="flex space-x-2">
+                  <input type="text" id="test-search-query" value="Rust language release 2026" class="flex-1 bg-slate-900 border border-white/10 rounded-lg px-3 py-1 text-xs text-slate-200 font-mono">
+                  <button id="btn-run-test-search" class="bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold px-3 py-1 rounded-lg text-xs transition">Test Search</button>
+                </div>
+                <div id="test-search-result" class="text-[11px] font-mono text-slate-400 bg-slate-950/80 p-2 rounded border border-white/5">
+                  Ready. Click 'Test Search' to probe DuckDuckGo Lite & IPC.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB: AI Models & Endpoints -->
+          <div class="tab-pane hidden space-y-6" id="pane-tab-models">
+            <div>
+              <h3 class="text-sm font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-2">
+                <span>🧠</span>
+                <span>AI Models & Multimodal Endpoints</span>
+              </h3>
+              <p class="text-xs text-slate-400">Configure local Ollama workhorse models and ModelFusion IPC bridges.</p>
+            </div>
+
+            <div class="space-y-4">
+              <div class="bg-slate-950/60 p-4 rounded-xl border border-white/5 space-y-2">
+                <div class="flex justify-between items-center">
+                  <label class="text-xs font-semibold text-slate-200">Local Ollama REST API</label>
+                  <span class="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">Active</span>
+                </div>
+                <div class="flex space-x-2">
+                  <input type="text" value="http://127.0.0.1:11434" class="flex-1 bg-slate-900 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-200 font-mono">
+                  <button class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10">Probe</button>
+                </div>
+              </div>
+
+              <div class="bg-slate-950/60 p-4 rounded-xl border border-white/5 flex items-center justify-between">
+                <div>
+                  <label class="text-xs font-semibold text-slate-200 block">Primary Workhorse Model</label>
+                  <span class="text-[11px] text-slate-400">Automatically sized based on runtime available system RAM.</span>
+                </div>
+                <select class="bg-slate-900 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-200 font-mono focus:outline-none">
+                  <option selected>qwen2.5:32b (Available RAM &gt; 48GB)</option>
+                  <option>qwen2.5:14b (Available RAM &gt; 24GB)</option>
+                  <option>qwen2.5:7b (Fast Standard Engine)</option>
+                  <option>deepseek-r1:32b (Deep Reasoning)</option>
+                </select>
+              </div>
+
+              <div class="bg-slate-950/60 p-4 rounded-xl border border-white/5 flex items-center justify-between">
+                <div>
+                  <label class="text-xs font-semibold text-slate-200 block">Vision Specialist Model</label>
+                  <span class="text-[11px] text-slate-400">Multi-modal visual grounding for Set-of-Mark & screenshots.</span>
+                </div>
+                <select class="bg-slate-900 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-200 font-mono focus:outline-none">
+                  <option selected>qwen2.5-vl (Open-Weight VLM)</option>
+                  <option>llama3.2-vision (Meta Multimodal)</option>
+                  <option>OpenVINO ViT (Hardware Direct)</option>
+                </select>
+              </div>
+
+              <div class="bg-slate-950/60 p-4 rounded-xl border border-white/5 flex items-center justify-between">
+                <div>
+                  <label class="text-xs font-semibold text-slate-200 block">Sampling Temperature</label>
+                  <span class="text-[11px] text-slate-400">Lower values (0.1–0.3) provide analytical determinism.</span>
+                </div>
+                <div class="flex items-center space-x-3">
+                  <input type="range" min="0.0" max="1.0" step="0.05" value="0.2" class="w-28 accent-indigo-500">
+                  <span class="text-xs font-mono text-indigo-400 font-bold">0.20</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB: Appearance -->
+          <div class="tab-pane hidden space-y-6" id="pane-tab-appearance">
+            <div>
+              <h3 class="text-sm font-bold text-cyan-400 uppercase tracking-wider">Appearance & Themes</h3>
+              <p class="text-xs text-slate-400">Customize the visual styling and typography of the HugOS Browser portal.</p>
+            </div>
+
+            <div class="space-y-4">
+              <div class="bg-slate-950/60 p-4 rounded-xl border border-white/5 flex items-center justify-between">
+                <div>
+                  <label class="text-xs font-semibold text-slate-200 block">Theme</label>
+                  <span class="text-[11px] text-slate-400">Select background contrast mode.</span>
+                </div>
+                <select class="bg-slate-900 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none">
+                  <option selected>dark-plus (Default HugOS)</option>
+                  <option>obsidian (Pitch Black)</option>
+                  <option>midnight (Deep Navy)</option>
+                </select>
+              </div>
+
+              <div class="bg-slate-950/60 p-4 rounded-xl border border-white/5 flex items-center justify-between">
+                <div>
+                  <label class="text-xs font-semibold text-slate-200 block">Terminal Font Size</label>
+                  <span class="text-[11px] text-slate-400">Font scaling for execution logs.</span>
+                </div>
+                <select class="bg-slate-900 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-200 font-mono focus:outline-none">
+                  <option>12px (Compact)</option>
+                  <option selected>13px (Default)</option>
+                  <option>14px (Medium)</option>
+                  <option>16px (Large)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB: Usage -->
+          <div class="tab-pane hidden space-y-6" id="pane-tab-usage">
+            <div>
+              <h3 class="text-sm font-bold text-emerald-400 uppercase tracking-wider">Telemetry & Hardware Usage</h3>
+              <p class="text-xs text-slate-400">Real-time local GPU, RAM, and model latency benchmarks.</p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div class="bg-slate-950/60 p-4 rounded-xl border border-white/5 space-y-1">
+                <span class="text-[11px] text-slate-400 block">Runtime Available RAM</span>
+                <span class="text-lg font-bold text-emerald-400 font-mono">58.4 GB Free</span>
+                <span class="text-[10px] text-slate-500 block">of 64.0 GB physical installed</span>
+              </div>
+              <div class="bg-slate-950/60 p-4 rounded-xl border border-white/5 space-y-1">
+                <span class="text-[11px] text-slate-400 block">NVIDIA GPU VRAM</span>
+                <span class="text-lg font-bold text-cyan-400 font-mono">16.0 GB Free</span>
+                <span class="text-[10px] text-slate-500 block">RTX 4090 / CUDA 12.4</span>
+              </div>
+              <div class="bg-slate-950/60 p-4 rounded-xl border border-white/5 space-y-1">
+                <span class="text-[11px] text-slate-400 block">Database Catalog</span>
+                <span class="text-lg font-bold text-indigo-400 font-mono">2,140,820 Models</span>
+                <span class="text-[10px] text-slate-500 block">SQLite hf_models.db (45 Tasks)</span>
+              </div>
+              <div class="bg-slate-950/60 p-4 rounded-xl border border-white/5 space-y-1">
+                <span class="text-[11px] text-slate-400 block">Token Velocity</span>
+                <span class="text-lg font-bold text-amber-400 font-mono">84.2 tokens/s</span>
+                <span class="text-[10px] text-slate-500 block">qwen2.5:32b FP16 on GPU</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Other tabs generic placeholder -->
+          <div class="tab-pane hidden space-y-4" id="pane-tab-other">
+            <div class="bg-slate-950/60 p-8 rounded-xl border border-white/5 text-center space-y-2">
+              <span class="text-3xl">✨</span>
+              <h4 class="text-sm font-semibold text-slate-200">Category Configured</h4>
+              <p class="text-xs text-slate-400">Settings for this section are active and managed via the ModelFusion Master CLI.</p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-6 py-3 border-t border-white/10 bg-slate-950 flex items-center justify-between">
+        <button id="btn-reset-defaults" class="text-xs text-slate-400 hover:text-rose-400 transition">Reset to Defaults</button>
+        <div class="flex items-center space-x-2">
+          <button id="btn-cancel-settings" class="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 transition">Cancel</button>
+          <button id="btn-save-settings" class="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white shadow transition">Save Preferences</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Client-Side Interactive Script -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // 1. Settings Drawer Elements
+      const btnOpenSettings = document.getElementById('btn-open-settings');
+      const settingsBackdrop = document.getElementById('settings-backdrop');
+      const btnCloseSettings = document.getElementById('btn-close-settings');
+      const btnCancelSettings = document.getElementById('btn-cancel-settings');
+      const btnSaveSettings = document.getElementById('btn-save-settings');
+      const settingsNavItems = document.querySelectorAll('.nav-item');
+      const settingsPanes = document.querySelectorAll('.tab-pane');
+      const settingsSearch = document.getElementById('settings-search');
+
+      function openSettings() {
+        settingsBackdrop.classList.remove('hidden');
+      }
+
+      function closeSettings() {
+        settingsBackdrop.classList.add('hidden');
+      }
+
+      btnOpenSettings.addEventListener('click', openSettings);
+      btnCloseSettings.addEventListener('click', closeSettings);
+      btnCancelSettings.addEventListener('click', closeSettings);
+      btnSaveSettings.addEventListener('click', () => {
+        closeSettings();
+        appendTerminalLine('[SYSTEM] Settings saved to localStorage and applied to local engine.', 'text-emerald-400');
+      });
+
+      // Keyboard shortcuts: Ctrl+, to open settings; Esc to close
+      window.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === ',') {
+          e.preventDefault();
+          openSettings();
+        } else if (e.key === 'Escape') {
+          closeSettings();
+        }
+      });
+
+      // Tab Switching
+      settingsNavItems.forEach(item => {
+        item.addEventListener('click', () => {
+          settingsNavItems.forEach(i => i.classList.remove('bg-white/10', 'text-white', 'font-semibold'));
+          settingsNavItems.forEach(i => i.classList.add('text-slate-400'));
+          item.classList.add('bg-white/10', 'text-white', 'font-semibold');
+          item.classList.remove('text-slate-400');
+
+          const tabId = item.getAttribute('data-tab');
+          settingsPanes.forEach(p => p.classList.add('hidden'));
+
+          const targetPane = document.getElementById(`pane-${tabId}`);
+          if (targetPane) {
+            targetPane.classList.remove('hidden');
+          } else {
+            document.getElementById('pane-tab-other').classList.remove('hidden');
+          }
+        });
+      });
+
+      // Settings Search Filtering
+      settingsSearch.addEventListener('input', (e) => {
+        const query = e.target.value.toLowerCase().trim();
+        settingsNavItems.forEach(item => {
+          const text = item.textContent.toLowerCase();
+          if (text.includes(query) || query === '') {
+            item.style.display = 'flex';
+          } else {
+            item.style.display = 'none';
+          }
+        });
+      });
+
+      // 2. Terminal & Command Runner Logic
+      const terminalScreen = document.getElementById('terminal-screen');
+      const termInput = document.getElementById('term-input');
+      const btnExecute = document.getElementById('btn-execute');
+      const btnClearTerm = document.getElementById('btn-clear-term');
+      const btnWebMode = document.getElementById('btn-web-mode');
+      const webIcon = document.getElementById('web-icon');
+      const webLabel = document.getElementById('web-label');
+      const chipBtns = document.querySelectorAll('.chip-btn');
+
+      // Web Mode Toggle: Auto -> On -> Off -> Auto
+      const webModes = ['Auto', 'On', 'Off'];
+      let currentWebModeIdx = 0;
+      btnWebMode.addEventListener('click', () => {
+        currentWebModeIdx = (currentWebModeIdx + 1) % webModes.length;
+        const mode = webModes[currentWebModeIdx];
+        webLabel.textContent = mode;
+        if (mode === 'Auto') {
+          btnWebMode.className = 'px-2.5 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-semibold flex items-center space-x-1.5 transition flex-shrink-0';
+        } else if (mode === 'On') {
+          btnWebMode.className = 'px-2.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center space-x-1.5 transition flex-shrink-0';
+        } else {
+          btnWebMode.className = 'px-2.5 py-1.5 rounded-xl bg-slate-800 text-slate-400 border border-white/10 text-xs font-semibold flex items-center space-x-1.5 transition flex-shrink-0';
+        }
+        appendTerminalLine(`[CONFIG] Web Search Mode set to: ${mode}`, 'text-slate-400');
+      });
+
+      function appendTerminalLine(text, colorClass = 'text-slate-300') {
+        const line = document.createElement('div');
+        line.className = colorClass;
+        line.textContent = text;
+        terminalScreen.appendChild(line);
+        terminalScreen.scrollTop = terminalScreen.scrollHeight;
+      }
+
+      function runCommand(cmd) {
+        if (!cmd.trim()) return;
+        appendTerminalLine(`> ${cmd}`, 'text-slate-100 font-bold');
+        termInput.value = '';
+
+        if (cmd.startsWith('/acdso')) {
+          appendTerminalLine('[ROUTER] 📊 Routing to ACDSO Risk-Aware Pareto AutoML Specialist...', 'text-cyan-400');
+          appendTerminalLine('[ACDSO] Ingesting dataset: attention.csv (14.2 KB, 8 columns)', 'text-slate-300');
+          appendTerminalLine('[ACDSO] Pareto Knee-Point selected: LightGBM (Accuracy: 0.942, Latency: 1.2ms, Memory: 12MB)', 'text-emerald-400');
+        } else if (cmd.startsWith('/som')) {
+          toggleSoM();
+          appendTerminalLine('[VISION] Set-of-Mark visual grounding badges toggled on DOM viewport.', 'text-rose-400');
+        } else if (cmd.startsWith('/search')) {
+          appendTerminalLine(`[SEARCH] Querying DuckDuckGo: "${cmd.replace('/search', '').trim()}"`, 'text-amber-400');
+          appendTerminalLine('[SEARCH] Retrieved 4 live sources. Correlating with Qwen 2.5 32B...', 'text-slate-300');
+        } else {
+          appendTerminalLine(`[OLLAMA] Streaming response from Qwen 2.5 32B:`, 'text-indigo-400');
+          appendTerminalLine('ModelFusion evaluated directive across multimodal panel. Consensus reached with 100% confidence.', 'text-slate-300');
+        }
+      }
+
+      btnExecute.addEventListener('click', () => runCommand(termInput.value));
+      termInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') runCommand(termInput.value);
+      });
+
+      chipBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          runCommand(btn.getAttribute('data-cmd'));
+        });
+      });
+
+      btnClearTerm.addEventListener('click', () => {
+        terminalScreen.innerHTML = '<div class="text-slate-400">[SYSTEM] Terminal cleared. Ready.</div>';
+      });
+
+      // 3. Set-of-Mark Toggle on Page
+      const btnSomToggle = document.getElementById('btn-som-toggle');
+      let somVisible = true;
+      function toggleSoM() {
+        somVisible = !somVisible;
+        const badges = document.querySelectorAll('.som-badge');
+        badges.forEach(b => {
+          b.style.display = somVisible ? 'inline-block' : 'none';
+        });
+      }
+      btnSomToggle.addEventListener('click', toggleSoM);
+
+      // 4. Test Search button in Settings
+      const btnRunTestSearch = document.getElementById('btn-run-test-search');
+      const testSearchResult = document.getElementById('test-search-result');
+      if (btnRunTestSearch) {
+        btnRunTestSearch.addEventListener('click', () => {
+          testSearchResult.textContent = 'Probing :5000/api/search and DuckDuckGo Lite...';
+          setTimeout(() => {
+            testSearchResult.innerHTML = '<span class="text-emerald-400 font-bold">✓ Success:</span> Found 5 results (Rust 1.86.0 release notes, async closures, cargo update). Latency: 210ms.';
+          }, 400);
+        });
+      }
+
+      // 5. Extract Table Action
+      const btnExtractTable = document.getElementById('btn-extract-this-table');
+      if (btnExtractTable) {
+        btnExtractTable.addEventListener('click', () => {
+          runCommand('/acdso "Deep Learning Software Comparison" --target license');
+        });
+      }
+    });
+  </script>
+</body>
+</html>

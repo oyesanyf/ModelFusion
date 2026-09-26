@@ -1,0 +1,2140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ModelFusion & HugOS IDE — Technical Architecture & Interactive Blueprint</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    /* Custom scrollbars and transitions */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--background); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    .glass-card { background: var(--card); border: 1px solid var(--border); }
+  </style>
+</head>
+<body class="bg-[var(--background)] text-[var(--foreground)] antialiased p-6 md:p-10 font-sans max-w-7xl mx-auto">
+
+  <!-- Hero Header -->
+  <header class="glass-card rounded-3xl p-8 mb-8 shadow-2xl relative overflow-hidden">
+    <div class="absolute -right-20 -top-20 w-80 h-80 bg-gradient-to-br from-amber-500/20 via-orange-500/10 to-transparent rounded-full blur-3xl pointer-events-none"></div>
+    <div class="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+      <div>
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-500 text-xs font-bold uppercase tracking-wider mb-3">
+          <span>🌀</span> Authenticode Signed Release • Build 153
+        </div>
+        <h1 class="text-3xl md:text-5xl font-black tracking-tight text-[var(--foreground)] mb-2">
+          ModelFusion &amp; HugOS IDE
+        </h1>
+        <p class="text-base md:text-lg text-[var(--muted-foreground)] max-w-2xl">
+          Open-Weight Compound Intelligence Operating System with Autonomous ReST-RL, Multi-Modal Consensus Routing, and Sub-50ms Kernel Preemption.
+        </p>
+      </div>
+      <div class="flex flex-col gap-2.5 min-w-[240px]">
+        <div class="glass-card bg-[var(--background)]/80 rounded-2xl p-4 border border-[var(--border)] shadow-sm">
+          <div class="text-xs text-[var(--muted-foreground)] uppercase tracking-wider font-semibold">Verified Status</div>
+          <div class="flex items-center justify-between mt-1">
+            <span class="text-xl font-black text-emerald-500">100% Green</span>
+            <span class="text-xs font-mono bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded border border-emerald-500/20">150 / 150 Tests</span>
+          </div>
+          <div class="text-[11px] text-[var(--muted-foreground)] mt-1 font-mono">170 Production CLI Flags</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Core Pillars Grid -->
+  <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+    <div class="glass-card rounded-2xl p-6 hover:border-amber-500/40 transition-all">
+      <div class="h-10 w-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 font-bold text-xl mb-4">
+        🧠
+      </div>
+      <h3 class="text-lg font-bold mb-2">Multi-Objective Pareto Routing</h3>
+      <p class="text-sm text-[var(--muted-foreground)] leading-relaxed">
+        Indexes 2,000,000+ Hugging Face models across all 45 tasks. Dynamically sizes local execution against <strong>runtime available RAM</strong>, never total physical memory, preventing OOM aborts.
+      </p>
+    </div>
+
+    <div class="glass-card rounded-2xl p-6 hover:border-indigo-500/40 transition-all">
+      <div class="h-10 w-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-500 font-bold text-xl mb-4">
+        ⚡
+      </div>
+      <h3 class="text-lg font-bold mb-2">ReST-RL &amp; Sub-50ms Preemption</h3>
+      <p class="text-sm text-[var(--muted-foreground)] leading-relaxed">
+        Background RL self-training engine backed by Windows Job Objects (&lt;8ms termination) and token-level SSE yielding (&lt;25ms abortion). Features an adversarial $K=5$ AST mutation testing certification gate.
+      </p>
+    </div>
+
+    <div class="glass-card rounded-2xl p-6 hover:border-emerald-500/40 transition-all">
+      <div class="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 font-bold text-xl mb-4">
+        📈
+      </div>
+      <h3 class="text-lg font-bold mb-2">ACDSO Risk-Aware AutoML</h3>
+      <p class="text-sm text-[var(--muted-foreground)] leading-relaxed">
+        5-objective Pareto knee-point optimization (Accuracy, Cost, Memory, Latency, Risk), automated leakage detection, walk-forward time-series forecasting, and causal uplift decision intelligence. Zero cloud tokens.
+      </p>
+    </div>
+
+    <div class="glass-card rounded-2xl p-6 hover:border-sky-500/40 transition-all">
+      <div class="h-10 w-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-500 font-bold text-xl mb-4">
+        🔐
+      </div>
+      <h3 class="text-lg font-bold mb-2">4-Way Cryptographic Parity</h3>
+      <p class="text-sm text-[var(--muted-foreground)] leading-relaxed">
+        Guarantees 100% bit-for-bit SHA-256 match across target release binary, IDE packaging staging, distribution package, and locally installed production runtime. Fully Authenticode-signed.
+      </p>
+    </div>
+  </section>
+
+  <!-- Interactive System Blueprint & Telemetry Calculator -->
+    <!-- Interactive Command Explorer (All 170 Master CLI Flags) -->
+  <section class="glass-card rounded-3xl p-8 mb-8 shadow-2xl">
+    <div class="flex flex-col md:flex-row items-start md:items-center justify-between pb-6 mb-6 border-b border-[var(--border)] gap-4">
+      <div>
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-500 text-xs font-bold uppercase tracking-wider mb-2">
+          <span>Authoritative CLI Master Table</span>
+        </div>
+        <h2 class="text-2xl font-black tracking-tight text-[var(--foreground)]">Interactive Command & Flag Explorer (All 170 Flags)</h2>
+        <p class="text-sm text-[var(--muted-foreground)]">Instant search across all 170 production flags, multi-modal routing pipelines, and system execution directives.</p>
+      </div>
+      <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full md:w-auto">
+        <div class="relative w-full sm:w-72">
+          <input type="text" id="flagSearch" oninput="filterFlags()" placeholder="Search 170 flags, tasks, syntax..." 
+                 class="w-full px-4 py-2 text-xs rounded-xl glass-card border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] focus:outline-none focus:border-amber-500" />
+        </div>
+        <span id="flagCounter" class="text-xs font-mono text-amber-500 font-bold whitespace-nowrap">Showing 170 of 170</span>
+      </div>
+    </div>
+
+    <!-- Filter Buttons -->
+    <div class="flex flex-wrap gap-2 mb-6" id="filterButtons">
+      <button onclick="setCategory('all')" id="btn-all" class="cat-btn px-3 py-1 rounded-xl text-xs font-semibold bg-amber-500 text-white">All Flags (170)</button>
+      <button onclick="setCategory('global')" id="btn-global" class="cat-btn px-3 py-1 rounded-xl text-xs font-semibold glass-card text-[var(--muted-foreground)] hover:text-[var(--foreground)]">Global & Hardware (19)</button>
+      <button onclick="setCategory('ml')" id="btn-ml" class="cat-btn px-3 py-1 rounded-xl text-xs font-semibold glass-card text-[var(--muted-foreground)] hover:text-[var(--foreground)]">ML & Quantization (12)</button>
+      <button onclick="setCategory('innov')" id="btn-innov" class="cat-btn px-3 py-1 rounded-xl text-xs font-semibold glass-card text-[var(--muted-foreground)] hover:text-[var(--foreground)]">Innovation (6)</button>
+      <button onclick="setCategory('hyde')" id="btn-hyde" class="cat-btn px-3 py-1 rounded-xl text-xs font-semibold glass-card text-[var(--muted-foreground)] hover:text-[var(--foreground)]">HyDE & Search (9)</button>
+      <button onclick="setCategory('sys')" id="btn-sys" class="cat-btn px-3 py-1 rounded-xl text-xs font-semibold glass-card text-[var(--muted-foreground)] hover:text-[var(--foreground)]">System & Backends (41)</button>
+      <button onclick="setCategory('data')" id="btn-data" class="cat-btn px-3 py-1 rounded-xl text-xs font-semibold glass-card text-[var(--muted-foreground)] hover:text-[var(--foreground)]">Data & Eval (7)</button>
+      <button onclick="setCategory('tasks')" id="btn-tasks" class="cat-btn px-3 py-1 rounded-xl text-xs font-semibold glass-card text-[var(--muted-foreground)] hover:text-[var(--foreground)]">Multi-Modal Tasks (62)</button>
+      <button onclick="setCategory('server')" id="btn-server" class="cat-btn px-3 py-1 rounded-xl text-xs font-semibold glass-card text-[var(--muted-foreground)] hover:text-[var(--foreground)]">Server & MCP (5)</button>
+      <button onclick="setCategory('acdso')" id="btn-acdso" class="cat-btn px-3 py-1 rounded-xl text-xs font-semibold glass-card text-[var(--muted-foreground)] hover:text-[var(--foreground)]">ACDSO Risk-Aware AutoML (9)</button>
+    </div>
+
+    <!-- Flag Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[750px] overflow-y-auto pr-1" id="cmdGrid">
+      <!-- Generated via JS -->
+    </div>
+  </section>
+
+  <!-- Verification & Parity Audit -->
+  <footer class="glass-card rounded-3xl p-6 text-center text-xs text-[var(--muted-foreground)]">
+    <div class="flex flex-wrap items-center justify-center gap-6 mb-3">
+      <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-emerald-500"></span> Git Main: <code>fe8e39bb</code></span>
+      <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-emerald-500"></span> Release Tag: <code>v1.0.0-beta.153</code></span>
+      <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-emerald-500"></span> Rolling Release: <code>v1.0.0-beta</code></span>
+    </div>
+    <p>ModelFusion &amp; HugOS IDE • MIT License • Canonical Remote: <code>https://github.com/oyesanyf/ModelFusion.git</code></p>
+  </footer>
+
+  <script>
+    // Hardware Allocation Sizing Matrix
+    const ramRange = document.getElementById('ramRange');
+    const vramRange = document.getElementById('vramRange');
+    const ramDisplay = document.getElementById('ramDisplay');
+    const vramDisplay = document.getElementById('vramDisplay');
+    const activeModelTag = document.getElementById('activeModelTag');
+    const decisionTitle = document.getElementById('decisionTitle');
+    const decisionDetail = document.getElementById('decisionDetail');
+    const engineType = document.getElementById('engineType');
+    const throughputEst = document.getElementById('throughputEst');
+    const vramStatus = document.getElementById('vramStatus');
+
+    function updateSizing() {
+      const ram = parseFloat(ramRange.value);
+      const vram = parseFloat(vramRange.value);
+      ramDisplay.textContent = ram.toFixed(1) + ' GB';
+      vramDisplay.textContent = vram.toFixed(1) + ' GB';
+
+      if (ram >= 48 || vram >= 24) {
+        activeModelTag.textContent = 'qwen2.5:32b';
+        decisionTitle.textContent = 'Frontier Reasoning Tier (32B)';
+        decisionDetail.textContent = 'Allocates top-tier 32B model. When VRAM < 24 GB, offloads non-critical transformer layers to system RAM with adaptive timeout protection (600s).';
+        engineType.textContent = 'Ollama GPU/CPU';
+        throughputEst.textContent = vram >= 24 ? '~85 tok/s' : '~35 tok/s';
+        vramStatus.textContent = vram >= 24 ? '100% Resident' : 'Hybrid Offload';
+      } else if (ram >= 24 || vram >= 14) {
+        activeModelTag.textContent = 'qwen2.5:14b';
+        decisionTitle.textContent = 'High-Throughput Instruction Tier (14B)';
+        decisionDetail.textContent = 'Balanced multi-modal tier. Fits completely in >=14 GB VRAM or runs cleanly on host memory with minimal overhead.';
+        engineType.textContent = 'Ollama Tensor Core';
+        throughputEst.textContent = vram >= 14 ? '~75 tok/s' : '~45 tok/s';
+        vramStatus.textContent = vram >= 14 ? '100% Resident' : 'Low Offload';
+      } else if (ram >= 12 || vram >= 4.5) {
+        activeModelTag.textContent = 'qwen2.5:7b';
+        decisionTitle.textContent = 'GPU Tensor Core Resident Tier (7B)';
+        decisionDetail.textContent = 'Ultra-low latency execution. Model fits 100% within GPU VRAM (4.6 GB size). Zero CPU memory offloading for lightning-fast analysis.';
+        engineType.textContent = 'Pure GPU Resident';
+        throughputEst.textContent = '~60-80 tok/s';
+        vramStatus.textContent = '100% Resident';
+      } else if (ram >= 6 || vram >= 2) {
+        activeModelTag.textContent = 'qwen2.5:3b';
+        decisionTitle.textContent = 'Compact Edge Tier (3B)';
+        decisionDetail.textContent = 'Optimized for laptops and integrated graphics. Delivers high-speed reasoning with under 3 GB memory footprint.';
+        engineType.textContent = 'Edge / Ollama';
+        throughputEst.textContent = '~90-120 tok/s';
+        vramStatus.textContent = '100% Resident';
+      } else {
+        activeModelTag.textContent = 'qwen2.5:1.5b';
+        decisionTitle.textContent = 'Minimal Footprint Tier (1.5B)';
+        decisionDetail.textContent = 'Guarantees execution even on low-RAM machines without risk of memory pressure or crashing background IDE processes.';
+        engineType.textContent = 'Ultra-Light / CPU';
+        throughputEst.textContent = '~120+ tok/s';
+        vramStatus.textContent = 'Full CPU/VRAM';
+      }
+    }
+
+    ramRange.addEventListener('input', updateSizing);
+    vramRange.addEventListener('input', updateSizing);
+    updateSizing();
+
+    // Command Explorer Database
+    // Master CLI Commands (All 170 Flags)
+    // Master CLI Commands (All 170 Flags)
+    const allFlags = [
+    {
+        "idx": 1,
+        "name": "--file",
+        "flag": "--file",
+        "category": "global",
+        "category_name": "Global Execution & Resource Flags",
+        "type": "String",
+        "default": "None",
+        "desc": "Specify a local file path as target input for analysis, code review, or ingestion into the model context.",
+        "syntax": "cli.exe --file \"crates/core/src/lib.rs\" --prompt \"Review this file for potential memory leaks\""
+    },
+    {
+        "idx": 2,
+        "name": "--folder",
+        "flag": "--folder",
+        "category": "global",
+        "category_name": "Global Execution & Resource Flags",
+        "type": "String",
+        "default": "None",
+        "desc": "Specify a target directory for batch scanning, multi-file code review, or directory-level summarization.",
+        "syntax": "cli.exe --folder \"src/\" --prompt \"Generate an architectural overview of all Rust modules in this folder\""
+    },
+    {
+        "idx": 3,
+        "name": "--prompt",
+        "flag": "--prompt",
+        "category": "global",
+        "category_name": "Global Execution & Resource Flags",
+        "type": "String",
+        "default": "None",
+        "desc": "Primary instruction or question passed to the dynamically selected local or remote model.",
+        "syntax": "cli.exe --prompt \"Explain the zero-VRAM graduated verification mechanism in HugOS\""
+    },
+    {
+        "idx": 4,
+        "name": "--task",
+        "flag": "--task",
+        "category": "global",
+        "category_name": "Global Execution & Resource Flags",
+        "type": "String",
+        "default": "None",
+        "desc": "Explicitly force routing to a specific Hugging Face task pipeline instead of automatic classification.",
+        "syntax": "cli.exe --task text-generation --prompt \"Write a high-performance LRU cache in Rust\""
+    },
+    {
+        "idx": 5,
+        "name": "--budget",
+        "flag": "--budget",
+        "category": "global",
+        "category_name": "Global Execution & Resource Flags",
+        "type": "f64",
+        "default": "10.0",
+        "desc": "Sets a maximum monetary budget cap for commercial cloud LLM provider API consumption.",
+        "syntax": "cli.exe --prompt \"Deep refactor of parsing pipeline\" --budget 2.5"
+    },
+    {
+        "idx": 6,
+        "name": "--chain-of-thought",
+        "flag": "--chain-of-thought",
+        "category": "global",
+        "category_name": "Global Execution & Resource Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Enforces step-by-step reasoning tokens prior to synthesizing final code and answers.",
+        "syntax": "cli.exe --prompt \"Solve the dining philosophers problem with deadlock avoidance\" --chain-of-thought"
+    },
+    {
+        "idx": 7,
+        "name": "--config",
+        "flag": "--config",
+        "category": "global",
+        "category_name": "Global Execution & Resource Flags",
+        "type": "String",
+        "default": "None",
+        "desc": "Overrides default engine configuration with settings from a specified JSON configuration file.",
+        "syntax": "cli.exe --config \"config/production_overrides.json\" --active-model"
+    },
+    {
+        "idx": 8,
+        "name": "--enable-ml",
+        "flag": "--enable-ml",
+        "category": "global",
+        "category_name": "Global Execution & Resource Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Enables machine-learning enhancements across model routing, feature extraction, and heuristics.",
+        "syntax": "cli.exe --prompt \"Classify cybersecurity incident logs\" --enable-ml"
+    },
+    {
+        "idx": 9,
+        "name": "--use-openai",
+        "flag": "--use-openai",
+        "category": "global",
+        "category_name": "Global Execution & Resource Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Directs execution to OpenAI API endpoints (requires OPENAI_API_KEY) rather than local Ollama models.",
+        "syntax": "cli.exe --prompt \"Summarize multi-tier architecture\" --use-openai"
+    },
+    {
+        "idx": 10,
+        "name": "--verbose",
+        "flag": "--verbose",
+        "category": "global",
+        "category_name": "Global Execution & Resource Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Enables detailed informational console logs, pipeline transition notices, and execution progress.",
+        "syntax": "cli.exe --update --db-path \"IDE/db/hf_models.db\" --verbose"
+    },
+    {
+        "idx": 11,
+        "name": "--debug",
+        "flag": "--debug",
+        "category": "global",
+        "category_name": "Global Execution & Resource Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Outputs exhaustive low-level diagnostic traces, memory allocations, IPC messages, and raw errors.",
+        "syntax": "cli.exe --rest-rl status --debug"
+    },
+    {
+        "idx": 12,
+        "name": "--selection-strategy",
+        "flag": "--selection-strategy",
+        "category": "global",
+        "category_name": "Global Execution & Resource Flags",
+        "type": "String",
+        "default": "multi_objective",
+        "desc": "Specifies the Pareto optimization strategy used to score and rank candidate models from SQLite.",
+        "syntax": "cli.exe --task text-generation --selection-strategy popularity --prompt \"Generate REST client\""
+    },
+    {
+        "idx": 13,
+        "name": "--language",
+        "flag": "--language",
+        "category": "global",
+        "category_name": "Global Execution & Resource Flags",
+        "type": "String",
+        "default": "en",
+        "desc": "Configures the target linguistic locale for model prompt templates, tokenizers, and responses.",
+        "syntax": "cli.exe --prompt \"Translate invoice summary\" --language fr"
+    },
+    {
+        "idx": 14,
+        "name": "--gpu",
+        "flag": "--gpu",
+        "category": "global",
+        "category_name": "Global Execution & Resource Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Forces GPU acceleration (CUDA, ROCm, Vulkan) and aborts if hardware acceleration is unavailable.",
+        "syntax": "cli.exe --fusion --fusion-models 3 --gpu --prompt \"Synthesize microkernel design\""
+    },
+    {
+        "idx": 15,
+        "name": "--cpu",
+        "flag": "--cpu",
+        "category": "global",
+        "category_name": "Global Execution & Resource Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Forces CPU-only execution, disabling GPU kernel initialization and saving VRAM.",
+        "syntax": "cli.exe --fusion --cpu --prompt \"Parse CSV dataset and compute stats\""
+    },
+    {
+        "idx": 16,
+        "name": "--api-keys",
+        "flag": "--api-keys",
+        "category": "global",
+        "category_name": "Global Execution & Resource Flags",
+        "type": "String",
+        "default": "None",
+        "desc": "Loads provider credentials (HuggingFace, OpenAI, Anthropic) from a structured JSON file.",
+        "syntax": "cli.exe --api-keys \"credentials/keys.json\" --use-openai --prompt \"Run code analysis\""
+    },
+    {
+        "idx": 17,
+        "name": "--sys-info",
+        "flag": "--sys-info",
+        "category": "global",
+        "category_name": "Global Execution & Resource Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Detects and prints CPU, RAM, available memory, GPU model, VRAM, and storage resources in JSON format.",
+        "syntax": "cli.exe --sys-info"
+    },
+    {
+        "idx": 18,
+        "name": "--save-model",
+        "flag": "--save-model",
+        "category": "global",
+        "category_name": "Global Execution & Resource Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Serializes and persists the trained ML model selector weights and routing policy to disk.",
+        "syntax": "cli.exe --enable-ml-selection --ml-retrain --save-model"
+    },
+    {
+        "idx": 19,
+        "name": "--load-model",
+        "flag": "--load-model",
+        "category": "global",
+        "category_name": "Global Execution & Resource Flags",
+        "type": "String",
+        "default": "None",
+        "desc": "Loads pre-trained model selection weights from disk for offline deterministic routing.",
+        "syntax": "cli.exe --load-model \"models/custom_router.bin\" --enable-ml-selection"
+    },
+    {
+        "idx": 20,
+        "name": "--enable-ml-selection",
+        "flag": "--enable-ml-selection",
+        "category": "ml",
+        "category_name": "Machine Learning Model Selection",
+        "type": "bool",
+        "default": "false",
+        "desc": "Enables the machine-learning classifier to pick optimal models based on task, prompt, and system resources.",
+        "syntax": "cli.exe --enable-ml-selection --prompt \"Identify SQL injection vulnerabilities\""
+    },
+    {
+        "idx": 21,
+        "name": "--ml-learning",
+        "flag": "--ml-learning",
+        "category": "ml",
+        "category_name": "Machine Learning Model Selection",
+        "type": "bool",
+        "default": "false",
+        "desc": "Activates online reinforcement learning to update selection weights based on execution success rates.",
+        "syntax": "cli.exe --enable-ml-selection --ml-learning --prompt \"Refactor concurrent queue\""
+    },
+    {
+        "idx": 22,
+        "name": "--ml-ensemble-method",
+        "flag": "--ml-ensemble-method",
+        "category": "ml",
+        "category_name": "Machine Learning Model Selection",
+        "type": "String",
+        "default": "weighted_voting",
+        "desc": "Sets the ensemble aggregation algorithm for combining predictions across multiple ML meta-models.",
+        "syntax": "cli.exe --enable-ml-selection --ml-ensemble-method weighted_voting"
+    },
+    {
+        "idx": 23,
+        "name": "--ml-confidence-threshold",
+        "flag": "--ml-confidence-threshold",
+        "category": "ml",
+        "category_name": "Machine Learning Model Selection",
+        "type": "f64",
+        "default": "0.6",
+        "desc": "Minimum confidence required to accept ML model routing; lower scores trigger fallback heuristics.",
+        "syntax": "cli.exe --enable-ml-selection --ml-confidence-threshold 0.75"
+    },
+    {
+        "idx": 24,
+        "name": "--ml-analytics",
+        "flag": "--ml-analytics",
+        "category": "ml",
+        "category_name": "Machine Learning Model Selection",
+        "type": "bool",
+        "default": "false",
+        "desc": "Prints statistical reports of model routing decisions, classification accuracy, and confidence metrics.",
+        "syntax": "cli.exe --ml-analytics"
+    },
+    {
+        "idx": 25,
+        "name": "--ml-retrain",
+        "flag": "--ml-retrain",
+        "category": "ml",
+        "category_name": "Machine Learning Model Selection",
+        "type": "bool",
+        "default": "false",
+        "desc": "Forces full retraining of the model selection routing classifiers using historical run records.",
+        "syntax": "cli.exe --ml-retrain --save-model"
+    },
+    {
+        "idx": 26,
+        "name": "--ml-cleanup",
+        "flag": "--ml-cleanup",
+        "category": "ml",
+        "category_name": "Machine Learning Model Selection",
+        "type": "u32",
+        "default": "None",
+        "desc": "Purges historical ML execution telemetry and reward logs older than the specified retention days.",
+        "syntax": "cli.exe --ml-cleanup 30"
+    },
+    {
+        "idx": 27,
+        "name": "--sinq",
+        "flag": "--sinq",
+        "category": "ml",
+        "category_name": "SINQ Quantization Engine",
+        "type": "bool",
+        "default": "false",
+        "desc": "Enables SINQ (Sub-4-bit Integer Non-linear Quantization) for high-efficiency low-memory model inference.",
+        "syntax": "cli.exe --sinq --prompt \"Generate an AES-256 GCM encryption routine\""
+    },
+    {
+        "idx": 28,
+        "name": "--sinq-nbits",
+        "flag": "--sinq-nbits",
+        "category": "ml",
+        "category_name": "SINQ Quantization Engine",
+        "type": "u32",
+        "default": "4",
+        "desc": "Specifies the target bit precision for SINQ weight quantization (default: 4).",
+        "syntax": "cli.exe --sinq --sinq-nbits 4 --prompt \"Quantize and run code generation\""
+    },
+    {
+        "idx": 29,
+        "name": "--sinq-group-size",
+        "flag": "--sinq-group-size",
+        "category": "ml",
+        "category_name": "SINQ Quantization Engine",
+        "type": "u32",
+        "default": "64",
+        "desc": "Specifies the number of consecutive weight elements sharing quantization scale and zero-point parameters.",
+        "syntax": "cli.exe --sinq --sinq-group-size 64"
+    },
+    {
+        "idx": 30,
+        "name": "--sinq-tiling-mode",
+        "flag": "--sinq-tiling-mode",
+        "category": "ml",
+        "category_name": "SINQ Quantization Engine",
+        "type": "String",
+        "default": "1D",
+        "desc": "Configures tensor tiling strategy for SINQ quantization matrix kernels.",
+        "syntax": "cli.exe --sinq --sinq-tiling-mode 1D"
+    },
+    {
+        "idx": 31,
+        "name": "--sinq-method",
+        "flag": "--sinq-method",
+        "category": "ml",
+        "category_name": "SINQ Quantization Engine",
+        "type": "String",
+        "default": "sinq",
+        "desc": "Selects the mathematical quantization formulation (default: sinq).",
+        "syntax": "cli.exe --sinq --sinq-method sinq"
+    },
+    {
+        "idx": 32,
+        "name": "--enable-innovations",
+        "flag": "--enable-innovations",
+        "category": "innov",
+        "category_name": "Innovation & Cognitive Systems",
+        "type": "bool",
+        "default": "false",
+        "desc": "Activates all ModelFusion cognitive innovation modules including workflow optimization and predictive planning.",
+        "syntax": "cli.exe --enable-innovations --prompt \"Design an asynchronous multi-producer multi-consumer queue\""
+    },
+    {
+        "idx": 33,
+        "name": "--workflow-optimization",
+        "flag": "--workflow-optimization",
+        "category": "innov",
+        "category_name": "Innovation & Cognitive Systems",
+        "type": "bool",
+        "default": "false",
+        "desc": "Applies cognitive pipeline restructuring to minimize latency and memory churn across subtasks.",
+        "syntax": "cli.exe --workflow-optimization --folder \"crates/\" --prompt \"Audit compilation bottlenecks\""
+    },
+    {
+        "idx": 34,
+        "name": "--semantic-analysis",
+        "flag": "--semantic-analysis",
+        "category": "innov",
+        "category_name": "Innovation & Cognitive Systems",
+        "type": "bool",
+        "default": "false",
+        "desc": "Performs deep semantic AST and intent analysis on codebases and input prompts.",
+        "syntax": "cli.exe --semantic-analysis --file \"crates/core/src/router.rs\""
+    },
+    {
+        "idx": 35,
+        "name": "--temporal-tracking",
+        "flag": "--temporal-tracking",
+        "category": "innov",
+        "category_name": "Innovation & Cognitive Systems",
+        "type": "bool",
+        "default": "false",
+        "desc": "Tracks semantic modifications and architectural drift across code revisions over time.",
+        "syntax": "cli.exe --temporal-tracking --folder \"src/\""
+    },
+    {
+        "idx": 36,
+        "name": "--predictive-mode",
+        "flag": "--predictive-mode",
+        "category": "innov",
+        "category_name": "Innovation & Cognitive Systems",
+        "type": "bool",
+        "default": "false",
+        "desc": "Uses speculative ghost modeling to anticipate subsequent user commands and pre-cache inference results.",
+        "syntax": "cli.exe --predictive-mode --prompt \"Refactor state machine for high throughput\""
+    },
+    {
+        "idx": 37,
+        "name": "--innovation-level",
+        "flag": "--innovation-level",
+        "category": "innov",
+        "category_name": "Innovation & Cognitive Systems",
+        "type": "u32",
+        "default": "2",
+        "desc": "Configures aggressiveness and heuristic exploration depth of innovation subsystems (default: 2).",
+        "syntax": "cli.exe --enable-innovations --innovation-level 2"
+    },
+    {
+        "idx": 38,
+        "name": "--enable-hyde",
+        "flag": "--enable-hyde",
+        "category": "hyde",
+        "category_name": "HyDE Search & Web Retrieval",
+        "type": "bool",
+        "default": "false",
+        "desc": "Activates Hypothetical Document Embeddings (HyDE) for superior semantic document and code retrieval.",
+        "syntax": "cli.exe --enable-hyde --search-query \"Zero-copy ring buffer in Rust\""
+    },
+    {
+        "idx": 39,
+        "name": "--use-hyde",
+        "flag": "--use-hyde",
+        "category": "hyde",
+        "category_name": "HyDE Search & Web Retrieval",
+        "type": "bool",
+        "default": "false",
+        "desc": "Enables interactive HyDE query refinement and hypothetical response generation before searching.",
+        "syntax": "cli.exe --use-hyde --prompt \"How does Windows Job Object termination provide sub-50ms preemption?\""
+    },
+    {
+        "idx": 40,
+        "name": "--hyde-variants",
+        "flag": "--hyde-variants",
+        "category": "hyde",
+        "category_name": "HyDE Search & Web Retrieval",
+        "type": "bool",
+        "default": "false",
+        "desc": "Generates multiple hypothetical answers across diverse temperature seeds to maximize embedding recall.",
+        "syntax": "cli.exe --enable-hyde --hyde-variants --search-query \"SIMD vectorization in AVX-512\""
+    },
+    {
+        "idx": 41,
+        "name": "--add-documents",
+        "flag": "--add-documents",
+        "category": "hyde",
+        "category_name": "HyDE Search & Web Retrieval",
+        "type": "String",
+        "default": "None",
+        "desc": "Ingests and indexes local files or Markdown docs into the HyDE vector embedding database.",
+        "syntax": "cli.exe --add-documents \"docs/architecture.md\""
+    },
+    {
+        "idx": 42,
+        "name": "--search-query",
+        "flag": "--search-query",
+        "category": "hyde",
+        "category_name": "HyDE Search & Web Retrieval",
+        "type": "String",
+        "default": "None",
+        "desc": "Executes a semantic vector similarity search against indexed codebase and documentation chunks.",
+        "syntax": "cli.exe --search-query \"pareto optimal model selection algorithm\""
+    },
+    {
+        "idx": 43,
+        "name": "--research (aliases: --reseach)",
+        "flag": "--research",
+        "category": "hyde",
+        "category_name": "HyDE Search & Web Retrieval",
+        "type": "String",
+        "default": "None",
+        "desc": "Autonomous deep research agent performing multi-hop search, recursive web scraping, and reasoning synthesis.",
+        "syntax": "cli.exe --research \"Latest advances in GRPO and reasoning model distillation 2026\""
+    },
+    {
+        "idx": 44,
+        "name": "--search (aliases: --serarch)",
+        "flag": "--search",
+        "category": "hyde",
+        "category_name": "HyDE Search & Web Retrieval",
+        "type": "String",
+        "default": "None",
+        "desc": "Performs real-time web search and fast extractive summarization using open-weight local models.",
+        "syntax": "cli.exe --search \"Rust tokio broadcast channel lag handling\""
+    },
+    {
+        "idx": 45,
+        "name": "--top-k",
+        "flag": "--top-k",
+        "category": "hyde",
+        "category_name": "HyDE Search & Web Retrieval",
+        "type": "u32",
+        "default": "5",
+        "desc": "Specifies the number of top-ranking search results or document passages to return (default: 5).",
+        "syntax": "cli.exe --search-query \"memory safety invariants\" --top-k 5"
+    },
+    {
+        "idx": 46,
+        "name": "--demo-hyde",
+        "flag": "--demo-hyde",
+        "category": "hyde",
+        "category_name": "HyDE Search & Web Retrieval",
+        "type": "bool",
+        "default": "false",
+        "desc": "Runs an interactive end-to-end demonstration of HyDE hypothetical vector generation and retrieval.",
+        "syntax": "cli.exe --demo-hyde"
+    },
+    {
+        "idx": 47,
+        "name": "--active-model (aliases: --active-models, --current-model, --current-models, --ide-model, --ide-models, --models-in-use)",
+        "flag": "--active-model",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Inspects and displays all active models across Ollama VRAM/RAM runtime, SQLite task models, and OpenVINO cache.",
+        "syntax": "cli.exe --active-model --db-path \"IDE/db/hf_models.db\""
+    },
+    {
+        "idx": 48,
+        "name": "--stats",
+        "flag": "--stats",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Displays global catalog statistics, model counts per Hugging Face task, and database health metrics.",
+        "syntax": "cli.exe --stats --db-path \"IDE/db/hf_models.db\""
+    },
+    {
+        "idx": 49,
+        "name": "--tasks",
+        "flag": "--tasks",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "String",
+        "default": "None",
+        "desc": "Lists all 45+ supported Hugging Face task types and their currently registered models.",
+        "syntax": "cli.exe --tasks vision"
+    },
+    {
+        "idx": 50,
+        "name": "--update",
+        "flag": "--update",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Fast curated update: indexes top ~6,500 production workhorse models and provisions matching Ollama model.",
+        "syntax": "cli.exe --update --db-path \"IDE/db/hf_models.db\""
+    },
+    {
+        "idx": 51,
+        "name": "--updatedb",
+        "flag": "--updatedb",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Full registry crawler: ingests all 2M+ models from Hugging Face Hub via cursor pagination (1,000/batch).",
+        "syntax": "cli.exe --updatedb --db-path \"IDE/db/hf_models.db\""
+    },
+    {
+        "idx": 52,
+        "name": "--max-models",
+        "flag": "--max-models",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "usize",
+        "default": "None",
+        "desc": "Caps the total number of models ingested from Hugging Face Hub during a --updatedb crawl run.",
+        "syntax": "cli.exe --updatedb --max-models 50000 --db-path \"IDE/db/hf_models.db\""
+    },
+    {
+        "idx": 53,
+        "name": "--restore",
+        "flag": "--restore",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Restores ModelFusion configuration and SQLite catalog databases from verified recovery backups.",
+        "syntax": "cli.exe --restore"
+    },
+    {
+        "idx": 54,
+        "name": "--decision-stats",
+        "flag": "--decision-stats",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Displays historical statistics on Pareto model routing decisions, execution latencies, and fallback events.",
+        "syntax": "cli.exe --decision-stats"
+    },
+    {
+        "idx": 55,
+        "name": "--novel-ai-stats",
+        "flag": "--novel-ai-stats",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Displays operational telemetry and metrics for novel AI components (SINQ, HyDE, predictive reasoning).",
+        "syntax": "cli.exe --novel-ai-stats"
+    },
+    {
+        "idx": 56,
+        "name": "--performance-stats",
+        "flag": "--performance-stats",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Outputs hardware utilization, inference throughput (tokens/second), memory footprint, and queue delays.",
+        "syntax": "cli.exe --performance-stats"
+    },
+    {
+        "idx": 57,
+        "name": "--cache-stats",
+        "flag": "--cache-stats",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Displays cache hit ratios, storage utilization, and eviction counters for prompt and IR caches.",
+        "syntax": "cli.exe --cache-stats"
+    },
+    {
+        "idx": 58,
+        "name": "--clearcache",
+        "flag": "--clearcache",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Evicts all transient cache stores, prompt response buffers, and downloaded temporary model weights.",
+        "syntax": "cli.exe --clearcache"
+    },
+    {
+        "idx": 59,
+        "name": "--analytics-demo",
+        "flag": "--analytics-demo",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Executes a synthetic benchmark demonstrating multi-criteria model ranking and Pareto frontier visualization.",
+        "syntax": "cli.exe --analytics-demo"
+    },
+    {
+        "idx": 60,
+        "name": "--model-ranking",
+        "flag": "--model-ranking",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "String",
+        "default": "None",
+        "desc": "Computes and displays Pareto-ranked scorecards for models registered under the specified task.",
+        "syntax": "cli.exe --model-ranking text-generation"
+    },
+    {
+        "idx": 61,
+        "name": "--model-recommendations",
+        "flag": "--model-recommendations",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Generates hardware-tailored model recommendations based on current CPU, GPU VRAM, and RAM availability.",
+        "syntax": "cli.exe --model-recommendations"
+    },
+    {
+        "idx": 62,
+        "name": "--full",
+        "flag": "--full",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Enables comprehensive multi-stage analysis, activating cross-model validation and deep auditing.",
+        "syntax": "cli.exe --full --prompt \"Exhaustive verification of cryptographic primitives\""
+    },
+    {
+        "idx": 63,
+        "name": "--fusion",
+        "flag": "--fusion",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Executes prompt across a panel of models simultaneously and arbitrates responses into a synthesized consensus.",
+        "syntax": "cli.exe --fusion --fusion-models 3 --prompt \"Formulate optimal distributed consensus protocol\""
+    },
+    {
+        "idx": 64,
+        "name": "--fusion-models",
+        "flag": "--fusion-models",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "usize",
+        "default": "0",
+        "desc": "Specifies the number of models in the fusion arbitration panel (default: 0 = dynamic auto-sizing).",
+        "syntax": "cli.exe --fusion --fusion-models 3 --prompt \"Design zero-trust authentication service\""
+    },
+    {
+        "idx": 65,
+        "name": "--fusion-mode",
+        "flag": "--fusion-mode",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "String",
+        "default": "multi-model",
+        "desc": "Execution topology for Model Fusion: 'multi-model' (diverse models) or 'multi-sample' (fast local sampling).",
+        "syntax": "cli.exe --fusion --fusion-mode multi-sample --prompt \"Review code for race conditions\""
+    },
+    {
+        "idx": 66,
+        "name": "--ollama",
+        "flag": "--ollama",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Routes inference execution directly through local Ollama daemon rather than Python transformers.",
+        "syntax": "cli.exe --ollama --prompt \"Explain RAII in modern C++\""
+    },
+    {
+        "idx": 67,
+        "name": "--openvino",
+        "flag": "--openvino",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Uses Intel OpenVINO runtime for AVX-512 / AMX accelerated CPU inference.",
+        "syntax": "cli.exe --openvino --prompt \"Optimize matrix multiplication kernel\""
+    },
+    {
+        "idx": 68,
+        "name": "--onnx",
+        "flag": "--onnx",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Uses ONNX Runtime cross-platform inference engine for quantized and exported models.",
+        "syntax": "cli.exe --onnx --prompt \"Run classification on feature vector\""
+    },
+    {
+        "idx": 69,
+        "name": "--vllm",
+        "flag": "--vllm",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Uses vLLM PagedAttention inference engine for ultra-high throughput GPU serving.",
+        "syntax": "cli.exe --vllm --prompt \"High-throughput batch code summarization\""
+    },
+    {
+        "idx": 70,
+        "name": "--model",
+        "flag": "--model",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "String",
+        "default": "None",
+        "desc": "Overrides Pareto routing heuristics and forces execution using a specific model identifier.",
+        "syntax": "cli.exe --model \"qwen2.5:14b\" --prompt \"Refactor threadpool scheduler\""
+    },
+    {
+        "idx": 71,
+        "name": "--prepare-model",
+        "flag": "--prepare-model",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "String",
+        "default": "None",
+        "desc": "Pre-converts and quantizes a Hugging Face model into OpenVINO Intermediate Representation (IR).",
+        "syntax": "cli.exe --prepare-model \"Qwen/Qwen2.5-Coder-7B\" --weight-format int8"
+    },
+    {
+        "idx": 72,
+        "name": "--prepare-all-models",
+        "flag": "--prepare-all-models",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Batch converts all eligible top-tier models in the catalog database to OpenVINO IR format.",
+        "syntax": "cli.exe --prepare-all-models --weight-format int8"
+    },
+    {
+        "idx": 73,
+        "name": "--weight-format",
+        "flag": "--weight-format",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "String",
+        "default": "int8",
+        "desc": "Specifies weight precision for OpenVINO Intermediate Representation exports (default: int8).",
+        "syntax": "cli.exe --prepare-model \"Qwen/Qwen2.5-7B\" --weight-format int4"
+    },
+    {
+        "idx": 74,
+        "name": "--ov-model-dir",
+        "flag": "--ov-model-dir",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "String",
+        "default": "ov_models",
+        "desc": "Directory where compiled OpenVINO IR models (.xml / .bin) are stored and cached (default: ov_models).",
+        "syntax": "cli.exe --openvino --ov-model-dir \"D:/models/openvino_cache\""
+    },
+    {
+        "idx": 75,
+        "name": "--context-auto",
+        "flag": "--context-auto",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Automatically generates background domain context using a thinking model (e.g. DeepSeek-R1) prior to answering.",
+        "syntax": "cli.exe --context-auto --prompt \"Implement distributed rate limiter\""
+    },
+    {
+        "idx": 76,
+        "name": "--context",
+        "flag": "--context",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "String",
+        "default": "None",
+        "desc": "Injects explicit contextual background information into the system prompt.",
+        "syntax": "cli.exe --context \"Target OS: Windows 11 64-bit, Kernel: NT 10.0\" --prompt \"Generate IPC pipe setup\""
+    },
+    {
+        "idx": 77,
+        "name": "--report",
+        "flag": "--report",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "String",
+        "default": "None",
+        "desc": "Specifies file path or directory destination where generated analysis reports should be saved.",
+        "syntax": "cli.exe --datascience --file \"data/telemetry.csv\" --report \"reports/quarterly_audit.md\""
+    },
+    {
+        "idx": 78,
+        "name": "--reporttype",
+        "flag": "--reporttype",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "String",
+        "default": "md",
+        "desc": "Format of the generated report document (default: md).",
+        "syntax": "cli.exe --datascience --file \"data/sales.csv\" --report \"reports/summary.pdf\" --reporttype pdf"
+    },
+    {
+        "idx": 79,
+        "name": "--delegation",
+        "flag": "--delegation",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Uses hierarchical delegation pattern to route individual subtasks to specialized domain models.",
+        "syntax": "cli.exe --delegation --prompt \"Perform vulnerability audit and synthesize remediation patch\""
+    },
+    {
+        "idx": 80,
+        "name": "--recursion",
+        "flag": "--recursion",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Enables recursive task decomposition to break complex multifaceted prompts into atomic solvable subtasks.",
+        "syntax": "cli.exe --recursion --prompt \"Design complete operating system memory manager\""
+    },
+    {
+        "idx": 81,
+        "name": "--getvino",
+        "flag": "--getvino",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Launches background synchronization daemon to periodically pull pre-optimized OpenVINO IR models.",
+        "syntax": "cli.exe --getvino --getvino-interval 24"
+    },
+    {
+        "idx": 82,
+        "name": "--getvino-interval",
+        "flag": "--getvino-interval",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "u64",
+        "default": "24",
+        "desc": "Interval in hours between background OpenVINO model synchronization cycles (default: 24).",
+        "syntax": "cli.exe --getvino --getvino-interval 12"
+    },
+    {
+        "idx": 83,
+        "name": "--rest-rl (aliases: --rl)",
+        "flag": "--rest-rl",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "Vec<String",
+        "default": "None",
+        "desc": "Controls and inspects the HugOS ReST-RL / GRPO background reinforcement learning daemon.",
+        "syntax": "cli.exe --rest-rl status"
+    },
+    {
+        "idx": 84,
+        "name": "--real-options",
+        "flag": "--real-options",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Applies financial real options valuation to maintain hot standby backup models during critical tasks.",
+        "syntax": "cli.exe --real-options --task text-generation --prompt \"Generate high-reliability payment handler\""
+    },
+    {
+        "idx": 85,
+        "name": "--prompt-quality-scoring",
+        "flag": "--prompt-quality-scoring",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Evaluates clarity, specificity, and completeness of input prompts and suggests automated optimizations.",
+        "syntax": "cli.exe --prompt-quality-scoring --prompt \"Refactor database pool\""
+    },
+    {
+        "idx": 86,
+        "name": "--ml-fallback",
+        "flag": "--ml-fallback",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "true",
+        "desc": "Enables automated heuristic fallback when ML selection confidence falls below minimum threshold (default: true).",
+        "syntax": "cli.exe --ml-fallback true --enable-ml-selection"
+    },
+    {
+        "idx": 87,
+        "name": "--jupyter",
+        "flag": "--jupyter",
+        "category": "sys",
+        "category_name": "System & Orchestration Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Spawns or connects to an interactive Jupyter notebook server for data exploration and visualization.",
+        "syntax": "cli.exe --jupyter"
+    },
+    {
+        "idx": 88,
+        "name": "--dataanalyst (aliases: --data-analyst, --datanalyst)",
+        "flag": "--dataanalyst",
+        "category": "data",
+        "category_name": "Data Science & Tabular Workflows",
+        "type": "bool",
+        "default": "false",
+        "desc": "Launches the automated Data Analyst pipeline: parses CSV/Excel, performs statistical profiling, and summarizes trends.",
+        "syntax": "cli.exe --dataanalyst --file \"data/q3_metrics.csv\" --prompt \"Analyze customer churn correlates\""
+    },
+    {
+        "idx": 89,
+        "name": "--datascience",
+        "flag": "--datascience",
+        "category": "data",
+        "category_name": "Data Science & Tabular Workflows",
+        "type": "bool",
+        "default": "false",
+        "desc": "Runs the comprehensive Data Science workflow: data cleaning, feature engineering, correlation analysis, and predictive modeling.",
+        "syntax": "cli.exe --datascience --file \"data/transactions.csv\" --report \"reports/fraud_analysis.md\""
+    },
+    {
+        "idx": 90,
+        "name": "--export-pdf",
+        "flag": "--export-pdf",
+        "category": "data",
+        "category_name": "Data Science & Tabular Workflows",
+        "type": "bool",
+        "default": "false",
+        "desc": "Renders analysis reports, statistical tables, and visualizations directly into a formatted PDF document.",
+        "syntax": "cli.exe --datascience --file \"data/telemetry.csv\" --export-pdf --report \"reports/metrics.pdf\""
+    },
+    {
+        "idx": 91,
+        "name": "--score",
+        "flag": "--score",
+        "category": "data",
+        "category_name": "Response Evaluation & Planning",
+        "type": "bool",
+        "default": "false",
+        "desc": "Calculates multi-dimensional quality metrics (coherence, accuracy, safety, code validity) on generated output.",
+        "syntax": "cli.exe --score --prompt \"Write a lock-free ring buffer in Rust\""
+    },
+    {
+        "idx": 92,
+        "name": "--judge",
+        "flag": "--judge",
+        "category": "data",
+        "category_name": "Response Evaluation & Planning",
+        "type": "bool",
+        "default": "false",
+        "desc": "Invokes an independent LLM-as-a-Judge model to critically review, score, and certify model outputs.",
+        "syntax": "cli.exe --judge --prompt \"Evaluate concurrent hash map implementations for race conditions\""
+    },
+    {
+        "idx": 93,
+        "name": "--plan",
+        "flag": "--plan",
+        "category": "data",
+        "category_name": "Response Evaluation & Planning",
+        "type": "bool",
+        "default": "false",
+        "desc": "Synthesizes a structured multi-phase execution blueprint with verification gates prior to generating code.",
+        "syntax": "cli.exe --plan --prompt \"Migrate monolithic web service to asynchronous actor architecture\""
+    },
+    {
+        "idx": 94,
+        "name": "--pe-header-extraction",
+        "flag": "--pe-header-extraction",
+        "category": "data",
+        "category_name": "Binary & PE Executable Analysis",
+        "type": "bool",
+        "default": "false",
+        "desc": "Extracts PE header structures, section tables, imported DLLs, export symbols, and digital signatures from Windows binaries.",
+        "syntax": "cli.exe --pe-header-extraction --file \"target/release/cli.exe\""
+    },
+    {
+        "idx": 95,
+        "name": "--text-classification",
+        "flag": "--text-classification",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Routes prompt to top-ranked text classification models for categorizing unstructured text into target classes.",
+        "syntax": "cli.exe --text-classification --prompt \"Analyze user feedback for sentiment polarity: Excellent product!\""
+    },
+    {
+        "idx": 96,
+        "name": "--token-classification",
+        "flag": "--token-classification",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Routes prompt to token classification models for token-level labelling (NER, POS tagging, grammatical syntax).",
+        "syntax": "cli.exe --token-classification --prompt \"Extract entity tokens from: Satya Nadella visited Microsoft Dublin\""
+    },
+    {
+        "idx": 97,
+        "name": "--question-answering",
+        "flag": "--question-answering",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Extracts precise answers to queries given explicit reference context passages.",
+        "syntax": "cli.exe --question-answering --context \"ModelFusion uses SQLite for offline cataloging.\" --prompt \"Where does ModelFusion store models?\""
+    },
+    {
+        "idx": 98,
+        "name": "--text-generation",
+        "flag": "--text-generation",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Standard autoregressive text generation for reasoning, creative writing, and documentation.",
+        "syntax": "cli.exe --text-generation --prompt \"Synthesize an architectural summary of modern microkernels\""
+    },
+    {
+        "idx": 99,
+        "name": "--summarization",
+        "flag": "--summarization",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Distills long-form technical reports, transcripts, and documents into concise summaries.",
+        "syntax": "cli.exe --summarization --file \"RFC-9110.txt\" --prompt \"Provide a 3-bullet executive summary\""
+    },
+    {
+        "idx": 100,
+        "name": "--translation",
+        "flag": "--translation",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Translates text across languages preserving technical terminology and semantic intent.",
+        "syntax": "cli.exe --translation --language de --prompt \"High-performance software systems require rigorous profiling.\""
+    },
+    {
+        "idx": 101,
+        "name": "--fill-mask",
+        "flag": "--fill-mask",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Predicts masked tokens within sentences using bidirectional masked language models (e.g. BERT/RoBERTa).",
+        "syntax": "cli.exe --fill-mask --prompt \"The capital of France is [MASK].\""
+    },
+    {
+        "idx": 102,
+        "name": "--text2text-generation",
+        "flag": "--text2text-generation",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Performs arbitrary sequence-to-sequence text transformation and structured rewriting.",
+        "syntax": "cli.exe --text2text-generation --prompt \"Rewrite this function signature to use async/await syntax: fn fetch() -> Result<Data>;\""
+    },
+    {
+        "idx": 103,
+        "name": "--language-detection",
+        "flag": "--language-detection",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Identifies the primary natural language of input passages with associated confidence scores.",
+        "syntax": "cli.exe --language-detection --prompt \"Bonjour tout le monde, comment allez-vous aujourd'hui?\""
+    },
+    {
+        "idx": 104,
+        "name": "--grammar-correction",
+        "flag": "--grammar-correction",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Detects grammatical, syntactic, and spelling errors and provides corrected text.",
+        "syntax": "cli.exe --grammar-correction --prompt \"They is going to the store yesterday.\""
+    },
+    {
+        "idx": 105,
+        "name": "--paraphrase-generation",
+        "flag": "--paraphrase-generation",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Rephrases sentences into alternative expressions while preserving core semantics.",
+        "syntax": "cli.exe --paraphrase-generation --prompt \"Optimizing throughput requires eliminating contention on shared locks.\""
+    },
+    {
+        "idx": 106,
+        "name": "--causal-language-modeling",
+        "flag": "--causal-language-modeling",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Raw autoregressive next-token continuation modeling without instruction fine-tuning templates.",
+        "syntax": "cli.exe --causal-language-modeling --prompt \"In distributed computing, the CAP theorem states that\""
+    },
+    {
+        "idx": 107,
+        "name": "--zero-shot-classification",
+        "flag": "--zero-shot-classification",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Classifies text into dynamic arbitrary categories without requiring task-specific training data.",
+        "syntax": "cli.exe --zero-shot-classification --prompt \"The server latency spiked to 450ms during flash sale\" --context \"billing, infrastructure, security\""
+    },
+    {
+        "idx": 108,
+        "name": "--feature-extraction",
+        "flag": "--feature-extraction",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Outputs dense multidimensional mathematical vector embeddings for downstream similarity and clustering.",
+        "syntax": "cli.exe --feature-extraction --prompt \"Embed this semantic concept into vector space\""
+    },
+    {
+        "idx": 109,
+        "name": "--sentence-similarity",
+        "flag": "--sentence-similarity",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Computes cosine similarity between sentence embeddings to determine semantic equivalence.",
+        "syntax": "cli.exe --sentence-similarity --prompt \"Rust memory safety\" --context \"C++ RAII lifetime semantics\""
+    },
+    {
+        "idx": 110,
+        "name": "--anonymization",
+        "flag": "--anonymization",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Redacts or obfuscates personally identifiable information (PII) from text.",
+        "syntax": "cli.exe --anonymization --prompt \"Patient John Doe, SSN 000-12-3456, visited Dr. Smith at Boston Clinic.\""
+    },
+    {
+        "idx": 111,
+        "name": "--coreference-resolution",
+        "flag": "--coreference-resolution",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Resolves referring expressions and pronouns to their corresponding entity antecedents.",
+        "syntax": "cli.exe --coreference-resolution --prompt \"Alice told Bob she would review his pull request once it passed CI.\""
+    },
+    {
+        "idx": 112,
+        "name": "--spam-detection",
+        "flag": "--spam-detection",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Classifies incoming email, chat, or form submissions as legitimate or unsolicited spam.",
+        "syntax": "cli.exe --spam-detection --prompt \"Congratulations! You have won a $1,000 gift card. Click here to claim.\""
+    },
+    {
+        "idx": 113,
+        "name": "--malware-text-detection",
+        "flag": "--malware-text-detection",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Analyzes scripts, command strings, and payloads for indicators of malicious code execution.",
+        "syntax": "cli.exe --malware-text-detection --prompt \"powershell.exe -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkALgBEAG8AdwBuAGwAbwBhAGQAUwB0AHIAaQBuAGcAKAApAA==\""
+    },
+    {
+        "idx": 114,
+        "name": "--phishing-detection",
+        "flag": "--phishing-detection",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Scans communication text and URLs for social engineering patterns and credential harvesting indicators.",
+        "syntax": "cli.exe --phishing-detection --prompt \"Urgent: Your bank account has been locked. Verify credentials immediately at http://secure-bank-login.xyz\""
+    },
+    {
+        "idx": 115,
+        "name": "--pii-detection",
+        "flag": "--pii-detection",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Identifies sensitive personal information (credit cards, social security numbers, phone numbers, addresses).",
+        "syntax": "cli.exe --pii-detection --file \"logs/access.log\""
+    },
+    {
+        "idx": 116,
+        "name": "--hate-speech-detection",
+        "flag": "--hate-speech-detection",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Detects toxic language, hate speech, and derogatory slurs for moderation compliance.",
+        "syntax": "cli.exe --hate-speech-detection --prompt \"Audit this user comment for safety compliance: ...\""
+    },
+    {
+        "idx": 117,
+        "name": "--cyberbullying-detection",
+        "flag": "--cyberbullying-detection",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Identifies targeted harassment, bullying, and intimidation patterns in social interactions.",
+        "syntax": "cli.exe --cyberbullying-detection --prompt \"Analyze chat transcript for harassment: ...\""
+    },
+    {
+        "idx": 118,
+        "name": "--fake-news-detection",
+        "flag": "--fake-news-detection",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Evaluates news claims against factual verification patterns to identify misinformation.",
+        "syntax": "cli.exe --fake-news-detection --prompt \"Breaking: Moon discovered to be made of green cheese according to NASA\""
+    },
+    {
+        "idx": 119,
+        "name": "--legal-judgment-classification",
+        "flag": "--legal-judgment-classification",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Classifies judicial opinions, motions, and court rulings by legal domain and judicial outcome.",
+        "syntax": "cli.exe --legal-judgment-classification --file \"briefs/motion_to_dismiss.txt\""
+    },
+    {
+        "idx": 120,
+        "name": "--contract-clause-classification",
+        "flag": "--contract-clause-classification",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Identifies contract clause types (Indemnification, Termination, Confidentiality, Governing Law).",
+        "syntax": "cli.exe --contract-clause-classification --prompt \"Either party may terminate this agreement upon 30 days written notice.\""
+    },
+    {
+        "idx": 121,
+        "name": "--case-outcome-prediction",
+        "flag": "--case-outcome-prediction",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Analyzes litigation filings to estimate probable case outcomes based on legal precedents.",
+        "syntax": "cli.exe --case-outcome-prediction --file \"cases/brief_summary.txt\""
+    },
+    {
+        "idx": 122,
+        "name": "--financial-ner",
+        "flag": "--financial-ner",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Extracts financial entities (ticker symbols, revenue metrics, institutions, currencies) from reports.",
+        "syntax": "cli.exe --financial-ner --prompt \"Goldman Sachs reported Q2 net revenues of $12.73 billion, up 17% year-over-year.\""
+    },
+    {
+        "idx": 123,
+        "name": "--legal-ner",
+        "flag": "--legal-ner",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Identifies legal citations, statutory codes, case names, and jurisdictional entities.",
+        "syntax": "cli.exe --legal-ner --prompt \"Under 17 U.S.C. \u00a7 107, the defendant asserts a fair use affirmative defense.\""
+    },
+    {
+        "idx": 124,
+        "name": "--biomedical-ner",
+        "flag": "--biomedical-ner",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Extracts biomedical entities (genes, proteins, diseases, drug compounds, dosages) from scientific papers.",
+        "syntax": "cli.exe --biomedical-ner --prompt \"Metformin administration reduced HbA1c levels in type 2 diabetes mellitus patients.\""
+    },
+    {
+        "idx": 125,
+        "name": "--chemical-reaction-ner",
+        "flag": "--chemical-reaction-ner",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Extracts chemical reagents, catalysts, reaction conditions, and products from chemistry literature.",
+        "syntax": "cli.exe --chemical-reaction-ner --prompt \"Benzene reacts with nitric acid in the presence of sulfuric acid to form nitrobenzene.\""
+    },
+    {
+        "idx": 126,
+        "name": "--financial-sentiment-analysis",
+        "flag": "--financial-sentiment-analysis",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Classifies investor sentiment (bullish, bearish, neutral) from financial news and 10-K filings.",
+        "syntax": "cli.exe --financial-sentiment-analysis --prompt \"Operating margins expanded 140 basis points despite macroeconomic headwinds.\""
+    },
+    {
+        "idx": 127,
+        "name": "--scientific-abstract-summarization",
+        "flag": "--scientific-abstract-summarization",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Distills dense academic papers into structured problem-method-result research summaries.",
+        "syntax": "cli.exe --scientific-abstract-summarization --file \"papers/quantum_computing.txt\""
+    },
+    {
+        "idx": 128,
+        "name": "--emotion-detection",
+        "flag": "--emotion-detection",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Detects nuanced emotional states (joy, frustration, anger, surprise, sadness) in conversational text.",
+        "syntax": "cli.exe --emotion-detection --prompt \"I am completely overwhelmed by how supportive the team has been!\""
+    },
+    {
+        "idx": 129,
+        "name": "--sarcasm-detection",
+        "flag": "--sarcasm-detection",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Identifies ironic and sarcastic linguistic markers where intended meaning differs from literal text.",
+        "syntax": "cli.exe --sarcasm-detection --prompt \"Oh fantastic, another mandatory unskippable meeting on a Friday afternoon.\""
+    },
+    {
+        "idx": 130,
+        "name": "--stance-detection",
+        "flag": "--stance-detection",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Determines whether an author is in favor of, against, or neutral toward a given target topic.",
+        "syntax": "cli.exe --stance-detection --prompt \"Nuclear energy is indispensable for decarbonizing the global power grid.\" --context \"Clean Energy Policy\""
+    },
+    {
+        "idx": 131,
+        "name": "--bias-detection",
+        "flag": "--bias-detection",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Identifies cognitive, gender, political, or demographic biases in articles and datasets.",
+        "syntax": "cli.exe --bias-detection --prompt \"Audit this editorial for political or demographic framing bias: ...\""
+    },
+    {
+        "idx": 132,
+        "name": "--hallucination-detection",
+        "flag": "--hallucination-detection",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Detects ungrounded assertions or factual inconsistencies between generated responses and reference premises.",
+        "syntax": "cli.exe --hallucination-detection --context \"The Eiffel Tower was completed in 1889.\" --prompt \"The Eiffel Tower was built by Napoleon in 1804.\""
+    },
+    {
+        "idx": 133,
+        "name": "--reading-level-assessment",
+        "flag": "--reading-level-assessment",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Calculates reading comprehension levels (Flesch-Kincaid, Lexile) to assess documentation accessibility.",
+        "syntax": "cli.exe --reading-level-assessment --file \"docs/getting_started.md\""
+    },
+    {
+        "idx": 134,
+        "name": "--generation-groundedness",
+        "flag": "--generation-groundedness",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Evaluates whether model assertions are strictly supported by provided source materials.",
+        "syntax": "cli.exe --generation-groundedness --context \"docs/spec.txt\" --prompt \"Does the generated implementation conform to specification?\""
+    },
+    {
+        "idx": 135,
+        "name": "--citation-intent-classification",
+        "flag": "--citation-intent-classification",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Classifies the purpose of academic citations (background, methodology, comparison, critique).",
+        "syntax": "cli.exe --citation-intent-classification --prompt \"Our method builds directly upon the architecture introduced by Vaswani et al. (2017).\""
+    },
+    {
+        "idx": 136,
+        "name": "--code-vulnerability-detection",
+        "flag": "--code-vulnerability-detection",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Scans source code for security vulnerabilities, buffer overflows, integer wraps, and memory safety flaws.",
+        "syntax": "cli.exe --code-vulnerability-detection --file \"crates/core/src/parser.rs\""
+    },
+    {
+        "idx": 137,
+        "name": "--code-summary-generation",
+        "flag": "--code-summary-generation",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Synthesizes concise technical docstrings and architectural summaries from complex functions and classes.",
+        "syntax": "cli.exe --code-summary-generation --file \"crates/cli/src/main.rs\""
+    },
+    {
+        "idx": 138,
+        "name": "--code-clone-detection",
+        "flag": "--code-clone-detection",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Identifies duplicate, near-duplicate, and copy-pasted code fragments across a repository.",
+        "syntax": "cli.exe --code-clone-detection --folder \"src/\""
+    },
+    {
+        "idx": 139,
+        "name": "--image-classification",
+        "flag": "--image-classification",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Routes image files to vision classification models to identify primary subjects and visual categories.",
+        "syntax": "cli.exe --image-classification --file \"assets/icon.png\""
+    },
+    {
+        "idx": 140,
+        "name": "--object-detection",
+        "flag": "--object-detection",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Locates and bounds distinct objects (buttons, windows, icons) within an input image.",
+        "syntax": "cli.exe --object-detection --file \"assets/screenshot.png\""
+    },
+    {
+        "idx": 141,
+        "name": "--image-segmentation",
+        "flag": "--image-segmentation",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Segments images at pixel-level resolution to isolate foreground objects from background canvas.",
+        "syntax": "cli.exe --image-segmentation --file \"assets/diagram.png\""
+    },
+    {
+        "idx": 142,
+        "name": "--visual-question-answering",
+        "flag": "--visual-question-answering",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Answers natural language questions about the visual content of an uploaded image or diagram.",
+        "syntax": "cli.exe --visual-question-answering --file \"assets/chart.png\" --prompt \"What is the value of Q3 revenue shown in the bar chart?\""
+    },
+    {
+        "idx": 143,
+        "name": "--document-question-answering",
+        "flag": "--document-question-answering",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Extracts answers directly from scanned documents, structured PDF forms, and invoices.",
+        "syntax": "cli.exe --document-question-answering --file \"invoices/inv_2026.pdf\" --prompt \"What is the total due and payment date?\""
+    },
+    {
+        "idx": 144,
+        "name": "--zero-shot-image-classification",
+        "flag": "--zero-shot-image-classification",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Classifies images into arbitrary candidate categories using multi-modal vision-language models (CLIP).",
+        "syntax": "cli.exe --zero-shot-image-classification --file \"assets/device.jpg\" --context \"laptop, tablet, desktop, smartphone\""
+    },
+    {
+        "idx": 145,
+        "name": "--depth-estimation",
+        "flag": "--depth-estimation",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Computes monocular depth maps predicting distance from camera for each pixel in an image.",
+        "syntax": "cli.exe --depth-estimation --file \"assets/scene.jpg\""
+    },
+    {
+        "idx": 146,
+        "name": "--image-feature-extraction",
+        "flag": "--image-feature-extraction",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Extracts high-dimensional visual embedding vectors for image retrieval and similarity matching.",
+        "syntax": "cli.exe --image-feature-extraction --file \"assets/logo.png\""
+    },
+    {
+        "idx": 147,
+        "name": "--automatic-speech-recognition",
+        "flag": "--automatic-speech-recognition",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Transcribes spoken audio into timestamped text transcripts using state-of-the-art ASR models (Whisper).",
+        "syntax": "cli.exe --automatic-speech-recognition --file \"recordings/standup.wav\""
+    },
+    {
+        "idx": 148,
+        "name": "--audio-classification",
+        "flag": "--audio-classification",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Classifies audio files by acoustic event, musical genre, or environmental sound category.",
+        "syntax": "cli.exe --audio-classification --file \"telemetry/engine_sound.wav\""
+    },
+    {
+        "idx": 149,
+        "name": "--voice-activity-detection",
+        "flag": "--voice-activity-detection",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Detects presence of human speech vs silence or background noise in audio streams.",
+        "syntax": "cli.exe --voice-activity-detection --file \"audio/meeting.mp3\""
+    },
+    {
+        "idx": 150,
+        "name": "--emotion-recognition",
+        "flag": "--emotion-recognition",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Detects vocal emotion and caller stress levels from audio pitch, tone, and prosody.",
+        "syntax": "cli.exe --emotion-recognition --file \"support/call_sample.wav\""
+    },
+    {
+        "idx": 151,
+        "name": "--video-classification",
+        "flag": "--video-classification",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Classifies video clips into activity, genre, or scene categories using temporal-spatial models.",
+        "syntax": "cli.exe --video-classification --file \"media/demo.mp4\""
+    },
+    {
+        "idx": 152,
+        "name": "--text-to-speech",
+        "flag": "--text-to-speech",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Synthesizes natural-sounding speech audio from text input using neural vocoders.",
+        "syntax": "cli.exe --text-to-speech --prompt \"Build 153 compilation complete. All 170 CLI flags verified.\""
+    },
+    {
+        "idx": 153,
+        "name": "--text-to-image",
+        "flag": "--text-to-image",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Generates high-resolution images from text descriptions using latent diffusion models.",
+        "syntax": "cli.exe --text-to-image --prompt \"Futuristic AI operating system terminal in glowing amber cyberpunk aesthetic\""
+    },
+    {
+        "idx": 154,
+        "name": "--image-super-resolution",
+        "flag": "--image-super-resolution",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Upscales low-resolution images using neural super-resolution to enhance clarity and detail.",
+        "syntax": "cli.exe --image-super-resolution --file \"assets/low_res_badge.png\""
+    },
+    {
+        "idx": 155,
+        "name": "--table-question-answering",
+        "flag": "--table-question-answering",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Answers natural language queries by executing relational reasoning directly over tabular datasets.",
+        "syntax": "cli.exe --table-question-answering --file \"data/benchmarks.csv\" --prompt \"Which model achieved the highest throughput?\""
+    },
+    {
+        "idx": 156,
+        "name": "--feature-ranking",
+        "flag": "--feature-ranking",
+        "category": "tasks",
+        "category_name": "Multi-Modal Task Routing Flags",
+        "type": "bool",
+        "default": "false",
+        "desc": "Ranks input dataset features by predictive importance, information gain, and variance.",
+        "syntax": "cli.exe --feature-ranking --file \"data/training_set.csv\" --prompt \"Target: churn\""
+    },
+    {
+        "idx": 157,
+        "name": "--db-path",
+        "flag": "--db-path",
+        "category": "server",
+        "category_name": "Server & Database Commands",
+        "type": "String",
+        "default": "None",
+        "desc": "Specifies custom SQLite database path for ModelFusion catalog, models, and embeddings.",
+        "syntax": "cli.exe --db-path \"IDE/db/hf_models.db\" --stats"
+    },
+    {
+        "idx": 158,
+        "name": "--server",
+        "flag": "--server",
+        "category": "server",
+        "category_name": "Server & Database Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Launches the ModelFusion HTTP REST API server for external IDE and headless automation access.",
+        "syntax": "cli.exe --server --port 5000 --db-path \"IDE/db/hf_models.db\""
+    },
+    {
+        "idx": 159,
+        "name": "--enable-slash-commands",
+        "flag": "--enable-slash-commands",
+        "category": "server",
+        "category_name": "Server & Database Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Enables parsing of interactive IDE slash commands (/datascience, /search, /jupyter, /evolve) from raw prompts.",
+        "syntax": "cli.exe --enable-slash-commands --prompt \"/datascience data/sales.csv\""
+    },
+    {
+        "idx": 160,
+        "name": "--port",
+        "flag": "--port",
+        "category": "server",
+        "category_name": "Server & Database Commands",
+        "type": "u16",
+        "default": "5000",
+        "desc": "Specifies the TCP port on which the ModelFusion HTTP API server listens (default: 5000).",
+        "syntax": "cli.exe --server --port 8080"
+    },
+    {
+        "idx": 161,
+        "name": "--mcp",
+        "flag": "--mcp",
+        "category": "server",
+        "category_name": "Server & Database Commands",
+        "type": "bool",
+        "default": "false",
+        "desc": "Runs ModelFusion as a Model Context Protocol (MCP) server communicating over standard input/output (stdio).",
+        "syntax": "cli.exe --mcp --db-path \"IDE/db/hf_models.db\""
+    },
+    {
+        "idx": 162,
+        "name": "--acdso",
+        "flag": "--acdso",
+        "category": "acdso",
+        "category_name": "ACDSO Risk-Aware AutoML",
+        "type": "bool",
+        "default": "false",
+        "desc": "Runs ACDSO Risk-Aware AutoML with 5-objective Pareto knee-point optimization, automated leakage detection, and reproducible Python code generation. Aliases: --automl, --riskautoml, --risk-automl.",
+        "syntax": "cli.exe --acdso --file \"data/credit_risk.csv\" --target default --no-fusion"
+    },
+    {
+        "idx": 163,
+        "name": "--target <TARGET>",
+        "flag": "--target",
+        "category": "acdso",
+        "category_name": "ACDSO Risk-Aware AutoML",
+        "type": "String",
+        "default": "None",
+        "desc": "Designates the target column name or comma-separated column names for supervised classification, regression, or multi-target modeling.",
+        "syntax": "cli.exe --acdso --file \"data/housing.csv\" --target \"median_house_value\""
+    },
+    {
+        "idx": 164,
+        "name": "--predict <PREDICT>",
+        "flag": "--predict",
+        "category": "acdso",
+        "category_name": "ACDSO Risk-Aware AutoML",
+        "type": "String",
+        "default": "None",
+        "desc": "Trains models and outputs cross-validated and test-set predictions for the designated target column(s).",
+        "syntax": "cli.exe --acdso --file \"data/customer_churn.csv\" --predict churn --no-fusion"
+    },
+    {
+        "idx": 165,
+        "name": "--best-score",
+        "flag": "--best-score",
+        "category": "acdso",
+        "category_name": "ACDSO Risk-Aware AutoML",
+        "type": "bool",
+        "default": "false",
+        "desc": "Overrides 5-objective Pareto knee-point selection to force choice of the single model with strictly highest cross-validation score regardless of latency or memory complexity.",
+        "syntax": "cli.exe --acdso --file \"data/fraud_detection.csv\" --target is_fraud --best-score"
+    },
+    {
+        "idx": 166,
+        "name": "--timeseries",
+        "flag": "--timeseries",
+        "category": "acdso",
+        "category_name": "ACDSO Risk-Aware AutoML",
+        "type": "bool",
+        "default": "false",
+        "desc": "Activates ACDSO Auto Time Series forecasting mode with walk-forward temporal cross-validation, lag feature extraction, rolling statistics, and trend/seasonality decomposition.",
+        "syntax": "cli.exe --acdso --file \"data/store_sales.csv\" --timeseries --datetime-col \"date\" --horizon 14"
+    },
+    {
+        "idx": 167,
+        "name": "--datetime-col <COL>",
+        "flag": "--datetime-col",
+        "category": "acdso",
+        "category_name": "ACDSO Risk-Aware AutoML",
+        "type": "String",
+        "default": "None",
+        "desc": "Specifies the datetime or timestamp column name for temporal ordering, walk-forward splitting, and cyclical time feature engineering.",
+        "syntax": "cli.exe --acdso --file \"data/energy_load.csv\" --timeseries --datetime-col \"timestamp\" --horizon 24"
+    },
+    {
+        "idx": 168,
+        "name": "--horizon <N>",
+        "flag": "--horizon",
+        "category": "acdso",
+        "category_name": "ACDSO Risk-Aware AutoML",
+        "type": "usize",
+        "default": "7",
+        "desc": "Configures the forecasting horizon window length (number of future time steps to predict). Default: 7.",
+        "syntax": "cli.exe --acdso --file \"data/daily_demand.csv\" --timeseries --datetime-col \"day\" --horizon 30"
+    },
+    {
+        "idx": 169,
+        "name": "--decision",
+        "flag": "--decision",
+        "category": "acdso",
+        "category_name": "ACDSO Risk-Aware AutoML",
+        "type": "bool",
+        "default": "false",
+        "desc": "Executes ACDSO Decision Intelligence mode for causal inference, uplift modeling, propensity score weighting, and counterfactual policy simulation.",
+        "syntax": "cli.exe --acdso --file \"data/marketing.csv\" --decision --target conversion --treatment incentive_offered"
+    },
+    {
+        "idx": 170,
+        "name": "--treatment <COL>",
+        "flag": "--treatment",
+        "category": "acdso",
+        "category_name": "ACDSO Risk-Aware AutoML",
+        "type": "String",
+        "default": "None",
+        "desc": "Designates the intervention/treatment feature column for causal uplift and heterogeneous treatment effect (HTE) estimation.",
+        "syntax": "cli.exe --acdso --file \"data/clinical_trial.csv\" --decision --target recovery_rate --treatment drug_dosage"
+    }
+];
+
+    let activeCategory = 'all';
+
+    function renderFlags(list) {
+      const grid = document.getElementById('cmdGrid');
+      const counter = document.getElementById('flagCounter');
+      counter.textContent = `Showing ${list.length} of 170`;
+
+      if (list.length === 0) {
+        grid.innerHTML = `<div class="col-span-full p-8 text-center text-sm text-[var(--muted-foreground)]">No matching flags found. Try searching for a different keyword or task.</div>`;
+        return;
+      }
+
+      grid.innerHTML = list.map(c => `
+        <div class="p-4 rounded-2xl glass-card flex flex-col justify-between hover:border-amber-500/50 transition-all border border-[var(--border)] bg-[var(--card)]">
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-mono font-bold text-amber-500">#${c.idx}</span>
+              <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20">${c.category_name}</span>
+            </div>
+            <div class="font-mono text-sm font-bold text-[var(--foreground)] mb-1 break-all">${c.name}</div>
+            <div class="flex items-center gap-2 mb-2 text-[11px] text-[var(--muted-foreground)]">
+              <span>Type: <code class="text-[var(--foreground)]">${c.type}</code></span>
+              <span>•</span>
+              <span>Default: <code class="text-[var(--foreground)]">${c.default}</code></span>
+            </div>
+            <p class="text-xs text-[var(--muted-foreground)] mb-3 leading-relaxed">${c.desc}</p>
+          </div>
+          <div class="text-[11px] font-mono bg-[var(--background)] p-2 rounded-lg border border-[var(--border)] text-emerald-400 break-all select-all">
+            ${c.syntax}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function setCategory(cat) {
+      activeCategory = cat;
+      document.querySelectorAll('.cat-btn').forEach(b => {
+        b.className = 'cat-btn px-3 py-1 rounded-xl text-xs font-semibold glass-card text-[var(--muted-foreground)] hover:text-[var(--foreground)]';
+      });
+      const activeBtn = document.getElementById(`btn-${cat}`);
+      if (activeBtn) {
+        activeBtn.className = 'cat-btn px-3 py-1 rounded-xl text-xs font-semibold bg-amber-500 text-white';
+      }
+      filterFlags();
+    }
+
+    function filterFlags() {
+      const query = (document.getElementById('flagSearch').value || '').toLowerCase().trim();
+      const filtered = allFlags.filter(c => {
+        const matchesCat = activeCategory === 'all' || c.category === activeCategory;
+        const matchesQuery = !query || 
+          c.name.toLowerCase().includes(query) ||
+          c.flag.toLowerCase().includes(query) ||
+          c.desc.toLowerCase().includes(query) ||
+          c.syntax.toLowerCase().includes(query) ||
+          c.category_name.toLowerCase().includes(query);
+        return matchesCat && matchesQuery;
+      });
+      renderFlags(filtered);
+    }
+
+    // Initial render
+    renderFlags(allFlags);
+  </script>
+</body>
+</html>

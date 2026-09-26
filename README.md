@@ -20,11 +20,13 @@
 
 ModelFusion is an open-weight compound intelligence system and autonomous operating system runtime designed to achieve frontier-class reasoning and technical capability at a fraction of the cost of commercial proprietary APIs. By combining retrieval-augmented generation (RAG), dynamic task-based model selection across 2M+ models, multi-model consensus deliberation, sub-50ms preemption ReST-RL, and structured synthesis, ModelFusion bridges the gap between local open-weights execution and closed frontier models.
 
-### 📚 Documentation & Interactive Dashboards
-*   [Interactive Architecture & Hardware Sizing Dashboard](file:///C:/Users/oyesanyf/.gemini/antigravity/brain/b6ef927a-8ffc-4ecd-b7ed-90b470e8fc34/ModelFusion_Interactive_Docs.html) — Live interactive telemetry, sizing matrix simulator, and command explorer.
-*   [CLI Reference Manual (All 170 Flags)](docs/CLI_REFERENCE.md) — Exhaustive master table, parameter options, and executable examples for all 170 CLI flags.
-*   [HugOS IDE Integration Manual](docs/HUGOS_IDE_MANUAL.md) — Details local multimodal processing, intent classifier centroids, and IDE specific CLI/MCP configurations.
-*   [HugOS IDE Build & Feature Guide](docs/HUGOS_IDE_GUIDE.md) — Architecture, installation, slash commands, and build pipeline.
+### 📚 Documentation, Interactive Screens & Architecture Reports
+*   [**Interactive Screens & UI Catalog**](docs/screens/README.md) — Standalone ChatGPT-style simulators, aligned Generative UI widgets, 5-theme switchers, and browser interfaces.
+*   [**Interactive Architecture & 170-Flag CLI Portal**](docs/screens/ModelFusion_Interactive_Docs.html) — Searchable database of all 170 Master CLI flags, hardware sizing simulator, and live telemetry.
+*   [**Architecture Reports & Plans**](docs/reports/README.md) — Browser test reports, settings specifications, and walkthrough guides.
+*   [**CLI Reference Manual (All 170 Flags)**](docs/CLI_REFERENCE.md) — Exhaustive master table, parameter options, and executable examples for all 170 CLI flags.
+*   [**HugOS IDE Integration Manual**](docs/HUGOS_IDE_MANUAL.md) — Details local multimodal processing, intent classifier centroids, and IDE specific CLI/MCP configurations.
+*   [**HugOS IDE Build & Feature Guide**](docs/HUGOS_IDE_GUIDE.md) — Architecture, installation, slash commands, and build pipeline.
 
 ---
 

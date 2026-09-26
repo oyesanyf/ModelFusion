@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    /* 5 Theme Overrides for Demonstration */
+    .preview-white { --background: #ffffff; --card: #ffffff; --sidebar: #f9f9f9; --border: #e5e7eb; --foreground: #111827; --muted-foreground: #6b7280; --secondary: #f3f4f6; --secondary-foreground: #111827; }
+    .preview-dark { --background: #212121; --card: #212121; --sidebar: #171717; --border: #2f2f2f; --foreground: #ececec; --muted-foreground: #b4b4b4; --secondary: #2f2f2f; --secondary-foreground: #ececec; }
+    .preview-obsidian { --background: #000000; --card: #0a0a0a; --sidebar: #050505; --border: #222222; --foreground: #f3f4f6; --muted-foreground: #9ca3af; --secondary: #1a1a1a; --secondary-foreground: #f3f4f6; }
+    .preview-midnight { --background: #090d16; --card: #0f172a; --sidebar: #060911; --border: #1e293b; --foreground: #f8fafc; --muted-foreground: #94a3b8; --secondary: #1e293b; --secondary-foreground: #f8fafc; }
+    .preview-warm { --background: #fbf8f3; --card: #fbf8f3; --sidebar: #f3ede2; --border: #e6ddce; --foreground: #2d261e; --muted-foreground: #796c5f; --secondary: #ede4d4; --secondary-foreground: #2d261e; }
+  </style>
+</head>
+<body class="bg-transparent text-[var(--foreground)] antialiased p-2 select-none">
+  <div id="widget-card" class="preview-dark bg-[var(--card)] text-[var(--foreground)] border border-[var(--border)] rounded-2xl shadow-2xl overflow-hidden max-w-2xl mx-auto transition-colors duration-200">
+    
+    <!-- Top Header: Dynamic ModelFusion Consensus & Theme Selector -->
+    <div class="flex items-center justify-between px-4 py-2.5 border-b border-[var(--border)] bg-[var(--sidebar)] text-xs">
+      <!-- Header Model Selector -->
+      <div class="flex items-center gap-2">
+        <select id="model-select" class="bg-[var(--secondary)] text-[var(--foreground)] border border-[var(--border)] rounded-lg px-2.5 py-1 font-medium cursor-pointer outline-none focus:ring-1 focus:ring-amber-500">
+          <option value="auto" selected>✨ ModelFusion Auto (Default)</option>
+          <option value="fast">⚡ Fast Workhorse (Qwen 2.5 7B)</option>
+          <option value="deep">🧠 Deep Reasoning (DeepSeek-R1)</option>
+          <option value="vision">👁️ Vision-Language (Qwen-VL)</option>
+        </select>
+        <span class="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold text-[10px]">Consensus</span>
+      </div>
+
+      <!-- Theme Switcher Pills -->
+      <div class="flex items-center gap-1 bg-[var(--background)] p-1 rounded-lg border border-[var(--border)]">
+        <button onclick="setTheme('preview-white')" class="theme-btn px-2 py-0.5 rounded text-[10px] font-medium hover:bg-slate-700/20" title="Clean White">White</button>
+        <button onclick="setTheme('preview-dark')" class="theme-btn px-2 py-0.5 rounded text-[10px] font-medium bg-amber-500/20 text-amber-400 font-bold" title="ChatGPT Charcoal">Dark</button>
+        <button onclick="setTheme('preview-obsidian')" class="theme-btn px-2 py-0.5 rounded text-[10px] font-medium hover:bg-slate-700/20" title="OLED Obsidian">Obsidian</button>
+        <button onclick="setTheme('preview-midnight')" class="theme-btn px-2 py-0.5 rounded text-[10px] font-medium hover:bg-slate-700/20" title="Navy Midnight">Midnight</button>
+        <button onclick="setTheme('preview-warm')" class="theme-btn px-2 py-0.5 rounded text-[10px] font-medium hover:bg-slate-700/20" title="Warm Sepia">Warm</button>
+      </div>
+    </div>
+
+    <!-- Centered 768px Max-Width Reading Column -->
+    <div id="messages-container" class="p-4 flex flex-col gap-3.5 max-w-xl mx-auto h-[260px] overflow-y-auto text-sm scroll-smooth">
+      
+      <!-- User Message (Clean Right-Aligned inside 768px column) -->
+      <div class="flex justify-end">
+        <div class="bg-[var(--secondary)] text-[var(--secondary-foreground)] rounded-2xl rounded-br-sm px-4 py-2 max-w-[85%] border border-[var(--border)] shadow-sm">
+          what is the capital of Nigeria?
+        </div>
+      </div>
+
+      <!-- Assistant Message (Clean Left-Aligned ModelFusion Stream) -->
+      <div class="flex items-start gap-3">
+        <div class="w-6 h-6 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center text-xs flex-shrink-0 mt-0.5 font-bold">
+          ✨
+        </div>
+        <div class="flex-1 space-y-1">
+          <div class="text-[11px] font-medium text-[var(--muted-foreground)] flex items-center gap-1.5">
+            <span class="text-amber-500 font-semibold">ModelFusion</span>
+            <span>•</span>
+            <span class="text-emerald-400">Multi-Model Adaptive Consensus</span>
+          </div>
+          <div class="text-[var(--foreground)] leading-relaxed">
+            The capital of Nigeria is <strong>Abuja</strong>.
+          </div>
+          <div class="text-xs text-[var(--muted-foreground)] leading-snug">
+            Abuja replaced Lagos as Nigeria's federal capital territory in December 1991 due to its central location and planned infrastructure.
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Floating Bottom Input Capsule (Centered within column) -->
+    <div class="p-3 border-t border-[var(--border)] bg-[var(--sidebar)]">
+      <form onsubmit="handleSend(event)" class="max-w-xl mx-auto flex items-center gap-2 px-3 py-1.5 rounded-full border border-[var(--border)] bg-[var(--background)] shadow-inner focus-within:border-amber-500/50 transition-colors">
+        <button type="button" class="text-base text-[var(--muted-foreground)] hover:text-[var(--foreground)] px-1 leading-none font-medium" title="Attach file">+</button>
+        <input id="prompt-input" type="text" placeholder="Ask HugOS or type a command..." class="bg-transparent border-none outline-none text-xs text-[var(--foreground)] placeholder-[var(--muted-foreground)] flex-1 px-1">
+        <span class="text-[10px] px-2 py-0.5 rounded-full border border-[var(--border)] text-[var(--muted-foreground)]">🌐 Web: Auto</span>
+        <button type="submit" class="w-6 h-6 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center text-xs font-bold hover:brightness-110 active:scale-95 transition-all">↑</button>
+      </form>
+    </div>
+
+    <!-- Status Strip: Diagnostic Cleanliness & Privacy -->
+    <div class="px-4 py-1.5 bg-[var(--sidebar)] border-t border-[var(--border)] text-[10px] text-[var(--muted-foreground)] flex justify-between items-center">
+      <div class="flex items-center gap-2">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span>Local Consensus Engine Active</span>
+        <span class="text-[var(--border)]">|</span>
+        <span class="text-amber-400 font-medium">Debug Pills: Suppressed in Chat View</span>
+      </div>
+      <span class="text-emerald-400 font-medium">✓ 768px Centered Alignment</span>
+    </div>
+
+  </div>
+
+  <script>
+    function setTheme(themeClass) {
+      const card = document.getElementById('widget-card');
+      card.className = card.className.replace(/preview-\w+/, themeClass);
+      document.querySelectorAll('.theme-btn').forEach(btn => {
+        btn.classList.remove('bg-amber-500/20', 'text-amber-400', 'font-bold');
+      });
+      event.target.classList.add('bg-amber-500/20', 'text-amber-400', 'font-bold');
+    }
+
+    function handleSend(e) {
+      e.preventDefault();
+      const input = document.getElementById('prompt-input');
+      const val = input.value.trim();
+      if (!val) return;
+      input.value = '';
+
+      const container = document.getElementById('messages-container');
+      
+      // Append user bubble (right-aligned in 768px column)
+      const userDiv = document.createElement('div');
+      userDiv.className = 'flex justify-end';
+      userDiv.innerHTML = `<div class="bg-[var(--secondary)] text-[var(--secondary-foreground)] rounded-2xl rounded-br-sm px-4 py-2 max-w-[85%] border border-[var(--border)] shadow-sm">${escapeHtml(val)}</div>`;
+      container.appendChild(userDiv);
+
+      // Append assistant consensus response
+      const asstDiv = document.createElement('div');
+      asstDiv.className = 'flex items-start gap-3 animate-fade-in';
+      asstDiv.innerHTML = `
+        <div class="w-6 h-6 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center text-xs flex-shrink-0 mt-0.5 font-bold">✨</div>
+        <div class="flex-1 space-y-1">
+          <div class="text-[11px] font-medium text-[var(--muted-foreground)] flex items-center gap-1.5">
+            <span class="text-amber-500 font-semibold">ModelFusion</span>
+            <span>•</span>
+            <span class="text-emerald-400">Adaptive Consensus</span>
+          </div>
+          <div class="text-[var(--foreground)] leading-relaxed">
+            Processed directive via <strong>ModelFusion Consensus Engine</strong> with zero cloud latency.
+          </div>
+        </div>
+      `;
+      container.appendChild(asstDiv);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+  </script>
+</body>
+</html>
