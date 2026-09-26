@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="HugOS Browser" Manufacturer="HugOS Team" Version="1.0.6" UpgradeCode="e98c7d08-91cb-4248-bfa5-765c96ddeca6" Scope="perUser">
+  <Package Name="HugOS Browser" Manufacturer="HugOS Team" Version="1.0.7" UpgradeCode="e98c7d08-91cb-4248-bfa5-765c96ddeca6" Scope="perUser">
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." Schedule="afterInstallInitialize" AllowSameVersionUpgrades="yes" />
 
     <MediaTemplate EmbedCab="yes" />
