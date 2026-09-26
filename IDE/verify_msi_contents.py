@@ -270,8 +270,11 @@ def verify_via_msi_database(msi_path):
 
     print("[INFO] Performing direct in-memory MSI database verification via msi.dll...")
     msi = ctypes.windll.msi
+    from ctypes import c_void_p
+    msi.MsiOpenDatabaseW.argtypes = [wintypes.LPCWSTR, c_void_p, ctypes.POINTER(wintypes.HANDLE)]
+    msi.MsiOpenDatabaseW.restype = wintypes.UINT
     hDb = wintypes.HANDLE()
-    ret = msi.MsiOpenDatabaseW(os.path.abspath(msi_path), 0, ctypes.byref(hDb))
+    ret = msi.MsiOpenDatabaseW(os.path.abspath(msi_path), c_void_p(0), ctypes.byref(hDb))
     if ret != 0 or not hDb.value:
         print(f"[FATAL ERROR] MsiOpenDatabaseW failed with error {ret}")
         sys.exit(1)

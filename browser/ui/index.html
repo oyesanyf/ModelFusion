@@ -71,6 +71,10 @@
           <span class="dot status-dot" id="dot-cdp"></span>
           <span class="status-text" id="text-cdp">CDP :9222</span>
         </div>
+        <button class="settings-nav-btn" id="btn-open-settings" title="HugOS Browser Settings (Ctrl+,)">
+          <span class="settings-nav-icon">⚙️</span>
+          <span class="settings-nav-text">Settings</span>
+        </button>
       </div>
     </header>
 
@@ -205,8 +209,17 @@
               <button class="cmd-chip" data-cmd="--sys-info">--sys-info</button>
             </div>
 
+            <!-- File Attachment Tray -->
+            <div class="attachment-tray hidden" id="attachment-tray"></div>
+
             <!-- Terminal Input Line -->
             <div class="terminal-input-bar">
+              <button type="button" class="cli-input-btn" id="btn-attach-file" title="Attach file (Code, CSV, Text, JSON, PDF, etc.)">📎</button>
+              <input type="file" id="file-picker" multiple class="hidden">
+              <button type="button" class="cli-input-btn web-mode-btn" id="btn-web-mode" title="Toggle Internet Search mode (Auto / On / Off)">
+                <span id="web-mode-icon">🌐</span>
+                <span id="web-mode-label">Web: Auto</span>
+              </button>
               <span class="prompt-sym">hugos-cli &gt;</span>
               <input type="text" id="cli-prompt-input" placeholder="Type @agent browser &lt;task&gt;, /browser &lt;url&gt;, /acdso, or natural language prompt..." spellcheck="false">
               <button class="cli-run-btn" id="btn-run-cli">Execute</button>
@@ -255,6 +268,733 @@
         </div>
       </div>
     </main>
+  </div>
+
+  <!-- Settings Modal Dialog -->
+  <div class="settings-modal-backdrop hidden" id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-dialog-title">
+    <div class="settings-dialog">
+      <!-- Modal Header -->
+      <div class="settings-dialog-header">
+        <div class="settings-title-group">
+          <span class="settings-header-icon">⚙️</span>
+          <h2 class="settings-dialog-title" id="settings-dialog-title">HugOS Browser Settings</h2>
+          <span class="settings-dialog-sub">ModelFusion AI & Browser Preferences</span>
+        </div>
+        <button class="settings-close-btn" id="settings-close-btn" title="Close Settings (Escape)">✕</button>
+      </div>
+
+      <!-- Modal Body (Sidebar Nav + Panes) -->
+      <div class="settings-dialog-body">
+        <!-- Sidebar Navigation (Matching User Screenshot media_1790440436024.png) -->
+        <nav class="settings-nav" aria-label="Settings Categories">
+          <div class="settings-search-box">
+            <span class="search-glass">🔍</span>
+            <input type="text" id="settings-search" placeholder="Search" autocomplete="off" spellcheck="false">
+            <button id="settings-search-clear" class="search-clear hidden" type="button" title="Clear Search">✕</button>
+          </div>
+          <div class="nav-section-title">Personal</div>
+          <button type="button" class="settings-tab active" data-tab="tab-general">
+            <span class="tab-icon">⚙️</span>
+            <span class="tab-text">General</span>
+          </button>
+          <button type="button" class="settings-tab" data-tab="tab-appearance">
+            <span class="tab-icon">🔆</span>
+            <span class="tab-text">Appearance</span>
+          </button>
+          <button type="button" class="settings-tab" data-tab="tab-websearch">
+            <span class="tab-icon">🌐</span>
+            <span class="tab-text">Web Search &amp; Routing</span>
+          </button>
+          <button type="button" class="settings-tab" data-tab="tab-models">
+            <span class="tab-icon">🧠</span>
+            <span class="tab-text">AI Models &amp; Endpoints</span>
+          </button>
+          <button type="button" class="settings-tab" data-tab="tab-storage">
+            <span class="tab-icon">📁</span>
+            <span class="tab-text">Storage</span>
+          </button>
+          <button type="button" class="settings-tab" data-tab="tab-keyboard">
+            <span class="tab-icon">⌨️</span>
+            <span class="tab-text">Keyboard</span>
+          </button>
+          <button type="button" class="settings-tab" data-tab="tab-usage">
+            <span class="tab-icon">📈</span>
+            <span class="tab-text">Usage</span>
+          </button>
+          <button type="button" class="settings-tab" data-tab="tab-notifications">
+            <span class="tab-icon">🔔</span>
+            <span class="tab-text">Notifications</span>
+          </button>
+          <button type="button" class="settings-tab" data-tab="tab-account">
+            <span class="tab-icon">👤</span>
+            <span class="tab-text">Account</span>
+          </button>
+          <button type="button" class="settings-tab" data-tab="tab-security">
+            <span class="tab-icon">🔑</span>
+            <span class="tab-text">Security and login</span>
+          </button>
+          <button type="button" class="settings-tab" data-tab="tab-voice">
+            <span class="tab-icon">🎙️</span>
+            <span class="tab-text">Voice</span>
+          </button>
+          <button type="button" class="settings-tab" data-tab="tab-pets">
+            <span class="tab-icon">🐾</span>
+            <span class="tab-text">Pets</span>
+          </button>
+        </nav>
+
+        <!-- Tab Content Panes -->
+        <div class="settings-content">
+          <!-- 1. GENERAL TAB -->
+          <div class="settings-tab-pane active" id="pane-tab-general">
+            <div class="settings-pane-header">
+              <h3>General Preferences</h3>
+              <p>Configure default homepage, token streaming, and dynamic hardware sizing policies.</p>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-homepage-url" class="setting-label">Default Browser Homepage</label>
+                <span class="setting-desc">Initial URL loaded when launching or returning home. Leave blank for Dashboard.</span>
+              </div>
+              <div class="setting-control">
+                <input type="text" id="setting-homepage-url" class="setting-input" placeholder="e.g. https://huggingface.co or blank for Dashboard" spellcheck="false">
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-stream" class="setting-label">Real-time Token Streaming</label>
+                <span class="setting-desc">Stream token chunks with sub-50ms yields to the interactive terminal console.</span>
+              </div>
+              <div class="setting-control">
+                <label class="setting-toggle-label">
+                  <input type="checkbox" id="setting-stream" checked>
+                  <span class="toggle-text">Enable Streaming</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-auto-scroll" class="setting-label">Terminal Auto-scroll</label>
+                <span class="setting-desc">Automatically scroll terminal screen to the newest message or streaming token.</span>
+              </div>
+              <div class="setting-control">
+                <label class="setting-toggle-label">
+                  <input type="checkbox" id="setting-auto-scroll" checked>
+                  <span class="toggle-text">Auto-scroll Terminal</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-sizing-strategy" class="setting-label">Dynamic Hardware Sizing Rule</label>
+                <span class="setting-desc">Rule to size local LLM tiers dynamically from runtime available / free memory.</span>
+              </div>
+              <div class="setting-control">
+                <select id="setting-sizing-strategy" class="setting-select">
+                  <option value="runtime_ram" selected>Runtime Available RAM (Recommended / Dynamic)</option>
+                  <option value="pareto">Pareto Multi-Objective Frontier</option>
+                  <option value="low_budget">Low-Budget / Low-Resource Mode</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">System Architecture &amp; Diagnostics</label>
+                <span class="setting-desc">Platform execution engine verified across Master CLI parity targets.</span>
+              </div>
+              <div class="setting-control">
+                <div class="diagnostics-pill-box">
+                  <span class="diag-pill">Windows x64 Native</span>
+                  <span class="diag-pill">Dual-Stack IPv4/IPv6</span>
+                  <span class="diag-pill">&lt;8ms Job Preemption</span>
+                  <span class="diag-pill">Zero-Cloud Offline</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. APPEARANCE TAB -->
+          <div class="settings-tab-pane" id="pane-tab-appearance">
+            <div class="settings-pane-header">
+              <h3>Appearance &amp; Typography</h3>
+              <p>Customize UI color palettes, terminal typography, and accent highlights.</p>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-theme" class="setting-label">Color Theme</label>
+                <span class="setting-desc">Visual color palette for HugOS Browser and CLI console.</span>
+              </div>
+              <div class="setting-control">
+                <select id="setting-theme" class="setting-select">
+                  <option value="dark-plus" selected>Dark+ (Default HugOS)</option>
+                  <option value="obsidian">Obsidian (Pure Pitch Black)</option>
+                  <option value="midnight">Midnight (Deep Navy)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-font-size" class="setting-label">Terminal Font Size</label>
+                <span class="setting-desc">Typography size for terminal screen output and streaming tokens.</span>
+              </div>
+              <div class="setting-control">
+                <select id="setting-font-size" class="setting-select">
+                  <option value="12px">12px (Compact)</option>
+                  <option value="13px" selected>13px (Default)</option>
+                  <option value="14px">14px (Medium)</option>
+                  <option value="16px">16px (Large)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-accent-color" class="setting-label">Accent Highlight Color</label>
+                <span class="setting-desc">Accent color for buttons, badges, status dots, and active tabs.</span>
+              </div>
+              <div class="setting-control">
+                <select id="setting-accent-color" class="setting-select">
+                  <option value="indigo" selected>Indigo (#6366f1 - HugOS Standard)</option>
+                  <option value="emerald">Emerald (#10b981 - Eco Green)</option>
+                  <option value="sky">Sky Blue (#0284c7 - Clean Blue)</option>
+                  <option value="purple">Purple (#a855f7 - Deep Violet)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-high-contrast" class="setting-label">High-Contrast Borders</label>
+                <span class="setting-desc">Enhance visual contrast of interactive elements and borders.</span>
+              </div>
+              <div class="setting-control">
+                <label class="setting-toggle-label">
+                  <input type="checkbox" id="setting-high-contrast">
+                  <span class="toggle-text">High-Contrast Mode</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. WEB SEARCH & ROUTING TAB -->
+          <div class="settings-tab-pane" id="pane-tab-websearch">
+            <div class="settings-pane-header">
+              <h3>Live Internet Search &amp; Intelligent Query Routing</h3>
+              <p>Equip local open-weight models with real-time web knowledge, automated routing, and source citations.</p>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-websearch-enable" class="setting-label">Enable Live Internet Search</label>
+                <span class="setting-desc">Permit the AI engine to query the live internet for up-to-date facts, docs, and news.</span>
+              </div>
+              <div class="setting-control">
+                <label class="setting-toggle-label">
+                  <input type="checkbox" id="setting-websearch-enable" checked>
+                  <span class="toggle-text">Live Web Search Enabled</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-websearch-mode" class="setting-label">Search Trigger &amp; Routing Mode</label>
+                <span class="setting-desc">How HugOS decides whether to query the internet or answer directly with local model knowledge.</span>
+              </div>
+              <div class="setting-control">
+                <select id="setting-websearch-mode" class="setting-select">
+                  <option value="auto" selected>Auto: Intelligent Routing (Recommended - Detects Recency &amp; Research)</option>
+                  <option value="always">Always On: Search Live Web for Every Query</option>
+                  <option value="off">Off: 100% Offline Local Model Reasoning Only</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-websearch-engine" class="setting-label">Search Engine Provider</label>
+                <span class="setting-desc">Backend used to execute fast live web searches without tracking or paid APIs.</span>
+              </div>
+              <div class="setting-control">
+                <select id="setting-websearch-engine" class="setting-select">
+                  <option value="modelfusion_ipc" selected>ModelFusion Master CLI IPC (:5000 /api/search - Fastest)</option>
+                  <option value="ddg_lite">DuckDuckGo Lite Direct Gateway</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-websearch-max-results" class="setting-label">Maximum Web Search Results</label>
+                <span class="setting-desc">Number of relevant search hits ingested and correlated per query (1 to 10).</span>
+              </div>
+              <div class="setting-control slider-control">
+                <input type="range" id="setting-websearch-max-results" class="setting-slider" min="1" max="10" step="1" value="5">
+                <span class="slider-val" id="val-websearch-max-results">5</span>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-websearch-correlate" class="setting-label">Correlate Web Knowledge with Local LLM</label>
+                <span class="setting-desc">Synthesize live web search snippets with internal model reasoning into a cohesive, verified answer.</span>
+              </div>
+              <div class="setting-control">
+                <label class="setting-toggle-label">
+                  <input type="checkbox" id="setting-websearch-correlate" checked>
+                  <span class="toggle-text">Correlate with LLM</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-websearch-citations" class="setting-label">Include Direct URL Citations</label>
+                <span class="setting-desc">Format verified web sources as [1], [2] footnotes with clickable Markdown links.</span>
+              </div>
+              <div class="setting-control">
+                <label class="setting-toggle-label">
+                  <input type="checkbox" id="setting-websearch-citations" checked>
+                  <span class="toggle-text">Cite Web Sources</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Live Search Test Sandbox Card -->
+            <div class="setting-item test-sandbox-card">
+              <div class="setting-info" style="max-width: 100%;">
+                <label class="setting-label">Test Live Web Search</label>
+                <span class="setting-desc">Verify real-time web connectivity and query extraction directly from the browser:</span>
+                <div class="setting-input-row" style="margin-top: 10px;">
+                  <input type="text" id="setting-test-search-query" class="setting-input" placeholder="e.g. rust latest version, deepseek r1, current weather" value="rust programming language latest release">
+                  <button type="button" class="setting-test-btn" id="btn-test-live-search">Test Live Search</button>
+                </div>
+                <div class="websearch-test-preview hidden" id="websearch-test-preview"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. AI MODELS & ENDPOINTS TAB -->
+          <div class="settings-tab-pane" id="pane-tab-models">
+            <div class="settings-pane-header">
+              <h3>AI Models &amp; Endpoints</h3>
+              <p>Configure local Ollama instance, ModelFusion Master CLI IPC bridge, and Chrome DevTools Protocol.</p>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-ollama-url" class="setting-label">Local Ollama REST API</label>
+                <span class="setting-desc">Base URL for local Ollama HTTP REST API serving workhorse models.</span>
+              </div>
+              <div class="setting-control-group">
+                <div class="setting-input-row">
+                  <input type="text" id="setting-ollama-url" class="setting-input" value="http://127.0.0.1:11434" spellcheck="false">
+                  <button type="button" class="setting-test-btn" id="btn-test-ollama">Test Connection</button>
+                </div>
+                <div class="test-result-wrapper">
+                  <span class="test-result" id="result-test-ollama"></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-ipc-url" class="setting-label">ModelFusion Master CLI IPC</label>
+                <span class="setting-desc">Local IPC daemon endpoint for autonomous orchestration, graph index, and web search.</span>
+              </div>
+              <div class="setting-control-group">
+                <div class="setting-input-row">
+                  <input type="text" id="setting-ipc-url" class="setting-input" value="http://127.0.0.1:5000" spellcheck="false">
+                  <button type="button" class="setting-test-btn" id="btn-test-ipc">Test Connection</button>
+                </div>
+                <div class="test-result-wrapper">
+                  <span class="test-result" id="result-test-ipc"></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-cdp-port" class="setting-label">Chrome DevTools Protocol (CDP) Port</label>
+                <span class="setting-desc">Target TCP port for remote debugging, DOM inspection, and HAR capture.</span>
+              </div>
+              <div class="setting-control-group">
+                <div class="setting-input-row">
+                  <input type="number" id="setting-cdp-port" class="setting-input number-input" value="9222" min="1" max="65535">
+                  <button type="button" class="setting-test-btn" id="btn-test-cdp">Test CDP</button>
+                </div>
+                <div class="test-result-wrapper">
+                  <span class="test-result" id="result-test-cdp"></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-active-model" class="setting-label">Primary Workhorse Model</label>
+                <span class="setting-desc">Active model used for interactive directives, summaries, and tool calling.</span>
+              </div>
+              <div class="setting-control-group">
+                <div class="setting-input-row">
+                  <select id="setting-active-model" class="setting-select">
+                    <option value="qwen2.5:7b">qwen2.5:7b (Fast Standard Engine)</option>
+                    <option value="qwen2.5:32b">qwen2.5:32b (Deep Reasoner 32B)</option>
+                    <option value="qwen2.5:14b">qwen2.5:14b (Mid Tier 14B)</option>
+                    <option value="qwen2.5:1.5b">qwen2.5:1.5b (Ultra-Lightweight 1.5B)</option>
+                    <option value="deepseek-r1:1.5b">deepseek-r1:1.5b (Distilled Reasoning)</option>
+                    <option value="deepseek-r1:32b">deepseek-r1:32b (DeepSeek R1 32B)</option>
+                  </select>
+                  <button type="button" class="setting-test-btn" id="btn-refresh-models">Refresh Tags</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-vision-model" class="setting-label">Vision Specialist Model</label>
+                <span class="setting-desc">Specialized visual grounding model tag for Set-of-Mark and image analysis.</span>
+              </div>
+              <div class="setting-control">
+                <input type="text" id="setting-vision-model" class="setting-input" value="qwen2.5-vl" spellcheck="false">
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-temperature" class="setting-label">Sampling Temperature</label>
+                <span class="setting-desc">Lower values (0.1–0.3) provide analytical determinism; higher values increase variety.</span>
+              </div>
+              <div class="setting-control slider-control">
+                <input type="range" id="setting-temperature" class="setting-slider" min="0.0" max="1.0" step="0.05" value="0.2">
+                <span class="slider-val" id="val-temperature">0.20</span>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-max-tokens" class="setting-label">Max Output Tokens</label>
+                <span class="setting-desc">Upper bound on generated response token count per directive.</span>
+              </div>
+              <div class="setting-control">
+                <select id="setting-max-tokens" class="setting-select">
+                  <option value="2048">2048 tokens (Concise)</option>
+                  <option value="4096" selected>4096 tokens (Default Production)</option>
+                  <option value="8192">8192 tokens (Extended Context)</option>
+                  <option value="16384">16384 tokens (Full Research Report)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- 5. STORAGE TAB -->
+          <div class="settings-tab-pane" id="pane-tab-storage">
+            <div class="settings-pane-header">
+              <h3>Storage &amp; Multi-Modal Catalog Database</h3>
+              <p>Manage browser session caches, file attachment workspace, and Hugging Face SQLite catalog.</p>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">Navigation History &amp; Web Cache</label>
+                <span class="setting-desc">Clear session navigation history stack and cached webview pages.</span>
+              </div>
+              <div class="setting-control">
+                <button type="button" class="cli-btn-secondary danger-btn" id="btn-clear-history">Clear History</button>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">Attached Files Cache</label>
+                <span class="setting-desc">Remove all currently staged file attachments and parsed datasets from memory.</span>
+              </div>
+              <div class="setting-control">
+                <button type="button" class="cli-btn-secondary" id="btn-clear-attachments">Clear Attachments</button>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">Multi-Modal SQLite Catalog Database</label>
+                <span class="setting-desc">Authoritative local catalog indexed with 2M+ Hugging Face models across 45 tasks.</span>
+              </div>
+              <div class="setting-control">
+                <div class="db-stats-card">
+                  <div class="db-stat-row"><strong>Database Path:</strong> <code>IDE/db/hf_models.db</code></div>
+                  <div class="db-stat-row"><strong>Multi-Modal Tasks:</strong> 45 Vision, Audio, NLP &amp; Code Tasks</div>
+                  <div class="db-stat-row"><strong>Offline Access:</strong> 100% In-Memory Fast Interception (&lt;1ms)</div>
+                  <div class="db-stat-row"><strong>Update Engine:</strong> <code>cli.exe --update</code> (6,500 models) &amp; <code>--updatedb</code> (All 2M+)</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 6. KEYBOARD SHORTCUTS TAB -->
+          <div class="settings-tab-pane" id="pane-tab-keyboard">
+            <div class="settings-pane-header">
+              <h3>Keyboard Shortcuts</h3>
+              <p>Master keyboard shortcuts for rapid navigation, file attachment, and AI directives.</p>
+            </div>
+
+            <div class="shortcut-table-wrapper">
+              <table class="shortcut-table">
+                <thead>
+                  <tr>
+                    <th>Shortcut</th>
+                    <th>Action</th>
+                    <th>Context</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><kbd>Ctrl</kbd> + <kbd>,</kbd></td>
+                    <td>Open / Close Settings Drawer</td>
+                    <td>Global</td>
+                  </tr>
+                  <tr>
+                    <td><kbd>Esc</kbd></td>
+                    <td>Close Modals / Clear Overlays</td>
+                    <td>Global</td>
+                  </tr>
+                  <tr>
+                    <td><kbd>Ctrl</kbd> + <kbd>O</kbd></td>
+                    <td>Attach File (Code, CSV, Text, JSON)</td>
+                    <td>CLI Runner</td>
+                  </tr>
+                  <tr>
+                    <td><kbd>Alt</kbd> + <kbd>S</kbd></td>
+                    <td>Cycle Web Search Mode (Auto → On → Off)</td>
+                    <td>CLI Runner</td>
+                  </tr>
+                  <tr>
+                    <td><kbd>Alt</kbd> + <kbd>M</kbd></td>
+                    <td>Toggle Set-of-Mark Visual Markers</td>
+                    <td>Page / Webview</td>
+                  </tr>
+                  <tr>
+                    <td><kbd>Enter</kbd></td>
+                    <td>Execute Prompt / Navigate Omnibox</td>
+                    <td>Inputs</td>
+                  </tr>
+                  <tr>
+                    <td><kbd>Ctrl</kbd> + <kbd>L</kbd></td>
+                    <td>Focus Omnibox Search Bar</td>
+                    <td>Global</td>
+                  </tr>
+                  <tr>
+                    <td><kbd>Ctrl</kbd> + <kbd>K</kbd></td>
+                    <td>Focus Terminal Command Input</td>
+                    <td>Global</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- 7. USAGE TELEMETRY TAB -->
+          <div class="settings-tab-pane" id="pane-tab-usage">
+            <div class="settings-pane-header">
+              <h3>Hardware Usage &amp; Telemetry</h3>
+              <p>Real-time system resource allocation, active model status, and query statistics.</p>
+            </div>
+
+            <div class="hw-stats-grid" style="margin-top: 10px;">
+              <div class="hw-stat-item">
+                <span class="stat-label">Runtime Available RAM</span>
+                <span class="stat-value" id="usage-ram">16.0 GB+ Detected</span>
+              </div>
+              <div class="hw-stat-item">
+                <span class="stat-label">GPU Acceleration</span>
+                <span class="stat-value" id="usage-gpu">Vulkan / DirectCompute</span>
+              </div>
+              <div class="hw-stat-item">
+                <span class="stat-label">Active Local Model</span>
+                <span class="stat-value" id="usage-model">qwen2.5:7b</span>
+              </div>
+              <div class="hw-stat-item">
+                <span class="stat-label">Queries Executed</span>
+                <span class="stat-value" id="usage-queries">0 Directives</span>
+              </div>
+            </div>
+
+            <div class="setting-item" style="margin-top: 16px;">
+              <div class="setting-info">
+                <label class="setting-label">Hardware Dynamic Sizing Policy</label>
+                <span class="setting-desc">Runtime available RAM is strictly evaluated at invocation to eliminate Out-Of-Memory (OOM) risks.</span>
+              </div>
+              <div class="setting-control">
+                <span class="diag-pill" style="color: #10b981; border-color: #10b981;">Enforced Invariant</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 8. NOTIFICATIONS TAB -->
+          <div class="settings-tab-pane" id="pane-tab-notifications">
+            <div class="settings-pane-header">
+              <h3>Notifications &amp; Alerts</h3>
+              <p>Configure in-app toast notifications, model provisioning alerts, and sound effects.</p>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-notif-toast" class="setting-label">In-App Toast Alerts</label>
+                <span class="setting-desc">Show non-intrusive status toast alerts upon command completion and model switches.</span>
+              </div>
+              <div class="setting-control">
+                <label class="setting-toggle-label">
+                  <input type="checkbox" id="setting-notif-toast" checked>
+                  <span class="toggle-text">Toast Alerts Enabled</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-notif-sound" class="setting-label">Task Completion Chime</label>
+                <span class="setting-desc">Play an audio cue when lengthy autonomous research or AutoML runs complete.</span>
+              </div>
+              <div class="setting-control">
+                <label class="setting-toggle-label">
+                  <input type="checkbox" id="setting-notif-sound">
+                  <span class="toggle-text">Audio Cue</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- 9. ACCOUNT TAB -->
+          <div class="settings-tab-pane" id="pane-tab-account">
+            <div class="settings-pane-header">
+              <h3>Local User Account &amp; Identity</h3>
+              <p>HugOS runs completely client-side with zero accounts, zero cloud registration, and no data tracking.</p>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">User Identity</label>
+                <span class="setting-desc">Local Developer Profile on Windows Native Host.</span>
+              </div>
+              <div class="setting-control">
+                <span class="stat-value">Localhost (Zero-Cloud)</span>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">Local Data Root</label>
+                <span class="setting-desc">Directory where local models, databases, and preferences reside.</span>
+              </div>
+              <div class="setting-control">
+                <code>%LOCALAPPDATA%\HugOS Browser</code>
+              </div>
+            </div>
+          </div>
+
+          <!-- 10. SECURITY AND LOGIN TAB -->
+          <div class="settings-tab-pane" id="pane-tab-security">
+            <div class="settings-pane-header">
+              <h3>Security &amp; Sandboxing</h3>
+              <p>Hardware-level process isolation, sub-50ms preemption, and sandbox guarantees.</p>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">Windows Job Object Isolation</label>
+                <span class="setting-desc">Child processes are registered with Windows Job Objects for immediate sub-8ms termination upon cancellation.</span>
+              </div>
+              <div class="setting-control">
+                <span class="diag-pill" style="color: #10b981; border-color: #10b981;">Active &amp; Guarded</span>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">Iframe CSP &amp; Cross-Origin Protection</label>
+                <span class="setting-desc">Web views are isolated with strict sandbox attributes protecting local filesystem access.</span>
+              </div>
+              <div class="setting-control">
+                <span class="diag-pill" style="color: #10b981; border-color: #10b981;">Sandbox Enforced</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 11. VOICE TAB -->
+          <div class="settings-tab-pane" id="pane-tab-voice">
+            <div class="settings-pane-header">
+              <h3>Voice &amp; Audio Input</h3>
+              <p>Configure offline Whisper speech recognition and voice commands.</p>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-voice-transcribe" class="setting-label">Offline Voice Transcription</label>
+                <span class="setting-desc">Automatically transcribe attached audio files using local Whisper workhorse model.</span>
+              </div>
+              <div class="setting-control">
+                <label class="setting-toggle-label">
+                  <input type="checkbox" id="setting-voice-transcribe" checked>
+                  <span class="toggle-text">Offline ASR Active</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- 12. PETS TAB -->
+          <div class="settings-tab-pane" id="pane-tab-pets">
+            <div class="settings-pane-header">
+              <h3>Developer Pets &amp; Companions</h3>
+              <p>Choose an interactive developer companion to assist during long coding and research sessions.</p>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-pet-choice" class="setting-label">Companion Mascot</label>
+                <span class="setting-desc">Select which pet appears in the terminal status corner.</span>
+              </div>
+              <div class="setting-control">
+                <select id="setting-pet-choice" class="setting-select">
+                  <option value="crab" selected>🦀 Ferris the Rust Crab</option>
+                  <option value="robot">🤗 Huggy the HF Robot</option>
+                  <option value="cat">🐱 Cyber Cat</option>
+                  <option value="llama">🦙 Ollama Llama</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-pet-enable" class="setting-label">Enable Companion Mode</label>
+                <span class="setting-desc">Show your chosen mascot cheering for green tests and successful queries.</span>
+              </div>
+              <div class="setting-control">
+                <label class="setting-toggle-label">
+                  <input type="checkbox" id="setting-pet-enable" checked>
+                  <span class="toggle-text">Pet Companion Enabled</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Footer Actions -->
+      <div class="settings-dialog-footer">
+        <div class="footer-left">
+          <button type="button" class="settings-footer-btn reset-btn" id="btn-reset-settings">Reset to Defaults</button>
+        </div>
+        <div class="footer-right">
+          <button type="button" class="settings-footer-btn cancel-btn" id="btn-cancel-settings">Cancel</button>
+          <button type="button" class="settings-footer-btn save-btn" id="btn-save-settings">Save Preferences</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="app.js"></script>

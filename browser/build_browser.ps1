@@ -88,6 +88,11 @@ function Sign-FileWithCert {
 Write-Host "[INFO] Signing internal binaries..." -ForegroundColor Yellow
 $filesToSign = Get-ChildItem -Path $browserDir -Include *.exe, *.dll -Recurse | Where-Object { $_.FullName -notlike "*node_modules*" }
 foreach ($f in $filesToSign) {
+    $existingSig = Get-AuthenticodeSignature $f.FullName -ErrorAction SilentlyContinue
+    if ($existingSig -and $existingSig.SignerCertificate -ne $null) {
+        Write-Host "  [ALREADY SIGNED] $($f.Name)" -ForegroundColor Green
+        continue
+    }
     $ok = Sign-FileWithCert -FilePath $f.FullName
     if ($ok) {
         Write-Host "  [SIGNED] $($f.Name)" -ForegroundColor Green

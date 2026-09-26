@@ -5702,6 +5702,71 @@ Respond ONLY with a valid JSON object matching this schema:
     "simple_general".to_string()
 }
 
+/// Simple URL percent decoder.
+pub fn url_decode_simple(input: &str) -> String {
+    let mut out = Vec::new();
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'+' {
+            out.push(b' ');
+            i += 1;
+        } else if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(b) = u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""), 16) {
+                out.push(b);
+                i += 3;
+            } else {
+                out.push(bytes[i]);
+                i += 1;
+            }
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).to_string()
+}
+
+/// Extracts search query string and max_results limit from URI query string or JSON payload.
+pub fn parse_query_and_limit_from_request(raw_uri: &str, request_json: &serde_json::Value) -> (String, usize) {
+    let mut query = String::new();
+    let mut max_results = 5usize;
+
+    // Check query string in raw_uri
+    if let Some((_, qs)) = raw_uri.split_once('?') {
+        for pair in qs.split('&') {
+            if let Some((k, v)) = pair.split_once('=') {
+                let decoded_val = url_decode_simple(v);
+                match k {
+                    "q" | "query" => {
+                        if !decoded_val.trim().is_empty() {
+                            query = decoded_val;
+                        }
+                    }
+                    "max_results" | "limit" | "n" => {
+                        if let Ok(n) = decoded_val.parse::<usize>() {
+                            max_results = n.clamp(1, 10);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    // Check JSON body fallback or override
+    if query.trim().is_empty() {
+        if let Some(q) = request_json.get("query").or_else(|| request_json.get("q")).and_then(|v| v.as_str()) {
+            query = q.to_string();
+        }
+    }
+    if let Some(n) = request_json.get("max_results").or_else(|| request_json.get("limit")).and_then(|v| v.as_u64()) {
+        max_results = (n as usize).clamp(1, 10);
+    }
+
+    (query.trim().to_string(), max_results)
+}
+
 async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: bool) -> Result<()> {
     // Set default runtime backend flags once at startup so they remain read-only during server lifetime
     std::env::set_var("MODELFUSION_USE_OLLAMA", "true");
@@ -5759,6 +5824,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
             let mut content_length = 0;
             let mut parsed_headers = std::collections::HashMap::new();
             let mut request_path = "/orchestrate".to_string();
+            let mut raw_request_uri = "/orchestrate".to_string();
 
             loop {
                 let n = match socket.read(&mut buf).await {
@@ -5774,11 +5840,17 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         let headers_str = String::from_utf8_lossy(&request_data[..pos]);
                         let first_line = headers_str.lines().next().unwrap_or("");
                         let parts: Vec<&str> = first_line.split_whitespace().collect();
+                        if parts.first().copied() == Some("OPTIONS") {
+                            let cors_resp = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                            let _ = socket.write_all(cors_resp.as_bytes()).await;
+                            return;
+                        }
                         if parts.len() >= 2 {
+                            raw_request_uri = parts[1].to_string();
                             request_path = parts[1].split('?').next().unwrap_or("/orchestrate").to_string();
                         }
                         if request_path == "/health" {
-                            let response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"status\":\"ok\"}";
+                            let response = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"status\":\"ok\"}";
                             let _ = socket.write_all(response.as_bytes()).await;
                             return;
                         }
@@ -5808,18 +5880,77 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 return;
             }
 
-            let body = &request_data[body_start..body_start + content_length];
-            let request_json: serde_json::Value = match serde_json::from_slice(body) {
-                Ok(v) => v,
-                Err(_) => {
-                    let response = "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"error\":\"Invalid JSON\"}";
-                    let _ = socket.write_all(response.as_bytes()).await;
-                    return;
+            let body = if body_start + content_length <= request_data.len() {
+                &request_data[body_start..body_start + content_length]
+            } else {
+                &request_data[body_start..]
+            };
+            let request_json: serde_json::Value = if body.is_empty() {
+                serde_json::json!({})
+            } else {
+                match serde_json::from_slice(body) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        let response = "HTTP/1.1 400 Bad Request\r\nAccess-Control-Allow-Origin: *\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"error\":\"Invalid JSON\"}";
+                        let _ = socket.write_all(response.as_bytes()).await;
+                        return;
+                    }
                 }
             };
 
             let db_path_str = db_path_clone.clone().unwrap_or_else(|| "db/hf_models.db".to_string());
             let db_path_val = std::path::Path::new(&db_path_str);
+
+            // ── Live Web Search Endpoint (/api/search and /websearch) ──
+            if request_path == "/api/search" || request_path == "/websearch" {
+                let (query, max_results) = parse_query_and_limit_from_request(&raw_request_uri, &request_json);
+                if query.is_empty() {
+                    let err_json = serde_json::json!({
+                        "error": "Query parameter 'q' or 'query' is required"
+                    });
+                    let err_body = serde_json::to_string(&err_json).unwrap_or_default();
+                    let response = format!(
+                        "HTTP/1.1 400 Bad Request\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        err_body.len(),
+                        err_body
+                    );
+                    let _ = socket.write_all(response.as_bytes()).await;
+                    let _ = socket.flush().await;
+                    return;
+                }
+
+                eprintln!("[SERVER] 🌐 Live web search request: query={:?}, max_results={}", query, max_results);
+                let (resp_body, status_code, status_text) = match modelfusion_core::live_web_search(&query, max_results).await {
+                    Ok(results) => {
+                        let resp_json = serde_json::json!({
+                            "query": query,
+                            "count": results.len(),
+                            "results": results
+                        });
+                        (serde_json::to_string(&resp_json).unwrap_or_default(), 200, "OK")
+                    }
+                    Err(e) => {
+                        let err_json = serde_json::json!({
+                            "error": format!("Web search failed: {}", e),
+                            "query": query,
+                            "count": 0,
+                            "results": []
+                        });
+                        (serde_json::to_string(&err_json).unwrap_or_default(), 200, "OK")
+                    }
+                };
+
+                let response = format!(
+                    "HTTP/1.1 {} {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    status_code,
+                    status_text,
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
 
             // ── OpenAI-compatible /v1/chat/completions endpoint ──
             // Translates OpenAI messages format → internal /orchestrate format → OpenAI response.
@@ -8434,7 +8565,7 @@ sequenceDiagram
 
             let response_body = serde_json::to_string(&response_json).unwrap();
             let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                 response_body.len(),
                 response_body
             );
@@ -12937,4 +13068,39 @@ public class Pr {
         assert_eq!(decision.consensus, ConsensusType::SingleBypass);
         assert_eq!(decision.confidence, 0.95);
     }
+
+    #[test]
+    fn test_url_decode_simple() {
+        use super::url_decode_simple;
+        assert_eq!(url_decode_simple("rust+programming%20language"), "rust programming language");
+        assert_eq!(url_decode_simple("hello%21%20world%3F"), "hello! world?");
+        assert_eq!(url_decode_simple("q=qwen2.5%3A7b&limit=5"), "q=qwen2.5:7b&limit=5");
+    }
+
+    #[test]
+    fn test_parse_query_and_limit_from_request() {
+        use super::parse_query_and_limit_from_request;
+        // 1. GET query string
+        let (q1, l1) = parse_query_and_limit_from_request("/api/search?q=rust+lang&max_results=3", &serde_json::json!({}));
+        assert_eq!(q1, "rust lang");
+        assert_eq!(l1, 3);
+
+        // 2. Limit clamping
+        let (q2, l2) = parse_query_and_limit_from_request("/api/search?query=deepseek&max_results=50", &serde_json::json!({}));
+        assert_eq!(q2, "deepseek");
+        assert_eq!(l2, 10);
+
+        // 3. POST JSON fallback
+        let (q3, l3) = parse_query_and_limit_from_request("/websearch", &serde_json::json!({
+            "query": "machine learning datasets",
+            "max_results": 7
+        }));
+        assert_eq!(q3, "machine learning datasets");
+        assert_eq!(l3, 7);
+
+        // 4. Empty query
+        let (q4, _) = parse_query_and_limit_from_request("/api/search", &serde_json::json!({}));
+        assert!(q4.is_empty());
+    }
 }
+
