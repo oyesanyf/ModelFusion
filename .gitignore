@@ -21,6 +21,11 @@ IDE/hugos.exe
 IDE/bin/
 IDE/HugOS.wxs
 IDE/HugOS.wixpdb
+browser/Chromium-win32-x64/*
+!browser/Chromium-win32-x64/hugos-browser.bat
+browser/db/
+browser/bin/
+browser/HugOS*.wixpdb
 IDE/vscode-126-extract/
 IDE/vscode-1.126.0-win32-x64.zip
 IDE/test-user-data/

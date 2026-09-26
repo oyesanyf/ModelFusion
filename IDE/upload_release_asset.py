@@ -149,6 +149,7 @@ def main():
         
     msi_path = os.path.join(script_dir, "HugOS.msi")
     cli_path = os.path.join(os.path.dirname(script_dir), "target", "release", "cli.exe")
+    browser_msi_path = os.path.join(os.path.dirname(script_dir), "browser", "HugOS_Browser.msi")
     
     if not os.path.isfile(msi_path):
         print(f"[ERROR] MSI not found at: {msi_path}")
@@ -157,10 +158,14 @@ def main():
         print(f"[ERROR] CLI not found at: {cli_path}")
         sys.exit(1)
 
+    artifacts = [(cli_path, "cli.exe"), (msi_path, "HugOS.msi")]
+    if os.path.isfile(browser_msi_path):
+        artifacts.append((browser_msi_path, "HugOS_Browser.msi"))
+
     print("==========================================")
     print(f"Local Release Artifacts (Build {build_number}):")
-    print(f"  CLI: {cli_path} ({os.path.getsize(cli_path)} bytes, SHA256: {compute_sha256(cli_path)})")
-    print(f"  MSI: {msi_path} ({os.path.getsize(msi_path)} bytes, SHA256: {compute_sha256(msi_path)})")
+    for fpath, fname in artifacts:
+        print(f"  {fname}: {fpath} ({os.path.getsize(fpath)} bytes, SHA256: {compute_sha256(fpath)})")
     print("==========================================")
         
     targets = [
@@ -182,7 +187,7 @@ def main():
                     continue
                 raise
             assets_by_name = {a["name"]: a for a in rel.get("assets", [])}
-            for local_f, name in [(cli_path, "cli.exe"), (msi_path, "HugOS.msi")]:
+            for local_f, name in artifacts:
                 local_sz = os.path.getsize(local_f)
                 if name not in assets_by_name:
                     print(f"  [FAIL] {name} NOT FOUND on {tag_name}")
@@ -207,8 +212,8 @@ def main():
         print(f"==========================================")
         rel = get_or_create_release(tag_name, release_name, token)
         rel_id = rel["id"]
-        upload_asset(rel_id, cli_path, "cli.exe", token)
-        upload_asset(rel_id, msi_path, "HugOS.msi", token)
+        for local_f, name in artifacts:
+            upload_asset(rel_id, local_f, name, token)
         
     print("\n[SUCCESS] All release assets uploaded and verified successfully on GitHub Releases!")
 

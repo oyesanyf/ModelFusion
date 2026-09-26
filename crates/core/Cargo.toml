@@ -20,3 +20,4 @@ monitoring      = { path = "../monitoring" }
 utils           = { path = "../utils" }
 async-trait     = { workspace = true }
 futures         = { workspace = true }
+regex           = { workspace = true }

@@ -1292,6 +1292,7 @@ dependencies = [
  "log",
  "model_selection",
  "monitoring",
+ "regex",
  "reqwest",
  "security",
  "serde",
