@@ -596,15 +596,26 @@ pub fn ensure_ollama_running() -> Result<(), String> {
         "ollama".to_string()
     };
 
-    // Launch ollama serve as a background process
-    let start_result = Command::new("cmd")
-        .args(["/C", "start", "/B", "ollama", "serve"])
-        .spawn()
-        .or_else(|_| {
-            Command::new(&ollama_exec)
-                .arg("serve")
-                .spawn()
-        });
+    // Ensure OLLAMA_ORIGINS=* is active so local browsers/file origins are never rejected with 403 Forbidden
+    std::env::set_var("OLLAMA_ORIGINS", "*");
+    #[cfg(windows)]
+    {
+        let ps_cmd = "[Environment]::SetEnvironmentVariable('OLLAMA_ORIGINS', '*', 'User')";
+        let _ = Command::new("powershell")
+            .args(["-NoProfile", "-Command", ps_cmd])
+            .status();
+    }
+
+    // Launch ollama serve as a background process with OLLAMA_ORIGINS=*
+    let mut cmd = Command::new("cmd");
+    cmd.args(["/C", "start", "/B", "ollama", "serve"]);
+    cmd.env("OLLAMA_ORIGINS", "*");
+    let start_result = cmd.spawn().or_else(|_| {
+        let mut direct_cmd = Command::new(&ollama_exec);
+        direct_cmd.arg("serve");
+        direct_cmd.env("OLLAMA_ORIGINS", "*");
+        direct_cmd.spawn()
+    });
 
     match start_result {
         Ok(_) => {

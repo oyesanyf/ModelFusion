@@ -2453,7 +2453,7 @@ async fn run(args: Args) -> Result<()> {
 
                 if !suite.cdp.is_available().await {
                     println!("🌐 [BROWSER] Chromium CDP session offline. Auto-launching HugOS Browser...");
-                    let launch_url = if is_url { Some(task_clean) } else { None };
+                    let launch_url = if is_url { Some(task_clean) } else { Some("http://localhost:5000/index.html") };
                     if let Err(err) = launch_hugos_browser(launch_url) {
                         eprintln!("⚠️ [WARN] {}", err);
                     } else {
@@ -2520,7 +2520,8 @@ async fn run(args: Args) -> Result<()> {
             }
         } else {
             println!("   Status: 🟡 Offline. Auto-launching HugOS Browser...");
-            if let Err(e) = launch_hugos_browser(None) {
+            let default_start_url = "http://localhost:5000/index.html";
+            if let Err(e) = launch_hugos_browser(Some(default_start_url)) {
                 eprintln!("⚠️ [WARN] {}", e);
             } else {
                 for _ in 0..10 {
@@ -5875,10 +5876,17 @@ async fn ensure_server_running(port: u16) {
     }
 
     if let Ok(exe_path) = std::env::current_exe() {
-        let _ = std::process::Command::new(exe_path)
-            .args(["--server", "--port", &port.to_string()])
-            .spawn();
-        for _ in 0..10 {
+        let mut cmd = std::process::Command::new(&exe_path);
+        cmd.args(["--server", "--port", &port.to_string()]);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const DETACHED_PROCESS: u32 = 0x00000008;
+            const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+            cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+        }
+        let _ = cmd.spawn();
+        for _ in 0..15 {
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
             if let Ok(res) = client.get(&health_url).send().await {
                 if res.status().is_success() {
@@ -5972,7 +5980,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             raw_request_uri = parts[1].to_string();
                             request_path = parts[1].split('?').next().unwrap_or("/orchestrate").to_string();
                         }
-                        if request_path == "/health" {
+                        if request_path == "/health" || request_path == "/api/health" {
                             let response = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"status\":\"ok\"}";
                             let _ = socket.write_all(response.as_bytes()).await;
                             return;
@@ -6025,7 +6033,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
             let db_path_val = std::path::Path::new(&db_path_str);
 
             // ── Static Web UI Files Serving (HugOS Browser UI) ──
-            if request_path == "/" || request_path == "/index.html" || request_path == "/styles.css" || request_path == "/app.js" || request_path.starts_with("/ui/") {
+            if request_path == "/" || request_path == "/index.html" || request_path == "/styles.css" || request_path == "/app.js" || request_path.starts_with("/ui/") || request_path.starts_with("/browser/ui/") {
                 if let Some(ui_dir) = find_browser_ui_dir() {
                     let file_name = if request_path == "/" || request_path == "/index.html" {
                         "index.html"
@@ -6033,8 +6041,12 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         "styles.css"
                     } else if request_path == "/app.js" {
                         "app.js"
+                    } else if let Some(stripped) = request_path.strip_prefix("/browser/ui/") {
+                        stripped
+                    } else if let Some(stripped) = request_path.strip_prefix("/ui/") {
+                        stripped
                     } else {
-                        request_path.trim_start_matches("/ui/").trim_start_matches('/')
+                        request_path.trim_start_matches('/')
                     };
                     let target_file = ui_dir.join(file_name);
                     if target_file.is_file() {
@@ -6049,6 +6061,10 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 "image/svg+xml"
                             } else if file_name.ends_with(".png") {
                                 "image/png"
+                            } else if file_name.ends_with(".ico") {
+                                "image/x-icon"
+                            } else if file_name.ends_with(".json") {
+                                "application/json"
                             } else {
                                 "application/octet-stream"
                             };

@@ -13,6 +13,8 @@ targets = [
     os.path.abspath(r"d:\harfile\ModelFusion\IDE\bin\cli.exe"),
     os.path.abspath(r"d:\harfile\ModelFusion\IDE\VSCode-win32-x64\bin\cli.exe"),
     os.path.join(localapp, r"HugOS IDE\bin\cli.exe"),
+    os.path.abspath(r"d:\harfile\ModelFusion\browser\bin\cli.exe"),
+    os.path.join(localapp, r"HugOS Browser\bin\cli.exe"),
 ]
 
 for t in targets:
@@ -56,7 +58,7 @@ for p in all_paths:
 
 unique_hashes = set(hashes.values())
 if len(unique_hashes) == 1:
-    print("\n[SUCCESS] 4-way cryptographic binary parity verified 100% identical!")
+    print("\n[SUCCESS] 6-way cryptographic binary parity verified 100% identical!")
 else:
     print("\n[ERROR] Hash mismatch across targets!")
     exit(1)
