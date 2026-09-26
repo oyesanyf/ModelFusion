@@ -5563,6 +5563,38 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
     
     let db_path_opt = db_path.clone();
 
+    // Background Ollama Healthcheck Watchdog: periodically verifies Ollama liveness every 15s and auto-wakes if down
+    tokio::spawn(async {
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(std::time::Duration::from_secs(3))
+            .build()
+            .unwrap_or_default();
+        let ollama_endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+        let tags_url = format!("{}/api/tags", ollama_endpoint.trim_end_matches('/'));
+
+        let mut consecutive_failures = 0;
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
+            match client.get(&tags_url).send().await {
+                Ok(res) if res.status().is_success() => {
+                    if consecutive_failures > 0 {
+                        eprintln!("[SERVER WATCHDOG] ✅ Ollama engine recovered and healthy at {}", tags_url);
+                    }
+                    consecutive_failures = 0;
+                }
+                _ => {
+                    consecutive_failures += 1;
+                    if consecutive_failures >= 2 {
+                        eprintln!("[SERVER WATCHDOG] ⚠️ Ollama engine unresponsive at {} (failure count: {}). Auto-waking Ollama daemon...", tags_url, consecutive_failures);
+                        let _ = model_selection::memory::ensure_ollama_running();
+                        consecutive_failures = 0;
+                    }
+                }
+            }
+        }
+    });
+
     loop {
         let (mut socket, _) = match listener.accept().await {
             Ok(val) => val,
@@ -6338,7 +6370,8 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                                 let mut cmd = std::process::Command::new(exe_path);
                                                 cmd.arg("--updatedb")
                                                    .arg("--db-path")
-                                                   .arg(db_resolved);
+                                                   .arg(db_resolved)
+                                                   .env("MODELFUSION_SUBPROCESS", "1");
                                                 #[cfg(windows)]
                                                 {
                                                     use std::os::windows::process::CommandExt;
@@ -6878,7 +6911,8 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                              let mut cmd = std::process::Command::new(exe_path);
                                              cmd.arg("--update")
                                                 .arg("--db-path")
-                                                .arg(db_resolved);
+                                                .arg(db_resolved)
+                                                .env("MODELFUSION_SUBPROCESS", "1");
                                              #[cfg(windows)]
                                              {
                                                  use std::os::windows::process::CommandExt;
@@ -8220,6 +8254,7 @@ async fn run_cli_subcommand(cmd_args: &[String], db_path: &std::path::Path) -> S
     if let Ok(exe_path) = std::env::current_exe() {
         let output = tokio::process::Command::new(exe_path)
             .args(&args)
+            .env("MODELFUSION_SUBPROCESS", "1")
             .output()
             .await;
 
@@ -10733,19 +10768,30 @@ fn acquire_cross_process_lock() -> Result<std::fs::File> {
     let _ = std::fs::create_dir_all(&lock_dir);
     let lock_path = lock_dir.join(".inference.lock");
 
+    // If invoked as a child process from the parent server or another CLI process,
+    // do not block on exclusive inference lock (prevents self-deadlock when parent holds the lock).
+    if std::env::var("MODELFUSION_SUBPROCESS").is_ok() {
+        return Ok(std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .share_mode(1 | 2 | 4) // FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE
+            .open(&lock_path)?);
+    }
+
     // Loop and try to acquire the lock
     let start_time = std::time::Instant::now();
     loop {
         match std::fs::OpenOptions::new()
             .write(true)
             .create(true)
-            .share_mode(0) // Exclusive access, lock out other processes
+            .share_mode(1 | 2 | 4) // Allow sharing so child processes and tools never hard-deadlock with OS error 13
             .open(&lock_path)
         {
             Ok(file) => return Ok(file),
             Err(e) => {
-                if start_time.elapsed().as_secs() > 600 {
-                    anyhow::bail!("Failed to acquire cross-process inference lock after 10 minutes: {}", e);
+                if start_time.elapsed().as_secs() > 5 {
+                    anyhow::bail!("Failed to acquire cross-process inference lock after 5 seconds: {}", e);
                 }
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }

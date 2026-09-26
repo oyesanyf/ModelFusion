@@ -813,6 +813,242 @@ def patch_workspace_structure(content, file_path=""):
     return content
 
 
+def patch_healthcheck_watchdog(content, file_path):
+    """Patch ModelFusionLMProvider with periodic health check watchdog and auto-revival."""
+    patched = False
+
+    # 1. Constructor call: add this._startHealthCheckWatchdog() right after this._startWatcher()
+    if "_startHealthCheckWatchdog" not in content:
+        old_ctor = "this._startWatcher();\n        this._checkOllamaInstallation();"
+        new_ctor = "this._startWatcher();\n        this._startHealthCheckWatchdog();\n        this._checkOllamaInstallation();"
+        if old_ctor in content:
+            content = content.replace(old_ctor, new_ctor, 1)
+            patched = True
+            print(f"  [OK] Injected this._startHealthCheckWatchdog() into constructor in {file_path}")
+        else:
+            m = re.search(r'(this\._startWatcher\(\);\s*)(this\._checkOllamaInstallation\(\);)', content)
+            if m:
+                content = content[:m.start(2)] + "this._startHealthCheckWatchdog();\n        " + content[m.start(2):]
+                patched = True
+                print(f"  [OK] Injected this._startHealthCheckWatchdog() via regex into constructor in {file_path}")
+
+    # 2. In disposeServer(): add this._stopHealthCheckWatchdog();
+    if "_stopHealthCheckWatchdog" not in content:
+        old_dispose = "disposeServer() {\n        this._stopWatcher();"
+        new_dispose = "disposeServer() {\n        this._stopHealthCheckWatchdog();\n        this._stopWatcher();"
+        if old_dispose in content:
+            content = content.replace(old_dispose, new_dispose, 1)
+            patched = True
+            print(f"  [OK] Injected this._stopHealthCheckWatchdog() into disposeServer in {file_path}")
+        else:
+            m = re.search(r'(disposeServer\(\)\s*\{)(\s*)(this\._stopWatcher\(\);)', content)
+            if m:
+                content = content[:m.end(1)] + "\n        this._stopHealthCheckWatchdog();" + content[m.start(3)-len(m.group(2)):m.start(3)] + content[m.start(3):]
+                patched = True
+                print(f"  [OK] Injected this._stopHealthCheckWatchdog() via regex into disposeServer in {file_path}")
+
+    # 3. Add watchdog methods if not present
+    if "_probeServicesHealth" not in content:
+        watchdog_methods = (
+            "      _startHealthCheckWatchdog() {\n"
+            "        this._stopHealthCheckWatchdog();\n"
+            "        const config3 = vscode15.workspace.getConfiguration(\"hugos.modelfusion\");\n"
+            "        const intervalSeconds = config3.get(\"watchdog.interval\", 10);\n"
+            "        this._logService.info(`ModelFusionProvider: Starting health check watchdog. Interval: ${intervalSeconds}s`);\n"
+            "        this._outputChannel.appendLine(`[Watchdog] Periodic health check watchdog started (every ${intervalSeconds}s).`);\n"
+            "        this._serverFailures = 0;\n"
+            "        this._ollamaFailures = 0;\n"
+            "        this._watchdogTimer = setInterval(() => {\n"
+            "          this._probeServicesHealth();\n"
+            "        }, intervalSeconds * 1e3);\n"
+            "      }\n"
+            "      _stopHealthCheckWatchdog() {\n"
+            "        if (this._watchdogTimer) {\n"
+            "          clearInterval(this._watchdogTimer);\n"
+            "          this._watchdogTimer = void 0;\n"
+            "          this._logService.info(\"ModelFusionProvider: Stopped health check watchdog.\");\n"
+            "          this._outputChannel.appendLine(\"[Watchdog] Health check watchdog stopped.\");\n"
+            "        }\n"
+            "      }\n"
+            "      _probeServicesHealth() {\n"
+            "        const http4 = (typeof http !== \"undefined\" && http && http.get) ? http : require(\"http\");\n"
+            "        // 1. Probe ModelFusion Server on Port 5000 (/health)\n"
+            "        try {\n"
+            "          const req = http4.get(\"http://127.0.0.1:5000/health\", { timeout: 1500 }, (res) => {\n"
+            "            if (res.statusCode === 200) {\n"
+            "              if (this._serverFailures > 0) {\n"
+            "                this._outputChannel.appendLine(\"[Watchdog] \\u2705 ModelFusion Server (port 5000) is online and healthy.\");\n"
+            "                this._logService.info(\"ModelFusionProvider [Watchdog]: ModelFusion server recovered.\");\n"
+            "              }\n"
+            "              this._serverFailures = 0;\n"
+            "            } else {\n"
+            "              this._handleServerFailure(`HTTP status ${res.statusCode}`);\n"
+            "            }\n"
+            "          });\n"
+            "          req.on(\"error\", (err2) => {\n"
+            "            this._handleServerFailure(err2.message);\n"
+            "          });\n"
+            "          req.on(\"timeout\", () => {\n"
+            "            req.destroy();\n"
+            "            this._handleServerFailure(\"Probe timed out (>1500ms)\");\n"
+            "          });\n"
+            "        } catch (e4) {\n"
+            "          this._handleServerFailure(e4.message);\n"
+            "        }\n\n"
+            "        // 2. Probe Ollama on Port 11434 (/api/tags)\n"
+            "        try {\n"
+            "          const reqOl = http4.get(\"http://127.0.0.1:11434/api/tags\", { timeout: 2000 }, (res) => {\n"
+            "            if (res.statusCode === 200) {\n"
+            "              if (this._ollamaFailures > 0) {\n"
+            "                this._outputChannel.appendLine(\"[Watchdog] \\u2705 Ollama Engine (port 11434) is online and healthy.\");\n"
+            "                this._logService.info(\"ModelFusionProvider [Watchdog]: Ollama engine recovered.\");\n"
+            "              }\n"
+            "              this._ollamaFailures = 0;\n"
+            "            } else {\n"
+            "              this._handleOllamaFailure(`HTTP status ${res.statusCode}`);\n"
+            "            }\n"
+            "          });\n"
+            "          reqOl.on(\"error\", (err2) => {\n"
+            "            this._handleOllamaFailure(err2.message);\n"
+            "          });\n"
+            "          reqOl.on(\"timeout\", () => {\n"
+            "            reqOl.destroy();\n"
+            "            this._handleOllamaFailure(\"Probe timed out (>2000ms)\");\n"
+            "          });\n"
+            "        } catch (e4) {\n"
+            "          this._handleOllamaFailure(e4.message);\n"
+            "        }\n"
+            "      }\n"
+            "      _handleServerFailure(reason) {\n"
+            "        this._serverFailures = (this._serverFailures || 0) + 1;\n"
+            "        if (this._serverFailures === 1) {\n"
+            "          this._outputChannel.appendLine(`[Watchdog] \\u26A0\\uFE0F ModelFusion Server probe failed (${reason}). Failure count: 1/2`);\n"
+            "        } else if (this._serverFailures >= 2) {\n"
+            "          this._outputChannel.appendLine(`[Watchdog] \\u26A0\\uFE0F ModelFusion Server is unresponsive (${reason}). Auto-waking server process...`);\n"
+            "          this._logService.warn(`ModelFusionProvider [Watchdog]: Auto-waking ModelFusion server. Reason: ${reason}`);\n"
+            "          if (this._serverProcess) {\n"
+            "            try { this._serverProcess.kill(); } catch {}\n"
+            "            this._serverProcess = void 0;\n"
+            "          }\n"
+            "          this._serverFailures = 0;\n"
+            "          this.startServer();\n"
+            "        }\n"
+            "      }\n"
+            "      _handleOllamaFailure(reason) {\n"
+            "        this._ollamaFailures = (this._ollamaFailures || 0) + 1;\n"
+            "        if (this._ollamaFailures === 1) {\n"
+            "          this._outputChannel.appendLine(`[Watchdog] \\u26A0\\uFE0F Ollama probe failed (${reason}). Failure count: 1/2`);\n"
+            "        } else if (this._ollamaFailures >= 2) {\n"
+            "          this._outputChannel.appendLine(`[Watchdog] \\u26A0\\uFE0F Ollama is unresponsive (${reason}). Auto-waking Ollama daemon...`);\n"
+            "          this._logService.warn(`ModelFusionProvider [Watchdog]: Auto-waking Ollama daemon. Reason: ${reason}`);\n"
+            "          this._ollamaFailures = 0;\n"
+            "          this._checkOllamaInstallation();\n"
+            "        }\n"
+            "      }\n"
+        )
+        if "      _startWatcher() {" in content:
+            content = content.replace("      _startWatcher() {", watchdog_methods + "      _startWatcher() {", 1)
+            patched = True
+            print(f"  [OK] Injected watchdog methods into ModelFusionLMProvider in {file_path}")
+
+    # 4. Watchdog configuration listener
+    if 'affectsConfiguration("hugos.modelfusion.watchdog")' not in content:
+        old_cfg = 'if (e4.affectsConfiguration("hugos.modelfusion.watcher")) {'
+        new_cfg = (
+            'if (e4.affectsConfiguration("hugos.modelfusion.watchdog")) {\n'
+            '            this._logService.info("ModelFusionProvider: Watchdog configuration changed, restarting watchdog.");\n'
+            '            this._outputChannel.appendLine("[Watchdog] Configuration changed \\u2014 restarting watchdog.");\n'
+            '            this._startHealthCheckWatchdog();\n'
+            '          }\n'
+            '          if (e4.affectsConfiguration("hugos.modelfusion.watcher")) {'
+        )
+        if old_cfg in content:
+            content = content.replace(old_cfg, new_cfg, 1)
+            patched = True
+            print(f"  [OK] Injected watchdog configuration change listener in {file_path}")
+
+    return content
+
+
+def patch_request_timeout(content, file_path):
+    """Patch _sendOrchestrationRequest so active jobs never time out unless user cancels."""
+    if "isLongRunningJob" in content and "effectiveTimeout" in content:
+        return content
+
+    target_block = (
+        '          const scaledTimeout = ModelFusionLMProvider.REQUEST_TIMEOUT_MS;\n'
+        '          const options = {\n'
+        '            hostname: "127.0.0.1",\n'
+        '            port: 5e3,\n'
+        '            path: "/orchestrate",\n'
+        '            method: "POST",\n'
+        '            headers: {\n'
+        '              "Content-Type": "application/json",\n'
+        '              "Content-Length": Buffer.byteLength(postData)\n'
+        '            },\n'
+        '            // Socket-level timeout: if cli.exe takes longer than this we abort\n'
+        '            // and the caller falls through to the CLI spawn fallback.\n'
+        '            timeout: scaledTimeout\n'
+        '          };\n'
+        '          const req = http.request(options, (res) => {\n'
+        '            let data = "";\n'
+        '            res.on("data", (chunk) => {\n'
+        '              data += chunk;\n'
+        '            });'
+    )
+
+    replace_block = (
+        '          const config4 = vscode15.workspace.getConfiguration("hugos.modelfusion");\n'
+        '          const configTimeout = config4.get("requestTimeout", 0);\n'
+        '          const isLongRunningJob = /^\\s*(\\/|@agent\\s+)?(acdso|automl|risk-automl|data-science|datascience|data-analyst|dataanalyst|evolve|rest-rl|restrl|rl|research|update|updatedb)\\b/i.test(promptText);\n'
+        '          let effectiveTimeout = (configTimeout > 0) ? configTimeout * 1e3 : 0;\n'
+        '          const options = {\n'
+        '            hostname: "127.0.0.1",\n'
+        '            port: 5e3,\n'
+        '            path: "/orchestrate",\n'
+        '            method: "POST",\n'
+        '            headers: {\n'
+        '              "Content-Type": "application/json",\n'
+        '              "Content-Length": Buffer.byteLength(postData)\n'
+        '            },\n'
+        '            timeout: effectiveTimeout\n'
+        '          };\n'
+        '          const req = http.request(options, (res) => {\n'
+        '            let data = "";\n'
+        '            res.on("data", (chunk) => {\n'
+        '              data += chunk;\n'
+        '              if (effectiveTimeout > 0) {\n'
+        '                req.setTimeout(effectiveTimeout);\n'
+        '              }\n'
+        '            });'
+    )
+
+    if target_block in content:
+        content = content.replace(target_block, replace_block, 1)
+
+        old_timeout_handler = (
+            '          req.on("timeout", () => {\n'
+            '            this._logService.warn(`ModelFusionProvider: HTTP request to port 5000 timed out after ${scaledTimeout / 1e3}s. Aborting.`);\n'
+            '            req.destroy(new Error(`Request timed out after ${scaledTimeout / 1e3}s`));\n'
+            '          });'
+        )
+        new_timeout_handler = (
+            '          req.on("timeout", () => {\n'
+            '            if (effectiveTimeout > 0) {\n'
+            '              this._logService.warn(`ModelFusionProvider: HTTP request to port 5000 timed out after ${effectiveTimeout / 1e3}s. Aborting.`);\n'
+            '              req.destroy(new Error(`Request timed out after ${effectiveTimeout / 1e3}s`));\n'
+            '            }\n'
+            '          });'
+        )
+        if old_timeout_handler in content:
+            content = content.replace(old_timeout_handler, new_timeout_handler, 1)
+        print(f"  [OK] Patched _sendOrchestrationRequest timeout in {file_path}")
+    else:
+        print(f"  [WARN] target_block not found for timeout patch in {file_path}")
+
+    return content
+
+
 def patch_file(file_path):
     """Patch a single extension.js file."""
     with open(file_path, "r", encoding="utf-8") as f:
@@ -884,6 +1120,8 @@ def patch_file(file_path):
                 break
         new_content = re.sub(r'("version")(\s+)("updatedb")', r'\1,\2\3', new_content)
         new_content = patch_workspace_structure(new_content, file_path)
+        new_content = patch_healthcheck_watchdog(new_content, file_path)
+        new_content = patch_request_timeout(new_content, file_path)
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(new_content)
         print(f"  PATCHED (unminified format, {len(UNMINIFIED_BLOCK)} chars): {file_path}")
@@ -904,6 +1142,8 @@ def patch_file(file_path):
         
         new_content = content[:si] + '\n' + MINIFIED_BLOCK.strip() + '\n' + content[ei:]
         new_content = patch_workspace_structure(new_content, file_path)
+        new_content = patch_healthcheck_watchdog(new_content, file_path)
+        new_content = patch_request_timeout(new_content, file_path)
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(new_content)
         print(f"  PATCHED (minified format, {len(MINIFIED_BLOCK)} chars): {file_path}")
@@ -1119,8 +1359,10 @@ if __name__ == '__main__':
             c5 = ('if (cleanUserText(rawText).length > 0)' in c or 'if(clnUT(rt).length>0){break;}' in c)
 
             c6 = all(cmd in c for cmd in ['"rest-rl"', '"restrl"', '"rl"', '"active-model"', '"active-models"', '"activemodels"', '"version"', '"updatedb"', '"update"', '"clearcache"'])
+            c7 = ('_startHealthCheckWatchdog' in c and '_probeServicesHealth' in c)
+            c8 = ('isLongRunningJob' in c and 'effectiveTimeout' in c)
 
-            if not (c1 and c2 and c3 and c4 and c5 and c6):
+            if not (c1 and c2 and c3 and c4 and c5 and c6 and c7 and c8):
                 print(f"❌ INVARIANT VIOLATION in {file_path}:")
                 print(f"   c1 (avo in knownCommands): {c1}")
                 print(f"   c2 (cmdName === avo router): {c2}")
@@ -1128,6 +1370,8 @@ if __name__ == '__main__':
                 print(f"   c4 (no useAvo = true): {c4}")
                 print(f"   c5 (multi-turn break guard): {c5}")
                 print(f"   c6 (fastInfoCommands contains all fast commands): {c6}")
+                print(f"   c7 (health check watchdog methods): {c7}")
+                print(f"   c8 (active job request timeout): {c8}")
                 all_ok = False
             else:
                 print(f"✅ Invariants PASSED: {file_path}")
