@@ -79,7 +79,7 @@ impl Default for BrowserToolSuite {
 impl BrowserToolSuite {
     pub fn new(port: u16) -> Self {
         Self {
-            cdp: CdpClient::new("127.0.0.1", port),
+            cdp: CdpClient::new("localhost", port),
             vision: VisionGroundingEngine::default(),
             active_target: None,
             last_pruned_dom: None,

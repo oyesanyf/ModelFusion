@@ -5,8 +5,8 @@ pub mod fusion_arbiter;
 pub use fusion_arbiter::{ArbitrationResult, CandidateSolution, FusionArbiter};
 pub mod browser_fusion;
 pub use browser_fusion::{
-    BrowserActionProposal, BrowserArbitrationDecision, BrowserFusionArbiter, ConsensusType,
-    SpecialistType,
+    find_browser_launcher_bat, launch_hugos_browser, BrowserActionProposal,
+    BrowserArbitrationDecision, BrowserFusionArbiter, ConsensusType, SpecialistType,
 };
 
 use anyhow::Result;
@@ -2365,6 +2365,17 @@ async fn run(args: Args) -> Result<()> {
         // Sub-command: --browser-extract <URL>
         if let Some(ref extract_url) = args.browser_extract {
             println!("🌐 [BROWSER] Extracting semantic datasets from: {}", extract_url);
+            if !suite.cdp.is_available().await {
+                println!("🌐 [BROWSER] Chromium CDP offline. Auto-launching HugOS Browser...");
+                let _ = launch_hugos_browser(Some(extract_url));
+                for _ in 0..10 {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    if suite.cdp.is_available().await {
+                        println!("   Status: 🟢 Connected to active Chromium session (CDP port {})", port);
+                        break;
+                    }
+                }
+            }
             match suite.extract_tables(Some(extract_url)).await {
                 Ok(tables) => {
                     println!("✅ Extracted {} table(s) from {}\n", tables.len(), extract_url);
@@ -2394,7 +2405,25 @@ async fn run(args: Args) -> Result<()> {
             let task_clean = task.trim();
             if !task_clean.is_empty() {
                 println!("🌐 [BROWSER] Executing autonomous task: \"{}\"", task_clean);
-                if task_clean.starts_with("http://") || task_clean.starts_with("https://") {
+                let is_url = task_clean.starts_with("http://") || task_clean.starts_with("https://") || task_clean.starts_with("file://");
+
+                if !suite.cdp.is_available().await {
+                    println!("🌐 [BROWSER] Chromium CDP session offline. Auto-launching HugOS Browser...");
+                    let launch_url = if is_url { Some(task_clean) } else { None };
+                    if let Err(err) = launch_hugos_browser(launch_url) {
+                        eprintln!("⚠️ [WARN] {}", err);
+                    } else {
+                        for _ in 0..10 {
+                            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                            if suite.cdp.is_available().await {
+                                println!("   Status: 🟢 Connected to active Chromium session (CDP port {})", port);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if is_url {
                     match suite.navigate(task_clean).await {
                         Ok(nav_msg) => println!("{}", nav_msg),
                         Err(err) => eprintln!("Navigation error: {}", err),
@@ -2428,7 +2457,7 @@ async fn run(args: Args) -> Result<()> {
         // Default: --browser without task -> Launch or report HugOS Browser
         println!("🌐 [BROWSER] HugOS Intelligent Browser");
         println!("   Remote Debugging Port: {}", port);
-        println!("   CDP Base URL: http://127.0.0.1:{}", port);
+        println!("   CDP Base URL: {}", suite.cdp.base_url());
         if suite.cdp.is_available().await {
             println!("   Status: 🟢 Connected to active Chromium session");
             if let Ok(targets) = suite.cdp.list_targets().await {
@@ -2438,7 +2467,24 @@ async fn run(args: Args) -> Result<()> {
                 }
             }
         } else {
-            println!("   Status: 🟡 Offline (launch via browser/Chromium-win32-x64/hugos-browser.bat)");
+            println!("   Status: 🟡 Offline. Auto-launching HugOS Browser...");
+            if let Err(e) = launch_hugos_browser(None) {
+                eprintln!("⚠️ [WARN] {}", e);
+            } else {
+                for _ in 0..10 {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    if suite.cdp.is_available().await {
+                        println!("   Status: 🟢 Connected to active Chromium session (CDP port {})", port);
+                        if let Ok(targets) = suite.cdp.list_targets().await {
+                            println!("   Active Targets ({}):", targets.len());
+                            for t in targets.iter().take(5) {
+                                println!("     - [{}] {} ({})", t.target_type, t.title, t.url);
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
         }
         return Ok(());
     }
@@ -7261,7 +7307,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                           let query = resolve_code_for_command(&args_owned, &prompt_for_cmd);
                                           let q_trim = query.trim();
                                           if q_trim.is_empty() {
-                                              (idx, "🌐 **HugOS Intelligent Browser Agent (`/browser`)**\n\nInvoke live web browsing, Set-of-Mark DOM inspection, and table extraction.\n\n**Usage**:\n- `/browser https://huggingface.co/models`\n- `/browser extract tables from https://en.wikipedia.org/wiki/Comparison_of_deep_learning_software`\n- `/browser find top trending vision-language models`\n\n*Core Architecture*: CDP port 9222, 90% DOM token reduction, vision-language grounding, and ACDSO table extraction.".to_string())
+                                              (idx, "🌐 **HugOS Intelligent Browser Agent (`/browser`)**\n\nInvoke live web browsing, Set-of-Mark DOM inspection, and table extraction in the dedicated HugOS Browser environment.\n\n**Usage**:\n- `/browser` (launch dedicated HugOS Browser CLI dashboard)\n- `/browser https://en.wikipedia.org/wiki/Comparison_of_deep_learning_software`\n- `/browser extract tables from <url>`\n- `/browser find top trending vision-language models`\n\n*Core Architecture*: CDP port 9222, 90% DOM token reduction, vision-language grounding, and ACDSO table extraction.".to_string())
                                           } else if q_trim.starts_with("http://") || q_trim.starts_with("https://") {
                                               let mut suite = modelfusion_core::browser::BrowserToolSuite::new(9222);
                                               let mut report = format!("🌐 **HugOS Browser Inspection for `{}`**\n\n", q_trim);

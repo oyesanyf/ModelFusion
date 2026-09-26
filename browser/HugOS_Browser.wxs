@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="HugOS Browser" Manufacturer="HugOS Team" Version="1.0.2" UpgradeCode="e98c7d08-91cb-4248-bfa5-765c96ddeca6" Scope="perUser">
+  <Package Name="HugOS Browser" Manufacturer="HugOS Team" Version="1.0.6" UpgradeCode="e98c7d08-91cb-4248-bfa5-765c96ddeca6" Scope="perUser">
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." Schedule="afterInstallInitialize" AllowSameVersionUpgrades="yes" />
 
     <MediaTemplate EmbedCab="yes" />
@@ -21,6 +21,8 @@
         <Directory Id="dir_4" Name="db">
         </Directory>
         <Directory Id="dir_5" Name="extension">
+        </Directory>
+        <Directory Id="dir_6" Name="ui">
         </Directory>
 
       </Directory>
@@ -89,6 +91,15 @@
       </Component>
       <Component Id="cmp_13" Guid="*" Directory="INSTALLFOLDER">
         <File Id="fil_13" Source="README.md" KeyPath="yes" />
+      </Component>
+      <Component Id="cmp_14" Guid="*" Directory="dir_6">
+        <File Id="fil_14" Source="ui\app.js" KeyPath="yes" />
+      </Component>
+      <Component Id="cmp_15" Guid="*" Directory="dir_6">
+        <File Id="fil_15" Source="ui\index.html" KeyPath="yes" />
+      </Component>
+      <Component Id="cmp_16" Guid="*" Directory="dir_6">
+        <File Id="fil_16" Source="ui\styles.css" KeyPath="yes" />
       </Component>
     </ComponentGroup>
   </Package>
