@@ -2519,12 +2519,17 @@ body.theme-warm .chat-input-box {
 
 /* 5. Clean Conversation View (Centered ChatGPT Column Width) */
 .chatgpt-conversation-view {
-  display: flex !important;
+  display: flex;
   flex-direction: column !important;
   flex: 1 !important;
   width: 100% !important;
   height: 100% !important;
   overflow: hidden !important;
+}
+
+.chatgpt-conversation-view.hidden,
+.chatgpt-hero-section.hidden {
+  display: none !important;
 }
 
 .chatgpt-conversation-view .chat-messages {

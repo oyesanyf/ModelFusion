@@ -1667,10 +1667,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const streamMode = currentSettings.stream !== false;
 
     const hasImages = options && options.images && Array.isArray(options.images) && options.images.length > 0;
+    let selectedVisionModel = null;
 
     if (hasImages) {
       // Vision model selection: check configured vision model or discover installed vision tags
-      let selectedVisionModel = currentSettings.visionModel || 'qwen2.5-vl';
+      selectedVisionModel = currentSettings.visionModel || 'qwen2.5-vl';
       try {
         const tagsRes = await fetch(`${ollamaUrl}/api/tags`, { method: 'GET' });
         if (tagsRes.ok) {
@@ -1695,6 +1696,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (e) {
         // Continue with configured vision model
       }
+    }
     const isFusionMode = modelToUse === 'modelfusion_auto' || modelToUse === 'fast_fusion' || modelToUse === 'deep_reasoning';
     let resolvedOllamaModel = 'qwen2.5:7b';
     if (activeOllamaModel && activeOllamaModel !== 'modelfusion_auto' && activeOllamaModel !== 'fast_fusion' && activeOllamaModel !== 'deep_reasoning') {
