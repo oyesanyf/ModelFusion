@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HugOS Intelligent Browser | Clean ChatGPT AI Environment</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+    * {
+      box-sizing: border-box;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Theme Variable Definitions */
+    :root {
+      /* White / ChatGPT Light Theme (Default) */
+      --bg-main: #ffffff;
+      --bg-sidebar: #f9fafb;
+      --bg-surface: #ffffff;
+      --bg-surface-hover: #f3f4f6;
+      --bg-subtle: #f8fafc;
+      --border-color: #e5e7eb;
+      --border-subtle: #f1f5f9;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --text-light: #94a3b8;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --accent-light: #eff6ff;
+      --user-bubble: #f1f5f9;
+      --user-text: #0f172a;
+      --assistant-bubble: #ffffff;
+      --input-bg: #ffffff;
+      --input-border: #d1d5db;
+      --input-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+      --card-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 10px 15px -3px rgba(0,0,0,0.04);
+    }
+
+    /* Dark Theme (ChatGPT Slate Dark) */
+    .theme-dark {
+      --bg-main: #212121;
+      --bg-sidebar: #171717;
+      --bg-surface: #2f2f2f;
+      --bg-surface-hover: #383838;
+      --bg-subtle: #262626;
+      --border-color: #3e3e3e;
+      --border-subtle: #303030;
+      --text-main: #ececec;
+      --text-muted: #b4b4b4;
+      --text-light: #737373;
+      --accent: #10a37f;
+      --accent-hover: #1a7f64;
+      --accent-light: rgba(16, 163, 127, 0.15);
+      --user-bubble: #2f2f2f;
+      --user-text: #ececec;
+      --assistant-bubble: transparent;
+      --input-bg: #2f2f2f;
+      --input-border: #424242;
+      --input-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+    }
+
+    /* Midnight Theme */
+    .theme-midnight {
+      --bg-main: #0b0f19;
+      --bg-sidebar: #070a12;
+      --bg-surface: #111827;
+      --bg-surface-hover: #1f2937;
+      --bg-subtle: #0e1422;
+      --border-color: #1f2937;
+      --border-subtle: #162032;
+      --text-main: #f9fafb;
+      --text-muted: #9ca3af;
+      --text-light: #6b7280;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --accent-light: rgba(99, 102, 241, 0.15);
+      --user-bubble: #1f2937;
+      --user-text: #f9fafb;
+      --assistant-bubble: transparent;
+      --input-bg: #111827;
+      --input-border: #374151;
+      --input-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+      --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+
+    /* Obsidian Theme */
+    .theme-obsidian {
+      --bg-main: #121214;
+      --bg-sidebar: #0a0a0c;
+      --bg-surface: #1a1a1e;
+      --bg-surface-hover: #26262c;
+      --bg-subtle: #16161a;
+      --border-color: #2e2e36;
+      --border-subtle: #222228;
+      --text-main: #f4f4f5;
+      --text-muted: #a1a1aa;
+      --text-light: #71717a;
+      --accent: #8b5cf6;
+      --accent-hover: #7c3aed;
+      --accent-light: rgba(139, 92, 246, 0.15);
+      --user-bubble: #222228;
+      --user-text: #f4f4f5;
+      --assistant-bubble: transparent;
+      --input-bg: #1a1a1e;
+      --input-border: #33333d;
+      --input-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+      --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    }
+
+    body {
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background-color: var(--border-color);
+      border-radius: 9999px;
+    }
+
+    .citation-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent);
+      background: var(--accent-light);
+      border-radius: 4px;
+      padding: 0 5px;
+      margin: 0 2px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.15s ease;
+    }
+    .citation-badge:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.1);
+    }
+  </style>
+</head>
+<body class="h-screen w-screen flex flex-col overflow-hidden">
+
+  <!-- TOP BROWSER & ACTION BAR -->
+  <header class="h-13 border-b flex items-center justify-between px-4 z-20 flex-shrink-0" 
+          style="background-color: var(--bg-surface); border-color: var(--border-color);">
+    
+    <!-- Left Navigation Controls & Logo -->
+    <div class="flex items-center space-x-3">
+      <div class="flex items-center space-x-2 font-bold text-sm tracking-tight">
+        <span class="text-xl">🌐</span>
+        <span class="hidden sm:inline" style="color: var(--text-main);">HugOS Browser</span>
+      </div>
+
+      <div class="flex items-center space-x-1 pl-2 border-l" style="border-color: var(--border-color);">
+        <button id="nav-back" class="p-1.5 rounded-lg hover:bg-[var(--bg-surface-hover)] text-[var(--text-muted)] text-xs transition">◀</button>
+        <button id="nav-fwd" class="p-1.5 rounded-lg hover:bg-[var(--bg-surface-hover)] text-[var(--text-muted)] text-xs transition">▶</button>
+        <button id="nav-reload" class="p-1.5 rounded-lg hover:bg-[var(--bg-surface-hover)] text-[var(--text-muted)] text-xs transition">🔄</button>
+      </div>
+    </div>
+
+    <!-- Centered Clean Omnibox -->
+    <div class="flex-1 max-w-xl mx-4">
+      <div class="flex items-center rounded-xl px-3 py-1.5 border transition focus-within:ring-2 focus-within:ring-[var(--accent)]"
+           style="background-color: var(--bg-subtle); border-color: var(--border-color);">
+        <span class="text-xs font-mono text-[var(--text-light)] mr-1.5 select-none">https://</span>
+        <input type="text" id="omnibox-input" 
+               placeholder="Search the live web, ask a question, or enter any URL..."
+               class="bg-transparent text-xs w-full focus:outline-none placeholder-[var(--text-light)]"
+               style="color: var(--text-main);" />
+        <button id="btn-omnibox-go" class="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-main)] hover:bg-[var(--bg-surface-hover)] text-xs ml-1">➔</button>
+      </div>
+    </div>
+
+    <!-- Right Controls: Status, Theme Toggle, Settings -->
+    <div class="flex items-center space-x-2">
+      <!-- Engine Status Pill -->
+      <div class="hidden md:flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-mono border"
+           style="background-color: var(--bg-subtle); border-color: var(--border-color); color: var(--text-muted);">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span id="engine-status-text">Ollama: Ready (qwen2.5:32b)</span>
+      </div>
+
+      <!-- Quick Theme Switcher Button -->
+      <div class="relative">
+        <button id="btn-theme-dropdown" 
+                class="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border hover:bg-[var(--bg-surface-hover)] transition"
+                style="background-color: var(--bg-surface); border-color: var(--border-color); color: var(--text-main);"
+                title="Change UI Theme">
+          <span id="current-theme-icon">☀️</span>
+          <span id="current-theme-label" class="hidden sm:inline">Light</span>
+          <span class="text-[10px] text-[var(--text-muted)]">▼</span>
+        </button>
+
+        <!-- Theme Dropdown Menu -->
+        <div id="theme-menu" class="hidden absolute right-0 mt-1 w-44 rounded-xl border p-1 shadow-lg z-50 text-xs"
+             style="background-color: var(--bg-surface); border-color: var(--border-color);">
+          <button data-theme="white" class="theme-opt w-full flex items-center space-x-2 px-2.5 py-2 rounded-lg hover:bg-[var(--bg-surface-hover)] text-left font-medium">
+            <span>☀️</span>
+            <span>White (ChatGPT Light)</span>
+          </button>
+          <button data-theme="dark" class="theme-opt w-full flex items-center space-x-2 px-2.5 py-2 rounded-lg hover:bg-[var(--bg-surface-hover)] text-left font-medium">
+            <span>🌙</span>
+            <span>Dark (Slate)</span>
+          </button>
+          <button data-theme="midnight" class="theme-opt w-full flex items-center space-x-2 px-2.5 py-2 rounded-lg hover:bg-[var(--bg-surface-hover)] text-left font-medium">
+            <span>🌌</span>
+            <span>Midnight Navy</span>
+          </button>
+          <button data-theme="obsidian" class="theme-opt w-full flex items-center space-x-2 px-2.5 py-2 rounded-lg hover:bg-[var(--bg-surface-hover)] text-left font-medium">
+            <span>🖤</span>
+            <span>Obsidian Black</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Settings Drawer Button -->
+      <button id="btn-open-settings" 
+              class="p-2 rounded-lg border hover:bg-[var(--bg-surface-hover)] transition text-xs"
+              style="background-color: var(--bg-surface); border-color: var(--border-color); color: var(--text-main);"
+              title="Settings (Ctrl+,)">
+        ⚙️
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN CHAT & CONVERSATIONAL WORKSPACE -->
+  <main class="flex-1 flex flex-col items-center justify-between relative overflow-hidden">
+    
+    <!-- Scrollable Messages Area -->
+    <div id="chat-stream" class="w-full flex-1 overflow-y-auto px-4 py-6 custom-scrollbar flex flex-col items-center">
+      
+      <!-- Minimalist Welcome State (Shown when chat is empty) -->
+      <div id="welcome-view" class="max-w-xl w-full my-auto flex flex-col items-center text-center space-y-4 py-8">
+        <div class="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl shadow-sm border"
+             style="background-color: var(--bg-surface); border-color: var(--border-color);">
+          🌐
+        </div>
+        <h1 class="text-2xl sm:text-3xl font-bold tracking-tight" style="color: var(--text-main);">
+          What would you like to explore today?
+        </h1>
+        <p class="text-sm max-w-md" style="color: var(--text-muted);">
+          HugOS Browser combines local AI reasoning with real-time web retrieval, document analysis, and multimodal model fusion.
+        </p>
+
+        <!-- Quick Starter Prompts -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full pt-4">
+          <button class="starter-prompt p-3 rounded-xl border text-left text-xs transition hover:scale-[1.01] hover:border-[var(--accent)]"
+                  style="background-color: var(--bg-surface); border-color: var(--border-color);"
+                  data-prompt="What are the latest breakthrough vision-language models released this month?">
+            <span class="font-semibold block" style="color: var(--text-main);">🔍 Live Web Search</span>
+            <span style="color: var(--text-muted);">Research latest vision-language models</span>
+          </button>
+          <button class="starter-prompt p-3 rounded-xl border text-left text-xs transition hover:scale-[1.01] hover:border-[var(--accent)]"
+                  style="background-color: var(--bg-surface); border-color: var(--border-color);"
+                  data-prompt="Analyze the trade-offs of Pareto Multi-Objective AutoML model selection.">
+            <span class="font-semibold block" style="color: var(--text-main);">📊 ACDSO AutoML</span>
+            <span style="color: var(--text-muted);">Explain 5-dimension Pareto knee-points</span>
+          </button>
+          <button class="starter-prompt p-3 rounded-xl border text-left text-xs transition hover:scale-[1.01] hover:border-[var(--accent)]"
+                  style="background-color: var(--bg-surface); border-color: var(--border-color);"
+                  data-prompt="Explain quantum error correction using surface codes step-by-step.">
+            <span class="font-semibold block" style="color: var(--text-main);">🧠 Deep Local Reasoning</span>
+            <span style="color: var(--text-muted);">Complex physics & quantum computing</span>
+          </button>
+          <button class="starter-prompt p-3 rounded-xl border text-left text-xs transition hover:scale-[1.01] hover:border-[var(--accent)]"
+                  style="background-color: var(--bg-surface); border-color: var(--border-color);"
+                  data-prompt="/browser https://en.wikipedia.org/wiki/Comparison_of_deep_learning_software">
+            <span class="font-semibold block" style="color: var(--text-main);">🌐 Browse & Extract</span>
+            <span style="color: var(--text-muted);">Inspect deep learning software tables</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Message History Container -->
+      <div id="message-container" class="max-w-3xl w-full space-y-6 hidden">
+        <!-- Sample Assistant Intro Card -->
+        <div class="flex items-start space-x-3">
+          <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm flex-shrink-0 font-bold border"
+               style="background-color: var(--accent); color: white; border-color: var(--border-color);">
+            H
+          </div>
+          <div class="flex-1 space-y-2">
+            <div class="flex items-center space-x-2">
+              <span class="font-semibold text-xs" style="color: var(--text-main);">HugOS AI</span>
+              <span class="text-[10px] font-mono" style="color: var(--text-light);">Local & Verified</span>
+            </div>
+            <div class="text-sm leading-relaxed" style="color: var(--text-main);">
+              Hello! I am your AI assistant built into HugOS Browser. I can browse the internet, correlate search results with local knowledge, analyze tabular datasets via ACDSO, and synthesize multimodal inputs. Type a query below or attach a file to get started.
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- FLOATING CHATGPT-STYLE INPUT AREA -->
+    <div class="w-full max-w-3xl px-4 pb-4 pt-1 z-10">
+      
+      <!-- Floating Attachment Tray (Preview chips) -->
+      <div id="attachment-tray" class="hidden flex flex-wrap gap-2 mb-2 p-2 rounded-xl border"
+           style="background-color: var(--bg-surface); border-color: var(--border-color);">
+      </div>
+
+      <!-- Main Input Capsule -->
+      <div class="rounded-2xl border transition focus-within:ring-2 focus-within:ring-[var(--accent)]"
+           style="background-color: var(--input-bg); border-color: var(--input-border); box-shadow: var(--input-shadow);">
+        
+        <div class="p-3">
+          <textarea id="chat-input" rows="1" 
+                    placeholder="Message HugOS Browser or ask anything..."
+                    class="w-full bg-transparent resize-none focus:outline-none text-sm leading-relaxed custom-scrollbar max-h-40 placeholder-[var(--text-light)]"
+                    style="color: var(--text-main);"></textarea>
+        </div>
+
+        <div class="flex items-center justify-between px-3 pb-2.5 pt-1 border-t" style="border-color: var(--border-subtle);">
+          <!-- Left Action Icons: Attach & Web Toggle -->
+          <div class="flex items-center space-x-2">
+            <input type="file" id="file-input-hidden" class="hidden" multiple accept="image/*,.csv,.tsv,.json,.parquet,.pdf,.py,.rs,.js,.txt,.md" />
+            <button id="btn-attach" class="p-1.5 rounded-lg text-lg hover:bg-[var(--bg-surface-hover)] text-[var(--text-muted)] hover:text-[var(--text-main)] transition" title="Attach file or image">
+              📎
+            </button>
+
+            <!-- Web Mode Toggle Pill -->
+            <button id="btn-web-toggle" 
+                    class="flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-medium border transition"
+                    style="background-color: var(--accent-light); border-color: var(--border-color); color: var(--accent);"
+                    title="Toggle Web Search Mode">
+              <span id="web-icon">🌐</span>
+              <span id="web-label">Web: Auto</span>
+            </button>
+          </div>
+
+          <!-- Right Action: Model Tag & Send Button -->
+          <div class="flex items-center space-x-2">
+            <span class="text-[11px] font-mono hidden sm:inline" style="color: var(--text-light);">
+              Qwen 2.5 (32B)
+            </span>
+            <button id="btn-send" class="w-8 h-8 rounded-xl flex items-center justify-center text-white transition disabled:opacity-40"
+                    style="background-color: var(--accent);">
+              ➔
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Footer Privacy & Instructions Notice -->
+      <div class="text-center pt-2 text-[11px] select-none" style="color: var(--text-light);">
+        <span>Zero Cloud Guaranteed • 100% Private Local Inference • Press <strong>Enter</strong> to send</span>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- 12-CATEGORY SETTINGS DRAWER MODAL -->
+  <div id="settings-backdrop" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+    <div class="w-full max-w-3xl h-[85vh] rounded-2xl border flex flex-col overflow-hidden shadow-2xl"
+         style="background-color: var(--bg-surface); border-color: var(--border-color);">
+      
+      <!-- Settings Header -->
+      <div class="h-14 border-b flex items-center justify-between px-6 flex-shrink-0" style="border-color: var(--border-color);">
+        <div class="flex items-center space-x-2">
+          <span class="text-lg">⚙️</span>
+          <h2 class="font-bold text-base" style="color: var(--text-main);">Settings</h2>
+        </div>
+        <button id="btn-close-settings" class="p-1.5 rounded-lg text-lg hover:bg-[var(--bg-surface-hover)] text-[var(--text-muted)] hover:text-[var(--text-main)]">✕</button>
+      </div>
+
+      <!-- Settings Body: Left Tabs + Right Content -->
+      <div class="flex-1 flex overflow-hidden">
+        
+        <!-- Left Sidebar Tabs -->
+        <div class="w-56 border-r p-3 overflow-y-auto custom-scrollbar flex-shrink-0 space-y-1" 
+             style="background-color: var(--bg-sidebar); border-color: var(--border-color);">
+          <div class="text-[11px] font-bold uppercase tracking-wider px-3 py-1.5" style="color: var(--text-light);">Personal</div>
+          <button class="settings-tab-btn active w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-xs font-medium text-left" data-tab="tab-appearance">
+            <span>🔆</span>
+            <span>Appearance & Theme</span>
+          </button>
+          <button class="settings-tab-btn w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-xs font-medium text-left" data-tab="tab-search">
+            <span>🌐</span>
+            <span>Web Search & Routing</span>
+          </button>
+          <button class="settings-tab-btn w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-xs font-medium text-left" data-tab="tab-models">
+            <span>🧠</span>
+            <span>AI Models & Hardware</span>
+          </button>
+          <button class="settings-tab-btn w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-xs font-medium text-left" data-tab="tab-general">
+            <span>⚙️</span>
+            <span>General</span>
+          </button>
+          <button class="settings-tab-btn w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-xs font-medium text-left" data-tab="tab-storage">
+            <span>📁</span>
+            <span>Storage & Cache</span>
+          </button>
+          <button class="settings-tab-btn w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-xs font-medium text-left" data-tab="tab-security">
+            <span>🔑</span>
+            <span>Security & Privacy</span>
+          </button>
+        </div>
+
+        <!-- Right Content Pane -->
+        <div class="flex-1 p-6 overflow-y-auto custom-scrollbar">
+          
+          <!-- Appearance Tab -->
+          <div id="pane-tab-appearance" class="settings-pane space-y-6">
+            <div>
+              <h3 class="font-bold text-base mb-1" style="color: var(--text-main);">Appearance</h3>
+              <p class="text-xs" style="color: var(--text-muted);">Customize the color scheme, theme, and typography of HugOS Browser.</p>
+            </div>
+
+            <div class="space-y-4">
+              <div>
+                <label class="block text-xs font-semibold mb-2" style="color: var(--text-main);">Theme Color Palette</label>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <!-- White / ChatGPT Light -->
+                  <div class="theme-card cursor-pointer p-3 rounded-xl border flex flex-col items-center space-y-2 hover:ring-2 hover:ring-[var(--accent)]"
+                       data-set-theme="white" style="background-color: #ffffff; border-color: #e5e7eb; color: #0f172a;">
+                    <div class="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs">✓</div>
+                    <span class="text-xs font-bold">White</span>
+                    <span class="text-[10px] text-slate-500">ChatGPT Light</span>
+                  </div>
+
+                  <!-- Dark Slate -->
+                  <div class="theme-card cursor-pointer p-3 rounded-xl border flex flex-col items-center space-y-2 hover:ring-2 hover:ring-[var(--accent)]"
+                       data-set-theme="dark" style="background-color: #212121; border-color: #3e3e3e; color: #ececec;">
+                    <div class="w-6 h-6 rounded-full bg-emerald-600 flex items-center justify-center text-white text-xs">🌙</div>
+                    <span class="text-xs font-bold">Dark</span>
+                    <span class="text-[10px] text-gray-400">ChatGPT Dark</span>
+                  </div>
+
+                  <!-- Midnight Navy -->
+                  <div class="theme-card cursor-pointer p-3 rounded-xl border flex flex-col items-center space-y-2 hover:ring-2 hover:ring-[var(--accent)]"
+                       data-set-theme="midnight" style="background-color: #0b0f19; border-color: #1f2937; color: #f9fafb;">
+                    <div class="w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs">🌌</div>
+                    <span class="text-xs font-bold">Midnight</span>
+                    <span class="text-[10px] text-gray-400">Deep Navy</span>
+                  </div>
+
+                  <!-- Obsidian -->
+                  <div class="theme-card cursor-pointer p-3 rounded-xl border flex flex-col items-center space-y-2 hover:ring-2 hover:ring-[var(--accent)]"
+                       data-set-theme="obsidian" style="background-color: #121214; border-color: #2e2e36; color: #f4f4f5;">
+                    <div class="w-6 h-6 rounded-full bg-purple-600 flex items-center justify-center text-white text-xs">🖤</div>
+                    <span class="text-xs font-bold">Obsidian</span>
+                    <span class="text-[10px] text-gray-400">Pure Black</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="pt-4 border-t" style="border-color: var(--border-color);">
+                <label class="block text-xs font-semibold mb-1" style="color: var(--text-main);">Interface Font Size</label>
+                <select id="setting-font-size" class="w-full text-xs rounded-lg p-2 border" 
+                        style="background-color: var(--bg-subtle); border-color: var(--border-color); color: var(--text-main);">
+                  <option value="13px">Default (13px)</option>
+                  <option value="14px">Comfortable (14px)</option>
+                  <option value="15px">Large (15px)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Web Search Tab -->
+          <div id="pane-tab-search" class="settings-pane hidden space-y-6">
+            <div>
+              <h3 class="font-bold text-base mb-1" style="color: var(--text-main);">Web Search & Routing</h3>
+              <p class="text-xs" style="color: var(--text-muted);">Configure how the browser correlates live internet information with local LLM knowledge.</p>
+            </div>
+
+            <div class="space-y-4">
+              <div class="flex items-center justify-between p-3 rounded-xl border" style="background-color: var(--bg-subtle); border-color: var(--border-color);">
+                <div>
+                  <div class="text-xs font-semibold" style="color: var(--text-main);">Intelligent Query Routing</div>
+                  <div class="text-[11px]" style="color: var(--text-muted);">Automatically detects when a prompt requires live web data vs internal logic.</div>
+                </div>
+                <input type="checkbox" id="setting-router-enabled" checked class="w-4 h-4 accent-blue-600 rounded">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold mb-1" style="color: var(--text-main);">Default Web Search Mode</label>
+                <select id="setting-search-mode" class="w-full text-xs rounded-lg p-2 border" 
+                        style="background-color: var(--bg-subtle); border-color: var(--border-color); color: var(--text-main);">
+                  <option value="auto">Auto (Smart Routing)</option>
+                  <option value="always">Always Search (ChatGPT Browsing Mode)</option>
+                  <option value="off">Off (100% Offline Local Model)</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold mb-1" style="color: var(--text-main);">Max Sources per Search</label>
+                <input type="number" min="1" max="10" value="5" class="w-full text-xs rounded-lg p-2 border" 
+                       style="background-color: var(--bg-subtle); border-color: var(--border-color); color: var(--text-main);">
+              </div>
+            </div>
+          </div>
+
+          <!-- AI Models Tab -->
+          <div id="pane-tab-models" class="settings-pane hidden space-y-6">
+            <div>
+              <h3 class="font-bold text-base mb-1" style="color: var(--text-main);">AI Models & Local Hardware</h3>
+              <p class="text-xs" style="color: var(--text-muted);">View installed Ollama models and dynamic memory scaling status.</p>
+            </div>
+
+            <div class="p-4 rounded-xl border space-y-2 text-xs font-mono" style="background-color: var(--bg-subtle); border-color: var(--border-color);">
+              <div class="flex justify-between">
+                <span class="text-[var(--text-muted)]">Active Model:</span>
+                <span class="font-bold text-emerald-500">qwen2.5:32b (Zero-Cloud)</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-[var(--text-muted)]">Runtime Available RAM:</span>
+                <span style="color: var(--text-main);">64.0 GB Detected</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-[var(--text-muted)]">Dedicated GPU VRAM:</span>
+                <span style="color: var(--text-main);">16.0 GB (RTX 4090)</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-[var(--text-muted)]">Vision Specialist:</span>
+                <span style="color: var(--text-main);">qwen2.5-vl</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- General Tab -->
+          <div id="pane-tab-general" class="settings-pane hidden space-y-4">
+            <h3 class="font-bold text-base" style="color: var(--text-main);">General Preferences</h3>
+            <p class="text-xs" style="color: var(--text-muted);">Startup options, default search provider, and notifications.</p>
+          </div>
+
+          <!-- Storage Tab -->
+          <div id="pane-tab-storage" class="settings-pane hidden space-y-4">
+            <h3 class="font-bold text-base" style="color: var(--text-main);">Storage & Cache</h3>
+            <button class="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-semibold">Clear Browser Cache</button>
+          </div>
+
+          <!-- Security Tab -->
+          <div id="pane-tab-security" class="settings-pane hidden space-y-4">
+            <h3 class="font-bold text-base" style="color: var(--text-main);">Security & Privacy</h3>
+            <p class="text-xs text-emerald-500 font-semibold">🛡️ Zero data telemetry or external model telemetry is active.</p>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- Settings Footer -->
+      <div class="h-14 border-t flex items-center justify-end px-6 space-x-2 flex-shrink-0" style="border-color: var(--border-color);">
+        <button id="btn-save-settings-modal" class="px-4 py-2 rounded-xl text-white font-medium text-xs shadow transition"
+                style="background-color: var(--accent);">
+          Done
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- SCRIPT LOGIC -->
+  <script>
+    // Theme Management
+    let currentTheme = localStorage.getItem('hugos_browser_theme') || 'white';
+
+    function applyTheme(theme) {
+      currentTheme = theme;
+      localStorage.setItem('hugos_browser_theme', theme);
+      
+      document.body.classList.remove('theme-dark', 'theme-midnight', 'theme-obsidian');
+      if (theme !== 'white') {
+        document.body.classList.add(`theme-${theme}`);
+      }
+
+      // Update dropdown button icon/text
+      const iconMap = { white: '☀️', dark: '🌙', midnight: '🌌', obsidian: '🖤' };
+      const labelMap = { white: 'White', dark: 'Dark', midnight: 'Midnight', obsidian: 'Obsidian' };
+      document.getElementById('current-theme-icon').textContent = iconMap[theme] || '☀️';
+      document.getElementById('current-theme-label').textContent = labelMap[theme] || 'White';
+    }
+
+    applyTheme(currentTheme);
+
+    // Theme dropdown toggling
+    const btnThemeDropdown = document.getElementById('btn-theme-dropdown');
+    const themeMenu = document.getElementById('theme-menu');
+
+    btnThemeDropdown.addEventListener('click', (e) => {
+      e.stopPropagation();
+      themeMenu.classList.toggle('hidden');
+    });
+
+    document.addEventListener('click', () => {
+      themeMenu.classList.add('hidden');
+    });
+
+    document.querySelectorAll('.theme-opt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        applyTheme(btn.getAttribute('data-theme'));
+        themeMenu.classList.add('hidden');
+      });
+    });
+
+    document.querySelectorAll('.theme-card').forEach(card => {
+      card.addEventListener('click', () => {
+        applyTheme(card.getAttribute('data-set-theme'));
+      });
+    });
+
+    // Settings Modal
+    const btnOpenSettings = document.getElementById('btn-open-settings');
+    const btnCloseSettings = document.getElementById('btn-close-settings');
+    const btnSaveSettingsModal = document.getElementById('btn-save-settings-modal');
+    const settingsBackdrop = document.getElementById('settings-backdrop');
+
+    btnOpenSettings.addEventListener('click', () => settingsBackdrop.classList.remove('hidden'));
+    btnCloseSettings.addEventListener('click', () => settingsBackdrop.classList.add('hidden'));
+    btnSaveSettingsModal.addEventListener('click', () => settingsBackdrop.classList.add('hidden'));
+
+    // Settings Tab Switching
+    document.querySelectorAll('.settings-tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.settings-tab-btn').forEach(b => b.classList.remove('active', 'bg-[var(--bg-surface)]'));
+        btn.classList.add('active', 'bg-[var(--bg-surface)]');
+
+        const tabId = btn.getAttribute('data-tab');
+        document.querySelectorAll('.settings-pane').forEach(p => p.classList.add('hidden'));
+        document.getElementById(`pane-${tabId}`).classList.remove('hidden');
+      });
+    });
+
+    // Web Mode Toggle
+    let webMode = 'auto'; // 'auto', 'always', 'off'
+    const btnWebToggle = document.getElementById('btn-web-toggle');
+    const webIcon = document.getElementById('web-icon');
+    const webLabel = document.getElementById('web-label');
+
+    btnWebToggle.addEventListener('click', () => {
+      if (webMode === 'auto') {
+        webMode = 'always';
+        webIcon.textContent = '🌐';
+        webLabel.textContent = 'Web: On';
+      } else if (webMode === 'always') {
+        webMode = 'off';
+        webIcon.textContent = '📴';
+        webLabel.textContent = 'Web: Off';
+      } else {
+        webMode = 'auto';
+        webIcon.textContent = '🌐';
+        webLabel.textContent = 'Web: Auto';
+      }
+    });
+
+    // File Attachment System
+    const btnAttach = document.getElementById('btn-attach');
+    const fileInputHidden = document.getElementById('file-input-hidden');
+    const attachmentTray = document.getElementById('attachment-tray');
+    let stagedFiles = [];
+
+    btnAttach.addEventListener('click', () => fileInputHidden.click());
+
+    fileInputHidden.addEventListener('change', (e) => {
+      const files = Array.from(e.target.files);
+      files.forEach(f => {
+        const fileObj = {
+          id: Math.random().toString(36).substr(2, 6),
+          name: f.name,
+          size: (f.size / 1024).toFixed(1) + ' KB',
+          isImg: f.type.startsWith('image/'),
+          isTabular: f.name.endsWith('.csv') || f.name.endsWith('.tsv')
+        };
+        if (fileObj.isImg) {
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            fileObj.dataUrl = ev.target.result;
+            renderAttachments();
+          };
+          reader.readAsDataURL(f);
+        }
+        stagedFiles.push(fileObj);
+      });
+      renderAttachments();
+      fileInputHidden.value = '';
+    });
+
+    function renderAttachments() {
+      if (stagedFiles.length === 0) {
+        attachmentTray.classList.add('hidden');
+        attachmentTray.innerHTML = '';
+        return;
+      }
+      attachmentTray.classList.remove('hidden');
+      attachmentTray.innerHTML = stagedFiles.map(f => `
+        <div class="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs" style="background-color: var(--bg-subtle); border-color: var(--border-color);">
+          ${f.isImg && f.dataUrl ? `<img src="${f.dataUrl}" class="w-5 h-5 rounded object-cover" />` : (f.isTabular ? '📊' : '📄')}
+          <span class="font-medium max-w-[140px] truncate" style="color: var(--text-main);">${f.name}</span>
+          <span class="text-[10px]" style="color: var(--text-light);">${f.size}</span>
+          <button onclick="removeFile('${f.id}')" class="text-slate-400 hover:text-red-500 ml-1">✕</button>
+        </div>
+      `).join('');
+    }
+
+    window.removeFile = function(id) {
+      stagedFiles = stagedFiles.filter(f => f.id !== id);
+      renderAttachments();
+    };
+
+    // Chat Message Rendering & Streaming Simulator
+    const welcomeView = document.getElementById('welcome-view');
+    const messageContainer = document.getElementById('message-container');
+    const chatInput = document.getElementById('chat-input');
+    const btnSend = document.getElementById('btn-send');
+    const chatStream = document.getElementById('chat-stream');
+
+    function appendUserMessage(text, files) {
+      welcomeView.classList.add('hidden');
+      messageContainer.classList.remove('hidden');
+
+      const fileHtml = files.length > 0 ? `
+        <div class="flex flex-wrap gap-1.5 mb-2">
+          ${files.map(f => `
+            <div class="flex items-center space-x-1 px-2 py-0.5 rounded border text-[11px]" style="background-color: var(--bg-surface); border-color: var(--border-color);">
+              ${f.isImg && f.dataUrl ? `<img src="${f.dataUrl}" class="w-4 h-4 rounded object-cover" />` : (f.isTabular ? '📊' : '📄')}
+              <span>${f.name}</span>
+            </div>
+          `).join('')}
+        </div>
+      ` : '';
+
+      const userMsg = document.createElement('div');
+      userMsg.className = 'flex justify-end';
+      userMsg.innerHTML = `
+        <div class="max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed" 
+             style="background-color: var(--user-bubble); color: var(--user-text); border: 1px solid var(--border-color);">
+          ${fileHtml}
+          <div>${text}</div>
+        </div>
+      `;
+      messageContainer.appendChild(userMsg);
+      chatStream.scrollTop = chatStream.scrollHeight;
+    }
+
+    function appendAssistantResponse(query, files) {
+      const isSearch = webMode === 'always' || (webMode === 'auto' && (query.toLowerCase().includes('latest') || query.toLowerCase().includes('who') || query.toLowerCase().includes('search')));
+      const hasImages = files.some(f => f.isImg);
+
+      const assistantMsg = document.createElement('div');
+      assistantMsg.className = 'flex items-start space-x-3';
+      
+      const responseId = 'resp_' + Date.now();
+      assistantMsg.innerHTML = `
+        <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm flex-shrink-0 font-bold border"
+             style="background-color: var(--accent); color: white; border-color: var(--border-color);">
+          H
+        </div>
+        <div class="flex-1 space-y-2">
+          <div class="flex items-center space-x-2">
+            <span class="font-semibold text-xs" style="color: var(--text-main);">HugOS AI</span>
+            ${isSearch ? '<span class="px-2 py-0.5 rounded-full text-[10px] bg-blue-500/10 text-blue-500 font-medium">🌐 Web Search Correlated</span>' : ''}
+            ${hasImages ? '<span class="px-2 py-0.5 rounded-full text-[10px] bg-purple-500/10 text-purple-500 font-medium">👁️ Vision Specialist</span>' : ''}
+          </div>
+          <div id="${responseId}" class="text-sm leading-relaxed" style="color: var(--text-main);">
+            <span class="inline-block animate-pulse">Thinking...</span>
+          </div>
+        </div>
+      `;
+      messageContainer.appendChild(assistantMsg);
+      chatStream.scrollTop = chatStream.scrollHeight;
+
+      // Simulate streaming token response with real citations
+      setTimeout(() => {
+        const respEl = document.getElementById(responseId);
+        if (isSearch) {
+          respEl.innerHTML = `
+            Based on verified live search results <span class="citation-badge" title="Hugging Face Hub">[1]</span>, the top trending vision-language architectures include <strong>Qwen2.5-VL</strong> <span class="citation-badge" title="Alibaba Research">[2]</span> and <strong>Llama-3.2-Vision</strong>. 
+            <br><br>
+            Key benchmarks and findings:
+            <ul class="list-disc pl-5 space-y-1 my-2">
+              <li><strong>Resolution-Free Grounding</strong>: Seamless Set-of-Mark visual bounding box detection across arbitrary aspect ratios.</li>
+              <li><strong>Multimodal Reasoning</strong>: Document parsing, table extraction, and dense chart question answering.</li>
+            </ul>
+            Sources:
+            <div class="mt-2 space-y-1 text-xs">
+              <div><a href="https://huggingface.co/models" class="text-blue-500 hover:underline">[1] Hugging Face Vision-Language Leaderboard</a></div>
+              <div><a href="https://github.com/QwenLM/Qwen2.5-VL" class="text-blue-500 hover:underline">[2] Qwen2.5-VL Technical Report & Checkpoints</a></div>
+            </div>
+          `;
+        } else {
+          respEl.innerHTML = `
+            Processed your directive using the local <strong>Qwen 2.5 32B</strong> engine with zero cloud dependency. 
+            <br><br>
+            All computations were executed directly on your workstation hardware with 100% offline privacy and sub-50ms kernel scheduling.
+          `;
+        }
+        chatStream.scrollTop = chatStream.scrollHeight;
+      }, 700);
+    }
+
+    function handleSend() {
+      const text = chatInput.value.trim();
+      if (!text && stagedFiles.length === 0) return;
+
+      const currentFiles = [...stagedFiles];
+      appendUserMessage(text || '(Attached Files)', currentFiles);
+      chatInput.value = '';
+      chatInput.style.height = 'auto';
+      stagedFiles = [];
+      renderAttachments();
+
+      appendAssistantResponse(text, currentFiles);
+    }
+
+    btnSend.addEventListener('click', handleSend);
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleSend();
+      }
+    });
+
+    // Auto-resizing textarea
+    chatInput.addEventListener('input', () => {
+      chatInput.style.height = 'auto';
+      chatInput.style.height = Math.min(chatInput.scrollHeight, 160) + 'px';
+    });
+
+    // Quick starter prompt clicks
+    document.querySelectorAll('.starter-prompt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        chatInput.value = btn.getAttribute('data-prompt');
+        handleSend();
+      });
+    });
+
+    // Omnibox Navigation
+    const omniboxInput = document.getElementById('omnibox-input');
+    const btnOmniboxGo = document.getElementById('btn-omnibox-go');
+
+    function handleOmnibox() {
+      const val = omniboxInput.value.trim();
+      if (!val) return;
+      chatInput.value = val.startsWith('http') ? `/browser ${val}` : val;
+      handleSend();
+      omniboxInput.value = '';
+    }
+
+    btnOmniboxGo.addEventListener('click', handleOmnibox);
+    omniboxInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') handleOmnibox();
+    });
+
+    // Keyboard shortcut: Ctrl+, opens Settings
+    window.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === ',') {
+        e.preventDefault();
+        settingsBackdrop.classList.toggle('hidden');
+      }
+    });
+  </script>
+</body>
+</html>

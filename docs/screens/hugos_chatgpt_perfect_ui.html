@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HugOS Browser | Pixel-Perfect ChatGPT UI Simulator</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    :root {
+      --bg-canvas: #ffffff;
+      --bg-sidebar: #f9f9f9;
+      --bg-capsule: #ffffff;
+      --border-color: #ececec;
+      --border-capsule: #e5e5e5;
+      --border-focus: #9e9e9e;
+      --text-primary: #0d0d0d;
+      --text-muted: #676767;
+      --hover-bg: #ececec;
+      --active-bg: #e5e5e5;
+      --user-msg-bg: #f4f4f4;
+      --btn-send-bg: #0d0d0d;
+      --btn-send-color: #ffffff;
+      --chip-bg: #ffffff;
+    }
+    body.theme-dark {
+      --bg-canvas: #212121;
+      --bg-sidebar: #171717;
+      --bg-capsule: #2f2f2f;
+      --border-color: #303030;
+      --border-capsule: #383838;
+      --border-focus: #555555;
+      --text-primary: #ececec;
+      --text-muted: #b4b4b4;
+      --hover-bg: #212121;
+      --active-bg: #282828;
+      --user-msg-bg: #2f2f2f;
+      --btn-send-bg: #ffffff;
+      --btn-send-color: #000000;
+      --chip-bg: #212121;
+    }
+    body.theme-obsidian {
+      --bg-canvas: #000000;
+      --bg-sidebar: #0a0a0a;
+      --bg-capsule: #141414;
+      --border-color: #1f1f1f;
+      --border-capsule: #2a2a2a;
+      --text-primary: #ffffff;
+      --text-muted: #a1a1aa;
+      --hover-bg: #181818;
+      --user-msg-bg: #1c1c1e;
+      --btn-send-bg: #ffffff;
+      --btn-send-color: #000000;
+      --chip-bg: #141414;
+    }
+    body.theme-midnight {
+      --bg-canvas: #0b0f19;
+      --bg-sidebar: #080b12;
+      --bg-capsule: #111827;
+      --border-color: #1f2937;
+      --border-capsule: #283548;
+      --text-primary: #f8fafc;
+      --text-muted: #94a3b8;
+      --hover-bg: #162032;
+      --user-msg-bg: #1e293b;
+      --btn-send-bg: #38bdf8;
+      --btn-send-color: #0b0f19;
+      --chip-bg: #111827;
+    }
+    body.theme-warm {
+      --bg-canvas: #faf8f5;
+      --bg-sidebar: #f4efe6;
+      --bg-capsule: #ffffff;
+      --border-color: #ded6c6;
+      --border-capsule: #e5ded0;
+      --text-primary: #2d2a26;
+      --text-muted: #7d776f;
+      --hover-bg: #eae3d5;
+      --user-msg-bg: #f4efe6;
+      --btn-send-bg: #2d2a26;
+      --btn-send-color: #faf8f5;
+      --chip-bg: #ffffff;
+    }
+    .custom-scroll::-webkit-scrollbar { width: 6px; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: rgba(150,150,150,0.25); border-radius: 4px; }
+  </style>
+</head>
+<body class="theme-white m-0 p-0 font-sans antialiased text-[var(--text-primary)] bg-[var(--bg-canvas)] h-screen w-screen overflow-hidden flex transition-colors duration-200">
+
+  <!-- 1. LEFT SIDEBAR (Width 260px, Matching ChatGPT Exactly) -->
+  <aside id="sidebar" class="w-64 min-w-[260px] h-full flex flex-col justify-between bg-[var(--bg-sidebar)] border-r border-[var(--border-color)] p-3 transition-all duration-200 z-20">
+    <div>
+      <!-- Brand & Toggle Header -->
+      <div class="flex items-center justify-between px-2 py-2 mb-3">
+        <div class="flex items-center gap-2.5 font-semibold text-base tracking-tight cursor-pointer">
+          <span class="text-xl">🌐</span>
+          <span>HugOS AI</span>
+        </div>
+        <button id="btn-toggle-sidebar" class="text-sm p-1.5 rounded-md hover:bg-[var(--hover-bg)] text-[var(--text-muted)]" title="Close sidebar">◫</button>
+      </div>
+
+      <!-- Navigation List -->
+      <nav class="flex flex-col gap-1">
+        <button class="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm font-medium hover:bg-[var(--hover-bg)] text-left bg-[var(--active-bg)]">
+          <span class="text-base">📝</span>
+          <span>New chat</span>
+        </button>
+        <button class="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm hover:bg-[var(--hover-bg)] text-left text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+          <span class="text-base">🖼️</span>
+          <span>Images</span>
+        </button>
+        <button class="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm hover:bg-[var(--hover-bg)] text-left text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+          <span class="text-base">@</span>
+          <span>Plugins</span>
+        </button>
+        <button class="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm hover:bg-[var(--hover-bg)] text-left text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+          <span class="text-base">🔍</span>
+          <span>Deep research</span>
+        </button>
+      </nav>
+    </div>
+
+    <!-- Bottom Footer Navigation -->
+    <div class="flex flex-col gap-1 pt-3 border-t border-[var(--border-color)]">
+      <button class="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm hover:bg-[var(--hover-bg)] text-left text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+        <span class="text-base">⚙️</span>
+        <span>Settings</span>
+      </button>
+      <button class="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm hover:bg-[var(--hover-bg)] text-left text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+        <span class="text-base">🌐</span>
+        <span>Hardware & Models</span>
+        <span class="ml-auto text-xs opacity-50">↗</span>
+      </button>
+      <button class="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm hover:bg-[var(--hover-bg)] text-left text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+        <span class="text-base">❓</span>
+        <span>Help</span>
+        <span class="ml-auto text-xs opacity-50">↗</span>
+      </button>
+
+      <!-- 100% Local Privacy Card -->
+      <div class="mt-2 p-2.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-canvas)] text-xs">
+        <div class="font-semibold flex items-center gap-1.5 text-emerald-600">
+          <span>🔒</span> 100% Local &amp; Private
+        </div>
+        <div class="text-[var(--text-muted)] mt-0.5 text-[11px] leading-tight">
+          Runs entirely offline on your GPU/RAM with zero cloud telemetry.
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- 2. MAIN CONTENT AREA (Centered 768px Reading Layout) -->
+  <main class="flex-1 flex flex-col h-full overflow-hidden relative">
+    
+    <!-- Top Nav Header -->
+    <header class="h-14 px-4 flex items-center justify-between border-b border-[var(--border-color)] flex-shrink-0 z-10">
+      <!-- Model Selector Dropdown (ModelFusion Auto as Prominent Default) -->
+      <div class="relative">
+        <button id="btn-model-menu" class="flex items-center gap-2 px-3 py-1.5 rounded-lg text-base font-semibold hover:bg-[var(--hover-bg)] transition-colors">
+          <span class="text-amber-500">✨</span>
+          <span id="label-active-model">ModelFusion Auto</span>
+          <span class="text-xs opacity-60">⌄</span>
+        </button>
+
+        <!-- Dropdown Menu -->
+        <div id="model-dropdown" class="hidden absolute top-12 left-0 w-72 p-2 rounded-xl shadow-2xl border border-[var(--border-color)] bg-[var(--bg-canvas)] z-50">
+          <div class="p-2.5 rounded-lg bg-[var(--active-bg)] cursor-pointer" onclick="selectModel('ModelFusion Auto', 'Multi-Model Consensus (Default)')">
+            <div class="font-semibold text-xs flex items-center gap-1.5">
+              <span>🌟</span> ModelFusion Auto (Default)
+            </div>
+            <div class="text-[11px] text-[var(--text-muted)] mt-0.5">Adaptive Multi-Model Consensus &amp; Dynamic Specialist Routing</div>
+          </div>
+          <div class="p-2.5 rounded-lg hover:bg-[var(--hover-bg)] cursor-pointer mt-1" onclick="selectModel('Fast Fusion', 'qwen2.5:7b + deepseek-r1:1.5b')">
+            <div class="font-semibold text-xs flex items-center gap-1.5">
+              <span>⚡</span> Fast Fusion
+            </div>
+            <div class="text-[11px] text-[var(--text-muted)] mt-0.5">Dual-Model Speculative Consensus</div>
+          </div>
+          <div class="p-2.5 rounded-lg hover:bg-[var(--hover-bg)] cursor-pointer mt-1" onclick="selectModel('Deep Reasoning', 'qwen2.5:32b + deepseek-r1:32b')">
+            <div class="font-semibold text-xs flex items-center gap-1.5">
+              <span>🧠</span> Deep Reasoning
+            </div>
+            <div class="text-[11px] text-[var(--text-muted)] mt-0.5">High-Capacity Consensus Panel</div>
+          </div>
+          <div class="my-1.5 border-t border-[var(--border-color)]"></div>
+          <div class="px-2 py-1 text-[10px] uppercase font-semibold text-[var(--text-muted)]">Single Model Overrides</div>
+          <div class="p-2 rounded-lg hover:bg-[var(--hover-bg)] cursor-pointer text-xs font-mono" onclick="selectModel('qwen2.5:7b', 'Direct Single Model')">qwen2.5:7b</div>
+          <div class="p-2 rounded-lg hover:bg-[var(--hover-bg)] cursor-pointer text-xs font-mono" onclick="selectModel('qwen2.5:32b', 'Direct Single Model')">qwen2.5:32b</div>
+          <div class="p-2 rounded-lg hover:bg-[var(--hover-bg)] cursor-pointer text-xs font-mono" onclick="selectModel('deepseek-r1:1.5b', 'Direct Single Model')">deepseek-r1:1.5b</div>
+        </div>
+      </div>
+
+      <!-- Right Header Actions (Theme Switcher & Status) -->
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium border border-[var(--border-color)] bg-[var(--bg-sidebar)]">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span class="hidden sm:inline">Local AI Ready</span>
+        </div>
+
+        <!-- 5-Theme Quick Switcher -->
+        <select id="theme-selector" onchange="switchTheme(this.value)" class="text-xs px-2.5 py-1 rounded-lg border border-[var(--border-color)] bg-[var(--bg-sidebar)] text-[var(--text-primary)] cursor-pointer outline-none">
+          <option value="theme-white">☀️ White (ChatGPT)</option>
+          <option value="theme-dark">🌙 Dark (ChatGPT)</option>
+          <option value="theme-obsidian">🖤 Obsidian (OLED)</option>
+          <option value="theme-midnight">🌌 Midnight Navy</option>
+          <option value="theme-warm">📜 Warm Sepia</option>
+        </select>
+      </div>
+    </header>
+
+    <!-- Scrollable Conversation Area (Strictly Constrained to 768px Centered Column) -->
+    <div id="messages-container" class="flex-1 overflow-y-auto custom-scroll px-4 pt-6 pb-36">
+      <div class="w-full max-w-3xl mx-auto flex flex-col gap-6">
+
+        <!-- Turn 1: User Message (Clean Right-Aligned Bubble) -->
+        <div class="flex justify-end">
+          <div class="bg-[var(--user-msg-bg)] border border-[var(--border-capsule)] rounded-3xl rounded-br-sm px-5 py-3 max-w-[85%] text-[15px] leading-relaxed shadow-sm">
+            capital of Iran
+          </div>
+        </div>
+
+        <!-- Turn 2: ModelFusion Assistant Response (Clean Left-Aligned Markdown Stream) -->
+        <div class="flex items-start gap-4">
+          <div class="w-7 h-7 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center text-sm flex-shrink-0 mt-0.5">
+            ✨
+          </div>
+          <div class="flex-1 text-[15px] leading-relaxed">
+            <div class="text-xs font-semibold text-[var(--text-muted)] mb-1.5 flex items-center gap-2">
+              <span class="text-amber-500 font-medium">ModelFusion AI</span>
+              <span class="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">Adaptive Consensus</span>
+            </div>
+            <p>The capital of Iran is <strong>Tehran</strong>.</p>
+            <p class="mt-2 text-sm text-[var(--text-muted)]">
+              Tehran is the country's most populous city and serves as its political, economic, and cultural center, located at the foot of the Alborz mountain range.
+            </p>
+          </div>
+        </div>
+
+        <!-- Turn 3: User Message -->
+        <div class="flex justify-end">
+          <div class="bg-[var(--user-msg-bg)] border border-[var(--border-capsule)] rounded-3xl rounded-br-sm px-5 py-3 max-w-[85%] text-[15px] leading-relaxed shadow-sm">
+            what is its population and timezone?
+          </div>
+        </div>
+
+        <!-- Turn 4: Assistant Response with Web Citation Badges -->
+        <div class="flex items-start gap-4">
+          <div class="w-7 h-7 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center text-sm flex-shrink-0 mt-0.5">
+            ✨
+          </div>
+          <div class="flex-1 text-[15px] leading-relaxed">
+            <div class="text-xs font-semibold text-[var(--text-muted)] mb-1.5 flex items-center gap-2">
+              <span class="text-amber-500 font-medium">ModelFusion AI</span>
+              <span class="px-1.5 py-0.5 rounded text-[10px] bg-blue-500/10 text-blue-500 border border-blue-500/20">Web Correlated</span>
+            </div>
+            <p>Key demographics and time parameters for Tehran:</p>
+            <ul class="list-disc pl-5 mt-2 space-y-1 text-sm">
+              <li><strong>Population:</strong> Approximately <strong>9.4 million</strong> within the city limits, and over <strong>16 million</strong> in the metropolitan area. <a href="#" class="text-indigo-500 font-semibold">[1]</a></li>
+              <li><strong>Timezone:</strong> Iran Standard Time (<strong>IRST</strong>), which is <strong>UTC+3:30</strong> (Iran does not observe daylight saving time). <a href="#" class="text-indigo-500 font-semibold">[2]</a></li>
+            </ul>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Pinned Floating Bottom Input Capsule (Centered within 768px) -->
+    <div class="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[var(--bg-canvas)] via-[var(--bg-canvas)] to-transparent flex flex-col items-center z-20">
+      <div class="w-full max-w-3xl flex flex-col">
+        <div class="flex items-center gap-2.5 px-4 py-2.5 rounded-full border border-[var(--border-capsule)] bg-[var(--bg-capsule)] shadow-lg transition-all focus-within:border-[var(--border-focus)]">
+          
+          <!-- + File Attachment Button -->
+          <button class="w-8 h-8 rounded-full flex items-center justify-center text-xl text-[var(--text-muted)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] transition-colors" title="Attach file, image, or dataset">
+            +
+          </button>
+
+          <!-- Input Textarea -->
+          <input type="text" id="sim-prompt-input" placeholder="Ask HugOS or search..." class="flex-1 bg-transparent border-none outline-none text-[15px] text-[var(--text-primary)] font-inherit" value="" onkeydown="handleEnter(event)">
+
+          <!-- Web Search Mode Toggle Pill -->
+          <button id="sim-web-btn" onclick="toggleWebMode()" class="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border border-[var(--border-color)] text-[var(--text-muted)] hover:bg-[var(--hover-bg)] transition-colors">
+            <span>🌐</span>
+            <span id="sim-web-label">Web</span>
+          </button>
+
+          <!-- Circular Send Button (↑) -->
+          <button id="sim-send-btn" onclick="sendSimulatedPrompt()" class="w-8 h-8 rounded-full bg-[var(--btn-send-bg)] text-[var(--btn-send-color)] flex items-center justify-center font-bold text-base hover:opacity-85 transition-opacity">
+            ↑
+          </button>
+        </div>
+
+        <!-- Footer Disclaimer -->
+        <div class="text-center text-[11px] text-[var(--text-muted)] mt-2">
+          ModelFusion runs 100% locally with private hardware acceleration.
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    function switchTheme(theme) {
+      document.body.className = `${theme} m-0 p-0 font-sans antialiased text-[var(--text-primary)] bg-[var(--bg-canvas)] h-screen w-screen overflow-hidden flex transition-colors duration-200`;
+    }
+
+    const modelMenu = document.getElementById('btn-model-menu');
+    const modelDropdown = document.getElementById('model-dropdown');
+    modelMenu.addEventListener('click', (e) => {
+      e.stopPropagation();
+      modelDropdown.classList.toggle('hidden');
+    });
+    document.addEventListener('click', () => {
+      modelDropdown.classList.add('hidden');
+    });
+
+    function selectModel(name, sub) {
+      document.getElementById('label-active-model').textContent = name;
+      modelDropdown.classList.add('hidden');
+    }
+
+    let webMode = true;
+    function toggleWebMode() {
+      webMode = !webMode;
+      const btn = document.getElementById('sim-web-btn');
+      const label = document.getElementById('sim-web-label');
+      if (webMode) {
+        btn.classList.add('border-emerald-500', 'text-emerald-500');
+        label.textContent = 'Web On';
+      } else {
+        btn.classList.remove('border-emerald-500', 'text-emerald-500');
+        label.textContent = 'Web Off';
+      }
+    }
+
+    const toggleSidebarBtn = document.getElementById('btn-toggle-sidebar');
+    const sidebar = document.getElementById('sidebar');
+    toggleSidebarBtn.addEventListener('click', () => {
+      sidebar.classList.toggle('hidden');
+    });
+
+    function handleEnter(e) {
+      if (e.key === 'Enter') sendSimulatedPrompt();
+    }
+
+    function sendSimulatedPrompt() {
+      const input = document.getElementById('sim-prompt-input');
+      const q = input.value.trim();
+      if (!q) return;
+      input.value = '';
+
+      const container = document.querySelector('#messages-container > div');
+      
+      // User bubble
+      const userDiv = document.createElement('div');
+      userDiv.className = 'flex justify-end';
+      userDiv.innerHTML = `<div class="bg-[var(--user-msg-bg)] border border-[var(--border-capsule)] rounded-3xl rounded-br-sm px-5 py-3 max-w-[85%] text-[15px] leading-relaxed shadow-sm">${q}</div>`;
+      container.appendChild(userDiv);
+
+      // Assistant response
+      const asstDiv = document.createElement('div');
+      asstDiv.className = 'flex items-start gap-4';
+      asstDiv.innerHTML = `
+        <div class="w-7 h-7 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center text-sm flex-shrink-0 mt-0.5">✨</div>
+        <div class="flex-1 text-[15px] leading-relaxed">
+          <div class="text-xs font-semibold text-[var(--text-muted)] mb-1.5 flex items-center gap-2">
+            <span class="text-amber-500 font-medium">ModelFusion AI</span>
+            <span class="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">Consensus Answer</span>
+          </div>
+          <p>Processed "<strong>${q}</strong>" via <strong>ModelFusion Multi-Model Consensus</strong>. All local reasoning gates aligned with 100% confidence.</p>
+        </div>
+      `;
+      container.appendChild(asstDiv);
+
+      const scrollArea = document.getElementById('messages-container');
+      scrollArea.scrollTop = scrollArea.scrollHeight;
+    }
+  </script>
+</body>
+</html>
