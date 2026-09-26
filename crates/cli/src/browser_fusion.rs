@@ -413,4 +413,66 @@ mod tests {
         assert!(think.contains("DOM Specialist identified correct button"));
         assert_eq!(action, proposals[0].action);
     }
+
+    #[test]
+    fn test_find_browser_launcher_bat() {
+        let bat = find_browser_launcher_bat();
+        assert!(bat.is_some(), "Should locate hugos-browser.bat");
+    }
 }
+
+/// Locates the `hugos-browser.bat` script across workspace and installation paths.
+pub fn find_browser_launcher_bat() -> Option<std::path::PathBuf> {
+    // 1. Check relative to current executable
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(dir) = exe_path.parent() {
+            let p1 = dir.join("../../browser/Chromium-win32-x64/hugos-browser.bat");
+            if p1.is_file() {
+                return p1.canonicalize().ok().or(Some(p1));
+            }
+            let p2 = dir.join("../Chromium-win32-x64/hugos-browser.bat");
+            if p2.is_file() {
+                return p2.canonicalize().ok().or(Some(p2));
+            }
+        }
+    }
+
+    // 2. Check current working directory
+    let cwd_candidates = [
+        "browser/Chromium-win32-x64/hugos-browser.bat",
+        "Chromium-win32-x64/hugos-browser.bat",
+    ];
+    for cand in cwd_candidates {
+        let p = std::path::PathBuf::from(cand);
+        if p.is_file() {
+            return p.canonicalize().ok().or(Some(p));
+        }
+    }
+
+    // 3. Check installed production location
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        let p = std::path::PathBuf::from(local_app_data).join("HugOS Browser/Chromium-win32-x64/hugos-browser.bat");
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+
+    None
+}
+
+/// Spawns the HugOS Intelligent Chromium Browser with optional startup URL.
+pub fn launch_hugos_browser(url: Option<&str>) -> Result<(), String> {
+    let bat_path = find_browser_launcher_bat()
+        .ok_or_else(|| "Could not locate hugos-browser.bat. Ensure HugOS Browser is present in browser/Chromium-win32-x64/.".to_string())?;
+
+    println!("🚀 [BROWSER] Spawning HugOS Browser Engine: {}", bat_path.display());
+    let mut cmd = std::process::Command::new("cmd");
+    cmd.args(["/c", bat_path.to_str().unwrap()]);
+    if let Some(u) = url {
+        cmd.arg(u);
+    }
+    cmd.spawn()
+        .map_err(|e| format!("Failed to spawn hugos-browser.bat: {}", e))?;
+    Ok(())
+}
+

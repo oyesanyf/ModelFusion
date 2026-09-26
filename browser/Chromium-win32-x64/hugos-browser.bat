@@ -10,6 +10,16 @@ set SCRIPT_DIR=%~dp0
 set EXTENSION_DIR=%SCRIPT_DIR%..\extension
 for %%i in ("%EXTENSION_DIR%") do set EXTENSION_PATH=%%~fi
 
+set "DEFAULT_HOME=%SCRIPT_DIR%..\ui\index.html"
+if not exist "%DEFAULT_HOME%" (
+    if exist "%LOCALAPPDATA%\HugOS Browser\ui\index.html" (
+        set "DEFAULT_HOME=%LOCALAPPDATA%\HugOS Browser\ui\index.html"
+    )
+)
+for %%i in ("%DEFAULT_HOME%") do set "HOME_FILE_PATH=%%~fi"
+set "START_URL=file:///%HOME_FILE_PATH:\=/%"
+if not "%~1"=="" set "START_URL=%~1"
+
 set USER_DATA_DIR=%LOCALAPPDATA%\HugOS Browser\User Data
 if not exist "%USER_DATA_DIR%" mkdir "%USER_DATA_DIR%"
 
@@ -44,6 +54,7 @@ echo [INFO] Binary: "%CHROME_BIN%"
 echo [INFO] Remote Debugging Port: 9222
 echo [INFO] Extension Path: "%EXTENSION_PATH%"
 echo [INFO] User Data Dir: "%USER_DATA_DIR%"
+echo [INFO] Startup URL: "%START_URL%"
 
 start "" "%CHROME_BIN%" ^
     --remote-debugging-port=9222 ^
@@ -53,6 +64,7 @@ start "" "%CHROME_BIN%" ^
     --no-first-run ^
     --no-default-browser-check ^
     --enable-features=SidePanel,SidePanelPinning ^
-    https://huggingface.co/models
+    --homepage="%START_URL%" ^
+    "%START_URL%"
 
 endlocal

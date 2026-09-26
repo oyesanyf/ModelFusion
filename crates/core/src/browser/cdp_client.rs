@@ -34,13 +34,14 @@ pub struct CdpResponse {
 pub struct CdpClient {
     pub port: u16,
     pub host: String,
+    resolved_host: std::sync::RwLock<Option<String>>,
     req_counter: AtomicU64,
     http_client: reqwest::Client,
 }
 
 impl Default for CdpClient {
     fn default() -> Self {
-        Self::new("127.0.0.1", 9222)
+        Self::new("localhost", 9222)
     }
 }
 
@@ -53,23 +54,56 @@ impl CdpClient {
         Self {
             host: host.into(),
             port,
+            resolved_host: std::sync::RwLock::new(None),
             req_counter: AtomicU64::new(1),
             http_client,
         }
     }
 
+    /// Returns the active host address (resolved via dual-stack probe or fallback to configured host).
+    pub fn active_host(&self) -> String {
+        if let Ok(guard) = self.resolved_host.read() {
+            if let Some(ref h) = *guard {
+                return h.clone();
+            }
+        }
+        self.host.clone()
+    }
+
     /// Base HTTP endpoint for the Chromium debugging instance.
     pub fn base_url(&self) -> String {
-        format!("http://{}:{}", self.host, self.port)
+        format!("http://{}:{}", self.active_host(), self.port)
     }
 
     /// Checks whether the Chromium remote debugging endpoint is responsive.
+    /// Probes the configured host (defaulting to localhost), and if that fails,
+    /// tries alternate addresses (`127.0.0.1` and `[::1]`) for dual-stack compatibility.
     pub async fn is_available(&self) -> bool {
-        let url = format!("{}/json/version", self.base_url());
-        match self.http_client.get(&url).send().await {
-            Ok(resp) => resp.status().is_success(),
-            Err(_) => false,
+        let configured = self.active_host();
+        let candidates = [
+            configured.as_str(),
+            "localhost",
+            "127.0.0.1",
+            "[::1]",
+        ];
+
+        let mut seen = std::collections::HashSet::new();
+        for candidate in candidates {
+            if !seen.insert(candidate) {
+                continue;
+            }
+            let url = format!("http://{}:{}/json/version", candidate, self.port);
+            if let Ok(resp) = self.http_client.get(&url).send().await {
+                if resp.status().is_success() {
+                    if let Ok(mut guard) = self.resolved_host.write() {
+                        *guard = Some(candidate.to_string());
+                    }
+                    return true;
+                }
+            }
         }
+
+        false
     }
 
     /// Queries the browser version and metadata.
@@ -177,9 +211,10 @@ impl CdpClient {
         let payload_str = payload.to_string();
 
         // Connect and dispatch over RFC 6455 WebSocket
+        let active_host = self.active_host();
         let response_str = tokio::time::timeout(
             Duration::from_secs(10),
-            Self::execute_ws_transaction(&self.host, self.port, ws_url, req_id, &payload_str),
+            Self::execute_ws_transaction(&active_host, self.port, ws_url, req_id, &payload_str),
         )
         .await
         .map_err(|_| format!("CDP command '{}' timed out after 10s", method))??;
@@ -202,15 +237,18 @@ impl CdpClient {
         expected_id: u64,
         payload: &str,
     ) -> Result<String, String> {
-        let path = if let Some(idx) = ws_url.find(&format!("{}:{}/", host, port)) {
-            &ws_url[idx + format!("{}:{}/", host, port).len() - 1..]
-        } else if let Some(idx) = ws_url.find("/devtools/") {
+        let path = if let Some(idx) = ws_url.find("/devtools/") {
             &ws_url[idx..]
+        } else if let Some(idx) = ws_url.find(&format!("{}:{}/", host, port)) {
+            &ws_url[idx + format!("{}:{}/", host, port).len() - 1..]
+        } else if let Some(slash_idx) = ws_url.strip_prefix("ws://").and_then(|r| r.find('/')) {
+            &ws_url[5 + slash_idx..]
         } else {
             "/devtools/page"
         };
 
-        let mut stream = TcpStream::connect((host, port))
+        let connect_host = host.trim_start_matches('[').trim_end_matches(']');
+        let mut stream = TcpStream::connect((connect_host, port))
             .await
             .map_err(|e| format!("Failed to connect to CDP socket at {}:{}: {}", host, port, e))?;
 
@@ -495,6 +533,9 @@ mod tests {
 
     #[test]
     fn test_cdp_client_initialization() {
+        let client_def = CdpClient::default();
+        assert_eq!(client_def.base_url(), "http://localhost:9222");
+
         let client = CdpClient::new("127.0.0.1", 9222);
         assert_eq!(client.base_url(), "http://127.0.0.1:9222");
     }

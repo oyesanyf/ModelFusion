@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HugOS Browser | ModelFusion AI Web Environment</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Top Navigation & Omnibox Bar -->
+    <header class="top-nav-bar">
+      <div class="nav-left">
+        <div class="brand" id="brand-home" title="HugOS Browser Home">
+          <span class="logo-icon">🌐</span>
+          <div class="brand-text">
+            <span class="brand-title">HugOS Browser</span>
+            <span class="brand-sub">ModelFusion AI Web Environment</span>
+          </div>
+        </div>
+
+        <div class="history-controls">
+          <button class="nav-btn" id="nav-back" title="Go Back">◀</button>
+          <button class="nav-btn" id="nav-forward" title="Go Forward">▶</button>
+          <button class="nav-btn" id="nav-reload" title="Reload Page">🔄</button>
+          <button class="nav-btn" id="nav-home" title="Return to Dashboard">🏠</button>
+        </div>
+      </div>
+
+      <!-- Omnibox / Search & Action Center -->
+      <div class="omnibox-wrapper">
+        <div class="omnibox-inner">
+          <span class="omnibox-protocol" id="omnibox-protocol">https://</span>
+          <input type="text" id="omnibox-input" placeholder="Enter any URL (e.g. en.wikipedia.org, localhost:3000) or enter a research query..." autocomplete="off" spellcheck="false">
+          <button class="omnibox-clear" id="omnibox-clear" title="Clear">✕</button>
+          <button class="omnibox-go" id="omnibox-go" title="Navigate (Enter)">➔</button>
+        </div>
+      </div>
+
+      <!-- Quick Action Buttons -->
+      <div class="action-buttons">
+        <button class="action-btn" id="btn-som" title="Set-of-Mark visual tagging on interactive elements">
+          <span class="btn-icon">🏷️</span>
+          <span class="btn-label">Visual Mark</span>
+        </button>
+        <button class="action-btn" id="btn-acdso" title="Extract tables and route into 5-objective Pareto AutoML">
+          <span class="btn-icon">📊</span>
+          <span class="btn-label">ACDSO AutoML</span>
+        </button>
+        <button class="action-btn" id="btn-summarize" title="Generate semantic summary via local model">
+          <span class="btn-icon">📝</span>
+          <span class="btn-label">Summarize</span>
+        </button>
+        <button class="action-btn" id="btn-research" title="Autonomous multi-step deep research">
+          <span class="btn-icon">🔍</span>
+          <span class="btn-label">Deep Research</span>
+        </button>
+      </div>
+
+      <!-- Engine Status Indicators -->
+      <div class="engine-status-group">
+        <div class="status-pill" id="status-ipc" title="ModelFusion CLI IPC Daemon (Port 5000)">
+          <span class="dot status-dot" id="dot-ipc"></span>
+          <span class="status-text" id="text-ipc">IPC :5000</span>
+        </div>
+        <div class="status-pill" id="status-ollama" title="Local Offline Ollama Engine (Port 11434)">
+          <span class="dot status-dot" id="dot-ollama"></span>
+          <span class="status-text" id="text-ollama">Ollama :11434</span>
+        </div>
+        <div class="status-pill" id="status-cdp" title="Chrome DevTools Protocol (CDP Port 9222)">
+          <span class="dot status-dot" id="dot-cdp"></span>
+          <span class="status-text" id="text-cdp">CDP :9222</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Viewport Area -->
+    <main class="main-viewport">
+      <!-- 1. DASHBOARD VIEW (Default Home) -->
+      <div class="view-panel" id="dashboard-view">
+        <div class="dashboard-scroll">
+          <!-- Privacy & Zero-Cloud Guarantee Banner -->
+          <div class="privacy-badge">
+            <span class="shield-icon">🛡️</span>
+            <div class="privacy-text">
+              <strong>Zero Cloud / Paid Models Guaranteed</strong>
+              <span>100% offline, privacy-first local AI execution powered by ModelFusion CLI & local Ollama engine.</span>
+            </div>
+          </div>
+
+          <!-- Hardware & Model Sizing Banner -->
+          <div class="hardware-card">
+            <div class="hw-header">
+              <div class="hw-title-group">
+                <span class="hw-icon">⚡</span>
+                <div>
+                  <h3 class="hw-heading">Active Hardware & Local Intelligence</h3>
+                  <p class="hw-sub">Dynamically scaled based on runtime available system memory</p>
+                </div>
+              </div>
+              <div class="hw-badge" id="active-model-badge">Qwen 2.5 (32B / 14B / 7B)</div>
+            </div>
+
+            <div class="hw-stats-grid">
+              <div class="hw-stat-item">
+                <span class="stat-label">Active Model Engine</span>
+                <span class="stat-value" id="stat-model">Auto-Detecting...</span>
+              </div>
+              <div class="hw-stat-item">
+                <span class="stat-label">Runtime Available RAM</span>
+                <span class="stat-value" id="stat-ram">Probing system...</span>
+              </div>
+              <div class="hw-stat-item">
+                <span class="stat-label">Detected VRAM</span>
+                <span class="stat-value" id="stat-vram">Probing GPU...</span>
+              </div>
+              <div class="hw-stat-item">
+                <span class="stat-label">Multi-Modal Tasks</span>
+                <span class="stat-value" id="stat-tasks">45 HF Tasks Supported</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Launch Tiles -->
+          <section class="tiles-section">
+            <h2 class="section-title">Quick Launch & Discovery Workflows</h2>
+            <div class="tiles-grid">
+              <div class="launch-tile" id="tile-automl" data-url="https://raw.githubusercontent.com/mwaskom/seaborn-data/master/titanic.csv" data-action="acdso">
+                <div class="tile-icon">📊</div>
+                <div class="tile-content">
+                  <h4 class="tile-title">Data Science & AutoML</h4>
+                  <p class="tile-desc">Extract tabular datasets and launch 5-objective Pareto ACDSO (Accuracy, Cost, Memory, Latency, Risk).</p>
+                  <div class="tile-tags">
+                    <span class="tile-tag">Seaborn Datasets</span>
+                    <span class="tile-tag">Pareto Frontier</span>
+                    <span class="tile-tag">Kaggle Ready</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="launch-tile" id="tile-arxiv" data-url="https://arxiv.org/list/cs.AI/recent" data-action="summarize">
+                <div class="tile-icon">📄</div>
+                <div class="tile-content">
+                  <h4 class="tile-title">arXiv & Technical Docs</h4>
+                  <p class="tile-desc">Read academic papers, specifications, and docs with token-pruned semantic summaries & AST reduction.</p>
+                  <div class="tile-tags">
+                    <span class="tile-tag">arXiv CS.AI</span>
+                    <span class="tile-tag">90% Token Reduction</span>
+                    <span class="tile-tag">PDF / HTML</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="launch-tile" id="tile-scraper" data-url="https://en.wikipedia.org/wiki/Comparison_of_deep_learning_software" data-action="extract">
+                <div class="tile-icon">🌐</div>
+                <div class="tile-content">
+                  <h4 class="tile-title">Web Scraper & Crawler</h4>
+                  <p class="tile-desc">Structured HTML table, CSV, and interactive entity extractor with Set-of-Mark visual grounding.</p>
+                  <div class="tile-tags">
+                    <span class="tile-tag">Set-of-Mark</span>
+                    <span class="tile-tag">CSV Export</span>
+                    <span class="tile-tag">Semantic Parsing</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="launch-tile" id="tile-localhost" data-url="http://localhost:3000" data-action="devserver">
+                <div class="tile-icon">💻</div>
+                <div class="tile-content">
+                  <h4 class="tile-title">Localhost Dev Server</h4>
+                  <p class="tile-desc">Inspect local web applications with Chrome DevTools Protocol, live console errors, and HAR capture.</p>
+                  <div class="tile-tags">
+                    <span class="tile-tag">localhost:3000</span>
+                    <span class="tile-tag">CDP Inspection</span>
+                    <span class="tile-tag">HAR Logs</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Autonomous CLI Command Runner -->
+          <section class="cli-runner-section">
+            <div class="cli-header">
+              <div class="cli-title-group">
+                <span class="cli-icon">⚡</span>
+                <div>
+                  <h3 class="cli-heading">Autonomous Master CLI Command Runner</h3>
+                  <p class="cli-sub">Directly dispatch multi-agent browser directives to ModelFusion Master CLI</p>
+                </div>
+              </div>
+              <div class="cli-actions">
+                <button class="cli-btn-secondary" id="btn-clear-console">Clear Console</button>
+                <button class="cli-btn-secondary" id="btn-copy-logs">Copy Logs</button>
+              </div>
+            </div>
+
+            <!-- Suggestion Chips -->
+            <div class="command-chips">
+              <button class="cmd-chip" data-cmd="/browser https://en.wikipedia.org/wiki/Comparison_of_deep_learning_software">/browser wikipedia tables</button>
+              <button class="cmd-chip" data-cmd="/acdso https://raw.githubusercontent.com/mwaskom/seaborn-data/master/titanic.csv">/acdso titanic dataset</button>
+              <button class="cmd-chip" data-cmd="@agent browser find top trending vision-language models on hugging face">@agent browser trending VLMs</button>
+              <button class="cmd-chip" data-cmd="/som">/som (Set-of-Mark)</button>
+              <button class="cmd-chip" data-cmd="/summarize">/summarize</button>
+              <button class="cmd-chip" data-cmd="--sys-info">--sys-info</button>
+            </div>
+
+            <!-- Terminal Input Line -->
+            <div class="terminal-input-bar">
+              <span class="prompt-sym">hugos-cli &gt;</span>
+              <input type="text" id="cli-prompt-input" placeholder="Type @agent browser &lt;task&gt;, /browser &lt;url&gt;, /acdso, or natural language prompt..." spellcheck="false">
+              <button class="cli-run-btn" id="btn-run-cli">Execute</button>
+            </div>
+
+            <!-- Live Terminal Output Screen -->
+            <div class="terminal-screen" id="terminal-screen">
+              <div class="term-line sys">[SYSTEM] HugOS Intelligent Browser Environment Initialized.</div>
+              <div class="term-line sys">[INFO] Master CLI: cli.exe (Authoritative Build Target)</div>
+              <div class="term-line sys">[INFO] Chrome DevTools Protocol Target: localhost:9222</div>
+              <div class="term-line ready">[READY] Type a command above or enter any web URL in the omnibox to begin.</div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <!-- 2. WEBVIEW VIEW (Visible when navigating) -->
+      <div class="view-panel hidden" id="webview-view">
+        <div class="webview-toolbar">
+          <div class="wv-info">
+            <span class="wv-indicator">Browsing:</span>
+            <span class="wv-current-url" id="wv-current-url">about:blank</span>
+          </div>
+          <div class="wv-controls">
+            <button class="wv-btn" id="btn-wv-som">🏷️ Run SoM on Page</button>
+            <button class="wv-btn" id="btn-wv-tables">📊 Extract Tables to ACDSO</button>
+            <button class="wv-btn" id="btn-wv-summarize">📝 Summarize Page</button>
+            <button class="wv-btn" id="btn-wv-newtab" title="Open in Top-Level Tab">↗️ Open Direct</button>
+            <button class="wv-btn" id="btn-wv-home" title="Back to Dashboard">🏠 Dashboard</button>
+          </div>
+        </div>
+
+        <div class="webview-body">
+          <iframe id="browser-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals" src="about:blank"></iframe>
+          <div class="frame-fallback hidden" id="frame-fallback">
+            <div class="fallback-card">
+              <span class="fallback-icon">🛡️</span>
+              <h3>Cross-Origin Site Restriction</h3>
+              <p>This website prevents embedded iframe rendering via <code>X-Frame-Options: SAMEORIGIN</code> or Content Security Policy.</p>
+              <div class="fallback-buttons">
+                <button class="cli-run-btn" id="btn-open-toplevel">Open Directly in HugOS Browser</button>
+                <button class="cli-btn-secondary" id="btn-fallback-home">Return to Dashboard</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
