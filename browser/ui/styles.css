@@ -682,6 +682,15 @@ body {
   margin-top: 4px;
 }
 
+.term-line.model-response {
+  color: #38bdf8;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 6px 0;
+  line-height: 1.5;
+}
+
+
 /* -------------------------------------------------------------
    Webview Viewport Panel
 ------------------------------------------------------------- */
