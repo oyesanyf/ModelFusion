@@ -611,6 +611,19 @@ body {
   border-color: #6366f1;
 }
 
+.attachment-chip.image-chip {
+  padding-left: 4px;
+}
+
+.chip-thumb {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 4px;
+  margin-right: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
 .attachment-icon {
   font-size: 13px;
 }
@@ -632,6 +645,39 @@ body {
   font-family: var(--mono-font);
 }
 
+.attachment-badge {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.image-badge {
+  background: rgba(236, 72, 153, 0.18);
+  color: #f472b6;
+  border: 1px solid rgba(236, 72, 153, 0.35);
+}
+
+.audio-badge {
+  background: rgba(168, 85, 247, 0.18);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.35);
+}
+
+.dataset-badge {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.doc-badge {
+  background: rgba(59, 130, 246, 0.18);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+}
+
 .attachment-dataset-badge {
   background: rgba(16, 185, 129, 0.2);
   color: #10b981;
@@ -641,6 +687,25 @@ body {
   font-size: 9.5px;
   font-weight: 600;
   text-transform: uppercase;
+}
+
+.chip-action-btn {
+  background: rgba(99, 102, 241, 0.25);
+  border: 1px solid rgba(99, 102, 241, 0.5);
+  color: #a5b4fc;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-left: 2px;
+}
+
+.chip-action-btn:hover {
+  background: rgba(99, 102, 241, 0.45);
+  color: #ffffff;
+  border-color: #818cf8;
 }
 
 .attachment-remove {
@@ -653,6 +718,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  margin-left: 2px;
 }
 
 .attachment-remove:hover {
@@ -662,6 +728,73 @@ body {
 .drag-over {
   border-color: #6366f1 !important;
   box-shadow: 0 0 16px rgba(99, 102, 241, 0.4) !important;
+}
+
+/* Multimodal Model Fusion Banner */
+.fusion-banner {
+  background: linear-gradient(135deg, rgba(30, 27, 75, 0.7), rgba(49, 14, 61, 0.7));
+  border: 1px solid;
+  border-image: linear-gradient(135deg, rgba(99, 102, 241, 0.6), rgba(236, 72, 153, 0.6)) 1;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.fusion-banner-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fusion-banner-icon {
+  font-size: 22px;
+  filter: drop-shadow(0 0 6px rgba(236, 72, 153, 0.5));
+}
+
+.fusion-banner-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fusion-banner-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #f1f5f9;
+  letter-spacing: 0.3px;
+}
+
+.fusion-banner-arbiter {
+  font-size: 11px;
+  color: #cbd5e1;
+}
+
+.fusion-banner-arbiter strong {
+  color: #a5b4fc;
+}
+
+.fusion-specialists {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.fusion-pill {
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #e2e8f0;
+  font-size: 10.5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-family: var(--mono-font);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* Terminal Input Bar */

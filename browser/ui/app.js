@@ -108,6 +108,8 @@ document.addEventListener('DOMContentLoaded', () => {
     cdpPort: 9222,
     activeModel: 'qwen2.5:7b',
     visionModel: 'qwen2.5-vl',
+    audioModel: 'whisper-base',
+    multimodalAuto: true,
     temperature: 0.2,
     maxTokens: 4096,
     stream: true,
@@ -261,7 +263,9 @@ document.addEventListener('DOMContentLoaded', () => {
       settingActiveModel.value = s.activeModel;
     }
 
-    setVal('setting-vision-model', s.visionModel);
+    setVal('setting-vision-model', s.visionModel || DEFAULT_SETTINGS.visionModel);
+    setVal('setting-audio-model', s.audioModel || DEFAULT_SETTINGS.audioModel);
+    setCheck('setting-multimodal-auto', s.multimodalAuto !== false);
     setVal('setting-temperature', s.temperature);
     if (valTemperature) {
       valTemperature.textContent = parseFloat(s.temperature).toFixed(2);
@@ -329,6 +333,8 @@ document.addEventListener('DOMContentLoaded', () => {
       cdpPort: getNum('setting-cdp-port', DEFAULT_SETTINGS.cdpPort),
       activeModel: getVal('setting-active-model', DEFAULT_SETTINGS.activeModel),
       visionModel: getVal('setting-vision-model', DEFAULT_SETTINGS.visionModel).trim(),
+      audioModel: getVal('setting-audio-model', DEFAULT_SETTINGS.audioModel).trim(),
+      multimodalAuto: getCheck('setting-multimodal-auto', DEFAULT_SETTINGS.multimodalAuto),
       temperature: parseFloat(getVal('setting-temperature', DEFAULT_SETTINGS.temperature)),
       maxTokens: getNum('setting-max-tokens', DEFAULT_SETTINGS.maxTokens),
       stream: getCheck('setting-stream', DEFAULT_SETTINGS.stream),
@@ -553,7 +559,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // -----------------------------------------------------------------
-  // File Attachment Handling & Staging
+  // Multimodal File Attachment & Preview Tray
   // -----------------------------------------------------------------
   function renderAttachmentTray() {
     if (!attachmentTray) return;
@@ -568,23 +574,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
     attachedFiles.forEach(file => {
       const chip = document.createElement('div');
-      chip.className = 'attachment-chip';
+      chip.className = `attachment-chip ${file.type === 'image' ? 'image-chip' : ''}`;
 
-      let icon = '📄';
-      if (file.isDataset) icon = '📊';
-      else if (file.name.endsWith('.json') || file.name.endsWith('.jsonl')) icon = '📦';
-      else if (file.name.endsWith('.pdf')) icon = '📑';
-      else if (file.name.endsWith('.rs') || file.name.endsWith('.py') || file.name.endsWith('.js') || file.name.endsWith('.ts')) icon = '💻';
+      let thumbHtml = '';
+      let badgeHtml = '';
+      let actionBtnHtml = '';
+
+      if (file.type === 'image') {
+        thumbHtml = `<img src="${file.dataUrl}" class="chip-thumb" alt="${file.name}">`;
+        badgeHtml = `<span class="attachment-badge image-badge">🖼️ Image</span>`;
+      } else if (file.type === 'audio') {
+        thumbHtml = `<span class="attachment-icon">🎙️</span>`;
+        badgeHtml = `<span class="attachment-badge audio-badge">🎙️ Audio</span>`;
+      } else if (file.type === 'tabular') {
+        thumbHtml = `<span class="attachment-icon">📊</span>`;
+        badgeHtml = `<span class="attachment-badge dataset-badge">📊 Tabular Dataset</span>`;
+        actionBtnHtml = `<button type="button" class="chip-action-btn btn-run-acdso" title="Run Pareto AutoML assessment">⚡ Run ACDSO</button>`;
+      } else if (file.type === 'code') {
+        thumbHtml = `<span class="attachment-icon">💻</span>`;
+        badgeHtml = `<span class="attachment-badge doc-badge">💻 Code</span>`;
+      } else {
+        thumbHtml = `<span class="attachment-icon">📄</span>`;
+        badgeHtml = `<span class="attachment-badge doc-badge">📄 Document</span>`;
+      }
 
       const sizeFormatted = file.size > 1024 * 1024
         ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
         : `${(file.size / 1024).toFixed(1)} KB`;
 
       chip.innerHTML = `
-        <span class="attachment-icon">${icon}</span>
+        ${thumbHtml}
         <span class="attachment-name" title="${file.name}">${file.name}</span>
         <span class="attachment-size">${sizeFormatted}</span>
-        ${file.isDataset ? '<span class="attachment-dataset-badge">Dataset</span>' : ''}
+        ${badgeHtml}
+        ${actionBtnHtml}
         <button type="button" class="attachment-remove" title="Remove attachment">✕</button>
       `;
 
@@ -593,27 +616,106 @@ document.addEventListener('DOMContentLoaded', () => {
         removeAttachedFile(file.id);
       });
 
+      const acdsoBtn = chip.querySelector('.btn-run-acdso');
+      if (acdsoBtn) {
+        acdsoBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          termLog(`Triggered Pareto AutoML execution for staged dataset: ${file.name}`, 'info');
+          executeCliCommand('/acdso');
+        });
+      }
+
       attachmentTray.appendChild(chip);
     });
   }
 
-  function addAttachedFile(name, size, type, content) {
-    const isDataset = name.toLowerCase().endsWith('.csv') ||
-      name.toLowerCase().endsWith('.tsv') ||
-      name.toLowerCase().endsWith('.parquet');
+  function handleFiles(files) {
+    if (!files || files.length === 0) return;
+    Array.from(files).forEach(file => {
+      const ext = file.name.slice(((file.name.lastIndexOf('.') - 1) >>> 0) + 2).toLowerCase();
+      const mime = (file.type || '').toLowerCase();
 
-    const fileObj = {
-      id: 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-      name,
-      size,
-      type,
-      content,
-      isDataset
-    };
+      const imageExts = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg'];
+      const audioExts = ['wav', 'mp3', 'ogg', 'm4a', 'flac', 'aac'];
+      const tabularExts = ['csv', 'tsv', 'parquet', 'xlsx', 'json'];
+      const codeExts = ['py', 'rs', 'js', 'ts', 'jsx', 'tsx', 'cpp', 'c', 'h', 'hpp', 'java', 'go', 'rb', 'php', 'sh', 'ps1', 'sql', 'html', 'css'];
 
-    attachedFiles.push(fileObj);
-    renderAttachmentTray();
-    termLog(`[ATTACHMENT] Attached file: ${name} (${(size / 1024).toFixed(1)} KB)${isDataset ? ' [Tabular Dataset Staged]' : ''}`, 'info');
+      if (imageExts.includes(ext) || mime.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const dataUrl = e.target.result;
+          const base64 = dataUrl.replace(/^data:[^;]+;base64,/, '');
+          const fileObj = {
+            id: 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            name: file.name,
+            size: file.size,
+            type: 'image',
+            mimeType: file.type || 'image/png',
+            dataUrl,
+            base64
+          };
+          attachedFiles.push(fileObj);
+          renderAttachmentTray();
+          termLog(`[ATTACH] 📎 Attached multimodal asset: "${file.name}" (IMAGE). Ready for fusion routing.`, 'info');
+        };
+        reader.readAsDataURL(file);
+      } else if (audioExts.includes(ext) || mime.startsWith('audio/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const dataUrl = e.target.result;
+          const fileObj = {
+            id: 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            name: file.name,
+            size: file.size,
+            type: 'audio',
+            mimeType: file.type || 'audio/wav',
+            dataUrl
+          };
+          attachedFiles.push(fileObj);
+          renderAttachmentTray();
+          termLog(`[ATTACH] 📎 Attached multimodal asset: "${file.name}" (AUDIO). Ready for fusion routing.`, 'info');
+        };
+        reader.readAsDataURL(file);
+      } else if (tabularExts.includes(ext) || mime.includes('csv') || mime.includes('tab-separated')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const content = e.target.result;
+          const fileObj = {
+            id: 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            name: file.name,
+            size: file.size,
+            type: 'tabular',
+            isTabular: true,
+            isDataset: true,
+            mimeType: file.type || 'text/csv',
+            content
+          };
+          attachedFiles.push(fileObj);
+          renderAttachmentTray();
+          termLog(`[ATTACH] 📎 Attached multimodal asset: "${file.name}" (TABULAR). Ready for fusion routing.`, 'info');
+        };
+        reader.readAsText(file);
+      } else {
+        const isCode = codeExts.includes(ext);
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const content = e.target.result;
+          const fileObj = {
+            id: 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            name: file.name,
+            size: file.size,
+            type: isCode ? 'code' : 'document',
+            isCode,
+            mimeType: file.type || 'text/plain',
+            content
+          };
+          attachedFiles.push(fileObj);
+          renderAttachmentTray();
+          termLog(`[ATTACH] 📎 Attached multimodal asset: "${file.name}" (${isCode ? 'CODE' : 'DOCUMENT'}). Ready for fusion routing.`, 'info');
+        };
+        reader.readAsText(file);
+      }
+    });
   }
 
   function removeAttachedFile(id) {
@@ -637,14 +739,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     filePicker.addEventListener('change', (e) => {
-      const files = Array.from(e.target.files || []);
-      files.forEach(file => {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          addAttachedFile(file.name, file.size, file.type, event.target.result);
-        };
-        reader.readAsText(file);
-      });
+      handleFiles(e.target.files);
       filePicker.value = '';
     });
   }
@@ -672,15 +767,138 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     if (terminalScreen) terminalScreen.classList.remove('drag-over');
     if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      Array.from(e.dataTransfer.files).forEach(file => {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          addAttachedFile(file.name, file.size, file.type, event.target.result);
-        };
-        reader.readAsText(file);
-      });
+      handleFiles(e.dataTransfer.files);
     }
   });
+
+  // -----------------------------------------------------------------
+  // Adaptive Multimodal Fusion Router
+  // -----------------------------------------------------------------
+  function determineFusionPanel(prompt, files = [], settings = {}) {
+    const lower = (prompt || '').toLowerCase().trim();
+    const hasImage = files.some(f => f.type === 'image');
+    const hasAudio = files.some(f => f.type === 'audio');
+    const hasTabular = files.some(f => f.type === 'tabular' || f.isTabular || f.isDataset) || lower.startsWith('/acdso') || lower.startsWith('@agent acdso');
+    const webRouting = shouldRouteToWeb(prompt || '', settings.webSearchMode || 'auto');
+    const hasWeb = webRouting.routeToWeb;
+    const hasCode = lower.includes('fn ') || lower.includes('def ') || lower.includes('class ') ||
+      lower.includes('struct ') || lower.includes('impl ') || lower.includes('```') ||
+      files.some(f => f.type === 'code');
+
+    const visionMod = settings.visionModel || 'qwen2.5-vl';
+    const audioMod = settings.audioModel || 'whisper-base';
+    const activeMod = settings.activeModel || 'qwen2.5:32b';
+    const threshold = settings.consensusThreshold || 'dominant';
+
+    if (hasImage) {
+      return {
+        name: 'Vision-Language Reasoning Fusion',
+        primary: visionMod,
+        secondary: activeMod,
+        arbiter: `${threshold.toUpperCase()} Consensus Gate`,
+        specialists: [
+          `🔹 Vision: ${visionMod}`,
+          `🔹 Reasoning: ${activeMod}`,
+          `🔹 SoM: Visual Grounding`,
+          `🔹 Arbiter: ${threshold}`
+        ],
+        task: 'visual-question-answering'
+      };
+    }
+
+    if (hasAudio) {
+      return {
+        name: 'Audio-Speech Semantic Fusion',
+        primary: audioMod,
+        secondary: settings.activeModel || 'qwen2.5:7b',
+        arbiter: 'Dominant Gate',
+        specialists: [
+          `🔹 Audio: ${audioMod}`,
+          `🔹 Semantic: ${settings.activeModel || 'qwen2.5:7b'}`,
+          `🔹 Arbiter: Dominant Gate`
+        ],
+        task: 'automatic-speech-recognition'
+      };
+    }
+
+    if (hasTabular) {
+      return {
+        name: 'Pareto AutoML & Tabular Analytics Fusion',
+        primary: 'ACDSO Engine',
+        secondary: activeMod,
+        arbiter: 'Pareto Optimal Knee-Point',
+        specialists: [
+          `🔹 AutoML: ACDSO Engine`,
+          `🔹 Synthesis: ${activeMod}`,
+          `🔹 Arbiter: Pareto Knee-Point`
+        ],
+        task: 'tabular-analytics'
+      };
+    }
+
+    if (hasWeb) {
+      return {
+        name: 'Live Web Retrieval & Fact Synthesis Fusion',
+        primary: 'DuckDuckGo / ModelFusion Web Crawler',
+        secondary: activeMod,
+        arbiter: 'Fact Verification Consensus',
+        specialists: [
+          `🔹 Web: DuckDuckGo / ModelFusion Crawler`,
+          `🔹 Correlation: ${activeMod}`,
+          `🔹 Arbiter: Fact Verification`
+        ],
+        task: 'web-research'
+      };
+    }
+
+    if (hasCode) {
+      return {
+        name: 'Deterministic Code Synthesis Fusion',
+        primary: activeMod,
+        secondary: 'Syntax Verifier',
+        arbiter: 'AST Grammar Certification Gate',
+        specialists: [
+          `🔹 Code: ${activeMod}`,
+          `🔹 Gate: Zero-Error Certification`
+        ],
+        task: 'code-generation'
+      };
+    }
+
+    return {
+      name: 'Analytical Reasoning Fusion',
+      primary: settings.activeModel || 'qwen2.5:7b',
+      secondary: null,
+      arbiter: 'Single Bypass',
+      specialists: [
+        `🔹 Primary: ${settings.activeModel || 'qwen2.5:7b'}`,
+        `🔹 Arbiter: Single Bypass`
+      ],
+      task: 'general-reasoning'
+    };
+  }
+
+  function termLogFusion(panel) {
+    if (!panel || !terminalScreen) return;
+    const card = document.createElement('div');
+    card.className = 'term-line fusion-banner';
+    card.innerHTML = `
+      <div class="fusion-banner-header">
+        <span class="fusion-banner-icon">🎭</span>
+        <div class="fusion-banner-title-group">
+          <div class="fusion-banner-title">Multimodal Model Fusion Activated: ${panel.name}</div>
+          <div class="fusion-banner-arbiter">Consensus Arbiter: <strong>${panel.arbiter}</strong></div>
+        </div>
+      </div>
+      <div class="fusion-specialists">
+        ${panel.specialists.map(s => `<span class="fusion-pill">${s}</span>`).join('')}
+      </div>
+    `;
+    terminalScreen.appendChild(card);
+    if (currentSettings.autoScroll !== false) {
+      terminalScreen.scrollTop = terminalScreen.scrollHeight;
+    }
+  }
 
   // -----------------------------------------------------------------
   // Intelligent Query Router & Live Web Search Engine
@@ -1262,19 +1480,51 @@ document.addEventListener('DOMContentLoaded', () => {
   // -----------------------------------------------------------------
 
   // Real Streaming AI Chat via local Ollama endpoint with fallback to IPC
-  async function streamAiChat(userPrompt, systemPrompt = 'You are HugOS Browser AI, an expert, accurate assistant built into the ModelFusion browser environment. Provide clear, direct, concise, and helpful answers.') {
+  async function streamAiChat(userPrompt, systemPrompt = 'You are HugOS Browser AI, an expert, accurate assistant built into the ModelFusion browser environment. Provide clear, direct, concise, and helpful answers.', options = {}) {
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const modelToUse = currentSettings.activeModel || activeOllamaModel || 'qwen2.5:7b';
+    let modelToUse = currentSettings.activeModel || activeOllamaModel || 'qwen2.5:7b';
     const ollamaUrl = (currentSettings.ollamaUrl || 'http://127.0.0.1:11434').trim().replace(/\/+$/, '');
     const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
     const tempToUse = typeof currentSettings.temperature === 'number' ? currentSettings.temperature : 0.2;
     const maxTokensToUse = typeof currentSettings.maxTokens === 'number' ? currentSettings.maxTokens : 4096;
     const streamMode = currentSettings.stream !== false;
 
+    const hasImages = options && options.images && Array.isArray(options.images) && options.images.length > 0;
+
+    if (hasImages) {
+      // Vision model selection: check configured vision model or discover installed vision tags
+      let selectedVisionModel = currentSettings.visionModel || 'qwen2.5-vl';
+      try {
+        const tagsRes = await fetch(`${ollamaUrl}/api/tags`, { method: 'GET' });
+        if (tagsRes.ok) {
+          const tagsData = await tagsRes.json();
+          const candidate = (currentSettings.visionModel || 'qwen2.5-vl').toLowerCase();
+          const exactMatch = (tagsData.models || []).find(m => m.name.toLowerCase() === candidate || m.name.toLowerCase().startsWith(candidate + ':'));
+          if (exactMatch) {
+            selectedVisionModel = exactMatch.name;
+          } else {
+            const anyVision = (tagsData.models || []).find(m => {
+              const n = m.name.toLowerCase();
+              return n.includes('-vl') || n.includes('vision') || n.includes('llava') || n.includes('bakllava');
+            });
+            if (anyVision) {
+              selectedVisionModel = anyVision.name;
+              termLog(`[ROUTER] Auto-selected available local vision model: ${selectedVisionModel}`, 'sys');
+            } else {
+              termLog(`[ROUTER] Note: Vision model '${candidate}' not installed. Attempting with active model or Master CLI pipeline.`, 'warn');
+            }
+          }
+        }
+      } catch (e) {
+        // Continue with configured vision model
+      }
+      modelToUse = selectedVisionModel;
+    }
+
     // Status indicator
     const statusLine = document.createElement('div');
     statusLine.className = 'term-line info';
-    statusLine.textContent = `[${time}] 🤖 Thinking with ${modelToUse}...`;
+    statusLine.textContent = `[${time}] 🤖 Thinking with ${modelToUse}${hasImages ? ' [Multimodal Vision Mode]' : ''}...`;
     terminalScreen.appendChild(statusLine);
     if (currentSettings.autoScroll !== false) terminalScreen.scrollTop = terminalScreen.scrollHeight;
 
@@ -1282,6 +1532,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const responseLine = document.createElement('div');
     responseLine.className = 'term-line model-response';
     terminalScreen.appendChild(responseLine);
+
+    const messagePayload = {
+      role: 'user',
+      content: userPrompt
+    };
+    if (hasImages) {
+      messagePayload.images = options.images;
+    }
 
     try {
       const res = await fetch(`${ollamaUrl}/api/chat`, {
@@ -1291,7 +1549,7 @@ document.addEventListener('DOMContentLoaded', () => {
           model: modelToUse,
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
+            messagePayload
           ],
           stream: streamMode,
           options: {
@@ -1367,10 +1625,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Try fallback to Master CLI IPC /orchestrate
       try {
+        const ipcPayload = {
+          prompt: userPrompt,
+          task: hasImages ? 'visual-question-answering' : 'general',
+          model: modelToUse
+        };
+        if (hasImages) {
+          ipcPayload.images = options.images;
+        }
+
         const ipcRes = await fetch(`${ipcUrl}/orchestrate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: userPrompt, task: 'general' })
+          body: JSON.stringify(ipcPayload)
         });
         if (ipcRes.ok) {
           const data = await ipcRes.json();
@@ -1712,10 +1979,17 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    // Multimodal & Adaptive Fusion Resolution
+    const attachedImages = currentAttachments.filter(f => f.type === 'image' && f.base64).map(f => f.base64);
+    const panel = determineFusionPanel(cmd, currentAttachments, currentSettings);
+
     // 6. Intelligent Query Routing: Web Search vs Local LLM Reasoning
     const routingDecision = shouldRouteToWeb(cmd, currentSettings.webSearchMode || 'auto');
 
     if (routingDecision.routeToWeb) {
+      if (currentSettings.multimodalAuto !== false) {
+        termLogFusion(panel);
+      }
       termLog(`[ROUTER] 🌐 Route: Live Web Search (${routingDecision.reason})`, 'sys');
       termLog(`[SEARCH] Querying web search engine for: "${routingDecision.cleanQuery}"...`, 'info');
 
@@ -1744,20 +2018,23 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
 
         const sysPrompt = 'You are HugOS AI, an intelligent assistant with live internet search capabilities. Correlate search evidence with internal reasoning, provide factual and up-to-date answers, and cite sources accurately with [1], [2] badges and markdown links.';
 
-        await streamAiChat(promptWithSearch, sysPrompt);
+        await streamAiChat(promptWithSearch, sysPrompt, { images: attachedImages, panel });
         if (currentAttachments.length > 0) clearAllAttachments();
         return;
       } else {
         termLog(`[SEARCH] No live web results returned. Falling back to local model internal knowledge.`, 'warn');
       }
     } else {
+      if (currentSettings.multimodalAuto !== false && (attachedImages.length > 0 || panel.name !== 'Analytical Reasoning Fusion')) {
+        termLogFusion(panel);
+      }
       termLog(`[ROUTER] 🧠 Route: Local LLM Internal Reasoning (${routingDecision.reason})`, 'sys');
     }
 
-    // 7. Default Local LLM Reasoning (with attached files if staged)
+    // 7. Default Local LLM Reasoning (with attached files and multimodal fusion)
     const promptToSend = attachmentContext ? `${cmd}\n\n${attachmentContext}` : cmd;
     termLog(`Dispatching directive to local ModelFusion pipeline: "${cmd}"${currentAttachments.length > 0 ? ` (${currentAttachments.length} file(s) attached)` : ''}`, 'info');
-    await streamAiChat(promptToSend);
+    await streamAiChat(promptToSend, 'You are HugOS Browser AI, an expert, accurate assistant built into the ModelFusion browser environment. Provide clear, direct, concise, and helpful answers.', { images: attachedImages, panel });
     if (currentAttachments.length > 0) {
       clearAllAttachments();
     }

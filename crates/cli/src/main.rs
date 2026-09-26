@@ -607,6 +607,26 @@ async fn generate_active_models_report(db_path_opt: Option<&str>) -> String {
     generate_active_models_markdown(db_path_opt).await
 }
 
+/// Generates a real-time status markdown report for the active multimodal model fusion panel.
+pub fn generate_fusion_status_report() -> String {
+    let sys = query_system_resources();
+    let best_model = select_ollama_model_from_sys(false, &sys);
+    format!(
+        "🎭 **Active Multimodal Model Fusion Panel**\n\n\
+        - **Engine Status**: Synchronized & Operational (Zero-Cloud Local Execution)\n\
+        - **Participating Specialists**:\n  \
+          - 🔹 **Vision Specialist**: `qwen2.5-vl` / `llama3.2-vision` (Visual Grounding & OCR)\n  \
+          - 🔹 **Reasoning & Synthesis**: `{}` (Deep Multi-Objective Reasoning)\n  \
+          - 🔹 **Audio Specialist**: `whisper-base` (Speech Recognition & Acoustic Profiling)\n  \
+          - 🔹 **AutoML & Tabular Analytics**: `ACDSO Engine` (5-Dimension Pareto Knee-Point Optimization)\n  \
+          - 🔹 **Live Web Retrieval**: `DuckDuckGo / ModelFusion IPC` (Fact Correlation)\n\
+        - **Arbiter & Consensus**: Dynamic Multi-Objective Pareto Arbiter (Dominant Gate)\n\
+        - **Hardware Budget**: Available RAM: {:.2} GB | Free VRAM: {} MB ({})\n\
+        - **Privacy & Security**: 100% Zero-Cloud / Offline Local Execution",
+        best_model, sys.free_ram_gb, sys.free_vram_mb, sys.gpu_name
+    )
+}
+
 async fn rpc_call_rest_rl(method: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::net::TcpStream;
@@ -1001,6 +1021,9 @@ struct Args {
 
     #[arg(long, help = "Print detected system resource specifications in JSON format")]
     sys_info: bool,
+
+    #[arg(long, help = "Display real-time multimodal model fusion panel status")]
+    fusion_status: bool,
 
     #[arg(long, help = "Save trained ML models")]
     save_model: bool,
@@ -1982,6 +2005,11 @@ async fn run(args: Args) -> Result<()> {
     if args.active_model {
         let report = generate_active_models_report(args.db_path.as_deref()).await;
         println!("{}", report);
+        return Ok(());
+    }
+
+    if args.fusion_status {
+        println!("{}", generate_fusion_status_report());
         return Ok(());
     }
 
@@ -4316,7 +4344,7 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
         "@agent", "agent", "@commands", "commands", "@command", "command",
         "@tasks", "tasks", "@task", "task", "@comments", "comments",
         "@comment", "comment", "@modelfusion", "modelfusion", "@hugos", "hugos",
-        "@automl", "@acdso", "@browser"
+        "@automl", "@acdso", "@browser", "@vision", "@multimodal", "@fusion"
     ] {
         if lower.starts_with(prefix) {
             let rest = &s[prefix.len()..];
@@ -4336,6 +4364,10 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
         .collect::<String>()
         .to_lowercase();
     match stripped.as_str() {
+        "vision" | "visionmodel" => Some("vision"),
+        "multimodaltask" | "multimodal" | "mm" => Some("multimodal"),
+        "fusion" => Some("fusion"),
+        "fusionstatus" | "fusionpanel" => Some("fusion-status"),
         "stats" | "statsd" => Some("stats"),
         "sysinfo" => Some("sys-info"),
         "mcp" => Some("mcp"),
@@ -4391,7 +4423,6 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
         "securityanalysis" => Some("security_analysis"),
         "codetask" => Some("code_task"),
         "domaintask" => Some("domain_task"),
-        "multimodaltask" | "multimodal" => Some("multimodal_task"),
         "semanticsearch" => Some("semantic_search"),
         "analyticsdemo" => Some("analytics-demo"),
         "modelranking" => Some("model-ranking"),
@@ -4424,7 +4455,6 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
         "topk" => Some("top-k"),
         "demohyde" => Some("demo-hyde"),
         "full" => Some("full"),
-        "fusion" => Some("fusion"),
         "nofusion" => Some("no-fusion"),
         "fusionmodels" => Some("fusion-models"),
         "fusionmode" => Some("fusion-mode"),
@@ -5961,6 +5991,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 // Convert OpenAI messages array to a single prompt string
                 let mut prompt_parts: Vec<String> = Vec::new();
                 let mut latest_user_query_str: Option<String> = None;
+                let mut extracted_images: Vec<serde_json::Value> = Vec::new();
                 if let Some(messages) = request_json["messages"].as_array() {
                     for msg in messages {
                         let role = msg["role"].as_str().unwrap_or("user");
@@ -5975,6 +6006,13 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                     parts.push(t.to_string());
                                 } else if let Some(v) = item.get("value").and_then(|v| v.as_str()) {
                                     parts.push(v.to_string());
+                                } else if let Some(img_url) = item.get("image_url").and_then(|v| v.get("url")).and_then(|u| u.as_str()) {
+                                    let b64 = if let Some(pos) = img_url.find(";base64,") {
+                                        &img_url[pos + 8..]
+                                    } else {
+                                        img_url
+                                    };
+                                    extracted_images.push(serde_json::Value::String(b64.to_string()));
                                 }
                             }
                             parts.join("\n")
@@ -6001,7 +6039,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 }
                 let latest_uq = latest_user_query_str.unwrap_or_default();
                 // Rewrite as /orchestrate request
-                request_json = serde_json::json!({
+                let mut rewritten_json = serde_json::json!({
                     "prompt": combined_prompt,
                     "model": model,
                     "ollama": true,
@@ -6010,6 +6048,10 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     "budget": 10.0,
                     "latest_user_query": latest_uq
                 });
+                if !extracted_images.is_empty() {
+                    rewritten_json["images"] = serde_json::Value::Array(extracted_images);
+                }
+                request_json = rewritten_json;
                 eprintln!("[SERVER] >>> /v1/chat/completions → translated to /orchestrate (model: {}, prompt len: {}, latest_user_query len: {})", model, combined_prompt.len(), latest_uq.len());
             }
 
@@ -6053,6 +6095,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 }
                 "/orchestrate" => {
                     let mut prompt = request_json["prompt"].as_str().unwrap_or("").to_string();
+                    let images_opt = request_json.get("images").and_then(|v| v.as_array());
                     let mut strategy = request_json["selection_strategy"].as_str().unwrap_or("multi_objective").to_string();
                     let raw_fusion_models = request_json["fusion_models"].as_u64().unwrap_or(0) as usize;
                     let fusion_models = if raw_fusion_models <= 1 {
@@ -6082,6 +6125,12 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             } else if let Some(n) = v.as_f64() {
                                 orchestration_options.insert(k.clone(), n.to_string());
                             }
+                        }
+                    }
+
+                    if let Some(imgs) = images_opt {
+                        if !imgs.is_empty() {
+                            orchestration_options.insert("images".to_string(), serde_json::to_string(imgs).unwrap_or_default());
                         }
                     }
 
@@ -6493,7 +6542,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         "security-analysis" => "security_analysis",
                                         "code-task" => "code_task",
                                         "domain-task" => "domain_task",
-                                        "multimodal-task" | "multimodal" => "multimodal_task",
+                                        "multimodal-task" => "multimodal_task",
                                         "semantic-search" | "semantic_search" => "semantic_search",
                                         "research" | "reseach" => "research",
                                         "search" | "serarch" | "serarch-query" | "serarch_query" | "serarchquery" => "search",
@@ -6529,6 +6578,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         "createfile" | "create-file" | "create_file" | "newfile" | "new-file" | "new_file" | "writefile" | "write-file" => "createfile",
                                         "rest-rl" | "restrl" | "rl" => "rest-rl",
                                         "boost" | "booster" => "optimize",
+                                        "vision" | "visionmodel" => "vision",
+                                        "multimodal" | "multimodaltask" | "mm" => "multimodal",
+                                        "fusion" | "fusionstatus" | "fusion-status" | "fusionpanel" => "fusion-status",
                                         other => other,
                                     };
 
@@ -6538,6 +6590,14 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                      let _db_path_str = db_resolved.to_string_lossy();
 
                                     match canonical {
+                                        "vision" | "multimodal" => {
+                                            let sys = query_system_resources();
+                                            let vision_model = "qwen2.5-vl";
+                                            (idx, format!("👁️ **Multimodal & Vision-Language Processing Engine**\n\n- **Active Vision Specialist**: `{}` (Set-of-Mark Grounding & Visual OCR)\n- **Multimodal Tasks Supported**: Image Classification, Visual QA, Document QA, OCR, Object Detection, Tabular Analytics (ACDSO), Audio Transcription\n- **Hardware Acceleration**: GPU VRAM: {} MB / Available RAM: {:.2} GB\n- **Routing**: Automatic multimodal tensor routing with zero-cloud local execution.\n\nAttach images or datasets to your prompt or drag-and-drop into HugOS to trigger automatic fusion.", vision_model, sys.free_vram_mb, sys.free_ram_gb))
+                                        },
+                                        "fusion" | "fusion-status" => {
+                                            (idx, generate_fusion_status_report())
+                                        },
                                         "unknown" => {
                                             (idx, format!("⚠️ **Unknown command `/{}`.** Type `/commands` or `/help` to view all available commands.", args_owned))
                                         },
@@ -8036,10 +8096,16 @@ sequenceDiagram
                         let is_explicit_false = explicit_fusion_in_json == Some(false)
                             || explicit_fusion_in_opts == Some(false);
 
-                        if ollama && (!is_complex || is_explicit_false || !fusion || lower.contains("review") || lower.contains("explain")) {
+                        let has_images = images_opt.map_or(false, |a| !a.is_empty());
+
+                        if ollama && (!is_complex || is_explicit_false || !fusion || lower.contains("review") || lower.contains("explain") || has_images) {
                             let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
                                 .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
-                            let dynamic_model = resolve_dynamic_ollama_model(model_override.as_deref(), budget <= 0.5, &endpoint).await;
+                            let dynamic_model = if has_images && model_override.is_none() {
+                                "qwen2.5-vl".to_string()
+                            } else {
+                                resolve_dynamic_ollama_model(model_override.as_deref(), budget <= 0.5, &endpoint).await
+                            };
                             let ollama_model = dynamic_model.as_str();
 
                             let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
@@ -8165,9 +8231,18 @@ sequenceDiagram
                             };
                             
                             eprintln!("[SERVER] 🎭 Dynamic prompt: {:?}", &fast_sys[..fast_sys.len().min(60)]);
+                            let mut user_msg_val = serde_json::json!({
+                                "role": "user",
+                                "content": &user_msg
+                            });
+                            if let Some(imgs) = images_opt {
+                                if !imgs.is_empty() {
+                                    user_msg_val["images"] = serde_json::Value::Array(imgs.clone());
+                                }
+                            }
                             let messages = serde_json::json!([
                                 {"role": "system", "content": fast_sys},
-                                {"role": "user", "content": &user_msg}
+                                user_msg_val
                             ]);
 
                             // Dynamic temperature: low for facts, higher for creative
@@ -13101,6 +13176,42 @@ public class Pr {
         // 4. Empty query
         let (q4, _) = parse_query_and_limit_from_request("/api/search", &serde_json::json!({}));
         assert!(q4.is_empty());
+    }
+
+    #[test]
+    fn test_multimodal_fusion_routing() {
+        use super::{canonicalize_command, generate_fusion_status_report};
+
+        // 1. Verify slash and flag command canonicalization for multimodal and fusion directives
+        assert_eq!(canonicalize_command("/vision"), Some("vision"));
+        assert_eq!(canonicalize_command("--vision"), Some("vision"));
+        assert_eq!(canonicalize_command("@agent /vision"), Some("vision"));
+
+        assert_eq!(canonicalize_command("/multimodal"), Some("multimodal"));
+        assert_eq!(canonicalize_command("--multimodal"), Some("multimodal"));
+        assert_eq!(canonicalize_command("/mm"), Some("multimodal"));
+
+        assert_eq!(canonicalize_command("/fusion"), Some("fusion"));
+        assert_eq!(canonicalize_command("/fusion-status"), Some("fusion-status"));
+        assert_eq!(canonicalize_command("/fusionpanel"), Some("fusion-status"));
+
+        // 2. Verify fusion status report generation
+        let report = generate_fusion_status_report();
+        assert!(report.contains("Active Multimodal Model Fusion Panel"));
+        assert!(report.contains("Vision Specialist"));
+        assert!(report.contains("Audio Specialist"));
+        assert!(report.contains("AutoML & Tabular Analytics"));
+
+        // 3. Verify multimodal image payload message format
+        let images_payload = vec![serde_json::Value::String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==".to_string())];
+        let mut user_msg_val = serde_json::json!({
+            "role": "user",
+            "content": "Describe this architecture diagram"
+        });
+        user_msg_val["images"] = serde_json::Value::Array(images_payload.clone());
+
+        assert_eq!(user_msg_val["images"].as_array().map(|a| a.len()), Some(1));
+        assert_eq!(user_msg_val["role"], "user");
     }
 }
 

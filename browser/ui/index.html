@@ -214,8 +214,8 @@
 
             <!-- Terminal Input Line -->
             <div class="terminal-input-bar">
-              <button type="button" class="cli-input-btn" id="btn-attach-file" title="Attach file (Code, CSV, Text, JSON, PDF, etc.)">📎</button>
-              <input type="file" id="file-picker" multiple class="hidden">
+              <button type="button" class="cli-input-btn" id="btn-attach-file" title="Attach multimodal asset (Images, Audio, Datasets, Documents, Code)">📎</button>
+              <input type="file" id="file-picker" multiple accept="image/*,audio/*,.csv,.tsv,.parquet,.xlsx,.json,.pdf,.py,.rs,.js,.ts,.html,.css,.md,.txt" class="hidden">
               <button type="button" class="cli-input-btn web-mode-btn" id="btn-web-mode" title="Toggle Internet Search mode (Auto / On / Off)">
                 <span id="web-mode-icon">🌐</span>
                 <span id="web-mode-label">Web: Auto</span>
@@ -659,10 +659,38 @@
             <div class="setting-item">
               <div class="setting-info">
                 <label for="setting-vision-model" class="setting-label">Vision Specialist Model</label>
-                <span class="setting-desc">Specialized visual grounding model tag for Set-of-Mark and image analysis.</span>
+                <span class="setting-desc">Specialized visual grounding model for Set-of-Mark and image reasoning.</span>
               </div>
               <div class="setting-control">
-                <input type="text" id="setting-vision-model" class="setting-input" value="qwen2.5-vl" spellcheck="false">
+                <select id="setting-vision-model" class="setting-select">
+                  <option value="qwen2.5-vl" selected>qwen2.5-vl (Qwen 2.5 Vision-Language - Recommended)</option>
+                  <option value="llama3.2-vision">llama3.2-vision (Llama 3.2 Vision 11B)</option>
+                  <option value="llava">llava (LLaVA 1.6 7B/13B)</option>
+                  <option value="bakllava">bakllava (BakLLaVA Multimodal)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-audio-model" class="setting-label">Audio Specialist Model</label>
+                <span class="setting-desc">Speech recognition and acoustic transcription model tag (e.g. Whisper).</span>
+              </div>
+              <div class="setting-control">
+                <input type="text" id="setting-audio-model" class="setting-input" value="whisper-base" spellcheck="false">
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-multimodal-auto" class="setting-label">Multimodal Auto-Routing</label>
+                <span class="setting-desc">Automatically route prompts and attachments to specialized vision, audio, tabular, and reasoning panels.</span>
+              </div>
+              <div class="setting-control">
+                <label class="setting-toggle-label">
+                  <input type="checkbox" id="setting-multimodal-auto" checked>
+                  <span class="toggle-text">Multimodal Auto-Routing Enabled</span>
+                </label>
               </div>
             </div>
 
