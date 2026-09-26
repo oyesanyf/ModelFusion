@@ -1,0 +1,34 @@
+{
+  "browser": {
+    "theme": {
+      "color_scheme": 1,
+      "dark_mode": true
+    },
+    "show_home_button": true,
+    "check_default_browser": false
+  },
+  "metrics": {
+    "reporting_enabled": false
+  },
+  "safebrowsing": {
+    "enabled": true
+  },
+  "profile": {
+    "default_content_setting_values": {
+      "notifications": 2,
+      "geolocation": 2
+    },
+    "password_manager_enabled": false
+  },
+  "modelfusion": {
+    "endpoint": "http://127.0.0.1:11434",
+    "ipc_port": 5000,
+    "cdp_port": 9222,
+    "som_enabled": true,
+    "token_budget_reduction_target": 0.90,
+    "auto_extract_tables": true,
+    "default_vision_model": "qwen2.5-vl",
+    "default_reasoning_model": "deepseek-r1:7b",
+    "default_dom_model": "qwen2.5:7b"
+  }
+}

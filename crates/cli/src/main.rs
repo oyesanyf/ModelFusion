@@ -3,6 +3,11 @@
 
 pub mod fusion_arbiter;
 pub use fusion_arbiter::{ArbitrationResult, CandidateSolution, FusionArbiter};
+pub mod browser_fusion;
+pub use browser_fusion::{
+    BrowserActionProposal, BrowserArbitrationDecision, BrowserFusionArbiter, ConsensusType,
+    SpecialistType,
+};
 
 use anyhow::Result;
 use clap::Parser;
@@ -1324,8 +1329,17 @@ struct Args {
     #[arg(long, help = "Run an instruction on a recurring schedule or as a one-time timer")]
     schedule: Option<String>,
 
-    #[arg(long, help = "Invoke web browser agent for web tasks and page scraping")]
-    browser: Option<String>,
+    #[arg(long, help = "Launch interactive HugOS Browser with ModelFusion AI sidebar")]
+    browser: bool,
+
+    #[arg(long, help = "Autonomous goal-directed web navigation and data collection task")]
+    browser_task: Option<String>,
+
+    #[arg(long, help = "Instant semantic table and dataset extraction from target URL")]
+    browser_extract: Option<String>,
+
+    #[arg(long, default_value = "9222", help = "Chromium remote debugging port")]
+    browser_port: u16,
 
     #[arg(long, alias = "grillme", help = "Interview user to align on a plan and resolve design decisions")]
     grill_me: bool,
@@ -2339,6 +2353,94 @@ async fn run(args: Args) -> Result<()> {
             println!("====================================");
             return Ok(());
         }
+    }
+
+    // ---------------------------------------------------------
+    // HugOS Browser Execution Flow
+    // ---------------------------------------------------------
+    if args.browser || args.browser_task.is_some() || args.browser_extract.is_some() {
+        let port = args.browser_port;
+        let mut suite = modelfusion_core::browser::BrowserToolSuite::new(port);
+
+        // Sub-command: --browser-extract <URL>
+        if let Some(ref extract_url) = args.browser_extract {
+            println!("🌐 [BROWSER] Extracting semantic datasets from: {}", extract_url);
+            match suite.extract_tables(Some(extract_url)).await {
+                Ok(tables) => {
+                    println!("✅ Extracted {} table(s) from {}\n", tables.len(), extract_url);
+                    for table in &tables {
+                        println!("== {} ==", table.summary());
+                        println!("{}\n", table.to_csv());
+                    }
+                }
+                Err(e) => {
+                    eprintln!("❌ Failed to extract tables: {}", e);
+                }
+            }
+            return Ok(());
+        }
+
+        // Sub-command: --browser-task <TASK> or --browser <query>
+        let task_query = args.browser_task.clone()
+            .or_else(|| {
+                if args.browser {
+                    args.prompt.clone().or_else(|| args.query.clone())
+                } else {
+                    None
+                }
+            });
+
+        if let Some(task) = task_query {
+            let task_clean = task.trim();
+            if !task_clean.is_empty() {
+                println!("🌐 [BROWSER] Executing autonomous task: \"{}\"", task_clean);
+                if task_clean.starts_with("http://") || task_clean.starts_with("https://") {
+                    match suite.navigate(task_clean).await {
+                        Ok(nav_msg) => println!("{}", nav_msg),
+                        Err(err) => eprintln!("Navigation error: {}", err),
+                    }
+                    if let Ok(dom) = suite.get_clean_dom(None).await {
+                        println!("📄 Pruned DOM ({} chars, {:.1}% token reduction, {} interactive elements):",
+                            dom.pruned_char_count, dom.token_reduction_pct, dom.interactive_elements.len());
+                        let preview: String = dom.text.chars().take(2000).collect();
+                        println!("{}\n", preview);
+                    }
+                } else {
+                    let arbiter = BrowserFusionArbiter::default();
+                    let proposals = vec![
+                        BrowserActionProposal {
+                            model: arbiter.dom_model.clone(),
+                            specialist: SpecialistType::DomSpecialist,
+                            action: modelfusion_core::browser::BrowserAction::GetCleanDom { max_chars: Some(40_000) },
+                            rationale: "Initial page inspection and Set-of-Mark parsing".to_string(),
+                            confidence: 0.90,
+                        },
+                    ];
+                    let decision = arbiter.arbitrate(task_clean, "Initial task dispatch", &proposals);
+                    println!("🧠 [CONSENSUS] Selected action: {:?} ({:?}, confidence: {:.2})",
+                        decision.selected_action, decision.consensus, decision.confidence);
+                    println!("   Reasoning: {}", decision.reasoning);
+                }
+                return Ok(());
+            }
+        }
+
+        // Default: --browser without task -> Launch or report HugOS Browser
+        println!("🌐 [BROWSER] HugOS Intelligent Browser");
+        println!("   Remote Debugging Port: {}", port);
+        println!("   CDP Base URL: http://127.0.0.1:{}", port);
+        if suite.cdp.is_available().await {
+            println!("   Status: 🟢 Connected to active Chromium session");
+            if let Ok(targets) = suite.cdp.list_targets().await {
+                println!("   Active Targets ({}):", targets.len());
+                for t in targets.iter().take(5) {
+                    println!("     - [{}] {} ({})", t.target_type, t.title, t.url);
+                }
+            }
+        } else {
+            println!("   Status: 🟡 Offline (launch via browser/Chromium-win32-x64/hugos-browser.bat)");
+        }
+        return Ok(());
     }
 
     // ---------------------------------------------------------
@@ -4168,7 +4270,7 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
         "@agent", "agent", "@commands", "commands", "@command", "command",
         "@tasks", "tasks", "@task", "task", "@comments", "comments",
         "@comment", "comment", "@modelfusion", "modelfusion", "@hugos", "hugos",
-        "@automl", "@acdso"
+        "@automl", "@acdso", "@browser"
     ] {
         if lower.starts_with(prefix) {
             let rest = &s[prefix.len()..];
@@ -4220,7 +4322,7 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
         "btw" => Some("btw"),
         "goal" => Some("goal"),
         "schedule" | "sched" | "timer" | "cron" => Some("schedule"),
-        "browser" | "browse" | "web" => Some("browser"),
+        "browser" | "browse" | "web" | "hugosbrowser" | "browseragent" | "browsertask" | "browserextract" => Some("browser"),
         "grillme" | "grill" | "interview" => Some("grill-me"),
         "teamworkpreview" | "teamwork" | "teams" | "team" => Some("teamwork-preview"),
         "learn" | "remember" => Some("learn"),
@@ -4430,12 +4532,13 @@ pub fn get_cli_flag_info(flag_name: &str) -> (bool, Option<&'static str>) {
         "ml-fallback" => (true, Some("true")),
         "rest-rl" | "rl" => (true, Some("status")),
         "horizon" => (true, Some("7")),
+        "browser-port" => (true, Some("9222")),
 
         // Option<String> / Option<usize> flags (no default value)
         "file" | "folder" | "prompt" | "task" | "config" | "api-keys" | "load-model"
         | "add-documents" | "search-query" | "research" | "search" | "max-models"
         | "model" | "prepare-model" | "context" | "report" | "db-path" | "vscode-tag"
-        | "btw" | "goal" | "schedule" | "browser" | "learn" | "generative-ui" | "genui"
+        | "btw" | "goal" | "schedule" | "browser-task" | "browser-extract" | "learn" | "generative-ui" | "genui"
         | "target" | "predict" | "datetime-col" | "treatment" => (true, None),
 
         // All other flags are boolean flags
@@ -6748,6 +6851,35 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                           };
 
                                           let mut parsed = parse_acdso_cmd_args(clean_args);
+                                          let mut web_extracted_prefix = String::new();
+
+                                          let url_target = if parsed.target_file.starts_with("http://") || parsed.target_file.starts_with("https://") {
+                                              Some(parsed.target_file.clone())
+                                          } else {
+                                              clean_args.split_whitespace().find(|w| w.starts_with("http://") || w.starts_with("https://")).map(|w| w.to_string())
+                                          };
+
+                                          if let Some(target_url) = url_target {
+                                              let mut suite = modelfusion_core::browser::BrowserToolSuite::new(9222);
+                                              if let Ok(tables) = suite.extract_tables(Some(&target_url)).await {
+                                                  if let Some(first_table) = tables.first() {
+                                                      let csv_content = first_table.to_csv();
+                                                      let temp_csv = std::env::temp_dir().join(format!("acdso_web_table_{}.csv", chrono::Utc::now().timestamp()));
+                                                      if std::fs::write(&temp_csv, csv_content).is_ok() {
+                                                          parsed.target_file = temp_csv.to_string_lossy().to_string();
+                                                          web_extracted_prefix = format!(
+                                                              "🌐 **Web Table Extracted from `{}`**\n- **Table**: {}\n- **Dimensions**: {} rows × {} columns\n- **Dataset Target**: `{}`\n\n",
+                                                              target_url,
+                                                              first_table.caption.as_deref().unwrap_or("Extracted Table #1"),
+                                                              first_table.row_count,
+                                                              first_table.col_count,
+                                                              parsed.target_file
+                                                          );
+                                                      }
+                                                  }
+                                              }
+                                          }
+
                                           if parsed.target_file.is_empty() {
                                               if let Some((ds_path, _)) = attached.iter().find(|(path, _)| is_dataset(path)) {
                                                   parsed.target_file = ds_path.clone();
@@ -6814,7 +6946,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                               } else {
                                                   trimmed.to_string()
                                               };
-                                              (idx, format!("{}\n\n{}", header, final_body))
+                                              (idx, format!("{}{}\n\n{}", web_extracted_prefix, header, final_body))
                                           }
                                       },
                                      "pe_header_extraction" => {
@@ -7127,11 +7259,38 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                       },
                                       "browser" => {
                                           let query = resolve_code_for_command(&args_owned, &prompt_for_cmd);
-                                          if query.trim().is_empty() {
-                                              (idx, "🌐 **Web Browser Agent (`/browser`)**\n\nInvoke live web browsing and autonomous page inspection.\n\n**Usage**:\n- `/browser https://huggingface.co/models`\n- `/browser search for latest Vulkan driver optimizations`".to_string())
+                                          let q_trim = query.trim();
+                                          if q_trim.is_empty() {
+                                              (idx, "🌐 **HugOS Intelligent Browser Agent (`/browser`)**\n\nInvoke live web browsing, Set-of-Mark DOM inspection, and table extraction.\n\n**Usage**:\n- `/browser https://huggingface.co/models`\n- `/browser extract tables from https://en.wikipedia.org/wiki/Comparison_of_deep_learning_software`\n- `/browser find top trending vision-language models`\n\n*Core Architecture*: CDP port 9222, 90% DOM token reduction, vision-language grounding, and ACDSO table extraction.".to_string())
+                                          } else if q_trim.starts_with("http://") || q_trim.starts_with("https://") {
+                                              let mut suite = modelfusion_core::browser::BrowserToolSuite::new(9222);
+                                              let mut report = format!("🌐 **HugOS Browser Inspection for `{}`**\n\n", q_trim);
+                                              if suite.cdp.is_available().await {
+                                                  if let Ok(nav_msg) = suite.navigate(q_trim).await {
+                                                      report.push_str(&format!("- **Navigation**: {}\n", nav_msg));
+                                                  }
+                                              }
+                                              match suite.extract_tables(Some(q_trim)).await {
+                                                  Ok(tables) => {
+                                                      report.push_str(&format!("- **Extracted Datasets**: {} table(s) found\n", tables.len()));
+                                                      for t in tables.iter().take(3) {
+                                                          report.push_str(&format!("  - {}: {} rows × {} cols\n", t.caption.as_deref().unwrap_or("Table"), t.row_count, t.col_count));
+                                                      }
+                                                  }
+                                                  Err(e) => {
+                                                      report.push_str(&format!("- **Table Extraction Notice**: {}\n", e));
+                                                  }
+                                              }
+                                              if let Ok(dom) = suite.get_clean_dom(None).await {
+                                                  report.push_str(&format!("\n- **Semantic DOM**: {} chars ({:.1}% token reduction, {} interactive elements)\n\n",
+                                                      dom.pruned_char_count, dom.token_reduction_pct, dom.interactive_elements.len()));
+                                                  let preview: String = dom.text.chars().take(1000).collect();
+                                                  report.push_str(&format!("```markdown\n{}\n...\n```", preview));
+                                              }
+                                              (idx, report)
                                           } else {
-                                              let r = run_cli_subcommand(&["--research".to_string(), query.trim().to_string()], db_resolved).await;
-                                              (idx, format!("🌐 **Web Browser Agent (`/browser`)**\n\n{}", r.trim()))
+                                              let r = run_cli_subcommand(&["--research".to_string(), q_trim.to_string()], db_resolved).await;
+                                              (idx, format!("🌐 **HugOS Web Browser Agent (`/browser`)**\n\n{}", r.trim()))
                                           }
                                       },
                                       "plan" => {
@@ -12658,5 +12817,78 @@ public class Pr {
         assert!(parsed.no_fusion);
 
         assert_eq!(determine_task_override(&parsed), Some("acdso".to_string()));
+    }
+
+    #[test]
+    fn test_canonicalize_browser_commands() {
+        use super::canonicalize_command;
+
+        assert_eq!(canonicalize_command("browser"), Some("browser"));
+        assert_eq!(canonicalize_command("/browser"), Some("browser"));
+        assert_eq!(canonicalize_command("@browser"), Some("browser"));
+        assert_eq!(canonicalize_command("@agent browser"), Some("browser"));
+        assert_eq!(canonicalize_command("browse"), Some("browser"));
+        assert_eq!(canonicalize_command("/browse"), Some("browser"));
+        assert_eq!(canonicalize_command("web"), Some("browser"));
+        assert_eq!(canonicalize_command("/web"), Some("browser"));
+        assert_eq!(canonicalize_command("browsertask"), Some("browser"));
+        assert_eq!(canonicalize_command("browserextract"), Some("browser"));
+        assert_eq!(canonicalize_command("hugosbrowser"), Some("browser"));
+        assert_eq!(canonicalize_command("@agent /browser"), Some("browser"));
+    }
+
+    #[test]
+    fn test_browser_flags_parsing() {
+        use super::{get_cli_flag_info, Args};
+        use clap::Parser;
+
+        assert_eq!(get_cli_flag_info("--browser"), (false, None));
+        assert_eq!(get_cli_flag_info("--browser-task"), (true, None));
+        assert_eq!(get_cli_flag_info("--browser-extract"), (true, None));
+        assert_eq!(get_cli_flag_info("--browser-port"), (true, Some("9222")));
+
+        let parsed_interactive = Args::try_parse_from(["cli", "--browser"]).expect("Should parse --browser");
+        assert!(parsed_interactive.browser);
+        assert_eq!(parsed_interactive.browser_port, 9222);
+
+        let parsed_task = Args::try_parse_from([
+            "cli",
+            "--browser-task",
+            "Collect top trending models",
+            "--browser-port",
+            "9225",
+        ]).expect("Should parse --browser-task");
+        assert_eq!(parsed_task.browser_task.as_deref(), Some("Collect top trending models"));
+        assert_eq!(parsed_task.browser_port, 9225);
+
+        let parsed_extract = Args::try_parse_from([
+            "cli",
+            "--browser-extract",
+            "https://huggingface.co/spaces",
+        ]).expect("Should parse --browser-extract");
+        assert_eq!(parsed_extract.browser_extract.as_deref(), Some("https://huggingface.co/spaces"));
+    }
+
+    #[test]
+    fn test_browser_fusion_integration() {
+        use super::browser_fusion::{BrowserActionProposal, BrowserFusionArbiter, ConsensusType, SpecialistType};
+        use modelfusion_core::browser::{BrowserAction, ElementTarget};
+
+        let arbiter = BrowserFusionArbiter::default();
+        let proposals = vec![
+            BrowserActionProposal {
+                model: "qwen2.5:7b".to_string(),
+                specialist: SpecialistType::DomSpecialist,
+                action: BrowserAction::Click {
+                    target: ElementTarget::BySelector("#search-btn".to_string()),
+                },
+                rationale: "Target search button".to_string(),
+                confidence: 0.95,
+            },
+        ];
+
+        let decision = arbiter.arbitrate("Search", "Page with search button", &proposals);
+        assert_eq!(decision.consensus, ConsensusType::SingleBypass);
+        assert_eq!(decision.confidence, 0.95);
     }
 }

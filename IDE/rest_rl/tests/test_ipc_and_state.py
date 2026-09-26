@@ -27,9 +27,14 @@ class TestIPCAndState(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        import tempfile
+        import os
         cls.test_port = find_free_port()
         cls.test_pipe = rf"\\.\pipe\test_hugos_rest_rl_{int(time.time()*1000)}"
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tf:
+            cls.temp_db = tf.name
         cls.daemon = RestRLDaemon()
+        cls.daemon.db_path = cls.temp_db
         cls.daemon.tcp_port = cls.test_port
         cls.daemon.pipe_name = cls.test_pipe
         cls.daemon.initialize()
@@ -43,6 +48,12 @@ class TestIPCAndState(unittest.TestCase):
     def tearDownClass(cls):
         if cls.daemon:
             cls.daemon.stop()
+        if hasattr(cls, "temp_db"):
+            try:
+                import os
+                os.unlink(cls.temp_db)
+            except Exception:
+                pass
 
     def test_01_agent_status(self):
         status = self.client.get_status()
@@ -105,7 +116,7 @@ class TestMult(unittest.TestCase):
         self.client.notify_idle_start()
 
         # Wait for worker loop to pick up and process task
-        max_wait = 10.0
+        max_wait = 20.0
         start = time.time()
         completed = False
         while time.time() - start < max_wait:

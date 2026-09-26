@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HugOS Intelligent Browser Assistant</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="sidebar-container">
+    <!-- Header -->
+    <header class="sidebar-header">
+      <div class="brand">
+        <span class="logo-icon">🌐</span>
+        <div class="brand-text">
+          <span class="title">HugOS Co-Pilot</span>
+          <span class="subtitle">Multi-Modal Browser Engine</span>
+        </div>
+      </div>
+      <div id="status-badge" class="status-indicator online">
+        <span class="dot"></span>
+        <span id="status-text">Ollama Ready</span>
+      </div>
+    </header>
+
+    <!-- Quick Action Chips -->
+    <div class="action-chips-container">
+      <button class="chip" id="chip-som" title="Inject Set-of-Mark tags into interactive elements">
+        🏷️ Visual Mark
+      </button>
+      <button class="chip" id="chip-tables" title="Extract tabular datasets and launch 5-objective ACDSO">
+        📊 Analyze with ACDSO
+      </button>
+      <button class="chip" id="chip-summarize" title="Token-pruned semantic summary of current page">
+        📝 Summarize
+      </button>
+      <button class="chip" id="chip-research" title="Launch Deep Research web workflow">
+        🔍 Deep Research
+      </button>
+    </div>
+
+    <!-- Active Tab Context Pill -->
+    <div class="context-banner" id="context-banner">
+      <span class="context-label">Active Tab:</span>
+      <span class="context-title" id="page-title">Loading current page...</span>
+    </div>
+
+    <!-- Chat Messages History Feed -->
+    <div class="chat-feed" id="chat-feed">
+      <div class="message assistant">
+        <div class="message-header">
+          <span class="sender-name">HugOS Browser Engine</span>
+          <span class="timestamp">Ready</span>
+        </div>
+        <div class="message-content">
+          <p>Welcome to <strong>HugOS Intelligent Browser</strong>. I can execute autonomous actions, extract datasets for ACDSO AutoML, and prune DOM trees by 90% using Set-of-Mark tags.</p>
+          <div class="tip-box">
+            💡 <strong>Quick Commands:</strong>
+            <ul>
+              <li><code>/acdso</code> — Extract tables and run 5-objective Pareto optimization</li>
+              <li><code>/browser &lt;goal&gt;</code> — Autonomous web navigation</li>
+              <li><code>/datascience</code> — In-depth exploratory data analysis</li>
+              <li><code>/plan</code> — Generate architectural implementation plans</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Interactive Prompt Bar -->
+    <footer class="input-container">
+      <div class="input-wrapper">
+        <textarea id="prompt-input" placeholder="Ask HugOS or type a slash command (e.g. /acdso, /browser)..." rows="1"></textarea>
+        <button id="send-button" title="Send (Enter)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </div>
+    </footer>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
