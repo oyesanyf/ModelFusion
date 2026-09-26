@@ -459,10 +459,35 @@ pub fn is_ollama_installed() -> bool {
     false
 }
 
+/// Check if the Ollama endpoint is accepting requests with CORS Origin headers (e.g. Origin: null from file:/// or browser origins).
+pub fn is_ollama_cors_ready(endpoint: &str) -> bool {
+    let client = reqwest::blocking::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_millis(800))
+        .build()
+        .unwrap_or_default();
+    let url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
+    client.get(&url)
+        .header("Origin", "null")
+        .send()
+        .map(|r| r.status().is_success())
+        .unwrap_or(false)
+}
+
 /// Ensure Ollama is running. If it's not, auto-start `ollama serve` and wait for it.
 pub fn ensure_ollama_running() -> Result<(), String> {
     let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
         .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+
+    // Always guarantee OLLAMA_ORIGINS=* is injected into current process and persisted into Windows User environment
+    std::env::set_var("OLLAMA_ORIGINS", "*");
+    #[cfg(windows)]
+    {
+        let ps_cmd = "[Environment]::SetEnvironmentVariable('OLLAMA_ORIGINS', '*', 'User'); [Environment]::SetEnvironmentVariable('OLLAMA_ORIGINS', '*', 'Process')";
+        let _ = Command::new("powershell")
+            .args(["-NoProfile", "-Command", ps_cmd])
+            .status();
+    }
 
     // First check: is it already running?
     if is_ollama_responding(&endpoint) {

@@ -114,7 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ollamaUrl: 'http://127.0.0.1:11434',
     ipcUrl: 'http://127.0.0.1:5000',
     cdpPort: 9222,
-    activeModel: 'modelfusion_auto',
+    activeModel: 'qwen2.5:7b',
     visionModel: 'qwen2.5-vl',
     audioModel: 'whisper-base',
     multimodalAuto: true,
@@ -148,7 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const historyStack = [];
   let historyIndex = -1;
   let currentNavUrl = '';
-  let activeOllamaModel = 'modelfusion_auto';
+  let activeOllamaModel = 'qwen2.5:7b';
 
 
   // -----------------------------------------------------------------
@@ -1514,9 +1514,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (res.ok) {
           const data = await res.json();
           models = data.models || [];
-          if (models.length > 0) {
-            isHealthy = true;
-          }
+          isHealthy = true;
         }
       } catch (e) {
         // Proxy not responding yet
@@ -1524,15 +1522,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 3. If models found and responding
-    if (isHealthy && models.length > 0) {
+    if (isHealthy) {
       if (dotOllama) dotOllama.className = 'status-dot online';
-      populateModelDropdown(models);
+      if (models.length > 0) {
+        populateModelDropdown(models);
+      }
 
       // Select active model
-      if (!currentSettings.activeModel || currentSettings.activeModel === DEFAULT_SETTINGS.activeModel || currentSettings.activeModel === 'modelfusion_auto') {
-        activeOllamaModel = 'modelfusion_auto';
-      } else if (currentSettings.activeModel === 'fast_fusion' || currentSettings.activeModel === 'deep_reasoning') {
-        activeOllamaModel = currentSettings.activeModel;
+      if (!currentSettings.activeModel || currentSettings.activeModel === DEFAULT_SETTINGS.activeModel) {
+        activeOllamaModel = 'qwen2.5:7b';
       } else {
         activeOllamaModel = currentSettings.activeModel;
       }
@@ -1541,13 +1539,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const headerModelName = document.getElementById('header-active-model-name');
       if (headerModelName) {
         if (activeOllamaModel === 'modelfusion_auto') {
-          headerModelName.textContent = '✨ ModelFusion Auto';
+          headerModelName.textContent = '🌟 ModelFusion Auto';
         } else if (activeOllamaModel === 'fast_fusion') {
           headerModelName.textContent = '⚡ Fast Fusion';
         } else if (activeOllamaModel === 'deep_reasoning') {
           headerModelName.textContent = '🧠 Deep Reasoning';
+        } else if (activeOllamaModel === 'qwen2.5:7b') {
+          headerModelName.textContent = 'HugOS AI';
         } else {
-          headerModelName.textContent = activeOllamaModel;
+          headerModelName.textContent = `HugOS AI (${activeOllamaModel})`;
         }
       }
       if (activeModelBadge) activeModelBadge.textContent = activeOllamaModel;
@@ -1984,7 +1984,11 @@ document.addEventListener('DOMContentLoaded', () => {
       if (assistantBubble) {
         assistantBubble.classList.remove('streaming');
         if (bubbleContent) {
-          bubbleContent.innerHTML = `<span style="color: var(--error-color);">⚠️ Connection Error: ${err.message}. Ensure Ollama is running at ${ollamaUrl} with ${modelToUse}.</span>`;
+          let switchPrompt = '';
+          if (window.location.protocol === 'file:') {
+            switchPrompt = '<div style="margin-top: 8px;"><a href="http://localhost:5000/index.html" class="hero-chip" style="font-size: 11px; padding: 4px 10px; display: inline-block; text-decoration: none; cursor: pointer;">Switch to http://localhost:5000</a></div>';
+          }
+          bubbleContent.innerHTML = `<span style="color: var(--error-color);">⚠️ Connection Error: ${err.message}. Ensure Ollama is running at ${ollamaUrl} with ${modelToUse}.</span>${switchPrompt}`;
         }
       }
       responseLine.remove();
@@ -2526,13 +2530,15 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
           } catch (e) {}
           if (headerActiveModelName) {
             if (chosenModel === 'modelfusion_auto') {
-              headerActiveModelName.textContent = '✨ ModelFusion Auto';
+              headerActiveModelName.textContent = '🌟 ModelFusion Auto';
             } else if (chosenModel === 'fast_fusion') {
               headerActiveModelName.textContent = '⚡ Fast Fusion';
             } else if (chosenModel === 'deep_reasoning') {
               headerActiveModelName.textContent = '🧠 Deep Reasoning';
+            } else if (chosenModel === 'qwen2.5:7b') {
+              headerActiveModelName.textContent = 'HugOS AI';
             } else {
-              headerActiveModelName.textContent = chosenModel;
+              headerActiveModelName.textContent = `HugOS AI (${chosenModel})`;
             }
           }
           modelOptions.forEach(o => o.classList.toggle('active', o === opt));

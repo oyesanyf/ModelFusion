@@ -50,10 +50,15 @@ curl -s -o nul --max-time 2 http://127.0.0.1:5000/health
 if errorlevel 1 (
     echo [INFO] ModelFusion Master Server offline on port 5000. Auto-starting server...
     if not "%CLI_BIN%"=="" (
-        start /B "" "%CLI_BIN%" --server --port 5000
-        timeout /t 1 /nobreak >nul
+        powershell -WindowStyle Hidden -Command "Start-Process '%CLI_BIN%' -ArgumentList '--server', '--port', '5000' -WindowStyle Hidden"
+        for /L %%i in (1,1,10) do (
+            curl -s -o nul --max-time 1 http://127.0.0.1:5000/health
+            if not errorlevel 1 goto :server_ready
+            timeout /t 1 /nobreak >nul
+        )
     )
 )
+:server_ready
 
 REM 0c. Determine Startup URL (default to Master Server HTTP origin to prevent null CORS)
 set "START_URL=http://localhost:5000/index.html"
@@ -109,6 +114,6 @@ echo [INFO] Extension Path: "%EXTENSION_PATH%"
 echo [INFO] User Data Dir: "%USER_DATA_DIR%"
 echo [INFO] Startup URL: "%START_URL%"
 
-start "" "%CHROME_BIN%" --remote-debugging-port=9222 --remote-allow-origins=* --load-extension="%EXTENSION_PATH%" --user-data-dir="%USER_DATA_DIR%" --disable-backgrounding-occluded-windows --no-first-run --no-default-browser-check --enable-features=SidePanel,SidePanelPinning --homepage="%START_URL%" "%START_URL%"
+start "" "%CHROME_BIN%" --remote-debugging-port=9222 --remote-allow-origins=* --allow-file-access-from-files --disable-web-security --load-extension="%EXTENSION_PATH%" --user-data-dir="%USER_DATA_DIR%" --disable-backgrounding-occluded-windows --no-first-run --no-default-browser-check --enable-features=SidePanel,SidePanelPinning --homepage="%START_URL%" "%START_URL%"
 
 endlocal

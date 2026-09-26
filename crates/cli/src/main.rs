@@ -6126,9 +6126,11 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         }
                     }
                 }
+                let cors_ready = model_selection::memory::is_ollama_cors_ready(&ollama_endpoint);
                 let status_json = serde_json::json!({
                     "installed": installed,
                     "running": running,
+                    "cors_ready": cors_ready,
                     "endpoint": ollama_endpoint,
                     "models": models_val
                 });
