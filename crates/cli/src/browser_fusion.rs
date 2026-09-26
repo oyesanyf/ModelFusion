@@ -418,6 +418,22 @@ mod tests {
     fn test_find_browser_launcher_bat() {
         let bat = find_browser_launcher_bat();
         assert!(bat.is_some(), "Should locate hugos-browser.bat");
+        let bat = bat.unwrap();
+        assert!(
+            !bat.to_string_lossy().starts_with(r"\\?\"),
+            "Launcher path must not contain \\?\\ prefix for cmd.exe compatibility"
+        );
+    }
+}
+
+/// Helper to strip verbatim extended-length UNC prefix (`\\?\`) returned by `canonicalize()` on Windows.
+/// Windows `cmd.exe` fails with "The system cannot find the path specified" when invoked with `\\?\` paths.
+fn strip_verbatim_prefix(p: std::path::PathBuf) -> std::path::PathBuf {
+    let s = p.to_string_lossy();
+    if let Some(stripped) = s.strip_prefix(r"\\?\") {
+        std::path::PathBuf::from(stripped)
+    } else {
+        p
     }
 }
 
@@ -428,11 +444,11 @@ pub fn find_browser_launcher_bat() -> Option<std::path::PathBuf> {
         if let Some(dir) = exe_path.parent() {
             let p1 = dir.join("../../browser/Chromium-win32-x64/hugos-browser.bat");
             if p1.is_file() {
-                return p1.canonicalize().ok().or(Some(p1));
+                return Some(strip_verbatim_prefix(p1.canonicalize().unwrap_or(p1)));
             }
             let p2 = dir.join("../Chromium-win32-x64/hugos-browser.bat");
             if p2.is_file() {
-                return p2.canonicalize().ok().or(Some(p2));
+                return Some(strip_verbatim_prefix(p2.canonicalize().unwrap_or(p2)));
             }
         }
     }
@@ -445,7 +461,7 @@ pub fn find_browser_launcher_bat() -> Option<std::path::PathBuf> {
     for cand in cwd_candidates {
         let p = std::path::PathBuf::from(cand);
         if p.is_file() {
-            return p.canonicalize().ok().or(Some(p));
+            return Some(strip_verbatim_prefix(p.canonicalize().unwrap_or(p)));
         }
     }
 
@@ -453,7 +469,7 @@ pub fn find_browser_launcher_bat() -> Option<std::path::PathBuf> {
     if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
         let p = std::path::PathBuf::from(local_app_data).join("HugOS Browser/Chromium-win32-x64/hugos-browser.bat");
         if p.is_file() {
-            return Some(p);
+            return Some(strip_verbatim_prefix(p.canonicalize().unwrap_or(p)));
         }
     }
 
@@ -464,6 +480,7 @@ pub fn find_browser_launcher_bat() -> Option<std::path::PathBuf> {
 pub fn launch_hugos_browser(url: Option<&str>) -> Result<(), String> {
     let bat_path = find_browser_launcher_bat()
         .ok_or_else(|| "Could not locate hugos-browser.bat. Ensure HugOS Browser is present in browser/Chromium-win32-x64/.".to_string())?;
+    let bat_path = strip_verbatim_prefix(bat_path);
 
     println!("🚀 [BROWSER] Spawning HugOS Browser Engine: {}", bat_path.display());
     let mut cmd = std::process::Command::new("cmd");
