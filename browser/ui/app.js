@@ -157,6 +157,16 @@ document.addEventListener('DOMContentLoaded', () => {
   function termLog(message, type = 'info') {
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
+    // Transition view from hero section to conversation stream
+    if (type === 'cmd' || type === 'model-response') {
+      const heroSec = document.getElementById('chat-hero-section');
+      const convView = document.getElementById('chat-conversation-view');
+      const webView = document.getElementById('webview-view');
+      if (heroSec) heroSec.classList.add('hidden');
+      if (convView) convView.classList.remove('hidden');
+      if (webView) webView.classList.add('hidden');
+    }
+
     // Hide welcome banner when user issues a command or model responds
     if (chatWelcome && (type === 'cmd' || type === 'model-response')) {
       chatWelcome.classList.add('hidden');
@@ -218,25 +228,35 @@ document.addEventListener('DOMContentLoaded', () => {
   // Settings Management & Persistence
   // -----------------------------------------------------------------
   function updateWebModeButton() {
-    if (!btnWebMode || !webModeIcon || !webModeLabel) return;
     const mode = currentSettings.webSearchMode || 'auto';
-    btnWebMode.classList.remove('mode-auto', 'mode-always', 'mode-off');
-    if (mode === 'always') {
-      btnWebMode.classList.add('mode-always');
-      webModeIcon.textContent = '🌐';
-      webModeLabel.textContent = 'Web: On';
-      btnWebMode.title = 'Internet Search: Always On (Search live web for every query)';
-    } else if (mode === 'off') {
-      btnWebMode.classList.add('mode-off');
-      webModeIcon.textContent = '📴';
-      webModeLabel.textContent = 'Web: Off';
-      btnWebMode.title = 'Internet Search: Off (100% offline local LLM only)';
-    } else {
-      btnWebMode.classList.add('mode-auto');
-      webModeIcon.textContent = '🌐';
-      webModeLabel.textContent = 'Web: Auto';
-      btnWebMode.title = 'Internet Search: Auto (Intelligent query routing)';
-    }
+    const btnPinned = document.getElementById('btn-web-mode-pinned');
+    const iconPinned = document.getElementById('web-mode-icon-pinned');
+    const labelPinned = document.getElementById('web-mode-label-pinned');
+
+    [btnWebMode, btnPinned].forEach(btn => {
+      if (!btn) return;
+      btn.classList.remove('mode-auto', 'mode-always', 'mode-off');
+      if (mode === 'always') {
+        btn.classList.add('mode-always');
+        btn.title = 'Internet Search: Always On (Search live web for every query)';
+      } else if (mode === 'off') {
+        btn.classList.add('mode-off');
+        btn.title = 'Internet Search: Off (100% offline local LLM only)';
+      } else {
+        btn.classList.add('mode-auto');
+        btn.title = 'Internet Search: Auto (Intelligent query routing)';
+      }
+    });
+
+    [webModeIcon, iconPinned].forEach(icon => {
+      if (!icon) return;
+      icon.textContent = mode === 'off' ? '📴' : '🌐';
+    });
+
+    [webModeLabel, labelPinned].forEach(label => {
+      if (!label) return;
+      label.textContent = mode === 'always' ? 'Web: On' : mode === 'off' ? 'Web: Off' : 'Web';
+    });
   }
 
   function applySettings(settings) {
@@ -252,23 +272,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const theme = settings.theme || 'dark-plus';
     if (theme === 'white' || theme === 'light') {
       document.body.classList.add('theme-white');
-      if (themeToggleIcon) themeToggleIcon.textContent = '🌙';
-      if (themeToggleText) themeToggleText.textContent = 'Dark';
+      if (themeToggleIcon) themeToggleIcon.textContent = '☀️';
+      if (themeToggleText) themeToggleText.textContent = 'White';
     } else if (theme === 'obsidian') {
       document.body.classList.add('theme-obsidian');
-      if (themeToggleIcon) themeToggleIcon.textContent = '☀️';
-      if (themeToggleText) themeToggleText.textContent = 'White';
+      if (themeToggleIcon) themeToggleIcon.textContent = '⬛';
+      if (themeToggleText) themeToggleText.textContent = 'Obsidian';
     } else if (theme === 'midnight') {
       document.body.classList.add('theme-midnight');
-      if (themeToggleIcon) themeToggleIcon.textContent = '☀️';
-      if (themeToggleText) themeToggleText.textContent = 'White';
+      if (themeToggleIcon) themeToggleIcon.textContent = '🌌';
+      if (themeToggleText) themeToggleText.textContent = 'Midnight';
     } else if (theme === 'warm') {
       document.body.classList.add('theme-warm');
+      if (themeToggleIcon) themeToggleIcon.textContent = '🌅';
+      if (themeToggleText) themeToggleText.textContent = 'Warm';
+    } else {
+      document.body.classList.add('theme-dark');
       if (themeToggleIcon) themeToggleIcon.textContent = '🌙';
       if (themeToggleText) themeToggleText.textContent = 'Dark';
-    } else {
-      if (themeToggleIcon) themeToggleIcon.textContent = '☀️';
-      if (themeToggleText) themeToggleText.textContent = 'White';
     }
 
     // Apply font size to terminal
@@ -628,70 +649,77 @@ document.addEventListener('DOMContentLoaded', () => {
   // Multimodal File Attachment & Preview Tray
   // -----------------------------------------------------------------
   function renderAttachmentTray() {
-    if (!attachmentTray) return;
+    const trayPinned = document.getElementById('attachment-tray-pinned');
+    const trays = [attachmentTray, trayPinned].filter(Boolean);
+    if (trays.length === 0) return;
+
     if (attachedFiles.length === 0) {
-      attachmentTray.innerHTML = '';
-      attachmentTray.classList.add('hidden');
+      trays.forEach(tray => {
+        tray.innerHTML = '';
+        tray.classList.add('hidden');
+      });
       return;
     }
 
-    attachmentTray.innerHTML = '';
-    attachmentTray.classList.remove('hidden');
+    trays.forEach(tray => {
+      tray.innerHTML = '';
+      tray.classList.remove('hidden');
 
-    attachedFiles.forEach(file => {
-      const chip = document.createElement('div');
-      chip.className = `attachment-chip ${file.type === 'image' ? 'image-chip' : ''}`;
+      attachedFiles.forEach(file => {
+        const chip = document.createElement('div');
+        chip.className = `attachment-chip ${file.type === 'image' ? 'image-chip' : ''}`;
 
-      let thumbHtml = '';
-      let badgeHtml = '';
-      let actionBtnHtml = '';
+        let thumbHtml = '';
+        let badgeHtml = '';
+        let actionBtnHtml = '';
 
-      if (file.type === 'image') {
-        thumbHtml = `<img src="${file.dataUrl}" class="chip-thumb" alt="${file.name}">`;
-        badgeHtml = `<span class="attachment-badge image-badge">🖼️ Image</span>`;
-      } else if (file.type === 'audio') {
-        thumbHtml = `<span class="attachment-icon">🎙️</span>`;
-        badgeHtml = `<span class="attachment-badge audio-badge">🎙️ Audio</span>`;
-      } else if (file.type === 'tabular') {
-        thumbHtml = `<span class="attachment-icon">📊</span>`;
-        badgeHtml = `<span class="attachment-badge dataset-badge">📊 Tabular Dataset</span>`;
-        actionBtnHtml = `<button type="button" class="chip-action-btn btn-run-acdso" title="Run Pareto AutoML assessment">⚡ Run ACDSO</button>`;
-      } else if (file.type === 'code') {
-        thumbHtml = `<span class="attachment-icon">💻</span>`;
-        badgeHtml = `<span class="attachment-badge doc-badge">💻 Code</span>`;
-      } else {
-        thumbHtml = `<span class="attachment-icon">📄</span>`;
-        badgeHtml = `<span class="attachment-badge doc-badge">📄 Document</span>`;
-      }
+        if (file.type === 'image') {
+          thumbHtml = `<img src="${file.dataUrl}" class="chip-thumb" alt="${file.name}">`;
+          badgeHtml = `<span class="attachment-badge image-badge">🖼️ Image</span>`;
+        } else if (file.type === 'audio') {
+          thumbHtml = `<span class="attachment-icon">🎙️</span>`;
+          badgeHtml = `<span class="attachment-badge audio-badge">🎙️ Audio</span>`;
+        } else if (file.type === 'tabular') {
+          thumbHtml = `<span class="attachment-icon">📊</span>`;
+          badgeHtml = `<span class="attachment-badge dataset-badge">📊 Tabular Dataset</span>`;
+          actionBtnHtml = `<button type="button" class="chip-action-btn btn-run-acdso" title="Run Pareto AutoML assessment">⚡ Run ACDSO</button>`;
+        } else if (file.type === 'code') {
+          thumbHtml = `<span class="attachment-icon">💻</span>`;
+          badgeHtml = `<span class="attachment-badge doc-badge">💻 Code</span>`;
+        } else {
+          thumbHtml = `<span class="attachment-icon">📄</span>`;
+          badgeHtml = `<span class="attachment-badge doc-badge">📄 Document</span>`;
+        }
 
-      const sizeFormatted = file.size > 1024 * 1024
-        ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
-        : `${(file.size / 1024).toFixed(1)} KB`;
+        const sizeFormatted = file.size > 1024 * 1024
+          ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+          : `${(file.size / 1024).toFixed(1)} KB`;
 
-      chip.innerHTML = `
-        ${thumbHtml}
-        <span class="attachment-name" title="${file.name}">${file.name}</span>
-        <span class="attachment-size">${sizeFormatted}</span>
-        ${badgeHtml}
-        ${actionBtnHtml}
-        <button type="button" class="attachment-remove" title="Remove attachment">✕</button>
-      `;
+        chip.innerHTML = `
+          ${thumbHtml}
+          <span class="attachment-name" title="${file.name}">${file.name}</span>
+          <span class="attachment-size">${sizeFormatted}</span>
+          ${badgeHtml}
+          ${actionBtnHtml}
+          <button type="button" class="attachment-remove" title="Remove attachment">✕</button>
+        `;
 
-      chip.querySelector('.attachment-remove').addEventListener('click', (e) => {
-        e.stopPropagation();
-        removeAttachedFile(file.id);
-      });
-
-      const acdsoBtn = chip.querySelector('.btn-run-acdso');
-      if (acdsoBtn) {
-        acdsoBtn.addEventListener('click', (e) => {
+        chip.querySelector('.attachment-remove').addEventListener('click', (e) => {
           e.stopPropagation();
-          termLog(`Triggered Pareto AutoML execution for staged dataset: ${file.name}`, 'info');
-          executeCliCommand('/acdso');
+          removeAttachedFile(file.id);
         });
-      }
 
-      attachmentTray.appendChild(chip);
+        const acdsoBtn = chip.querySelector('.btn-run-acdso');
+        if (acdsoBtn) {
+          acdsoBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            termLog(`Triggered Pareto AutoML execution for staged dataset: ${file.name}`, 'info');
+            executeCliCommand('/acdso');
+          });
+        }
+
+        tray.appendChild(chip);
+      });
     });
   }
 
@@ -1443,62 +1471,76 @@ document.addEventListener('DOMContentLoaded', () => {
   // -----------------------------------------------------------------
   // 3. Engine Health Probing & Dynamic Hardware Sizing
   // -----------------------------------------------------------------
-  async function probeOllama() {
+  async function probeOllama(autoWake = true) {
     const url = (currentSettings.ollamaUrl || 'http://127.0.0.1:11434').trim().replace(/\/+$/, '');
+    const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+    let models = [];
+    let isHealthy = false;
+
+    // 1. First probe direct Ollama endpoint
     try {
       const res = await fetch(`${url}/api/tags`, { method: 'GET' });
       if (res.ok) {
         const data = await res.json();
-        const models = data.models || [];
-        dotOllama.className = 'dot status-dot online';
-        textOllama.textContent = 'Ollama Ready';
-
-        if (currentSettings.activeModel && currentSettings.activeModel !== DEFAULT_SETTINGS.activeModel) {
-          activeOllamaModel = currentSettings.activeModel;
-          if (activeModelBadge) activeModelBadge.textContent = currentSettings.activeModel;
-          if (statModel) statModel.textContent = `${currentSettings.activeModel} (Configured)`;
-          if (footerActiveModel) footerActiveModel.textContent = currentSettings.activeModel;
-        } else {
-          // Detect installed models. Prefer qwen2.5:7b for fast interactive responses, or qwen2.5:32b
-          let selectedTag = 'qwen2.5:7b';
-          let displayModel = 'Qwen 2.5 7B';
-
-          const has7b = models.find(m => m.name.toLowerCase().includes('qwen2.5:7b') || (m.name.toLowerCase().includes('7b') && m.name.toLowerCase().includes('qwen')));
-          const has32b = models.find(m => m.name.toLowerCase().includes('qwen2.5:32b') || (m.name.toLowerCase().includes('32b') && m.name.toLowerCase().includes('qwen')));
-          const has14b = models.find(m => m.name.toLowerCase().includes('14b'));
-          const hasSmall = models.find(m => m.name.toLowerCase().includes('3b') || m.name.toLowerCase().includes('1.5b'));
-
-          if (has7b) {
-            selectedTag = has7b.name;
-            displayModel = 'Qwen 2.5 7B';
-          } else if (has32b) {
-            selectedTag = has32b.name;
-            displayModel = 'Qwen 2.5 32B';
-          } else if (has14b) {
-            selectedTag = has14b.name;
-            displayModel = has14b.name;
-          } else if (hasSmall) {
-            selectedTag = hasSmall.name;
-            displayModel = hasSmall.name;
-          } else if (models.length > 0) {
-            selectedTag = models[0].name;
-            displayModel = models[0].name;
-          }
-
-          activeOllamaModel = selectedTag;
-          if (activeModelBadge) activeModelBadge.textContent = displayModel;
-          if (statModel) statModel.textContent = `${displayModel} (Local)`;
-          if (footerActiveModel) footerActiveModel.textContent = displayModel;
-        }
-        return true;
+        models = data.models || [];
+        isHealthy = true;
       }
     } catch (e) {
-      // Offline
+      // Direct connection failed (CORS or offline)
     }
 
-    dotOllama.className = 'dot status-dot';
-    const portMatch = url.match(/:(\d+)/);
-    textOllama.textContent = portMatch ? `Ollama :${portMatch[1]}` : 'Ollama Offline';
+    // 2. If direct probe failed, try Master CLI proxy at :5000
+    if (!isHealthy) {
+      try {
+        const res = await fetch(`${ipcUrl}/api/tags`, { method: 'GET' });
+        if (res.ok) {
+          const data = await res.json();
+          models = data.models || [];
+          if (models.length > 0) {
+            isHealthy = true;
+          }
+        }
+      } catch (e) {
+        // Proxy not responding yet
+      }
+    }
+
+    // 3. If models found and responding
+    if (isHealthy && models.length > 0) {
+      if (dotOllama) dotOllama.className = 'status-dot online';
+      populateModelDropdown(models);
+
+      // Select active model
+      let selectedTag = activeOllamaModel || 'qwen2.5:7b';
+      const has7b = models.find(m => m.name.toLowerCase().includes('qwen2.5:7b') || (m.name.toLowerCase().includes('7b') && m.name.toLowerCase().includes('qwen')));
+      const has32b = models.find(m => m.name.toLowerCase().includes('qwen2.5:32b') || (m.name.toLowerCase().includes('32b') && m.name.toLowerCase().includes('qwen')));
+      if (!currentSettings.activeModel || currentSettings.activeModel === DEFAULT_SETTINGS.activeModel) {
+        if (has7b) selectedTag = has7b.name;
+        else if (has32b) selectedTag = has32b.name;
+        else if (models.length > 0) selectedTag = models[0].name;
+      }
+      activeOllamaModel = selectedTag;
+      if (textOllama) textOllama.textContent = `${activeOllamaModel} Ready`;
+      const headerModelName = document.getElementById('header-active-model-name');
+      if (headerModelName) headerModelName.textContent = activeOllamaModel;
+      if (activeModelBadge) activeModelBadge.textContent = activeOllamaModel;
+      if (footerActiveModel) footerActiveModel.textContent = activeOllamaModel;
+      return true;
+    }
+
+    // 4. If offline and autoWake requested: auto-start Ollama via Master CLI
+    if (autoWake) {
+      if (dotOllama) dotOllama.className = 'status-dot starting';
+      if (textOllama) textOllama.textContent = '🟡 Starting Ollama Engine...';
+      try {
+        fetch(`${ipcUrl}/api/ollama/start`, { method: 'POST' }).catch(() => {});
+        // Poll for readiness
+        setTimeout(() => probeOllama(false), 2500);
+      } catch (e) {}
+    } else {
+      if (dotOllama) dotOllama.className = 'status-dot offline';
+      if (textOllama) textOllama.textContent = 'Local AI Offline';
+    }
     return false;
   }
 
@@ -1668,25 +1710,68 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      const res = await fetch(`${ollamaUrl}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: modelToUse,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            messagePayload
-          ],
-          stream: streamMode,
-          options: {
-            temperature: tempToUse,
-            num_predict: maxTokensToUse
-          }
-        })
+      let res = null;
+      let lastFetchErr = null;
+      const chatEndpoints = [ollamaUrl];
+      if (ipcUrl && !chatEndpoints.includes(ipcUrl)) {
+        chatEndpoints.push(ipcUrl);
+      }
+
+      const reqBodyStr = JSON.stringify({
+        model: modelToUse,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          messagePayload
+        ],
+        stream: streamMode,
+        options: {
+          temperature: tempToUse,
+          num_predict: maxTokensToUse
+        }
       });
 
-      if (!res.ok) {
-        throw new Error(`Ollama returned status ${res.status} ${res.statusText}`);
+      for (const ep of chatEndpoints) {
+        try {
+          const candidateRes = await fetch(`${ep}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: reqBodyStr
+          });
+          if (candidateRes.ok) {
+            res = candidateRes;
+            break;
+          } else {
+            lastFetchErr = new Error(`Endpoint ${ep} returned status ${candidateRes.status}`);
+          }
+        } catch (epErr) {
+          lastFetchErr = epErr;
+        }
+      }
+
+      // If both direct and proxy failed, try auto-waking Ollama via Master CLI
+      if (!res && ipcUrl) {
+        try {
+          if (statusLine) statusLine.textContent = `[${time}] 🟡 Ollama offline. Auto-starting Ollama engine via Master CLI...`;
+          await fetch(`${ipcUrl}/api/ollama/start`, { method: 'POST' });
+          await new Promise(r => setTimeout(r, 2500));
+          for (const ep of chatEndpoints) {
+            try {
+              const retryRes = await fetch(`${ep}/api/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: reqBodyStr
+              });
+              if (retryRes.ok) {
+                res = retryRes;
+                break;
+              }
+            } catch (e) {}
+          }
+        } catch (wakeErr) {}
+      }
+
+      if (!res) {
+        throw lastFetchErr || new Error(`Could not connect to Ollama at ${ollamaUrl} or proxy ${ipcUrl}`);
       }
 
       if (!streamMode) {
@@ -2210,21 +2295,192 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
   // Expose to window for external integration, CDP automation, and test runner
   window.executeCliCommand = executeCliCommand;
 
-  // 1-Click Theme Switcher
+  // 1-Click Theme Switcher (Cycles through all 5 ChatGPT themes)
   if (btnThemeToggle) {
     btnThemeToggle.addEventListener('click', () => {
-      const isLight = document.body.classList.contains('theme-white') || document.body.classList.contains('theme-light') || document.body.classList.contains('theme-warm');
-      const nextTheme = isLight ? 'dark-plus' : 'white';
+      const themes = ['white', 'dark-plus', 'obsidian', 'midnight', 'warm'];
+      let curTheme = currentSettings.theme || 'dark-plus';
+      if (curTheme === 'dark') curTheme = 'dark-plus';
+      let idx = themes.indexOf(curTheme);
+      if (idx === -1) idx = 1;
+      const nextTheme = themes[(idx + 1) % themes.length];
       currentSettings.theme = nextTheme;
       try {
         localStorage.setItem('hugos_browser_settings', JSON.stringify(currentSettings));
       } catch (e) {}
       applySettings(currentSettings);
-      termLog(`Theme switched to: ${nextTheme === 'white' ? 'ChatGPT White' : 'ChatGPT Dark'}`, 'sys');
+      termLog(`[THEME] Switched theme to: ${nextTheme}`, 'sys');
     });
   }
 
-  // Auto-expanding textarea & Enter/Shift+Enter key handling
+  // ChatGPT Sidebar Toggle & Expand
+  const chatgptSidebar = document.getElementById('chatgpt-sidebar');
+  const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
+  const sidebarExpandBtn = document.getElementById('sidebar-expand-btn');
+
+  if (sidebarToggleBtn && chatgptSidebar) {
+    sidebarToggleBtn.addEventListener('click', () => {
+      chatgptSidebar.classList.add('collapsed');
+      if (sidebarExpandBtn) sidebarExpandBtn.classList.remove('hidden');
+    });
+  }
+
+  if (sidebarExpandBtn && chatgptSidebar) {
+    sidebarExpandBtn.addEventListener('click', () => {
+      chatgptSidebar.classList.remove('collapsed');
+      sidebarExpandBtn.classList.add('hidden');
+    });
+  }
+
+  // Sidebar Navigation Items
+  const sidebarNewChat = document.getElementById('sidebar-new-chat');
+  const chatHeroSection = document.getElementById('chat-hero-section');
+  const chatConversationView = document.getElementById('chat-conversation-view');
+
+  function startNewChat() {
+    if (chatHeroSection) chatHeroSection.classList.remove('hidden');
+    if (chatConversationView) chatConversationView.classList.add('hidden');
+    if (webviewView) webviewView.classList.add('hidden');
+    if (chatMessages) chatMessages.innerHTML = '';
+    if (cliPromptInput) {
+      cliPromptInput.value = '';
+      cliPromptInput.style.height = 'auto';
+      cliPromptInput.focus();
+    }
+    if (cliPromptInputPinned) {
+      cliPromptInputPinned.value = '';
+      cliPromptInputPinned.style.height = 'auto';
+    }
+    termLog('[SYSTEM] Started new conversation session.', 'sys');
+  }
+
+  if (sidebarNewChat) {
+    sidebarNewChat.addEventListener('click', startNewChat);
+  }
+
+  const sidebarImages = document.getElementById('sidebar-images');
+  if (sidebarImages && filePicker) {
+    sidebarImages.addEventListener('click', () => {
+      filePicker.click();
+    });
+  }
+
+  const sidebarPlugins = document.getElementById('sidebar-plugins');
+  if (sidebarPlugins) {
+    sidebarPlugins.addEventListener('click', () => {
+      openSettingsModal();
+      const tabPlugins = document.querySelector('.settings-tab[data-tab="plugins"]');
+      if (tabPlugins) tabPlugins.click();
+    });
+  }
+
+  const sidebarDeepResearch = document.getElementById('sidebar-deep-research');
+  if (sidebarDeepResearch) {
+    sidebarDeepResearch.addEventListener('click', () => {
+      const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+        ? cliPromptInputPinned
+        : cliPromptInput;
+      if (activeInput) {
+        activeInput.value = '@agent browser deep research on ';
+        activeInput.focus();
+      }
+    });
+  }
+
+  const sidebarModels = document.getElementById('sidebar-models');
+  if (sidebarModels) {
+    sidebarModels.addEventListener('click', () => {
+      openSettingsModal();
+      const tabModels = document.querySelector('.settings-tab[data-tab="models"]');
+      if (tabModels) tabModels.click();
+    });
+  }
+
+  const sidebarSettings = document.getElementById('sidebar-settings');
+  if (sidebarSettings) {
+    sidebarSettings.addEventListener('click', openSettingsModal);
+  }
+
+  const sidebarHelp = document.getElementById('sidebar-help');
+  if (sidebarHelp) {
+    sidebarHelp.addEventListener('click', () => {
+      executeCliCommand('--sys-info');
+    });
+  }
+
+  // Model Selector Dropdown in Top Navigation
+  const modelSelectorDropdown = document.getElementById('model-selector-dropdown');
+  const modelDropdownMenu = document.getElementById('model-dropdown-menu');
+  const headerActiveModelName = document.getElementById('header-active-model-name');
+
+  if (modelSelectorDropdown && modelDropdownMenu) {
+    modelSelectorDropdown.addEventListener('click', (e) => {
+      e.stopPropagation();
+      modelDropdownMenu.classList.toggle('hidden');
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!modelDropdownMenu.contains(e.target) && e.target !== modelSelectorDropdown) {
+        modelDropdownMenu.classList.add('hidden');
+      }
+    });
+
+    const modelOptions = modelDropdownMenu.querySelectorAll('.model-opt');
+    modelOptions.forEach(opt => {
+      opt.addEventListener('click', () => {
+        const chosenModel = opt.getAttribute('data-model');
+        if (chosenModel) {
+          currentSettings.activeModel = chosenModel;
+          activeOllamaModel = chosenModel;
+          try {
+            localStorage.setItem('hugos_browser_settings', JSON.stringify(currentSettings));
+          } catch (e) {}
+          if (headerActiveModelName) headerActiveModelName.textContent = chosenModel;
+          modelOptions.forEach(o => o.classList.toggle('active', o === opt));
+          modelDropdownMenu.classList.add('hidden');
+          termLog(`[MODEL] Active model switched to: ${chosenModel}`, 'sys');
+        }
+      });
+    });
+  }
+
+  // Status Engine Pill Manual Probe / Auto-Wake
+  const statusEnginePill = document.getElementById('status-engine-pill');
+  if (statusEnginePill) {
+    statusEnginePill.addEventListener('click', async () => {
+      termLog('[SYSTEM] Probing local AI engine status...', 'info');
+      await probeOllama(true);
+    });
+  }
+
+  // Suggestion Chip: "What can you do?"
+  const chipWhatCanYouDo = document.getElementById('chip-what-can-you-do');
+  if (chipWhatCanYouDo) {
+    chipWhatCanYouDo.addEventListener('click', () => {
+      executeCliCommand('What can you do?');
+    });
+  }
+
+  // Attachment Buttons (+)
+  const btnAttach = document.getElementById('btn-attach');
+  const btnAttachPinned = document.getElementById('btn-attach-pinned');
+  if (btnAttach && filePicker) {
+    btnAttach.addEventListener('click', () => filePicker.click());
+  }
+  if (btnAttachPinned && filePicker) {
+    btnAttachPinned.addEventListener('click', () => filePicker.click());
+  }
+
+  // Pinned Web Mode Button Sync
+  const btnWebModePinned = document.getElementById('btn-web-mode-pinned');
+  if (btnWebModePinned && btnWebMode) {
+    btnWebModePinned.addEventListener('click', () => {
+      btnWebMode.click();
+    });
+  }
+
+  // Auto-expanding Hero Textarea & Send Button
+  const btnSendPrompt = document.getElementById('btn-send-prompt');
   if (cliPromptInput) {
     cliPromptInput.addEventListener('input', () => {
       cliPromptInput.style.height = 'auto';
@@ -2244,13 +2500,67 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
     });
   }
 
-  if (btnRunCli) {
-    btnRunCli.addEventListener('click', () => {
+  if (btnSendPrompt) {
+    btnSendPrompt.addEventListener('click', () => {
       const val = (cliPromptInput ? cliPromptInput.value : '').trim();
       if (val) {
         if (cliPromptInput) {
           cliPromptInput.value = '';
           cliPromptInput.style.height = 'auto';
+        }
+        executeCliCommand(val);
+      }
+    });
+  }
+
+  // Pinned Bottom Textarea & Send Button
+  const cliPromptInputPinned = document.getElementById('cli-prompt-input-pinned');
+  const btnSendPromptPinned = document.getElementById('btn-send-prompt-pinned');
+
+  if (cliPromptInputPinned) {
+    cliPromptInputPinned.addEventListener('input', () => {
+      cliPromptInputPinned.style.height = 'auto';
+      cliPromptInputPinned.style.height = Math.min(cliPromptInputPinned.scrollHeight, 160) + 'px';
+    });
+
+    cliPromptInputPinned.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const val = cliPromptInputPinned.value.trim();
+        if (val) {
+          cliPromptInputPinned.value = '';
+          cliPromptInputPinned.style.height = 'auto';
+          executeCliCommand(val);
+        }
+      }
+    });
+  }
+
+  if (btnSendPromptPinned) {
+    btnSendPromptPinned.addEventListener('click', () => {
+      const val = (cliPromptInputPinned ? cliPromptInputPinned.value : '').trim();
+      if (val) {
+        if (cliPromptInputPinned) {
+          cliPromptInputPinned.value = '';
+          cliPromptInputPinned.style.height = 'auto';
+        }
+        executeCliCommand(val);
+      }
+    });
+  }
+
+  if (btnRunCli) {
+    btnRunCli.addEventListener('click', () => {
+      const val = (cliPromptInput ? cliPromptInput.value : '').trim() ||
+                  (cliPromptInputPinned ? cliPromptInputPinned.value : '').trim();
+      if (val) {
+        if (cliPromptInput) {
+          cliPromptInput.value = '';
+          cliPromptInput.style.height = 'auto';
+        }
+        if (cliPromptInputPinned) {
+          cliPromptInputPinned.value = '';
+          cliPromptInputPinned.style.height = 'auto';
         }
         executeCliCommand(val);
       }

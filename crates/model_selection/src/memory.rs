@@ -393,7 +393,7 @@ pub fn model_fits(params_billions: f64, backend: Backend, memory: &SystemMemory)
 }
 
 /// Check if Ollama is actually responding by making a real HTTP request.
-fn is_ollama_responding(endpoint: &str) -> bool {
+pub fn is_ollama_responding(endpoint: &str) -> bool {
     // Use curl for a reliable check (powershell Invoke-WebRequest can give false positives)
     let result = Command::new("curl")
         .args(["-s", "-o", "nul", "-w", "%{http_code}", "--max-time", "3",
@@ -420,6 +420,43 @@ fn is_ollama_responding(endpoint: &str) -> bool {
             }
         }
     }
+}
+
+/// Check if Ollama is installed on the system (in PATH or common installation paths).
+pub fn is_ollama_installed() -> bool {
+    let check_installed = Command::new("cmd")
+        .args(["/C", "where", "ollama"])
+        .output();
+
+    if let Ok(output) = check_installed {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                let trimmed = line.trim();
+                let p = std::path::PathBuf::from(trimmed);
+                if p.is_file() {
+                    return true;
+                }
+            }
+        }
+    }
+
+    let mut common_candidates = Vec::new();
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        common_candidates.push(std::path::PathBuf::from(local_app_data).join("Programs").join("Ollama").join("ollama.exe"));
+    }
+    if let Ok(prog_files) = std::env::var("ProgramFiles") {
+        common_candidates.push(std::path::PathBuf::from(prog_files).join("Ollama").join("ollama.exe"));
+    }
+    common_candidates.push(std::path::PathBuf::from(r"C:\Program Files\Ollama\ollama.exe"));
+
+    for cand in common_candidates {
+        if cand.is_file() {
+            return true;
+        }
+    }
+
+    false
 }
 
 /// Ensure Ollama is running. If it's not, auto-start `ollama serve` and wait for it.
