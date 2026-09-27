@@ -845,7 +845,7 @@ graph TD
     D --> D4[ModelFusion Multi-Modal System Panel: 6,438 Models / 45 Tasks]
     D --> D5[12-Category Settings Drawer & Consensus Panel Sizing]
     
-    E --> E1[Set-of-Mark SoM Visual Grounding: [1], [2], [3]]
+    E --> E1["Set-of-Mark (SoM) Visual Grounding: [1], [2], [3]"]
     E --> E2[90% Token-Pruned Semantic DOM Filter]
     E --> E3[Multimodal Consensus: Vision + DOM + Heavy Arbiter]
     

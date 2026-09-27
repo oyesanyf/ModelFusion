@@ -20,7 +20,7 @@ graph TD
     D --> D3[5-Button Action Row: Copy, Share, TTS, Regenerate, More]
     D --> D4[ModelFusion System Panel: 6,438 Models / 45 Tasks]
     
-    E --> E1[Set-of-Mark SoM Visual Grounding: [1], [2], [3]]
+    E --> E1["Set-of-Mark (SoM) Visual Grounding: [1], [2], [3]"]
     E --> E2[90% Token-Pruned Semantic DOM Filter]
     E --> E3[Multimodal Consensus: Vision + DOM + Heavy Arbiter]
     
