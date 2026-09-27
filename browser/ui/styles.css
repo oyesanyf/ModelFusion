@@ -1160,10 +1160,10 @@ body {
   background: #18181c;
   border: 1px solid #2a2a32;
   border-radius: 12px;
-  width: 900px;
-  max-width: 94vw;
-  height: 640px;
-  max-height: 90vh;
+  width: 960px;
+  max-width: 95vw;
+  height: 660px;
+  max-height: 92vh;
   display: flex;
   flex-direction: column;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
@@ -1243,7 +1243,7 @@ body {
 }
 
 .settings-nav {
-  width: 250px;
+  width: 230px;
   flex-shrink: 0;
   background: #18181c;
   border-right: 1px solid #2a2a32;
@@ -1410,7 +1410,7 @@ body {
 
 .setting-info {
   flex: 1;
-  max-width: 55%;
+  max-width: 46%;
 }
 
 .setting-label {
@@ -1430,8 +1430,8 @@ body {
 
 .setting-control-group,
 .setting-input-group {
-  flex: 1;
-  max-width: 45%;
+  flex: 1.25;
+  max-width: 54%;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -1439,8 +1439,8 @@ body {
 }
 
 .setting-control {
-  flex: 1;
-  max-width: 45%;
+  flex: 1.25;
+  max-width: 54%;
   display: flex;
   justify-content: flex-end;
 }
@@ -1461,6 +1461,7 @@ body {
   padding: 6px 10px;
   font-size: 12px;
   width: 100%;
+  min-width: 200px;
   outline: none;
   font-family: var(--mono-font);
   transition: border-color 0.15s ease;
@@ -1471,7 +1472,8 @@ body {
 }
 
 .setting-input.number-input {
-  width: 100px;
+  width: 90px;
+  min-width: 90px;
 }
 
 .setting-select {
@@ -1482,6 +1484,7 @@ body {
   padding: 6px 10px;
   font-size: 12px;
   width: 100%;
+  min-width: 240px;
   outline: none;
   cursor: pointer;
   transition: border-color 0.15s ease;
@@ -3264,7 +3267,7 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
   bottom: 0;
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(4px);
-  z-index: 1000;
+  z-index: 10001;
   display: flex;
   align-items: center;
   justify-content: center;
