@@ -33,6 +33,36 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+}
+
+/* Sleek, Auto-hiding Scrollbars across entire application */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+body.theme-dark-plus ::-webkit-scrollbar-thumb,
+body.theme-obsidian ::-webkit-scrollbar-thumb,
+body.theme-midnight ::-webkit-scrollbar-thumb,
+body.theme-dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+}
+body.theme-dark-plus *,
+body.theme-obsidian *,
+body.theme-midnight *,
+body.theme-dark * {
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
 
 body {
@@ -52,6 +82,7 @@ body {
   flex-direction: column;
   height: 100vh;
   width: 100vw;
+  overflow: hidden;
 }
 
 /* -------------------------------------------------------------
@@ -2254,17 +2285,7 @@ body.theme-warm .chat-input-box {
 }
 
 .chatgpt-header-omnibox {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  max-width: 480px;
-  margin: 0 16px;
-  background: var(--bg-capsule);
-  border: 1px solid var(--border-color);
-  border-radius: 20px;
-  padding: 5px 12px;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  display: none !important;
 }
 
 .chatgpt-header-omnibox:focus-within {
@@ -2535,6 +2556,7 @@ body.theme-warm .chat-input-box {
 .chatgpt-conversation-view .chat-messages {
   flex: 1 !important;
   overflow-y: auto !important;
+  scrollbar-gutter: stable;
   padding: 24px 16px 140px 16px !important;
   display: flex !important;
   flex-direction: column !important;
@@ -2748,4 +2770,455 @@ body.theme-warm {
   background-color: #faf8f5;
   color: #2c2825;
 }
+
+/* -------------------------------------------------------------
+   7. Assistant Action Bar (Copy, Share, Read Aloud, Regenerate, More)
+------------------------------------------------------------- */
+.msg-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 4px;
+  user-select: none;
+}
+
+.msg-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.msg-action-btn:hover {
+  background: var(--hover-bg);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+.msg-action-btn:active {
+  transform: scale(0.97);
+}
+
+.msg-action-btn.active {
+  color: var(--accent-color);
+  background: var(--accent-subtle);
+}
+
+/* -------------------------------------------------------------
+   8. ChatGPT Canvas Document Card (media_1790473024763.png)
+------------------------------------------------------------- */
+.chatgpt-canvas-card {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  padding: 24px 28px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  margin: 14px 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+body.theme-dark .chatgpt-canvas-card,
+body.theme-dark-plus .chatgpt-canvas-card,
+body.theme-obsidian .chatgpt-canvas-card,
+body.theme-midnight .chatgpt-canvas-card {
+  border-color: #383838;
+  background: #1e1e1e;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+
+body.theme-warm .chatgpt-canvas-card {
+  background: #ffffff;
+  border-color: #ddd7cd;
+}
+
+.canvas-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 12px;
+  margin-bottom: 18px;
+}
+
+.canvas-card-title-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.canvas-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.canvas-action-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.canvas-action-btn:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+.canvas-card-body {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text-primary);
+}
+
+/* -------------------------------------------------------------
+   9. Markdown Typography in Assistant Messages
+------------------------------------------------------------- */
+.chat-messages .assistant-bubble h1,
+.chat-messages .assistant-bubble h2,
+.chat-messages .assistant-bubble h3,
+.chat-messages .assistant-bubble h4 {
+  color: var(--text-primary);
+  font-weight: 600;
+  margin: 18px 0 10px 0;
+  line-height: 1.35;
+}
+
+.chat-messages .assistant-bubble h1 { font-size: 22px; }
+.chat-messages .assistant-bubble h2 { font-size: 18px; }
+.chat-messages .assistant-bubble h3 { font-size: 15px; }
+
+.chat-messages .assistant-bubble p {
+  margin-bottom: 14px;
+}
+
+.chat-messages .assistant-bubble ul,
+.chat-messages .assistant-bubble ol {
+  margin: 8px 0 14px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-messages .assistant-bubble li {
+  line-height: 1.6;
+}
+
+.chat-messages .assistant-bubble code.inline-code {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--mono-font);
+  font-size: 13px;
+}
+
+body.theme-dark .chat-messages .assistant-bubble code.inline-code,
+body.theme-dark-plus .chat-messages .assistant-bubble code.inline-code,
+body.theme-obsidian .chat-messages .assistant-bubble code.inline-code,
+body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.chat-messages .bubble-code-block {
+  background: #18181b;
+  color: #f4f4f5;
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin: 14px 0;
+  overflow-x: auto;
+  position: relative;
+  font-family: var(--mono-font);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.code-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.06);
+  margin: -14px -16px 12px -16px;
+  padding: 6px 14px;
+  font-size: 11px;
+  color: #a1a1aa;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+}
+
+.code-copy-btn {
+  background: transparent;
+  border: none;
+  color: #a1a1aa;
+  cursor: pointer;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.code-copy-btn:hover {
+  color: #ffffff;
+}
+
+/* -------------------------------------------------------------
+   10. Sidebar Chat History
+------------------------------------------------------------- */
+.sidebar-chat-history {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+.chat-history-header {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  padding: 4px 8px 8px;
+}
+
+.chat-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13.5px;
+  color: var(--text-primary);
+  transition: background 0.15s ease;
+  position: relative;
+}
+
+.chat-history-item:hover {
+  background: var(--hover-bg);
+}
+
+.chat-history-item.active {
+  background: var(--active-bg);
+  font-weight: 500;
+}
+
+.chat-item-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 6px;
+}
+
+.chat-item-delete {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  opacity: 0;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.chat-history-item:hover .chat-item-delete {
+  opacity: 0.7;
+}
+
+.chat-item-delete:hover {
+  opacity: 1 !important;
+  color: var(--error-color);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* -------------------------------------------------------------
+   11. Scroll to Bottom Floating Button
+------------------------------------------------------------- */
+.scroll-bottom-btn {
+  position: absolute;
+  bottom: 120px;
+  right: calc(50% - 18px);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--bg-capsule);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  cursor: pointer;
+  z-index: 50;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.scroll-bottom-btn.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px);
+}
+
+.scroll-bottom-btn:hover {
+  background: var(--hover-bg);
+}
+
+/* -------------------------------------------------------------
+   12. ModelFusion System Panel Modal
+------------------------------------------------------------- */
+.modelfusion-panel-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.modelfusion-panel-modal.hidden {
+  display: none !important;
+}
+
+.modelfusion-modal-dialog {
+  background: var(--dropdown-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  width: 90%;
+  max-width: 720px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.mf-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.mf-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mf-modal-close-btn {
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+.mf-modal-close-btn:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.mf-modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.mf-grid-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.mf-stat-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mf-stat-icon {
+  font-size: 20px;
+}
+
+.mf-stat-val {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.mf-stat-lbl {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.mf-section-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.mf-task-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mf-task-pill {
+  background: var(--pill-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 
