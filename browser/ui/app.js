@@ -139,7 +139,10 @@ document.addEventListener('DOMContentLoaded', () => {
     searchEngine: 'modelfusion_ipc',
     maxSearchResults: 5,
     correlateWithLlm: true,
-    includeCitations: true
+    includeCitations: true,
+    agenticLoopEnabled: true,
+    agenticChunkSize: 4096,
+    agenticStrategy: 'auto_continuation'
   };
 
   let currentSettings = { ...DEFAULT_SETTINGS };
@@ -150,6 +153,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let historyIndex = -1;
   let currentNavUrl = '';
   let activeOllamaModel = 'qwen2.5:7b';
+  let cachedHardwareModel = null;
+  let cachedHardwareStats = null;
   let lastUserPrompt = '';
   let chatSessions = [];
   let currentSessionId = null;
@@ -383,6 +388,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     setVal('setting-max-tokens', s.maxTokens);
+    setCheck('setting-agentic-loop-enable', s.agenticLoopEnabled !== false);
+    setVal('setting-agentic-chunk-size', s.agenticChunkSize || DEFAULT_SETTINGS.agenticChunkSize);
+    setVal('setting-agentic-strategy', s.agenticStrategy || DEFAULT_SETTINGS.agenticStrategy);
     setCheck('setting-stream', s.stream);
     setVal('setting-sizing-strategy', s.sizingStrategy);
     setVal('setting-dom-budget', s.domBudget);
@@ -452,6 +460,9 @@ document.addEventListener('DOMContentLoaded', () => {
       multimodalAuto: getCheck('setting-multimodal-auto', DEFAULT_SETTINGS.multimodalAuto),
       temperature: parseFloat(getVal('setting-temperature', DEFAULT_SETTINGS.temperature)),
       maxTokens: getNum('setting-max-tokens', DEFAULT_SETTINGS.maxTokens),
+      agenticLoopEnabled: getCheck('setting-agentic-loop-enable', DEFAULT_SETTINGS.agenticLoopEnabled),
+      agenticChunkSize: getNum('setting-agentic-chunk-size', DEFAULT_SETTINGS.agenticChunkSize),
+      agenticStrategy: getVal('setting-agentic-strategy', DEFAULT_SETTINGS.agenticStrategy),
       stream: getCheck('setting-stream', DEFAULT_SETTINGS.stream),
       sizingStrategy: getVal('setting-sizing-strategy', DEFAULT_SETTINGS.sizingStrategy),
       domBudget: getNum('setting-dom-budget', DEFAULT_SETTINGS.domBudget),
@@ -1637,6 +1648,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function openModelFusionPanel() {
     if (!mfModal) return;
+    mfModal.style.zIndex = '10005';
     mfModal.classList.remove('hidden');
     await refreshModelFusionStatus();
   }
@@ -1731,6 +1743,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateModelFusionUI(data) {
+    if (!data) return;
+    if (data.active_hardware_model) cachedHardwareModel = data.active_hardware_model;
+    if (data.hardware) cachedHardwareStats = data.hardware;
+
     const count = data.total_models || 6438;
     const hwModel = data.active_hardware_model || activeOllamaModel || 'qwen2.5:7b';
     const dbPath = data.db_path || 'IDE/db/hf_models.db';
@@ -1756,6 +1772,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (settingDbPath) settingDbPath.textContent = dbPath;
     if (mfDbPath) mfDbPath.textContent = dbPath;
 
+    if (statModel && (!currentSettings.activeModel || currentSettings.activeModel === 'modelfusion_auto')) {
+      statModel.textContent = `${hwModel} (Auto-scaled)`;
+    }
+
     const mfPanelSize = document.getElementById('mf-modal-fusion-panel-size');
     const fusionCount = currentSettings.fusionModels !== undefined ? currentSettings.fusionModels : DEFAULT_SETTINGS.fusionModels;
     if (mfPanelSize) {
@@ -1767,6 +1787,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (mfRam) mfRam.textContent = `${data.hardware.free_ram_gb || 'N/A'} GB Free / ${data.hardware.total_ram_gb || 'N/A'} GB Total`;
       if (mfGpu) mfGpu.textContent = data.hardware.has_gpu ? `${data.hardware.gpu_name} (${data.hardware.free_vram_mb || 0} MB Free VRAM)` : 'CPU Accelerated';
       if (mfDbSize) mfDbSize.textContent = `${count.toLocaleString()} Models Indexed`;
+
+      if (statRam && typeof data.hardware.free_ram_gb === 'number') {
+        statRam.textContent = `${data.hardware.free_ram_gb.toFixed(1)} GB Free (${data.hardware.total_ram_gb.toFixed(1)} GB Total)`;
+      }
+      if (statVram && data.hardware) {
+        statVram.textContent = data.hardware.has_gpu ? `${data.hardware.gpu_name} (${data.hardware.free_vram_mb || 0} MB Free VRAM)` : 'CPU Accelerated';
+      }
     }
   }
 
@@ -2142,6 +2169,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (res.ok) {
         dotIpc.className = 'dot status-dot online';
         textIpc.textContent = 'IPC Connected';
+        refreshModelFusionStatus();
         return true;
       }
     } catch (e) {
@@ -2150,6 +2178,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (res2.ok) {
           dotIpc.className = 'dot status-dot online';
           textIpc.textContent = 'IPC Connected';
+          refreshModelFusionStatus();
           return true;
         }
       } catch (e2) {}
@@ -2157,6 +2186,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     dotIpc.className = 'dot status-dot online';
     textIpc.textContent = 'Master CLI';
+    refreshModelFusionStatus();
     return true;
   }
 
@@ -2179,6 +2209,18 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function detectHardware() {
+    if (cachedHardwareStats) {
+      if (typeof cachedHardwareStats.free_ram_gb === 'number') {
+        statRam.textContent = `${cachedHardwareStats.free_ram_gb.toFixed(1)} GB Free (${cachedHardwareStats.total_ram_gb.toFixed(1)} GB Total)`;
+      }
+      if (cachedHardwareStats.has_gpu) {
+        statVram.textContent = `${cachedHardwareStats.gpu_name} (${cachedHardwareStats.free_vram_mb || 0} MB Free VRAM)`;
+      } else {
+        statVram.textContent = 'CPU Accelerated';
+      }
+      return;
+    }
+
     // Check browser runtime memory API
     let freeRamEstimate = '16.0 GB+';
     if (navigator.deviceMemory) {
@@ -2270,7 +2312,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (modelToUse === 'fast_fusion') {
       resolvedOllamaModel = 'qwen2.5:7b';
     } else {
-      resolvedOllamaModel = 'qwen2.5:7b';
+      resolvedOllamaModel = cachedHardwareModel || (activeOllamaModel !== 'modelfusion_auto' ? activeOllamaModel : null) || 'qwen2.5:32b';
     }
 
     if (hasImages && selectedVisionModel) {
@@ -2349,152 +2391,211 @@ document.addEventListener('DOMContentLoaded', () => {
         if (ipcUrl && !chatEndpoints.includes(ipcUrl)) chatEndpoints.push(ipcUrl);
       }
 
-      const reqBodyStr = JSON.stringify({
-        model: resolvedOllamaModel,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          messagePayload
-        ],
-        stream: streamMode,
-        options: {
-          temperature: tempToUse,
-          num_predict: maxTokensToUse
-        }
-      });
+      const isAgenticLoop = currentSettings.agenticLoopEnabled !== false && maxTokensToUse > 4096;
+      const targetTokens = maxTokensToUse;
+      const chunkSize = currentSettings.agenticChunkSize || 4096;
+      const maxLoops = isAgenticLoop ? Math.min(32, Math.ceil(targetTokens / chunkSize)) : 1;
 
-      for (const ep of chatEndpoints) {
-        try {
-          const candidateRes = await fetch(`${ep}/api/chat`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: reqBodyStr
-          });
-          if (candidateRes.ok) {
-            res = candidateRes;
-            break;
-          } else {
-            lastFetchErr = new Error(`Endpoint ${ep} returned HTTP ${candidateRes.status}`);
-          }
-        } catch (epErr) {
-          lastFetchErr = epErr;
-          console.warn(`[ROUTER] Fetch to ${ep}/api/chat failed:`, epErr);
-        }
+      let agenticBadge = null;
+      if (isAgenticLoop && assistantBubble) {
+        agenticBadge = document.createElement('div');
+        agenticBadge.className = 'agentic-loop-badge';
+        agenticBadge.innerHTML = `🔄 Agentic Loop: Turn 1/${maxLoops} • 0 tokens`;
+        assistantBubble.insertBefore(agenticBadge, bubbleContent);
       }
 
-      // If both direct and proxy failed, try auto-waking Ollama via Master CLI
-      if (!res && ipcUrl) {
-        try {
-          if (statusLine) statusLine.textContent = `[${time}] 🟡 Starting Local AI Engine...`;
-          if (bubbleContent) {
-            bubbleContent.innerHTML = `<span style="color: var(--warning-color); font-style: italic;">🟡 Starting Local AI Engine... Please wait a moment while the local model initializes.</span>`;
-          }
-          if (textOllama) textOllama.textContent = '🟡 Starting Local AI Engine...';
-          if (dotOllama) dotOllama.className = 'status-dot starting';
+      const conversationMessages = [
+        { role: 'system', content: systemPrompt },
+        messagePayload
+      ];
 
-          await fetch(`${ipcUrl}/api/ollama/start`, { method: 'POST' }).catch(() => {});
-
-          for (let poll = 0; poll < 15; poll++) {
-            await new Promise(r => setTimeout(r, 2000));
-            for (const ep of [ipcUrl, ollamaUrl]) {
-              try {
-                const retryRes = await fetch(`${ep}/api/chat`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: reqBodyStr
-                });
-                if (retryRes.ok) {
-                  res = retryRes;
-                  if (dotOllama) dotOllama.className = 'status-dot online';
-                  if (textOllama) textOllama.textContent = 'Local AI Ready';
-                  break;
-                }
-              } catch (e) {}
-            }
-            if (res) break;
-          }
-        } catch (wakeErr) {
-          console.warn('[ROUTER] Auto-wake error:', wakeErr);
-        }
-      }
-
-      if (!res) {
-        throw lastFetchErr || new Error(`Could not connect to Ollama at ${ollamaUrl} or proxy ${ipcUrl}`);
-      }
-
-      if (!streamMode) {
-        const data = await res.json();
-        const fullResponse = data.message?.content || data.response || '';
-        statusLine.textContent = `[${time}] 🤖 ModelFusion Engine (${modelToUse}) completed:`;
-        responseLine.innerHTML = renderMarkdown(fullResponse);
-        if (assistantBubble) {
-          assistantBubble.classList.remove('streaming');
-          assistantBubble.dataset.rawText = fullResponse;
-          assistantBubble.dataset.prompt = userPrompt;
-          if (bubbleContent) {
-            bubbleContent.innerHTML = formatAssistantContent(fullResponse, userPrompt);
-          }
-        }
-        const activeSession = chatSessions.find(s => s.id === currentSessionId);
-        if (activeSession) {
-          activeSession.messages.push({ role: 'assistant', content: fullResponse, model: modelToUse });
-          saveChatHistory();
-        }
-        if (currentSettings.autoScroll !== false) {
-          if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
-          if (terminalScreen) terminalScreen.scrollTop = terminalScreen.scrollHeight;
-        }
-        return fullResponse;
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder('utf-8');
-      let buffer = '';
       let fullResponse = '';
+      let totalEstimatedTokens = 0;
 
-      statusLine.textContent = `[${time}] 🤖 ModelFusion Engine (${modelToUse}) streaming:`;
+      for (let turn = 0; turn < maxLoops; turn++) {
+        if (isAgenticLoop && agenticBadge) {
+          agenticBadge.innerHTML = `🔄 Agentic Loop: Turn ${turn + 1}/${maxLoops} • ~${Math.round(totalEstimatedTokens).toLocaleString()} / ${targetTokens.toLocaleString()} tokens`;
+        }
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+        const currentTurnChunk = isAgenticLoop ? chunkSize : maxTokensToUse;
+        const reqBodyStr = JSON.stringify({
+          model: resolvedOllamaModel,
+          messages: conversationMessages,
+          stream: streamMode,
+          options: {
+            temperature: tempToUse,
+            num_predict: currentTurnChunk
+          }
+        });
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop(); // Retain incomplete fragment
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
+        let res = null;
+        let lastFetchErr = null;
+        for (const ep of chatEndpoints) {
           try {
-            const parsed = JSON.parse(trimmed);
-            const chunk = parsed.message?.content || parsed.response || '';
-            if (chunk) {
-              fullResponse += chunk;
-              if (bubbleContent) {
-                bubbleContent.style.color = '';
-                bubbleContent.style.fontStyle = '';
-                bubbleContent.innerHTML = renderMarkdown(fullResponse);
-              }
-              responseLine.textContent = fullResponse;
-              if (currentSettings.autoScroll !== false) {
-                if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
-                if (terminalScreen) terminalScreen.scrollTop = terminalScreen.scrollHeight;
-              }
+            const candidateRes = await fetch(`${ep}/api/chat`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: reqBodyStr
+            });
+            if (candidateRes.ok) {
+              res = candidateRes;
+              break;
+            } else {
+              lastFetchErr = new Error(`Endpoint ${ep} returned HTTP ${candidateRes.status}`);
             }
-          } catch (e) {
-            // Malformed fragment, skip
+          } catch (epErr) {
+            lastFetchErr = epErr;
+            console.warn(`[ROUTER] Fetch to ${ep}/api/chat failed:`, epErr);
           }
         }
+
+        // If both direct and proxy failed on turn 0, try auto-waking Ollama via Master CLI
+        if (!res && turn === 0 && ipcUrl) {
+          try {
+            if (statusLine) statusLine.textContent = `[${time}] 🟡 Starting Local AI Engine...`;
+            if (bubbleContent) {
+              bubbleContent.innerHTML = `<span style="color: var(--warning-color); font-style: italic;">🟡 Starting Local AI Engine... Please wait a moment while the local model initializes.</span>`;
+            }
+            if (textOllama) textOllama.textContent = '🟡 Starting Local AI Engine...';
+            if (dotOllama) dotOllama.className = 'status-dot starting';
+
+            await fetch(`${ipcUrl}/api/ollama/start`, { method: 'POST' }).catch(() => {});
+
+            for (let poll = 0; poll < 15; poll++) {
+              await new Promise(r => setTimeout(r, 2000));
+              for (const ep of [ipcUrl, ollamaUrl]) {
+                try {
+                  const retryRes = await fetch(`${ep}/api/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: reqBodyStr
+                  });
+                  if (retryRes.ok) {
+                    res = retryRes;
+                    if (dotOllama) dotOllama.className = 'status-dot online';
+                    if (textOllama) textOllama.textContent = 'Local AI Ready';
+                    break;
+                  }
+                } catch (e) {}
+              }
+              if (res) break;
+            }
+          } catch (wakeErr) {
+            console.warn('[ROUTER] Auto-wake error:', wakeErr);
+          }
+        }
+
+        if (!res) {
+          if (turn > 0 && fullResponse) {
+            break;
+          }
+          throw lastFetchErr || new Error(`Could not connect to Ollama at ${ollamaUrl} or proxy ${ipcUrl}`);
+        }
+
+        let turnResponse = '';
+        let doneReason = '';
+
+        if (!streamMode) {
+          const data = await res.json();
+          turnResponse = data.message?.content || data.response || '';
+          doneReason = data.done_reason || '';
+          fullResponse += (turn > 0 ? '\n\n' : '') + turnResponse;
+          totalEstimatedTokens += Math.max(1, Math.round(turnResponse.length / 4));
+          statusLine.textContent = `[${time}] 🤖 ModelFusion Engine (${modelToUse}) completed:`;
+          responseLine.innerHTML = renderMarkdown(fullResponse);
+          if (bubbleContent) {
+            bubbleContent.style.color = '';
+            bubbleContent.style.fontStyle = '';
+            bubbleContent.innerHTML = renderMarkdown(fullResponse);
+          }
+        } else {
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder('utf-8');
+          let buffer = '';
+
+          statusLine.textContent = `[${time}] 🤖 ModelFusion Engine (${modelToUse}) ${isAgenticLoop ? `[Turn ${turn + 1}/${maxLoops}] ` : ''}streaming:`;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // Retain incomplete fragment
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+              try {
+                const parsed = JSON.parse(trimmed);
+                const chunk = parsed.message?.content || parsed.response || '';
+                if (parsed.done_reason) doneReason = parsed.done_reason;
+                if (chunk) {
+                  turnResponse += chunk;
+                  fullResponse += chunk;
+                  totalEstimatedTokens += Math.max(1, Math.round(chunk.length / 4));
+                  if (bubbleContent) {
+                    bubbleContent.style.color = '';
+                    bubbleContent.style.fontStyle = '';
+                    bubbleContent.innerHTML = renderMarkdown(fullResponse);
+                  }
+                  responseLine.textContent = fullResponse;
+                  if (isAgenticLoop && agenticBadge && totalEstimatedTokens % 80 === 0) {
+                    agenticBadge.innerHTML = `🔄 Agentic Loop: Turn ${turn + 1}/${maxLoops} • ~${Math.round(totalEstimatedTokens).toLocaleString()} / ${targetTokens.toLocaleString()} tokens`;
+                  }
+                  if (currentSettings.autoScroll !== false) {
+                    if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+                    if (terminalScreen) terminalScreen.scrollTop = terminalScreen.scrollHeight;
+                  }
+                }
+              } catch (e) {
+                // Malformed fragment, skip
+              }
+            }
+          }
+
+          // Process any trailing buffer
+          if (buffer.trim()) {
+            try {
+              const parsed = JSON.parse(buffer.trim());
+              const chunk = parsed.message?.content || parsed.response || '';
+              if (parsed.done_reason) doneReason = parsed.done_reason;
+              if (chunk) {
+                turnResponse += chunk;
+                fullResponse += chunk;
+                totalEstimatedTokens += Math.max(1, Math.round(chunk.length / 4));
+              }
+            } catch (e) {}
+          }
+        }
+
+        // Check continuation condition for next turn in agentic loop
+        if (!isAgenticLoop || turn + 1 >= maxLoops) {
+          break;
+        }
+
+        const codeFences = (fullResponse.match(/```/g) || []).length;
+        const hasUnclosedCodeBlock = codeFences % 2 !== 0;
+        const isNearLimit = turnResponse.length >= currentTurnChunk * 2.2;
+        const shouldContinue = doneReason === 'length' || hasUnclosedCodeBlock || (isNearLimit && totalEstimatedTokens < targetTokens * 0.9);
+
+        if (!shouldContinue) {
+          break;
+        }
+
+        conversationMessages.push({ role: 'assistant', content: turnResponse });
+        const nextTurn = turn + 2;
+        const curTurn = turn + 1;
+        const continuationPrompt = `Great, now write Part ${nextTurn} based on Part ${curTurn}. Continue seamlessly from where you stopped without repeating previous code or pleasantries.`;
+        conversationMessages.push({ role: 'user', content: continuationPrompt });
+        fullResponse += '\n\n';
+
+        termLog(`[AGENTIC LOOP] 🔄 Turn ${curTurn}/${maxLoops} completed (~${Math.round(totalEstimatedTokens).toLocaleString()} tokens). Chaining Part ${nextTurn}...`, 'info');
       }
 
-      // Process any trailing buffer
-      if (buffer.trim()) {
-        try {
-          const parsed = JSON.parse(buffer.trim());
-          const chunk = parsed.message?.content || parsed.response || '';
-          if (chunk) {
-            fullResponse += chunk;
-          }
-        } catch (e) {}
+      if (isAgenticLoop && agenticBadge) {
+        agenticBadge.className = 'agentic-loop-badge complete';
+        agenticBadge.innerHTML = `✅ Agentic Loop: Complete (${conversationMessages.length > 2 ? Math.floor(conversationMessages.length / 2) : 1} turns • ~${Math.round(totalEstimatedTokens).toLocaleString()} tokens)`;
       }
 
       statusLine.textContent = `[${time}] 🤖 ModelFusion Engine (${modelToUse}) completed:`;
@@ -3058,14 +3159,6 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
     });
   }
 
-  const sidebarPlugins = document.getElementById('sidebar-plugins');
-  if (sidebarPlugins) {
-    sidebarPlugins.addEventListener('click', () => {
-      openSettingsModal();
-      const tabPlugins = document.querySelector('.settings-tab[data-tab="plugins"]');
-      if (tabPlugins) tabPlugins.click();
-    });
-  }
 
   const sidebarDeepResearch = document.getElementById('sidebar-deep-research');
   if (sidebarDeepResearch) {
@@ -3079,6 +3172,60 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
       }
     });
   }
+
+  // -------------------------------------------------------------
+  // Sidebar Tools & Directives Accordion (All 161+ Tools)
+  // -------------------------------------------------------------
+  const sidebarToolsToggle = document.getElementById('sidebar-tools-toggle');
+  const sidebarToolsAccordion = document.getElementById('sidebar-tools-accordion');
+  if (sidebarToolsToggle && sidebarToolsAccordion) {
+    sidebarToolsToggle.addEventListener('click', () => {
+      sidebarToolsAccordion.classList.toggle('collapsed');
+      const chevron = document.getElementById('tools-accordion-chevron');
+      if (chevron) {
+        chevron.textContent = sidebarToolsAccordion.classList.contains('collapsed') ? '▸' : '▾';
+      }
+    });
+  }
+
+  // Toggle category sections
+  document.querySelectorAll('.tool-category-header').forEach((catHeader) => {
+    catHeader.addEventListener('click', () => {
+      const content = catHeader.nextElementSibling;
+      const chevron = catHeader.querySelector('.cat-chevron');
+      if (content) {
+        const isCollapsed = content.classList.toggle('collapsed');
+        if (chevron) {
+          chevron.textContent = isCollapsed ? '▸' : '▾';
+        }
+      }
+    });
+  });
+
+  // Tool / Directive chip buttons: insert command into active prompt input
+  document.querySelectorAll('.tool-command-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const cmd = btn.getAttribute('data-cmd') || btn.textContent.trim();
+      const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+        ? cliPromptInputPinned
+        : cliPromptInput;
+      if (activeInput) {
+        const currentVal = activeInput.value;
+        if (!currentVal.trim()) {
+          activeInput.value = cmd;
+        } else {
+          activeInput.value = currentVal.trimEnd() + ' ' + cmd;
+        }
+        activeInput.focus();
+        const len = activeInput.value.length;
+        activeInput.setSelectionRange(len, len);
+      }
+      // Quick visual feedback
+      btn.classList.add('copied');
+      setTimeout(() => btn.classList.remove('copied'), 400);
+    });
+  });
 
   const sidebarModels = document.getElementById('sidebar-models');
   if (sidebarModels) {
@@ -3353,6 +3500,7 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
   const btnRunUpdatedb = document.getElementById('btn-run-updatedb');
   const btnQuickUpdatedb = document.getElementById('btn-quick-updatedb');
   const catalogUpdateFeedback = document.getElementById('catalog-update-feedback');
+  const modelsTabFeedback = document.getElementById('models-tab-update-feedback');
   const settingUpdatedbMaxModels = document.getElementById('setting-updatedb-max-models');
   const capChips = document.querySelectorAll('.updatedb-cap-chip');
 
@@ -3369,11 +3517,30 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
   async function triggerCatalogUpdate() {
     const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
     termLog('[DATABASE] ⚡ Executing fast curated catalog update (--update)...', 'info');
-    if (catalogUpdateFeedback) {
-      catalogUpdateFeedback.style.display = 'block';
-      catalogUpdateFeedback.style.color = 'var(--accent-color, #10b981)';
-      catalogUpdateFeedback.innerHTML = '⚡ Fast curated update started (~6,500 models across 45 tasks). Auto-provisioning local Ollama model in background.';
+
+    const updateMsg = '⚡ Fast curated update running (~6,500 models across 45 tasks). Auto-provisioning local Ollama model in background...';
+    [catalogUpdateFeedback, modelsTabFeedback].forEach(fb => {
+      if (fb) {
+        fb.style.display = 'block';
+        fb.classList.remove('crawler-active');
+        fb.style.color = 'var(--accent-color, #10b981)';
+        fb.innerHTML = updateMsg;
+      }
+    });
+
+    if (btnQuickUpdate) {
+      btnQuickUpdate.disabled = true;
+      btnQuickUpdate.classList.add('btn-loading');
+      btnQuickUpdate.dataset.origText = btnQuickUpdate.textContent;
+      btnQuickUpdate.textContent = '⏳ Updating... (~6.5k)';
     }
+    if (btnRunUpdate) {
+      btnRunUpdate.disabled = true;
+      btnRunUpdate.classList.add('btn-loading');
+      btnRunUpdate.dataset.origText = btnRunUpdate.textContent;
+      btnRunUpdate.textContent = '⏳ Updating Catalog...';
+    }
+
     try {
       const res = await fetch(`${ipcUrl}/api/models/update`, {
         method: 'POST',
@@ -3383,15 +3550,30 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
       if (res.ok) {
         const data = await res.json();
         termLog(`[DATABASE] ⚡ ${data.description || 'Curated update started in background.'}`, 'success');
+        const doneMsg = `✅ Fast curated update started. Ingesting ~6,500 models across 45 tasks.`;
+        [catalogUpdateFeedback, modelsTabFeedback].forEach(fb => {
+          if (fb) fb.innerHTML = doneMsg;
+        });
       } else {
         termLog(`[DATABASE] ⚠️ Curated update endpoint returned status ${res.status}`, 'warn');
       }
     } catch (err) {
       termLog(`[DATABASE] Note: ${err.message}. Master CLI update directive dispatched.`, 'sys');
     }
+
     setTimeout(() => {
       refreshModelFusionStatus();
-    }, 2500);
+      if (btnQuickUpdate) {
+        btnQuickUpdate.disabled = false;
+        btnQuickUpdate.classList.remove('btn-loading');
+        btnQuickUpdate.textContent = btnQuickUpdate.dataset.origText || '⚡ Update Curated (~6.5k)';
+      }
+      if (btnRunUpdate) {
+        btnRunUpdate.disabled = false;
+        btnRunUpdate.classList.remove('btn-loading');
+        btnRunUpdate.textContent = btnRunUpdate.dataset.origText || '⚡ Run Curated Update (--update)';
+      }
+    }, 4000);
   }
 
   async function triggerCatalogUpdatedb() {
@@ -3401,10 +3583,28 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
     const capQuery = cap ? `?max_models=${cap}` : '';
 
     termLog(`[DATABASE] 🚀 Executing full registry crawler (--updatedb) across all 2M+ Hugging Face models${cap ? ` (capped at ${cap.toLocaleString()} models)` : ''}...`, 'info');
-    if (catalogUpdateFeedback) {
-      catalogUpdateFeedback.style.display = 'block';
-      catalogUpdateFeedback.style.color = '#8b5cf6';
-      catalogUpdateFeedback.innerHTML = `🚀 Full registry crawler started for over 2 million models across all 45 tasks. Committing ~1,000 models/sec into SQLite.${cap ? ` (Cap: ${cap.toLocaleString()})` : ''}`;
+
+    const crawlMsg = `🚀 Full registry crawler active across 2M+ models (~1,000 models/sec committed into SQLite).${cap ? ` (Cap: ${cap.toLocaleString()})` : ''}`;
+    [catalogUpdateFeedback, modelsTabFeedback].forEach(fb => {
+      if (fb) {
+        fb.style.display = 'block';
+        fb.classList.add('crawler-active');
+        fb.style.color = '#8b5cf6';
+        fb.innerHTML = crawlMsg;
+      }
+    });
+
+    if (btnQuickUpdatedb) {
+      btnQuickUpdatedb.disabled = true;
+      btnQuickUpdatedb.classList.add('btn-loading');
+      btnQuickUpdatedb.dataset.origText = btnQuickUpdatedb.textContent;
+      btnQuickUpdatedb.textContent = '⏳ Crawling All 2M+...';
+    }
+    if (btnRunUpdatedb) {
+      btnRunUpdatedb.disabled = true;
+      btnRunUpdatedb.classList.add('btn-loading');
+      btnRunUpdatedb.dataset.origText = btnRunUpdatedb.textContent;
+      btnRunUpdatedb.textContent = '⏳ Crawling Registry...';
     }
 
     try {
@@ -3416,15 +3616,30 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
       if (res.ok) {
         const data = await res.json();
         termLog(`[DATABASE] 🚀 ${data.description || 'Full registry crawler started in background.'}`, 'success');
+        const doneMsg = `🚀 Registry crawler running in background. Committing ~1,000 models/sec into SQLite.`;
+        [catalogUpdateFeedback, modelsTabFeedback].forEach(fb => {
+          if (fb) fb.innerHTML = doneMsg;
+        });
       } else {
         termLog(`[DATABASE] ⚠️ Full registry crawler endpoint returned status ${res.status}`, 'warn');
       }
     } catch (err) {
       termLog(`[DATABASE] Note: ${err.message}. Master CLI registry crawler directive dispatched.`, 'sys');
     }
+
     setTimeout(() => {
       refreshModelFusionStatus();
-    }, 2500);
+      if (btnQuickUpdatedb) {
+        btnQuickUpdatedb.disabled = false;
+        btnQuickUpdatedb.classList.remove('btn-loading');
+        btnQuickUpdatedb.textContent = btnQuickUpdatedb.dataset.origText || '🚀 Crawl All 2M+ Models';
+      }
+      if (btnRunUpdatedb) {
+        btnRunUpdatedb.disabled = false;
+        btnRunUpdatedb.classList.remove('btn-loading');
+        btnRunUpdatedb.textContent = btnRunUpdatedb.dataset.origText || '🚀 Crawl Full Registry (--updatedb)';
+      }
+    }, 5000);
   }
 
   [btnRunUpdate, btnQuickUpdate].forEach(btn => {
@@ -3447,6 +3662,14 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
 
   if (btnCloseMfModal) {
     btnCloseMfModal.addEventListener('click', closeModelFusionPanel);
+  }
+
+  if (mfModal) {
+    mfModal.addEventListener('click', (e) => {
+      if (e.target === mfModal) {
+        closeModelFusionPanel();
+      }
+    });
   }
 
   window.addEventListener('keydown', (e) => {

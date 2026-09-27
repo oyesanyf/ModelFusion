@@ -222,6 +222,15 @@ pub fn select_ollama_model_from_sys(is_low_budget: bool, res: &SystemResourceSum
     }
 }
 
+/// Generates the standard seamless recursive continuation prompt for Agentic Loop Looping.
+pub fn generate_agentic_continuation_prompt(part_num: usize) -> String {
+    format!(
+        "Great, now write Part {} based on Part {}. Continue seamlessly from where you stopped without repeating previous code or pleasantries.",
+        part_num + 1,
+        part_num
+    )
+}
+
 /// Detects system RAM, VRAM, and CPU to pick the optimal Ollama model fit based on available memory.
 /// Prints a formatted debug log banner showing detected resources.
 pub fn select_ollama_model_for_hardware(is_low_budget: bool) -> &'static str {
@@ -1225,6 +1234,18 @@ struct Args {
 
     #[arg(long, help = "Maximum number of models to ingest during --updatedb (defaults to unlimited)")]
     max_models: Option<usize>,
+
+    #[arg(long, help = "Enable agentic loop looping (recursive auto-chaining) for up to 256k tokens")]
+    agentic_loop: bool,
+
+    #[arg(long, default_value = "32768", help = "Target total output tokens for agentic loop (up to 262144)")]
+    target_tokens: usize,
+
+    #[arg(long, default_value = "4096", help = "Chunk token budget per turn in agentic loop")]
+    chunk_tokens: usize,
+
+    #[arg(long, default_value = "32", help = "Maximum loops/turns for agentic loop chaining")]
+    max_loops: usize,
 
     #[arg(long, help = "Restore config and database from backups")]
     restore: bool,
@@ -6560,6 +6581,70 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 let ollama_endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
                 let chat_url = format!("{}/api/chat", ollama_endpoint.trim_end_matches('/'));
                 let is_streaming = request_json.get("stream").and_then(|v| v.as_bool()).unwrap_or(false);
+                let agentic_loop = request_json.get("agentic_loop").and_then(|v| v.as_bool()).unwrap_or(false);
+                let target_tokens = request_json.get("target_tokens").and_then(|v| v.as_u64()).map(|v| v as usize).unwrap_or(32768);
+                let chunk_tokens = request_json.get("chunk_tokens").and_then(|v| v.as_u64()).map(|v| v as usize).unwrap_or(4096);
+                let max_loops = request_json.get("max_loops").and_then(|v| v.as_u64()).map(|v| v as usize).unwrap_or(32);
+
+                if agentic_loop && target_tokens > 4096 && !is_streaming {
+                    let actual_loops = max_loops.min(32).min((target_tokens + chunk_tokens - 1) / chunk_tokens);
+                    let mut current_json = request_json.clone();
+                    if let Some(opts) = current_json.get_mut("options").and_then(|o| o.as_object_mut()) {
+                        opts.insert("num_predict".to_string(), serde_json::json!(chunk_tokens));
+                    }
+                    let mut accumulated_content = String::new();
+                    let mut final_data = serde_json::Value::Null;
+                    for turn in 0..actual_loops {
+                        match client.post(&chat_url).json(&current_json).send().await {
+                            Ok(res) if res.status().is_success() => {
+                                let data: serde_json::Value = res.json().await.unwrap_or_default();
+                                let content = data["message"]["content"].as_str().unwrap_or("").to_string();
+                                let done_reason = data["done_reason"].as_str().unwrap_or("").to_string();
+                                if !accumulated_content.is_empty() {
+                                    accumulated_content.push_str("\n\n");
+                                }
+                                accumulated_content.push_str(&content);
+                                final_data = data;
+
+                                if turn + 1 >= actual_loops {
+                                    break;
+                                }
+                                let code_fences = accumulated_content.matches("```").count();
+                                let unclosed = code_fences % 2 != 0;
+                                let near_limit = content.len() >= chunk_tokens * 2;
+                                if done_reason != "length" && !unclosed && !near_limit {
+                                    break;
+                                }
+                                if let Some(msgs) = current_json.get_mut("messages").and_then(|m| m.as_array_mut()) {
+                                    msgs.push(serde_json::json!({
+                                        "role": "assistant",
+                                        "content": content
+                                    }));
+                                    msgs.push(serde_json::json!({
+                                        "role": "user",
+                                        "content": generate_agentic_continuation_prompt(turn + 1)
+                                    }));
+                                }
+                            }
+                            _ => break,
+                        }
+                    }
+
+                    if !accumulated_content.is_empty() {
+                        if let Some(msg_obj) = final_data.get_mut("message").and_then(|m| m.as_object_mut()) {
+                            msg_obj.insert("content".to_string(), serde_json::json!(accumulated_content));
+                        }
+                        let bytes = serde_json::to_vec(&final_data).unwrap_or_default();
+                        let response = format!(
+                            "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                            bytes.len()
+                        );
+                        let _ = socket.write_all(response.as_bytes()).await;
+                        let _ = socket.write_all(&bytes).await;
+                        let _ = socket.flush().await;
+                        return;
+                    }
+                }
 
                 match client.post(&chat_url).header("Content-Type", "application/json").body(body.to_vec()).send().await {
                     Ok(mut res) => {
@@ -6850,6 +6935,10 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         .map(|s| s.trim())
                         .filter(|s| !s.is_empty() && *s != "modelfusion-local" && *s != "modelfusion" && *s != "default" && *s != "auto")
                         .map(|s| s.to_string());
+                    let agentic_loop = request_json.get("agentic_loop").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let target_tokens = request_json.get("target_tokens").and_then(|v| v.as_u64()).map(|v| v as usize).unwrap_or(32768);
+                    let chunk_tokens = request_json.get("chunk_tokens").and_then(|v| v.as_u64()).map(|v| v as usize).unwrap_or(4096);
+                    let max_loops = request_json.get("max_loops").and_then(|v| v.as_u64()).map(|v| v as usize).unwrap_or(32);
 
                     if slash_enabled {
                         // Parse slash commands from incoming prompt
@@ -8991,6 +9080,79 @@ sequenceDiagram
                                 .timeout(std::time::Duration::from_secs(custom_timeout))
                                 .build()
                                 .unwrap();
+
+                            if agentic_loop && target_tokens > 4096 {
+                                eprintln!("[SERVER] 🔄 Agentic Loop Looping active in /orchestrate: target_tokens={}, chunk_tokens={}, max_loops={}", target_tokens, chunk_tokens, max_loops);
+                                let mut accumulated_content = String::new();
+                                let mut loop_messages = messages.clone();
+                                let actual_loops = max_loops.min(32).min((target_tokens + chunk_tokens - 1) / chunk_tokens);
+
+                                for turn in 0..actual_loops {
+                                    let turn_body = serde_json::json!({
+                                        "model": ollama_model,
+                                        "messages": loop_messages,
+                                        "stream": false,
+                                        "options": {
+                                            "temperature": temperature,
+                                            "num_predict": chunk_tokens,
+                                            "num_ctx": select_context_window_for_model(ollama_model)
+                                        }
+                                    });
+
+                                    match client.post(&url).json(&turn_body).send().await {
+                                        Ok(res) if res.status().is_success() => {
+                                            let data: serde_json::Value = res.json().await.unwrap_or_default();
+                                            let turn_text = data["message"]["content"]
+                                                .as_str()
+                                                .unwrap_or("")
+                                                .to_string();
+                                            let done_reason = data["done_reason"].as_str().unwrap_or("");
+
+                                            if !accumulated_content.is_empty() {
+                                                accumulated_content.push_str("\n\n");
+                                            }
+                                            accumulated_content.push_str(&turn_text);
+
+                                            if turn + 1 >= actual_loops {
+                                                break;
+                                            }
+
+                                            let code_fences = accumulated_content.matches("```").count();
+                                            let unclosed = code_fences % 2 != 0;
+                                            let near_limit = turn_text.len() >= chunk_tokens * 2;
+                                            let should_continue = done_reason == "length" || unclosed || near_limit;
+
+                                            if !should_continue {
+                                                break;
+                                            }
+
+                                            if let Some(arr) = loop_messages.as_array_mut() {
+                                                arr.push(serde_json::json!({
+                                                    "role": "assistant",
+                                                    "content": turn_text
+                                                }));
+                                                let cont_prompt = generate_agentic_continuation_prompt(turn + 1);
+                                                arr.push(serde_json::json!({
+                                                    "role": "user",
+                                                    "content": cont_prompt
+                                                }));
+                                            }
+                                            eprintln!("[SERVER] 🔄 Agentic Loop: Turn {}/{} complete. Chaining next turn...", turn + 1, actual_loops);
+                                        }
+                                        _ => {
+                                            if !accumulated_content.is_empty() {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if !accumulated_content.is_empty() {
+                                    let cleaned = clean_model_response(&accumulated_content);
+                                    eprintln!("[SERVER] 🔄 Agentic Loop complete: {} chars returned.", cleaned.len());
+                                    return cleaned;
+                                }
+                            }
 
                             match client.post(&url).json(&body).send().await {
                                 Ok(res) if res.status().is_success() => {
@@ -13978,6 +14140,42 @@ public class Pr {
         assert!(args_updatedb.updatedb);
         assert_eq!(args_updatedb.max_models, Some(50000));
         assert_eq!(args_updatedb.db_path.as_deref(), Some("IDE/db/hf_models.db"));
+    }
+
+    #[test]
+    fn test_agentic_loop_parameters_and_continuation_prompt() {
+        use super::{generate_agentic_continuation_prompt, Args};
+        use clap::Parser;
+
+        // 1. Verify recursive continuation prompt structure across parts
+        let prompt_part2 = generate_agentic_continuation_prompt(1);
+        assert_eq!(
+            prompt_part2,
+            "Great, now write Part 2 based on Part 1. Continue seamlessly from where you stopped without repeating previous code or pleasantries."
+        );
+
+        let prompt_part3 = generate_agentic_continuation_prompt(2);
+        assert_eq!(
+            prompt_part3,
+            "Great, now write Part 3 based on Part 2. Continue seamlessly from where you stopped without repeating previous code or pleasantries."
+        );
+
+        // 2. Test Clap parsing for agentic loop parameters
+        let parsed_agentic = Args::try_parse_from(&[
+            "cli",
+            "--agentic-loop",
+            "--target-tokens",
+            "131072",
+            "--chunk-tokens",
+            "8192",
+            "--max-loops",
+            "16",
+        ]).expect("Should parse agentic loop arguments");
+
+        assert!(parsed_agentic.agentic_loop);
+        assert_eq!(parsed_agentic.target_tokens, 131072);
+        assert_eq!(parsed_agentic.chunk_tokens, 8192);
+        assert_eq!(parsed_agentic.max_loops, 16);
     }
 }
 

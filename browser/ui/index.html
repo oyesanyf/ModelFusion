@@ -27,14 +27,128 @@
           <span class="nav-item-icon">🖼️</span>
           <span class="nav-item-text">Images</span>
         </button>
-        <button type="button" class="sidebar-nav-item" id="sidebar-plugins" title="Specialized AI Plugins &amp; ACDSO">
-          <span class="nav-item-icon">@</span>
-          <span class="nav-item-text">Plugins</span>
-        </button>
         <button type="button" class="sidebar-nav-item" id="sidebar-deep-research" title="Autonomous Multi-Step Deep Research">
           <span class="nav-item-icon">🔍</span>
           <span class="nav-item-text">Deep research</span>
         </button>
+
+        <!-- Collapsible Tools & Directives Accordion -->
+        <div class="sidebar-tools-accordion" id="sidebar-tools-accordion">
+          <button type="button" class="sidebar-tools-header" id="sidebar-tools-toggle" title="Toggle ModelFusion Tools &amp; Directives (All 161+ Tools)">
+            <span class="tools-header-icon">🛠️</span>
+            <span class="tools-header-title">Tools &amp; Directives</span>
+            <span class="tools-header-badge">161</span>
+            <span class="tools-header-chevron" id="tools-accordion-chevron">▾</span>
+          </button>
+          <div class="sidebar-tools-body" id="sidebar-tools-body">
+            <!-- 1. Web & Browser -->
+            <div class="tool-category">
+              <button type="button" class="tool-category-header" data-cat="web">
+                <span class="cat-icon">🌐</span>
+                <span class="cat-title">Web &amp; Browser</span>
+                <span class="cat-chevron">▾</span>
+              </button>
+              <div class="tool-category-content">
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="@agent browser deep research on " title="Autonomous Deep Research">🔍 Deep research</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="/som" title="Set-of-Mark Visual Grounding">/som</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="/summarize " title="Summarize Web Page">/summarize</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="/browser " title="Interactive Browser Command">/browser</button>
+              </div>
+            </div>
+
+            <!-- 2. Data Science & AutoML -->
+            <div class="tool-category">
+              <button type="button" class="tool-category-header" data-cat="data">
+                <span class="cat-icon">📊</span>
+                <span class="cat-title">Data Science &amp; AutoML</span>
+                <span class="cat-chevron">▸</span>
+              </button>
+              <div class="tool-category-content collapsed">
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="/acdso " title="Automated Causal Decision Science Optimization">/acdso</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--datascience " title="Data Science Workflow">--datascience</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--dataanalyst " title="Data Analyst Exploration">--dataanalyst</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--timeseries --horizon 7 " title="Time-Series Forecasting">--timeseries</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--predict " title="AutoML Model Prediction">--predict</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--decision " title="Prescriptive Decision Optimization">--decision</button>
+              </div>
+            </div>
+
+            <!-- 3. Agent & Planning -->
+            <div class="tool-category">
+              <button type="button" class="tool-category-header" data-cat="agent">
+                <span class="cat-icon">🧠</span>
+                <span class="cat-title">Agent &amp; Planning</span>
+                <span class="cat-chevron">▸</span>
+              </button>
+              <div class="tool-category-content collapsed">
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--goal " title="Long-Running Autonomous Goal Mode">--goal</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--plan " title="Structured Architecture Plan">--plan</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--grill-me " title="Adversarial Requirements Interview">--grill-me</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--boost " title="Deep Thinking &amp; Reasoning Boost">--boost</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--agentic-loop --target-tokens 65536 " title="Recursive Agentic Loop Looping (Up to 256k tokens)">--agentic-loop</button>
+              </div>
+            </div>
+
+            <!-- 4. Vision & Multimodal -->
+            <div class="tool-category">
+              <button type="button" class="tool-category-header" data-cat="vision">
+                <span class="cat-icon">👁️</span>
+                <span class="cat-title">Vision &amp; Multimodal</span>
+                <span class="cat-chevron">▸</span>
+              </button>
+              <div class="tool-category-content collapsed">
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="/vision " title="Vision Analysis &amp; Image Grounding">/vision</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--image-classification " title="Zero-Shot Image Classification">--image-classification</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--object-detection " title="Visual Object Detection">--object-detection</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--visual-question-answering " title="Visual Question Answering">--visual-question-answering</button>
+              </div>
+            </div>
+
+            <!-- 5. Audio & Speech -->
+            <div class="tool-category">
+              <button type="button" class="tool-category-header" data-cat="audio">
+                <span class="cat-icon">🎙️</span>
+                <span class="cat-title">Audio &amp; Speech</span>
+                <span class="cat-chevron">▸</span>
+              </button>
+              <div class="tool-category-content collapsed">
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--automatic-speech-recognition " title="Speech-to-Text (ASR)">--automatic-speech-recognition</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--text-to-speech " title="Text-to-Speech (TTS)">--text-to-speech</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--audio-classification " title="Audio Classification">--audio-classification</button>
+              </div>
+            </div>
+
+            <!-- 6. Code & Systems -->
+            <div class="tool-category">
+              <button type="button" class="tool-category-header" data-cat="code">
+                <span class="cat-icon">💻</span>
+                <span class="cat-title">Code &amp; Systems</span>
+                <span class="cat-chevron">▸</span>
+              </button>
+              <div class="tool-category-content collapsed">
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--code-vulnerability-detection " title="Code Vulnerability Detection &amp; Audit">--code-vulnerability-detection</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--graph-index " title="Semantic Code Graph Knowledge Index">--graph-index</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--pe-header-extraction " title="PE Header Extraction &amp; Binary Forensics">--pe-header-extraction</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--rest-rl start" title="Start ReST-RL Background Daemon">--rest-rl start</button>
+              </div>
+            </div>
+
+            <!-- 7. Catalog & Maintenance -->
+            <div class="tool-category">
+              <button type="button" class="tool-category-header" data-cat="catalog">
+                <span class="cat-icon">🗄️</span>
+                <span class="cat-title">Catalog &amp; Maintenance</span>
+                <span class="cat-chevron">▸</span>
+              </button>
+              <div class="tool-category-content collapsed">
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--update" title="Fast Curated Engine (~6.5k models)">--update</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--updatedb" title="Continuous Hub Crawler (All 2M+ models)">--updatedb</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--active-model" title="Inspect Active Ollama Model">--active-model</button>
+                <button type="button" class="tool-chip-btn tool-command-btn" data-cmd="--sys-info" title="System Hardware Resources &amp; VRAM">--sys-info</button>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <div class="sidebar-chat-history" id="sidebar-chat-history">
           <div class="chat-history-header">Recent chats</div>
@@ -576,6 +690,7 @@
                       <button type="button" class="action-btn" id="btn-quick-updatedb" style="font-size: 12px; padding: 6px 12px;">🚀 Crawl All 2M+ Models</button>
                     </div>
                   </div>
+                  <div id="models-tab-update-feedback" class="models-update-feedback-banner" style="display: none;"></div>
                 </div>
               </div>
             </div>
@@ -724,6 +839,51 @@
                   <option value="4096" selected>4096 tokens (Default Production)</option>
                   <option value="8192">8192 tokens (Extended Context)</option>
                   <option value="16384">16384 tokens (Full Research Report)</option>
+                  <option value="32768">32768 tokens (Agentic Loop: 32k - Extended Architecture)</option>
+                  <option value="65536">65536 tokens (Agentic Loop: 64k - Full Application Modules)</option>
+                  <option value="131072">131072 tokens (Agentic Loop: 128k - Complex Multi-Tier Systems)</option>
+                  <option value="262144">262144 tokens (Agentic Loop: 256k - Complete Full-Stack Codebase)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-agentic-loop-enable" class="setting-label">Agentic Loop Looping (Recursive Chaining)</label>
+                <span class="setting-desc">Auto-chain LLM turns recursively up to 256k tokens. Generates multi-part outputs seamlessly by feeding turn outputs back into context.</span>
+              </div>
+              <div class="setting-control checkbox-control">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="setting-agentic-loop-enable" checked>
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-agentic-chunk-size" class="setting-label">Agentic Loop Chunk Size</label>
+                <span class="setting-desc">Token budget generated per sequential turn before triggering continuation.</span>
+              </div>
+              <div class="setting-control">
+                <select id="setting-agentic-chunk-size" class="setting-select">
+                  <option value="4096" selected>4096 tokens/turn (Recommended)</option>
+                  <option value="8192">8192 tokens/turn (Large Chunks)</option>
+                  <option value="2048">2048 tokens/turn (Fast Increments)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label for="setting-agentic-strategy" class="setting-label">Agentic Loop Strategy</label>
+                <span class="setting-desc">Sequencing approach for recursive context chaining and prompt triggers.</span>
+              </div>
+              <div class="setting-control">
+                <select id="setting-agentic-strategy" class="setting-select">
+                  <option value="auto_continuation" selected>Auto-Continuation (Seamless Part-by-Part)</option>
+                  <option value="multi_part_assembly">Multi-Part Assembly (Structured Modules)</option>
+                  <option value="target_budget">Target Budget (Exact Token Target)</option>
                 </select>
               </div>
             </div>

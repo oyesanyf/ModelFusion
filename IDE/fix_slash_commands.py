@@ -1049,6 +1049,35 @@ def patch_request_timeout(content, file_path):
     return content
 
 
+def patch_agentic_loop(content, file_path):
+    """Patch _sendOrchestrationRequest to include agentic_loop, target_tokens, and chunk_tokens."""
+    if "body3.agentic_loop" in content or "agentic_loop: agenticLoop" in content:
+        return content
+
+    target = (
+        '          const postData = JSON.stringify(body3);\n'
+        '          const config4 = vscode15.workspace.getConfiguration("hugos.modelfusion");\n'
+        '          const configTimeout = config4.get("requestTimeout", 0);'
+    )
+    replacement = (
+        '          const config4 = vscode15.workspace.getConfiguration("hugos.modelfusion");\n'
+        '          if (config4.get("agenticLoop", true)) {\n'
+        '            body3.agentic_loop = true;\n'
+        '            body3.target_tokens = config4.get("targetTokens", 32768);\n'
+        '            body3.chunk_tokens = config4.get("chunkTokens", 4096);\n'
+        '          }\n'
+        '          const postData = JSON.stringify(body3);\n'
+        '          const configTimeout = config4.get("requestTimeout", 0);'
+    )
+    if target in content:
+        content = content.replace(target, replacement, 1)
+        print(f"  [OK] Patched agentic loop into _sendOrchestrationRequest in {file_path}")
+    else:
+        print(f"  [WARN] Target not found for agentic loop patch in {file_path}")
+
+    return content
+
+
 def patch_file(file_path):
     """Patch a single extension.js file."""
     with open(file_path, "r", encoding="utf-8") as f:
@@ -1122,6 +1151,7 @@ def patch_file(file_path):
         new_content = patch_workspace_structure(new_content, file_path)
         new_content = patch_healthcheck_watchdog(new_content, file_path)
         new_content = patch_request_timeout(new_content, file_path)
+        new_content = patch_agentic_loop(new_content, file_path)
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(new_content)
         print(f"  PATCHED (unminified format, {len(UNMINIFIED_BLOCK)} chars): {file_path}")
@@ -1144,6 +1174,7 @@ def patch_file(file_path):
         new_content = patch_workspace_structure(new_content, file_path)
         new_content = patch_healthcheck_watchdog(new_content, file_path)
         new_content = patch_request_timeout(new_content, file_path)
+        new_content = patch_agentic_loop(new_content, file_path)
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(new_content)
         print(f"  PATCHED (minified format, {len(MINIFIED_BLOCK)} chars): {file_path}")
@@ -1361,8 +1392,9 @@ if __name__ == '__main__':
             c6 = all(cmd in c for cmd in ['"rest-rl"', '"restrl"', '"rl"', '"active-model"', '"active-models"', '"activemodels"', '"version"', '"updatedb"', '"update"', '"clearcache"'])
             c7 = ('_startHealthCheckWatchdog' in c and '_probeServicesHealth' in c)
             c8 = ('isLongRunningJob' in c and 'effectiveTimeout' in c)
+            c9 = ('body3.agentic_loop' in c or 'agentic_loop' in c)
 
-            if not (c1 and c2 and c3 and c4 and c5 and c6 and c7 and c8):
+            if not (c1 and c2 and c3 and c4 and c5 and c6 and c7 and c8 and c9):
                 print(f"❌ INVARIANT VIOLATION in {file_path}:")
                 print(f"   c1 (avo in knownCommands): {c1}")
                 print(f"   c2 (cmdName === avo router): {c2}")
@@ -1372,6 +1404,7 @@ if __name__ == '__main__':
                 print(f"   c6 (fastInfoCommands contains all fast commands): {c6}")
                 print(f"   c7 (health check watchdog methods): {c7}")
                 print(f"   c8 (active job request timeout): {c8}")
+                print(f"   c9 (agentic loop parameter injection): {c9}")
                 all_ok = False
             else:
                 print(f"✅ Invariants PASSED: {file_path}")
