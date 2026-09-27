@@ -26,19 +26,17 @@ Write-Host "--------------------------------------------------------" -Foregroun
 
 # 1. Verify binary staging
 $cliBinPath = Join-Path $browserDir "bin\cli.exe"
-if (-not (Test-Path $cliBinPath)) {
-    $srcCli = Join-Path $rootDir "target\release\cli.exe"
-    if (-not (Test-Path $srcCli)) {
-        $srcCli = Join-Path $rootDir "IDE\bin\cli.exe"
-    }
-    if (Test-Path $srcCli) {
-        New-Item -ItemType Directory -Force -Path (Split-Path $cliBinPath -Parent) | Out-Null
-        Copy-Item -Path $srcCli -Destination $cliBinPath -Force
-        Write-Host "[OK] Staged cli.exe from $srcCli" -ForegroundColor Green
-    } else {
-        Write-Host "[ERROR] cli.exe not found. Build release binary first." -ForegroundColor Red
-        Exit 1
-    }
+$srcCli = Join-Path $rootDir "target\release\cli.exe"
+if (-not (Test-Path $srcCli)) {
+    $srcCli = Join-Path $rootDir "IDE\bin\cli.exe"
+}
+if (Test-Path $srcCli) {
+    New-Item -ItemType Directory -Force -Path (Split-Path $cliBinPath -Parent) | Out-Null
+    Copy-Item -Path $srcCli -Destination $cliBinPath -Force
+    Write-Host "[OK] Staged latest cli.exe from $srcCli into $cliBinPath" -ForegroundColor Green
+} else {
+    Write-Host "[ERROR] cli.exe not found at $srcCli. Build release binary first." -ForegroundColor Red
+    Exit 1
 }
 
 # 2. Locate signtool or PowerShell Authenticode

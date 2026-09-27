@@ -434,12 +434,15 @@ fn select_context_window_for_model(model: &str) -> u32 {
     }
 }
 
-fn resolve_db_path(db_path_opt: Option<&str>) -> std::path::PathBuf {
+pub fn resolve_db_path(db_path_opt: Option<&str>) -> std::path::PathBuf {
     if let Some(p) = db_path_opt {
         let path = std::path::Path::new(p);
-        if path.exists() {
-            return path.to_path_buf();
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                let _ = std::fs::create_dir_all(parent);
+            }
         }
+        return path.to_path_buf();
     }
     let candidates = [
         "IDE/db/hf_models.db",
@@ -456,6 +459,8 @@ fn resolve_db_path(db_path_opt: Option<&str>) -> std::path::PathBuf {
         if let Some(parent) = exe.parent() {
             let p1 = parent.join("db").join("hf_models.db");
             if p1.exists() { return p1; }
+            let p0 = parent.join("hf_models.db");
+            if p0.exists() { return p0; }
             if let Some(grandparent) = parent.parent() {
                 let p2 = grandparent.join("db").join("hf_models.db");
                 if p2.exists() { return p2; }
@@ -464,8 +469,29 @@ fn resolve_db_path(db_path_opt: Option<&str>) -> std::path::PathBuf {
             }
         }
     }
-    std::path::PathBuf::from(db_path_opt.unwrap_or("IDE/db/hf_models.db"))
+    // Check LOCALAPPDATA standard paths
+    if let Ok(local_app) = std::env::var("LOCALAPPDATA") {
+        let base = std::path::PathBuf::from(local_app);
+        let p_ide = base.join("HugOS IDE").join("db").join("hf_models.db");
+        if p_ide.exists() { return p_ide; }
+        let p_browser = base.join("HugOS Browser").join("db").join("hf_models.db");
+        if p_browser.exists() { return p_browser; }
+        let p_mf = base.join("ModelFusion").join("db").join("hf_models.db");
+        if p_mf.exists() { return p_mf; }
+        // Fallback default: %LOCALAPPDATA%\ModelFusion\db\hf_models.db
+        if let Some(parent) = p_mf.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        return p_mf;
+    }
+    // Fallback relative path, ensuring parent dir exists
+    let fallback = std::path::PathBuf::from("IDE/db/hf_models.db");
+    if let Some(parent) = fallback.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    fallback
 }
+
 
 async fn generate_active_models_markdown(db_path_opt: Option<&str>) -> String {
     let mut out = String::new();
@@ -710,19 +736,82 @@ fn resolve_rest_rl_dir() -> std::path::PathBuf {
     std::path::PathBuf::from("IDE").join("rest_rl")
 }
 
+fn find_in_path(cmd: &str) -> Option<std::path::PathBuf> {
+    if let Ok(path_var) = std::env::var("PATH") {
+        for dir in std::env::split_paths(&path_var) {
+            let candidate = dir.join(cmd);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+            #[cfg(windows)]
+            {
+                let candidate_exe = dir.join(format!("{}.exe", cmd));
+                if candidate_exe.is_file() {
+                    return Some(candidate_exe);
+                }
+            }
+        }
+    }
+    None
+}
+
+pub fn resolve_python_command() -> Option<std::path::PathBuf> {
+    // 1. Check if python is in PATH
+    if let Some(path) = find_in_path("python").or_else(|| find_in_path("python3")) {
+        return Some(path);
+    }
+    // 2. Check standard Windows Python installations
+    if let Ok(local_app) = std::env::var("LOCALAPPDATA") {
+        let base = std::path::PathBuf::from(local_app).join("Programs").join("Python");
+        if let Ok(entries) = std::fs::read_dir(base) {
+            for entry in entries.flatten() {
+                let py = entry.path().join("python.exe");
+                if py.is_file() {
+                    return Some(py);
+                }
+            }
+        }
+    }
+    // 3. Check Program Files
+    if let Ok(prog_files) = std::env::var("ProgramFiles") {
+        let base = std::path::PathBuf::from(prog_files).join("Python");
+        if let Ok(entries) = std::fs::read_dir(base) {
+            for entry in entries.flatten() {
+                let py = entry.path().join("python.exe");
+                if py.is_file() {
+                    return Some(py);
+                }
+            }
+        }
+    }
+    // 4. Check bundled python adjacent to exe
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let p1 = parent.join("python").join("python.exe");
+            if p1.is_file() { return Some(p1); }
+            let p2 = parent.join("resources").join("app").join("python").join("python.exe");
+            if p2.is_file() { return Some(p2); }
+        }
+    }
+    None
+}
+
 fn spawn_rest_rl_daemon() -> Result<(), String> {
     let rl_dir = resolve_rest_rl_dir();
     let daemon_script = rl_dir.join("rest_rl_daemon.py");
     if !daemon_script.exists() {
         return Err(format!("ReST-RL daemon script not found at {:?}", daemon_script));
     }
+    let py_cmd = resolve_python_command().ok_or_else(|| {
+        "Python is not installed or available on this system. Install Python or run with bundled runtime to enable ReST-RL.".to_string()
+    })?;
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
         const DETACHED_PROCESS: u32 = 0x00000008;
         const IDLE_PRIORITY_CLASS: u32 = 0x00000040;
-        let mut cmd = std::process::Command::new("python");
+        let mut cmd = std::process::Command::new(&py_cmd);
         cmd.arg(&daemon_script)
             .current_dir(&rl_dir)
             .creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | IDLE_PRIORITY_CLASS)
@@ -733,7 +822,7 @@ fn spawn_rest_rl_daemon() -> Result<(), String> {
     }
     #[cfg(not(windows))]
     {
-        let mut cmd = std::process::Command::new("python3");
+        let mut cmd = std::process::Command::new(&py_cmd);
         cmd.arg(&daemon_script)
             .current_dir(&rl_dir)
             .stdin(std::process::Stdio::null())
@@ -1923,8 +2012,8 @@ fn main() -> Result<()> {
                         .cloned()
                         .unwrap_or_else(|| candidates[0].clone());
                     
-                    eprintln!("[Background] Script path: {:?} (exists: {})", script_path, script_path.exists());
-                    let result = std::process::Command::new("python")
+                    let py_cmd = resolve_python_command().unwrap_or_else(|| std::path::PathBuf::from("python"));
+                    let result = std::process::Command::new(&py_cmd)
                         .arg(&script_path)
                         .arg(&ov_dir)
                         .arg("all")
@@ -2031,7 +2120,8 @@ async fn run(args: Args) -> Result<()> {
 
     if args.jupyter && args.prompt.is_none() && args.query.is_none() && args.file.is_none() {
         println!("🚀 Launching Jupyter Notebook: data_analyst_workflow.ipynb");
-        let status = std::process::Command::new("python")
+        let py_cmd = resolve_python_command().unwrap_or_else(|| std::path::PathBuf::from("python"));
+        let status = std::process::Command::new(&py_cmd)
             .args(&["-m", "notebook", "data_analyst_workflow.ipynb"])
             .status();
         if let Err(e) = status {
@@ -2194,7 +2284,8 @@ async fn run(args: Args) -> Result<()> {
             println!("\n📦 Step 1: Downloading pre-converted OV Hub models (INT4, no local conversion)...");
             let hub_script = find_script("cache_ov_hub.py");
             let db_path_str = handler.db_path.to_string_lossy().to_string();
-            let hub_result = std::process::Command::new("python")
+            let py_cmd = resolve_python_command().unwrap_or_else(|| std::path::PathBuf::from("python"));
+            let hub_result = std::process::Command::new(&py_cmd)
                 .arg(&hub_script)
                 .arg(&args.ov_model_dir)
                 .arg(&db_path_str)
@@ -2227,7 +2318,7 @@ async fn run(args: Args) -> Result<()> {
 
                 for (i, model_id) in models.iter().enumerate() {
                     println!("[{}/{}] {}", i + 1, total, model_id);
-                    let result = std::process::Command::new("python")
+                    let result = std::process::Command::new(&py_cmd)
                         .arg(&prepare_script)
                         .arg(model_id)
                         .arg(&args.ov_model_dir)
@@ -2393,7 +2484,8 @@ async fn run(args: Args) -> Result<()> {
         if let Some(ref model_id) = args.prepare_model {
             // Single model preparation
             println!("🔷 [OPENVINO] Preparing model: {} (format: {})", model_id, args.weight_format);
-            let status = std::process::Command::new("python")
+            let py_cmd = resolve_python_command().unwrap_or_else(|| std::path::PathBuf::from("python"));
+            let status = std::process::Command::new(&py_cmd)
                 .arg(&script_path)
                 .arg(model_id)
                 .arg(&args.ov_model_dir)
@@ -2434,9 +2526,10 @@ async fn run(args: Args) -> Result<()> {
             let mut fail_count = 0;
             let total = models.len();
 
+            let py_cmd = resolve_python_command().unwrap_or_else(|| std::path::PathBuf::from("python"));
             for (i, model_id) in models.iter().enumerate() {
                 println!("\n[{}/{}] Processing: {}", i + 1, total, model_id);
-                let result = std::process::Command::new("python")
+                let result = std::process::Command::new(&py_cmd)
                     .arg(&script_path)
                     .arg(model_id)
                     .arg(&args.ov_model_dir)
@@ -2952,7 +3045,8 @@ async fn run(args: Args) -> Result<()> {
                 ));
             }
             eprintln!("🔍 Checking vLLM installation...");
-            let check = std::process::Command::new("python3")
+            let py_vllm = resolve_python_command().unwrap_or_else(|| std::path::PathBuf::from("python3"));
+            let check = std::process::Command::new(&py_vllm)
                 .args(["-c", "import vllm; print('OK')"])
                 .output();
             match check {
@@ -2980,8 +3074,9 @@ async fn run(args: Args) -> Result<()> {
             }
         } else if openvino {
             eprintln!("🔍🔷 Checking OpenVINO installation...");
+            let py_cmd = resolve_python_command().unwrap_or_else(|| std::path::PathBuf::from("python"));
             // Try openvino_genai first (best performance)
-            let genai_check = std::process::Command::new("python")
+            let genai_check = std::process::Command::new(&py_cmd)
                 .args(["-c", "import openvino_genai; print('OK')"])
                 .output();
             match genai_check {
@@ -2994,7 +3089,7 @@ async fn run(args: Args) -> Result<()> {
                 }
                 _ => {
                     // Fallback: check for classic openvino
-                    let fallback_check = std::process::Command::new("python")
+                    let fallback_check = std::process::Command::new(&py_cmd)
                         .args(["-c", "import openvino; print('OK')"])
                         .output();
                     match fallback_check {
@@ -3016,7 +3111,8 @@ async fn run(args: Args) -> Result<()> {
             }
         } else if args.onnx {
             eprintln!("🔍🟣 Checking ONNX Runtime installation...");
-            let onnx_check = std::process::Command::new("python")
+            let py_cmd = resolve_python_command().unwrap_or_else(|| std::path::PathBuf::from("python"));
+            let onnx_check = std::process::Command::new(&py_cmd)
                 .args(["-c", "import optimum.onnxruntime; print('OK')"])
                 .output();
             match onnx_check {
@@ -3772,39 +3868,57 @@ pub fn extract_latest_user_query(prompt: &str) -> String {
     }
 }
 
+pub fn resolve_dataset_path(name: &str) -> Option<std::path::PathBuf> {
+    let clean_name = name.trim().trim_matches(|c: char| c == '\'' || c == '"' || c == '`');
+    if clean_name.is_empty() {
+        return None;
+    }
+    let mut candidates = Vec::new();
+    
+    // Direct path
+    candidates.push(std::path::PathBuf::from(clean_name));
+    
+    // Relative to CWD
+    candidates.push(std::path::PathBuf::from("dataset").join("Seaborn All Built-in Datasets").join(clean_name));
+    candidates.push(std::path::PathBuf::from("datasets").join(clean_name));
+    candidates.push(std::path::PathBuf::from("data").join(clean_name));
+    candidates.push(std::path::PathBuf::from("IDE").join(clean_name));
+    candidates.push(std::path::PathBuf::from("IDE").join("db").join(clean_name));
+    candidates.push(std::path::PathBuf::from("crates").join("cli").join(clean_name));
+    candidates.push(std::path::PathBuf::from(".").join(clean_name));
+    
+    // Relative to exe
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(p) = exe.parent() {
+            candidates.push(p.join(clean_name));
+            candidates.push(p.join("dataset").join(clean_name));
+            candidates.push(p.join("data").join(clean_name));
+        }
+    }
+    
+    // Check USERPROFILE
+    if let Ok(user_profile) = std::env::var("USERPROFILE") {
+        let up = std::path::PathBuf::from(user_profile);
+        candidates.push(up.join("Datasets").join(clean_name));
+        candidates.push(up.join("Documents").join("Datasets").join(clean_name));
+    }
+    
+    // Fallback check D:\ if it exists
+    candidates.push(std::path::PathBuf::from(r"D:\dataset\Seaborn All Built-in Datasets").join(clean_name));
+    
+    for c in candidates {
+        if c.is_file() {
+            return Some(c);
+        }
+    }
+    None
+}
+
 /// Formats file bytes for LLM consumption, extracting clean schema/column tokens for binary datasets
 /// (.parquet, .xlsx) and text/cells for code and notebooks (.ipynb, .csv, .json, .py, etc.).
 /// Resolves a file path across current working directory and candidate workspace directories.
 pub fn resolve_existing_file_path(file_path: &str) -> Option<std::path::PathBuf> {
-    let trimmed = file_path.trim().trim_matches(|c: char| c == '\'' || c == '"' || c == '`');
-    if trimmed.is_empty() {
-        return None;
-    }
-    let p = std::path::Path::new(trimmed);
-    if p.is_file() {
-        return Some(p.to_path_buf());
-    }
-    let candidate_paths = [
-        format!(r"D:\dataset\Seaborn All Built-in Datasets\{}", trimmed),
-        format!("IDE/{}", trimmed),
-        format!("IDE/db/{}", trimmed),
-        format!("crates/cli/{}", trimmed),
-        format!("./{}", trimmed),
-    ];
-    for cp in &candidate_paths {
-        let cp_p = std::path::Path::new(cp);
-        if cp_p.is_file() {
-            return Some(cp_p.to_path_buf());
-        }
-    }
-    if let Ok(mut exe_path) = std::env::current_exe() {
-        exe_path.pop();
-        let cp = exe_path.join(trimmed);
-        if cp.is_file() {
-            return Some(cp);
-        }
-    }
-    None
+    resolve_dataset_path(file_path)
 }
 
 /// Formats file bytes for LLM consumption, extracting clean schema/column tokens for binary datasets
@@ -4199,26 +4313,10 @@ pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> 
             if !seen_ids.contains(&clean_lower) && !seen_ids.contains(&base_name) {
                 let mut found_bytes: Option<Vec<u8>> = None;
                 let mut resolved_path = clean.clone();
-                let p = std::path::Path::new(&clean);
-                if p.is_file() {
-                    found_bytes = std::fs::read(p).ok();
-                } else {
-                    let candidate_paths = [
-                        format!(r"D:\dataset\Seaborn All Built-in Datasets\{}", clean),
-                        format!("IDE/{}", clean),
-                        format!("IDE/db/{}", clean),
-                        format!("crates/cli/{}", clean),
-                        format!("./{}", clean),
-                    ];
-                    for cp in &candidate_paths {
-                        let cp_p = std::path::Path::new(cp);
-                        if cp_p.is_file() {
-                            if let Ok(b) = std::fs::read(cp_p) {
-                                found_bytes = Some(b);
-                                resolved_path = cp.clone();
-                                break;
-                            }
-                        }
+                if let Some(target_p) = resolve_dataset_path(&clean) {
+                    if let Ok(b) = std::fs::read(&target_p) {
+                        found_bytes = Some(b);
+                        resolved_path = target_p.to_string_lossy().to_string();
                     }
                 }
                 if let Some(bytes) = found_bytes {
@@ -5721,8 +5819,8 @@ async fn query_local_router(system_prompt: &str, user_prompt: &str) -> Option<St
     }
     
     let prompt_format = format!("<|im_start|>system\n{}<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n", system_prompt, user_prompt);
-    
-    let out = tokio::process::Command::new("python")
+    let py_cmd = resolve_python_command()?;
+    let out = tokio::process::Command::new(py_cmd)
         .arg(script_path)
         .arg("Qwen/Qwen2.5-1.5B-Instruct")
         .arg(&prompt_format)
@@ -6151,8 +6249,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 }
             };
 
-            let db_path_str = db_path_clone.clone().unwrap_or_else(|| "db/hf_models.db".to_string());
-            let db_path_val = std::path::Path::new(&db_path_str);
+            let resolved_db = resolve_db_path(db_path_clone.as_deref());
+            let db_path_str = resolved_db.to_string_lossy().to_string();
+            let db_path_val = resolved_db.as_path();
 
             // ── Static Web UI Files Serving (HugOS Browser UI) ──
             if request_path == "/" || request_path == "/index.html" || request_path == "/styles.css" || request_path == "/app.js" || request_path.starts_with("/ui/") || request_path.starts_with("/browser/ui/") {
@@ -7455,8 +7554,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                             let clean_args = args_owned.trim().to_lowercase();
                                             let first_arg = clean_args.split_whitespace().next().unwrap_or("");
                                             let cat_opt = if !first_arg.is_empty() { Some(first_arg) } else { None };
-                                            let db_path_str = db_path_ref.as_deref().filter(|s| !s.is_empty()).unwrap_or("IDE/db/hf_models.db");
-                                            let handler = ComprehensiveTaskHandler::new(Some(db_path_str)).unwrap_or_else(|_| ComprehensiveTaskHandler::new(None).unwrap());
+                                            let resolved_db = resolve_db_path(db_path_ref.as_deref().filter(|s| !s.is_empty()));
+                                            let db_path_str = resolved_db.to_string_lossy();
+                                            let handler = ComprehensiveTaskHandler::new(Some(&db_path_str)).unwrap_or_else(|_| ComprehensiveTaskHandler::new(None).unwrap());
                                             let tasks_res = handler.handle_tasks_list(cat_opt);
                                             
                                             let mut enriched = format!("### 📋 ModelFusion Tasks ({})\n\n{}", cat_opt.unwrap_or("all"), tasks_res.content);
@@ -7465,7 +7565,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                             } else {
                                                 db_path_str.to_string()
                                             };
-                                            if let Ok(db) = db::HuggingFaceModelDatabase::open(&db_to_open).or_else(|_| db::HuggingFaceModelDatabase::open(db_path_str)) {
+                                            if let Ok(db) = db::HuggingFaceModelDatabase::open(&db_to_open).or_else(|_| db::HuggingFaceModelDatabase::open(&resolved_db)) {
                                                 if let Some(cat) = cat_opt {
                                                     let task_list: Vec<&str> = match cat {
                                                         "audio" => vec!["automatic-speech-recognition", "audio-classification", "voice-activity-detection", "emotion-recognition", "text-to-speech"],
@@ -8465,8 +8565,8 @@ sequenceDiagram
                                           };
                                           let attached = extract_attached_code_context(&prompt_for_cmd);
                                            if args_owned.trim().is_empty() && attached.is_empty() {
-                                               let db_path_str = db_path_ref.as_deref().filter(|s| !s.is_empty()).unwrap_or("IDE/db/hf_models.db");
-                                               let top_models = if let Ok(db) = db::HuggingFaceModelDatabase::open(db_path_str) {
+                                               let resolved_db = resolve_db_path(db_path_ref.as_deref().filter(|s| !s.is_empty()));
+                                               let top_models = if let Ok(db) = db::HuggingFaceModelDatabase::open(&resolved_db) {
                                                    db.get_by_task(clean_task, 3).unwrap_or_default()
                                                } else {
                                                    Vec::new()
@@ -14177,6 +14277,56 @@ public class Pr {
         assert_eq!(parsed_agentic.chunk_tokens, 8192);
         assert_eq!(parsed_agentic.max_loops, 16);
     }
+
+    #[test]
+    fn test_universal_db_path_resolution() {
+        use super::resolve_db_path;
+
+        // 1. Explicit path in non-existent directory -> auto creates parent directory
+        let temp_dir = std::env::temp_dir().join("modelfusion_db_auto_create_test");
+        let target_db = temp_dir.join("sub").join("models.db");
+        if temp_dir.exists() {
+            let _ = std::fs::remove_dir_all(&temp_dir);
+        }
+        assert!(!target_db.parent().unwrap().exists());
+
+        let resolved = resolve_db_path(Some(target_db.to_str().unwrap()));
+        assert_eq!(resolved, target_db);
+        assert!(target_db.parent().unwrap().exists(), "Parent directory must be created automatically");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+
+        // 2. Fallback resolution with None -> returns a valid path whose parent exists or is created
+        let default_resolved = resolve_db_path(None);
+        assert!(!default_resolved.as_os_str().is_empty());
+        assert!(default_resolved.to_string_lossy().contains("hf_models.db"));
+    }
+
+    #[test]
+    fn test_dataset_path_resolution_and_python_command() {
+        use super::{resolve_dataset_path, resolve_python_command};
+
+        // 1. Dataset path resolution for non-empty existing temporary file
+        let temp_dir = std::env::temp_dir().join("mf_dataset_res_test");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let sample_csv = temp_dir.join("sample.csv");
+        let _ = std::fs::write(&sample_csv, "x,y\n1,2\n");
+
+        let resolved = resolve_dataset_path(sample_csv.to_str().unwrap());
+        assert_eq!(resolved, Some(sample_csv.clone()));
+
+        // Empty or non-existent
+        assert!(resolve_dataset_path("").is_none());
+        assert!(resolve_dataset_path("non_existent_dataset_abc_12345.csv").is_none());
+        let _ = std::fs::remove_file(&sample_csv);
+        let _ = std::fs::remove_dir_all(&temp_dir);
+
+        // 2. Safe python resolution test: never panics, returns Some(Path) or None cleanly
+        let py = resolve_python_command();
+        if let Some(p) = py {
+            assert!(p.is_file(), "Resolved python command must be an existing file");
+        }
+    }
 }
+
 
 

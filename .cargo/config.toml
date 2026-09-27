@@ -1,6 +1,7 @@
 [target.x86_64-pc-windows-msvc]
 linker = "rust-lld"
 rustflags = [
+    "-C", "target-feature=+crt-static",
     "-L", "native=D:/tools/xwin-crt/crt/lib/x64",
     "-L", "native=D:/tools/xwin-crt/sdk/lib/um/x64",
     "-L", "native=D:/tools/xwin-crt/sdk/lib/ucrt/x64",
@@ -9,6 +10,7 @@ rustflags = [
 [build]
 rustflags = [
     "-C", "linker=rust-lld",
+    "-C", "target-feature=+crt-static",
     "-L", "native=D:/tools/xwin-crt/crt/lib/x64",
     "-L", "native=D:/tools/xwin-crt/sdk/lib/um/x64",
     "-L", "native=D:/tools/xwin-crt/sdk/lib/ucrt/x64",
