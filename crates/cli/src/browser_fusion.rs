@@ -663,8 +663,8 @@ pub fn launch_hugos_browser(url: Option<&str>) -> Result<(), String> {
     println!("🌐 [BROWSER] Spawning default system browser on {}", start_url);
     #[cfg(windows)]
     {
-        let mut cmd = std::process::Command::new("cmd");
-        cmd.args(["/c", "start", start_url]);
+        let mut cmd = std::process::Command::new("rundll32.exe");
+        cmd.args(["url.dll,FileProtocolHandler", start_url]);
         {
             use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW

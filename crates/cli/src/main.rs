@@ -333,6 +333,56 @@ pub fn model_fits_memory(model_name: &str, free_ram_gb: f64, free_vram_mb: u64, 
     }
 }
 
+/// Identifies if a user prompt is a factual query susceptible to hallucinations on small models.
+pub fn is_factual_query(text: &str) -> bool {
+    let lower = text.trim().to_lowercase();
+    if lower.is_empty() {
+        return false;
+    }
+
+    // Never treat explicit programming/code blocks as general factual queries
+    let is_code = lower.contains("fn ") || lower.contains("def ") || lower.contains("class ")
+        || lower.contains("import ") || lower.contains("const ") || lower.contains("let ")
+        || lower.contains("var ") || lower.contains("function ") || lower.contains("public class")
+        || lower.contains("return ") || lower.contains("console.log") || lower.contains("println!");
+    if is_code {
+        return false;
+    }
+
+    // Political, geographical, biographical, or current leadership patterns
+    let leadership_patterns = [
+        "president of", "prime minister of", "capital of", "governor of",
+        "leader of", "head of state of", "who is the current", "who is the president",
+        "who is president", "what is the capital of", "who is currently", "current ruler of",
+        "chancellor of", "king of", "queen of", "monarch of", "mayor of"
+    ];
+    for pat in &leadership_patterns {
+        if lower.contains(pat) {
+            return true;
+        }
+    }
+
+    // Factual interrogatives
+    let question_prefixes = [
+        "who is ", "who was ", "who are ", "who were ",
+        "where is ", "where was ", "where are ",
+        "what is the capital ", "what is the population ", "what is the currency ",
+        "when was ", "when did ", "which country ", "which city "
+    ];
+    for pfx in &question_prefixes {
+        if lower.starts_with(pfx) {
+            return true;
+        }
+    }
+
+    // Questions ending with '?' or containing interrogatives with country/leader
+    if lower.contains('?') && (lower.contains("president") || lower.contains("capital") || lower.contains("leader") || lower.contains("prime minister") || lower.contains("born in") || lower.contains("population")) {
+        return true;
+    }
+
+    false
+}
+
 /// Resolves the optimal Ollama model from installed models and system resources without network calls.
 pub fn resolve_dynamic_ollama_model_from_state(
     requested_model: Option<&str>,
@@ -7302,6 +7352,85 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         resolved
                     );
                     current_json["model"] = serde_json::json!(resolved);
+                }
+
+                // Factual knowledge grounding & anti-hallucination guardrail for low-resource tiers
+                let active_model_str = current_json.get("model").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+                let is_small_model = active_model_str.contains("1.5b")
+                    || active_model_str.contains("0.5b")
+                    || active_model_str.contains("3b")
+                    || active_model_str.contains("1b");
+                let sys_res = query_system_resources();
+                let is_low_ram = sys_res.free_ram_gb < 8.0;
+
+                if is_small_model || is_low_ram {
+                    let mut last_user_idx = None;
+                    if let Some(messages) = current_json.get("messages").and_then(|m| m.as_array()) {
+                        for (idx, msg) in messages.iter().enumerate().rev() {
+                            if msg.get("role").and_then(|r| r.as_str()) == Some("user") {
+                                last_user_idx = Some(idx);
+                                break;
+                            }
+                        }
+                    }
+
+                    if let Some(u_idx) = last_user_idx {
+                        let user_content = current_json["messages"][u_idx]["content"].as_str().unwrap_or("").to_string();
+                        let is_already_grounded = user_content.contains("Verified Grounding Context:")
+                            || user_content.contains("Here are verified live internet search results");
+
+                        if !is_already_grounded && is_factual_query(&user_content) {
+                            eprintln!("[SERVER] 🌐 Factual query detected on small model/low RAM: {:?}", user_content);
+                            let search_res = modelfusion_core::live_web_search(&user_content, 5).await;
+                            match search_res {
+                                Ok(results) if !results.is_empty() => {
+                                    eprintln!("[SERVER] ✅ Grounded with {} live web search results", results.len());
+                                    let mut grounding_text = String::from("Verified Grounding Context:\n");
+                                    for (i, r) in results.iter().enumerate() {
+                                        grounding_text.push_str(&format!("[{}] Title: {}\nURL: {}\nSummary: {}\n\n", i + 1, r.title, r.url, r.snippet));
+                                    }
+                                    let enhanced_prompt = format!(
+                                        "User Query: {}\n\n{}\nInstructions:\n- Use the verified grounding context above to answer accurately and comprehensively.\n- Never invent, fabricate, or hallucinate political leaders, capitals, or dates.\n- State verified real-world facts directly (e.g. current head of state, verified capital city).\n- Cite the sources inline using [1], [2], etc., matching the numbered search results above.\n- Include clickable markdown links to the sources [Title](URL) where relevant.",
+                                        user_content,
+                                        grounding_text
+                                    );
+                                    current_json["messages"][u_idx]["content"] = serde_json::json!(enhanced_prompt);
+                                }
+                                _ => {
+                                    eprintln!("[SERVER] ⚠️ Web search returned no results, injecting strict factual guardrails");
+                                    let guardrail_prompt = format!(
+                                        "{}\n\nImportant Factual Constraint:\nIf you are asked about real-world facts such as world leaders, heads of state, country capitals, or historical dates and you are not 100% certain, state clearly that you do not have verified up-to-date records rather than fabricating false names or places. Never invent fictional political leaders or relocated capitals.",
+                                        user_content
+                                    );
+                                    current_json["messages"][u_idx]["content"] = serde_json::json!(guardrail_prompt);
+                                }
+                            }
+
+                            // Reinforce or insert system prompt to prohibit hallucinating names/places
+                            if let Some(messages) = current_json.get_mut("messages").and_then(|m| m.as_array_mut()) {
+                                let mut has_sys = false;
+                                for msg in messages.iter_mut() {
+                                    if msg.get("role").and_then(|r| r.as_str()) == Some("system") {
+                                        has_sys = true;
+                                        if let Some(content) = msg.get_mut("content") {
+                                            if let Some(s) = content.as_str() {
+                                                if !s.contains("Never invent false names") {
+                                                    *content = serde_json::json!(format!("{} Never invent false names, leaders, or relocated capitals.", s));
+                                                }
+                                            }
+                                        }
+                                        break;
+                                    }
+                                }
+                                if !has_sys {
+                                    messages.insert(0, serde_json::json!({
+                                        "role": "system",
+                                        "content": "You are ModelFusion AI, an intelligent assistant with live grounding capabilities. Correlate search evidence with internal reasoning, provide factual and up-to-date answers, and cite sources accurately. Never invent false names, leaders, or relocated capitals."
+                                    }));
+                                }
+                            }
+                        }
+                    }
                 }
 
                 if agentic_loop && target_tokens > 4096 && !is_streaming {
@@ -15613,6 +15742,25 @@ public class Pr {
         let remaining: Vec<String> = candidates.into_iter().filter(|m| m != failed_32b).collect();
         let fallback_ds = select_best_installed_ollama_model(&remaining);
         assert_eq!(fallback_ds, Some("deepseek-r1:1.5b".to_string()));
+    }
+
+    #[test]
+    fn test_is_factual_query() {
+        use super::is_factual_query;
+
+        // Factual queries (leadership, capitals, geography, biography)
+        assert!(is_factual_query("Who is the president of Nigeria?"));
+        assert!(is_factual_query("what is the capital of Iran"));
+        assert!(is_factual_query("who is the prime minister of the UK?"));
+        assert!(is_factual_query("where is Mount Everest"));
+        assert!(is_factual_query("when was the declaration of independence signed"));
+        assert!(is_factual_query("current ruler of Monaco"));
+
+        // Code / non-factual queries should not be flagged as factual search
+        assert!(!is_factual_query("fn calculate_sum(a: i32, b: i32) -> i32 { a + b }"));
+        assert!(!is_factual_query("const x = 10; console.log(x);"));
+        assert!(!is_factual_query("Write a rust program that sorts an array"));
+        assert!(!is_factual_query(""));
     }
 }
 

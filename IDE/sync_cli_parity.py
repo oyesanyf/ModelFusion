@@ -10,11 +10,18 @@ if not os.path.isfile(src):
 
 localapp = os.environ.get("LOCALAPPDATA", r"C:\Users\oyesanyf\AppData\Local")
 targets = [
+    os.path.abspath(r"d:\harfile\ModelFusion\target\release\clibrowser.exe"),
+    os.path.abspath(r"d:\harfile\ModelFusion\target\release\cliide.exe"),
     os.path.abspath(r"d:\harfile\ModelFusion\IDE\bin\cli.exe"),
+    os.path.abspath(r"d:\harfile\ModelFusion\IDE\bin\cliide.exe"),
     os.path.abspath(r"d:\harfile\ModelFusion\IDE\VSCode-win32-x64\bin\cli.exe"),
+    os.path.abspath(r"d:\harfile\ModelFusion\IDE\VSCode-win32-x64\bin\cliide.exe"),
     os.path.join(localapp, r"HugOS IDE\bin\cli.exe"),
+    os.path.join(localapp, r"HugOS IDE\bin\cliide.exe"),
     os.path.abspath(r"d:\harfile\ModelFusion\browser\bin\cli.exe"),
-    os.path.join(localapp, r"HugOS Browser\bin\cli.exe"),
+    os.path.abspath(r"d:\harfile\ModelFusion\browser\bin\clibrowser.exe"),
+    os.path.join(localapp, r"HugOS Browser\bin\clibrowser.exe"),
+    os.path.abspath(r"C:\harfile\cli.exe"),
 ]
 
 for t in targets:

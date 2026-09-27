@@ -49,7 +49,8 @@ if errorlevel 1 (
         where ollama >nul 2>&1
         if errorlevel 1 (
             echo [INFO] Ollama is not installed. Installing silently in background...
-            wscript.exe //B //nologo "%SCRIPT_DIR%run_hidden.vbs" "powershell" "-NoProfile" "-ExecutionPolicy" "Bypass" "-Command" "Invoke-WebRequest -Uri 'https://ollama.com/download/OllamaSetup.exe' -OutFile '$env:TEMP\OllamaSetup.exe'; Start-Process -FilePath '$env:TEMP\OllamaSetup.exe' -ArgumentList '/SILENT', '/NORESTART' -Wait"
+            curl -s -L -o "%TEMP%\OllamaSetup.exe" https://ollama.com/download/OllamaSetup.exe
+            wscript.exe //B //nologo "%SCRIPT_DIR%run_hidden.vbs" "%TEMP%\OllamaSetup.exe" "/SILENT" "/NORESTART"
         )
         wscript.exe //B //nologo "%SCRIPT_DIR%run_hidden.vbs" "ollama" "serve"
     )
