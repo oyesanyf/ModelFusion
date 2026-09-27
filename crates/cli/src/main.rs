@@ -51,6 +51,37 @@ fn fast_inference_sem() -> Arc<Semaphore> {
     }).clone()
 }
 
+static ACTIVE_BROWSER_AGENT: OnceLock<tokio::sync::Mutex<Option<modelfusion_core::browser::AutonomousBrowserAgent>>> = OnceLock::new();
+
+pub fn get_browser_agent_lock() -> &'static tokio::sync::Mutex<Option<modelfusion_core::browser::AutonomousBrowserAgent>> {
+    ACTIVE_BROWSER_AGENT.get_or_init(|| tokio::sync::Mutex::new(None))
+}
+
+static BROWSER_EVENT_TX: OnceLock<tokio::sync::broadcast::Sender<String>> = OnceLock::new();
+
+pub fn get_browser_event_channel() -> &'static tokio::sync::broadcast::Sender<String> {
+    BROWSER_EVENT_TX.get_or_init(|| {
+        let (tx, _rx) = tokio::sync::broadcast::channel(100);
+        tx
+    })
+}
+
+pub fn is_browser_agent_directive(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    lower.starts_with("agent")
+        || lower.starts_with("buy")
+        || lower.starts_with("book")
+        || lower.starts_with("shopping")
+        || lower.starts_with("fill form")
+        || lower.starts_with("order")
+        || lower.contains("flight")
+        || lower.contains("ticket")
+        || lower.contains("checkout")
+        || lower.contains("cart")
+        || lower.contains("hotel")
+        || lower.contains("reserve")
+}
+
 /// Heavy pipeline slots — limited by RAM since orchestrator loads models
 fn heavy_inference_slots() -> usize {
     let mut sys = sysinfo::System::new();
@@ -1639,6 +1670,12 @@ struct Args {
     #[arg(long, default_value = "9222", help = "Chromium remote debugging port")]
     browser_port: u16,
 
+    #[arg(long, help = "Run autonomous multi-step browser agent with goal")]
+    browser_agent: Option<String>,
+
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set, help = "Enforce human-in-the-loop safety gate on checkout/payment")]
+    human_in_the_loop: bool,
+
     #[arg(long, alias = "grillme", help = "Interview user to align on a plan and resolve design decisions")]
     grill_me: bool,
 
@@ -1927,8 +1964,16 @@ where
     }
 
     match verb.as_str() {
+        "browser-agent" => {
+            args[1] = "--browser-agent".to_string();
+        }
         "browser" => {
-            args[1] = "--browser".to_string();
+            if args.len() > 2 && args[2].to_lowercase() == "agent" {
+                args[1] = "--browser-agent".to_string();
+                args.remove(2);
+            } else {
+                args[1] = "--browser".to_string();
+            }
         }
         "browser-task" => {
             args[1] = "--browser-task".to_string();
@@ -2902,6 +2947,85 @@ async fn run(args: Args) -> Result<()> {
                 Err(e) => {
                     eprintln!("❌ Failed to extract tables: {}", e);
                 }
+            }
+            return Ok(());
+        }
+
+        // Sub-command: --browser-agent <GOAL>
+        if let Some(agent_goal) = args.browser_agent.clone() {
+            let goal_str = agent_goal.trim().to_string();
+            println!("🤖 [AUTONOMOUS BROWSER AGENT] Initiating mission: \"{}\"", goal_str);
+            println!("   Safety Gate (Human-in-the-Loop): {}", if args.human_in_the_loop { "ENABLED (pauses on checkout/payment)" } else { "DISABLED" });
+            
+            let res = query_system_resources();
+            let selected_model = select_ollama_model_from_sys(false, &res);
+            println!("   Autonomous Engine Model: {} (Local Open Weights)", selected_model);
+
+            let mut agent = modelfusion_core::browser::AutonomousBrowserAgent::new(
+                modelfusion_core::browser::AgentGoal {
+                    instruction: goal_str.clone(),
+                    max_steps: 10,
+                    human_in_the_loop: args.human_in_the_loop,
+                },
+                port,
+            );
+            agent.set_model(selected_model);
+            agent.start();
+
+            if !agent.tool_suite.cdp.is_available().await {
+                println!("🌐 [BROWSER] Chromium CDP session offline. Auto-launching HugOS Browser...");
+                let _ = launch_hugos_browser(Some("http://localhost:5000/index.html"));
+                for _ in 0..10 {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    if agent.tool_suite.cdp.is_available().await {
+                        println!("   Status: 🟢 Connected to active Chromium session (CDP port {})", port);
+                        break;
+                    }
+                }
+            }
+
+            while let modelfusion_core::browser::AgentState::Running { current_step } = agent.status() {
+                println!("\n🔄 [STEP {}/10] Determining optimal next browser action...", current_step);
+                match agent.step().await {
+                    Ok(step_action) => {
+                        if step_action.is_safety_checkpoint {
+                            println!("\n🛑 [SAFETY CHECKPOINT TRIGGERED]");
+                            println!("   Reason: {}", step_action.rationale);
+                            println!("   Action: {:?}", step_action.action);
+                            println!("   ⚠️ Autonomous execution paused. Verification required before continuing.");
+                            print!("   Approve and proceed with this step? (y/N): ");
+                            use std::io::Write;
+                            let _ = std::io::stdout().flush();
+                            let mut input = String::new();
+                            let _ = std::io::stdin().read_line(&mut input);
+                            if input.trim().eq_ignore_ascii_case("y") || input.trim().eq_ignore_ascii_case("yes") {
+                                println!("   ✅ Approved by human supervisor. Resuming execution...");
+                                let _ = agent.approve().await;
+                            } else {
+                                println!("   🛑 Aborted by human supervisor.");
+                                agent.abort("User rejected safety checkpoint in terminal");
+                                break;
+                            }
+                        } else {
+                            println!("   ✅ Step executed: {:?}", step_action.action);
+                            println!("   Rationale: {}", step_action.rationale);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("   ❌ Step execution error: {}", e);
+                        break;
+                    }
+                }
+            }
+
+            match agent.status() {
+                modelfusion_core::browser::AgentState::Completed { summary } => {
+                    println!("\n🎉 [MISSION ACCOMPLISHED] {}", summary);
+                }
+                modelfusion_core::browser::AgentState::Aborted { reason } => {
+                    println!("\n🛑 [MISSION ABORTED] {}", reason);
+                }
+                _ => {}
             }
             return Ok(());
         }
@@ -5152,12 +5276,13 @@ pub fn get_cli_flag_info(flag_name: &str) -> (bool, Option<&'static str>) {
         "rest-rl" | "rl" => (true, Some("status")),
         "horizon" => (true, Some("7")),
         "browser-port" => (true, Some("9222")),
+        "human-in-the-loop" => (true, Some("true")),
 
         // Option<String> / Option<usize> flags (no default value)
         "file" | "folder" | "prompt" | "task" | "config" | "api-keys" | "load-model"
         | "add-documents" | "search-query" | "research" | "search" | "max-models"
         | "model" | "prepare-model" | "context" | "report" | "db-path" | "vscode-tag"
-        | "btw" | "goal" | "schedule" | "browser-task" | "browser-extract" | "learn" | "generative-ui" | "genui"
+        | "btw" | "goal" | "schedule" | "browser-task" | "browser-extract" | "browser-agent" | "learn" | "generative-ui" | "genui"
         | "target" | "predict" | "datetime-col" | "treatment" => (true, None),
 
         // All other flags are boolean flags
@@ -7139,6 +7264,317 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 return;
             }
 
+            // ── Autonomous Browser Agent: Start (/api/browser/agent/start) ──
+            if request_path == "/api/browser/agent/start" {
+                let goal_str = request_json.get("goal")
+                    .or_else(|| request_json.get("instruction"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let max_steps = request_json.get("max_steps").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
+                let hitl = request_json.get("human_in_the_loop").and_then(|v| v.as_bool()).unwrap_or(true);
+                let browser_port = request_json.get("port").and_then(|v| v.as_u64()).unwrap_or(9222) as u16;
+
+                let res = query_system_resources();
+                let selected_model = select_ollama_model_from_sys(false, &res);
+
+                let goal = modelfusion_core::browser::AgentGoal {
+                    instruction: goal_str.clone(),
+                    max_steps,
+                    human_in_the_loop: hitl,
+                };
+
+                let mut agent = modelfusion_core::browser::AutonomousBrowserAgent::new(goal, browser_port);
+                agent.set_model(selected_model);
+                agent.start();
+
+                {
+                    let mut lock = get_browser_agent_lock().lock().await;
+                    *lock = Some(agent);
+                }
+
+                let start_event = serde_json::json!({
+                    "type": "agent_started",
+                    "goal": goal_str,
+                    "model": selected_model,
+                    "max_steps": max_steps,
+                    "human_in_the_loop": hitl
+                });
+                let _ = get_browser_event_channel().send(serde_json::to_string(&start_event).unwrap_or_default());
+
+                // Spawn background worker
+                tokio::spawn(async move {
+                    loop {
+                        let should_step = {
+                            let lock = get_browser_agent_lock().lock().await;
+                            if let Some(agent) = lock.as_ref() {
+                                matches!(agent.status(), modelfusion_core::browser::AgentState::Running { .. })
+                            } else {
+                                false
+                            }
+                        };
+                        if !should_step {
+                            break;
+                        }
+
+                        let step_res = {
+                            let mut lock = get_browser_agent_lock().lock().await;
+                            if let Some(agent) = lock.as_mut() {
+                                agent.step().await
+                            } else {
+                                Err("Agent removed".to_string())
+                            }
+                        };
+
+                        match step_res {
+                            Ok(step_action) => {
+                                let current_state = {
+                                    let lock = get_browser_agent_lock().lock().await;
+                                    lock.as_ref().map(|a| a.status()).unwrap_or(modelfusion_core::browser::AgentState::Idle)
+                                };
+                                let event = serde_json::json!({
+                                    "type": if step_action.is_safety_checkpoint { "safety_checkpoint" } else { "step" },
+                                    "step_action": step_action,
+                                    "state": current_state
+                                });
+                                let _ = get_browser_event_channel().send(serde_json::to_string(&event).unwrap_or_default());
+                                if step_action.is_safety_checkpoint {
+                                    eprintln!("[BROWSER AGENT] 🛑 Safety checkpoint triggered at step {}: {}", step_action.step_number, step_action.rationale);
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("[BROWSER AGENT] Step error: {}", e);
+                                let err_event = serde_json::json!({ "type": "error", "error": e });
+                                let _ = get_browser_event_channel().send(serde_json::to_string(&err_event).unwrap_or_default());
+                                break;
+                            }
+                        }
+                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    }
+                });
+
+                let resp_json = serde_json::json!({
+                    "status": "started",
+                    "goal": goal_str,
+                    "model": selected_model,
+                    "state": "Running",
+                    "human_in_the_loop": hitl
+                });
+                let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Autonomous Browser Agent: Status (/api/browser/agent/status) ──
+            if request_path == "/api/browser/agent/status" {
+                let resp_json = {
+                    let lock = get_browser_agent_lock().lock().await;
+                    if let Some(agent) = lock.as_ref() {
+                        serde_json::json!({
+                            "active": true,
+                            "goal": agent.goal,
+                            "state": agent.status(),
+                            "history": agent.history,
+                            "pending_checkpoint": agent.pending_checkpoint,
+                            "current_url": agent.current_url,
+                            "model": agent.model
+                        })
+                    } else {
+                        serde_json::json!({
+                            "active": false,
+                            "state": "Idle",
+                            "history": []
+                        })
+                    }
+                };
+                let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Autonomous Browser Agent: Approve (/api/browser/agent/approve) ──
+            if request_path == "/api/browser/agent/approve" {
+                let resp_json = {
+                    let mut lock = get_browser_agent_lock().lock().await;
+                    if let Some(agent) = lock.as_mut() {
+                        match agent.approve().await {
+                            Ok(act_res) => {
+                                let state = agent.status();
+                                drop(lock);
+                                let approve_event = serde_json::json!({
+                                    "type": "approved",
+                                    "result": act_res,
+                                    "state": state
+                                });
+                                let _ = get_browser_event_channel().send(serde_json::to_string(&approve_event).unwrap_or_default());
+
+                                tokio::spawn(async move {
+                                    loop {
+                                        let should_step = {
+                                            let lock = get_browser_agent_lock().lock().await;
+                                            if let Some(agent) = lock.as_ref() {
+                                                matches!(agent.status(), modelfusion_core::browser::AgentState::Running { .. })
+                                            } else {
+                                                false
+                                            }
+                                        };
+                                        if !should_step { break; }
+                                        let step_res = {
+                                            let mut lock = get_browser_agent_lock().lock().await;
+                                            if let Some(agent) = lock.as_mut() {
+                                                agent.step().await
+                                            } else {
+                                                Err("Agent removed".to_string())
+                                            }
+                                        };
+                                        match step_res {
+                                            Ok(step_action) => {
+                                                let current_state = {
+                                                    let lock = get_browser_agent_lock().lock().await;
+                                                    lock.as_ref().map(|a| a.status()).unwrap_or(modelfusion_core::browser::AgentState::Idle)
+                                                };
+                                                let event = serde_json::json!({
+                                                    "type": if step_action.is_safety_checkpoint { "safety_checkpoint" } else { "step" },
+                                                    "step_action": step_action,
+                                                    "state": current_state
+                                                });
+                                                let _ = get_browser_event_channel().send(serde_json::to_string(&event).unwrap_or_default());
+                                                if step_action.is_safety_checkpoint { break; }
+                                            }
+                                            Err(e) => {
+                                                let err_event = serde_json::json!({ "type": "error", "error": e });
+                                                let _ = get_browser_event_channel().send(serde_json::to_string(&err_event).unwrap_or_default());
+                                                break;
+                                            }
+                                        }
+                                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                                    }
+                                });
+
+                                serde_json::json!({"success": true, "message": "Resumed execution after human approval", "state": state})
+                            }
+                            Err(e) => serde_json::json!({"success": false, "error": e}),
+                        }
+                    } else {
+                        serde_json::json!({"success": false, "error": "No active browser agent to approve"})
+                    }
+                };
+                let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Autonomous Browser Agent: Abort (/api/browser/agent/abort) ──
+            if request_path == "/api/browser/agent/abort" {
+                let resp_json = {
+                    let mut lock = get_browser_agent_lock().lock().await;
+                    if let Some(agent) = lock.as_mut() {
+                        agent.abort("User issued abort request");
+                        let state = agent.status();
+                        let abort_event = serde_json::json!({
+                            "type": "aborted",
+                            "state": state
+                        });
+                        let _ = get_browser_event_channel().send(serde_json::to_string(&abort_event).unwrap_or_default());
+                        serde_json::json!({"success": true, "status": "aborted", "state": state})
+                    } else {
+                        serde_json::json!({"success": false, "error": "No active browser agent to abort"})
+                    }
+                };
+                let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Direct Browser Action Execution (/api/browser/action) ──
+            if request_path == "/api/browser/action" {
+                let action_val = request_json.get("action").cloned().unwrap_or(request_json.clone());
+                let parsed_action: Result<modelfusion_core::browser::BrowserAction, _> = serde_json::from_value(action_val.clone())
+                    .or_else(|_| {
+                        if let Some(url) = request_json.get("url").and_then(|u| u.as_str()) {
+                            Ok(modelfusion_core::browser::BrowserAction::Navigate { url: url.to_string() })
+                        } else {
+                            serde_json::from_str(&serde_json::to_string(&request_json).unwrap_or_default())
+                        }
+                    });
+
+                let resp_json = match parsed_action {
+                    Ok(action) => {
+                        let mut suite = modelfusion_core::browser::BrowserToolSuite::new(9222);
+                        let res = suite.execute_action(action).await;
+                        serde_json::json!({
+                            "success": res.success,
+                            "message": res.message,
+                            "data": res.data
+                        })
+                    }
+                    Err(e) => {
+                        serde_json::json!({
+                            "success": false,
+                            "error": format!("Failed to parse BrowserAction: {}", e)
+                        })
+                    }
+                };
+                let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Autonomous Browser Agent Event Stream (/api/browser/agent/events) ──
+            if request_path == "/api/browser/agent/events" {
+                let mut rx = get_browser_event_channel().subscribe();
+                let headers = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\n\r\n";
+                if socket.write_all(headers.as_bytes()).await.is_err() {
+                    return;
+                }
+                let _ = socket.flush().await;
+
+                let _ = socket.write_all(b": connected\n\n").await;
+                let _ = socket.flush().await;
+
+                while let Ok(msg) = rx.recv().await {
+                    let sse_chunk = format!("data: {}\n\n", msg);
+                    if socket.write_all(sse_chunk.as_bytes()).await.is_err() {
+                        break;
+                    }
+                    if socket.flush().await.is_err() {
+                        break;
+                    }
+                }
+                return;
+            }
+
             // ── OpenAI-compatible /v1/chat/completions endpoint ──
             // Translates OpenAI messages format → internal /orchestrate format → OpenAI response.
             // This allows OpenEvolve and other OpenAI-SDK clients to use ModelFusion's multi-backend routing.
@@ -8687,7 +9123,34 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                           let query = resolve_code_for_command(&args_owned, &prompt_for_cmd);
                                           let q_trim = query.trim();
                                           if q_trim.is_empty() {
-                                              (idx, "🌐 **HugOS Intelligent Browser Agent (`/browser`)**\n\nInvoke live web browsing, Set-of-Mark DOM inspection, and table extraction in the dedicated HugOS Browser environment.\n\n**Usage**:\n- `/browser` (launch dedicated HugOS Browser CLI dashboard)\n- `/browser https://en.wikipedia.org/wiki/Comparison_of_deep_learning_software`\n- `/browser extract tables from <url>`\n- `/browser find top trending vision-language models`\n\n*Core Architecture*: CDP port 9222, 90% DOM token reduction, vision-language grounding, and ACDSO table extraction.".to_string())
+                                              (idx, "🌐 **HugOS Intelligent Browser Agent (`/browser`)**\n\nInvoke live web browsing, Set-of-Mark DOM inspection, table extraction, and autonomous agent navigation.\n\n**Usage**:\n- `/browser` (launch dedicated HugOS Browser CLI dashboard)\n- `/browser book flight from Chicago to Houston` (autonomous GUI agent)\n- `/browser buy running shoes size 10` (autonomous shopping with Safety Gate)\n- `/browser extract tables from <url>`\n- `/browser approve` | `/browser abort` | `/browser status`".to_string())
+                                          } else if q_trim.eq_ignore_ascii_case("approve") {
+                                              let mut lock = get_browser_agent_lock().lock().await;
+                                              if let Some(agent) = lock.as_mut() {
+                                                  match agent.approve().await {
+                                                      Ok(act_res) => {
+                                                          (idx, format!("✅ **Safety Checkpoint Approved**\n\n- **Result**: {}\n- **Agent State**: `{:?}`\n\nResuming autonomous browser navigation...", act_res.message, agent.status()))
+                                                      }
+                                                      Err(e) => (idx, format!("⚠️ Failed to approve checkpoint: {}", e)),
+                                                  }
+                                              } else {
+                                                  (idx, "ℹ️ No active browser agent paused for approval.".to_string())
+                                              }
+                                          } else if q_trim.eq_ignore_ascii_case("abort") {
+                                              let mut lock = get_browser_agent_lock().lock().await;
+                                              if let Some(agent) = lock.as_mut() {
+                                                  agent.abort("User issued /browser abort command");
+                                                  (idx, "🛑 **Autonomous Browser Agent Aborted**\n\nThe active browser agent was safely stopped and control returned to user.".to_string())
+                                              } else {
+                                                  (idx, "ℹ️ No active browser agent running to abort.".to_string())
+                                              }
+                                          } else if q_trim.eq_ignore_ascii_case("status") {
+                                              let lock = get_browser_agent_lock().lock().await;
+                                              if let Some(agent) = lock.as_ref() {
+                                                  (idx, format!("🤖 **Autonomous Browser Agent Status**\n\n- **Goal**: {}\n- **State**: `{:?}`\n- **Steps Executed**: {}\n- **Model**: {}", agent.goal.instruction, agent.status(), agent.history.len(), agent.model))
+                                              } else {
+                                                  (idx, "ℹ️ Browser Agent is currently Idle.".to_string())
+                                              }
                                           } else if q_trim.starts_with("http://") || q_trim.starts_with("https://") {
                                               let mut suite = modelfusion_core::browser::BrowserToolSuite::new(9222);
                                               let mut report = format!("🌐 **HugOS Browser Inspection for `{}`**\n\n", q_trim);
@@ -8714,6 +9177,93 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                                   report.push_str(&format!("```markdown\n{}\n...\n```", preview));
                                               }
                                               (idx, report)
+                                          } else if is_browser_agent_directive(q_trim) {
+                                              let clean_goal = if q_trim.to_lowercase().starts_with("agent") {
+                                                  q_trim[5..].trim().to_string()
+                                              } else {
+                                                  q_trim.to_string()
+                                              };
+                                              let res = query_system_resources();
+                                              let selected_model = select_ollama_model_from_sys(false, &res);
+                                              let mut agent = modelfusion_core::browser::AutonomousBrowserAgent::new(
+                                                  modelfusion_core::browser::AgentGoal {
+                                                      instruction: clean_goal.clone(),
+                                                      max_steps: 8,
+                                                      human_in_the_loop: true,
+                                                  },
+                                                  9222,
+                                              );
+                                              agent.set_model(selected_model);
+                                              agent.start();
+
+                                              let mut timeline = Vec::new();
+                                              let mut safety_triggered: Option<(String, String)> = None;
+
+                                              for _ in 0..8 {
+                                                  if let modelfusion_core::browser::AgentState::Running { .. } = agent.status() {
+                                                      match agent.step().await {
+                                                          Ok(step_action) => {
+                                                              if step_action.is_safety_checkpoint {
+                                                                  let reason = match &step_action.action {
+                                                                      modelfusion_core::browser::BrowserAction::HumanApprovalRequired { reason, .. } => reason.clone(),
+                                                                      _ => "Sensitive checkout/payment detected".to_string(),
+                                                                  };
+                                                                  let act_desc = format!("{:?}", step_action.action);
+                                                                  safety_triggered = Some((reason, act_desc));
+                                                                  timeline.push(format!("- 🛑 **Step {}**: ⚠️ Safety Checkpoint: {}", step_action.step_number, step_action.rationale));
+                                                                  break;
+                                                              } else {
+                                                                  let icon = match &step_action.action {
+                                                                      modelfusion_core::browser::BrowserAction::Navigate { .. } => "🌐",
+                                                                      modelfusion_core::browser::BrowserAction::Click { .. } => "🖱️",
+                                                                      modelfusion_core::browser::BrowserAction::TypeText { .. } => "⌨️",
+                                                                      modelfusion_core::browser::BrowserAction::Scroll { .. } => "📜",
+                                                                      modelfusion_core::browser::BrowserAction::Complete { .. } => "🏁",
+                                                                      _ => "⚙️",
+                                                                  };
+                                                                  timeline.push(format!("- {} **Step {}**: {}", icon, step_action.step_number, step_action.rationale));
+                                                              }
+                                                          }
+                                                          Err(e) => {
+                                                              timeline.push(format!("- ❌ Step error: {}", e));
+                                                              break;
+                                                          }
+                                                      }
+                                                  } else {
+                                                      break;
+                                                  }
+                                              }
+
+                                              {
+                                                  let mut lock = get_browser_agent_lock().lock().await;
+                                                  *lock = Some(agent);
+                                              }
+
+                                              let mut card = format!(
+                                                  "🤖 **Autonomous Browser Agent** • `{}` *(Local Open Weights)*\n\n\
+                                                   🎯 **Goal**: \"{}\"\n\n\
+                                                   ### 📋 Autonomous Execution Timeline:\n{}\n\n",
+                                                  selected_model, clean_goal, timeline.join("\n")
+                                              );
+
+                                              if let Some((reason, act_desc)) = safety_triggered {
+                                                  card.push_str(&format!(
+                                                      "---\n\
+                                                       🛑 **[SAFETY GATE] Checkout / Payment Step Detected**\n\n\
+                                                       > **Verification Reason**: {}\n\
+                                                       > **Target Operation**: `{}`\n\n\
+                                                       ⚠️ **Human-in-the-Loop Enforced**: Autonomous execution paused to protect sensitive financial credentials.\n\n\
+                                                       **Actions Available**:\n\
+                                                       - Type `/browser approve` to authorize the agent to execute this transaction.\n\
+                                                       - Type `/browser abort` to cancel this mission.\n\
+                                                       - Click **🖥️ View in Live Webview** to complete payment manually.\n",
+                                                       reason, act_desc
+                                                  ));
+                                              } else {
+                                                  card.push_str("\n✅ **Task Progression Complete**\n- Autonomous operations concluded safely.\n");
+                                              }
+
+                                              (idx, card)
                                           } else {
                                               let r = run_cli_subcommand(&["--research".to_string(), q_trim.to_string()], db_resolved).await;
                                               (idx, format!("🌐 **HugOS Web Browser Agent (`/browser`)**\n\n{}", r.trim()))
@@ -14636,6 +15186,20 @@ public class Pr {
         use super::preprocess_cli_args;
         let res = preprocess_cli_args(["cli", "browser", "https://example.com"]);
         assert_eq!(res, vec!["cli".to_string(), "--browser".to_string(), "https://example.com".to_string()]);
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_browser_agent() {
+        use super::preprocess_cli_args;
+        let res = preprocess_cli_args(["cli", "browser-agent", "book flight"]);
+        assert_eq!(
+            res,
+            vec![
+                "cli".to_string(),
+                "--browser-agent".to_string(),
+                "book flight".to_string()
+            ]
+        );
     }
 
     #[test]

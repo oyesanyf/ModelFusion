@@ -469,7 +469,8 @@ Real-time internet web search, documentation scraping, model hub synchronization
 
 | Command | Aliases | Arguments / Options | Description |
 |:---|:---|:---|:---|
-| `/browser` | `/web-browser`, `/hugos-browser` | `[url]` | Launches the dedicated HugOS Chromium Browser environment with Set-of-Mark visual grounding, CDP orchestration, and ChatGPT ergonomic side panel. |
+| `/browser` | `/web-browser`, `/hugos-browser` | `[url or autonomous goal]` | Launches the dedicated HugOS Chromium Browser or executes autonomous goal missions (e.g. `/browser buy keyboard on amazon`, `/browser book flight`). Supports `/browser approve`, `/browser abort`, and `/browser status`. |
+| `/browser-agent` | — | `<goal>` | Dispatches an autonomous multi-step visual browser agent mission with Set-of-Mark (SoM) DOM visual grounding, local Qwen2.5 open-weights inference, and Human-in-the-Loop Safety Gate on payments/checkout. |
 | `/browser-task` | — | `<goal or task>` | Dispatches an autonomous goal-directed web research directive to the HugOS Browser engine. |
 | `/browser-extract` | — | `<url>` | Semantically extracts HTML tables and CSS grids from the target URL, streaming directly into ACDSO AutoML. |
 | `/research` | `/reseach` | `<topic or query>` | Conducts live web research: fetches documentation, extracts key technical facts, summarizes architectural recommendations, and provides source URLs. |
@@ -502,6 +503,16 @@ Refresh our local ModelFusion database with the latest curated Hugging Face mode
 ```text
 /updatedb --max-models 50000
 Run the full registry crawler to index the next 50,000 Hugging Face models into IDE/db/hf_models.db.
+```
+
+```text
+/browser buy blue mechanical keyboard on amazon ($79 budget)
+Autonomous multi-step browser mission: inspects Amazon search, grounds interactive items via Set-of-Mark (SoM), selects product, and pauses at checkout with amber Human-in-the-Loop Safety Gate.
+```
+
+```text
+/browser approve
+Authorizes paused agent execution at checkout/payment checkpoint to complete transaction.
 ```
 
 ---

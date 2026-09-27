@@ -257,6 +257,8 @@
         </div>
       </nav>
 
+      <div class="sidebar-divider"></div>
+
       <div class="sidebar-bottom-section">
         <button type="button" class="sidebar-nav-item" id="sidebar-settings" title="Settings (Ctrl+,)">
           <span class="nav-item-icon">⚙️</span>
@@ -938,6 +940,8 @@
               </div>
               <div class="setting-control">
                 <select id="setting-max-tokens" class="setting-select">
+                  <option value="256">256 tokens (Ultra-Concise Micro-Budget)</option>
+                  <option value="512">512 tokens (Short Summary)</option>
                   <option value="2048">2048 tokens (Concise)</option>
                   <option value="4096" selected>4096 tokens (Default Production)</option>
                   <option value="8192">8192 tokens (Extended Context)</option>

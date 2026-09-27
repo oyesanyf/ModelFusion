@@ -67,7 +67,7 @@ UNMINIFIED_BLOCK = r'''
       "audio-classification","voice-activity-detection","emotion-recognition","video-classification",
       "text-to-speech","text-to-image","image-super-resolution","table-question-answering","feature-ranking","error",
       "research","reseach","search","rl","restrl","rest-rl","createfile","create-file","create_file","newfile","new-file","new_file",
-      "btw","goal","schedule","browser","grill-me","grillme","teamwork-preview","teamworkpreview","learn","boost","generative_ui","generative-ui","genui","ui"
+      "btw","goal","schedule","browser","browser-agent","grill-me","grillme","teamwork-preview","teamworkpreview","learn","boost","generative_ui","generative-ui","genui","ui"
     ]);
     const normCmd = (cmd) => {
       if (!cmd) return "";
@@ -76,6 +76,7 @@ UNMINIFIED_BLOCK = r'''
       l = l.replace(/^@agent[\s\/:]+/, "");
       l = l.replace(/^[\\/@]+/, "");
       l = l.trim();
+      if (l === "browser-agent" || l === "browseragent") return "browser";
       if (l === "rl" || l === "restrl") return "rest-rl";
       if (l === "create-file" || l === "create_file" || l === "newfile" || l === "new-file" || l === "new_file") return "createfile";
       if (l === "grillme") return "grill-me";
@@ -1000,7 +1001,7 @@ def patch_request_timeout(content, file_path):
     replace_block = (
         '          const config4 = vscode15.workspace.getConfiguration("hugos.modelfusion");\n'
         '          const configTimeout = config4.get("requestTimeout", 0);\n'
-        '          const isLongRunningJob = /^\\s*(\\/|@agent\\s+)?(acdso|automl|risk-automl|data-science|datascience|data-analyst|dataanalyst|evolve|rest-rl|restrl|rl|research|update|updatedb)\\b/i.test(promptText);\n'
+        '          const isLongRunningJob = /^\\s*(\\/|@agent\\s+)?(browser|browser-agent|acdso|automl|risk-automl|data-science|datascience|data-analyst|dataanalyst|evolve|rest-rl|restrl|rl|research|update|updatedb)\\b/i.test(promptText);\n'
         '          let effectiveTimeout = (configTimeout > 0) ? configTimeout * 1e3 : 0;\n'
         '          const options = {\n'
         '            hostname: "127.0.0.1",\n'
@@ -1046,6 +1047,17 @@ def patch_request_timeout(content, file_path):
     else:
         print(f"  [WARN] target_block not found for timeout patch in {file_path}")
 
+    return content
+
+
+def patch_browser_agent(content, file_path):
+    """Patch ModelFusionLMProvider in extension.js so /browser and @agent browser route to autonomous agent with Safety Gate."""
+    if "isLongRunningJob" in content and "browser|" not in content:
+        content = content.replace(
+            "(acdso|automl|risk-automl",
+            "(browser|browser-agent|acdso|automl|risk-automl"
+        )
+        print(f"  [OK] Injected 'browser' into isLongRunningJob regex in {file_path}")
     return content
 
 
@@ -1125,7 +1137,7 @@ def patch_file(file_path):
             "dataanalyst", "data-analyst", "datascience", "data-science", "jupyter",
             "acdso", "automl", "risk-automl", "riskautoml",
             "@automl", "/automl", "@agent automl", "@acdso", "/acdso", "@agent acdso",
-            "btw", "goal", "schedule", "browser", "plan", "grill-me", "grillme",
+            "btw", "goal", "schedule", "browser", "browser-agent", "plan", "grill-me", "grillme",
             "teamwork-preview", "teamworkpreview", "learn", "generative_ui", "generative-ui", "genui", "ui"
         ]
         for pattern in ["const fastInfoCommands = /* @__PURE__ */ new Set([", "const fastInfoCommands = new Set(["]:
@@ -1151,6 +1163,7 @@ def patch_file(file_path):
         new_content = patch_workspace_structure(new_content, file_path)
         new_content = patch_healthcheck_watchdog(new_content, file_path)
         new_content = patch_request_timeout(new_content, file_path)
+        new_content = patch_browser_agent(new_content, file_path)
         new_content = patch_agentic_loop(new_content, file_path)
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(new_content)
@@ -1174,6 +1187,7 @@ def patch_file(file_path):
         new_content = patch_workspace_structure(new_content, file_path)
         new_content = patch_healthcheck_watchdog(new_content, file_path)
         new_content = patch_request_timeout(new_content, file_path)
+        new_content = patch_browser_agent(new_content, file_path)
         new_content = patch_agentic_loop(new_content, file_path)
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(new_content)
