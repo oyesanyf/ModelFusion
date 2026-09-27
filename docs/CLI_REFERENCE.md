@@ -1,7 +1,7 @@
-# ModelFusion Master CLI Reference Manual (All 170 Production Flags)
+# ModelFusion Master CLI Reference Manual (All 174 Production Flags)
 
 This document is the exhaustive, authoritative reference for the **ModelFusion Master CLI** (`cli.exe` or `cargo run --release --bin cli`).
-Every single one of the **170 production CLI flags** is documented below with its argument type, default value, functional category, behavioral explanation, and a **concrete executable command example**.
+Every single one of the **174 production CLI flags** is documented below with its argument type, default value, functional category, behavioral explanation, and a **concrete executable command example**.
 
 > [!IMPORTANT]
 > **Functional Architecture: Flags as Executable Commands**  
@@ -10,7 +10,7 @@ Every single one of the **170 production CLI flags** is documented below with it
 ---
 
 ## 📖 Table of Contents
-- [Master Summary Table (All 170 Flags)](#-master-summary-table-all-170-flags)
+- [Master Summary Table (All 174 Flags)](#-master-summary-table-all-174-flags)
 - [1. Global Execution & Resource Flags (#1 - #19)](#1-global-execution--resource-flags)
 - [2. Machine Learning Model Selection (#20 - #26)](#2-machine-learning-model-selection)
 - [3. SINQ Quantization Engine (#27 - #31)](#3-sinq-quantization-engine)
@@ -24,11 +24,12 @@ Every single one of the **170 production CLI flags** is documented below with it
 - [11. Server & Database Commands (#157 - #161)](#11-server--database-commands)
 - [12. ACDSO Risk-Aware AutoML Flags (#162 - #170)](#12-acdso-risk-aware-automl-flags-162---170)
 - [13. Universal Agent Directives & Slash Commands](#13-universal-agent-directives--slash-commands)
+- [14. HugOS Browser Flags & Autonomous Web Environment (#171 - #174)](#14-hugos-browser-flags--autonomous-web-environment-171---174)
 - [Appendix: Developer Tooling, Source Patching & Legacy Aliases](#appendix-developer-tooling-source-patching--legacy-aliases)
 
 ---
 
-## 📋 Master Summary Table (All 170 Flags)
+## 📋 Master Summary Table (All 174 Flags)
 
 | # | Flag & Aliases | Type | Default | Category | Description |
 |:---:|:---|:---:|:---:|:---|:---|
@@ -202,6 +203,10 @@ Every single one of the **170 production CLI flags** is documented below with it
 | 168 | `--horizon <HORIZON>` | `usize` | `7` | ACDSO Risk-Aware AutoML | Forecast horizon for ACDSO time series (default: 7). |
 | 169 | `--decision` | `bool` | `false` | ACDSO Risk-Aware AutoML | Run ACDSO Decision Intelligence (causal analysis & uplift modeling). |
 | 170 | `--treatment <TREATMENT>` | `String` | `None` | ACDSO Risk-Aware AutoML | Treatment column for ACDSO decision intelligence. |
+| 171 | `--browser`<br><small>Aliases: `browse`, `web`, `hugosbrowser`</small> | `bool` | `false` | HugOS Browser & Autonomous Web Environment | Launch interactive HugOS Browser environment with Chromium CDP and ChatGPT-fidelity AI side panel. |
+| 172 | `--browser-task <TASK>`<br><small>Aliases: `browsertask`</small> | `String` | `None` | HugOS Browser & Autonomous Web Environment | Autonomous goal-directed web navigation, Set-of-Mark visual inspection, and data collection task. |
+| 173 | `--browser-extract <URL>`<br><small>Aliases: `browserextract`</small> | `String` | `None` | HugOS Browser & Autonomous Web Environment | Semantic web table and dataset extraction from target URL directly into ACDSO Pareto AutoML. |
+| 174 | `--browser-port <PORT>` | `u16` | `9222` | HugOS Browser & Autonomous Web Environment | Specifies the Chromium remote debugging port (CDP) for browser automation (default: 9222). |
 
 ---
 
@@ -1287,6 +1292,65 @@ cli.exe --ml-fallback true --enable-ml-selection
 cli.exe --jupyter
 ```
 
+### Category 6 HugOS Browser Orchestration Directives
+
+The ModelFusion Master CLI orchestrates the autonomous **HugOS Browser** environment via the following core system directives:
+
+#### `--browser`
+- **Category:** System & Orchestration Commands / HugOS Browser
+- **Argument Type:** `bool`
+- **Default Value:** `false`
+- **Aliases:** `browse`, `web`, `hugosbrowser`
+- **Accepted Parameters:** Boolean switch (no value)
+- **Description:** Launches the interactive HugOS Chromium browser environment equipped with Chrome DevTools Protocol (CDP port 9222) automation, Set-of-Mark visual grounding, and ChatGPT-fidelity AI side panel.
+- **Cross-Reference:** See [HugOS Browser Environment](../README.md#-hugos-browser-dedicated-modelfusion-ai-web-environment) and [browser/README.md](../browser/README.md).
+
+```powershell
+# Launch interactive HugOS Browser with AI side panel
+cli.exe --browser
+```
+
+#### `--browser-task <TASK>`
+- **Category:** System & Orchestration Commands / HugOS Browser
+- **Argument Type:** `String`
+- **Default Value:** `None`
+- **Aliases:** `browsertask`
+- **Accepted Parameters:** Natural language goal directive (quoted string)
+- **Description:** Executes an autonomous goal-directed web navigation, visual DOM inspection, and data collection task, streaming synthesized progress to terminal or IDE.
+- **Cross-Reference:** See [Autonomous Chromium Architecture](../browser/README.md#key-capabilities--architecture).
+
+```powershell
+# Autonomous research directive
+cli.exe --browser-task "Extract recent research papers on multi-objective Pareto optimization"
+```
+
+#### `--browser-extract <URL>`
+- **Category:** System & Orchestration Commands / HugOS Browser
+- **Argument Type:** `String`
+- **Default Value:** `None`
+- **Aliases:** `browserextract`
+- **Accepted Parameters:** Valid HTTP/HTTPS web address
+- **Description:** Performs instant semantic table and dataset extraction from the target URL, parsing HTML tables and CSS grids directly into RFC-4180 CSV for 5-objective Pareto ACDSO AutoML.
+- **Cross-Reference:** See [Structured Table Extraction](../browser/README.md#2-instant-web-dataset-extraction-for-acdso-table_extractorrs).
+
+```powershell
+# Extract web table directly into AutoML pipeline
+cli.exe --browser-extract "https://en.wikipedia.org/wiki/List_of_countries_by_GDP_(nominal)"
+```
+
+#### `--browser-port <PORT>`
+- **Category:** System & Orchestration Commands / HugOS Browser
+- **Argument Type:** `u16`
+- **Default Value:** `9222`
+- **Accepted Parameters:** Valid TCP port number (1-65535)
+- **Description:** Configures the Chromium remote debugging port (CDP) for browser automation and WebSocket communication (default: 9222).
+- **Cross-Reference:** See [Chrome DevTools Protocol Engine](../browser/README.md#4-chrome-devtools-protocol-engine-cdp_clientrs).
+
+```powershell
+# Connect to custom Chromium debugging port
+cli.exe --browser --browser-port 9225
+```
+
 ---
 
 ## 7. Data Science & Tabular Workflows (#88 - #90)
@@ -2140,6 +2204,70 @@ cli.exe --table-question-answering --file "data/benchmarks.csv" --prompt "Which 
 cli.exe --feature-ranking --file "data/training_set.csv" --prompt "Target: churn"
 ```
 
+### Category 10 Multi-Modal Browser Vision & Visual Grounding Directives
+
+Web browsing in ModelFusion constitutes a complex multi-modal pipeline spanning visual layout understanding, coordinate mapping, and semantic DOM extraction:
+- **Set-of-Mark (SoM) Visual Grounding**: Generates discrete numeric boundary tags (`[1]`, `[2]`, `[3]`) over interactive UI elements.
+- **Vision-Language Model Coordination**: Multimodal models (`qwen2.5-vl`, `llama3.2-vision`) analyze viewport screenshots to resolve obfuscated canvas or dynamic JavaScript elements into exact pixel coordinates.
+- **Multi-Modal Tabular Extraction**: Identifies tabular data structures in web viewports and serializes them for ACDSO AutoML.
+
+The primary multi-modal browser flags are:
+
+#### `--browser`
+- **Category:** Multi-Modal Task Routing Flags / HugOS Browser
+- **Argument Type:** `bool`
+- **Default Value:** `false`
+- **Aliases:** `browse`, `web`, `hugosbrowser`
+- **Accepted Parameters:** Boolean switch (no value)
+- **Description:** Initializes the interactive multi-modal HugOS Browser workspace with vision grounding and AI side panel.
+- **Cross-Reference:** See [Set-of-Mark Visual Grounding](../README.md#2-set-of-mark-som-visual-grounding--token-pruned-dom) and [browser/README.md](../browser/README.md).
+
+```powershell
+# Launch multi-modal browser workspace
+cli.exe --browser
+```
+
+#### `--browser-task <TASK>`
+- **Category:** Multi-Modal Task Routing Flags / HugOS Browser
+- **Argument Type:** `String`
+- **Default Value:** `None`
+- **Aliases:** `browsertask`
+- **Accepted Parameters:** Multi-modal browsing objective (quoted string)
+- **Description:** Dispatches a multi-modal web exploration and information gathering task, utilizing Set-of-Mark vision-language grounding to navigate complex web pages.
+- **Cross-Reference:** See [Multi-Modal Consensus Arbitration](../browser/README.md#5-multi-model-consensus-arbitration-browser_fusionrs).
+
+```powershell
+# Autonomous multi-modal web research
+cli.exe --browser-task "Navigate to Hugging Face, locate top-trending vision models, and extract their benchmark scores"
+```
+
+#### `--browser-extract <URL>`
+- **Category:** Multi-Modal Task Routing Flags / HugOS Browser
+- **Argument Type:** `String`
+- **Default Value:** `None`
+- **Aliases:** `browserextract`
+- **Accepted Parameters:** Target web URL (quoted string)
+- **Description:** Dispatches multi-modal DOM and layout extraction to parse structured tables from target URLs directly into ACDSO Pareto AutoML.
+- **Cross-Reference:** See [Web Dataset Extraction for ACDSO](../browser/README.md#2-instant-web-dataset-extraction-for-acdso-table_extractorrs).
+
+```powershell
+# Extract structured table into ML pipeline
+cli.exe --browser-extract "https://en.wikipedia.org/wiki/Comparison_of_deep_learning_software"
+```
+
+#### `--browser-port <PORT>`
+- **Category:** Multi-Modal Task Routing Flags / HugOS Browser
+- **Argument Type:** `u16`
+- **Default Value:** `9222`
+- **Accepted Parameters:** Valid TCP port (1-65535)
+- **Description:** Remote debugging port for CDP connection to Chromium instance.
+- **Cross-Reference:** See [CDP Client Engine](../browser/README.md#4-chrome-devtools-protocol-engine-cdp_clientrs).
+
+```powershell
+# Target specific CDP port
+cli.exe --browser --browser-port 9222
+```
+
 ---
 
 ## 11. Server & Database Commands (#157 - #161)
@@ -2339,6 +2467,67 @@ HugOS IDE and ModelFusion integrate **10 universal compound agent directives** m
 | `/learn` | `--learn <RULE>` | `String` | Captures and persists reusable engineering rules into `.hugos/rules/` | `cli.exe --learn "Always check free RAM before allocating models"` |
 | `/boost` | `--boost` | `bool` | High-compute multi-sample consensus deliberation over top models | `cli.exe --boost --prompt "Solve dining philosophers"` |
 | `/generative_ui` | `--generative-ui <SPEC>` | `String` | Generates self-contained interactive HTML/Tailwind widgets | `cli.exe --generative-ui "GPU VRAM telemetry widget"` |
+
+---
+
+## 14. HugOS Browser Flags & Autonomous Web Environment (#171 - #174)
+
+This section details the **4 flags** powering **HugOS Browser**, ModelFusion's dedicated autonomous Chromium AI web operating environment.
+
+### #171. `--browser`
+- **Category:** HugOS Browser & Autonomous Web Environment / System Orchestration
+- **Argument Type:** `bool`
+- **Default Value:** `false`
+- **Aliases:** `browse`, `web`, `hugosbrowser`
+- **Accepted Parameters:** Boolean switch (no value)
+- **Description:** Launches the dedicated interactive HugOS Chromium browser environment equipped with Chrome DevTools Protocol (CDP port 9222) automation, Set-of-Mark visual grounding, automated ACDSO tabular data extraction, and pixel-perfect ChatGPT functional fidelity (clean white theme, centered 768px thread, canvas document cards, 5-button assistant action row, persistent chat history, and ModelFusion multi-modal system panel).
+
+```powershell
+# Example for #171: --browser
+# Launch interactive HugOS Browser with AI side panel
+cli.exe --browser
+```
+
+### #172. `--browser-task <TASK>`
+- **Category:** HugOS Browser & Autonomous Web Environment
+- **Argument Type:** `String`
+- **Default Value:** `None`
+- **Aliases:** `browsertask`
+- **Accepted Parameters:** Natural language web research or navigation directive (quoted string)
+- **Description:** Executes an autonomous goal-directed web navigation and data collection directive. The engine connects via CDP, retrieves token-pruned DOM structures with numeric Set-of-Mark tags (`[1]`, `[2]`), evaluates interactive candidates using multi-model consensus, executes clicks and keyboard inputs, and returns synthesized findings.
+
+```powershell
+# Example for #172: --browser-task
+# Autonomous research directive
+cli.exe --browser-task "Extract recent research papers on multi-objective Pareto optimization"
+```
+
+### #173. `--browser-extract <URL>`
+- **Category:** HugOS Browser & Autonomous Web Environment
+- **Argument Type:** `String`
+- **Default Value:** `None`
+- **Aliases:** `browserextract`
+- **Accepted Parameters:** Valid HTTP/HTTPS web address
+- **Description:** Performs instant semantic table and dataset extraction from the target URL. Parses HTML `<table>` elements and modern dynamic CSS grids (`role="grid"`), converts them to RFC-4180 compliant CSV and structured JSON, and directly streams the extracted tabular data into the 5-objective Pareto ACDSO engine.
+
+```powershell
+# Example for #173: --browser-extract
+# Extract web table directly into AutoML pipeline
+cli.exe --browser-extract "https://en.wikipedia.org/wiki/List_of_countries_by_GDP_(nominal)"
+```
+
+### #174. `--browser-port <PORT>`
+- **Category:** HugOS Browser & Autonomous Web Environment
+- **Argument Type:** `u16`
+- **Default Value:** `9222`
+- **Accepted Parameters:** Valid TCP port number (1-65535)
+- **Description:** Specifies the Chrome DevTools Protocol (CDP) remote debugging port used by the Master CLI to orchestrate Chromium browser tabs and dispatch WebSocket automation commands.
+
+```powershell
+# Example for #174: --browser-port
+# Connect to custom Chromium debugging port
+cli.exe --browser --browser-port 9225
+```
 
 ---
 

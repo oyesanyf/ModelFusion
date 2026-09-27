@@ -117,6 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
     activeModel: 'modelfusion_auto',
     visionModel: 'qwen2.5-vl',
     audioModel: 'whisper-base',
+    fusionModels: 0,
     multimodalAuto: true,
     temperature: 0.2,
     maxTokens: 4096,
@@ -374,6 +375,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     setVal('setting-vision-model', s.visionModel || DEFAULT_SETTINGS.visionModel);
     setVal('setting-audio-model', s.audioModel || DEFAULT_SETTINGS.audioModel);
+    setVal('setting-fusion-models', s.fusionModels !== undefined ? s.fusionModels : DEFAULT_SETTINGS.fusionModels);
     setCheck('setting-multimodal-auto', s.multimodalAuto !== false);
     setVal('setting-temperature', s.temperature);
     if (valTemperature) {
@@ -446,6 +448,7 @@ document.addEventListener('DOMContentLoaded', () => {
       activeModel: getVal('setting-active-model', DEFAULT_SETTINGS.activeModel),
       visionModel: getVal('setting-vision-model', DEFAULT_SETTINGS.visionModel).trim(),
       audioModel: getVal('setting-audio-model', DEFAULT_SETTINGS.audioModel).trim(),
+      fusionModels: getNum('setting-fusion-models', DEFAULT_SETTINGS.fusionModels),
       multimodalAuto: getCheck('setting-multimodal-auto', DEFAULT_SETTINGS.multimodalAuto),
       temperature: parseFloat(getVal('setting-temperature', DEFAULT_SETTINGS.temperature)),
       maxTokens: getNum('setting-max-tokens', DEFAULT_SETTINGS.maxTokens),
@@ -1695,6 +1698,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (settingHwFit) settingHwFit.textContent = `${hwModel} (Auto-scaled)`;
     if (settingDbPath) settingDbPath.textContent = dbPath;
     if (mfDbPath) mfDbPath.textContent = dbPath;
+
+    const mfPanelSize = document.getElementById('mf-modal-fusion-panel-size');
+    const fusionCount = currentSettings.fusionModels !== undefined ? currentSettings.fusionModels : DEFAULT_SETTINGS.fusionModels;
+    if (mfPanelSize) {
+      mfPanelSize.textContent = fusionCount === 0 ? '0 (Auto-RAM)' : `${fusionCount} Models`;
+    }
 
     if (data.hardware) {
       if (mfCpu) mfCpu.textContent = `${data.hardware.cpu_name} (${data.hardware.logical_cores || 'N/A'} logical cores)`;

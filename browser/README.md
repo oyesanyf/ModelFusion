@@ -1,10 +1,31 @@
 # HugOS Chromium Browser Engine & Multi-Modal AI Co-Pilot
 
-The **HugOS Chromium Browser** is an autonomous, high-speed, vision-grounded web operating environment built for ModelFusion. It combines standard Chromium browsing with deep ModelFusion AI integration, live Chrome DevTools Protocol (CDP) orchestration, semantic DOM pruning (Set-of-Mark tags), automatic tabular dataset extraction into the 5-objective Pareto ACDSO engine, and multi-model consensus arbitration.
+The **HugOS Chromium Browser** is an autonomous, high-speed, vision-grounded web operating environment built specifically for ModelFusion. It unifies standard Chromium browsing with deep ModelFusion AI integration, live Chrome DevTools Protocol (CDP) orchestration on port 9222, high-throughput semantic DOM pruning (Set-of-Mark tags), automatic tabular dataset extraction into the 5-objective Pareto ACDSO engine, multi-model consensus deliberation, and pixel-perfect ChatGPT functional fidelity.
 
 ---
 
-## Key Capabilities & Architecture
+## 🌐 Key Capabilities & Architecture
+
+```mermaid
+graph TD
+    A[User Prompt / URL / Slash Command] --> B[HugOS Browser Orchestration]
+    B --> C{Execution Mode}
+    
+    C -->|Interactive AI Chat| D[ChatGPT-Fidelity Side Panel UI]
+    C -->|Autonomous Navigation| E[CDP Engine: Port 9222]
+    C -->|Table / Data Extraction| F[RFC-4180 Table Extractor]
+    
+    D --> D1[Clean White / Dark Themes & Centered 768px Thread]
+    D --> D2[Canvas Document Cards .chatgpt-canvas-card]
+    D --> D3[5-Button Action Row: Copy, Share, TTS, Regenerate, More]
+    D --> D4[ModelFusion System Panel: 6,438 Models / 45 Tasks]
+    
+    E --> E1[Set-of-Mark SoM Visual Grounding: [1], [2], [3]]
+    E --> E2[90% Token-Pruned Semantic DOM Filter]
+    E --> E3[Multimodal Consensus: Vision + DOM + Heavy Arbiter]
+    
+    F --> G[ACDSO 5-Objective Pareto AutoML Pipeline]
+```
 
 ### 1. 90% Token Reduction Semantic DOM Pruner (`dom_pruner.rs`)
 Standard web pages contain megabytes of minified JavaScript bundles, tracking tags, CSS styles, and inline SVGs that cause severe context blowups and LLM latency.
@@ -40,58 +61,120 @@ Browser navigation workflows employ three specialist models:
 
 ---
 
-## Directory Structure
+## 🎨 ChatGPT Visual & Functional Fidelity
+
+HugOS Browser's AI interface (`browser/ui/`) provides unmatched ergonomic fidelity modeled directly after frontier AI conversational standards:
+
+### 1. Unified White & Dark Theme Aesthetics
+- **Default Clean White Theme (`#FCFCFC` / `#FFFFFF`)**: Pure light background, subtle borders (`#E5E5E5`), high-contrast typography, and unified light grey dialog surfaces.
+- **Dark Theme Variants**: Dark, Dark+, Obsidian Pitch Black, and Midnight Navy with custom CSS variables.
+- **Clean Settings Modal**: Every tab pane, navigation item, input field, and statistics card in the Settings Dialog adheres strictly to the active theme with zero jarring black-box artifacts.
+
+### 2. Centered 768px Chat Thread
+- Messages are formatted in a clean, focused 768px-wide center column with generous margin gutters.
+- User queries render in comfortable rounded chat capsules (`--user-msg-bg: #f4f4f4`).
+- Assistant answers stream in clean transparent typography with crisp typographic hierarchy.
+
+### 3. Canvas Document Card (`.chatgpt-canvas-card`)
+- Long-form generated text, technical reports, essays, and multi-line code snippets automatically format into elegant rounded Canvas cards.
+- Displays document title in the top-left corner with `📋 Copy` and `⤢ Expand` modal action buttons.
+
+### 4. 5-Button Assistant Action Row
+Every assistant message features an interactive bottom action bar:
+- 📋 **Copy**: Instant clipboard copying of Markdown source or formatted text.
+- ⬆️ **Share**: Exports message threads or saves conversation excerpts.
+- 🔊 **Read Aloud**: Native client-side speech synthesis powered by the Web Speech API.
+- 🔄 **Regenerate**: Triggers alternative response generation via ModelFusion consensus.
+- ⋯ **More options**: Quick access to model diagnostics, token telemetry, and execution traces.
+
+### 5. Persistent Sidebar Chat History
+- Conversation history is automatically persisted into `localStorage`.
+- Supports instant session switching, thread renaming, selective deletion, and new chat creation.
+
+### 6. Auto-Hiding Sleek 6px Scrollbars
+- Completely eliminates thick operating system scrollbars and dual-nested page scrollbars.
+- Custom WebKit scrollbar styling (`6px` width, rounded `#d1d5db` thumb, auto-hiding on idle).
+
+---
+
+## 🧠 ModelFusion Multi-Modal System Panel
+
+HugOS Browser embeds complete visibility into ModelFusion's local compound intelligence engine:
+- **Live Catalog Statistics**: Queries `IDE/db/hf_models.db` to show real-time catalog metrics (**6,438 Models across 45 Tasks**).
+- **Dynamic Hardware Memory Sizing**: Displays runtime available RAM (`res.free_ram_gb`), GPU VRAM (`res.free_vram_mb`), and the active workhorse model (`qwen2.5:32b/7b`).
+- **Consensus Panel Sizing**: Configurable via Settings -> AI Models & Endpoints:
+  - `0` (Auto: Dynamically sized from runtime available RAM)
+  - `2 Models` (Fast Dual Consensus)
+  - `3 Models` (Tri-Specialist: DOM + Vision + Reasoning)
+  - `5 Models` (Deep Consensus Panel)
+  - `10 Models` (Exhaustive Frontier Deliberation)
+- **REST Telemetry Endpoint**: Interacts with the Master CLI's `/api/modelfusion/status` endpoint.
+
+---
+
+## 📁 Directory Structure
 
 ```
 browser/
 ├── bin/
-│   └── cli.exe                 # Authoritative ModelFusion Master CLI binary
+│   └── cli.exe                 # Authoritative ModelFusion Master CLI binary (7-way parity)
 ├── config/
-│   └── default_preferences.json# Dark theme, telemetry disabled, ModelFusion endpoint
+│   └── default_preferences.json# Dark/White theme, telemetry disabled, ModelFusion endpoint
 ├── db/
-│   └── hf_models.db            # Hardlink/copy of SQLite multi-modal model catalog
+│   └── hf_models.db            # SQLite catalog database (6,438 models across 45 tasks)
 ├── extension/                  # Manifest V3 HugOS Browser AI Assistant
 │   ├── manifest.json           # Extension manifest with sidePanel, debugger, activeTab
 │   ├── content.js              # Set-of-Mark visual bounding box injector & DOM parser
 │   ├── background.js           # Background service worker managing CDP & ModelFusion IPC
-│   ├── sidepanel.html          # Full AI chat sidebar matching HugOS IDE dark theme
+│   ├── sidepanel.html          # AI chat sidebar HTML
 │   ├── sidepanel.js            # Chat interactions, slash commands, and tool streaming
-│   └── styles.css              # Dark-mode styling matching HugOS IDE
+│   └── styles.css              # Sidepanel styling
+├── ui/                         # ChatGPT-fidelity standalone AI web application
+│   ├── index.html              # Chat UI, Settings modal, ModelFusion system panel
+│   ├── app.js                  # Streaming LLM, chat history, TTS, settings persistence
+│   └── styles.css              # Themes (White, Dark, Obsidian), Canvas cards, 6px scrollbars
 ├── Chromium-win32-x64/
 │   └── hugos-browser.bat       # Launcher script with remote debugging & extension loading
 ├── build_number.txt            # Package auto-increment build tracking
 ├── build_browser.ps1           # WiX MSI automated packaging and digital signing script
-└── README.md                   # Technical documentation
+├── generate_wix.js             # Automated WiX manifest XML generator
+└── README.md                   # Comprehensive technical documentation
 ```
 
 ---
 
-## Master CLI Commands
+## 💻 Master CLI Commands
 
 ```powershell
 # Launch interactive HugOS Browser with AI side panel
 cli.exe --browser
 
-# Execute autonomous goal-directed web task
+# Execute autonomous goal-directed web navigation and research directive
 cli.exe --browser-task "Navigate to Hugging Face, search for top TTS models, and report their download counts"
 
-# Instant semantic table and dataset extraction from URL
+# Instant semantic table and dataset extraction from URL directly into ACDSO
 cli.exe --browser-extract "https://en.wikipedia.org/wiki/Comparison_of_deep_learning_software"
 
 # Specify custom remote debugging port
-cli.exe --browser --browser-port 9223
+cli.exe --browser --browser-port 9225
 
-# Interactive Slash Commands in HugOS Chat:
+# Direct launcher batch script
+.\browser\Chromium-win32-x64\hugos-browser.bat
+```
+
+### Interactive Slash Commands in HugOS Chat
+```text
 /browser https://huggingface.co/models
+/browser extract tables from https://en.wikipedia.org/wiki/List_of_countries_by_GDP_(nominal)
 /acdso https://en.wikipedia.org/wiki/List_of_countries_by_GDP_(nominal)
 @agent browser find the highest rated local embedding models
 ```
 
 ---
 
-## Packaging & MSI Distribution
+## 📦 Packaging & MSI Distribution
 
-To compile, verify, digitally sign, and build the HugOS Browser MSI installer:
+To compile, verify, digitally sign, and build the self-contained HugOS Browser MSI installer:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\browser\build_browser.ps1
 ```
