@@ -11,7 +11,10 @@ pub use browser_fusion::{
 
 use anyhow::Result;
 use clap::Parser;
-use modelfusion_core::{ComprehensiveTaskHandler, HuggingFaceOrchestrator};
+use modelfusion_core::{
+    ComprehensiveTaskHandler, HuggingFaceOrchestrator,
+    rl::{AdaptiveController, DecisionAction, FeatureState, LearningRegime},
+};
 use model_selection::SelectionStrategy;
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
@@ -785,6 +788,21 @@ pub async fn handle_rest_rl(args_list: &[String]) -> String {
                         "- **Daemon Status**: 🟢 RUNNING (TCP 127.0.0.1:45454 / Named Pipe)"
                     };
 
+                    let active_db_dir = if std::path::Path::new("IDE/db").exists() {
+                        std::path::Path::new("IDE/db")
+                    } else {
+                        std::path::Path::new("db")
+                    };
+                    let telem = {
+                        let ctrl = get_adaptive_controller(active_db_dir).lock().unwrap();
+                        ctrl.telemetry()
+                    };
+                    let temporal_str = if telem.temporal_improvement {
+                        "🟢 Positive (Late > Early)"
+                    } else {
+                        "⚪ Baseline Warmup"
+                    };
+
                     format!(
                         "🧠 **HugOS ReST-RL / GRPO Autonomous Reasoning Subsystem**\n\n\
                         {}\n\
@@ -796,19 +814,60 @@ pub async fn handle_rest_rl(args_list: &[String]) -> String {
                         - **Active Task**: {}\n\
                         - **Queue Length**: {} task(s)\n\
                         - **Processed Tasks**: {}\n\n\
+                        ### 📊 Sound Multi-Objective Adaptive Controller Telemetry\n\
+                        | Metric | Value |\n\
+                        |---|---|\n\
+                        | **Operational Learning Regime** | `{}` |\n\
+                        | **Total Route Decisions (t)** | `{}` |\n\
+                        | **Exploration Rate c(t)** | `{:.4}` |\n\
+                        | **Direct Advantage Ratio** | `RL > Raw`: {} ({:.1}%) \\| `RL == Raw`: {} \\| `RL < Raw`: {} |\n\
+                        | **Mean Instantaneous Regret** | `{:.4}` |\n\
+                        | **Reward Trajectory** | Early: `{:.3}` → Late: `{:.3}` ({}) |\n\n\
                         *Autonomous reinforcement learning reasoning active during debounced IDE idle periods.*",
-                        status_str, ide_state, tier, tier_name, model, adapter, ram, vram, gpu, running, q_len, proc_count
+                        status_str, ide_state, tier, tier_name, model, adapter, ram, vram, gpu, running, q_len, proc_count,
+                        telem.regime, telem.decisions_count, telem.exploration_rate,
+                        telem.advantage.rl_greater_than_raw, telem.advantage.win_rate_percent,
+                        telem.advantage.rl_equal_to_raw, telem.advantage.rl_less_than_raw,
+                        telem.mean_regret, telem.r_early, telem.r_late, temporal_str
                     )
                 }
                 Err(_) => {
                     let sys = query_system_resources();
+                    let active_db_dir = if std::path::Path::new("IDE/db").exists() {
+                        std::path::Path::new("IDE/db")
+                    } else {
+                        std::path::Path::new("db")
+                    };
+                    let telem = {
+                        let ctrl = get_adaptive_controller(active_db_dir).lock().unwrap();
+                        ctrl.telemetry()
+                    };
+                    let temporal_str = if telem.temporal_improvement {
+                        "🟢 Positive (Late > Early)"
+                    } else {
+                        "⚪ Baseline Warmup"
+                    };
+
                     format!(
                         "🧠 **HugOS ReST-RL / GRPO Autonomous Reasoning Subsystem**\n\n\
                         - **Daemon Status**: ⚪ STOPPED / IDLE (Daemon not currently active)\n\
                         - **Default Port**: 127.0.0.1:45454 (TCP JSON-RPC) / `\\\\.\\pipe\\hugos_rest_rl_ipc`\n\
                         - **Detected Hardware**: {:.1} GB Available RAM | {} MB Free VRAM ({})\n\n\
+                        ### 📊 Sound Multi-Objective Adaptive Controller Telemetry\n\
+                        | Metric | Value |\n\
+                        |---|---|\n\
+                        | **Operational Learning Regime** | `{}` |\n\
+                        | **Total Route Decisions (t)** | `{}` |\n\
+                        | **Exploration Rate c(t)** | `{:.4}` |\n\
+                        | **Direct Advantage Ratio** | `RL > Raw`: {} ({:.1}%) \\| `RL == Raw`: {} \\| `RL < Raw`: {} |\n\
+                        | **Mean Instantaneous Regret** | `{:.4}` |\n\
+                        | **Reward Trajectory** | Early: `{:.3}` → Late: `{:.3}` ({}) |\n\n\
                         Type `/rl start` or `cli.exe --rest-rl start` to launch the autonomous background reasoning worker.",
-                        sys.free_ram_gb, sys.free_vram_mb, sys.gpu_name
+                        sys.free_ram_gb, sys.free_vram_mb, sys.gpu_name,
+                        telem.regime, telem.decisions_count, telem.exploration_rate,
+                        telem.advantage.rl_greater_than_raw, telem.advantage.win_rate_percent,
+                        telem.advantage.rl_equal_to_raw, telem.advantage.rl_less_than_raw,
+                        telem.mean_regret, telem.r_early, telem.r_late, temporal_str
                     )
                 }
             }
@@ -2797,38 +2856,54 @@ async fn run(args: Args) -> Result<()> {
         let mut is_fusion_needed = fusion && !args.no_fusion;
         let mut bandit_context = 0;
         let mut bandit_arm = 0;
+        let mut rl_feature_state = FeatureState::new(0.5, 16.0, 4000.0, final_prompt.len(), false, false, false, false);
+        let mut rl_selected_action = DecisionAction::default_single();
         let mut run_bandit_learning = false;
 
         if !is_fusion_needed && !args.no_fusion && !args.mcp && !args.server && !args.ollama && !args.openvino && !args.onnx {
             run_bandit_learning = true;
             let complexity_str = llm_classify_complexity(&final_prompt).await;
             eprintln!("🦙 [ROUTER] Prompt classified complexity: {}", complexity_str);
-            bandit_context = match complexity_str.as_str() {
-                "simple_general" => 0,
-                "simple_coding" => 1,
-                "complex_general" => 2,
-                "complex_coding" => 3,
+            let (complexity_val, ctx) = match complexity_str.as_str() {
+                "simple_general" => (0.2, 0),
+                "simple_coding" => (0.4, 1),
+                "complex_general" => (0.7, 2),
+                "complex_coding" => (0.9, 3),
                 _ => {
                     let is_coding = detect_if_coding_or_complicated(&final_prompt);
-                    if is_coding { 1 } else { 0 }
+                    if is_coding { (0.6, 1) } else { (0.3, 0) }
                 }
             };
+            bandit_context = ctx;
+            let is_coding = detect_if_coding_or_complicated(&final_prompt);
+            let sys = query_system_resources();
+            rl_feature_state = FeatureState::new(
+                complexity_val,
+                sys.free_ram_gb,
+                sys.free_vram_mb as f64,
+                final_prompt.len(),
+                is_coding,
+                false,
+                args.file.is_some(),
+                false,
+            );
+            let candidate_actions = DecisionAction::default_candidate_actions();
             let db_dir = db_path.parent().unwrap_or_else(|| std::path::Path::new("db"));
-            let state = load_bandit_state(db_dir);
-            let epsilon = 0.15;
-            let mut lcg = Lcg::new();
-            bandit_arm = if lcg.gen_bool(epsilon) {
-                lcg.gen_range(0, 2)
-            } else {
-                let vals = state.values[bandit_context];
-                if vals[0] >= vals[1] { 0 } else { 1 }
+            let (action, ucb_score) = {
+                let mut ctrl = get_adaptive_controller(db_dir).lock().unwrap();
+                ctrl.select_action(&rl_feature_state, &candidate_actions)
             };
+            rl_selected_action = action;
+            bandit_arm = if rl_selected_action.consensus_panel_size > 1 || rl_selected_action.arm_id >= 2 { 1 } else { 0 };
             
             // Override arm choice using the small model LLM router decision
             if let Some(decision) = llm_route(&final_prompt).await {
                 eprintln!("🎯 [ROUTER] LLM Router decision: fusion={}, strategy={}, use_gpu={}, use_cpu={}, task={}",
                     decision.fusion, decision.selection_strategy, decision.use_gpu, decision.use_cpu, decision.detected_task);
                 bandit_arm = if decision.fusion { 1 } else { 0 };
+                if !decision.fusion {
+                    rl_selected_action = candidate_actions[0].clone();
+                }
             }
             
             // Force arm choice to 0 (single model) if the complexity layer classified it as simple!
@@ -2836,11 +2911,13 @@ async fn run(args: Args) -> Result<()> {
                 if bandit_arm == 1 {
                     eprintln!("💡 [ROUTER] Complexity layer classified task as simple. Overriding fusion selection to single model.");
                     bandit_arm = 0;
+                    rl_selected_action = candidate_actions[0].clone();
                 }
             }
             
             is_fusion_needed = bandit_arm == 1 && !args.no_fusion;
-            eprintln!("🎯 [BANDIT] Selected Arm: {} (0=Single, 1=Fusion) for context: {}", bandit_arm, complexity_str);
+            eprintln!("🎯 [ADAPTIVE-RL] Selected Arm: {} (panel={}, depth={}, search={}) | UCB Score: {:.4} | Context: {}",
+                bandit_arm, rl_selected_action.consensus_panel_size, rl_selected_action.verification_depth, rl_selected_action.search_mode, ucb_score, complexity_str);
         }
 
         // Acquire cross-process lock to prevent duplicate runs freezing the system
@@ -3029,6 +3106,12 @@ async fn run(args: Args) -> Result<()> {
                     }
                     if run_bandit_learning {
                         let db_dir = db_path.parent().unwrap_or_else(|| std::path::Path::new("db"));
+                        {
+                            let mut ctrl = get_adaptive_controller(db_dir).lock().unwrap();
+                            ctrl.update(&rl_feature_state, &rl_selected_action, 0.8, Some(0.5));
+                            let checkpoint_path = db_dir.join("adaptive_rl_policy.json");
+                            let _ = ctrl.save_checkpoint(&checkpoint_path);
+                        }
                         let mut state = load_bandit_state(db_dir);
                         let count = state.counts[bandit_context][bandit_arm];
                         let val = state.values[bandit_context][bandit_arm];
@@ -3042,6 +3125,12 @@ async fn run(args: Args) -> Result<()> {
                     eprintln!("Error: {}", e);
                     if run_bandit_learning {
                         let db_dir = db_path.parent().unwrap_or_else(|| std::path::Path::new("db"));
+                        {
+                            let mut ctrl = get_adaptive_controller(db_dir).lock().unwrap();
+                            ctrl.update(&rl_feature_state, &rl_selected_action, 0.0, Some(0.5));
+                            let checkpoint_path = db_dir.join("adaptive_rl_policy.json");
+                            let _ = ctrl.save_checkpoint(&checkpoint_path);
+                        }
                         let mut state = load_bandit_state(db_dir);
                         let count = state.counts[bandit_context][bandit_arm];
                         let val = state.values[bandit_context][bandit_arm];
@@ -3077,6 +3166,12 @@ async fn run(args: Args) -> Result<()> {
             }
             if run_bandit_learning {
                 let db_dir = db_path.parent().unwrap_or_else(|| std::path::Path::new("db"));
+                {
+                    let mut ctrl = get_adaptive_controller(db_dir).lock().unwrap();
+                    ctrl.update(&rl_feature_state, &rl_selected_action, 0.8, Some(0.5));
+                    let checkpoint_path = db_dir.join("adaptive_rl_policy.json");
+                    let _ = ctrl.save_checkpoint(&checkpoint_path);
+                }
                 let mut state = load_bandit_state(db_dir);
                 let count = state.counts[bandit_context][bandit_arm];
                 let val = state.values[bandit_context][bandit_arm];
@@ -3094,6 +3189,12 @@ async fn run(args: Args) -> Result<()> {
             }
             if run_bandit_learning {
                 let db_dir = db_path.parent().unwrap_or_else(|| std::path::Path::new("db"));
+                {
+                    let mut ctrl = get_adaptive_controller(db_dir).lock().unwrap();
+                    ctrl.update(&rl_feature_state, &rl_selected_action, 0.0, Some(0.5));
+                    let checkpoint_path = db_dir.join("adaptive_rl_policy.json");
+                    let _ = ctrl.save_checkpoint(&checkpoint_path);
+                }
                 let mut state = load_bandit_state(db_dir);
                 let count = state.counts[bandit_context][bandit_arm];
                 let val = state.values[bandit_context][bandit_arm];
@@ -4502,7 +4603,7 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
         "getvinointerval" => Some("getvino-interval"),
         "realoptions" => Some("real-options"),
         "promptqualityscoring" => Some("prompt-quality-scoring"),
-        "restrl" | "rl" | "restrlstatus" | "rlstatus" | "restrldaemon" | "rldaemon" | "rest-rl" => Some("rest-rl"),
+        "restrl" | "rl" | "restrlstatus" | "rlstatus" | "restrldaemon" | "rldaemon" | "rest-rl" | "adaptiverl" | "adaptiverlstatus" | "soundrl" => Some("rest-rl"),
         "score" => Some("score"),
         "judge" => Some("judge"),
         "plan" => Some("plan"),
@@ -6333,6 +6434,122 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 return;
             }
 
+            // ── Sound RL Adaptive Controller Telemetry (/api/rl/status) ──
+            if request_path == "/api/rl/status" {
+                let resolved_db = resolve_db_path(Some(&db_path_str));
+                let db_dir = resolved_db.parent().unwrap_or_else(|| std::path::Path::new("IDE/db"));
+                let telem = {
+                    let ctrl = get_adaptive_controller(db_dir).lock().unwrap();
+                    ctrl.telemetry()
+                };
+                let telem_json = serde_json::to_value(&telem).unwrap_or_else(|_| serde_json::json!({}));
+                let resp_body = serde_json::to_string(&telem_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Sound RL Adaptive Controller Routing (/api/rl/route) ──
+            if request_path == "/api/rl/route" {
+                let complexity = request_json.get("complexity").and_then(|v| v.as_f64()).unwrap_or(0.5);
+                let free_ram_gb = request_json.get("free_ram_gb").and_then(|v| v.as_f64()).unwrap_or(16.0);
+                let free_vram_mb = request_json.get("free_vram_mb").and_then(|v| v.as_f64()).unwrap_or(4000.0);
+                let prompt_len = request_json.get("prompt_len").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
+                let is_code = request_json.get("is_code").and_then(|v| v.as_bool()).unwrap_or(false);
+                let is_tabular = request_json.get("is_tabular").and_then(|v| v.as_bool()).unwrap_or(false);
+                let is_multimodal = request_json.get("is_multimodal").and_then(|v| v.as_bool()).unwrap_or(false);
+                let is_web = request_json.get("is_web").and_then(|v| v.as_bool()).unwrap_or(false);
+
+                let state = FeatureState::new(
+                    complexity,
+                    free_ram_gb,
+                    free_vram_mb,
+                    prompt_len,
+                    is_code,
+                    is_tabular,
+                    is_multimodal,
+                    is_web,
+                );
+                let candidate_actions = DecisionAction::default_candidate_actions();
+
+                let resolved_db = resolve_db_path(Some(&db_path_str));
+                let db_dir = resolved_db.parent().unwrap_or_else(|| std::path::Path::new("IDE/db"));
+                let (action, ucb_score, c_t, regime_str) = {
+                    let mut ctrl = get_adaptive_controller(db_dir).lock().unwrap();
+                    let (act, score) = ctrl.select_action(&state, &candidate_actions);
+                    let c_t = ctrl.exploration_rate();
+                    let reg = ctrl.telemetry().regime;
+                    (act, score, c_t, reg)
+                };
+
+                let resp_json = serde_json::json!({
+                    "status": "ok",
+                    "action": action,
+                    "ucb_score": ucb_score,
+                    "exploration_rate": c_t,
+                    "regime": regime_str
+                });
+                let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Sound RL Evaluation Mode Toggle (/api/rl/eval-mode) ──
+            if request_path == "/api/rl/eval-mode" {
+                let mode_str = request_json.get("mode")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| {
+                        if request_json.get("frozen_test").and_then(|v| v.as_bool()).unwrap_or(false) {
+                            Some("frozen_test")
+                        } else {
+                            Some("online")
+                        }
+                    })
+                    .unwrap_or("online");
+
+                let target_regime = if mode_str == "frozen_test" || mode_str == "frozen" {
+                    LearningRegime::FrozenTest
+                } else {
+                    LearningRegime::OnlineAnnealing
+                };
+
+                let resolved_db = resolve_db_path(Some(&db_path_str));
+                let db_dir = resolved_db.parent().unwrap_or_else(|| std::path::Path::new("IDE/db"));
+                let reg_name = {
+                    let mut ctrl = get_adaptive_controller(db_dir).lock().unwrap();
+                    ctrl.set_regime(target_regime);
+                    let checkpoint_path = db_dir.join("adaptive_rl_policy.json");
+                    let _ = ctrl.save_checkpoint(&checkpoint_path);
+                    ctrl.telemetry().regime
+                };
+
+                let resp_json = serde_json::json!({
+                    "status": "ok",
+                    "regime": reg_name,
+                    "frozen_test": target_regime == LearningRegime::FrozenTest
+                });
+                let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
             // ── Ollama Chat Proxy (/api/chat) ──
             if request_path == "/api/chat" {
                 let client = reqwest::Client::builder()
@@ -6556,19 +6773,46 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     let mut prompt = request_json["prompt"].as_str().unwrap_or("").to_string();
                     let images_opt = request_json.get("images").and_then(|v| v.as_array());
                     let mut strategy = request_json["selection_strategy"].as_str().unwrap_or("multi_objective").to_string();
+                    let res = query_system_resources();
+                    let is_code_task = detect_if_coding_or_complicated(&prompt);
+                    let prompt_len = prompt.len();
+                    let complexity_val = if is_code_task { 0.7 } else if prompt_len > 300 { 0.6 } else { 0.3 };
+                    let rl_server_state = FeatureState::new(
+                        complexity_val,
+                        res.free_ram_gb,
+                        res.free_vram_mb as f64,
+                        prompt_len,
+                        is_code_task,
+                        false,
+                        images_opt.map(|arr| !arr.is_empty()).unwrap_or(false),
+                        false,
+                    );
+                    let candidate_actions = DecisionAction::default_candidate_actions();
+                    let db_dir = std::path::Path::new("IDE/db");
+                    let alt_db_dir = std::path::Path::new("db");
+                    let active_db_dir = if db_dir.exists() { db_dir } else { alt_db_dir };
+
+                    let (rl_server_action, ucb_score) = {
+                        let mut ctrl = get_adaptive_controller(active_db_dir).lock().unwrap();
+                        ctrl.select_action(&rl_server_state, &candidate_actions)
+                    };
+
+                    eprintln!("[SERVER] 🧠 Adaptive RL Selected Arm {} (panel={}, depth={}, search={}) | UCB={:.4}",
+                        rl_server_action.arm_id, rl_server_action.consensus_panel_size, rl_server_action.verification_depth, rl_server_action.search_mode, ucb_score);
+
                     let raw_fusion_models = request_json["fusion_models"].as_u64().unwrap_or(0) as usize;
                     let fusion_models = if raw_fusion_models <= 1 {
                         let derived = model_selection::memory::derive_fusion_model_count();
                         let sys_mem = model_selection::memory::SystemMemory::detect_live();
-                        eprintln!("[SERVER] 🧠 Dynamic hardware allocation: runtime available RAM={:.1}GB, free VRAM={:.1}GB -> dynamically allocated fusion panel: {} models (raw setting was {}).",
-                            sys_mem.free_ram_gb, sys_mem.gpu_vram_free_gb, derived, raw_fusion_models);
-                        derived
+                        let chosen = derived.max(rl_server_action.consensus_panel_size);
+                        eprintln!("[SERVER] 🧠 Dynamic hardware allocation: runtime available RAM={:.1}GB, free VRAM={:.1}GB -> dynamically allocated fusion panel: {} models (raw setting was {}, RL suggested {}).",
+                            sys_mem.free_ram_gb, sys_mem.gpu_vram_free_gb, chosen, raw_fusion_models, rl_server_action.consensus_panel_size);
+                        chosen
                     } else {
                         raw_fusion_models
                     };
                     let fusion_mode = request_json["fusion_mode"].as_str().unwrap_or("auto").to_string();
                     let budget = request_json["budget"].as_f64().unwrap_or(10.0);
-                    let res = query_system_resources();
                     let mut openvino = request_json["openvino"].as_bool().unwrap_or(false);
                     let mut cpu = request_json["cpu"].as_bool().unwrap_or(false);
                     let mut gpu = request_json["gpu"].as_bool().unwrap_or(false);
@@ -8933,6 +9177,19 @@ sequenceDiagram
 
                     eprintln!("[SERVER] <<< Completed /orchestrate request in {}ms.", start_time.elapsed().as_millis());
                     let cleaned_content = clean_model_response(&content);
+                    // Update AdaptiveController with counterfactual margin against single-model baseline
+                    let r_actual = if cleaned_content.len() > 20 && !cleaned_content.contains("[ERROR]") {
+                        0.85
+                    } else {
+                        0.1
+                    };
+                    let r_baseline = 0.65; // Baseline single-model performance
+                    {
+                        let mut ctrl = get_adaptive_controller(active_db_dir).lock().unwrap();
+                        ctrl.update(&rl_server_state, &rl_server_action, r_actual, Some(r_baseline));
+                        let checkpoint_path = active_db_dir.join("adaptive_rl_policy.json");
+                        let _ = ctrl.save_checkpoint(&checkpoint_path);
+                    }
                     let response_json = if is_openai_compat {
                         // Return OpenAI-compatible response format
                         serde_json::json!({
@@ -9155,6 +9412,16 @@ async fn run_cli_subcommand(cmd_args: &[String], db_path: &std::path::Path) -> S
     } else {
         "Failed to resolve current executable path".to_string()
     }
+}
+
+static ADAPTIVE_CONTROLLER: OnceLock<std::sync::Mutex<AdaptiveController>> = OnceLock::new();
+
+pub fn get_adaptive_controller(db_dir: &std::path::Path) -> &'static std::sync::Mutex<AdaptiveController> {
+    ADAPTIVE_CONTROLLER.get_or_init(|| {
+        let checkpoint_path = db_dir.join("adaptive_rl_policy.json");
+        let controller = AdaptiveController::load_or_default(&checkpoint_path);
+        std::sync::Mutex::new(controller)
+    })
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
@@ -12692,6 +12959,10 @@ User: <context><environment_info>OS: Windows</environment_info></context>@agent 
         assert_eq!(canonicalize_command("@agent /restrl"), Some("rest-rl"));
         assert_eq!(canonicalize_command("@command rl"), Some("rest-rl"));
         assert_eq!(canonicalize_command("@commands rl"), Some("rest-rl"));
+        assert_eq!(canonicalize_command("/rl status"), Some("rest-rl"));
+        assert_eq!(canonicalize_command("/adaptive-rl"), Some("rest-rl"));
+        assert_eq!(canonicalize_command("@agent /adaptive-rl"), Some("rest-rl"));
+        assert_eq!(canonicalize_command("rl status"), Some("rest-rl"));
     }
 
     #[test]

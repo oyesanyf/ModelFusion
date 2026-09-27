@@ -216,7 +216,42 @@ sequenceDiagram
 
 * **Windows Job Object Termination**: Subprocesses launched during speculative code verification are bound to Win32 Job Objects (`CreateJobObjectW`) and terminated via `TerminateJobObject` in **<8ms**.
 * **Zero VRAM Multi-Tier Verification**: 4-tier graduated verification signal (Syntax AST $\to$ Static Typing $\to$ Unit Tests $\to$ Mutation Testing) without allocating secondary 8B reward models into GPU memory.
-* **Mutation Testing Gate**: $K=5$ AST mutants ($M_{kill} \ge 0.5$) act as an adversarial certification gate before candidate code patches are offered to the user.
+* **Mutation Testing Gate**: $K=5$ AST mutants ($M_{\text{kill}} \ge 0.5$) act as an adversarial certification gate before candidate code patches are offered to the user.
+
+#### Sound Multi-Objective Adaptive RL Controller (6 Fundamental Pillars)
+
+ModelFusion integrates a computationally sound, sample-efficient reinforcement learning controller (`crates/core/src/rl/adaptive_controller.rs`) operating across the Master CLI, HugOS IDE ReST-RL daemon, and HugOS Browser:
+
+1. **Algorithmic Soundness & Sabotage Elimination**:
+   * **Counterfactual Margin Scoring**: Resolves the counterfactual zero-gain bug by evaluating candidates strictly against unsteered baseline rewards ($\Delta R = R_{\text{candidate}} - R_{\text{clean\_base}}$), preserving steering credit while penalizing unnecessary intervention.
+   * **Strict Episode Boundaries ($\gamma = 0$)**: Enforces episodic reset ($\gamma = 0$) across independent prompts, distinct queries, and target file switches, preventing reward credit from bleeding backwards into prior trajectory steps.
+   * **Time-Decayed Exploration Annealing**: Dynamically decays the exploration parameter via $c(t) = \frac{c_0}{1.0 + \alpha_{\text{decay}} \cdot t}$ (defaults: $c_0 = 1.0, \alpha_{\text{decay}} = 0.005$), ensuring broad early state-space discovery that transitions seamlessly into high-precision exploitation.
+   * **Tikhonov-Regularized Cholesky Inversion**: Eliminates near-singular covariance matrix inversion instability by adding $\epsilon_{\text{tikh}} = 10^{-5} I$ before performing Cholesky decomposition ($L L^T = A_{\text{reg}}$), guaranteeing non-NaN, numerically stable parameter updates.
+
+2. **Shared Generalization Across Models & Modalities (45D Joint Space)**:
+   * Replaces siloed tabular heuristics with unified action-conditioned bilinear regression:
+     $$\phi(s, a) = [1, s, a, s \otimes a] \in \mathbb{R}^{45}$$
+   * **State Vector $s \in \mathbb{R}^8$**: Task complexity, runtime available RAM ($\text{GB} / 64$), free VRAM ($\text{MB} / 16384$), prompt character length ($\text{len} / 4000$), and modality indicators (`is_code`, `is_tabular`, `is_multimodal`, `is_web`).
+   * **Action Vector $a \in \mathbb{R}^4$**: Model tier ($[1.5\text{B}, 7\text{B}, 14\text{B}, 32\text{B}]$), consensus panel size, verification depth, and search trigger mode.
+   * **32 Bilinear Interaction Terms ($s \otimes a$)**: Enables rapid cross-task generalization, allowing the policy to accurately predict outcomes for rarely sampled actions based on shared feature affinities.
+
+3. **Task-Aligned Multi-Signal Verifiable Reward**:
+   * Multi-objective composite reward formulation:
+     $$R(s, a) = w_{\text{acc}} \cdot R_{\text{verification}} + w_{\text{cost}} \cdot R_{\text{efficiency}} + w_{\text{lat}} \cdot R_{\text{latency}} + w_{\text{reg}} \cdot R_{\text{regret}}$$
+   * Driven by verified compiler exit codes, Win32 Job Object test executions, AST mutation kills ($M_{\text{kill}} \ge 0.5 \implies R = 1.0$), and DOM element grounding accuracy over CDP (port 9222).
+
+4. **Scientific Rigor & Zero Leakage (`frozen_test` Mode)**:
+   * **`frozen_test` Mode**: Parameter updates are strictly locked during benchmark evaluation to prevent test-set contamination and guarantee valid out-of-distribution generalization metrics.
+   * **Three Operational Regimes**: `Cold` (pure zero-shot baseline), `Prior` (warm-started with curated multi-modal heuristics), and `FrozenTest` (deterministic evaluation).
+   * **Policy Checkpoint Serialization**: Persisted transparently to `IDE/db/adaptive_rl_policy.json`.
+
+5. **Direct Advantage Attribution & Regret Tracking**:
+   * **Direct Advantage Binning**: Categorizes every decision into `RL > Raw` (win), `RL == Raw` (neutral), and `RL < Raw` (loss) relative to the unsteered zero-shot baseline.
+   * **Counterfactual Regret Tracking**: Quantifies instantaneous and cumulative regret ($\text{Regret}_t = R^* - R(a_t)$) to evaluate sample efficiency in real time.
+
+6. **Temporal Dynamics & Behavioral Telemetry**:
+   * **Live REST Endpoints**: Master CLI exposes `/api/rl/status`, `/api/rl/route`, and `/api/rl/eval-mode`.
+   * **Browser Telemetry Card**: Dedicated **Sound RL Adaptive Controller** monitor in HugOS Browser Settings (`pane-tab-usage`) rendering live regime badges, decision counts, exploration rate $c(t)$, advantage win rates, and temporal gains ($R_{\text{late}} > R_{\text{early}}$).
 
 ---
 

@@ -53,6 +53,7 @@ class RolloutResult:
     is_complete: bool
     status: str  # "COMPLETED", "PAUSED", "IN_PROGRESS", "FAILED"
     sandbox_result: Optional[SandboxResult] = None
+    direct_advantage: Optional[str] = None  # "RL > Raw", "RL == Raw", "RL < Raw"
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:

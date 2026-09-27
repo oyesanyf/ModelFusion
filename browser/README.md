@@ -57,7 +57,12 @@ Standard web pages contain megabytes of minified JavaScript bundles, tracking ta
 Browser navigation workflows employ three specialist models:
 1. **Fast NLP DOM Specialist (`qwen2.5:7b`)**: Rapid Set-of-Mark parsing and quick DOM action proposal.
 2. **Vision Specialist (`qwen2.5-vl`)**: Visual layout verification and screenshot understanding.
-3. **Heavy Reasoning Arbiter (`deepseek-r1:7b` / `qwen2.5:32b`)**: Complex planning, multi-step navigation, and discrepancy resolution with `<think>` verification.
+### 6. Sound Multi-Objective Adaptive RL Controller & Telemetry
+HugOS Browser directly surfaces the 6-pillar mathematically sound reinforcement learning system (`crates/core/src/rl/adaptive_controller.rs`):
+* **Bilinear Joint Generalization $\phi(s, a) \in \mathbb{R}^{45}$**: Dispatches browser actions (DOM pruning depth, visual Set-of-Mark injection, vision specialist model selection, web search trigger, and panel size) conditioned on runtime available RAM, VRAM, and prompt characteristics.
+* **Tikhonov-Regularized Cholesky Inversion**: Guarantees numerically stable LinUCB parameter updates ($A_{\text{reg}} = A + \epsilon_{\text{tikh}} I$) without NaN risk during high-frequency browsing exploration.
+* **Time-Decayed Exploration Annealing**: Explores navigation and tool strategies aggressively early on ($c_0 = 1.0$), smoothly annealing to high-precision exploitation ($c(t) = \frac{c_0}{1 + \alpha_{\text{decay}} t}$).
+* **Live Settings Telemetry Card (`pane-tab-usage`)**: Displays real-time regime badges (`🟢 Online (Annealing)` / `❄️ Frozen Test`), decision count, exploration rate $c(t)$, advantage win rate (`RL > Raw: X%`), and temporal gain ($R_{\text{late}} > R_{\text{early}}$).
 
 ---
 

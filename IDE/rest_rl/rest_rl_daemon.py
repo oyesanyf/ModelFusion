@@ -80,8 +80,11 @@ class DaemonTask:
 class RestRLDaemon:
     """Core daemon managing JSON-RPC IPC, idle state controller, and background worker."""
 
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: Optional[str] = None, rl_eval_mode: Optional[str] = None):
         self.config = self._load_config(config_path)
+        self.rl_eval_mode = rl_eval_mode or self.config.get("rl_eval_mode", "online")
+        self._last_target_filename: Optional[str] = None
+        self._last_task_id: Optional[str] = None
         HardwareProfiler.apply_os_throttling()
         self.profiler = HardwareProfiler(
             tier1_min_ram_gb=self.config.get("resources", {}).get("tier1_min_available_ram_gb", 24.0),
@@ -265,6 +268,8 @@ class RestRLDaemon:
     def initialize(self):
         """Initializes low process scheduling priority, memory caps, and hardware tier."""
         logger.info("Initializing HugOS ReST-RL Daemon...")
+        if self.rl_eval_mode == "frozen_test":
+            logger.info("[REST-RL] ❄️ Frozen Test Mode active: parameter updates locked, evaluating zero-leakage baseline.")
 
         # 1. Enforce low OS priority
         HardwareProfiler.apply_os_throttling()
@@ -372,6 +377,20 @@ class RestRLDaemon:
                 time.sleep(0.5)
                 continue
 
+            # Episode boundary check (gamma = 0):
+            # Enforce strict episode boundary when target_filename changes
+            if self._last_target_filename is not None and self._last_target_filename != task_to_run.task.target_filename:
+                logger.info(
+                    "[REST-RL] 🛑 Target switch detected (%s -> %s). Enforcing episode boundary (gamma = 0) and isolating trajectory.",
+                    self._last_target_filename,
+                    task_to_run.task.target_filename,
+                )
+                if self.active_adapter and hasattr(self.active_adapter, "clear_task_state") and self._last_task_id:
+                    self.active_adapter.clear_task_state(self._last_task_id)
+
+            self._last_target_filename = task_to_run.task.target_filename
+            self._last_task_id = task_to_run.task.task_id
+
             self.current_task_id = task_to_run.task.task_id
             task_to_run.state = TaskState.RUNNING
             if not task_to_run.started_at:
@@ -398,6 +417,29 @@ class RestRLDaemon:
                     task_to_run.state = TaskState.COMPLETED
                     task_to_run.completed_at = time.time()
 
+                    # Direct Advantage Logging (RL > Raw, RL == Raw, RL < Raw)
+                    raw_baseline = rollout_result.metadata.get("raw_baseline_reward", 0.0)
+                    if rollout_result.best_reward > raw_baseline + 1e-5:
+                        adv_str = "RL > Raw"
+                    elif abs(rollout_result.best_reward - raw_baseline) <= 1e-5:
+                        adv_str = "RL == Raw"
+                    else:
+                        adv_str = "RL < Raw"
+                    rollout_result.direct_advantage = adv_str
+                    rollout_result.metadata["direct_advantage"] = adv_str
+                    logger.info(
+                        "[REST-RL] 🎯 Direct Advantage for task %s: [%s] (RL: %.2f vs Raw: %.2f)",
+                        task_to_run.task.task_id,
+                        adv_str,
+                        rollout_result.best_reward,
+                        raw_baseline,
+                    )
+
+                    if self.rl_eval_mode == "frozen_test":
+                        logger.info(
+                            "[REST-RL] ❄️ Frozen Test Mode active: parameter updates locked, evaluating zero-leakage baseline."
+                        )
+
                     # Compute unified diff patch if candidate differs from original
                     diff_patch = self._generate_diff(
                         original=task_to_run.task.original_code,
@@ -415,6 +457,7 @@ class RestRLDaemon:
                         "original_code": task_to_run.task.original_code,
                         "diff_patch": diff_patch,
                         "passed": rollout_result.best_reward >= 1.0,
+                        "direct_advantage": adv_str,
                     }
 
                     with self.task_lock:
@@ -426,11 +469,18 @@ class RestRLDaemon:
                     self._save_task_to_db(task_to_run.task, TaskState.COMPLETED, rollout_result.best_reward)
                     self._save_resolution_to_db(resolution_payload)
 
+                    # Enforce strict episode boundary (gamma = 0) on completed task
+                    if self.active_adapter and hasattr(self.active_adapter, "clear_task_state"):
+                        self.active_adapter.clear_task_state(task_to_run.task.task_id)
+                    self._last_target_filename = None
+                    self._last_task_id = None
+
                     logger.info(
-                        "Task %s finished with reward %.2f (status: %s)",
+                        "Task %s finished with reward %.2f (status: %s, advantage: %s)",
                         task_to_run.task.task_id,
                         rollout_result.best_reward,
                         rollout_result.status,
+                        adv_str,
                     )
 
             except Exception as e:
@@ -438,6 +488,10 @@ class RestRLDaemon:
                 task_to_run.state = TaskState.FAILED
                 task_to_run.error = str(e)
                 self._save_task_to_db(task_to_run.task, TaskState.FAILED, 0.0)
+                if self.active_adapter and hasattr(self.active_adapter, "clear_task_state"):
+                    self.active_adapter.clear_task_state(task_to_run.task.task_id)
+                self._last_target_filename = None
+                self._last_task_id = None
                 with self.task_lock:
                     if self.task_queue and self.task_queue[0] == task_to_run.task.task_id:
                         self.task_queue.pop(0)
@@ -581,6 +635,7 @@ class RestRLDaemon:
                 "hardware": hw_dict,
                 "hardware_profile": hw_dict,
                 "adapter": type(self.active_adapter).__name__ if self.active_adapter else "None",
+                "rl_eval_mode": self.rl_eval_mode,
             }
 
         elif method == "agent/get_result":
@@ -811,11 +866,24 @@ class RestRLDaemon:
 
 
 if __name__ == "__main__":
-    daemon = RestRLDaemon()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="HugOS ReST-RL / GRPO Autonomous Daemon")
+    parser.add_argument("--config", type=str, default=None, help="Path to config.json")
+    parser.add_argument(
+        "--rl_eval_mode",
+        type=str,
+        default="online",
+        choices=["online", "frozen_test"],
+        help="RL evaluation mode (online or frozen_test)",
+    )
+    cli_args = parser.parse_args()
+
+    daemon = RestRLDaemon(config_path=cli_args.config, rl_eval_mode=cli_args.rl_eval_mode)
     daemon.initialize()
     daemon.start()
 
-    logger.info("Daemon running. Press Ctrl+C to terminate.")
+    logger.info("Daemon running in [%s] mode. Press Ctrl+C to terminate.", daemon.rl_eval_mode)
     try:
         while True:
             time.sleep(1.0)
