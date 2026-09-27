@@ -97,18 +97,50 @@ Every assistant message features an interactive bottom action bar:
 
 ---
 
-## 🧠 ModelFusion Multi-Modal System Panel
+## 🧠 ModelFusion Multi-Modal System Panel & Settings Architecture
 
 HugOS Browser embeds complete visibility into ModelFusion's local compound intelligence engine:
-- **Live Catalog Statistics**: Queries `IDE/db/hf_models.db` to show real-time catalog metrics (**6,438 Models across 45 Tasks**).
-- **Dynamic Hardware Memory Sizing**: Displays runtime available RAM (`res.free_ram_gb`), GPU VRAM (`res.free_vram_mb`), and the active workhorse model (`qwen2.5:32b/7b`).
-- **Consensus Panel Sizing**: Configurable via Settings -> AI Models & Endpoints:
-  - `0` (Auto: Dynamically sized from runtime available RAM)
-  - `2 Models` (Fast Dual Consensus)
-  - `3 Models` (Tri-Specialist: DOM + Vision + Reasoning)
-  - `5 Models` (Deep Consensus Panel)
-  - `10 Models` (Exhaustive Frontier Deliberation)
-- **REST Telemetry Endpoint**: Interacts with the Master CLI's `/api/modelfusion/status` endpoint.
+- **Live Catalog Statistics**: Queries `IDE/db/hf_models.db` to show real-time catalog metrics (**6,438 Curated Models across 45 Tasks** or **1,271,167 Models** when full crawl is active).
+- **Dynamic Hardware Memory Sizing**: Evaluates strictly **runtime available / free memory** (`res.free_ram_gb`, `res.free_vram_mb`) to dynamically provision matching local Ollama workhorses (`qwen2.5:32b/14b/7b/1.5b`) without OOM risk.
+- **Consensus Panel Sizing (`--fusion-models`)**:
+  - `0 (Auto-RAM)`: Dynamically sized from available memory (Default).
+  - `2 Models`: Fast Dual Consensus (Primary reasoning + Secondary verifier).
+  - `3 Models`: Tri-Specialist (DOM Specialist + Vision Specialist + Heavy Reasoning Arbiter).
+  - `5 Models`: Deep Consensus Panel (Broad sampling across architectures).
+  - `10 Models`: Exhaustive Frontier Deliberation (Full Pareto consensus).
+- **Catalog Model Count Invariants & Transparency**:
+  - **`--update` (Fast Curated Tier)**: Populates the top ~6,500 production workhorse models across all 45 tasks.
+  - **`--updatedb` (Full Registry Crawler)**: Populates all 1,271,167+ models across the entire Hugging Face Hub.
+  - **Offline / IPC Fallback Invariant**: When the Master CLI backend (`:5000`) is offline or unreachable, the browser UI fails safe to the verified baseline constant of **6,438 Models**, rather than crashing or displaying blank metrics.
+  - **Task-Specific Filtering**: Unclassified models lacking valid `pipeline_tag` metadata exist in the raw table count, but are pruned from task-specific consensus candidate pools.
+
+---
+
+## ⚙️ Comprehensive 12-Category Settings Drawer (Matching HugOS IDE)
+
+Pressing `Ctrl+,` or clicking the ⚙️ Settings button in the sidebar opens the full two-column Settings Modal with real-time search filtering across 12 categories:
+1. ⚙️ **General**: Default homepage, token streaming mode, auto-scroll terminal, and diagnostics.
+2. 🔆 **Appearance**: 5 distinct themes (ChatGPT Clean White, Dark, Obsidian Pitch Black, Midnight Navy, Warm Sepia) and font size scaling.
+3. 🌐 **Web Search & Routing**: Autonomous query routing toggles, search engine provider, maximum search results, and citation formatting.
+4. 🧠 **AI Models & Endpoints**: Ollama REST API URL, ModelFusion Master CLI IPC URL, Chrome CDP Port, Primary Workhorse Model, Consensus Panel Size (`--fusion-models`), Vision Specialist Model (`qwen2.5-vl`), and Audio Specialist Model (`whisper-base`).
+5. 📁 **Storage**: Navigation history cache clearing, attached file staging management, and database statistics.
+6. ⌨️ **Keyboard**: Master table of keyboard shortcuts (`Ctrl+,`, `Ctrl+N`, `Ctrl+[`, `Ctrl+Enter`, `Alt+S`, `Esc`).
+7. 📈 **Usage**: Live host telemetry (Runtime Available RAM, GPU VRAM, active model, and query counter).
+8. 🔔 **Notifications**: In-app toast alerts, model provisioning notifications, and task completion chimes.
+9. 👤 **Account**: 100% local profile, zero cloud registration, and `%LOCALAPPDATA%\HugOS Browser` path.
+10. 🔑 **Security & Sandboxing**: Windows Job Object process isolation (<8ms termination) and CORS defense-in-depth.
+11. 🎙️ **Voice**: Speech synthesis voice selection, pitch, and playback rate for Read Aloud.
+12. 🐾 **Pets**: Interactive desktop productivity companion and status indicators.
+
+---
+
+## 📎 Multimodal File Attachments & Data Pipelines
+
+Attach files directly via the `📎` button or drag-and-drop:
+- **Images** (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`): Thumbnail preview in tray, processed via Set-of-Mark visual grounding and Vision Specialists.
+- **Audio** (`.wav`, `.mp3`, `.ogg`, `.flac`): Transcribed via local Whisper acoustic models.
+- **Tabular Datasets** (`.csv`, `.tsv`, `.parquet`): Features an instant `[⚡ Run ACDSO]` action chip to train 5-objective Pareto AutoML models directly on host datasets.
+- **Code & Documents** (`.rs`, `.py`, `.json`, `.pdf`, `.md`): Automatically injected into prompt context for analysis.
 
 ---
 

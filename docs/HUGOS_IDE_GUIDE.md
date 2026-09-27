@@ -469,6 +469,9 @@ Real-time internet web search, documentation scraping, model hub synchronization
 
 | Command | Aliases | Arguments / Options | Description |
 |:---|:---|:---|:---|
+| `/browser` | `/web-browser`, `/hugos-browser` | `[url]` | Launches the dedicated HugOS Chromium Browser environment with Set-of-Mark visual grounding, CDP orchestration, and ChatGPT ergonomic side panel. |
+| `/browser-task` | — | `<goal or task>` | Dispatches an autonomous goal-directed web research directive to the HugOS Browser engine. |
+| `/browser-extract` | — | `<url>` | Semantically extracts HTML tables and CSS grids from the target URL, streaming directly into ACDSO AutoML. |
 | `/research` | `/reseach` | `<topic or query>` | Conducts live web research: fetches documentation, extracts key technical facts, summarizes architectural recommendations, and provides source URLs. |
 | `/search` | — | `<query>` | Fast search query executing real-time web retrieval for current library versions, breaking API changes, or syntax lookups. |
 | `/update` | — | `--db-path <path>` | **Fast Curated Engine**: Syncs the top ~6,500 production workhorse models across all 45 tasks and dynamically auto-provisions the matching local Ollama model. |

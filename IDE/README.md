@@ -354,3 +354,14 @@ The ModelFusion MCP server registers the following native tools, which the edito
 ### 10. `report_bandit_feedback`
 * **Description**: Submits thumbs-up/down or numeric feedback to train the Multi-Armed Bandit context router.
 * **Parameters**: `context` (integer, required), `arm` (integer, required), `reward` (number, required).
+
+---
+
+## 🌐 Companion AI Web Environment: HugOS Browser
+
+Alongside HugOS IDE, ModelFusion packages **HugOS Browser** (`browser/`), a dedicated AI-native Chromium browsing environment:
+- **Set-of-Mark (SoM) Visual Grounding**: Actionable UI elements are tagged with discrete `[1]`, `[2]`, `[3]` markers for autonomous clicking, typing, and exploration.
+- **Instant Table Extractor into ACDSO**: Direct extraction of HTML tables and CSS grids into RFC-4180 CSV, streaming directly into the 5-objective Pareto AutoML engine (`/acdso <URL>`).
+- **ChatGPT Visual & Functional Fidelity**: Clean White signature theme, centered 768px chat column, Canvas Document Cards (`.chatgpt-canvas-card`), 5-button assistant action row (Copy, Share, Web Speech TTS, Regenerate, More), and sleek 6px auto-hiding scrollbars.
+- **ModelFusion Multi-Modal System Panel**: Complete visibility into the 6,438 curated workhorse models, 1.27M+ crawled registry, hardware telemetry, and consensus panel size configuration (`--fusion-models`).
+- **Seamless IDE Interop**: Launch directly from HugOS IDE chat using `/browser <url>` or `@agent browser <task>`.
