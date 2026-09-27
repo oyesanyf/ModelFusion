@@ -39,9 +39,11 @@ if errorlevel 1 (
         "%CLI_BIN%" --ensure-ollama
     ) else (
         where ollama >nul 2>&1
-        if not errorlevel 1 (
-            start /B "" "ollama" serve
+        if errorlevel 1 (
+            echo [INFO] Ollama is not installed. Installing silently in background...
+            powershell -NoProfile -Command "Invoke-WebRequest -Uri 'https://ollama.com/download/OllamaSetup.exe' -OutFile '$env:TEMP\OllamaSetup.exe'; Start-Process -FilePath '$env:TEMP\OllamaSetup.exe' -ArgumentList '/SILENT', '/NORESTART' -Wait"
         )
+        start /B "" "ollama" serve
     )
 )
 

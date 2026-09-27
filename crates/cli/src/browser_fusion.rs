@@ -424,6 +424,14 @@ mod tests {
             "Launcher path must not contain \\?\\ prefix for cmd.exe compatibility"
         );
     }
+
+    #[test]
+    fn test_find_system_chromium() {
+        let chromium = find_system_chromium();
+        assert!(chromium.is_some(), "Should locate at least one Chromium or Edge browser on Windows");
+        let path = chromium.unwrap();
+        assert!(path.is_file(), "Found chromium executable must be a valid file");
+    }
 }
 
 /// Helper to strip verbatim extended-length UNC prefix (`\\?\`) returned by `canonicalize()` on Windows.
@@ -437,39 +445,117 @@ fn strip_verbatim_prefix(p: std::path::PathBuf) -> std::path::PathBuf {
     }
 }
 
-/// Locates the `hugos-browser.bat` script across workspace and installation paths.
+/// Locates the `hugos-browser.bat` script across workspace, repository, and installation paths.
 pub fn find_browser_launcher_bat() -> Option<std::path::PathBuf> {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+
     // 1. Check relative to current executable
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(dir) = exe_path.parent() {
-            let p1 = dir.join("../../browser/Chromium-win32-x64/hugos-browser.bat");
-            if p1.is_file() {
-                return Some(strip_verbatim_prefix(p1.canonicalize().unwrap_or(p1)));
-            }
-            let p2 = dir.join("../Chromium-win32-x64/hugos-browser.bat");
-            if p2.is_file() {
-                return Some(strip_verbatim_prefix(p2.canonicalize().unwrap_or(p2)));
-            }
+            candidates.push(dir.join("hugos-browser.bat"));
+            candidates.push(dir.join("Chromium-win32-x64").join("hugos-browser.bat"));
+            candidates.push(dir.join("..").join("Chromium-win32-x64").join("hugos-browser.bat"));
+            candidates.push(dir.join("..").join("browser").join("Chromium-win32-x64").join("hugos-browser.bat"));
+            candidates.push(dir.join("..").join("..").join("browser").join("Chromium-win32-x64").join("hugos-browser.bat"));
+            candidates.push(dir.join("..").join("..").join("..").join("browser").join("Chromium-win32-x64").join("hugos-browser.bat"));
         }
     }
 
     // 2. Check current working directory
-    let cwd_candidates = [
-        "browser/Chromium-win32-x64/hugos-browser.bat",
-        "Chromium-win32-x64/hugos-browser.bat",
-    ];
-    for cand in cwd_candidates {
-        let p = std::path::PathBuf::from(cand);
-        if p.is_file() {
-            return Some(strip_verbatim_prefix(p.canonicalize().unwrap_or(p)));
+    candidates.push(std::path::PathBuf::from("hugos-browser.bat"));
+    candidates.push(std::path::PathBuf::from("Chromium-win32-x64/hugos-browser.bat"));
+    candidates.push(std::path::PathBuf::from("browser/Chromium-win32-x64/hugos-browser.bat"));
+
+    // 3. Check installed production locations
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        let base = std::path::PathBuf::from(&local_app_data);
+        candidates.push(base.join("HugOS Browser").join("Chromium-win32-x64").join("hugos-browser.bat"));
+        candidates.push(base.join("Programs").join("HugOS Browser").join("Chromium-win32-x64").join("hugos-browser.bat"));
+        candidates.push(base.join("ModelFusion").join("browser").join("Chromium-win32-x64").join("hugos-browser.bat"));
+    }
+
+    if let Ok(prog_files) = std::env::var("ProgramFiles") {
+        let base = std::path::PathBuf::from(&prog_files);
+        candidates.push(base.join("HugOS Browser").join("Chromium-win32-x64").join("hugos-browser.bat"));
+        candidates.push(base.join("ModelFusion").join("browser").join("Chromium-win32-x64").join("hugos-browser.bat"));
+    }
+
+    if let Ok(prog_files_x86) = std::env::var("ProgramFiles(x86)") {
+        let base = std::path::PathBuf::from(&prog_files_x86);
+        candidates.push(base.join("HugOS Browser").join("Chromium-win32-x64").join("hugos-browser.bat"));
+    }
+
+    // 4. Check known development roots
+    candidates.push(std::path::PathBuf::from(r"D:\harfile\ModelFusion\browser\Chromium-win32-x64\hugos-browser.bat"));
+    candidates.push(std::path::PathBuf::from(r"C:\harfile\ModelFusion\browser\Chromium-win32-x64\hugos-browser.bat"));
+    candidates.push(std::path::PathBuf::from(r"C:\harfile\browser\Chromium-win32-x64\hugos-browser.bat"));
+
+    for cand in candidates {
+        if cand.is_file() {
+            return Some(strip_verbatim_prefix(cand.canonicalize().unwrap_or(cand)));
         }
     }
 
-    // 3. Check installed production location
-    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
-        let p = std::path::PathBuf::from(local_app_data).join("HugOS Browser/Chromium-win32-x64/hugos-browser.bat");
-        if p.is_file() {
-            return Some(strip_verbatim_prefix(p.canonicalize().unwrap_or(p)));
+    None
+}
+
+/// Locates a Chromium-compatible browser executable (Google Chrome, Microsoft Edge, Brave, Chromium)
+/// across standard Windows installation paths and PATH environment.
+pub fn find_system_chromium() -> Option<std::path::PathBuf> {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+
+    // 1. Bundled HugOS Chromium in LOCALAPPDATA
+    if let Ok(local_app) = std::env::var("LOCALAPPDATA") {
+        let base = std::path::PathBuf::from(&local_app);
+        candidates.push(base.join("HugOS Browser").join("Chromium-win32-x64").join("chrome.exe"));
+        candidates.push(base.join("HugOS Browser").join("Chromium-win32-x64").join("chromium.exe"));
+    }
+
+    // 2. Google Chrome
+    if let Ok(pf) = std::env::var("ProgramFiles") {
+        candidates.push(std::path::PathBuf::from(&pf).join(r"Google\Chrome\Application\chrome.exe"));
+    }
+    if let Ok(pf_x86) = std::env::var("ProgramFiles(x86)") {
+        candidates.push(std::path::PathBuf::from(&pf_x86).join(r"Google\Chrome\Application\chrome.exe"));
+    }
+    if let Ok(local_app) = std::env::var("LOCALAPPDATA") {
+        candidates.push(std::path::PathBuf::from(&local_app).join(r"Google\Chrome\Application\chrome.exe"));
+    }
+
+    // 3. Microsoft Edge (Present on 100% of modern Windows 10/11 machines)
+    if let Ok(pf_x86) = std::env::var("ProgramFiles(x86)") {
+        candidates.push(std::path::PathBuf::from(&pf_x86).join(r"Microsoft\Edge\Application\msedge.exe"));
+    }
+    if let Ok(pf) = std::env::var("ProgramFiles") {
+        candidates.push(std::path::PathBuf::from(&pf).join(r"Microsoft\Edge\Application\msedge.exe"));
+    }
+    if let Ok(local_app) = std::env::var("LOCALAPPDATA") {
+        candidates.push(std::path::PathBuf::from(&local_app).join(r"Microsoft\Edge\Application\msedge.exe"));
+    }
+
+    // 4. Brave / Vivaldi
+    if let Ok(pf) = std::env::var("ProgramFiles") {
+        candidates.push(std::path::PathBuf::from(&pf).join(r"BraveSoftware\Brave-Browser\Application\brave.exe"));
+    }
+    if let Ok(local_app) = std::env::var("LOCALAPPDATA") {
+        candidates.push(std::path::PathBuf::from(&local_app).join(r"BraveSoftware\Brave-Browser\Application\brave.exe"));
+    }
+
+    // 5. Search PATH
+    if let Ok(path_var) = std::env::var("PATH") {
+        for dir in std::env::split_paths(&path_var) {
+            for bin in &["chrome.exe", "msedge.exe", "chromium.exe", "brave.exe"] {
+                let candidate = dir.join(bin);
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+
+    for cand in candidates {
+        if cand.is_file() {
+            return Some(cand);
         }
     }
 
@@ -477,19 +563,99 @@ pub fn find_browser_launcher_bat() -> Option<std::path::PathBuf> {
 }
 
 /// Spawns the HugOS Intelligent Chromium Browser with optional startup URL.
+/// Fallbacks gracefully through:
+/// 1. `hugos-browser.bat` launcher script (if available).
+/// 2. Direct native launch of Google Chrome / Microsoft Edge with remote debugging port 9222.
+/// 3. Default system browser invocation on the Master CLI HTTP endpoint.
 pub fn launch_hugos_browser(url: Option<&str>) -> Result<(), String> {
-    let bat_path = find_browser_launcher_bat()
-        .ok_or_else(|| "Could not locate hugos-browser.bat. Ensure HugOS Browser is present in browser/Chromium-win32-x64/.".to_string())?;
-    let bat_path = strip_verbatim_prefix(bat_path);
+    let start_url = url.unwrap_or("http://localhost:5000/index.html");
 
-    println!("🚀 [BROWSER] Spawning HugOS Browser Engine: {}", bat_path.display());
-    let mut cmd = std::process::Command::new("cmd");
-    cmd.args(["/c", bat_path.to_str().unwrap()]);
-    if let Some(u) = url {
-        cmd.arg(u);
+    // Strategy 1: hugos-browser.bat script
+    if let Some(bat_path) = find_browser_launcher_bat() {
+        let bat_path = strip_verbatim_prefix(bat_path);
+        println!("🚀 [BROWSER] Spawning HugOS Browser Engine via batch launcher: {}", bat_path.display());
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.args(["/c", bat_path.to_str().unwrap()]);
+        cmd.arg(start_url);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x00000008); // DETACHED_PROCESS
+        }
+        cmd.spawn().map_err(|e| format!("Failed to spawn hugos-browser.bat: {}", e))?;
+        return Ok(());
     }
-    cmd.spawn()
-        .map_err(|e| format!("Failed to spawn hugos-browser.bat: {}", e))?;
+
+    // Strategy 2: Direct native launch of Chrome / Edge with CDP port 9222
+    if let Some(chrome_bin) = find_system_chromium() {
+        let bin_name = chrome_bin.file_name().and_then(|n| n.to_str()).unwrap_or("chromium");
+        println!("🚀 [BROWSER] Spawning HugOS Browser Engine via native executable ({}): {}", bin_name, chrome_bin.display());
+
+        let user_data_dir = if let Ok(local_app) = std::env::var("LOCALAPPDATA") {
+            std::path::PathBuf::from(local_app).join("HugOS Browser").join("User Data")
+        } else {
+            std::path::PathBuf::from(".hugos_browser_profile")
+        };
+        let _ = std::fs::create_dir_all(&user_data_dir);
+
+        println!("   Remote Debugging Port: 9222");
+        println!("   User Data Dir: {}", user_data_dir.display());
+        println!("   Startup URL: {}", start_url);
+
+        let mut cmd = std::process::Command::new(&chrome_bin);
+        cmd.arg("--remote-debugging-port=9222")
+           .arg("--remote-allow-origins=*")
+           .arg("--allow-file-access-from-files")
+           .arg(format!("--user-data-dir={}", user_data_dir.display()))
+           .arg("--disable-backgrounding-occluded-windows")
+           .arg("--no-first-run")
+           .arg("--no-default-browser-check")
+           .arg(format!("--homepage={}", start_url));
+
+        // Extension discovery
+        let ext_candidates = [
+            if let Ok(l) = std::env::var("LOCALAPPDATA") {
+                Some(std::path::PathBuf::from(l).join("HugOS Browser").join("extension"))
+            } else { None },
+            Some(std::path::PathBuf::from("browser/extension")),
+            Some(std::path::PathBuf::from(r"D:\harfile\ModelFusion\browser\extension")),
+            Some(std::path::PathBuf::from(r"C:\harfile\ModelFusion\browser\extension")),
+            Some(std::path::PathBuf::from(r"C:\harfile\browser\extension")),
+        ];
+        for ext_opt in ext_candidates {
+            if let Some(ext) = ext_opt {
+                if ext.is_dir() && ext.join("manifest.json").is_file() {
+                    cmd.arg(format!("--load-extension={}", ext.display()));
+                    break;
+                }
+            }
+        }
+
+        cmd.arg(start_url);
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x00000008); // DETACHED_PROCESS
+        }
+
+        cmd.spawn().map_err(|e| format!("Failed to spawn {}: {}", chrome_bin.display(), e))?;
+        return Ok(());
+    }
+
+    // Strategy 3: Default system browser
+    println!("🌐 [BROWSER] Spawning default system browser on {}", start_url);
+    #[cfg(windows)]
+    {
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.args(["/c", "start", start_url]);
+        let _ = cmd.spawn();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(start_url).spawn();
+    }
+
     Ok(())
 }
 
