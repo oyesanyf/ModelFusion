@@ -39,6 +39,26 @@ if (Test-Path $srcCli) {
     Exit 1
 }
 
+# 1.1 Stage hf_models.db into browser\db and browser\bin\db
+$dbCandidates = @(
+    (Join-Path $rootDir "IDE\db\hf_models.db"),
+    "$env:LOCALAPPDATA\HugOS IDE\db\hf_models.db",
+    "$env:LOCALAPPDATA\ModelFusion\db\hf_models.db",
+    (Join-Path $rootDir "db\hf_models.db")
+)
+$dbSrc = $dbCandidates | Where-Object { (Test-Path $_) -and (Get-Item $_).Length -gt 50000 } | Select-Object -First 1
+if ($dbSrc) {
+    $browserDb = Join-Path $browserDir "db\hf_models.db"
+    $browserBinDb = Join-Path $browserDir "bin\db\hf_models.db"
+    New-Item -ItemType Directory -Force -Path (Split-Path $browserDb -Parent) | Out-Null
+    New-Item -ItemType Directory -Force -Path (Split-Path $browserBinDb -Parent) | Out-Null
+    Copy-Item -Path $dbSrc -Destination $browserDb -Force
+    Copy-Item -Path $dbSrc -Destination $browserBinDb -Force
+    Write-Host "[OK] Staged hf_models.db ($( (Get-Item $browserDb).Length ) bytes) into browser\db and browser\bin\db" -ForegroundColor Green
+} else {
+    Write-Host "[WARNING] No populated hf_models.db found for browser packaging." -ForegroundColor Yellow
+}
+
 # 2. Locate signtool or PowerShell Authenticode
 $signtoolPath = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe"
 if (-not (Test-Path $signtoolPath)) {

@@ -3210,8 +3210,9 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
   display: flex;
   flex-direction: column;
   padding: 4px;
-  max-height: 280px;
+  max-height: 360px;
   overflow-y: auto;
+  overflow-x: hidden;
   gap: 2px;
 }
 
@@ -3261,13 +3262,87 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
 
 .tool-category-content {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 4px 6px 8px 12px;
+  flex-direction: column;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3px 6px 6px 6px;
+  gap: 2px;
 }
 
 .tool-category-content.collapsed {
   display: none;
+}
+
+.tool-item-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  margin-bottom: 3px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  user-select: none;
+}
+
+.tool-btn-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.tool-icon {
+  font-size: 12.5px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.tool-label {
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tool-tag {
+  font-size: 9.5px;
+  font-family: ui-monospace, Consolas, monospace;
+  background: rgba(0, 0, 0, 0.08);
+  padding: 2px 5px;
+  border-radius: 3px;
+  opacity: 0.8;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+.tool-item-btn:hover {
+  background: var(--hover-bg, rgba(255, 255, 255, 0.08));
+  border-color: var(--border-color);
+}
+
+.tool-item-btn.active {
+  background: rgba(16, 163, 127, 0.15) !important;
+  border-color: #10a37f !important;
+  color: #10a37f !important;
+  font-weight: 500;
+}
+
+.tool-item-btn.grayed-out {
+  opacity: 0.25 !important;
+  filter: grayscale(1) !important;
+  pointer-events: none !important;
+  cursor: not-allowed !important;
+  background: transparent !important;
+  border-color: transparent !important;
 }
 
 .tool-chip-btn {
@@ -3301,6 +3376,67 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
 .tool-chip-btn.copied {
   background: #10a37f !important;
   color: #ffffff !important;
+}
+
+/* Active Directives Tray & Pills */
+.active-directives-tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+  width: 100%;
+  max-width: 768px;
+  box-sizing: border-box;
+}
+
+.active-directives-tray.hidden {
+  display: none !important;
+}
+
+.active-directive-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(16, 163, 127, 0.12);
+  border: 1px solid rgba(16, 163, 127, 0.35);
+  color: var(--text-primary);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  user-select: none;
+}
+
+.active-directive-pill .pill-icon {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.active-directive-pill .pill-label {
+  font-size: 11.5px;
+}
+
+.active-directive-pill .pill-tag {
+  font-size: 9.5px;
+  font-family: ui-monospace, Consolas, monospace;
+  background: rgba(16, 163, 127, 0.2);
+  padding: 1px 4px;
+  border-radius: 3px;
+  opacity: 0.85;
+}
+
+.active-directive-pill .pill-remove {
+  cursor: pointer;
+  opacity: 0.6;
+  font-size: 12px;
+  margin-left: 4px;
+  line-height: 1;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.active-directive-pill .pill-remove:hover {
+  opacity: 1;
+  color: #ef4444;
 }
 
 /* -------------------------------------------------------------

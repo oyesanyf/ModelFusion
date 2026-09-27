@@ -145,8 +145,8 @@ document.addEventListener('DOMContentLoaded', () => {
     agenticStrategy: 'auto_continuation'
   };
 
-  let currentSettings = { ...DEFAULT_SETTINGS };
   let attachedFiles = []; // Staged attachment objects: [{ id, name, size, type, content, isDataset }]
+  let activeDirectives = new Map(); // Staged tool directives: Map<toolId, { id, cmd, category, label, icon }>
 
   // Navigation state
   const historyStack = [];
@@ -722,6 +722,10 @@ document.addEventListener('DOMContentLoaded', () => {
           thumbHtml = `<span class="attachment-icon">📊</span>`;
           badgeHtml = `<span class="attachment-badge dataset-badge">📊 Tabular Dataset</span>`;
           actionBtnHtml = `<button type="button" class="chip-action-btn btn-run-acdso" title="Run Pareto AutoML assessment">⚡ Run ACDSO</button>`;
+        } else if (file.type === 'pe_binary' || file.isPeBinary) {
+          thumbHtml = `<span class="attachment-icon">🔬</span>`;
+          badgeHtml = `<span class="attachment-badge doc-badge" style="background: rgba(168, 85, 247, 0.15); color: #a855f7; border-color: rgba(168, 85, 247, 0.3);">🔬 PE Binary</span>`;
+          actionBtnHtml = `<button type="button" class="chip-action-btn btn-run-pe" title="Extract PE headers and binary forensics">🔍 Extract PE</button>`;
         } else if (file.type === 'code') {
           thumbHtml = `<span class="attachment-icon">💻</span>`;
           badgeHtml = `<span class="attachment-badge doc-badge">💻 Code</span>`;
@@ -757,6 +761,15 @@ document.addEventListener('DOMContentLoaded', () => {
           });
         }
 
+        const peBtn = chip.querySelector('.btn-run-pe');
+        if (peBtn) {
+          peBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            termLog(`Triggered PE Header Forensics for staged binary: ${file.name}`, 'info');
+            executeCliCommand('--pe-header-extraction');
+          });
+        }
+
         tray.appendChild(chip);
       });
     });
@@ -770,8 +783,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const imageExts = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg'];
       const audioExts = ['wav', 'mp3', 'ogg', 'm4a', 'flac', 'aac'];
-      const tabularExts = ['csv', 'tsv', 'parquet', 'xlsx', 'json'];
-      const codeExts = ['py', 'rs', 'js', 'ts', 'jsx', 'tsx', 'cpp', 'c', 'h', 'hpp', 'java', 'go', 'rb', 'php', 'sh', 'ps1', 'sql', 'html', 'css'];
+      const tabularExts = ['csv', 'tsv', 'parquet', 'xlsx'];
+      const peExts = ['exe', 'dll', 'sys', 'ocx', 'scr', 'bin', 'elf'];
+      const codeExts = ['py', 'rs', 'js', 'ts', 'jsx', 'tsx', 'cpp', 'c', 'h', 'hpp', 'java', 'go', 'rb', 'php', 'sh', 'ps1', 'sql', 'html', 'css', 'json', 'toml', 'yaml', 'yml'];
 
       if (imageExts.includes(ext) || mime.startsWith('image/')) {
         const reader = new FileReader();
@@ -789,6 +803,7 @@ document.addEventListener('DOMContentLoaded', () => {
           };
           attachedFiles.push(fileObj);
           renderAttachmentTray();
+          updateToolMenuRelevance();
           termLog(`[ATTACH] 📎 Attached multimodal asset: "${file.name}" (IMAGE). Ready for fusion routing.`, 'info');
         };
         reader.readAsDataURL(file);
@@ -806,6 +821,7 @@ document.addEventListener('DOMContentLoaded', () => {
           };
           attachedFiles.push(fileObj);
           renderAttachmentTray();
+          updateToolMenuRelevance();
           termLog(`[ATTACH] 📎 Attached multimodal asset: "${file.name}" (AUDIO). Ready for fusion routing.`, 'info');
         };
         reader.readAsDataURL(file);
@@ -825,9 +841,24 @@ document.addEventListener('DOMContentLoaded', () => {
           };
           attachedFiles.push(fileObj);
           renderAttachmentTray();
+          updateToolMenuRelevance();
           termLog(`[ATTACH] 📎 Attached multimodal asset: "${file.name}" (TABULAR). Ready for fusion routing.`, 'info');
         };
         reader.readAsText(file);
+      } else if (peExts.includes(ext)) {
+        const fileObj = {
+          id: 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+          name: file.name,
+          size: file.size,
+          type: 'pe_binary',
+          isPeBinary: true,
+          mimeType: 'application/vnd.microsoft.portable-executable',
+          content: `[PE Binary: ${file.name} (${file.size} bytes)]`
+        };
+        attachedFiles.push(fileObj);
+        renderAttachmentTray();
+        updateToolMenuRelevance();
+        termLog(`[ATTACH] 📎 Attached Windows PE binary: "${file.name}". Ready for forensics & header extraction.`, 'info');
       } else {
         const isCode = codeExts.includes(ext);
         const reader = new FileReader();
@@ -844,6 +875,7 @@ document.addEventListener('DOMContentLoaded', () => {
           };
           attachedFiles.push(fileObj);
           renderAttachmentTray();
+          updateToolMenuRelevance();
           termLog(`[ATTACH] 📎 Attached multimodal asset: "${file.name}" (${isCode ? 'CODE' : 'DOCUMENT'}). Ready for fusion routing.`, 'info');
         };
         reader.readAsText(file);
@@ -855,6 +887,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const found = attachedFiles.find(f => f.id === id);
     attachedFiles = attachedFiles.filter(f => f.id !== id);
     renderAttachmentTray();
+    updateToolMenuRelevance();
     if (found) {
       termLog(`[ATTACHMENT] Removed file: ${found.name}`, 'sys');
     }
@@ -863,7 +896,149 @@ document.addEventListener('DOMContentLoaded', () => {
   function clearAllAttachments() {
     attachedFiles = [];
     renderAttachmentTray();
+    updateToolMenuRelevance();
     termLog('Cleared all attached files from staging memory.', 'sys');
+  }
+
+  // -------------------------------------------------------------
+  // Dynamic Context-Aware Tool Gating & Selection Engine
+  // -------------------------------------------------------------
+  function updateToolMenuRelevance() {
+    const hasTabular = attachedFiles.some(f => f.type === 'tabular' || f.isTabular || f.isDataset || /\.(csv|tsv|parquet|xlsx)$/i.test(f.name));
+    const hasImage = attachedFiles.some(f => f.type === 'image' || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(f.name));
+    const hasAudio = attachedFiles.some(f => f.type === 'audio' || /\.(wav|mp3|ogg|flac|m4a|aac)$/i.test(f.name));
+    const hasPeBinary = attachedFiles.some(f => f.type === 'pe_binary' || f.isPeBinary || /\.(exe|dll|sys|bin|elf)$/i.test(f.name));
+    const hasCode = attachedFiles.some(f => f.type === 'code' || f.isCode || /\.(py|rs|js|ts|jsx|tsx|cpp|c|h|hpp|java|go|rb|php|sh|ps1|sql|html|css|json|toml|yaml|yml)$/i.test(f.name));
+
+    const hasActiveTabular = Array.from(activeDirectives.values()).some(d => d.category === 'tabular');
+    const hasActiveAudio = Array.from(activeDirectives.values()).some(d => d.category === 'audio');
+    const hasActiveVision = Array.from(activeDirectives.values()).some(d => d.category === 'vision');
+    const hasActivePeBinary = Array.from(activeDirectives.values()).some(d => d.category === 'pe_binary');
+    const hasActiveAgent = Array.from(activeDirectives.values()).some(d => d.category === 'agent');
+
+    const toolBtns = document.querySelectorAll('.tool-item-btn, .tool-command-btn');
+    toolBtns.forEach(btn => {
+      const category = btn.getAttribute('data-category') || '';
+      const toolId = btn.getAttribute('data-tool-id') || btn.getAttribute('data-cmd');
+      let disabledReason = '';
+
+      // Asset rules:
+      // - If hasTabular: ONLY tabular, agent, system are enabled! audio, vision, pe_binary are GRAYED OUT!
+      // - If hasImage: ONLY vision, web, agent, system are enabled! tabular, audio, pe_binary are GRAYED OUT!
+      // - If hasAudio: ONLY audio, agent, system are enabled! tabular, vision, pe_binary are GRAYED OUT!
+      // - If hasPeBinary: ONLY pe_binary, code, system are enabled! tabular, audio, vision are GRAYED OUT!
+      // - If hasCode: ONLY code, agent, system are enabled! audio, vision, pe_binary are GRAYED OUT!
+      if (hasTabular) {
+        if (['audio', 'vision', 'pe_binary'].includes(category)) {
+          disabledReason = 'Incompatible with attached tabular dataset';
+        }
+      }
+      if (hasImage) {
+        if (['tabular', 'audio', 'pe_binary'].includes(category)) {
+          disabledReason = 'Incompatible with attached image';
+        }
+      }
+      if (hasAudio) {
+        if (['tabular', 'vision', 'pe_binary'].includes(category)) {
+          disabledReason = 'Incompatible with attached audio file';
+        }
+      }
+      if (hasPeBinary) {
+        if (['tabular', 'audio', 'vision'].includes(category)) {
+          disabledReason = 'Incompatible with attached PE binary';
+        }
+      }
+      if (hasCode) {
+        if (['audio', 'vision', 'pe_binary'].includes(category)) {
+          disabledReason = 'Incompatible with attached code file';
+        }
+      }
+
+      // Mutual Exclusivity rules:
+      // - If any tabular tool is active: audio, vision, pe_binary are GRAYED OUT!
+      // - If any audio tool is active: tabular, vision, code, pe_binary are GRAYED OUT!
+      // - If any vision tool is active: tabular, audio, pe_binary are GRAYED OUT!
+      // - If any pe_binary tool is active: tabular, audio, vision, code are GRAYED OUT!
+      // - If any agent mode is active: other agent modes are GRAYED OUT! (Only 1 primary agent mode at a time).
+      if (!disabledReason) {
+        if (hasActiveTabular && ['audio', 'vision', 'pe_binary'].includes(category)) {
+          disabledReason = 'Incompatible with active tabular directive';
+        } else if (hasActiveAudio && ['tabular', 'vision', 'code', 'pe_binary'].includes(category)) {
+          disabledReason = 'Incompatible with active audio directive';
+        } else if (hasActiveVision && ['tabular', 'audio', 'pe_binary'].includes(category)) {
+          disabledReason = 'Incompatible with active vision directive';
+        } else if (hasActivePeBinary && ['tabular', 'audio', 'vision', 'code'].includes(category)) {
+          disabledReason = 'Incompatible with active PE binary directive';
+        } else if (hasActiveAgent && category === 'agent' && !activeDirectives.has(toolId)) {
+          disabledReason = 'Only one primary agent mode can be active at a time';
+        }
+      }
+
+      if (disabledReason) {
+        btn.classList.add('grayed-out');
+        btn.setAttribute('aria-disabled', 'true');
+        btn.setAttribute('title', disabledReason);
+        if (activeDirectives.has(toolId)) {
+          activeDirectives.delete(toolId);
+        }
+      } else {
+        btn.classList.remove('grayed-out');
+        btn.removeAttribute('aria-disabled');
+        const origTitle = btn.getAttribute('data-original-title');
+        if (origTitle) {
+          btn.setAttribute('title', origTitle);
+        }
+        if (activeDirectives.has(toolId)) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      }
+    });
+
+    renderActiveDirectives();
+  }
+
+  function renderActiveDirectives() {
+    const trayHero = document.getElementById('active-directives-tray-hero');
+    const trayPinned = document.getElementById('active-directives-tray-pinned');
+    const trays = [trayHero, trayPinned].filter(Boolean);
+
+    if (activeDirectives.size === 0) {
+      trays.forEach(tray => {
+        tray.classList.add('hidden');
+        tray.innerHTML = '';
+      });
+      return;
+    }
+
+    trays.forEach(tray => {
+      tray.classList.remove('hidden');
+      tray.innerHTML = '';
+      activeDirectives.forEach((d) => {
+        const pill = document.createElement('div');
+        pill.className = 'active-directive-pill';
+        pill.setAttribute('data-tool-id', d.id);
+        pill.innerHTML = `
+          <span class="pill-icon">${d.icon}</span>
+          <span class="pill-label">${d.label}</span>
+          <span class="pill-tag">${d.cmd.trim()}</span>
+          <span class="pill-remove" data-tool-id="${d.id}" title="Remove directive">✕</span>
+        `;
+        pill.querySelector('.pill-remove').addEventListener('click', (e) => {
+          e.stopPropagation();
+          activeDirectives.delete(d.id);
+          updateToolMenuRelevance();
+        });
+        tray.appendChild(pill);
+      });
+    });
+  }
+
+  function clearAllActiveDirectives() {
+    activeDirectives.clear();
+    renderActiveDirectives();
+    updateToolMenuRelevance();
   }
 
   if (btnAttachFile && filePicker) {
@@ -3202,28 +3377,26 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
     });
   });
 
-  // Tool / Directive chip buttons: insert command into active prompt input
-  document.querySelectorAll('.tool-command-btn').forEach((btn) => {
+  // Tool / Directive buttons: toggle active directive with dynamic gating
+  document.querySelectorAll('.tool-item-btn, .tool-command-btn').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
-      const cmd = btn.getAttribute('data-cmd') || btn.textContent.trim();
-      const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
-        ? cliPromptInputPinned
-        : cliPromptInput;
-      if (activeInput) {
-        const currentVal = activeInput.value;
-        if (!currentVal.trim()) {
-          activeInput.value = cmd;
-        } else {
-          activeInput.value = currentVal.trimEnd() + ' ' + cmd;
-        }
-        activeInput.focus();
-        const len = activeInput.value.length;
-        activeInput.setSelectionRange(len, len);
+      if (btn.classList.contains('grayed-out') || btn.getAttribute('aria-disabled') === 'true') {
+        return;
       }
-      // Quick visual feedback
-      btn.classList.add('copied');
-      setTimeout(() => btn.classList.remove('copied'), 400);
+      const toolId = btn.getAttribute('data-tool-id') || btn.getAttribute('data-cmd');
+      const cmd = btn.getAttribute('data-cmd') || btn.textContent.trim();
+      const category = btn.getAttribute('data-category') || 'web';
+      const label = btn.querySelector('.tool-label') ? btn.querySelector('.tool-label').textContent.trim() : cmd;
+      const icon = btn.querySelector('.tool-icon') ? btn.querySelector('.tool-icon').textContent.trim() : '⚡';
+
+      if (activeDirectives.has(toolId)) {
+        activeDirectives.delete(toolId);
+      } else {
+        activeDirectives.set(toolId, { id: toolId, cmd, category, label, icon });
+      }
+
+      updateToolMenuRelevance();
     });
   });
 
@@ -3331,6 +3504,15 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
     });
   }
 
+  function extractAndClearDirectives(userText) {
+    if (!activeDirectives || activeDirectives.size === 0) return userText;
+    const flags = Array.from(activeDirectives.values()).map(d => d.cmd.trim());
+    const missing = flags.filter(f => !userText.includes(f));
+    clearAllActiveDirectives();
+    if (missing.length === 0) return userText;
+    return userText ? `${missing.join(' ')} ${userText}` : missing.join(' ');
+  }
+
   // Auto-expanding Hero Textarea & Send Button
   const btnSendPrompt = document.getElementById('btn-send-prompt');
   if (cliPromptInput) {
@@ -3342,7 +3524,8 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
     cliPromptInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        const val = cliPromptInput.value.trim();
+        const raw = cliPromptInput.value.trim();
+        const val = extractAndClearDirectives(raw);
         if (val) {
           cliPromptInput.value = '';
           cliPromptInput.style.height = 'auto';
@@ -3354,7 +3537,8 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
 
   if (btnSendPrompt) {
     btnSendPrompt.addEventListener('click', () => {
-      const val = (cliPromptInput ? cliPromptInput.value : '').trim();
+      const raw = (cliPromptInput ? cliPromptInput.value : '').trim();
+      const val = extractAndClearDirectives(raw);
       if (val) {
         if (cliPromptInput) {
           cliPromptInput.value = '';
@@ -3378,7 +3562,8 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
     cliPromptInputPinned.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        const val = cliPromptInputPinned.value.trim();
+        const raw = cliPromptInputPinned.value.trim();
+        const val = extractAndClearDirectives(raw);
         if (val) {
           cliPromptInputPinned.value = '';
           cliPromptInputPinned.style.height = 'auto';
@@ -3390,7 +3575,8 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
 
   if (btnSendPromptPinned) {
     btnSendPromptPinned.addEventListener('click', () => {
-      const val = (cliPromptInputPinned ? cliPromptInputPinned.value : '').trim();
+      const raw = (cliPromptInputPinned ? cliPromptInputPinned.value : '').trim();
+      const val = extractAndClearDirectives(raw);
       if (val) {
         if (cliPromptInputPinned) {
           cliPromptInputPinned.value = '';
@@ -3403,8 +3589,9 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
 
   if (btnRunCli) {
     btnRunCli.addEventListener('click', () => {
-      const val = (cliPromptInput ? cliPromptInput.value : '').trim() ||
+      const raw = (cliPromptInput ? cliPromptInput.value : '').trim() ||
                   (cliPromptInputPinned ? cliPromptInputPinned.value : '').trim();
+      const val = extractAndClearDirectives(raw);
       if (val) {
         if (cliPromptInput) {
           cliPromptInput.value = '';
@@ -3701,4 +3888,7 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
   // Initialize ModelFusion system stats & model count
   refreshModelFusionStatus();
   setInterval(refreshModelFusionStatus, 30000);
+
+  // Initialize Tool Menu relevance and directives state
+  updateToolMenuRelevance();
 });
