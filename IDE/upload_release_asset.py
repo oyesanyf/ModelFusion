@@ -70,10 +70,27 @@ def api_request(url, method="GET", data=None, headers=None, token=None):
         print(f"[HTTP {e.code}] {url}: {err_body}")
         raise
 
-def get_or_create_release(tag_name, release_name, token):
+def get_or_create_release(tag_name, release_name, token, make_latest=False):
+    desc = (
+        f"# 🚀 ModelFusion & HugOS Suite ({tag_name})\n\n"
+        f"Official Release for the Three Pillars: **Master CLI**, **HugOS IDE**, and **HugOS Browser**.\n\n"
+        "### 📦 Release Artifacts:\n"
+        "1. **`cli.exe`** (ModelFusion Master CLI - 100% Self-Contained Static CRT)\n"
+        "2. **`HugOS_Browser.msi`** (HugOS Browser - Digitally Signed Installer)\n"
+        "3. **`HugOS.msi`** (HugOS IDE - Digitally Signed Installer)\n"
+    )
     try:
         rel = api_request(f"{API_URL}/releases/tags/{tag_name}", token=token)
         print(f"[INFO] Found existing release for tag: {tag_name} (ID: {rel['id']})")
+        # Update metadata to ensure title, body, and latest flags are refreshed
+        patch_data = {
+            "name": release_name,
+            "body": desc,
+            "prerelease": False,
+        }
+        if make_latest:
+            patch_data["make_latest"] = "true"
+        rel = api_request(f"{API_URL}/releases/{rel['id']}", method="PATCH", data=patch_data, token=token)
         return rel
     except urllib.error.HTTPError as e:
         if e.code == 404:
@@ -81,10 +98,12 @@ def get_or_create_release(tag_name, release_name, token):
             data = {
                 "tag_name": tag_name,
                 "name": release_name,
-                "body": f"Automated Release {release_name}\n\nAssets:\n- cli.exe (ModelFusion Master CLI - 100% Self-Contained Static CRT)\n- HugOS.msi (HugOS IDE - Digitally Signed Installer)\n- HugOS_Browser.msi (HugOS Browser - Digitally Signed Installer)",
+                "body": desc,
                 "draft": False,
-                "prerelease": True
+                "prerelease": False
             }
+            if make_latest:
+                data["make_latest"] = "true"
             return api_request(f"{API_URL}/releases", method="POST", data=data, token=token)
         raise
 
@@ -174,14 +193,14 @@ def main():
     print("==========================================")
         
     targets = [
-        (f"v1.0.0-beta.{build_number}", f"HugOS IDE v1.0.0-beta.{build_number} (Build {build_number})"),
-        ("v1.0.0-beta", f"HugOS IDE v1.0.0-beta (Build {build_number})")
+        (f"v1.0.0-beta.{build_number}", f"ModelFusion & HugOS Suite v1.0.0-beta.{build_number} (Build {build_number} - CLI, IDE, Browser)", True),
+        ("v1.0.0-beta", f"ModelFusion & HugOS Suite v1.0.0-beta (Latest Rolling Release - Build {build_number})", False)
     ]
 
     if "--check" in sys.argv or "--verify-only" in sys.argv:
         print("\n[INFO] Running in check/verify mode — inspecting remote assets...")
         all_match = True
-        for tag_name, release_name in targets:
+        for tag_name, release_name, _ in targets:
             print(f"\nVerifying remote assets for {tag_name}...")
             try:
                 rel = api_request(f"{API_URL}/releases/tags/{tag_name}", token=token)
@@ -211,11 +230,11 @@ def main():
             print("\n[ERROR] Remote release assets do not match local artifacts.")
             sys.exit(1)
     
-    for tag_name, release_name in targets:
+    for tag_name, release_name, make_latest in targets:
         print(f"\n==========================================")
         print(f"Target Release: {tag_name} - {release_name}")
         print(f"==========================================")
-        rel = get_or_create_release(tag_name, release_name, token)
+        rel = get_or_create_release(tag_name, release_name, token, make_latest=make_latest)
         rel_id = rel["id"]
         for local_f, name in artifacts:
             upload_asset(rel_id, local_f, name, token)
