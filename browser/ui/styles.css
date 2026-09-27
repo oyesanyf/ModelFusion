@@ -42,7 +42,8 @@
   width: 6px;
   height: 6px;
 }
-::-webkit-scrollbar-button {
+::-webkit-scrollbar-button,
+*::-webkit-scrollbar-button {
   display: none !important;
   width: 0 !important;
   height: 0 !important;
@@ -2208,7 +2209,7 @@ body.theme-warm .chat-input-box {
   flex-direction: column;
   background-color: var(--bg-sidebar);
   border-right: 1px solid var(--border-color);
-  padding: 12px 14px;
+  padding: 12px 10px;
   transition: width 0.2s ease, min-width 0.2s ease, margin 0.2s ease, opacity 0.2s ease;
   user-select: none;
   z-index: 10;
@@ -2268,12 +2269,12 @@ body.theme-warm .chat-input-box {
 .sidebar-nav-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-right: 2px;
+  padding-right: 3px;
 }
 
 .sidebar-nav-item {
@@ -2281,13 +2282,13 @@ body.theme-warm .chat-input-box {
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 9px 12px;
+  padding: 8px 10px;
   background: transparent;
   border: none;
   border-radius: 8px;
   color: var(--text-primary);
   font-family: inherit;
-  font-size: 14px;
+  font-size: 13.5px;
   line-height: 1.4;
   cursor: pointer;
   text-align: left;
@@ -2323,9 +2324,10 @@ body.theme-warm .chat-input-box {
 .sidebar-divider {
   height: 1px;
   background-color: var(--border-color);
-  margin: 8px 4px;
+  margin: 6px 6px;
   flex-shrink: 0;
   border: none;
+  opacity: 0.8;
 }
 
 .sidebar-bottom-section {
@@ -2935,6 +2937,7 @@ body.theme-obsidian {
   --border-capsule: #2a2a2a;
   --border-focus: #444444;
   --text-primary: #f0f0f0;
+  --text-secondary: #a3a3a3;
   --text-muted: #888888;
   --hover-bg: #1c1c1c;
   --active-bg: #252525;
@@ -2961,7 +2964,8 @@ body.theme-midnight {
   --border-capsule: #24324c;
   --border-focus: #38bdf8;
   --text-primary: #e2e8f0;
-  --text-muted: #94a3b8;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
   --hover-bg: #1e293b;
   --active-bg: #2a3a54;
   --card-bg: #101726;
@@ -2987,6 +2991,7 @@ body.theme-warm {
   --border-capsule: #ddd7cd;
   --border-focus: #9c9183;
   --text-primary: #2c2825;
+  --text-secondary: #5c544e;
   --text-muted: #7d756d;
   --hover-bg: #e8e3da;
   --active-bg: #dfd9ce;
@@ -3214,7 +3219,7 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
    9b. Sidebar Tools & Directives Accordion (All 161+ Tools)
 ------------------------------------------------------------- */
 .sidebar-tools-accordion {
-  margin: 8px 0;
+  margin: 6px 0;
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--bg-secondary, rgba(255, 255, 255, 0.03));
@@ -3226,15 +3231,15 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
 .sidebar-tools-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   width: 100%;
-  padding: 9px 12px;
-  min-height: 38px;
+  padding: 8px 10px;
+  min-height: 36px;
   background: transparent;
   border: none;
   color: var(--text-primary);
   font-family: inherit;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.4;
   letter-spacing: -0.1px;
@@ -3252,28 +3257,32 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
 }
 
 .tools-header-icon {
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
 }
 
 .tools-header-title {
   flex: 1;
-  font-size: 13.5px;
+  min-width: 0;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.4;
   letter-spacing: -0.1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tools-header-badge {
-  font-size: 10.5px;
+  font-size: 10px;
   line-height: 1.2;
-  padding: 2px 7px;
+  padding: 1.5px 6px;
   border-radius: 10px;
   background: rgba(16, 163, 127, 0.15);
   color: #10a37f;
@@ -3282,14 +3291,14 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
 }
 
 .tools-header-chevron {
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1;
   color: var(--text-muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
   transition: transform 0.2s ease;
 }
@@ -3305,11 +3314,9 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
 .sidebar-tools-body {
   display: flex;
   flex-direction: column;
-  padding: 6px 8px 8px;
-  max-height: 440px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  gap: 3px;
+  padding: 4px 6px 8px;
+  overflow: visible;
+  gap: 2px;
 }
 
 .tool-category {
@@ -3326,7 +3333,7 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
 .tool-category-btn {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   width: 100%;
   padding: 8px 10px;
   min-height: 34px;
@@ -3337,7 +3344,7 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.45;
   letter-spacing: -0.1px;
   cursor: pointer;
   text-align: left;
@@ -3356,7 +3363,7 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
 }
 
 .cat-icon {
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1;
   display: inline-flex;
   align-items: center;
@@ -3369,13 +3376,13 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
 .cat-title,
 .category-title {
   flex: 1;
+  min-width: 0;
   font-size: 13px;
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.45;
   letter-spacing: -0.1px;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
 }
 
 .cat-chevron {
@@ -3385,8 +3392,8 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
   transition: transform 0.2s ease;
 }
@@ -3396,8 +3403,8 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
   flex-direction: column;
   width: 100%;
   box-sizing: border-box;
-  padding: 4px 4px 6px 8px;
-  gap: 3px;
+  padding: 3px 2px 5px 6px;
+  gap: 2px;
   overflow: visible;
 }
 
@@ -3412,7 +3419,7 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
   width: 100%;
   min-height: 32px;
   box-sizing: border-box;
-  padding: 6px 10px;
+  padding: 6px 8px;
   margin-bottom: 2px;
   border-radius: 6px;
   font-family: inherit;
@@ -3432,7 +3439,7 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
 .tool-btn-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
   overflow: hidden;
   flex: 1;
@@ -3462,11 +3469,11 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
   font-size: 9.5px;
   font-family: ui-monospace, Consolas, monospace;
   background: rgba(0, 0, 0, 0.08);
-  padding: 2px 6px;
+  padding: 1.5px 5px;
   border-radius: 3px;
   opacity: 0.8;
   flex-shrink: 0;
-  margin-left: 6px;
+  margin-left: 4px;
   line-height: 1.2;
 }
 
