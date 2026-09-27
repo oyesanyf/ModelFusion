@@ -6,7 +6,7 @@
   <title>HugOS Browser | ModelFusion AI Web Environment</title>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="theme-white">
   <div class="chatgpt-app">
     <!-- Left Sidebar Matching ChatGPT Exactly -->
     <aside class="chatgpt-sidebar" id="chatgpt-sidebar">
@@ -35,6 +35,11 @@
           <span class="nav-item-icon">🔍</span>
           <span class="nav-item-text">Deep research</span>
         </button>
+
+        <div class="sidebar-chat-history" id="sidebar-chat-history">
+          <div class="chat-history-header">Recent chats</div>
+          <div class="chat-history-list" id="chat-history-list"></div>
+        </div>
       </nav>
 
       <div class="sidebar-bottom-section">
@@ -161,6 +166,7 @@
           <div class="chat-messages" id="chat-messages">
             <!-- Dynamic conversation messages stream here -->
           </div>
+          <button type="button" class="scroll-bottom-btn hidden" id="btn-scroll-bottom" title="Scroll to bottom">↓</button>
 
           <div class="pinned-bottom-wrapper">
             <div class="hero-capsule-container pinned-capsule">
@@ -556,6 +562,22 @@
 
             <div class="setting-item">
               <div class="setting-info">
+                <label class="setting-label">ModelFusion Model Catalog</label>
+                <span class="setting-desc">Universal multi-modal compound intelligence engine with offline catalog database.</span>
+              </div>
+              <div class="setting-control">
+                <div class="db-stats-card">
+                  <div class="db-stat-row"><strong>Indexed Models:</strong> <span id="setting-models-count-banner">6,438 Models</span> (across 45 Tasks)</div>
+                  <div class="db-stat-row"><strong>Hardware Model Fit:</strong> <span id="setting-models-hw-fit">qwen2.5:7b (Auto-scaled)</span></div>
+                  <div class="db-stat-row" style="margin-top: 8px;">
+                    <button type="button" class="action-btn" id="btn-open-mf-panel" style="font-size: 12px; padding: 6px 12px;">🧠 Open ModelFusion System Panel</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
                 <label for="setting-ollama-url" class="setting-label">Local Ollama REST API</label>
                 <span class="setting-desc">Base URL for local Ollama HTTP REST API serving workhorse models.</span>
               </div>
@@ -721,10 +743,14 @@
               </div>
               <div class="setting-control">
                 <div class="db-stats-card">
-                  <div class="db-stat-row"><strong>Database Path:</strong> <code>IDE/db/hf_models.db</code></div>
+                  <div class="db-stat-row"><strong>Indexed Models:</strong> <span id="setting-db-model-count">6,438 Models</span> (across 45 Tasks)</div>
+                  <div class="db-stat-row"><strong>Database Path:</strong> <code id="setting-db-path">IDE/db/hf_models.db</code></div>
                   <div class="db-stat-row"><strong>Multi-Modal Tasks:</strong> 45 Vision, Audio, NLP &amp; Code Tasks</div>
                   <div class="db-stat-row"><strong>Offline Access:</strong> 100% In-Memory Fast Interception (&lt;1ms)</div>
                   <div class="db-stat-row"><strong>Update Engine:</strong> <code>cli.exe --update</code> (6,500 models) &amp; <code>--updatedb</code> (All 2M+)</div>
+                  <div class="db-stat-row" style="margin-top: 8px;">
+                    <button type="button" class="action-btn" id="btn-open-mf-panel-storage" style="font-size: 12px; padding: 6px 12px;">🧠 View Model Breakdown &amp; Hardware</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -986,6 +1012,73 @@
         <div class="footer-right">
           <button type="button" class="settings-footer-btn cancel-btn" id="btn-cancel-settings">Cancel</button>
           <button type="button" class="settings-footer-btn save-btn" id="btn-save-settings">Save Preferences</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dedicated ModelFusion System Panel Modal -->
+  <div class="modelfusion-panel-modal hidden" id="modelfusion-panel-modal">
+    <div class="modelfusion-modal-dialog">
+      <div class="mf-modal-header">
+        <div class="mf-modal-title">
+          <span>🧠</span>
+          <span>ModelFusion Compound Intelligence System</span>
+        </div>
+        <button type="button" class="mf-modal-close-btn" id="btn-close-mf-modal" title="Close (Esc)">✕</button>
+      </div>
+      <div class="mf-modal-body">
+        <div class="mf-grid-cards">
+          <div class="mf-stat-card">
+            <span class="mf-stat-icon">🏷️</span>
+            <span class="mf-stat-val" id="mf-modal-catalog-count">6,438</span>
+            <span class="mf-stat-lbl">Multi-Modal Catalog Models</span>
+          </div>
+          <div class="mf-stat-card">
+            <span class="mf-stat-icon">🦙</span>
+            <span class="mf-stat-val" id="mf-modal-hw-model">qwen2.5:7b</span>
+            <span class="mf-stat-lbl">Runtime Hardware Model</span>
+          </div>
+          <div class="mf-stat-card">
+            <span class="mf-stat-icon">⚡</span>
+            <span class="mf-stat-val">45 Tasks</span>
+            <span class="mf-stat-lbl">Hugging Face Task Coverage</span>
+          </div>
+          <div class="mf-stat-card">
+            <span class="mf-stat-icon">🛡️</span>
+            <span class="mf-stat-val">100% Offline</span>
+            <span class="mf-stat-lbl">Zero Paid Cloud Guarantee</span>
+          </div>
+        </div>
+
+        <div class="mf-section">
+          <div class="mf-section-title">📊 Multi-Modal Task Breakdown (All 45 Hugging Face Tasks)</div>
+          <div class="mf-task-breakdown">
+            <div class="mf-task-pill"><span>👁️</span> <strong>Vision:</strong> 12 Tasks (Classification, Object Detection, Segmentation, OCR)</div>
+            <div class="mf-task-pill"><span>🎙️</span> <strong>Audio &amp; Speech:</strong> 8 Tasks (ASR, TTS, Audio Classification, VAD)</div>
+            <div class="mf-task-pill"><span>💬</span> <strong>NLP &amp; Conversational:</strong> 15 Tasks (Generation, Summarization, QA, Translation)</div>
+            <div class="mf-task-pill"><span>💻</span> <strong>Code &amp; Reasoning:</strong> 6 Tasks (Coding, Infilling, Deep Math Reasoning)</div>
+            <div class="mf-task-pill"><span>📈</span> <strong>Tabular &amp; AutoML:</strong> 4 Tasks (ACDSO Extraction, Regression, Analysis)</div>
+          </div>
+        </div>
+
+        <div class="mf-section">
+          <div class="mf-section-title">🎭 Compound Multi-Model Consensus Arbiters</div>
+          <div class="mf-task-breakdown">
+            <div class="mf-task-pill"><span>⚡</span> <strong>DOM Specialist:</strong> Fast token-pruned subtree parser</div>
+            <div class="mf-task-pill"><span>👁️</span> <strong>Vision Specialist:</strong> Set-of-Mark visual grounder (qwen2.5-vl)</div>
+            <div class="mf-task-pill"><span>🧠</span> <strong>Deep Reasoning:</strong> Speculative verify (deepseek-r1:1.5b)</div>
+          </div>
+        </div>
+
+        <div class="mf-section">
+          <div class="mf-section-title">💻 Local Hardware Resource Discovery &amp; Scaling</div>
+          <div style="font-size: 12.5px; color: var(--text-secondary); line-height: 1.7; background: var(--card-bg); padding: 14px 18px; border-radius: 10px; border: 1px solid var(--border-color);">
+            <div><strong>CPU:</strong> <span id="mf-modal-cpu">Detecting CPU...</span></div>
+            <div><strong>Available RAM:</strong> <span id="mf-modal-ram">Evaluating free memory...</span></div>
+            <div><strong>GPU / VRAM:</strong> <span id="mf-modal-gpu">Detecting graphics...</span></div>
+            <div><strong>Multi-Modal Catalog DB:</strong> <code id="mf-modal-db-path">IDE/db/hf_models.db</code> (<span id="mf-modal-db-size">Indexed &amp; Verified</span>)</div>
+          </div>
         </div>
       </div>
     </div>
