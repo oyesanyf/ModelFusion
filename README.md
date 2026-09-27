@@ -85,6 +85,9 @@ Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "IDE\HugOS.msi" -Wait
 #### 🌐 Pillar 3: HugOS Browser (AI-Native Chromium Web Environment)
 For autonomous web research, Set-of-Mark visual grounding, web table extraction, and ChatGPT canvas parity:
 ```powershell
+# Execute autonomous goal-directed multi-step web agent (shopping, flights, form-filling)
+cli.exe --browser-agent "Buy blue mechanical keyboard on Amazon ($79 budget)" --human-in-the-loop
+
 # Launch interactive HugOS Browser with AI side panel
 cli.exe --browser
 
@@ -97,7 +100,7 @@ cli.exe --browser-task "Extract recent research papers on multi-objective Pareto
 # Semantically extract web tables directly into ACDSO AutoML
 cli.exe --browser-extract "https://en.wikipedia.org/wiki/List_of_countries_by_GDP_(nominal)"
 ```
-👉 *Read the full [HugOS Browser Technical Manual](browser/README.md) and [Browser Architecture Section](#-hugos-browser-dedicated-modelfusion-ai-web-environment).*
+👉 *Read the full [HugOS Browser Technical Manual](browser/README.md), [Interactive Browser Agent Simulator](docs/screens/hugos_browser_agent_simulator.html), and [Browser Architecture Section](#-hugos-browser-dedicated-modelfusion-ai-web-environment).*
 
 ---
 

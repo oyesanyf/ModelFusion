@@ -15,8 +15,9 @@ pub use task_handler::ComprehensiveTaskHandler;
 pub use task_processor::UniversalTaskProcessor;
 pub use web_research::{live_web_search, run_deep_research, run_web_search_only, SearchResult};
 pub use browser::{
-    BrowserAction, BrowserActionResult, BrowserToolSuite, CdpClient, DomPruner, DomPrunerOptions,
-    ElementTarget, ExtractedTable, GroundingBox, GroundingResult, InteractiveElement, PrunedDom,
+    AgentGoal, AgentState, AutonomousBrowserAgent, BrowserAction, BrowserActionResult,
+    BrowserToolSuite, CdpClient, DomPruner, DomPrunerOptions, ElementTarget, ExtractedTable,
+    GroundingBox, GroundingResult, InteractiveElement, PrunedDom, SafetyClassifier, StepAction,
     TableExtractor, TargetInfo, VisionGroundingEngine,
 };
 pub use rl::*;

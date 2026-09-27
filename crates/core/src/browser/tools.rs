@@ -42,6 +42,12 @@ pub enum BrowserAction {
     CaptureViewport,
     /// Extract a token-pruned semantic DOM tree tagged with Set-of-Mark indices.
     GetCleanDom { max_chars: Option<usize> },
+    /// Wait for a specified number of seconds.
+    Wait { seconds: u64 },
+    /// Pause autonomous execution for human confirmation.
+    HumanApprovalRequired { reason: String, suggested_action: Option<Box<BrowserAction>> },
+    /// Declare goal completed with a summary.
+    Complete { summary: String },
 }
 
 /// The result returned after executing a browser action.
@@ -193,6 +199,31 @@ impl BrowserToolSuite {
                         message: err,
                         data: None,
                     },
+                }
+            }
+            BrowserAction::Wait { seconds } => {
+                tokio::time::sleep(tokio::time::Duration::from_secs(seconds)).await;
+                BrowserActionResult {
+                    success: true,
+                    message: format!("Waited for {} second(s).", seconds),
+                    data: None,
+                }
+            }
+            BrowserAction::HumanApprovalRequired { reason, suggested_action } => {
+                BrowserActionResult {
+                    success: true,
+                    message: format!("Human approval required: {}", reason),
+                    data: Some(serde_json::json!({
+                        "reason": reason,
+                        "suggested_action": suggested_action
+                    })),
+                }
+            }
+            BrowserAction::Complete { summary } => {
+                BrowserActionResult {
+                    success: true,
+                    message: format!("Goal completed: {}", summary),
+                    data: Some(serde_json::json!({ "summary": summary })),
                 }
             }
         }
