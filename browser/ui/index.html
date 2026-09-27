@@ -570,7 +570,11 @@
                   <div class="db-stat-row"><strong>Indexed Models:</strong> <span id="setting-models-count-banner">6,438 Models</span> (across 45 Tasks)</div>
                   <div class="db-stat-row"><strong>Hardware Model Fit:</strong> <span id="setting-models-hw-fit">qwen2.5:7b (Auto-scaled)</span></div>
                   <div class="db-stat-row" style="margin-top: 8px;">
-                    <button type="button" class="action-btn" id="btn-open-mf-panel" style="font-size: 12px; padding: 6px 12px;">🧠 Open ModelFusion System Panel</button>
+                    <div style="display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap;">
+                      <button type="button" class="action-btn" id="btn-open-mf-panel" style="font-size: 12px; padding: 6px 12px;">🧠 Open System Panel</button>
+                      <button type="button" class="action-btn" id="btn-quick-update" style="font-size: 12px; padding: 6px 12px;">⚡ Update Curated (~6.5k)</button>
+                      <button type="button" class="action-btn" id="btn-quick-updatedb" style="font-size: 12px; padding: 6px 12px;">🚀 Crawl All 2M+ Models</button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -768,6 +772,37 @@
                     <button type="button" class="action-btn" id="btn-open-mf-panel-storage" style="font-size: 12px; padding: 6px 12px;">🧠 View Model Breakdown &amp; Hardware</button>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <div class="setting-item" style="border-top: 1px solid var(--border-color); padding-top: 16px; margin-top: 16px;">
+              <div class="setting-info">
+                <label class="setting-label">Model Catalog Synchronization (--update)</label>
+                <span class="setting-desc">Fast Curated Engine: Ingests the top ~6,500 production workhorse models across all 45 tasks and dynamically auto-provisions the matching local Ollama model (qwen2.5:32b/14b/7b/1.5b) based on runtime available RAM.</span>
+              </div>
+              <div class="setting-control">
+                <button type="button" class="cli-run-btn" id="btn-run-update" style="font-size: 12.5px; padding: 7px 14px;">⚡ Run Curated Update (--update)</button>
+              </div>
+            </div>
+
+            <div class="setting-item" style="border-top: 1px solid var(--border-color); padding-top: 16px; margin-top: 16px;">
+              <div class="setting-info">
+                <label class="setting-label">Full Registry Crawler (--updatedb: All 2M+ Models)</label>
+                <span class="setting-desc">Crawls and ingests <strong>over 2 million models</strong> from the entire Hugging Face Hub ("whether junk or not") in 1,000-model transactions (~1,000 models/sec) into SQLite. Optional cap sets max models.</span>
+              </div>
+              <div class="setting-control-group">
+                <div class="setting-input-row" style="margin-bottom: 8px;">
+                  <input type="number" id="setting-updatedb-max-models" class="setting-input number-input" placeholder="Optional Cap (e.g. 50000, or blank for all 2M+)" min="1000" step="5000" style="min-width: 220px;">
+                  <button type="button" class="cli-run-btn" id="btn-run-updatedb" style="font-size: 12.5px; padding: 7px 14px; background: linear-gradient(135deg, #ec4899, #8b5cf6);">🚀 Crawl Full Registry (--updatedb)</button>
+                </div>
+                <div class="chip-preset-row" style="display: flex; gap: 6px; align-items: center;">
+                  <span style="font-size: 11px; color: var(--text-muted);">Quick Caps:</span>
+                  <button type="button" class="hero-chip updatedb-cap-chip" data-cap="10000" style="padding: 2px 8px; font-size: 11px;">10k</button>
+                  <button type="button" class="hero-chip updatedb-cap-chip" data-cap="50000" style="padding: 2px 8px; font-size: 11px;">50k</button>
+                  <button type="button" class="hero-chip updatedb-cap-chip" data-cap="250000" style="padding: 2px 8px; font-size: 11px;">250k</button>
+                  <button type="button" class="hero-chip updatedb-cap-chip" data-cap="" style="padding: 2px 8px; font-size: 11px;">All 2M+ (Unlimited)</button>
+                </div>
+                <div id="catalog-update-feedback" style="margin-top: 8px; font-size: 12px; display: none;"></div>
               </div>
             </div>
           </div>

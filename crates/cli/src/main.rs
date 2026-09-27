@@ -6215,6 +6215,102 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 return;
             }
 
+            // ── Model Catalog Fast Curated Update (/api/models/update) ──
+            if request_path == "/api/models/update" {
+                let resolved_db = resolve_db_path(Some(&db_path_str));
+                let resolved_db_buf = resolved_db.to_string_lossy().to_string();
+                if let Ok(exe_path) = std::env::current_exe() {
+                    let mut cmd = std::process::Command::new(exe_path);
+                    cmd.arg("--update")
+                       .arg("--db-path")
+                       .arg(&resolved_db_buf)
+                       .env("MODELFUSION_SUBPROCESS", "1");
+                    #[cfg(windows)]
+                    {
+                        use std::os::windows::process::CommandExt;
+                        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+                    }
+                    let _ = cmd.spawn();
+                }
+
+                let resp_json = serde_json::json!({
+                    "status": "started",
+                    "action": "update",
+                    "description": "Fast curated update (~6,500 production workhorse models across 45 tasks) & local Ollama model provisioning started in background."
+                });
+                let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Full Registry Crawler (/api/models/updatedb) ──
+            if request_path == "/api/models/updatedb" {
+                let mut max_models_opt: Option<usize> = None;
+                if let Some(query) = raw_request_uri.split('?').nth(1) {
+                    for pair in query.split('&') {
+                        if let Some((k, v)) = pair.split_once('=') {
+                            if k == "max_models" {
+                                if let Ok(val) = v.parse::<usize>() {
+                                    max_models_opt = Some(val);
+                                }
+                            }
+                        }
+                    }
+                }
+                if max_models_opt.is_none() {
+                    if let Some(val) = request_json.get("max_models") {
+                        if let Some(n) = val.as_u64() {
+                            max_models_opt = Some(n as usize);
+                        } else if let Some(s) = val.as_str() {
+                            if let Ok(n) = s.parse::<usize>() {
+                                max_models_opt = Some(n);
+                            }
+                        }
+                    }
+                }
+
+                let resolved_db = resolve_db_path(Some(&db_path_str));
+                let resolved_db_buf = resolved_db.to_string_lossy().to_string();
+                if let Ok(exe_path) = std::env::current_exe() {
+                    let mut cmd = std::process::Command::new(exe_path);
+                    cmd.arg("--updatedb")
+                       .arg("--db-path")
+                       .arg(&resolved_db_buf)
+                       .env("MODELFUSION_SUBPROCESS", "1");
+                    if let Some(mm) = max_models_opt {
+                        cmd.arg("--max-models").arg(mm.to_string());
+                    }
+                    #[cfg(windows)]
+                    {
+                        use std::os::windows::process::CommandExt;
+                        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+                    }
+                    let _ = cmd.spawn();
+                }
+
+                let resp_json = serde_json::json!({
+                    "status": "started",
+                    "action": "updatedb",
+                    "max_models": max_models_opt,
+                    "description": "Full registry crawler (over 2 million models across all 45 tasks) started in background in 1,000-model transaction batches."
+                });
+                let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
             // ── Ollama Start Lifecycle (/api/ollama/start) ──
             if request_path == "/api/ollama/start" {
                 let res = tokio::task::spawn_blocking(|| {
@@ -13584,5 +13680,34 @@ public class Pr {
         assert_eq!(user_msg_val["images"].as_array().map(|a| a.len()), Some(1));
         assert_eq!(user_msg_val["role"], "user");
     }
+
+    #[test]
+    fn test_update_and_updatedb_flags_and_canonicalization() {
+        use super::{canonicalize_command, Args};
+        use clap::Parser;
+
+        // Test canonicalization of slash and flag commands
+        assert_eq!(canonicalize_command("/update"), Some("update"));
+        assert_eq!(canonicalize_command("--update"), Some("update"));
+        assert_eq!(canonicalize_command("update"), Some("update"));
+        assert_eq!(canonicalize_command("update-db"), Some("updatedb"));
+        assert_eq!(canonicalize_command("/updatedb"), Some("updatedb"));
+        assert_eq!(canonicalize_command("--updatedb"), Some("updatedb"));
+        assert_eq!(canonicalize_command("updatedb"), Some("updatedb"));
+
+        // Test Clap parsing for --update
+        let args_update = Args::try_parse_from(&["cli", "--update", "--db-path", "IDE/db/hf_models.db"]).expect("Should parse --update");
+        assert!(args_update.update);
+        assert!(!args_update.updatedb);
+        assert_eq!(args_update.db_path.as_deref(), Some("IDE/db/hf_models.db"));
+
+        // Test Clap parsing for --updatedb with --max-models
+        let args_updatedb = Args::try_parse_from(&["cli", "--updatedb", "--max-models", "50000", "--db-path", "IDE/db/hf_models.db"]).expect("Should parse --updatedb");
+        assert!(!args_updatedb.update);
+        assert!(args_updatedb.updatedb);
+        assert_eq!(args_updatedb.max_models, Some(50000));
+        assert_eq!(args_updatedb.db_path.as_deref(), Some("IDE/db/hf_models.db"));
+    }
 }
+
 

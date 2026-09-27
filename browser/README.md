@@ -109,8 +109,8 @@ HugOS Browser embeds complete visibility into ModelFusion's local compound intel
   - `5 Models`: Deep Consensus Panel (Broad sampling across architectures).
   - `10 Models`: Exhaustive Frontier Deliberation (Full Pareto consensus).
 - **Catalog Model Count Invariants & Transparency**:
-  - **`--update` (Fast Curated Tier)**: Populates the top ~6,500 production workhorse models across all 45 tasks.
-  - **`--updatedb` (Full Registry Crawler)**: Populates all 1,271,167+ models across the entire Hugging Face Hub.
+  - **`--update` (Fast Curated Tier)**: Populates the top ~6,500 production workhorse models across all 45 tasks and provisions optimal local Ollama hardware model. Available via one-click `⚡ Run Curated Update (--update)` in the Settings Drawer and Models Tab.
+  - **`--updatedb` (Full Registry Crawler - All 2M+ Models)**: Traverses and ingests **over 2 million models** across the entire Hugging Face Hub into SQLite ("whether junk or not") in 1,000-model transactions (~1,000 models/sec). Available via one-click `🚀 Crawl Full Registry (--updatedb)` with configurable quick caps (10k, 50k, 250k, or all 2M+).
   - **Offline / IPC Fallback Invariant**: When the Master CLI backend (`:5000`) is offline or unreachable, the browser UI fails safe to the verified baseline constant of **6,438 Models**, rather than crashing or displaying blank metrics.
   - **Task-Specific Filtering**: Unclassified models lacking valid `pipeline_tag` metadata exist in the raw table count, but are pruned from task-specific consensus candidate pools.
 
@@ -122,8 +122,10 @@ Pressing `Ctrl+,` or clicking the ⚙️ Settings button in the sidebar opens th
 1. ⚙️ **General**: Default homepage, token streaming mode, auto-scroll terminal, and diagnostics.
 2. 🔆 **Appearance**: 5 distinct themes (ChatGPT Clean White, Dark, Obsidian Pitch Black, Midnight Navy, Warm Sepia) and font size scaling.
 3. 🌐 **Web Search & Routing**: Autonomous query routing toggles, search engine provider, maximum search results, and citation formatting.
-4. 🧠 **AI Models & Endpoints**: Ollama REST API URL, ModelFusion Master CLI IPC URL, Chrome CDP Port, Primary Workhorse Model, Consensus Panel Size (`--fusion-models`), Vision Specialist Model (`qwen2.5-vl`), and Audio Specialist Model (`whisper-base`).
-5. 📁 **Storage**: Navigation history cache clearing, attached file staging management, and database statistics.
+4. 🧠 **AI Models & Endpoints**: Ollama REST API URL, ModelFusion Master CLI IPC URL, Chrome CDP Port, Primary Workhorse Model, Consensus Panel Size (`--fusion-models`), Vision Specialist Model (`qwen2.5-vl`), and Audio Specialist Model (`whisper-base`). Features quick-action update buttons (`⚡ Update Curated (~6.5k)` and `🚀 Crawl All 2M+ Models`).
+5. 📁 **Storage**: Navigation history cache clearing, attached file staging management, database statistics, and interactive **Catalog Update & Crawler Operations Card**:
+   - `⚡ Run Curated Update (--update)`: Triggers background fast curated update (~6,500 models) & local Ollama model auto-provisioning.
+   - `🚀 Crawl Full Registry (--updatedb)`: Ingests over 2 million models across all 45 tasks in 1,000-model transaction batches, with optional preset caps (`10k`, `50k`, `250k`, or unlimited).
 6. ⌨️ **Keyboard**: Master table of keyboard shortcuts (`Ctrl+,`, `Ctrl+N`, `Ctrl+[`, `Ctrl+Enter`, `Alt+S`, `Esc`).
 7. 📈 **Usage**: Live host telemetry (Runtime Available RAM, GPU VRAM, active model, and query counter).
 8. 🔔 **Notifications**: In-app toast alerts, model provisioning notifications, and task completion chimes.

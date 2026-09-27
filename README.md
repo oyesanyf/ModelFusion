@@ -864,8 +864,8 @@ HugOS Browser supports compound multi-model deliberation, fusing multiple models
 
 ### 6. Model Catalog Architecture: 6,438 Curated Workhorses vs. 1.27M+ Full Registry
 ModelFusion maintains an SQLite catalog database (`hf_models.db`) to enable offline discovery and instant model switching across all 45 Hugging Face tasks:
-- **`--update` (Fast Curated Ingestion)**: Ingests the **top ~6,500 production workhorse models** across all 45 tasks. Designed for daily use, `@agent update`, and background refreshers. When initialized via `--update`, the database contains ~6,438 models.
-- **`--updatedb` (Full Registry Crawler)**: Traverses the entire Hugging Face Hub via cursor pagination (`limit=1000`, HTTP `Link: rel="next"`), indexing **1,271,167+ models** ("whether junk or not").
+- **`--update` (Fast Curated Ingestion)**: Ingests the **top ~6,500 production workhorse models** across all 45 tasks. Designed for daily use, `@agent update`, and background refreshers. When initialized via `--update`, the database contains ~6,438 models. Available directly in the Settings Drawer and Models tab via `⚡ Run Curated Update (--update)`.
+- **`--updatedb` (Full Registry Crawler - All 2M+ Models)**: Traverses the entire Hugging Face Hub via cursor pagination (`limit=1000`, HTTP `Link: rel="next"`), indexing **over 2 million models** ("whether junk or not") in 1,000-model transactions (~1,000 models/sec). Available via one-click `🚀 Crawl Full Registry (--updatedb)` in the Settings Drawer with quick caps (10k, 50k, 250k, or all 2M+).
 - **Offline / IPC Disconnected Fallback**: If the Master CLI server (`http://127.0.0.1:5000`) is offline or unreachable, the browser UI fails safe to the verified baseline constant of **6,438 Models**, rather than failing or displaying an empty screen.
 - **Task-Specific Filtering**: Unclassified community repositories lacking a valid `pipeline_tag` exist in the raw 1.27M database, but are pruned from task-specific consensus candidate pools to guarantee execution reliability.
 
@@ -874,8 +874,8 @@ HugOS Browser includes a full-featured Settings Modal (`Ctrl+,`) with real-time 
 1. ⚙️ **General**: Default browser homepage, token streaming toggles, auto-scroll behavior, and system diagnostics.
 2. 🔆 **Appearance**: 5 custom themes (ChatGPT Clean White, Sleek Dark, Obsidian Black, Midnight Navy, Warm Sepia) and font size scaling.
 3. 🌐 **Web Search & Routing**: Autonomous query routing toggles, search engine provider, maximum search results, and citation formatting.
-4. 🧠 **AI Models & Endpoints**: Ollama REST API URL, ModelFusion Master CLI IPC URL, Chrome CDP Port, Primary Workhorse Model, Consensus Panel Size (`--fusion-models`), Vision Specialist Model (`qwen2.5-vl`), and Audio Specialist Model (`whisper-base`).
-5. 📁 **Storage**: Navigation history cache clearing, attached file staging management, and database statistics.
+4. 🧠 **AI Models & Endpoints**: Ollama REST API URL, ModelFusion Master CLI IPC URL, Chrome CDP Port, Primary Workhorse Model, Consensus Panel Size (`--fusion-models`), Vision Specialist Model (`qwen2.5-vl`), and Audio Specialist Model (`whisper-base`). Includes quick-action update buttons (`⚡ Update Curated (~6.5k)` and `🚀 Crawl All 2M+ Models`).
+5. 📁 **Storage**: Navigation history cache clearing, attached file staging management, database statistics, and interactive **Catalog Update & Crawler Operations Card** (`⚡ Run Curated Update` and `🚀 Crawl Full Registry`).
 6. ⌨️ **Keyboard**: Master table of keyboard shortcuts (`Ctrl+,`, `Ctrl+N`, `Ctrl+[`, `Ctrl+Enter`, `Alt+S`, `Esc`).
 7. 📈 **Usage**: Live host telemetry (Runtime Available RAM, GPU VRAM, active model, and query counter).
 8. 🔔 **Notifications**: In-app toast alerts, model provisioning notifications, and task completion chimes.
