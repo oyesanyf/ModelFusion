@@ -82,11 +82,22 @@ def patch_extension_js(ext_js_path, node_path):
             this._outputChannel.appendLine(`[OLLAMA] Prepended ${ollamaDir} to environmentVariableCollection`);
           }
           if (process.platform === "win32") {
-            const escapedDir = ollamaDir.replace(/'/g, "''");
-            const psCmd = `powershell -NoProfile -Command "$dir = '${escapedDir}'; $p = [Environment]::GetEnvironmentVariable('Path', 'User'); if (-not $p) { [Environment]::SetEnvironmentVariable('Path', $dir, 'User') } elseif ($p -notlike ('*' + $dir + '*')) { [Environment]::SetEnvironmentVariable('Path', $p.TrimEnd(';') + ';' + $dir, 'User') }"`;
-            child_process2.exec(psCmd, { windowsHide: true }, (err) => {
-              if (!err) {
-                this._outputChannel.appendLine(`[OLLAMA] Ensured ${ollamaDir} in User PATH registry.`);
+            const regExe = path3.join(process.env["SystemRoot"] || "C:\\\\Windows", "System32", "reg.exe");
+            child_process2.execFile(regExe, ["query", "HKCU\\\\Environment", "/v", "Path"], { windowsHide: true }, (err, stdout) => {
+              let existingPath = "";
+              if (!err && stdout) {
+                const match = stdout.match(/Path\\s+REG_(?:EXPAND_)?SZ\\s+(.*)/i);
+                if (match && match[1]) {
+                  existingPath = match[1].trim();
+                }
+              }
+              if (!existingPath.toLowerCase().includes(ollamaDir.toLowerCase())) {
+                const newPath = existingPath ? `${existingPath.replace(/;+$/, "")};${ollamaDir}` : ollamaDir;
+                child_process2.execFile(regExe, ["add", "HKCU\\\\Environment", "/v", "Path", "/t", "REG_EXPAND_SZ", "/d", newPath, "/f"], { windowsHide: true }, (addErr) => {
+                  if (!addErr) {
+                    this._outputChannel.appendLine(`[OLLAMA] Ensured ${ollamaDir} in User PATH registry via reg.exe.`);
+                  }
+                });
               }
             });
           }
@@ -95,6 +106,43 @@ def patch_extension_js(ext_js_path, node_path):
         }
       }
 '''
+
+    # Upgrade any old powershell implementation of _ensureOllamaInPath
+    old_ps_ensure = '''          if (process.platform === "win32") {
+            const escapedDir = ollamaDir.replace(/'/g, "''");
+            const psCmd = `powershell -NoProfile -Command "$dir = '${escapedDir}'; $p = [Environment]::GetEnvironmentVariable('Path', 'User'); if (-not $p) { [Environment]::SetEnvironmentVariable('Path', $dir, 'User') } elseif ($p -notlike ('*' + $dir + '*')) { [Environment]::SetEnvironmentVariable('Path', $p.TrimEnd(';') + ';' + $dir, 'User') }"`;
+            child_process2.exec(psCmd, { windowsHide: true }, (err) => {
+              if (!err) {
+                this._outputChannel.appendLine(`[OLLAMA] Ensured ${ollamaDir} in User PATH registry.`);
+              }
+            });
+          }'''
+
+    new_reg_ensure = '''          if (process.platform === "win32") {
+            const regExe = path3.join(process.env["SystemRoot"] || "C:\\\\Windows", "System32", "reg.exe");
+            child_process2.execFile(regExe, ["query", "HKCU\\\\Environment", "/v", "Path"], { windowsHide: true }, (err, stdout) => {
+              let existingPath = "";
+              if (!err && stdout) {
+                const match = stdout.match(/Path\\s+REG_(?:EXPAND_)?SZ\\s+(.*)/i);
+                if (match && match[1]) {
+                  existingPath = match[1].trim();
+                }
+              }
+              if (!existingPath.toLowerCase().includes(ollamaDir.toLowerCase())) {
+                const newPath = existingPath ? `${existingPath.replace(/;+$/, "")};${ollamaDir}` : ollamaDir;
+                child_process2.execFile(regExe, ["add", "HKCU\\\\Environment", "/v", "Path", "/t", "REG_EXPAND_SZ", "/d", newPath, "/f"], { windowsHide: true }, (addErr) => {
+                  if (!addErr) {
+                    this._outputChannel.appendLine(`[OLLAMA] Ensured ${ollamaDir} in User PATH registry via reg.exe.`);
+                  }
+                });
+              }
+            });
+          }'''
+
+    if old_ps_ensure in content:
+        content = content.replace(old_ps_ensure, new_reg_ensure)
+        changed = True
+        print("  [UPGRADED] Converted _ensureOllamaInPath from powershell to silent reg.exe.")
 
     if "_ensureOllamaInPath(" not in content:
         target_pos = content.find("      _checkOllamaInstallation() {")

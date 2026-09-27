@@ -1316,17 +1316,37 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // 5. Search intent phrases
+    // 5. Search intent & factual knowledge patterns
     const searchIntents = [
       'search for', 'find out', 'look up', 'search on google', 'search the web',
-      'who is', 'where is', 'what is the current', 'how much is'
+      'who is', 'who was', 'where is', 'when was', 'what is the current', 'how much is',
+      'president of', 'prime minister of', 'capital of', 'leader of', 'ruler of',
+      'monarch of', 'king of', 'queen of', 'chancellor of', 'governor of', 'mayor of',
+      'population of', 'currency of', 'flag of', 'history of', 'head of state of',
+      'official language of', 'bordering countries of', 'gdp of', 'who founded',
+      'who invented', 'how old is', 'who won', 'what happened to', 'who is the current',
+      'tell me the capital', 'who leads', 'who rules'
     ];
     for (const intent of searchIntents) {
       if (lower.includes(intent)) {
         let clean = query;
         if (lower.startsWith('search for ')) clean = query.slice(11);
         else if (lower.startsWith('look up ')) clean = query.slice(8);
-        return { routeToWeb: true, reason: `Search intent detected: "${intent}"`, cleanQuery: clean };
+        return { routeToWeb: true, reason: `Factual knowledge query detected: "${intent}"`, cleanQuery: clean };
+      }
+    }
+
+    // Check political/geographical titles combined with "of"
+    if (/\b(president|prime\s+minister|capital|leader|population|currency|ruler|governor|mayor|chancellor|monarch|head\s+of\s+state)\s+of\b/i.test(lower)) {
+      return { routeToWeb: true, reason: 'Political/geographical leadership query detected', cleanQuery: query };
+    }
+
+    // 6. Check if current model is small (<= 3B) or low-resource system
+    const activeModelName = (currentSettings.activeModel || activeOllamaModel || '').toLowerCase();
+    const isSmallModel = activeModelName.includes('1.5b') || activeModelName.includes('0.5b') || activeModelName.includes('3b') || activeModelName.includes('1b');
+    if (isSmallModel && !isCodeQuery) {
+      if (lower.includes('?') || lower.startsWith('what ') || lower.startsWith('who ') || lower.startsWith('where ') || lower.startsWith('when ') || lower.startsWith('which ') || lower.startsWith('how ')) {
+        return { routeToWeb: true, reason: `Low-resource model grounding (${activeModelName || 'small model'})`, cleanQuery: query };
       }
     }
 
@@ -2625,7 +2645,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Real Streaming AI Chat via local Ollama endpoint with fallback to IPC
   async function streamAiChat(userPrompt, systemPrompt = 'You are HugOS Browser AI, an expert, accurate assistant built into the ModelFusion browser environment. Provide clear, direct, concise, and helpful answers.', options = {}) {
-    currentAbortController = new AbortController();
+    if (!currentAbortController || currentAbortController.signal.aborted) {
+      currentAbortController = new AbortController();
+    }
     setChatRunningState(true);
 
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -2706,10 +2728,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Hide welcome screen
     if (chatWelcome) chatWelcome.classList.add('hidden');
 
-    // Create assistant bubble in chatMessages
-    let assistantBubble = null;
-    let bubbleContent = null;
-    if (chatMessages) {
+    // Create assistant bubble in chatMessages (or reuse existing bubble from search phase)
+    let assistantBubble = options && options.existingBubble ? options.existingBubble : null;
+    let bubbleContent = options && options.bubbleContent ? options.bubbleContent : null;
+    if (chatMessages && !assistantBubble) {
       assistantBubble = document.createElement('div');
       assistantBubble.className = 'msg-bubble assistant-bubble streaming';
       assistantBubble.innerHTML = `
@@ -3973,7 +3995,32 @@ Instructions:
         termLogFusion(panel);
       }
       termLog(`[ROUTER] 🌐 Route: Live Web Search (${routingDecision.reason})`, 'sys');
-      termLog(`[SEARCH] Querying web search engine for: "${routingDecision.cleanQuery}"...`, 'info');
+      termLog(`[SEARCH] 🌐 Searching the web for: "${routingDecision.cleanQuery}"...`, 'info');
+
+      // Set chat running state to allow stopping
+      setChatRunningState(true);
+      currentAbortController = new AbortController();
+
+      // Immediately render assistant chat bubble with live searching status
+      if (chatWelcome) chatWelcome.classList.add('hidden');
+      let assistantBubble = null;
+      let bubbleContent = null;
+      if (chatMessages) {
+        assistantBubble = document.createElement('div');
+        assistantBubble.className = 'msg-bubble assistant-bubble streaming';
+        assistantBubble.innerHTML = `
+          <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+            <span>🌐</span> <span>ModelFusion AI</span>
+            <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">(Web Search Grounding)</span>
+          </div>
+          <div class="bubble-content" style="color: var(--accent-color); font-weight: 500; display: flex; align-items: center; gap: 6px;">
+            <span style="display: inline-block;">🌐</span> <span>Searching the web for &ldquo;${escapeHtml(routingDecision.cleanQuery)}&rdquo;&hellip;</span>
+          </div>
+        `;
+        chatMessages.appendChild(assistantBubble);
+        bubbleContent = assistantBubble.querySelector('.bubble-content');
+        if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
 
       const searchResults = await executeWebSearch(routingDecision.cleanQuery, currentSettings.maxSearchResults || 5);
 
@@ -3983,6 +4030,10 @@ Instructions:
           termLog(`  [${idx + 1}] ${r.title} - ${r.url}`, 'sys');
         });
 
+        if (bubbleContent) {
+          bubbleContent.innerHTML = `<span style="color: var(--text-muted); font-style: italic;">Synthesizing verified web evidence...</span>`;
+        }
+
         // Correlate live search results with LLM knowledge
         const searchContext = searchResults.map((r, idx) => {
           return `[${idx + 1}] Title: ${r.title}\nURL: ${r.url}\nSummary: ${r.snippet}`;
@@ -3990,21 +4041,35 @@ Instructions:
 
         const promptWithSearch = `User Query: ${cmd}
 
-Here are verified live internet search results retrieved just now:
+Verified Grounding Context:
 ${searchContext}
 
 ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
-- Provide an accurate, comprehensive, up-to-date response correlating the live search results above with your internal knowledge.
+- Use the verified grounding context above to answer accurately and comprehensively.
+- Never invent, fabricate, or hallucinate political leaders, capitals, or dates.
+- State verified real-world facts directly (e.g. current head of state, verified capital city).
 - Cite the sources inline using [1], [2], etc., matching the numbered search results above.
 - Include clickable markdown links to the sources [Title](URL) where relevant.`;
 
-        const sysPrompt = 'You are HugOS AI, an intelligent assistant with live internet search capabilities. Correlate search evidence with internal reasoning, provide factual and up-to-date answers, and cite sources accurately with [1], [2] badges and markdown links.';
+        const sysPrompt = 'You are HugOS AI, an intelligent assistant with live internet search capabilities. Correlate search evidence with internal reasoning, provide factual and up-to-date answers, and cite sources accurately with [1], [2] badges and markdown links. Never invent false names, leaders, or relocated capitals.';
 
-        await streamAiChat(promptWithSearch, sysPrompt, { images: attachedImages, panel });
+        await streamAiChat(promptWithSearch, sysPrompt, { images: attachedImages, panel, existingBubble: assistantBubble, bubbleContent: bubbleContent });
         if (currentAttachments.length > 0) clearAllAttachments();
         return;
       } else {
-        termLog(`[SEARCH] No live web results returned. Falling back to local model internal knowledge.`, 'warn');
+        termLog(`[SEARCH] No live web results returned. Falling back to local model with strict factual guardrails.`, 'warn');
+        if (bubbleContent) {
+          bubbleContent.innerHTML = `<span style="color: var(--text-muted); font-style: italic;">Thinking...</span>`;
+        }
+        const promptWithGuardrail = `${cmd}
+
+Important Factual Constraint:
+If you are asked about real-world facts such as world leaders, heads of state, country capitals, or historical dates and you are not 100% certain, state clearly that you do not have verified up-to-date records rather than fabricating false names or places. Never invent fictional political leaders or relocated capitals.`;
+
+        const sysPrompt = 'You are HugOS Browser AI, an expert, accurate assistant built into the ModelFusion browser environment. Provide clear, direct, and factually accurate answers. If uncertain of real-world facts, state so honestly.';
+        await streamAiChat(promptWithGuardrail, sysPrompt, { images: attachedImages, panel, existingBubble: assistantBubble, bubbleContent: bubbleContent });
+        if (currentAttachments.length > 0) clearAllAttachments();
+        return;
       }
     } else {
       if (currentSettings.multimodalAuto !== false && (attachedImages.length > 0 || panel.name !== 'Analytical Reasoning Fusion')) {

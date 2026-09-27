@@ -406,38 +406,23 @@ pub fn model_fits(params_billions: f64, backend: Backend, memory: &SystemMemory)
 
 /// Check if Ollama is actually responding by making a real HTTP request.
 pub fn is_ollama_responding(endpoint: &str) -> bool {
-    // Use curl for a reliable check (powershell Invoke-WebRequest can give false positives)
-    let result = create_hidden_command("curl")
-        .args(["-s", "-o", "nul", "-w", "%{http_code}", "--max-time", "3",
-               &format!("{}/api/tags", endpoint)])
-        .output();
-
-    match result {
-        Ok(o) => {
-            let code = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            code == "200"
-        }
-        Err(_) => {
-            // curl not available, try powershell as fallback
-            let ps_result = create_hidden_command("powershell")
-                .args(["-NoProfile", "-Command",
-                    &format!("try {{ $r = Invoke-WebRequest -Uri '{}/api/tags' -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop; $r.StatusCode }} catch {{ 'FAIL' }}", endpoint)])
-                .output();
-            match ps_result {
-                Ok(o) => {
-                    let text = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                    text == "200"
-                }
-                Err(_) => false,
-            }
-        }
-    }
+    let client = reqwest::blocking::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_millis(1500))
+        .build()
+        .unwrap_or_default();
+    let url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
+    client.get(&url)
+        .header("Origin", "null")
+        .send()
+        .map(|r| r.status().is_success())
+        .unwrap_or(false)
 }
 
 /// Check if Ollama is installed on the system (in PATH or common installation paths).
 pub fn is_ollama_installed() -> bool {
-    let check_installed = create_hidden_command("cmd")
-        .args(["/C", "where", "ollama"])
+    let check_installed = create_hidden_command("where")
+        .arg("ollama")
         .output();
 
     if let Ok(output) = check_installed {
@@ -495,9 +480,8 @@ pub fn ensure_ollama_running() -> Result<(), String> {
     std::env::set_var("OLLAMA_ORIGINS", "*");
     #[cfg(windows)]
     {
-        let ps_cmd = "[Environment]::SetEnvironmentVariable('OLLAMA_ORIGINS', '*', 'User'); [Environment]::SetEnvironmentVariable('OLLAMA_ORIGINS', '*', 'Process')";
-        let _ = create_hidden_command("powershell")
-            .args(["-NoProfile", "-Command", ps_cmd])
+        let _ = create_hidden_command("reg")
+            .args(["add", "HKCU\\Environment", "/v", "OLLAMA_ORIGINS", "/t", "REG_SZ", "/d", "*", "/f"])
             .status();
     }
 
@@ -509,8 +493,8 @@ pub fn ensure_ollama_running() -> Result<(), String> {
     // Check if Ollama is installed: PATH first, then common installation paths
     let mut ollama_path: Option<std::path::PathBuf> = None;
 
-    let check_installed = create_hidden_command("cmd")
-        .args(["/C", "where", "ollama"])
+    let check_installed = create_hidden_command("where")
+        .arg("ollama")
         .output();
 
     if let Ok(output) = check_installed {
@@ -548,27 +532,39 @@ pub fn ensure_ollama_running() -> Result<(), String> {
     // If not found at all, auto-download and install silently
     if ollama_path.is_none() {
         eprintln!("🦙 [OLLAMA] Ollama is not installed. Downloading and installing silently (this may take a minute)...");
-        let install_result = create_hidden_command("powershell")
-            .args([
-                "-NoProfile",
-                "-Command",
-                "Invoke-WebRequest -Uri 'https://ollama.com/download/OllamaSetup.exe' -OutFile \"$env:TEMP\\OllamaSetup.exe\"; Start-Process -FilePath \"$env:TEMP\\OllamaSetup.exe\" -ArgumentList '/SILENT', '/NORESTART' -Wait"
-            ])
-            .status();
-
-        match install_result {
-            Ok(status) if status.success() => {
-                eprintln!("🦙 [OLLAMA] Installation complete!");
-                // Give it a moment to update environment variables/PATH internally
-                std::thread::sleep(std::time::Duration::from_secs(3));
-            }
-            _ => {
-                return Err("Failed to install Ollama automatically. Please download it from https://ollama.com".to_string());
+        let temp_dir = std::env::temp_dir();
+        let installer_path = temp_dir.join("OllamaSetup.exe");
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(180))
+            .build()
+            .unwrap_or_default();
+        let mut downloaded_ok = false;
+        if let Ok(mut r) = client.get("https://ollama.com/download/OllamaSetup.exe").send() {
+            if r.status().is_success() {
+                if let Ok(mut f) = std::fs::File::create(&installer_path) {
+                    if std::io::copy(&mut r, &mut f).is_ok() {
+                        downloaded_ok = true;
+                    }
+                }
             }
         }
 
+        if downloaded_ok {
+            let status = create_hidden_command(&installer_path)
+                .args(["/SILENT", "/NORESTART"])
+                .status();
+            if let Ok(st) = status {
+                if st.success() {
+                    eprintln!("🦙 [OLLAMA] Installation complete!");
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                }
+            }
+        } else {
+            eprintln!("🦙 [OLLAMA] Failed to download Ollama installer automatically.");
+        }
+
         // Re-check where ollama or common paths
-        if let Ok(output) = create_hidden_command("cmd").args(["/C", "where", "ollama"]).output() {
+        if let Ok(output) = create_hidden_command("where").arg("ollama").output() {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 for line in stdout.lines() {
@@ -612,14 +608,34 @@ pub fn ensure_ollama_running() -> Result<(), String> {
 
             #[cfg(windows)]
             {
-                let dir_str = ollama_dir.to_string_lossy().replace('\'', "''");
-                let ps_cmd = format!(
-                    "$dir = '{}'; $p = [Environment]::GetEnvironmentVariable('Path', 'User'); if (-not $p) {{ [Environment]::SetEnvironmentVariable('Path', $dir, 'User') }} elseif ($p -notlike ('*' + $dir + '*')) {{ [Environment]::SetEnvironmentVariable('Path', $p.TrimEnd(';') + ';' + $dir, 'User') }}",
-                    dir_str
-                );
-                let _ = create_hidden_command("powershell")
-                    .args(["-NoProfile", "-Command", &ps_cmd])
-                    .status();
+                let dir_str = ollama_dir.to_string_lossy().to_string();
+                let query_out = create_hidden_command("reg")
+                    .args(["query", "HKCU\\Environment", "/v", "Path"])
+                    .output();
+                let mut existing_user_path = String::new();
+                if let Ok(out) = query_out {
+                    if out.status.success() {
+                        let text = String::from_utf8_lossy(&out.stdout);
+                        for line in text.lines() {
+                            let trimmed = line.trim();
+                            if trimmed.starts_with("Path") {
+                                if let Some(val) = trimmed.split_whitespace().last() {
+                                    existing_user_path = val.to_string();
+                                }
+                            }
+                        }
+                    }
+                }
+                if !existing_user_path.to_lowercase().contains(&dir_str.to_lowercase()) {
+                    let new_user_path = if existing_user_path.is_empty() {
+                        dir_str
+                    } else {
+                        format!("{};{}", existing_user_path.trim_end_matches(';'), dir_str)
+                    };
+                    let _ = create_hidden_command("reg")
+                        .args(["add", "HKCU\\Environment", "/v", "Path", "/t", "REG_EXPAND_SZ", "/d", &new_user_path, "/f"])
+                        .status();
+                }
             }
         }
     }
@@ -637,22 +653,21 @@ pub fn ensure_ollama_running() -> Result<(), String> {
     std::env::set_var("OLLAMA_ORIGINS", "*");
     #[cfg(windows)]
     {
-        let ps_cmd = "[Environment]::SetEnvironmentVariable('OLLAMA_ORIGINS', '*', 'User')";
-        let _ = create_hidden_command("powershell")
-            .args(["-NoProfile", "-Command", ps_cmd])
+        let _ = create_hidden_command("reg")
+            .args(["add", "HKCU\\Environment", "/v", "OLLAMA_ORIGINS", "/t", "REG_SZ", "/d", "*", "/f"])
             .status();
     }
 
-    // Launch ollama serve as a background process with OLLAMA_ORIGINS=*
-    let mut cmd = create_hidden_command("cmd");
-    cmd.args(["/C", "start", "/B", "ollama", "serve"]);
-    cmd.env("OLLAMA_ORIGINS", "*");
-    let start_result = cmd.spawn().or_else(|_| {
-        let mut direct_cmd = create_hidden_command(&ollama_exec);
-        direct_cmd.arg("serve");
-        direct_cmd.env("OLLAMA_ORIGINS", "*");
-        direct_cmd.spawn()
-    });
+    // Launch ollama serve as a detached background process with OLLAMA_ORIGINS=* and CREATE_NO_WINDOW
+    let mut direct_cmd = create_hidden_command(&ollama_exec);
+    direct_cmd.arg("serve");
+    direct_cmd.env("OLLAMA_ORIGINS", "*");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        direct_cmd.creation_flags(0x08000000 | 0x00000008); // CREATE_NO_WINDOW | DETACHED_PROCESS
+    }
+    let start_result = direct_cmd.spawn();
 
     match start_result {
         Ok(_) => {
