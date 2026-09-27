@@ -416,6 +416,8 @@ pub async fn run_deep_research(
 
     if let Some(script) = py_script {
         let mut cmd = tokio::process::Command::new("python");
+        #[cfg(windows)]
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
         cmd.arg(&script).arg(query);
         cmd.arg("--max-results").arg(max_results.to_string());
         if let Some(m) = model_override {

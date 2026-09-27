@@ -117,14 +117,14 @@ ${directoryTreeXml}
     </StandardDirectory>
     <StandardDirectory Id="DesktopFolder">
       <Component Id="ApplicationShortcutDesktop" Guid="*">
-        <Shortcut Id="ApplicationDesktopShortcut" Name="HugOS Browser" Target="[INSTALLFOLDER]Chromium-win32-x64\\hugos-browser.bat" WorkingDirectory="INSTALLFOLDER" Icon="HugOSBrowserIcon.ico" />
+        <Shortcut Id="ApplicationDesktopShortcut" Name="HugOS Browser" Target="[SystemFolder]wscript.exe" Arguments="&quot;[INSTALLFOLDER]Chromium-win32-x64\\hugos-browser.vbs&quot;" WorkingDirectory="INSTALLFOLDER" Icon="HugOSBrowserIcon.ico" />
         <RegistryValue Root="HKCU" Key="Software\\HugOSTeam\\HugOSBrowser" Name="desktop_shortcut" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </StandardDirectory>
 
     <DirectoryRef Id="ApplicationProgramsFolder">
       <Component Id="ApplicationShortcut" Guid="*">
-        <Shortcut Id="ApplicationStartMenuShortcut" Name="HugOS Browser" Target="[INSTALLFOLDER]Chromium-win32-x64\\hugos-browser.bat" Directory="ApplicationProgramsFolder" WorkingDirectory="INSTALLFOLDER" Icon="HugOSBrowserIcon.ico" />
+        <Shortcut Id="ApplicationStartMenuShortcut" Name="HugOS Browser" Target="[SystemFolder]wscript.exe" Arguments="&quot;[INSTALLFOLDER]Chromium-win32-x64\\hugos-browser.vbs&quot;" Directory="ApplicationProgramsFolder" WorkingDirectory="INSTALLFOLDER" Icon="HugOSBrowserIcon.ico" />
         <RemoveFolder Id="CleanUpShortcuts" On="uninstall" />
         <RegistryValue Root="HKCU" Key="Software\\HugOSTeam\\HugOSBrowser" Name="installed" Type="integer" Value="1" KeyPath="yes" />
       </Component>

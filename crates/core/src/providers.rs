@@ -33,13 +33,32 @@ fn find_script(relative_path: &str) -> String {
     relative_path.to_string()
 }
 
+#[inline]
+fn hidden_std_command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Command {
+    let mut cmd = std::process::Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    cmd
+}
+
+#[inline]
+fn hidden_tokio_command(program: impl AsRef<std::ffi::OsStr>) -> tokio::process::Command {
+    let mut cmd = tokio::process::Command::new(program);
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    cmd
+}
+
 static INIT_PYTHON: std::sync::Once = std::sync::Once::new();
 
 fn ensure_python_packages() {
     INIT_PYTHON.call_once(|| {
         println!("🔷 Checking Python multimodal dependencies...");
         
-        let py_check = std::process::Command::new("python")
+        let py_check = hidden_std_command("python")
             .arg("-c")
             .arg("import sys; print(sys.version)")
             .output();
@@ -49,7 +68,7 @@ fn ensure_python_packages() {
             return;
         }
 
-        let check = std::process::Command::new("python")
+        let check = hidden_std_command("python")
             .arg("-c")
             .arg("import importlib.util; ok = all(importlib.util.find_spec(p) is not None for p in ['torch', 'transformers', 'accelerate', 'PIL', 'soundfile', 'librosa', 'pypdf']); print('OK' if ok else 'FAIL')")
             .output();
@@ -64,7 +83,7 @@ fn ensure_python_packages() {
 
         if needs_install {
             println!("📥 [AUTO-INSTALL] Installing/updating missing local Python dependencies (this may take a few minutes)...");
-            let install_status = std::process::Command::new("python")
+            let install_status = hidden_std_command("python")
                 .args(["-m", "pip", "install", "torch", "transformers", "accelerate", "pillow", "soundfile", "librosa", "pypdf", "--quiet"])
                 .status();
                 
@@ -327,7 +346,7 @@ impl HuggingFaceProvider {
         let safe_prompt = if prompt.len() > 8000 { &prompt[..8000] } else { prompt };
         let output = tokio::time::timeout(
             timeout_duration,
-            tokio::process::Command::new("python")
+            hidden_tokio_command("python")
                 .env("PYTHONIOENCODING", "utf-8")
                 .arg(&script_path)
                 .arg(&self.config.model_id)
@@ -377,7 +396,7 @@ impl HuggingFaceProvider {
         let safe_prompt = if prompt.len() > 8000 { &prompt[..8000] } else { prompt };
         let output = tokio::time::timeout(
             timeout_duration,
-            tokio::process::Command::new("python")
+            hidden_tokio_command("python")
                 .env("PYTHONIOENCODING", "utf-8")
                 .arg(&script_path)
                 .arg(&self.config.model_id)
@@ -426,7 +445,7 @@ impl HuggingFaceProvider {
         let safe_prompt = if prompt.len() > 8000 { &prompt[..8000] } else { prompt };
         let output = tokio::time::timeout(
             timeout_duration,
-            tokio::process::Command::new("python")
+            hidden_tokio_command("python")
                 .env("PYTHONIOENCODING", "utf-8")
                 .arg(&script_path)
                 .arg(&self.config.model_id)

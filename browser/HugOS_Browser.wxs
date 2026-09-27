@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="HugOS Browser" Manufacturer="HugOS Team" Version="1.0.34" UpgradeCode="e98c7d08-91cb-4248-bfa5-765c96ddeca6" Scope="perUser">
+  <Package Name="HugOS Browser" Manufacturer="HugOS Team" Version="1.0.37" UpgradeCode="e98c7d08-91cb-4248-bfa5-765c96ddeca6" Scope="perUser">
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." Schedule="afterInstallInitialize" AllowSameVersionUpgrades="yes" />
 
     <MediaTemplate EmbedCab="yes" />
@@ -35,14 +35,14 @@
     </StandardDirectory>
     <StandardDirectory Id="DesktopFolder">
       <Component Id="ApplicationShortcutDesktop" Guid="*">
-        <Shortcut Id="ApplicationDesktopShortcut" Name="HugOS Browser" Target="[INSTALLFOLDER]Chromium-win32-x64\hugos-browser.bat" WorkingDirectory="INSTALLFOLDER" Icon="HugOSBrowserIcon.ico" />
+        <Shortcut Id="ApplicationDesktopShortcut" Name="HugOS Browser" Target="[SystemFolder]wscript.exe" Arguments="&quot;[INSTALLFOLDER]Chromium-win32-x64\hugos-browser.vbs&quot;" WorkingDirectory="INSTALLFOLDER" Icon="HugOSBrowserIcon.ico" />
         <RegistryValue Root="HKCU" Key="Software\HugOSTeam\HugOSBrowser" Name="desktop_shortcut" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </StandardDirectory>
 
     <DirectoryRef Id="ApplicationProgramsFolder">
       <Component Id="ApplicationShortcut" Guid="*">
-        <Shortcut Id="ApplicationStartMenuShortcut" Name="HugOS Browser" Target="[INSTALLFOLDER]Chromium-win32-x64\hugos-browser.bat" Directory="ApplicationProgramsFolder" WorkingDirectory="INSTALLFOLDER" Icon="HugOSBrowserIcon.ico" />
+        <Shortcut Id="ApplicationStartMenuShortcut" Name="HugOS Browser" Target="[SystemFolder]wscript.exe" Arguments="&quot;[INSTALLFOLDER]Chromium-win32-x64\hugos-browser.vbs&quot;" Directory="ApplicationProgramsFolder" WorkingDirectory="INSTALLFOLDER" Icon="HugOSBrowserIcon.ico" />
         <RemoveFolder Id="CleanUpShortcuts" On="uninstall" />
         <RegistryValue Root="HKCU" Key="Software\HugOSTeam\HugOSBrowser" Name="installed" Type="integer" Value="1" KeyPath="yes" />
       </Component>
@@ -58,56 +58,65 @@
       <Component Id="cmp_1" Guid="*" Directory="dir_1">
         <File Id="fil_1" Source="bin\cli.exe" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_2" Guid="*" Directory="dir_2">
-        <File Id="fil_2" Source="bin\db\hf_models.db" KeyPath="yes" />
+      <Component Id="cmp_2" Guid="*" Directory="dir_1">
+        <File Id="fil_2" Source="bin\clibrowser.exe" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_3" Guid="*" Directory="INSTALLFOLDER">
-        <File Id="fil_3" Source="build_browser.ps1" KeyPath="yes" />
+      <Component Id="cmp_3" Guid="*" Directory="dir_2">
+        <File Id="fil_3" Source="bin\db\hf_models.db" KeyPath="yes" />
       </Component>
       <Component Id="cmp_4" Guid="*" Directory="INSTALLFOLDER">
-        <File Id="fil_4" Source="build_number.txt" KeyPath="yes" />
+        <File Id="fil_4" Source="build_browser.ps1" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_5" Guid="*" Directory="dir_3">
-        <File Id="fil_5" Source="Chromium-win32-x64\hugos-browser.bat" KeyPath="yes" />
+      <Component Id="cmp_5" Guid="*" Directory="INSTALLFOLDER">
+        <File Id="fil_5" Source="build_number.txt" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_6" Guid="*" Directory="dir_4">
-        <File Id="fil_6" Source="config\default_preferences.json" KeyPath="yes" />
+      <Component Id="cmp_6" Guid="*" Directory="dir_3">
+        <File Id="fil_6" Source="Chromium-win32-x64\hugos-browser.bat" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_7" Guid="*" Directory="dir_5">
-        <File Id="fil_7" Source="db\hf_models.db" KeyPath="yes" />
+      <Component Id="cmp_7" Guid="*" Directory="dir_3">
+        <File Id="fil_7" Source="Chromium-win32-x64\hugos-browser.vbs" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_8" Guid="*" Directory="dir_6">
-        <File Id="fil_8" Source="extension\background.js" KeyPath="yes" />
+      <Component Id="cmp_8" Guid="*" Directory="dir_3">
+        <File Id="fil_8" Source="Chromium-win32-x64\run_hidden.vbs" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_9" Guid="*" Directory="dir_6">
-        <File Id="fil_9" Source="extension\content.js" KeyPath="yes" />
+      <Component Id="cmp_9" Guid="*" Directory="dir_4">
+        <File Id="fil_9" Source="config\default_preferences.json" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_10" Guid="*" Directory="dir_6">
-        <File Id="fil_10" Source="extension\manifest.json" KeyPath="yes" />
+      <Component Id="cmp_10" Guid="*" Directory="dir_5">
+        <File Id="fil_10" Source="db\hf_models.db" KeyPath="yes" />
       </Component>
       <Component Id="cmp_11" Guid="*" Directory="dir_6">
-        <File Id="fil_11" Source="extension\sidepanel.html" KeyPath="yes" />
+        <File Id="fil_11" Source="extension\background.js" KeyPath="yes" />
       </Component>
       <Component Id="cmp_12" Guid="*" Directory="dir_6">
-        <File Id="fil_12" Source="extension\sidepanel.js" KeyPath="yes" />
+        <File Id="fil_12" Source="extension\content.js" KeyPath="yes" />
       </Component>
       <Component Id="cmp_13" Guid="*" Directory="dir_6">
-        <File Id="fil_13" Source="extension\styles.css" KeyPath="yes" />
+        <File Id="fil_13" Source="extension\manifest.json" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_14" Guid="*" Directory="INSTALLFOLDER">
-        <File Id="fil_14" Source="generate_wix.js" KeyPath="yes" />
+      <Component Id="cmp_14" Guid="*" Directory="dir_6">
+        <File Id="fil_14" Source="extension\sidepanel.html" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_15" Guid="*" Directory="INSTALLFOLDER">
-        <File Id="fil_15" Source="README.md" KeyPath="yes" />
+      <Component Id="cmp_15" Guid="*" Directory="dir_6">
+        <File Id="fil_15" Source="extension\sidepanel.js" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_16" Guid="*" Directory="dir_7">
-        <File Id="fil_16" Source="ui\app.js" KeyPath="yes" />
+      <Component Id="cmp_16" Guid="*" Directory="dir_6">
+        <File Id="fil_16" Source="extension\styles.css" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_17" Guid="*" Directory="dir_7">
-        <File Id="fil_17" Source="ui\index.html" KeyPath="yes" />
+      <Component Id="cmp_17" Guid="*" Directory="INSTALLFOLDER">
+        <File Id="fil_17" Source="generate_wix.js" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_18" Guid="*" Directory="dir_7">
-        <File Id="fil_18" Source="ui\styles.css" KeyPath="yes" />
+      <Component Id="cmp_18" Guid="*" Directory="INSTALLFOLDER">
+        <File Id="fil_18" Source="README.md" KeyPath="yes" />
+      </Component>
+      <Component Id="cmp_19" Guid="*" Directory="dir_7">
+        <File Id="fil_19" Source="ui\app.js" KeyPath="yes" />
+      </Component>
+      <Component Id="cmp_20" Guid="*" Directory="dir_7">
+        <File Id="fil_20" Source="ui\index.html" KeyPath="yes" />
+      </Component>
+      <Component Id="cmp_21" Guid="*" Directory="dir_7">
+        <File Id="fil_21" Source="ui\styles.css" KeyPath="yes" />
       </Component>
     </ComponentGroup>
   </Package>

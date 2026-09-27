@@ -946,7 +946,7 @@ def patch_healthcheck_watchdog(content, file_path):
             "          const cliPath = this._getCliPath ? this._getCliPath() : void 0;\n"
             "          if (cliPath && require('fs').existsSync(cliPath)) {\n"
             "            try {\n"
-            "              require('child_process').spawn(cliPath, ['--ensure-ollama'], { detached: true, stdio: 'ignore' }).unref();\n"
+            "              require('child_process').spawn(cliPath, ['--ensure-ollama'], { detached: true, stdio: 'ignore', windowsHide: true }).unref();\n"
             "            } catch (e) { this._checkOllamaInstallation(); }\n"
             "          } else {\n"
             "            this._checkOllamaInstallation();\n"

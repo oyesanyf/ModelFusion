@@ -570,9 +570,25 @@ pub fn find_system_chromium() -> Option<std::path::PathBuf> {
 pub fn launch_hugos_browser(url: Option<&str>) -> Result<(), String> {
     let start_url = url.unwrap_or("http://localhost:5000/index.html");
 
-    // Strategy 1: hugos-browser.bat script
+    // Strategy 1: hugos-browser.bat / hugos-browser.vbs script
     if let Some(bat_path) = find_browser_launcher_bat() {
         let bat_path = strip_verbatim_prefix(bat_path);
+        let vbs_path = bat_path.with_extension("vbs");
+        if vbs_path.is_file() {
+            println!("🚀 [BROWSER] Spawning HugOS Browser Engine silently via VBS launcher: {}", vbs_path.display());
+            let mut cmd = std::process::Command::new("wscript.exe");
+            cmd.args(["//B", "//nologo", vbs_path.to_str().unwrap()]);
+            cmd.arg(start_url);
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+            }
+            if let Ok(_) = cmd.spawn() {
+                return Ok(());
+            }
+        }
+
         println!("🚀 [BROWSER] Spawning HugOS Browser Engine via batch launcher: {}", bat_path.display());
         let mut cmd = std::process::Command::new("cmd");
         cmd.args(["/c", bat_path.to_str().unwrap()]);
@@ -580,7 +596,7 @@ pub fn launch_hugos_browser(url: Option<&str>) -> Result<(), String> {
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            cmd.creation_flags(0x00000008); // DETACHED_PROCESS
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
         }
         cmd.spawn().map_err(|e| format!("Failed to spawn hugos-browser.bat: {}", e))?;
         return Ok(());
@@ -636,7 +652,7 @@ pub fn launch_hugos_browser(url: Option<&str>) -> Result<(), String> {
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            cmd.creation_flags(0x00000008); // DETACHED_PROCESS
+            cmd.creation_flags(0x08000000 | 0x00000008); // CREATE_NO_WINDOW | DETACHED_PROCESS
         }
 
         cmd.spawn().map_err(|e| format!("Failed to spawn {}: {}", chrome_bin.display(), e))?;
@@ -649,6 +665,10 @@ pub fn launch_hugos_browser(url: Option<&str>) -> Result<(), String> {
     {
         let mut cmd = std::process::Command::new("cmd");
         cmd.args(["/c", "start", start_url]);
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
         let _ = cmd.spawn();
     }
     #[cfg(not(windows))]

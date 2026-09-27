@@ -10,7 +10,7 @@ TARGET_LINE = 'if(c){let B=c.match(/^\\/([a-zA-Z][\\w-]*)\\s*(.*)/s),Q=B?B[1].to
 REPLACEMENT_CODE = """if(c){let B=c.match(/^\\/([a-zA-Z][\\w-]*)\\s*(.*)/s),Q=B?B[1].toLowerCase():"",P=B?B[2].trim():"";if(this._outputChannel.appendLine(`[SlashCmd] Detected /${Q} command. Args: "${P.slice(0,80)}"`),Q==="stats"||Q==="performance-stats"||Q==="cache-stats"||Q==="decision-stats"||Q==="novel-ai-stats"){
   try {
     let t=this._findCliBinary(), cp=require("child_process");
-    let raw=cp.execFileSync(t,["--stats"],{timeout:5e3,encoding:"utf8"});
+    let raw=cp.execFileSync(t,["--stats"],{timeout:5e3,encoding:"utf8",windowsHide:true});
     let clean=(raw||"").split("\\n").filter(l=>!l.startsWith("[")&&!l.includes("INFO ")).join("\\n").trim();
     a.report(new st(clean||raw.trim()));
     return;
@@ -25,7 +25,7 @@ REPLACEMENT_CODE = """if(c){let B=c.match(/^\\/([a-zA-Z][\\w-]*)\\s*(.*)/s),Q=B?
 if(Q==="sys-info"||Q==="sysinfo"){
   try {
     let t=this._findCliBinary(), cp=require("child_process");
-    let raw=cp.execFileSync(t,["--sys-info"],{timeout:5e3,encoding:"utf8"});
+    let raw=cp.execFileSync(t,["--sys-info"],{timeout:5e3,encoding:"utf8",windowsHide:true});
     let clean=(raw||"").split("\\n").filter(l=>!l.startsWith("[")&&!l.includes("INFO ")).join("\\n").trim();
     a.report(new st(`💻 **System Hardware Specifications**\\n\\n\`\`\`json\\n${clean}\\n\`\`\``));
     return;
@@ -41,7 +41,7 @@ if(Q==="tasks"){
   try {
     let t=this._findCliBinary(), cp=require("child_process");
     let args=P?["--tasks",P]:["--tasks"];
-    let raw=cp.execFileSync(t,args,{timeout:5e3,encoding:"utf8"});
+    let raw=cp.execFileSync(t,args,{timeout:5e3,encoding:"utf8",windowsHide:true});
     let clean=(raw||"").split("\\n").filter(l=>!l.startsWith("[")&&!l.includes("INFO ")).join("\\n").trim();
     a.report(new st(clean||"📋 Available tasks list retrieved."));
     return;

@@ -24,18 +24,26 @@ Write-Host "--------------------------------------------------------" -Foregroun
 Write-Host "[START] Starting HugOS Browser Signed MSI Packaging Process" -ForegroundColor Green
 Write-Host "--------------------------------------------------------" -ForegroundColor Green
 
+# 0. Terminate any background clibrowser or chrome processes to prevent file locks
+Stop-Process -Name clibrowser, chrome -Force -ErrorAction SilentlyContinue
+
 # 1. Verify binary staging
+$cliBrowserBinPath = Join-Path $browserDir "bin\clibrowser.exe"
 $cliBinPath = Join-Path $browserDir "bin\cli.exe"
-$srcCli = Join-Path $rootDir "target\release\cli.exe"
+$srcCli = Join-Path $rootDir "target\release\clibrowser.exe"
+if (-not (Test-Path $srcCli)) {
+    $srcCli = Join-Path $rootDir "target\release\cli.exe"
+}
 if (-not (Test-Path $srcCli)) {
     $srcCli = Join-Path $rootDir "IDE\bin\cli.exe"
 }
 if (Test-Path $srcCli) {
-    New-Item -ItemType Directory -Force -Path (Split-Path $cliBinPath -Parent) | Out-Null
+    New-Item -ItemType Directory -Force -Path (Split-Path $cliBrowserBinPath -Parent) | Out-Null
+    Copy-Item -Path $srcCli -Destination $cliBrowserBinPath -Force
     Copy-Item -Path $srcCli -Destination $cliBinPath -Force
-    Write-Host "[OK] Staged latest cli.exe from $srcCli into $cliBinPath" -ForegroundColor Green
+    Write-Host "[OK] Staged latest clibrowser.exe and cli.exe from $srcCli into browser\bin" -ForegroundColor Green
 } else {
-    Write-Host "[ERROR] cli.exe not found at $srcCli. Build release binary first." -ForegroundColor Red
+    Write-Host "[ERROR] clibrowser.exe / cli.exe not found at $srcCli. Build release binary first." -ForegroundColor Red
     Exit 1
 }
 

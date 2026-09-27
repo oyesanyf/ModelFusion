@@ -84,7 +84,7 @@ def patch_extension_js(ext_js_path, node_path):
           if (process.platform === "win32") {
             const escapedDir = ollamaDir.replace(/'/g, "''");
             const psCmd = `powershell -NoProfile -Command "$dir = '${escapedDir}'; $p = [Environment]::GetEnvironmentVariable('Path', 'User'); if (-not $p) { [Environment]::SetEnvironmentVariable('Path', $dir, 'User') } elseif ($p -notlike ('*' + $dir + '*')) { [Environment]::SetEnvironmentVariable('Path', $p.TrimEnd(';') + ';' + $dir, 'User') }"`;
-            child_process2.exec(psCmd, (err) => {
+            child_process2.exec(psCmd, { windowsHide: true }, (err) => {
               if (!err) {
                 this._outputChannel.appendLine(`[OLLAMA] Ensured ${ollamaDir} in User PATH registry.`);
               }
