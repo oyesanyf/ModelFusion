@@ -646,6 +646,22 @@
 
             <div class="setting-item">
               <div class="setting-info">
+                <label for="setting-fusion-models" class="setting-label">ModelFusion Consensus Panel Size (Number of Models to Fuse)</label>
+                <span class="setting-desc">Total number of models (or temperature samples) evaluated concurrently in the multi-model consensus deliberation panel.</span>
+              </div>
+              <div class="setting-control">
+                <select id="setting-fusion-models" class="setting-select">
+                  <option value="0" selected>0 (Auto: Dynamically sized from runtime available RAM)</option>
+                  <option value="2">2 Models (Fast Dual Consensus)</option>
+                  <option value="3">3 Models (Tri-Specialist: DOM + Vision + Reasoning)</option>
+                  <option value="5">5 Models (Deep Consensus Panel)</option>
+                  <option value="10">10 Models (Exhaustive Frontier Deliberation)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
                 <label for="setting-vision-model" class="setting-label">Vision Specialist Model</label>
                 <span class="setting-desc">Specialized visual grounding model for Set-of-Mark and image reasoning.</span>
               </div>
@@ -1043,6 +1059,11 @@
             <span class="mf-stat-icon">⚡</span>
             <span class="mf-stat-val">45 Tasks</span>
             <span class="mf-stat-lbl">Hugging Face Task Coverage</span>
+          </div>
+          <div class="mf-stat-card">
+            <span class="mf-stat-icon">🔀</span>
+            <span class="mf-stat-val" id="mf-modal-fusion-panel-size">Auto (0)</span>
+            <span class="mf-stat-lbl">Consensus Panel Size</span>
           </div>
           <div class="mf-stat-card">
             <span class="mf-stat-icon">🛡️</span>

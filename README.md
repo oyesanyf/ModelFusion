@@ -21,6 +21,8 @@
 ModelFusion is an open-weight compound intelligence system and autonomous operating system runtime designed to achieve frontier-class reasoning and technical capability at a fraction of the cost of commercial proprietary APIs. By combining retrieval-augmented generation (RAG), dynamic task-based model selection across 2M+ models, multi-model consensus deliberation, sub-50ms preemption ReST-RL, and structured synthesis, ModelFusion bridges the gap between local open-weights execution and closed frontier models.
 
 ### 📚 Documentation, Interactive Screens & Architecture Reports
+*   [**HugOS Browser AI Environment**](#-hugos-browser-dedicated-modelfusion-ai-web-environment) — Dedicated Chromium AI browsing environment with Set-of-Mark visual grounding, table extraction, and ChatGPT canvas fidelity.
+*   [**HugOS Browser Technical Manual**](browser/README.md) — Architecture, CDP protocol, Set-of-Mark token pruning, and extension configuration.
 *   [**Interactive Screens & UI Catalog**](docs/screens/README.md) — Standalone ChatGPT-style simulators, aligned Generative UI widgets, 5-theme switchers, and browser interfaces.
 *   [**Interactive Architecture & 170-Flag CLI Portal**](docs/screens/ModelFusion_Interactive_Docs.html) — Searchable database of all 170 Master CLI flags, hardware sizing simulator, and live telemetry.
 *   [**Architecture Reports & Plans**](docs/reports/README.md) — Browser test reports, settings specifications, and walkthrough guides.
@@ -707,6 +709,107 @@ cli.exe --acdso --file "data/marketing_campaign.csv" --decision --target convers
 
 ---
 
+## 🌐 HugOS Browser: Dedicated ModelFusion AI Web Environment
+
+HugOS Browser is a dedicated, autonomous Chromium-based AI operating environment engineered specifically for ModelFusion. Powered by the authoritative ModelFusion Master CLI (`cli.exe`), Chrome DevTools Protocol (CDP port 9222), and high-throughput semantic DOM pruning, HugOS Browser unifies interactive web navigation, Set-of-Mark visual grounding, automated dataset extraction into ACDSO, and pixel-perfect ChatGPT functional fidelity into a single zero-paid-models desktop runtime.
+
+```mermaid
+graph TD
+    A[User Prompt / URL / Slash Command] --> B[HugOS Browser Environment]
+    B --> C{Execution Mode}
+    
+    C -->|Interactive Chat| D[ChatGPT-Fidelity Side Panel UI]
+    C -->|Autonomous Navigation| E[CDP Engine: Port 9222]
+    C -->|Table / Data Extraction| F[RFC-4180 Table Extractor]
+    
+    D --> D1[Clean White / Dark Theme & Centered 768px Thread]
+    D --> D2[Canvas Document Cards .chatgpt-canvas-card]
+    D --> D3[5-Button Action Row: Copy, Share, TTS, Regenerate, More]
+    D --> D4[ModelFusion Multi-Modal System Panel: 6,438 Models / 45 Tasks]
+    
+    E --> E1[Set-of-Mark SoM Visual Grounding: [1], [2], [3]]
+    E --> E2[90% Token-Pruned Semantic DOM Filter]
+    E --> E3[Multimodal Consensus: Vision + DOM + Heavy Arbiter]
+    
+    F --> G[ACDSO 5-Objective Pareto AutoML Pipeline]
+```
+
+### 1. Autonomous Chromium AI Web Environment & CDP Architecture
+HugOS Browser is built directly around an isolated Chromium distribution (`browser/Chromium-win32-x64/`) and coordinates with the ModelFusion Master CLI over Chrome DevTools Protocol (CDP port 9222):
+- **Direct Async RFC-6455 WebSockets**: Provides sub-millisecond command dispatch for page navigation, element inspection, screenshot capturing, mouse events, and keystrokes.
+- **Bi-Directional AI Communication**: The dedicated Manifest V3 companion extension (`browser/extension/`) bridges browser runtime events with the ModelFusion HTTP API server on port 5000.
+- **Fail-Safe Non-Blocking Timeouts**: All CDP operations enforce strict 10-second safety timeouts with automatic reconnection, preventing process deadlocks during heavy multi-tab browsing.
+
+### 2. Set-of-Mark (SoM) Visual Grounding & Token-Pruned DOM
+Modern web pages frequently span megabytes of minified JavaScript, bloated SVG paths, CSS styles, and tracking beacons that exhaust LLM context windows and slow response times. HugOS Browser eliminates this overhead through two synergistic mechanisms:
+- **90% Token Reduction Semantic Pruner**: Strips scripts, styles, SVGs, noscripts, iframes, and comments, slashing typical token consumption by **85% to 95%** while preserving complete interactive fidelity.
+- **Set-of-Mark (SoM) Visual Grounding**: Actionable interactive targets (`<a>`, `<button>`, `<input>`, `<select>`, `<textarea>`, and click handlers) are tagged with discrete numeric badges (`[1]`, `[2]`, `[3]`). Vision models (`qwen2.5-vl`) and text models (`qwen2.5:32b/7b`) reference elements by number for error-free autonomous clicking and typing.
+
+### 3. Structured Table & Dataset Extraction directly into ACDSO
+HugOS Browser transforms the web into an instant data ingestion engine for machine learning:
+- **Zero-Loss Table Parsing**: Automatically extracts HTML `<table>` elements and modern dynamic grids (`role="grid"`, `role="table"`), converting them to RFC-4180 compliant CSV and structured JSON.
+- **Direct ACDSO Pipeline**: Triggered via `/acdso <URL>` or `--browser-extract <URL>`, tables are streamed directly into the 5-Objective Pareto AutoML engine to train predictive, time-series, or causal models on real-time web data without manual CSV export.
+
+### 4. ChatGPT Visual & Functional Fidelity
+HugOS Browser's AI side panel (`browser/ui/`) provides high-fidelity ergonomics modeled on frontier AI interfaces:
+- **Default Clean White Theme & Dark Variants**: Implements the signature ChatGPT aesthetic with clean `#FCFCFC` / `#FFFFFF` backgrounds, subtle `#E5E5E5` borders, and high-contrast typography, alongside dark theme options.
+- **Centered 768px Chat Thread**: Optimal reading width centered in the viewport with responsive auto-reflow.
+- **Full Markdown Rendering**: Clean typographic hierarchy for headings (`#`, `##`, `###`), bold emphasis, lists, tables, and fenced code blocks equipped with one-click copy buttons.
+- **Canvas Document Card (`.chatgpt-canvas-card`)**: Long-form outputs, essays, reports, and code blocks automatically wrap into elegant, rounded canvas containers displaying the document title in the top-left corner alongside `📋 Copy` and `⤢ Expand` buttons.
+- **5-Button Assistant Action Row**: Every assistant message provides a streamlined toolbar:
+  - 📋 **Copy**: Copies message contents or Markdown directly to the clipboard.
+  - ⬆️ **Share**: Exports or shares message exchanges.
+  - 🔊 **Read Aloud**: Native text-to-speech audio synthesis utilizing the Web Speech API.
+  - 🔄 **Regenerate**: Re-prompts the ModelFusion engine for alternative consensus drafts.
+  - ⋯ **More options**: Quick access to model details, token telemetry, and raw outputs.
+- **Sidebar Chat History**: Persistent multi-session history with instant switching, thread renaming, deletion, and "New chat" creation.
+- **Auto-Hiding Sleek 6px Scrollbars**: Completely eliminates thick operating system scrollbars and page-level double scrollbar bugs, providing a smooth, distraction-free view.
+
+### 5. ModelFusion Multi-Modal System Panel
+HugOS Browser provides instant introspection into local intelligence resources via its dedicated System Panel (accessible via "See models & hardware" or the header status pill):
+- **Live Catalog Statistics**: Live query against `IDE/db/hf_models.db`, displaying real-time metrics across **6,438 Production Workhorse Models across 45 Tasks**.
+- **Hardware Memory Allocation**: Displays live available free RAM (`res.free_ram_gb`), GPU VRAM (`res.free_vram_mb`), and the dynamically selected active Ollama model (e.g., `qwen2.5:32b`, `qwen2.5:14b`, or `qwen2.5:7b`).
+- **REST Status Endpoint**: Backed by the Master CLI's `/api/modelfusion/status` endpoint for zero-latency telemetry streaming.
+
+### 6. Live Internet Search & Intelligent Query Routing
+HugOS Browser combines local offline reasoning with real-time web awareness:
+- **Autonomous Query Routing (`/api/search`)**: When questions require recent information or external verification, queries are automatically routed to live web fetchers.
+- **Local Synthesis & Grounding**: Web search results are synthesized through local open-weights models, generating grounded Markdown responses with live link citations.
+
+### 7. Zero Paid Models Guarantee & 100% Privacy
+HugOS Browser requires **zero commercial API keys, zero paid cloud subscriptions, and zero external tracking**:
+- All reasoning is executed entirely on local hardware via Ollama or OpenVINO.
+- Browsing sessions, cookies, tabs, and private data remain strictly within your local environment.
+
+### 8. Concrete Executable Command Examples
+
+#### Standalone Master CLI Commands
+```powershell
+# Launch interactive HugOS Browser with AI side panel
+cli.exe --browser
+
+# Execute autonomous goal-directed web research directive
+cli.exe --browser-task "Extract recent research papers on multi-objective Pareto optimization"
+
+# Semantic dataset extraction from target URL directly into ACDSO
+cli.exe --browser-extract "https://en.wikipedia.org/wiki/List_of_countries_by_GDP_(nominal)"
+
+# Launch with custom Chromium remote debugging port
+cli.exe --browser --browser-port 9225
+
+# Direct launcher batch script
+.\browser\Chromium-win32-x64\hugos-browser.bat
+```
+
+#### Conversational Slash Commands in HugOS Chat
+```text
+/browser https://en.wikipedia.org/wiki/Comparison_of_deep_learning_software
+@agent browser extract tables from https://en.wikipedia.org/wiki/List_of_countries_by_GDP_(nominal)
+/acdso https://example.com/dataset.csv --target price --predict price
+```
+
+---
+
 ## 💻 CLI Reference & Capabilities (All 170 Flags)
 
 ModelFusion's Master CLI (`cli.exe`) is the single authoritative execution engine powering both standalone terminal workflows and the embedded HugOS IDE runtime. In accordance with ModelFusion's command architecture, **all 170 CLI flags function as direct executable capability directives** rather than passive configuration options.
@@ -723,7 +826,7 @@ ModelFusion's Master CLI (`cli.exe`) is the single authoritative execution engin
 | **3** | **SINQ Quantization Engine** | `#27 – #31` | 5 | Sub-4-bit integer non-linear weight quantization, bit-width (`--sinq-nbits`), grouping, tiling modes | `cli.exe --sinq --sinq-nbits 4 --prompt "..."` |
 | **4** | **Innovation & Cognitive Systems** | `#32 – #37` | 6 | Workflow optimization, semantic AST tracking, predictive reasoning, cognitive innovation levels | `cli.exe --enable-innovations --innovation-level 2` |
 | **5** | **HyDE Search & Web Retrieval** | `#38 – #46` | 9 | Hypothetical document embeddings, live web search agent (`--search`), autonomous deep research (`--research`) | `cli.exe --research "Latest GRPO RL advances"` |
-| **6** | **System & Orchestration Commands** | `#47 – #87` | 41 | Model Fusion deliberation (`--fusion`), Ollama/OpenVINO/ONNX/vLLM backends, `--update` vs `--updatedb`, ReST-RL | `cli.exe --active-model --db-path "IDE/db/hf_models.db"` |
+| **6** | **System & Orchestration Commands** | `#47 – #87` | 41 | Model Fusion deliberation (`--fusion`), Ollama/OpenVINO/ONNX/vLLM backends, `--update` vs `--updatedb`, ReST-RL, HugOS Browser (`--browser`, `--browser-task`) | `cli.exe --browser --browser-task "Research GRPO"` |
 | **7** | **Data Science & Tabular Workflows** | `#88 – #90` | 3 | Automated tabular profiling (`--dataanalyst`), full ML pipeline (`--datascience`), formatted PDF report export | `cli.exe --datascience --file "data.csv" --export-pdf` |
 | **8** | **Response Evaluation & Planning** | `#91 – #93` | 3 | Multi-metric response scoring (`--score`), LLM-as-a-Judge certification (`--judge`), strategic blueprints (`--plan`) | `cli.exe --judge --score --prompt "..."` |
 | **9** | **Binary & PE Executable Analysis** | `#94` | 1 | Windows PE executable header inspection, import/export symbol tables, digital Authenticode signatures | `cli.exe --pe-header-extraction --file "cli.exe"` |
