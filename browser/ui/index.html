@@ -895,6 +895,35 @@
               </div>
             </div>
 
+            <!-- Sound RL Adaptive Controller Telemetry Card -->
+            <div class="rl-telemetry-card" style="margin-top: 16px; padding: 14px 16px; background: rgba(139, 92, 246, 0.06); border: 1px solid rgba(139, 92, 246, 0.25); border-radius: 10px;">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 16px;">🧠</span>
+                  <strong style="font-size: 13px; color: var(--text-primary, #f1f5f9);">Sound RL Adaptive Controller</strong>
+                </div>
+                <span class="diag-pill" id="rl-regime-badge" style="color: #10b981; border-color: #10b981; font-size: 11px;">🟢 Online (Annealing)</span>
+              </div>
+              <div class="hw-stats-grid" style="grid-template-columns: repeat(2, 1fr); gap: 10px;">
+                <div class="hw-stat-item" style="padding: 8px 10px;">
+                  <span class="stat-label">Total Decisions</span>
+                  <span class="stat-value" id="rl-decisions-count" style="font-size: 15px;">0</span>
+                </div>
+                <div class="hw-stat-item" style="padding: 8px 10px;">
+                  <span class="stat-label">Exploration Rate c(t)</span>
+                  <span class="stat-value" id="rl-exploration-rate" style="font-size: 15px;">1.0000</span>
+                </div>
+                <div class="hw-stat-item" style="padding: 8px 10px;">
+                  <span class="stat-label">Direct Advantage Ratio</span>
+                  <span class="stat-value" id="rl-advantage-ratio" style="font-size: 13px;">RL > Raw: 0% | RL == Raw: 0%</span>
+                </div>
+                <div class="hw-stat-item" style="padding: 8px 10px;">
+                  <span class="stat-label">Temporal Gain</span>
+                  <span class="stat-value" id="rl-temporal-gain" style="font-size: 13px; color: #10b981;">⚪ Calibrating</span>
+                </div>
+              </div>
+            </div>
+
             <div class="setting-item" style="margin-top: 16px;">
               <div class="setting-info">
                 <label class="setting-label">Hardware Dynamic Sizing Policy</label>

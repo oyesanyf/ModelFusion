@@ -1653,6 +1653,15 @@ document.addEventListener('DOMContentLoaded', () => {
       if (res.ok) {
         const data = await res.json();
         updateModelFusionUI(data);
+      }
+    } catch (e) {}
+
+    // Fetch Sound RL Adaptive Controller Telemetry
+    try {
+      const rlRes = await fetch(`${ipcUrl}/api/rl/status`, { method: 'GET' });
+      if (rlRes.ok) {
+        const rlData = await rlRes.json();
+        updateRLTelemetryUI(rlData);
         return;
       }
     } catch (e) {}
@@ -1671,6 +1680,54 @@ document.addEventListener('DOMContentLoaded', () => {
         has_gpu: true
       }
     });
+  }
+
+  function updateRLTelemetryUI(data) {
+    if (!data) return;
+    const badge = document.getElementById('rl-regime-badge');
+    const decisions = document.getElementById('rl-decisions-count');
+    const exploration = document.getElementById('rl-exploration-rate');
+    const advantage = document.getElementById('rl-advantage-ratio');
+    const temporal = document.getElementById('rl-temporal-gain');
+
+    if (badge) {
+      if (data.regime === 'FrozenTest') {
+        badge.textContent = '❄️ Frozen Test';
+        badge.style.color = '#38bdf8';
+        badge.style.borderColor = '#38bdf8';
+      } else {
+        badge.textContent = '🟢 Online (Annealing)';
+        badge.style.color = '#10b981';
+        badge.style.borderColor = '#10b981';
+      }
+    }
+    if (decisions) {
+      decisions.textContent = `${data.decisions_count || 0}`;
+    }
+    if (exploration) {
+      const rate = typeof data.exploration_rate === 'number' ? data.exploration_rate.toFixed(4) : '1.0000';
+      exploration.textContent = rate;
+    }
+    if (advantage && data.advantage) {
+      const win = typeof data.advantage.win_rate_percent === 'number' ? data.advantage.win_rate_percent.toFixed(0) : '0';
+      const eq = data.advantage.rl_equal_to_raw || 0;
+      const total = (data.advantage.rl_greater_than_raw || 0) + eq + (data.advantage.rl_less_than_raw || 0);
+      const eqPct = total > 0 ? ((eq / total) * 100).toFixed(0) : '0';
+      advantage.textContent = `RL > Raw: ${win}% | RL == Raw: ${eqPct}%`;
+    }
+    if (temporal) {
+      if (data.temporal_improvement) {
+        const diff = (data.r_late - data.r_early).toFixed(3);
+        temporal.textContent = `🟢 Gain (+${diff})`;
+        temporal.style.color = '#10b981';
+      } else if (data.decisions_count > 0) {
+        temporal.textContent = '⚪ Steady / Warmup';
+        temporal.style.color = '#94a3b8';
+      } else {
+        temporal.textContent = '⚪ Calibrating';
+        temporal.style.color = '#94a3b8';
+      }
+    }
   }
 
   function updateModelFusionUI(data) {
