@@ -1,9 +1,10 @@
-$src = "D:\harfile\ModelFusion\target\release\cli.exe"
+$rootDir = Split-Path -Parent $PSScriptRoot
+$src = Join-Path $rootDir "target\release\cli.exe"
 $targets = @(
-    "D:\harfile\ModelFusion\IDE\bin\cli.exe",
-    "D:\harfile\ModelFusion\IDE\VSCode-win32-x64\bin\cli.exe",
+    (Join-Path $rootDir "IDE\bin\cli.exe"),
+    (Join-Path $rootDir "IDE\VSCode-win32-x64\bin\cli.exe"),
     "$env:LOCALAPPDATA\HugOS IDE\bin\cli.exe",
-    "D:\harfile\ModelFusion\browser\bin\cli.exe",
+    (Join-Path $rootDir "browser\bin\cli.exe"),
     "$env:LOCALAPPDATA\HugOS Browser\bin\cli.exe"
 )
 

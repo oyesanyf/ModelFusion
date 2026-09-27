@@ -81,7 +81,7 @@ def get_or_create_release(tag_name, release_name, token):
             data = {
                 "tag_name": tag_name,
                 "name": release_name,
-                "body": f"Automated Release {release_name}\n\nAssets:\n- HugOS.msi (Digitally Signed Installer)\n- cli.exe (ModelFusion CLI binary)",
+                "body": f"Automated Release {release_name}\n\nAssets:\n- cli.exe (ModelFusion Master CLI - 100% Self-Contained Static CRT)\n- HugOS.msi (HugOS IDE - Digitally Signed Installer)\n- HugOS_Browser.msi (HugOS Browser - Digitally Signed Installer)",
                 "draft": False,
                 "prerelease": True
             }
@@ -157,10 +157,15 @@ def main():
     if not os.path.isfile(cli_path):
         print(f"[ERROR] CLI not found at: {cli_path}")
         sys.exit(1)
+    if not os.path.isfile(browser_msi_path):
+        print(f"[ERROR] Browser MSI not found at: {browser_msi_path}")
+        sys.exit(1)
 
-    artifacts = [(cli_path, "cli.exe"), (msi_path, "HugOS.msi")]
-    if os.path.isfile(browser_msi_path):
-        artifacts.append((browser_msi_path, "HugOS_Browser.msi"))
+    artifacts = [
+        (cli_path, "cli.exe"),
+        (msi_path, "HugOS.msi"),
+        (browser_msi_path, "HugOS_Browser.msi"),
+    ]
 
     print("==========================================")
     print(f"Local Release Artifacts (Build {build_number}):")
