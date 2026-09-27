@@ -248,7 +248,9 @@ foreach ($vDir in $versionedDirs) {
 # 4.5 Copy Pre-populated HF Models Database (hf_models.db) into the packaged folder
 $candidateDbs = @(
     (Join-Path $PSScriptRoot "db\hf_models.db"),
-    (Join-Path (Split-Path $PSScriptRoot -Parent) "db\hf_models.db")
+    (Join-Path (Split-Path $PSScriptRoot -Parent) "db\hf_models.db"),
+    "$env:LOCALAPPDATA\HugOS IDE\db\hf_models.db",
+    "$env:LOCALAPPDATA\ModelFusion\db\hf_models.db"
 )
 $dbSrcPath = $candidateDbs | Where-Object { (Test-Path $_) -and (Get-Item $_).Length -gt 50000 } | Select-Object -First 1
 if (-not $dbSrcPath) {
@@ -263,6 +265,14 @@ if (Test-Path $dbSrcPath) {
     Write-Host "[INFO] Copying pre-populated models database to installer package ($dbSrcPath)..." -ForegroundColor Yellow
     Copy-Item -Path $dbSrcPath -Destination $dbDestPath -Force
     Write-Host "[OK] Copied ModelFusion Database to: $dbDestPath ($( (Get-Item $dbDestPath).Length ) bytes)" -ForegroundColor Green
+
+    $binDbDestDir = Join-Path $vsCodePackDir "bin\db"
+    if (-not (Test-Path $binDbDestDir)) {
+        New-Item -ItemType Directory -Force -Path $binDbDestDir | Out-Null
+    }
+    $binDbDestPath = Join-Path $binDbDestDir "hf_models.db"
+    Copy-Item -Path $dbSrcPath -Destination $binDbDestPath -Force
+    Write-Host "[OK] Copied ModelFusion Database to: $binDbDestPath ($( (Get-Item $binDbDestPath).Length ) bytes)" -ForegroundColor Green
 } else {
     Write-Host "[WARNING] Pre-populated database not found at $dbSrcPath. Packaging without pre-populated DB." -ForegroundColor Yellow
 }

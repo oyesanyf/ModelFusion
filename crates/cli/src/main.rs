@@ -434,6 +434,10 @@ fn select_context_window_for_model(model: &str) -> u32 {
     }
 }
 
+pub fn is_populated_db(p: &std::path::Path) -> bool {
+    p.is_file() && std::fs::metadata(p).map(|m| m.len() > 50_000).unwrap_or(false)
+}
+
 pub fn resolve_db_path(db_path_opt: Option<&str>) -> std::path::PathBuf {
     if let Some(p) = db_path_opt {
         let path = std::path::Path::new(p);
@@ -444,47 +448,143 @@ pub fn resolve_db_path(db_path_opt: Option<&str>) -> std::path::PathBuf {
         }
         return path.to_path_buf();
     }
-    let candidates = [
-        "IDE/db/hf_models.db",
-        "db/hf_models.db",
-        "../IDE/db/hf_models.db",
-    ];
-    for c in &candidates {
-        let p = std::path::Path::new(c);
-        if p.exists() {
-            return p.to_path_buf();
-        }
-    }
+
+    // 1. Gather all candidate paths to search for an already populated database (>50KB)
+    let mut search_candidates: Vec<std::path::PathBuf> = Vec::new();
+
+    // Dev & relative paths
+    search_candidates.push(std::path::PathBuf::from("IDE/db/hf_models.db"));
+    search_candidates.push(std::path::PathBuf::from("db/hf_models.db"));
+    search_candidates.push(std::path::PathBuf::from("../IDE/db/hf_models.db"));
+
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
-            let p1 = parent.join("db").join("hf_models.db");
-            if p1.exists() { return p1; }
-            let p0 = parent.join("hf_models.db");
-            if p0.exists() { return p0; }
+            search_candidates.push(parent.join("db").join("hf_models.db"));
+            search_candidates.push(parent.join("hf_models.db"));
             if let Some(grandparent) = parent.parent() {
-                let p2 = grandparent.join("db").join("hf_models.db");
-                if p2.exists() { return p2; }
-                let p3 = grandparent.join("IDE").join("db").join("hf_models.db");
-                if p3.exists() { return p3; }
+                search_candidates.push(grandparent.join("db").join("hf_models.db"));
+                search_candidates.push(grandparent.join("IDE").join("db").join("hf_models.db"));
             }
         }
     }
-    // Check LOCALAPPDATA standard paths
+
     if let Ok(local_app) = std::env::var("LOCALAPPDATA") {
         let base = std::path::PathBuf::from(local_app);
-        let p_ide = base.join("HugOS IDE").join("db").join("hf_models.db");
-        if p_ide.exists() { return p_ide; }
-        let p_browser = base.join("HugOS Browser").join("db").join("hf_models.db");
-        if p_browser.exists() { return p_browser; }
-        let p_mf = base.join("ModelFusion").join("db").join("hf_models.db");
-        if p_mf.exists() { return p_mf; }
-        // Fallback default: %LOCALAPPDATA%\ModelFusion\db\hf_models.db
-        if let Some(parent) = p_mf.parent() {
+        search_candidates.push(base.join("HugOS IDE").join("db").join("hf_models.db"));
+        search_candidates.push(base.join("HugOS IDE").join("bin").join("db").join("hf_models.db"));
+        search_candidates.push(base.join("HugOS Browser").join("db").join("hf_models.db"));
+        search_candidates.push(base.join("HugOS Browser").join("bin").join("db").join("hf_models.db"));
+        search_candidates.push(base.join("ModelFusion").join("db").join("hf_models.db"));
+    }
+
+    search_candidates.push(std::path::PathBuf::from(r"d:\harfile\ModelFusion\IDE\db\hf_models.db"));
+    search_candidates.push(std::path::PathBuf::from(r"C:\harfile\db\hf_models.db"));
+
+    // Find the best populated database from known sources
+    let best_populated = search_candidates.iter().find(|p| is_populated_db(p)).cloned();
+
+    // 2. Determine exe_dir of the running binary (std::env::current_exe())
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let is_bin = exe_dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s.eq_ignore_ascii_case("bin"))
+                .unwrap_or(false);
+
+            let (target, target_bin) = if is_bin {
+                (
+                    exe_dir.parent().unwrap_or(exe_dir).join("db").join("hf_models.db"),
+                    Some(exe_dir.join("db").join("hf_models.db")),
+                )
+            } else {
+                (
+                    exe_dir.join("db").join("hf_models.db"),
+                    None,
+                )
+            };
+
+            // If target is already populated, return target (and ensure target_bin is synced if present)
+            if is_populated_db(&target) {
+                if let Some(ref tb) = target_bin {
+                    if !is_populated_db(tb) {
+                        if let Some(p) = tb.parent() {
+                            let _ = std::fs::create_dir_all(p);
+                        }
+                        let _ = std::fs::copy(&target, tb);
+                    }
+                }
+                return target;
+            }
+
+            // 4. If target does NOT exist or is not populated (<50KB), and a populated source was found:
+            if let Some(ref source) = best_populated {
+                if let Some(p) = target.parent() {
+                    let _ = std::fs::create_dir_all(p);
+                }
+                if source != &target {
+                    if let Ok(_) = std::fs::copy(source, &target) {
+                        eprintln!("[DATABASE] 📦 Automatically provisioned model catalog to installation folder: {}", target.display());
+                    }
+                }
+
+                if let Some(ref tb) = target_bin {
+                    if !is_populated_db(tb) && source != tb {
+                        if let Some(p) = tb.parent() {
+                            let _ = std::fs::create_dir_all(p);
+                        }
+                        let _ = std::fs::copy(source, tb);
+                    }
+                }
+
+                if let Ok(cwd) = std::env::current_dir() {
+                    let cwd_db = cwd.join("db").join("hf_models.db");
+                    let has_db_folder = cwd.join("db").is_dir()
+                        || cwd.to_string_lossy().to_ascii_lowercase().contains("harfile");
+                    if has_db_folder && !is_populated_db(&cwd_db) && source != &cwd_db {
+                        if let Some(p) = cwd_db.parent() {
+                            let _ = std::fs::create_dir_all(p);
+                        }
+                        let _ = std::fs::copy(source, &cwd_db);
+                    }
+                }
+
+                let c_harfile = std::path::Path::new(r"C:\harfile");
+                if c_harfile.exists() {
+                    let c_db = c_harfile.join("db").join("hf_models.db");
+                    if !is_populated_db(&c_db) && source != &c_db {
+                        if let Some(p) = c_db.parent() {
+                            let _ = std::fs::create_dir_all(p);
+                        }
+                        let _ = std::fs::copy(source, &c_db);
+                    }
+                }
+
+                return target;
+            }
+        }
+    }
+
+    if let Some(source) = best_populated {
+        return source;
+    }
+
+    // 4. Pass 2 (Fallback existing): If none are populated, return the first path that exists
+    for path in &search_candidates {
+        if path.exists() {
+            return path.clone();
+        }
+    }
+
+    // 5. Pass 3 (Default create): Default to %LOCALAPPDATA%\ModelFusion\db\hf_models.db
+    if let Ok(local_app) = std::env::var("LOCALAPPDATA") {
+        let default_target = std::path::PathBuf::from(local_app).join("ModelFusion").join("db").join("hf_models.db");
+        if let Some(parent) = default_target.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        return p_mf;
+        return default_target;
     }
-    // Fallback relative path, ensuring parent dir exists
+
     let fallback = std::path::PathBuf::from("IDE/db/hf_models.db");
     if let Some(parent) = fallback.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -1521,6 +1621,9 @@ struct Args {
     #[arg(long, help = "Run an instruction on a recurring schedule or as a one-time timer")]
     schedule: Option<String>,
 
+    #[arg(long, help = "Launch HugOS IDE")]
+    ide: bool,
+
     #[arg(long, help = "Launch interactive HugOS Browser with ModelFusion AI sidebar")]
     browser: bool,
 
@@ -1808,9 +1911,199 @@ struct Args {
     force: bool,
 }
 
+pub fn preprocess_cli_args<I, T>(raw_args: I) -> Vec<String>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<String>,
+{
+    let mut args: Vec<String> = raw_args.into_iter().map(Into::into).collect();
+    if args.len() <= 1 {
+        return args;
+    }
+
+    let verb = args[1].to_lowercase();
+    if verb.starts_with('-') {
+        return args;
+    }
+
+    match verb.as_str() {
+        "browser" => {
+            args[1] = "--browser".to_string();
+        }
+        "browser-task" => {
+            args[1] = "--browser-task".to_string();
+        }
+        "browser-extract" => {
+            args[1] = "--browser-extract".to_string();
+        }
+        "ide" => {
+            args[1] = "--ide".to_string();
+        }
+        "update" => {
+            args[1] = "--update".to_string();
+        }
+        "updatedb" => {
+            args[1] = "--updatedb".to_string();
+        }
+        "sys-info" | "sysinfo" => {
+            args[1] = "--sys-info".to_string();
+        }
+        "active-models" | "active-model" => {
+            args[1] = "--active-model".to_string();
+        }
+        "server" => {
+            args[1] = "--server".to_string();
+        }
+        "mcp" => {
+            args[1] = "--mcp".to_string();
+        }
+        "ensure-ollama" => {
+            args[1] = "--ensure-ollama".to_string();
+        }
+        "acdso" => {
+            args[1] = "--acdso".to_string();
+            if args.len() > 2 && !args[2].starts_with('-') {
+                args.insert(2, "--file".to_string());
+            }
+        }
+        "datascience" => {
+            args[1] = "--datascience".to_string();
+            if args.len() > 2 && !args[2].starts_with('-') {
+                args.insert(2, "--file".to_string());
+            }
+        }
+        "dataanalyst" | "data-analyst" => {
+            args[1] = "--dataanalyst".to_string();
+            if args.len() > 2 && !args[2].starts_with('-') {
+                args.insert(2, "--file".to_string());
+            }
+        }
+        "predict" => {
+            args[1] = "--predict".to_string();
+        }
+        "timeseries" => {
+            args[1] = "--timeseries".to_string();
+        }
+        "causal" | "decision" => {
+            args[1] = "--decision".to_string();
+        }
+        "graph-index" => {
+            args[1] = "--graph-index".to_string();
+        }
+        "graph-query" => {
+            args[1] = "--graph-query".to_string();
+        }
+        "rl" | "restrl" | "rest-rl" => {
+            args[1] = "--rl".to_string();
+        }
+        _ => {}
+    }
+
+    args
+}
+
+pub fn find_hugos_ide_exe() -> Option<std::path::PathBuf> {
+    if let Ok(local_app) = std::env::var("LOCALAPPDATA") {
+        let base = std::path::PathBuf::from(local_app);
+        let p1 = base.join("Programs").join("HugOS IDE").join("HugOS.exe");
+        if p1.is_file() {
+            return Some(p1);
+        }
+        let p2 = base.join("HugOS IDE").join("HugOS.exe");
+        if p2.is_file() {
+            return Some(p2);
+        }
+    }
+
+    let candidates = [
+        "IDE/VSCode-win32-x64/HugOS.exe",
+        "IDE/VSCode-win32-x64/Code.exe",
+        "VSCode-win32-x64/HugOS.exe",
+        "VSCode-win32-x64/Code.exe",
+        "d:/harfile/ModelFusion/IDE/VSCode-win32-x64/HugOS.exe",
+        "d:/harfile/ModelFusion/IDE/VSCode-win32-x64/Code.exe",
+    ];
+    for c in &candidates {
+        let p = std::path::PathBuf::from(c);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let p_exe1 = parent.join("HugOS.exe");
+            if p_exe1.is_file() {
+                return Some(p_exe1);
+            }
+            let p_exe2 = parent.join("Code.exe");
+            if p_exe2.is_file() {
+                return Some(p_exe2);
+            }
+            if let Some(grandparent) = parent.parent() {
+                let p_g1 = grandparent.join("HugOS.exe");
+                if p_g1.is_file() {
+                    return Some(p_g1);
+                }
+                let p_g2 = grandparent.join("Code.exe");
+                if p_g2.is_file() {
+                    return Some(p_g2);
+                }
+                let p_g3 = grandparent.join("VSCode-win32-x64").join("HugOS.exe");
+                if p_g3.is_file() {
+                    return Some(p_g3);
+                }
+                let p_g4 = grandparent.join("VSCode-win32-x64").join("Code.exe");
+                if p_g4.is_file() {
+                    return Some(p_g4);
+                }
+            }
+        }
+    }
+
+    None
+}
+
 fn main() -> Result<()> {
     // Parse arguments on the main thread first, before starting runtime or semaphore
-    let args = Args::parse();
+    let raw_args: Vec<String> = std::env::args().collect();
+    let preprocessed = preprocess_cli_args(raw_args);
+    let args = Args::parse_from(preprocessed);
+
+    if args.ide {
+        if let Some(ide_exe) = find_hugos_ide_exe() {
+            println!("💻 [IDE] Launching HugOS IDE from: {}", ide_exe.display());
+            let mut cmd = std::process::Command::new(&ide_exe);
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                // DETACHED_PROCESS = 0x00000008
+                cmd.creation_flags(0x00000008);
+            }
+            if let Some(ref folder) = args.folder {
+                cmd.arg(folder);
+            } else if let Some(ref file) = args.file {
+                cmd.arg(file);
+            } else if let Some(ref q) = args.query {
+                cmd.arg(q);
+            }
+            match cmd.spawn() {
+                Ok(_) => {
+                    println!("🚀 [IDE] HugOS IDE instance started.");
+                    return Ok(());
+                }
+                Err(e) => {
+                    eprintln!("❌ Failed to launch HugOS IDE: {}", e);
+                    return Err(e.into());
+                }
+            }
+        } else {
+            eprintln!("❌ [IDE] HugOS IDE executable not found.");
+            eprintln!("   Please install HugOS IDE from: https://github.com/oyesanyf/ModelFusion/releases");
+            eprintln!("   Or run the installer: powershell -ExecutionPolicy Bypass -File .\\IDE\\build_msi.ps1");
+            return Ok(());
+        }
+    }
 
     if args.sys_info {
         let sys_mem = model_selection::memory::SystemMemory::detect();
@@ -2038,7 +2331,7 @@ async fn run(args: Args) -> Result<()> {
     // Load .env variables
     dotenv::dotenv().ok();
 
-    let args = Box::new(args);
+    let mut args = Box::new(args);
 
     if args.sys_info {
         let sys_mem = model_selection::memory::SystemMemory::detect();
@@ -2575,7 +2868,12 @@ async fn run(args: Args) -> Result<()> {
     // ---------------------------------------------------------
     // HugOS Browser Execution Flow
     // ---------------------------------------------------------
-    if args.browser || args.browser_task.is_some() || args.browser_extract.is_some() {
+    let is_browser_requested = args.browser || args.query.as_deref().map(|q| q.trim() == "browser").unwrap_or(false);
+    if is_browser_requested || args.browser_task.is_some() || args.browser_extract.is_some() {
+        if args.query.as_deref().map(|q| q.trim() == "browser").unwrap_or(false) {
+            args.query = None;
+        }
+        args.browser = true;
         let port = args.browser_port;
         let mut suite = modelfusion_core::browser::BrowserToolSuite::new(port);
 
@@ -5814,7 +6112,6 @@ async fn query_local_router(system_prompt: &str, user_prompt: &str) -> Option<St
     // 2. Second attempt/Fallback: Use local python script (cpu/transformers)
     let script_path = "src/scripts/run_model_transformers.py";
     if !std::path::Path::new(script_path).exists() {
-        eprintln!("⚠️ [LOCAL ROUTER] Script not found at: {}", script_path);
         return None;
     }
     
@@ -14325,6 +14622,117 @@ public class Pr {
         if let Some(p) = py {
             assert!(p.is_file(), "Resolved python command must be an existing file");
         }
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_browser() {
+        use super::preprocess_cli_args;
+        let res = preprocess_cli_args(["cli", "browser"]);
+        assert_eq!(res, vec!["cli".to_string(), "--browser".to_string()]);
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_browser_with_url() {
+        use super::preprocess_cli_args;
+        let res = preprocess_cli_args(["cli", "browser", "https://example.com"]);
+        assert_eq!(res, vec!["cli".to_string(), "--browser".to_string(), "https://example.com".to_string()]);
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_ide() {
+        use super::preprocess_cli_args;
+        let res = preprocess_cli_args(["cli", "ide"]);
+        assert_eq!(res, vec!["cli".to_string(), "--ide".to_string()]);
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_update() {
+        use super::preprocess_cli_args;
+        let res = preprocess_cli_args(["cli", "update"]);
+        assert_eq!(res, vec!["cli".to_string(), "--update".to_string()]);
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_updatedb() {
+        use super::preprocess_cli_args;
+        let res = preprocess_cli_args(["cli", "updatedb"]);
+        assert_eq!(res, vec!["cli".to_string(), "--updatedb".to_string()]);
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_sysinfo() {
+        use super::preprocess_cli_args;
+        let res = preprocess_cli_args(["cli", "sys-info"]);
+        assert_eq!(res, vec!["cli".to_string(), "--sys-info".to_string()]);
+
+        let res2 = preprocess_cli_args(["cli", "sysinfo"]);
+        assert_eq!(res2, vec!["cli".to_string(), "--sys-info".to_string()]);
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_acdso() {
+        use super::preprocess_cli_args;
+        let res = preprocess_cli_args(["cli", "acdso", "test.csv"]);
+        assert_eq!(res, vec!["cli".to_string(), "--acdso".to_string(), "--file".to_string(), "test.csv".to_string()]);
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_flags_unchanged() {
+        use super::preprocess_cli_args;
+        let res = preprocess_cli_args(["cli", "--browser"]);
+        assert_eq!(res, vec!["cli".to_string(), "--browser".to_string()]);
+
+        let res_sys = preprocess_cli_args(["cli", "--sys-info"]);
+        assert_eq!(res_sys, vec!["cli".to_string(), "--sys-info".to_string()]);
+    }
+
+    #[test]
+    fn test_is_populated_db_guard() {
+        use super::is_populated_db;
+        let temp_dir = std::env::temp_dir().join("mf_populated_db_test");
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        // Empty stub file (0 bytes) -> false
+        let stub_db = temp_dir.join("stub.db");
+        let _ = std::fs::write(&stub_db, b"");
+        assert!(!is_populated_db(&stub_db), "0-byte file must not be considered populated");
+
+        // Small stub file (1KB) -> false (< 50,000 bytes)
+        let small_db = temp_dir.join("small.db");
+        let _ = std::fs::write(&small_db, vec![0u8; 1024]);
+        assert!(!is_populated_db(&small_db), "1KB file must not be considered populated");
+
+        // Populated file (> 50,000 bytes) -> true
+        let populated_db = temp_dir.join("populated.db");
+        let _ = std::fs::write(&populated_db, vec![0u8; 60_000]);
+        assert!(is_populated_db(&populated_db), ">50KB file must be considered populated");
+
+        let _ = std::fs::remove_file(&stub_db);
+        let _ = std::fs::remove_file(&small_db);
+        let _ = std::fs::remove_file(&populated_db);
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_auto_sync_database_to_installation_folder() {
+        use super::{is_populated_db, resolve_db_path};
+        let temp_dir = std::env::temp_dir().join("mf_auto_sync_test");
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        let populated_source = temp_dir.join("source.db");
+        let _ = std::fs::write(&populated_source, vec![0u8; 60_000]);
+        assert!(is_populated_db(&populated_source));
+
+        let dest_db = temp_dir.join("install").join("db").join("hf_models.db");
+        assert!(!dest_db.exists());
+
+        // Test explicit resolution path copies or creates parent
+        let resolved = resolve_db_path(Some(dest_db.to_str().unwrap()));
+        assert_eq!(resolved, dest_db);
+        assert!(dest_db.parent().unwrap().exists());
+
+        let _ = std::fs::remove_file(&populated_source);
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
 

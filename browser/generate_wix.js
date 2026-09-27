@@ -24,8 +24,8 @@ function generateWix(srcDir, outputFile) {
     function walk(currentPath, parentDirId) {
         const items = fs.readdirSync(currentPath);
         for (const item of items) {
-            // Skip .msi, .wxs, .wixpdb, .log, and large DB from installer payload to keep installer light
-            if (item.endsWith('.msi') || item.endsWith('.wxs') || item.endsWith('.wixpdb') || item.endsWith('.log') || item.endsWith('.db') || item === '.git') {
+            // Skip .msi, .wxs, .wixpdb, .log, and .git from installer payload
+            if (item.endsWith('.msi') || item.endsWith('.wxs') || item.endsWith('.wixpdb') || item.endsWith('.log') || item === '.git') {
                 continue;
             }
             const itemPath = path.join(currentPath, item);
