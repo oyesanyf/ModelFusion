@@ -18,14 +18,22 @@ if not exist "%DEFAULT_HOME%" (
 )
 for %%i in ("%DEFAULT_HOME%") do set "HOME_FILE_PATH=%%~fi"
 
-REM 0. Discover ModelFusion Master CLI Binary
+REM 0. Discover ModelFusion Master CLI Binary (Browser Dedicated clibrowser.exe or cli.exe)
 set CLI_BIN=
-if exist "%SCRIPT_DIR%..\bin\cli.exe" (
+if exist "%SCRIPT_DIR%..\bin\clibrowser.exe" (
+    set "CLI_BIN=%SCRIPT_DIR%..\bin\clibrowser.exe"
+) else if exist "%LOCALAPPDATA%\HugOS Browser\bin\clibrowser.exe" (
+    set "CLI_BIN=%LOCALAPPDATA%\HugOS Browser\bin\clibrowser.exe"
+) else if exist "%SCRIPT_DIR%..\bin\cli.exe" (
     set "CLI_BIN=%SCRIPT_DIR%..\bin\cli.exe"
+) else if exist "%SCRIPT_DIR%..\..\target\release\clibrowser.exe" (
+    set "CLI_BIN=%SCRIPT_DIR%..\..\target\release\clibrowser.exe"
 ) else if exist "%SCRIPT_DIR%..\..\target\release\cli.exe" (
     set "CLI_BIN=%SCRIPT_DIR%..\..\target\release\cli.exe"
 ) else if exist "%LOCALAPPDATA%\HugOS Browser\bin\cli.exe" (
     set "CLI_BIN=%LOCALAPPDATA%\HugOS Browser\bin\cli.exe"
+) else if exist "%LOCALAPPDATA%\HugOS IDE\bin\cliide.exe" (
+    set "CLI_BIN=%LOCALAPPDATA%\HugOS IDE\bin\cliide.exe"
 ) else if exist "%LOCALAPPDATA%\HugOS IDE\bin\cli.exe" (
     set "CLI_BIN=%LOCALAPPDATA%\HugOS IDE\bin\cli.exe"
 )
@@ -36,14 +44,14 @@ curl -s -o nul --max-time 2 http://127.0.0.1:11434/api/tags
 if errorlevel 1 (
     echo [INFO] Ollama engine not responding. Auto-starting Ollama...
     if not "%CLI_BIN%"=="" (
-        "%CLI_BIN%" --ensure-ollama
+        wscript.exe //B //nologo "%SCRIPT_DIR%run_hidden.vbs" "%CLI_BIN%" "--ensure-ollama"
     ) else (
         where ollama >nul 2>&1
         if errorlevel 1 (
             echo [INFO] Ollama is not installed. Installing silently in background...
-            powershell -NoProfile -Command "Invoke-WebRequest -Uri 'https://ollama.com/download/OllamaSetup.exe' -OutFile '$env:TEMP\OllamaSetup.exe'; Start-Process -FilePath '$env:TEMP\OllamaSetup.exe' -ArgumentList '/SILENT', '/NORESTART' -Wait"
+            wscript.exe //B //nologo "%SCRIPT_DIR%run_hidden.vbs" "powershell" "-NoProfile" "-ExecutionPolicy" "Bypass" "-Command" "Invoke-WebRequest -Uri 'https://ollama.com/download/OllamaSetup.exe' -OutFile '$env:TEMP\OllamaSetup.exe'; Start-Process -FilePath '$env:TEMP\OllamaSetup.exe' -ArgumentList '/SILENT', '/NORESTART' -Wait"
         )
-        start /B "" "ollama" serve
+        wscript.exe //B //nologo "%SCRIPT_DIR%run_hidden.vbs" "ollama" "serve"
     )
 )
 
@@ -52,7 +60,7 @@ curl -s -o nul --max-time 2 http://127.0.0.1:5000/health
 if errorlevel 1 (
     echo [INFO] ModelFusion Master Server offline on port 5000. Auto-starting server...
     if not "%CLI_BIN%"=="" (
-        powershell -WindowStyle Hidden -Command "Start-Process '%CLI_BIN%' -ArgumentList '--server', '--port', '5000' -WindowStyle Hidden"
+        wscript.exe //B //nologo "%SCRIPT_DIR%run_hidden.vbs" "%CLI_BIN%" "--server" "--port" "5000"
         for /L %%i in (1,1,10) do (
             curl -s -o nul --max-time 1 http://127.0.0.1:5000/health
             if not errorlevel 1 goto :server_ready

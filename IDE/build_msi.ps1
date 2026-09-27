@@ -25,6 +25,9 @@ Write-Host "--------------------------------------------------------" -Foregroun
 Write-Host "[START] Starting HugOS IDE Signed MSI Packaging Process" -ForegroundColor Green
 Write-Host "--------------------------------------------------------" -ForegroundColor Green
 
+# 0. Terminate any background HugOS or cliide processes to prevent locked file errors
+Stop-Process -Name HugOS, cliide -Force -ErrorAction SilentlyContinue
+
 # 1. Verify VSCode-win32-x64 directory exists
 if (-not (Test-Path $vsCodePackDir)) {
     Write-Host "[ERROR] Packaged directory not found at: $vsCodePackDir" -ForegroundColor Red
@@ -96,10 +99,13 @@ function Sign-FileWithCert {
     }
 }
 
-# 4. Copy ModelFusion CLI (cli.exe) into the packaged folder
-$cliSrcPath = Join-Path (Split-Path $PSScriptRoot -Parent) "target\release\cli.exe"
+# 4. Copy ModelFusion CLI (cliide.exe and cli.exe) into the packaged folder
+$cliSrcPath = Join-Path (Split-Path $PSScriptRoot -Parent) "target\release\cliide.exe"
 if (-not (Test-Path $cliSrcPath)) {
-    Write-Host "[ERROR] ModelFusion cli.exe not found at $cliSrcPath. Run 'cargo build --release' first." -ForegroundColor Red
+    $cliSrcPath = Join-Path (Split-Path $PSScriptRoot -Parent) "target\release\cli.exe"
+}
+if (-not (Test-Path $cliSrcPath)) {
+    Write-Host "[ERROR] ModelFusion cliide.exe / cli.exe not found at $cliSrcPath. Run 'cargo build --release' first." -ForegroundColor Red
     Exit 1
 }
 
@@ -108,9 +114,16 @@ if (-not (Test-Path $cliDestDir)) {
     New-Item -ItemType Directory -Force -Path $cliDestDir | Out-Null
 }
 
+$cliIdeDestPath = Join-Path $cliDestDir "cliide.exe"
+Copy-Item -Path $cliSrcPath -Destination $cliIdeDestPath -Force
 $cliDestPath = Join-Path $cliDestDir "cli.exe"
 Copy-Item -Path $cliSrcPath -Destination $cliDestPath -Force
-Write-Host "[OK] Copied ModelFusion CLI to: $cliDestPath" -ForegroundColor Green
+
+$ideBinDir = Join-Path $PSScriptRoot "bin"
+if (-not (Test-Path $ideBinDir)) { New-Item -ItemType Directory -Force -Path $ideBinDir | Out-Null }
+Copy-Item -Path $cliSrcPath -Destination (Join-Path $ideBinDir "cliide.exe") -Force
+Copy-Item -Path $cliSrcPath -Destination (Join-Path $ideBinDir "cli.exe") -Force
+Write-Host "[OK] Copied ModelFusion CLI (cliide.exe and cli.exe) to: $cliDestDir and $ideBinDir" -ForegroundColor Green
 
 # 4.1 Restore original Electron binary (Code.exe -> HugOS.exe)
 # CRITICAL: Do NOT use the custom-built HugOS.exe here — it was compiled with a modified
@@ -646,6 +659,42 @@ if (Test-Path $patchOllamaScript) {
     }
 }
 
+# 4.978 Apply windowsHide: true to all child_process executions in extension.js
+Write-Host "[INFO] Applying windowsHide: true to extension.js..." -ForegroundColor Yellow
+$patchExtHiddenScript = Join-Path $PSScriptRoot "patch_extension_hidden.py"
+if (Test-Path $patchExtHiddenScript) {
+    python $patchExtHiddenScript
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] patch_extension_hidden script failed! Aborting MSI build." -ForegroundColor Red
+        Exit 1
+    }
+    Write-Host "[OK] Applied windowsHide: true patches across extension.js" -ForegroundColor Green
+}
+
+# 4.979 Apply single-instance false-positive suppression patches
+Write-Host "[INFO] Applying single-instance false-positive suppression patches..." -ForegroundColor Yellow
+$patchSingleInstanceScript = Join-Path $PSScriptRoot "patch_single_instance.py"
+if (Test-Path $patchSingleInstanceScript) {
+    python $patchSingleInstanceScript
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] patch_single_instance script failed! Aborting MSI build." -ForegroundColor Red
+        Exit 1
+    }
+    Write-Host "[OK] Applied single-instance false-positive suppression patches" -ForegroundColor Green
+}
+
+# 4.980 Apply cliide binary resolution patches to extension.js
+Write-Host "[INFO] Applying cliide binary resolution patches to extension.js..." -ForegroundColor Yellow
+$patchCliideScript = Join-Path $PSScriptRoot "patch_cliide.py"
+if (Test-Path $patchCliideScript) {
+    python $patchCliideScript
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] patch_cliide script failed! Aborting MSI build." -ForegroundColor Red
+        Exit 1
+    }
+    Write-Host "[OK] Applied cliide binary resolution patches across extension.js" -ForegroundColor Green
+}
+
 # 4.98 Ensure 100% parity and presence across all versioned runtime directories
 Write-Host "[INFO] Synchronizing all configuration, settings, extensions, and ReST-RL to versioned runtime directories..." -ForegroundColor Yellow
 $versionedDirs = @(Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' })
@@ -843,8 +892,8 @@ if (Test-Path $msiPath) {
 [System.GC]::WaitForPendingFinalizers()
 Start-Sleep -Seconds 6
 
-# Kill any lingering wix or wixnative processes from previous runs
-Stop-Process -Name wix, wixnative -Force -ErrorAction SilentlyContinue
+# Kill any lingering wix or wixnative processes from previous runs, as well as HugOS and cli to release locks
+Stop-Process -Name wix, wixnative, HugOS, cli -Force -ErrorAction SilentlyContinue
 Remove-Item "$env:LOCALAPPDATA\Temp\#cab*" -Force -Recurse -ErrorAction SilentlyContinue
 Remove-Item "$env:TEMP\#cab*" -Force -Recurse -ErrorAction SilentlyContinue
 Start-Service -Name msiserver -ErrorAction SilentlyContinue

@@ -7,6 +7,18 @@ use std::process::Command;
 use std::sync::OnceLock;
 use sysinfo::System;
 
+/// Helper to construct a Command with CREATE_NO_WINDOW on Windows to prevent console flashing.
+#[inline]
+pub fn create_hidden_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    let mut cmd = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    cmd
+}
+
 /// Process-level cache so hardware probes only run once per CLI invocation.
 static SYSTEM_MEMORY_CACHE: OnceLock<SystemMemory> = OnceLock::new();
 
@@ -245,7 +257,7 @@ pub fn evaluate_hardware_suitability(
 
 /// Detect GPU name and VRAM via nvidia-smi.
 fn detect_gpu() -> (Option<String>, f64, f64) {
-    let output = Command::new("nvidia-smi")
+    let output = create_hidden_command("nvidia-smi")
         .args(["--query-gpu=name,memory.total,memory.free", "--format=csv,noheader,nounits"])
         .output();
 
@@ -395,7 +407,7 @@ pub fn model_fits(params_billions: f64, backend: Backend, memory: &SystemMemory)
 /// Check if Ollama is actually responding by making a real HTTP request.
 pub fn is_ollama_responding(endpoint: &str) -> bool {
     // Use curl for a reliable check (powershell Invoke-WebRequest can give false positives)
-    let result = Command::new("curl")
+    let result = create_hidden_command("curl")
         .args(["-s", "-o", "nul", "-w", "%{http_code}", "--max-time", "3",
                &format!("{}/api/tags", endpoint)])
         .output();
@@ -407,7 +419,7 @@ pub fn is_ollama_responding(endpoint: &str) -> bool {
         }
         Err(_) => {
             // curl not available, try powershell as fallback
-            let ps_result = Command::new("powershell")
+            let ps_result = create_hidden_command("powershell")
                 .args(["-NoProfile", "-Command",
                     &format!("try {{ $r = Invoke-WebRequest -Uri '{}/api/tags' -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop; $r.StatusCode }} catch {{ 'FAIL' }}", endpoint)])
                 .output();
@@ -424,7 +436,7 @@ pub fn is_ollama_responding(endpoint: &str) -> bool {
 
 /// Check if Ollama is installed on the system (in PATH or common installation paths).
 pub fn is_ollama_installed() -> bool {
-    let check_installed = Command::new("cmd")
+    let check_installed = create_hidden_command("cmd")
         .args(["/C", "where", "ollama"])
         .output();
 
@@ -484,7 +496,7 @@ pub fn ensure_ollama_running() -> Result<(), String> {
     #[cfg(windows)]
     {
         let ps_cmd = "[Environment]::SetEnvironmentVariable('OLLAMA_ORIGINS', '*', 'User'); [Environment]::SetEnvironmentVariable('OLLAMA_ORIGINS', '*', 'Process')";
-        let _ = Command::new("powershell")
+        let _ = create_hidden_command("powershell")
             .args(["-NoProfile", "-Command", ps_cmd])
             .status();
     }
@@ -497,7 +509,7 @@ pub fn ensure_ollama_running() -> Result<(), String> {
     // Check if Ollama is installed: PATH first, then common installation paths
     let mut ollama_path: Option<std::path::PathBuf> = None;
 
-    let check_installed = Command::new("cmd")
+    let check_installed = create_hidden_command("cmd")
         .args(["/C", "where", "ollama"])
         .output();
 
@@ -536,7 +548,7 @@ pub fn ensure_ollama_running() -> Result<(), String> {
     // If not found at all, auto-download and install silently
     if ollama_path.is_none() {
         eprintln!("🦙 [OLLAMA] Ollama is not installed. Downloading and installing silently (this may take a minute)...");
-        let install_result = Command::new("powershell")
+        let install_result = create_hidden_command("powershell")
             .args([
                 "-NoProfile",
                 "-Command",
@@ -556,7 +568,7 @@ pub fn ensure_ollama_running() -> Result<(), String> {
         }
 
         // Re-check where ollama or common paths
-        if let Ok(output) = Command::new("cmd").args(["/C", "where", "ollama"]).output() {
+        if let Ok(output) = create_hidden_command("cmd").args(["/C", "where", "ollama"]).output() {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 for line in stdout.lines() {
@@ -605,7 +617,7 @@ pub fn ensure_ollama_running() -> Result<(), String> {
                     "$dir = '{}'; $p = [Environment]::GetEnvironmentVariable('Path', 'User'); if (-not $p) {{ [Environment]::SetEnvironmentVariable('Path', $dir, 'User') }} elseif ($p -notlike ('*' + $dir + '*')) {{ [Environment]::SetEnvironmentVariable('Path', $p.TrimEnd(';') + ';' + $dir, 'User') }}",
                     dir_str
                 );
-                let _ = Command::new("powershell")
+                let _ = create_hidden_command("powershell")
                     .args(["-NoProfile", "-Command", &ps_cmd])
                     .status();
             }
@@ -626,17 +638,17 @@ pub fn ensure_ollama_running() -> Result<(), String> {
     #[cfg(windows)]
     {
         let ps_cmd = "[Environment]::SetEnvironmentVariable('OLLAMA_ORIGINS', '*', 'User')";
-        let _ = Command::new("powershell")
+        let _ = create_hidden_command("powershell")
             .args(["-NoProfile", "-Command", ps_cmd])
             .status();
     }
 
     // Launch ollama serve as a background process with OLLAMA_ORIGINS=*
-    let mut cmd = Command::new("cmd");
+    let mut cmd = create_hidden_command("cmd");
     cmd.args(["/C", "start", "/B", "ollama", "serve"]);
     cmd.env("OLLAMA_ORIGINS", "*");
     let start_result = cmd.spawn().or_else(|_| {
-        let mut direct_cmd = Command::new(&ollama_exec);
+        let mut direct_cmd = create_hidden_command(&ollama_exec);
         direct_cmd.arg("serve");
         direct_cmd.env("OLLAMA_ORIGINS", "*");
         direct_cmd.spawn()
@@ -822,7 +834,7 @@ pub fn get_ollama_cached_models() -> Vec<String> {
 
     // 2. Fallback to curl with proxy bypass and timeout if reqwest was empty
     if fetched_tags.is_empty() {
-        let result = std::process::Command::new("curl")
+        let result = create_hidden_command("curl")
             .args(["-s", "--noproxy", "*", "--max-time", "2", &tags_url])
             .output();
 
@@ -843,7 +855,7 @@ pub fn get_ollama_cached_models() -> Vec<String> {
 
     // 3. Fallback to `ollama list` CLI if HTTP endpoints did not return models
     if fetched_tags.is_empty() {
-        if let Ok(o) = std::process::Command::new("ollama").args(["list"]).output() {
+        if let Ok(o) = create_hidden_command("ollama").args(["list"]).output() {
             if o.status.success() {
                 let stdout_str = String::from_utf8_lossy(&o.stdout);
                 for line in stdout_str.lines().skip(1) {

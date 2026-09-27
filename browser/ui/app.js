@@ -2830,8 +2830,8 @@ document.addEventListener('DOMContentLoaded', () => {
                   const modelsList = (tagsData.models || []).map(m => typeof m === 'string' ? m : (m.name || m.model || '')).filter(Boolean);
                   if (modelsList.length > 0) {
                     availableOllamaModels = modelsList;
-                    const altCandidate = pickBestInstalledOllamaModel(modelsList.filter(m => m !== resolvedOllamaModel));
-                    if (altCandidate) {
+                    const altCandidate = pickBestInstalledOllamaModel(modelsList.filter(m => m !== resolvedOllamaModel)) || pickBestInstalledOllamaModel(modelsList);
+                    if (altCandidate && altCandidate !== resolvedOllamaModel) {
                       resolvedOllamaModel = altCandidate;
                       console.log(`[ROUTER] 🔄 Auto-healing fallback: retrying with installed model '${resolvedOllamaModel}'`);
                       candidateRes = await fetch(`${ep}/api/chat`, {
@@ -2880,8 +2880,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
             await fetch(`${ipcUrl}/api/ollama/start`, { method: 'POST', signal: currentAbortController ? currentAbortController.signal : undefined }).catch(() => {});
 
+            const probeInstalledModels = async () => {
+              for (const ep of [ipcUrl, ollamaUrl]) {
+                try {
+                  const tRes = await fetch(`${ep}/api/tags`).catch(() => null);
+                  if (tRes && tRes.ok) {
+                    const data = await tRes.json();
+                    const models = (data.models || []).map(m => typeof m === 'string' ? m : (m.name || m.model || '')).filter(Boolean);
+                    if (models.length > 0) {
+                      availableOllamaModels = models;
+                      const best = pickBestInstalledOllamaModel(models);
+                      if (best) resolvedOllamaModel = best;
+                      return true;
+                    }
+                  }
+                } catch (e) {}
+              }
+              return false;
+            };
+
+            await probeInstalledModels();
+
             for (let poll = 0; poll < 15; poll++) {
-              await new Promise(r => setTimeout(r, 2000));
+              if (poll > 0) {
+                await new Promise(r => setTimeout(r, 1500));
+              }
+              if (poll % 2 === 0) {
+                await probeInstalledModels();
+              }
               for (const ep of [ipcUrl, ollamaUrl]) {
                 try {
                   const retryRes = await fetch(`${ep}/api/chat`, {

@@ -428,7 +428,10 @@ def main():
         verify_rest_rl_subsystem(v_root, f"Versioned ({versioned_dir_name})", failures)
 
         print("\n--- 3. Core Engine Binaries & Database ---")
-        verify_binary_file(os.path.join(install_root, "bin", "cli.exe"), "ModelFusion CLI Binary (bin/cli.exe)", 10_000_000, failures)
+        cli_cand = os.path.join(install_root, "bin", "cliide.exe")
+        if not os.path.isfile(cli_cand):
+            cli_cand = os.path.join(install_root, "bin", "cli.exe")
+        verify_binary_file(cli_cand, "ModelFusion CLI Binary (bin/cliide.exe or bin/cli.exe)", 10_000_000, failures)
         verify_binary_file(os.path.join(install_root, "db", "hf_models.db"), "Model Database (db/hf_models.db)", 50_000, failures)
 
         print("\n============================================================")

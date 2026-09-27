@@ -21,6 +21,27 @@ use std::sync::{Arc, OnceLock};
 use tokio::sync::Semaphore;
 use chrono;
 
+/// Helper to construct a std::process::Command with CREATE_NO_WINDOW on Windows to prevent console flashing.
+#[inline]
+pub fn hidden_std_command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Command {
+    let mut cmd = std::process::Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    cmd
+}
+
+/// Helper to construct a tokio::process::Command with CREATE_NO_WINDOW on Windows to prevent console flashing.
+#[inline]
+pub fn hidden_tokio_command(program: impl AsRef<std::ffi::OsStr>) -> tokio::process::Command {
+    let mut cmd = tokio::process::Command::new(program);
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    cmd
+}
+
 // ---------------------------------------------------------------------------
 // Global inference semaphore
 // ---------------------------------------------------------------------------
@@ -150,7 +171,7 @@ pub fn query_system_resources() -> SystemResourceSummary {
     let mut free_vram_mb = 0u64;
     let mut has_gpu = false;
 
-    if let Ok(output) = std::process::Command::new("nvidia-smi")
+    if let Ok(output) = hidden_std_command("nvidia-smi")
         .args(["--query-gpu=name,memory.total,memory.free", "--format=csv,noheader,nounits"])
         .output()
     {
@@ -168,7 +189,7 @@ pub fn query_system_resources() -> SystemResourceSummary {
 
     // Windows WMI fallback if nvidia-smi wasn't available
     if !has_gpu && cfg!(windows) {
-        if let Ok(output) = std::process::Command::new("wmic")
+        if let Ok(output) = hidden_std_command("wmic")
             .args(["path", "win32_videocard", "get", "name"])
             .output()
         {
@@ -942,10 +963,11 @@ fn spawn_rest_rl_daemon() -> Result<(), String> {
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
         const DETACHED_PROCESS: u32 = 0x00000008;
         const IDLE_PRIORITY_CLASS: u32 = 0x00000040;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
         let mut cmd = std::process::Command::new(&py_cmd);
         cmd.arg(&daemon_script)
             .current_dir(&rl_dir)
-            .creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | IDLE_PRIORITY_CLASS)
+            .creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | IDLE_PRIORITY_CLASS | CREATE_NO_WINDOW)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());
@@ -2122,8 +2144,8 @@ fn main() -> Result<()> {
             #[cfg(windows)]
             {
                 use std::os::windows::process::CommandExt;
-                // DETACHED_PROCESS = 0x00000008
-                cmd.creation_flags(0x00000008);
+                // DETACHED_PROCESS = 0x00000008, CREATE_NO_WINDOW = 0x08000000
+                cmd.creation_flags(0x00000008 | 0x08000000);
             }
             if let Some(ref folder) = args.folder {
                 cmd.arg(folder);
@@ -2351,7 +2373,7 @@ fn main() -> Result<()> {
                         .unwrap_or_else(|| candidates[0].clone());
                     
                     let py_cmd = resolve_python_command().unwrap_or_else(|| std::path::PathBuf::from("python"));
-                    let result = std::process::Command::new(&py_cmd)
+                    let result = hidden_std_command(&py_cmd)
                         .arg(&script_path)
                         .arg(&ov_dir)
                         .arg("all")
@@ -2459,7 +2481,7 @@ async fn run(args: Args) -> Result<()> {
     if args.jupyter && args.prompt.is_none() && args.query.is_none() && args.file.is_none() {
         println!("🚀 Launching Jupyter Notebook: data_analyst_workflow.ipynb");
         let py_cmd = resolve_python_command().unwrap_or_else(|| std::path::PathBuf::from("python"));
-        let status = std::process::Command::new(&py_cmd)
+        let status = hidden_std_command(&py_cmd)
             .args(&["-m", "notebook", "data_analyst_workflow.ipynb"])
             .status();
         if let Err(e) = status {
@@ -2568,7 +2590,7 @@ async fn run(args: Args) -> Result<()> {
         } else {
             let target_model = select_ollama_model_for_hardware(false);
             println!("📦 [OLLAMA] Selected optimal model: {}", target_model);
-            let pull_status = std::process::Command::new("ollama")
+            let pull_status = hidden_std_command("ollama")
                 .args(["pull", target_model])
                 .status()
                 .or_else(|_| {
@@ -2579,7 +2601,7 @@ async fn run(args: Args) -> Result<()> {
                             fallback = cand;
                         }
                     }
-                    std::process::Command::new(fallback)
+                    hidden_std_command(fallback)
                         .args(["pull", target_model])
                         .status()
                 });
@@ -2623,7 +2645,7 @@ async fn run(args: Args) -> Result<()> {
             let hub_script = find_script("cache_ov_hub.py");
             let db_path_str = handler.db_path.to_string_lossy().to_string();
             let py_cmd = resolve_python_command().unwrap_or_else(|| std::path::PathBuf::from("python"));
-            let hub_result = std::process::Command::new(&py_cmd)
+            let hub_result = hidden_std_command(&py_cmd)
                 .arg(&hub_script)
                 .arg(&args.ov_model_dir)
                 .arg(&db_path_str)
@@ -2656,7 +2678,7 @@ async fn run(args: Args) -> Result<()> {
 
                 for (i, model_id) in models.iter().enumerate() {
                     println!("[{}/{}] {}", i + 1, total, model_id);
-                    let result = std::process::Command::new(&py_cmd)
+                    let result = hidden_std_command(&py_cmd)
                         .arg(&prepare_script)
                         .arg(model_id)
                         .arg(&args.ov_model_dir)
@@ -2823,7 +2845,7 @@ async fn run(args: Args) -> Result<()> {
             // Single model preparation
             println!("🔷 [OPENVINO] Preparing model: {} (format: {})", model_id, args.weight_format);
             let py_cmd = resolve_python_command().unwrap_or_else(|| std::path::PathBuf::from("python"));
-            let status = std::process::Command::new(&py_cmd)
+            let status = hidden_std_command(&py_cmd)
                 .arg(&script_path)
                 .arg(model_id)
                 .arg(&args.ov_model_dir)
@@ -2867,7 +2889,7 @@ async fn run(args: Args) -> Result<()> {
             let py_cmd = resolve_python_command().unwrap_or_else(|| std::path::PathBuf::from("python"));
             for (i, model_id) in models.iter().enumerate() {
                 println!("\n[{}/{}] Processing: {}", i + 1, total, model_id);
-                let result = std::process::Command::new(&py_cmd)
+                let result = hidden_std_command(&py_cmd)
                     .arg(&script_path)
                     .arg(model_id)
                     .arg(&args.ov_model_dir)
@@ -3102,20 +3124,31 @@ async fn run(args: Args) -> Result<()> {
         ensure_server_running(5000).await;
 
         // Default: --browser without task -> Launch or report HugOS Browser
+        let default_start_url = "http://localhost:5000/index.html";
         println!("🌐 [BROWSER] HugOS Intelligent Browser");
         println!("   Remote Debugging Port: {}", port);
         println!("   CDP Base URL: {}", suite.cdp.base_url());
         if suite.cdp.is_available().await {
             println!("   Status: 🟢 Connected to active Chromium session");
+            let mut ui_target_found = false;
             if let Ok(targets) = suite.cdp.list_targets().await {
                 println!("   Active Targets ({}):", targets.len());
                 for t in targets.iter().take(5) {
                     println!("     - [{}] {} ({})", t.target_type, t.title, t.url);
                 }
+                if let Some(target) = targets.iter().find(|t| t.url.contains("5000") || t.url.contains("index.html")) {
+                    println!("   Activating HugOS Browser UI target: {} ({})", target.title, target.id);
+                    let _ = suite.cdp.activate_target(&target.id).await;
+                    ui_target_found = true;
+                }
             }
+            if !ui_target_found {
+                println!("   Navigating HugOS Browser to {}...", default_start_url);
+                let _ = suite.cdp.create_target(default_start_url).await;
+            }
+            let _ = launch_hugos_browser(Some(default_start_url));
         } else {
             println!("   Status: 🟡 Offline. Auto-launching HugOS Browser...");
-            let default_start_url = "http://localhost:5000/index.html";
             if let Err(e) = launch_hugos_browser(Some(default_start_url)) {
                 eprintln!("⚠️ [WARN] {}", e);
             } else {
@@ -3468,7 +3501,7 @@ async fn run(args: Args) -> Result<()> {
             }
             eprintln!("🔍 Checking vLLM installation...");
             let py_vllm = resolve_python_command().unwrap_or_else(|| std::path::PathBuf::from("python3"));
-            let check = std::process::Command::new(&py_vllm)
+            let check = hidden_std_command(&py_vllm)
                 .args(["-c", "import vllm; print('OK')"])
                 .output();
             match check {
@@ -3498,7 +3531,7 @@ async fn run(args: Args) -> Result<()> {
             eprintln!("🔍🔷 Checking OpenVINO installation...");
             let py_cmd = resolve_python_command().unwrap_or_else(|| std::path::PathBuf::from("python"));
             // Try openvino_genai first (best performance)
-            let genai_check = std::process::Command::new(&py_cmd)
+            let genai_check = hidden_std_command(&py_cmd)
                 .args(["-c", "import openvino_genai; print('OK')"])
                 .output();
             match genai_check {
@@ -3511,7 +3544,7 @@ async fn run(args: Args) -> Result<()> {
                 }
                 _ => {
                     // Fallback: check for classic openvino
-                    let fallback_check = std::process::Command::new(&py_cmd)
+                    let fallback_check = hidden_std_command(&py_cmd)
                         .args(["-c", "import openvino; print('OK')"])
                         .output();
                     match fallback_check {
@@ -3534,7 +3567,7 @@ async fn run(args: Args) -> Result<()> {
         } else if args.onnx {
             eprintln!("🔍🟣 Checking ONNX Runtime installation...");
             let py_cmd = resolve_python_command().unwrap_or_else(|| std::path::PathBuf::from("python"));
-            let onnx_check = std::process::Command::new(&py_cmd)
+            let onnx_check = hidden_std_command(&py_cmd)
                 .args(["-c", "import optimum.onnxruntime; print('OK')"])
                 .output();
             match onnx_check {
@@ -6242,7 +6275,7 @@ async fn query_local_router(system_prompt: &str, user_prompt: &str) -> Option<St
     
     let prompt_format = format!("<|im_start|>system\n{}<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n", system_prompt, user_prompt);
     let py_cmd = resolve_python_command()?;
-    let out = tokio::process::Command::new(py_cmd)
+    let out = hidden_tokio_command(py_cmd)
         .arg(script_path)
         .arg("Qwen/Qwen2.5-1.5B-Instruct")
         .arg(&prompt_format)
@@ -6539,7 +6572,8 @@ async fn ensure_server_running(port: u16) {
             use std::os::windows::process::CommandExt;
             const DETACHED_PROCESS: u32 = 0x00000008;
             const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
-            cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
         }
         let _ = cmd.spawn();
         for _ in 0..15 {
@@ -6631,11 +6665,38 @@ pub async fn fetch_installed_ollama_models(client: &reqwest::Client, ollama_endp
 }
 
 async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: bool) -> Result<()> {
+    // 0. Pre-bind health probe: If another instance (cliide, clibrowser, or cli) is already serving port, reuse it gracefully
+    let probe_client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_millis(600))
+        .build()
+        .unwrap_or_default();
+    let health_url = format!("http://127.0.0.1:{}/health", port);
+    if let Ok(res) = probe_client.get(&health_url).send().await {
+        if res.status().is_success() {
+            println!("🚀 [SERVER] ModelFusion Master Server already active on port {}. Reusing existing instance.", port);
+            return Ok(());
+        }
+    }
+
     // Set default runtime backend flags once at startup so they remain read-only during server lifetime
     std::env::set_var("MODELFUSION_USE_OLLAMA", "true");
     std::env::set_var("MODELFUSION_FORCE_GPU", "true");
 
-    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
+    let listener = match tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await {
+        Ok(l) => l,
+        Err(e) => {
+            // If binding fails due to address already in use, verify if /health is now responding
+            if let Ok(res) = probe_client.get(&health_url).send().await {
+                if res.status().is_success() {
+                    println!("🚀 [SERVER] ModelFusion Master Server active on port {}. Reusing existing instance.", port);
+                    return Ok(());
+                }
+            }
+            eprintln!("❌ [SERVER ERROR] Failed to bind to port {}: {}", port, e);
+            return Err(e.into());
+        }
+    };
     println!("ModelFusion API server running on http://127.0.0.1:{}", port);
     
     let db_path_opt = db_path.clone();
@@ -7217,18 +7278,29 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     let _ = tokio::task::spawn_blocking(model_selection::memory::ensure_ollama_running).await;
                 }
 
-                // 2. Resolve requested model ("modelfusion_auto" or empty -> pick best installed model)
+                // 2. Resolve requested model ("modelfusion_auto", empty, or uninstalled -> pick best installed model)
                 let requested_model = request_json.get("model").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let mut current_json = request_json.clone();
 
-                if requested_model == "modelfusion_auto" || requested_model.is_empty() {
-                    let mut installed_models = fetch_installed_ollama_models(&client, &ollama_endpoint).await;
-                    if installed_models.is_empty() {
-                        let _ = tokio::task::spawn_blocking(model_selection::memory::ensure_ollama_running).await;
-                        installed_models = fetch_installed_ollama_models(&client, &ollama_endpoint).await;
-                    }
+                let mut installed_models = fetch_installed_ollama_models(&client, &ollama_endpoint).await;
+                if installed_models.is_empty() {
+                    let _ = tokio::task::spawn_blocking(model_selection::memory::ensure_ollama_running).await;
+                    installed_models = fetch_installed_ollama_models(&client, &ollama_endpoint).await;
+                }
+
+                let is_installed = !requested_model.is_empty() && installed_models.iter().any(|m| {
+                    m == &requested_model 
+                    || m.starts_with(&format!("{}:", requested_model))
+                    || requested_model.starts_with(&format!("{}:", m))
+                });
+
+                if requested_model == "modelfusion_auto" || requested_model.is_empty() || !is_installed {
                     let resolved = resolve_model_for_chat(&requested_model, &installed_models);
-                    eprintln!("[SERVER] 🎯 Resolved '{}' -> '{}'", if requested_model.is_empty() { "<empty>" } else { &requested_model }, resolved);
+                    eprintln!("[SERVER] 🎯 Model '{}' (installed: {}) resolved -> '{}'", 
+                        if requested_model.is_empty() { "<empty>" } else { &requested_model }, 
+                        is_installed, 
+                        resolved
+                    );
                     current_json["model"] = serde_json::json!(resolved);
                 }
 
@@ -7260,7 +7332,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                             tokio::spawn(async move {
                                                 eprintln!("[SERVER] ⬇️ Background pull initiated for optimal model: {}", optimal);
                                                 let _ = tokio::task::spawn_blocking(move || {
-                                                    let _ = std::process::Command::new("ollama").args(["pull", &optimal]).output();
+                                                    let _ = hidden_std_command("ollama").args(["pull", &optimal]).output();
                                                 }).await;
                                             });
                                         }
@@ -7357,7 +7429,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                     tokio::spawn(async move {
                                         eprintln!("[SERVER] ⬇️ Background pull initiated for optimal model: {}", optimal);
                                         let _ = tokio::task::spawn_blocking(move || {
-                                            let _ = std::process::Command::new("ollama").args(["pull", &optimal]).output();
+                                            let _ = hidden_std_command("ollama").args(["pull", &optimal]).output();
                                         }).await;
                                     });
                                 }
@@ -10670,7 +10742,7 @@ async fn run_cli_subcommand(cmd_args: &[String], db_path: &std::path::Path) -> S
     }
 
     if let Ok(exe_path) = std::env::current_exe() {
-        let output = tokio::process::Command::new(exe_path)
+        let output = hidden_tokio_command(exe_path)
             .args(&args)
             .env("MODELFUSION_SUBPROCESS", "1")
             .output()
@@ -13233,7 +13305,6 @@ fn acquire_cross_process_lock() -> Result<std::fs::File> {
 
 /// Main workflow for --patch-ide: clone VSCode, apply all HugOS branding.
 async fn patch_ide_workflow(ide_src_dir: &str, shallow: bool, vscode_tag: Option<&str>) -> Result<()> {
-    use std::process::Command;
 
     let project_root = std::env::current_dir()?;
     let target_dir = project_root.join(ide_src_dir);
@@ -13255,7 +13326,7 @@ async fn patch_ide_workflow(ide_src_dir: &str, shallow: bool, vscode_tag: Option
         println!("  Skipping clone, applying patches to existing tree.");
         successes.push("Clone: skipped (directory exists)".into());
     } else {
-        let mut cmd = Command::new("git");
+        let mut cmd = hidden_std_command("git");
         cmd.arg("clone");
         if shallow {
             cmd.args(["--depth", "1"]);
@@ -13451,7 +13522,7 @@ async fn patch_ide_workflow(ide_src_dir: &str, shallow: bool, vscode_tag: Option
     println!("       This may take 10-15 minutes on first run.");
 
     // Step 8a: yarn install (ensure dependencies are up to date)
-    let yarn_status = Command::new("cmd.exe")
+    let yarn_status = hidden_std_command("cmd.exe")
         .args(["/c", "cd /d", &target_dir.to_string_lossy(), "&&", "yarn", "install", "--frozen-lockfile"])
         .output();
     match yarn_status {
@@ -13477,7 +13548,7 @@ async fn patch_ide_workflow(ide_src_dir: &str, shallow: bool, vscode_tag: Option
     // Step 8b: gulp vscode-win32-x64 (build the IDE)
     let gulp_js = target_dir.join("node_modules").join("gulp").join("bin").join("gulp.js");
     if gulp_js.exists() {
-        let build_status = Command::new("node")
+        let build_status = hidden_std_command("node")
             .arg(gulp_js.to_string_lossy().to_string())
             .arg("vscode-win32-x64")
             .current_dir(&target_dir)
@@ -13538,7 +13609,7 @@ async fn patch_ide_workflow(ide_src_dir: &str, shallow: bool, vscode_tag: Option
 
         let mut brand_ok = true;
         for (flag, key, value) in &branding_cmds {
-            let status = Command::new(&rcedit_str)
+            let status = hidden_std_command(&rcedit_str)
                 .args([exe_str.as_str(), *flag, *key, *value])
                 .output();
             if let Err(e) = status {
@@ -13548,17 +13619,17 @@ async fn patch_ide_workflow(ide_src_dir: &str, shallow: bool, vscode_tag: Option
         }
 
         // Set version strings
-        let _ = Command::new(&rcedit_str)
+        let _ = hidden_std_command(&rcedit_str)
             .args([&exe_str, "--set-product-version", "1.126.0"])
             .output();
-        let _ = Command::new(&rcedit_str)
+        let _ = hidden_std_command(&rcedit_str)
             .args([&exe_str, "--set-file-version", "1.126.0"])
             .output();
 
         // Set HugOS icon
         if hugos_ico.exists() {
             let ico_str = hugos_ico.to_string_lossy().to_string();
-            match Command::new(&rcedit_str)
+            match hidden_std_command(&rcedit_str)
                 .args([&exe_str, "--set-icon", &ico_str])
                 .output()
             {
@@ -13627,7 +13698,7 @@ async fn patch_ide_workflow(ide_src_dir: &str, shallow: bool, vscode_tag: Option
         // Verify HugOS.exe is not self-signed (the July 2026 incident guard)
         #[cfg(windows)]
         {
-            let check = Command::new("powershell")
+            let check = hidden_std_command("powershell")
                 .args([
                     "-NoProfile", "-Command",
                     &format!(
@@ -13667,8 +13738,7 @@ async fn patch_ide_workflow(ide_src_dir: &str, shallow: bool, vscode_tag: Option
     if built_exe.exists() {
         #[cfg(windows)]
         {
-            use std::process::Command;
-            let check = Command::new("powershell")
+                    let check = hidden_std_command("powershell")
                 .args([
                     "-NoProfile", "-Command",
                     &format!(
