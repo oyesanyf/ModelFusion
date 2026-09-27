@@ -6466,37 +6466,51 @@ pub fn parse_query_and_limit_from_request(raw_uri: &str, request_json: &serde_js
 
 /// Locates the `browser/ui` directory containing the HugOS Browser web assets.
 fn find_browser_ui_dir() -> Option<std::path::PathBuf> {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+
     // 1. Current working directory
-    let cwd_candidates = ["browser/ui", "ui"];
-    for cand in cwd_candidates {
-        let p = std::path::PathBuf::from(cand);
-        if p.is_dir() && p.join("index.html").is_file() {
-            return Some(p);
-        }
-    }
+    candidates.push(std::path::PathBuf::from("browser/ui"));
+    candidates.push(std::path::PathBuf::from("ui"));
 
     // 2. Relative to current exe
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(dir) = exe_path.parent() {
-            let candidates = [
-                dir.join("../../browser/ui"),
-                dir.join("../browser/ui"),
-                dir.join("../ui"),
-                dir.join("ui"),
-            ];
-            for cand in candidates {
-                if cand.is_dir() && cand.join("index.html").is_file() {
-                    return Some(cand);
-                }
-            }
+            candidates.push(dir.join("ui"));
+            candidates.push(dir.join("browser").join("ui"));
+            candidates.push(dir.join("../ui"));
+            candidates.push(dir.join("../browser/ui"));
+            candidates.push(dir.join("../../browser/ui"));
+            candidates.push(dir.join("../../../browser/ui"));
         }
     }
 
     // 3. Installed production location
     if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
-        let p = std::path::PathBuf::from(local_app_data).join("HugOS Browser/ui");
-        if p.is_dir() && p.join("index.html").is_file() {
-            return Some(p);
+        let base = std::path::PathBuf::from(&local_app_data);
+        candidates.push(base.join("HugOS Browser").join("ui"));
+        candidates.push(base.join("Programs").join("HugOS Browser").join("ui"));
+        candidates.push(base.join("ModelFusion").join("browser").join("ui"));
+    }
+
+    if let Ok(pf) = std::env::var("ProgramFiles") {
+        let base = std::path::PathBuf::from(&pf);
+        candidates.push(base.join("HugOS Browser").join("ui"));
+        candidates.push(base.join("ModelFusion").join("browser").join("ui"));
+    }
+
+    if let Ok(pf_x86) = std::env::var("ProgramFiles(x86)") {
+        let base = std::path::PathBuf::from(&pf_x86);
+        candidates.push(base.join("HugOS Browser").join("ui"));
+    }
+
+    // 4. Known development and extraction roots
+    candidates.push(std::path::PathBuf::from(r"D:\harfile\ModelFusion\browser\ui"));
+    candidates.push(std::path::PathBuf::from(r"C:\harfile\ModelFusion\browser\ui"));
+    candidates.push(std::path::PathBuf::from(r"C:\harfile\browser\ui"));
+
+    for cand in candidates {
+        if cand.is_dir() && cand.join("index.html").is_file() {
+            return Some(cand);
         }
     }
 
@@ -6538,6 +6552,82 @@ async fn ensure_server_running(port: u16) {
             }
         }
     }
+}
+
+pub fn extract_model_names_from_tags_json(tags_val: &serde_json::Value) -> Vec<String> {
+    let mut list = Vec::new();
+    if let Some(models) = tags_val.get("models").and_then(|v| v.as_array()) {
+        for m in models {
+            if let Some(name) = m.get("name").and_then(|v| v.as_str()).or_else(|| m.get("model").and_then(|v| v.as_str())) {
+                let trimmed = name.trim();
+                if !trimmed.is_empty() {
+                    list.push(trimmed.to_string());
+                }
+            }
+        }
+    }
+    list
+}
+
+pub fn select_best_installed_ollama_model(installed: &[String]) -> Option<String> {
+    if installed.is_empty() {
+        return None;
+    }
+    let priorities = [
+        "qwen2.5:32b",
+        "qwen2.5:14b",
+        "qwen2.5:7b",
+        "deepseek-r1:32b",
+        "deepseek-r1:14b",
+        "deepseek-r1:8b",
+        "deepseek-r1:7b",
+        "deepseek-r1:1.5b",
+        "qwen2.5:3b",
+        "qwen2.5:1.5b",
+    ];
+    for p in &priorities {
+        if let Some(found) = installed.iter().find(|m| {
+            let lower = m.to_lowercase();
+            let p_lower = p.to_lowercase();
+            lower == p_lower || lower.starts_with(&format!("{}:", p_lower))
+        }) {
+            return Some(found.clone());
+        }
+    }
+    if let Some(found) = installed.iter().find(|m| m.to_lowercase().contains("qwen")) {
+        return Some(found.clone());
+    }
+    if let Some(found) = installed.iter().find(|m| m.to_lowercase().contains("deepseek")) {
+        return Some(found.clone());
+    }
+    if let Some(found) = installed.iter().find(|m| m.to_lowercase().contains("llama")) {
+        return Some(found.clone());
+    }
+    installed.first().cloned()
+}
+
+pub fn resolve_model_for_chat(requested_model: &str, installed_models: &[String]) -> String {
+    let trimmed = requested_model.trim();
+    if trimmed.is_empty() || trimmed == "modelfusion_auto" {
+        if let Some(best) = select_best_installed_ollama_model(installed_models) {
+            return best;
+        }
+        select_ollama_model_for_hardware(false).to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+pub async fn fetch_installed_ollama_models(client: &reqwest::Client, ollama_endpoint: &str) -> Vec<String> {
+    let tags_url = format!("{}/api/tags", ollama_endpoint.trim_end_matches('/'));
+    if let Ok(res) = client.get(&tags_url).send().await {
+        if res.status().is_success() {
+            if let Ok(json_val) = res.json::<serde_json::Value>().await {
+                return extract_model_names_from_tags_json(&json_val);
+            }
+        }
+    }
+    Vec::new()
 }
 
 async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: bool) -> Result<()> {
@@ -6736,7 +6826,12 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 let tags_url = format!("{}/api/tags", ollama_endpoint.trim_end_matches('/'));
                 let resp_bytes = match client.get(&tags_url).send().await {
                     Ok(res) if res.status().is_success() => res.bytes().await.unwrap_or_default().to_vec(),
-                    _ => b"{\"models\":[]}".to_vec(),
+                    _ => {
+                        tokio::task::spawn_blocking(|| {
+                            let _ = model_selection::memory::ensure_ollama_running();
+                        });
+                        b"{\"models\":[]}".to_vec()
+                    }
                 };
                 let response = format!(
                     "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -7107,16 +7202,74 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 let chunk_tokens = request_json.get("chunk_tokens").and_then(|v| v.as_u64()).map(|v| v as usize).unwrap_or(4096);
                 let max_loops = request_json.get("max_loops").and_then(|v| v.as_u64()).map(|v| v as usize).unwrap_or(32);
 
+                // 1. Ensure Ollama daemon is active
+                let tags_probe_url = format!("{}/api/tags", ollama_endpoint.trim_end_matches('/'));
+                let is_alive = match client.get(&tags_probe_url)
+                    .timeout(std::time::Duration::from_millis(1500))
+                    .send()
+                    .await
+                {
+                    Ok(r) => r.status().is_success() || r.status().as_u16() < 500,
+                    Err(_) => false,
+                };
+                if !is_alive {
+                    eprintln!("[SERVER] ⚠️ Ollama is not responding at {}. Auto-healing Ollama daemon...", ollama_endpoint);
+                    let _ = tokio::task::spawn_blocking(model_selection::memory::ensure_ollama_running).await;
+                }
+
+                // 2. Resolve requested model ("modelfusion_auto" or empty -> pick best installed model)
+                let requested_model = request_json.get("model").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let mut current_json = request_json.clone();
+
+                if requested_model == "modelfusion_auto" || requested_model.is_empty() {
+                    let mut installed_models = fetch_installed_ollama_models(&client, &ollama_endpoint).await;
+                    if installed_models.is_empty() {
+                        let _ = tokio::task::spawn_blocking(model_selection::memory::ensure_ollama_running).await;
+                        installed_models = fetch_installed_ollama_models(&client, &ollama_endpoint).await;
+                    }
+                    let resolved = resolve_model_for_chat(&requested_model, &installed_models);
+                    eprintln!("[SERVER] 🎯 Resolved '{}' -> '{}'", if requested_model.is_empty() { "<empty>" } else { &requested_model }, resolved);
+                    current_json["model"] = serde_json::json!(resolved);
+                }
+
                 if agentic_loop && target_tokens > 4096 && !is_streaming {
                     let actual_loops = max_loops.min(32).min((target_tokens + chunk_tokens - 1) / chunk_tokens);
-                    let mut current_json = request_json.clone();
                     if let Some(opts) = current_json.get_mut("options").and_then(|o| o.as_object_mut()) {
                         opts.insert("num_predict".to_string(), serde_json::json!(chunk_tokens));
                     }
                     let mut accumulated_content = String::new();
                     let mut final_data = serde_json::Value::Null;
                     for turn in 0..actual_loops {
-                        match client.post(&chat_url).json(&current_json).send().await {
+                        let mut turn_res = client.post(&chat_url).json(&current_json).send().await;
+
+                        // Auto-healing 404 fallback on first turn if model not found
+                        if turn == 0 {
+                            if let Ok(ref res) = turn_res {
+                                if res.status() == reqwest::StatusCode::NOT_FOUND {
+                                    let failed_model = current_json.get("model").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                    eprintln!("[SERVER] ⚠️ Ollama returned 404 for model '{}' in agentic loop. Attempting auto-healing fallback...", failed_model);
+                                    let installed = fetch_installed_ollama_models(&client, &ollama_endpoint).await;
+                                    let candidates: Vec<String> = installed.into_iter().filter(|m| m != &failed_model).collect();
+                                    if let Some(fallback_model) = select_best_installed_ollama_model(&candidates) {
+                                        eprintln!("[SERVER] 🔄 Auto-healing 404 fallback: switching to '{}'", fallback_model);
+                                        current_json["model"] = serde_json::json!(&fallback_model);
+                                        turn_res = client.post(&chat_url).json(&current_json).send().await;
+
+                                        let optimal = select_ollama_model_for_hardware(false).to_string();
+                                        if optimal != fallback_model {
+                                            tokio::spawn(async move {
+                                                eprintln!("[SERVER] ⬇️ Background pull initiated for optimal model: {}", optimal);
+                                                let _ = tokio::task::spawn_blocking(move || {
+                                                    let _ = std::process::Command::new("ollama").args(["pull", &optimal]).output();
+                                                }).await;
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        match turn_res {
                             Ok(res) if res.status().is_success() => {
                                 let data: serde_json::Value = res.json().await.unwrap_or_default();
                                 let content = data["message"]["content"].as_str().unwrap_or("").to_string();
@@ -7167,35 +7320,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     }
                 }
 
-                match client.post(&chat_url).header("Content-Type", "application/json").body(body.to_vec()).send().await {
-                    Ok(mut res) => {
-                        let status = res.status();
-                        if !is_streaming {
-                            let bytes = res.bytes().await.unwrap_or_default();
-                            let response = format!(
-                                "HTTP/1.1 {} {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                                status.as_u16(),
-                                status.canonical_reason().unwrap_or("OK"),
-                                bytes.len()
-                            );
-                            let _ = socket.write_all(response.as_bytes()).await;
-                            let _ = socket.write_all(&bytes).await;
-                            let _ = socket.flush().await;
-                        } else {
-                            let initial_resp = format!(
-                                "HTTP/1.1 {} {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/x-ndjson\r\nConnection: close\r\n\r\n",
-                                status.as_u16(),
-                                status.canonical_reason().unwrap_or("OK")
-                            );
-                            let _ = socket.write_all(initial_resp.as_bytes()).await;
-                            while let Ok(Some(chunk)) = res.chunk().await {
-                                if socket.write_all(&chunk).await.is_err() {
-                                    break;
-                                }
-                                let _ = socket.flush().await;
-                            }
-                        }
-                    }
+                let post_bytes = serde_json::to_vec(&current_json).unwrap_or_else(|_| body.to_vec());
+                let mut res = match client.post(&chat_url).header("Content-Type", "application/json").body(post_bytes).send().await {
+                    Ok(r) => r,
                     Err(e) => {
                         let err_json = serde_json::json!({
                             "error": format!("Ollama proxy error: {}", e)
@@ -7207,6 +7334,61 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             err_body
                         );
                         let _ = socket.write_all(response.as_bytes()).await;
+                        let _ = socket.flush().await;
+                        return;
+                    }
+                };
+
+                // Auto-healing 404 fallback: model not found in Ollama
+                if res.status() == reqwest::StatusCode::NOT_FOUND {
+                    let failed_model = current_json.get("model").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    eprintln!("[SERVER] ⚠️ Ollama returned 404 for model '{}'. Querying installed models for fallback...", failed_model);
+                    let installed = fetch_installed_ollama_models(&client, &ollama_endpoint).await;
+                    let candidates: Vec<String> = installed.into_iter().filter(|m| m != &failed_model).collect();
+                    if let Some(fallback_model) = select_best_installed_ollama_model(&candidates) {
+                        eprintln!("[SERVER] 🔄 Auto-healing 404: re-dispatching request with fallback model '{}'", fallback_model);
+                        current_json["model"] = serde_json::json!(&fallback_model);
+                        let retry_bytes = serde_json::to_vec(&current_json).unwrap_or_default();
+                        if let Ok(retry_res) = client.post(&chat_url).header("Content-Type", "application/json").body(retry_bytes).send().await {
+                            if retry_res.status().is_success() {
+                                res = retry_res;
+                                let optimal = select_ollama_model_for_hardware(false).to_string();
+                                if optimal != fallback_model {
+                                    tokio::spawn(async move {
+                                        eprintln!("[SERVER] ⬇️ Background pull initiated for optimal model: {}", optimal);
+                                        let _ = tokio::task::spawn_blocking(move || {
+                                            let _ = std::process::Command::new("ollama").args(["pull", &optimal]).output();
+                                        }).await;
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let status = res.status();
+                if !is_streaming {
+                    let bytes = res.bytes().await.unwrap_or_default();
+                    let response = format!(
+                        "HTTP/1.1 {} {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        status.as_u16(),
+                        status.canonical_reason().unwrap_or("OK"),
+                        bytes.len()
+                    );
+                    let _ = socket.write_all(response.as_bytes()).await;
+                    let _ = socket.write_all(&bytes).await;
+                    let _ = socket.flush().await;
+                } else {
+                    let initial_resp = format!(
+                        "HTTP/1.1 {} {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/x-ndjson\r\nConnection: close\r\n\r\n",
+                        status.as_u16(),
+                        status.canonical_reason().unwrap_or("OK")
+                    );
+                    let _ = socket.write_all(initial_resp.as_bytes()).await;
+                    while let Ok(Some(chunk)) = res.chunk().await {
+                        if socket.write_all(&chunk).await.is_err() {
+                            break;
+                        }
                         let _ = socket.flush().await;
                     }
                 }
@@ -15297,6 +15479,70 @@ public class Pr {
 
         let _ = std::fs::remove_file(&populated_source);
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_resolve_modelfusion_auto_model() {
+        use super::{resolve_model_for_chat, select_best_installed_ollama_model};
+
+        // 1. Picks best installed among candidates
+        let installed = vec![
+            "deepseek-r1:1.5b".to_string(),
+            "qwen2.5:7b".to_string(),
+            "fenkohq/foundation-sec-8b:latest".to_string(),
+        ];
+        assert_eq!(select_best_installed_ollama_model(&installed), Some("qwen2.5:7b".to_string()));
+        assert_eq!(resolve_model_for_chat("modelfusion_auto", &installed), "qwen2.5:7b");
+        assert_eq!(resolve_model_for_chat("", &installed), "qwen2.5:7b");
+
+        // 2. Fallbacks to available deepseek if no qwen
+        let installed_deepseek = vec!["deepseek-r1:1.5b".to_string(), "custom:latest".to_string()];
+        assert_eq!(select_best_installed_ollama_model(&installed_deepseek), Some("deepseek-r1:1.5b".to_string()));
+        assert_eq!(resolve_model_for_chat("modelfusion_auto", &installed_deepseek), "deepseek-r1:1.5b");
+
+        // 3. Fallbacks to first available if none in priority list
+        let installed_custom = vec!["custom-foundation:latest".to_string()];
+        assert_eq!(select_best_installed_ollama_model(&installed_custom), Some("custom-foundation:latest".to_string()));
+        assert_eq!(resolve_model_for_chat("modelfusion_auto", &installed_custom), "custom-foundation:latest");
+
+        // 4. Preserves explicitly requested model if specified
+        assert_eq!(resolve_model_for_chat("custom-model:latest", &installed), "custom-model:latest");
+
+        // 5. Empty installed falls back to hardware tier
+        let empty_installed: Vec<String> = Vec::new();
+        let hw_model = resolve_model_for_chat("modelfusion_auto", &empty_installed);
+        assert!(!hw_model.is_empty());
+        assert_ne!(hw_model, "modelfusion_auto");
+    }
+
+    #[test]
+    fn test_chat_proxy_404_fallback_selection() {
+        use super::{extract_model_names_from_tags_json, select_best_installed_ollama_model};
+
+        let tags_json = serde_json::json!({
+            "models": [
+                { "name": "deepseek-r1:1.5b", "model": "deepseek-r1:1.5b" },
+                { "name": "fenkohq/foundation-sec-8b:latest", "model": "fenkohq/foundation-sec-8b:latest" },
+                { "name": "qwen2.5:32b", "model": "qwen2.5:32b" }
+            ]
+        });
+
+        let installed = extract_model_names_from_tags_json(&tags_json);
+        assert_eq!(installed.len(), 3);
+        assert!(installed.contains(&"deepseek-r1:1.5b".to_string()));
+        assert!(installed.contains(&"qwen2.5:32b".to_string()));
+
+        // If requested model (e.g. qwen2.5:7b or modelfusion_auto) 404s, pick best remaining candidate
+        let failed_model = "qwen2.5:7b";
+        let candidates: Vec<String> = installed.clone().into_iter().filter(|m| m != failed_model).collect();
+        let fallback = select_best_installed_ollama_model(&candidates);
+        assert_eq!(fallback, Some("qwen2.5:32b".to_string()));
+
+        // If qwen2.5:32b also failed, fallback to deepseek-r1:1.5b
+        let failed_32b = "qwen2.5:32b";
+        let remaining: Vec<String> = candidates.into_iter().filter(|m| m != failed_32b).collect();
+        let fallback_ds = select_best_installed_ollama_model(&remaining);
+        assert_eq!(fallback_ds, Some("deepseek-r1:1.5b".to_string()));
     }
 }
 

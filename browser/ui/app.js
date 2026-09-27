@@ -156,11 +156,47 @@ document.addEventListener('DOMContentLoaded', () => {
   let activeOllamaModel = 'qwen2.5:7b';
   let cachedHardwareModel = null;
   let cachedHardwareStats = null;
+  let availableOllamaModels = [];
   let lastUserPrompt = '';
   let chatSessions = [];
   let currentSessionId = null;
   let isGenerating = false;
   let currentAbortController = null;
+
+  function pickBestInstalledOllamaModel(modelsList) {
+    if (!modelsList || modelsList.length === 0) return null;
+    const names = modelsList.map(m => (typeof m === 'string' ? m : (m.name || m.model || '')).trim()).filter(Boolean);
+    if (names.length === 0) return null;
+
+    const priorities = [
+      'qwen2.5:32b',
+      'qwen2.5:14b',
+      'qwen2.5:7b',
+      'deepseek-r1:32b',
+      'deepseek-r1:14b',
+      'deepseek-r1:8b',
+      'deepseek-r1:7b',
+      'deepseek-r1:1.5b',
+      'qwen2.5:3b',
+      'qwen2.5:1.5b'
+    ];
+
+    for (const p of priorities) {
+      const found = names.find(n => n.toLowerCase() === p.toLowerCase() || n.toLowerCase().startsWith(p.toLowerCase() + ':'));
+      if (found) return found;
+    }
+
+    const anyQwen = names.find(n => n.toLowerCase().includes('qwen'));
+    if (anyQwen) return anyQwen;
+
+    const anyDeepSeek = names.find(n => n.toLowerCase().includes('deepseek'));
+    if (anyDeepSeek) return anyDeepSeek;
+
+    const anyLlama = names.find(n => n.toLowerCase().includes('llama'));
+    if (anyLlama) return anyLlama;
+
+    return names[0];
+  }
 
 
   // -----------------------------------------------------------------
@@ -332,6 +368,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function populateModelDropdown(models) {
+    if (Array.isArray(models)) {
+      availableOllamaModels = models.map(m => typeof m === 'string' ? m : (m.name || m.model || '')).filter(Boolean);
+    }
     if (!settingActiveModel) return;
     const currentVal = settingActiveModel.value || currentSettings.activeModel;
     settingActiveModel.innerHTML = '';
@@ -2630,14 +2669,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const isFusionMode = modelToUse === 'modelfusion_auto' || modelToUse === 'fast_fusion' || modelToUse === 'deep_reasoning';
     let resolvedOllamaModel = 'qwen2.5:7b';
+    const bestInstalled = pickBestInstalledOllamaModel(availableOllamaModels);
     if (activeOllamaModel && activeOllamaModel !== 'modelfusion_auto' && activeOllamaModel !== 'fast_fusion' && activeOllamaModel !== 'deep_reasoning') {
       resolvedOllamaModel = activeOllamaModel;
     } else if (modelToUse === 'deep_reasoning') {
       resolvedOllamaModel = 'qwen2.5:32b';
     } else if (modelToUse === 'fast_fusion') {
-      resolvedOllamaModel = 'qwen2.5:7b';
+      resolvedOllamaModel = bestInstalled || 'qwen2.5:7b';
     } else {
-      resolvedOllamaModel = cachedHardwareModel || (activeOllamaModel !== 'modelfusion_auto' ? activeOllamaModel : null) || 'qwen2.5:32b';
+      resolvedOllamaModel = bestInstalled || cachedHardwareModel || (activeOllamaModel !== 'modelfusion_auto' ? activeOllamaModel : null) || 'qwen2.5:7b';
+    }
+
+    // Strict guarantee: NEVER let resolvedOllamaModel be 'modelfusion_auto' or empty
+    if (!resolvedOllamaModel || resolvedOllamaModel === 'modelfusion_auto') {
+      resolvedOllamaModel = bestInstalled || cachedHardwareModel || 'qwen2.5:7b';
     }
 
     if (hasImages && selectedVisionModel) {
@@ -2757,12 +2802,60 @@ document.addEventListener('DOMContentLoaded', () => {
         let lastFetchErr = null;
         for (const ep of chatEndpoints) {
           try {
-            const candidateRes = await fetch(`${ep}/api/chat`, {
+            let candidateRes = await fetch(`${ep}/api/chat`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: reqBodyStr,
+              body: JSON.stringify({
+                model: resolvedOllamaModel,
+                messages: conversationMessages,
+                stream: streamMode,
+                options: {
+                  temperature: tempToUse,
+                  num_predict: currentTurnChunk
+                }
+              }),
               signal: currentAbortController ? currentAbortController.signal : undefined
             });
+
+            // Auto-healing 404 fallback: model not found in Ollama
+            if (candidateRes.status === 404) {
+              console.warn(`[ROUTER] ⚠️ Endpoint ${ep}/api/chat returned 404 for model ${resolvedOllamaModel}. Refreshing models & retrying fallback...`);
+              try {
+                let tagsRes = await fetch(`${ep}/api/tags`).catch(() => null);
+                if (!tagsRes || !tagsRes.ok) {
+                  tagsRes = await fetch(`${ollamaUrl}/api/tags`).catch(() => null);
+                }
+                if (tagsRes && tagsRes.ok) {
+                  const tagsData = await tagsRes.json();
+                  const modelsList = (tagsData.models || []).map(m => typeof m === 'string' ? m : (m.name || m.model || '')).filter(Boolean);
+                  if (modelsList.length > 0) {
+                    availableOllamaModels = modelsList;
+                    const altCandidate = pickBestInstalledOllamaModel(modelsList.filter(m => m !== resolvedOllamaModel));
+                    if (altCandidate) {
+                      resolvedOllamaModel = altCandidate;
+                      console.log(`[ROUTER] 🔄 Auto-healing fallback: retrying with installed model '${resolvedOllamaModel}'`);
+                      candidateRes = await fetch(`${ep}/api/chat`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          model: resolvedOllamaModel,
+                          messages: conversationMessages,
+                          stream: streamMode,
+                          options: {
+                            temperature: tempToUse,
+                            num_predict: currentTurnChunk
+                          }
+                        }),
+                        signal: currentAbortController ? currentAbortController.signal : undefined
+                      });
+                    }
+                  }
+                }
+              } catch (tagErr) {
+                console.warn('[ROUTER] Error refreshing tags on 404:', tagErr);
+              }
+            }
+
             if (candidateRes.ok) {
               res = candidateRes;
               break;
@@ -2794,7 +2887,15 @@ document.addEventListener('DOMContentLoaded', () => {
                   const retryRes = await fetch(`${ep}/api/chat`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: reqBodyStr,
+                    body: JSON.stringify({
+                      model: resolvedOllamaModel,
+                      messages: conversationMessages,
+                      stream: streamMode,
+                      options: {
+                        temperature: tempToUse,
+                        num_predict: currentTurnChunk
+                      }
+                    }),
                     signal: currentAbortController ? currentAbortController.signal : undefined
                   });
                   if (retryRes.ok) {
@@ -3010,7 +3111,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       statusLine.className = 'term-line error';
-      statusLine.textContent = `[${time}] Error connecting to local AI engine (${err.message}). Ensure Ollama is running at ${ollamaUrl} with ${modelToUse}.`;
+      const fallbackDisplayModel = resolvedOllamaModel && resolvedOllamaModel !== 'modelfusion_auto' ? resolvedOllamaModel : 'qwen2.5:7b';
+      statusLine.textContent = `[${time}] Error connecting to local AI engine (${err.message}). Ensure Ollama is running at ${ollamaUrl} with an installed model (e.g. ${fallbackDisplayModel}).`;
       if (assistantBubble) {
         assistantBubble.classList.remove('streaming');
         if (bubbleContent) {
@@ -3018,7 +3120,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (window.location.protocol === 'file:') {
             switchPrompt = '<div style="margin-top: 8px;"><a href="http://localhost:5000/index.html" class="hero-chip" style="font-size: 11px; padding: 4px 10px; display: inline-block; text-decoration: none; cursor: pointer;">Switch to http://localhost:5000</a></div>';
           }
-          bubbleContent.innerHTML = `<span style="color: var(--error-color);">⚠️ Connection Error: ${err.message}. Ensure Ollama is running at ${ollamaUrl} with ${modelToUse}.</span>${switchPrompt}`;
+          bubbleContent.innerHTML = `<span style="color: var(--error-color);">⚠️ Connection Error: ${err.message}. Ensure Ollama is running at ${ollamaUrl} with an installed model (e.g. ${fallbackDisplayModel}).</span>${switchPrompt}`;
         }
       }
       responseLine.remove();
