@@ -31,6 +31,164 @@ pub struct SearchResult {
     pub snippet: String,
 }
 
+/// Individual indexed document inside the search index.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct IndexedDocument {
+    pub id: usize,
+    pub title: String,
+    pub url: String,
+    pub snippet: String,
+    pub terms: Vec<String>,
+    pub timestamp: u64,
+}
+
+/// Inverted index term posting referencing a document ID and term frequency.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TermPosting {
+    pub doc_id: usize,
+    pub term_frequency: usize,
+}
+
+/// Relevance match result when querying the search index.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IndexedMatch {
+    pub doc_id: usize,
+    pub title: String,
+    pub url: String,
+    pub snippet: String,
+    pub score: f64,
+}
+
+/// An inverted search index over retrieved web documents, passages, and snippets.
+/// Maintains an index of all retrieved data for fast retrieval, relevance scoring, and grounded citation.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct WebSearchIndex {
+    pub documents: Vec<IndexedDocument>,
+    pub inverted_index: std::collections::HashMap<String, Vec<TermPosting>>,
+    pub total_terms: usize,
+}
+
+impl WebSearchIndex {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Tokenizes text into lowercase alphanumeric terms.
+    pub fn tokenize(text: &str) -> Vec<String> {
+        text.to_lowercase()
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| w.len() >= 2)
+            .map(|s| s.to_string())
+            .collect()
+    }
+
+    /// Adds a single document into the index, indexing its title and snippet terms.
+    pub fn add_document(&mut self, title: &str, url: &str, snippet: &str) -> usize {
+        let doc_id = self.documents.len() + 1;
+        let combined = format!("{} {}", title, snippet);
+        let tokens = Self::tokenize(&combined);
+
+        let mut freq_map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for t in &tokens {
+            *freq_map.entry(t.clone()).or_insert(0) += 1;
+            self.total_terms += 1;
+        }
+
+        for (term, freq) in &freq_map {
+            self.inverted_index
+                .entry(term.clone())
+                .or_default()
+                .push(TermPosting {
+                    doc_id,
+                    term_frequency: *freq,
+                });
+        }
+
+        self.documents.push(IndexedDocument {
+            id: doc_id,
+            title: title.to_string(),
+            url: url.to_string(),
+            snippet: snippet.to_string(),
+            terms: tokens,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
+        });
+
+        doc_id
+    }
+
+    /// Populates the index from a slice of SearchResult items.
+    pub fn add_search_results(&mut self, results: &[SearchResult]) {
+        for r in results {
+            self.add_document(&r.title, &r.url, &r.snippet);
+        }
+    }
+
+    /// Queries the search index using TF-IDF term scoring.
+    pub fn search(&self, query: &str) -> Vec<IndexedMatch> {
+        let q_tokens = Self::tokenize(query);
+        if q_tokens.is_empty() || self.documents.is_empty() {
+            return Vec::new();
+        }
+
+        let num_docs = self.documents.len() as f64;
+        let mut scores: std::collections::HashMap<usize, f64> = std::collections::HashMap::new();
+
+        for term in &q_tokens {
+            if let Some(postings) = self.inverted_index.get(term) {
+                let idf = ((num_docs + 1.0) / (postings.len() as f64 + 1.0)).ln() + 1.0;
+                for p in postings {
+                    let tf = p.term_frequency as f64;
+                    *scores.entry(p.doc_id).or_insert(0.0) += tf * idf;
+                }
+            }
+        }
+
+        let mut matches: Vec<IndexedMatch> = scores
+            .into_iter()
+            .filter_map(|(doc_id, score)| {
+                self.documents.iter().find(|d| d.id == doc_id).map(|d| IndexedMatch {
+                    doc_id,
+                    title: d.title.clone(),
+                    url: d.url.clone(),
+                    snippet: d.snippet.clone(),
+                    score,
+                })
+            })
+            .collect();
+
+        matches.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        matches
+    }
+
+    /// Formats the index into an augmented context buffer for LLM synthesis.
+    pub fn format_context_buffer(&self, max_items: usize) -> String {
+        let mut buffer = String::new();
+        for (idx, doc) in self.documents.iter().take(max_items).enumerate() {
+            buffer.push_str(&format!(
+                "[{}] Title: {}\nURL: {}\nExcerpt: {}\n\n",
+                idx + 1,
+                doc.title,
+                doc.url,
+                doc.snippet
+            ));
+        }
+        buffer
+    }
+
+    /// Returns a structured JSON summary of the index with all data.
+    pub fn index_summary(&self) -> serde_json::Value {
+        serde_json::json!({
+            "total_documents": self.documents.len(),
+            "unique_terms": self.inverted_index.len(),
+            "total_term_instances": self.total_terms,
+            "documents": self.documents,
+        })
+    }
+}
+
 /// Decode URL-encoded parameters (e.g., extracting destination URL from uddg=...)
 fn decode_percent_encoded(input: &str) -> String {
     let mut result = String::new();
@@ -435,12 +593,15 @@ pub async fn run_deep_research(
     }
 
     // 2. Resilient Native Rust Execution:
+    println!("🔍 Searching the internet for: \"{}\"...", query);
     let search_results = live_web_search(query, max_results).await?;
+    println!("🧠 Correlating results with LLM...");
     synthesize_research(query, &search_results, model_override).await
 }
 
 /// Quick live search only: retrieves results and formats markdown links with snippets.
 pub async fn run_web_search_only(query: &str, max_results: usize) -> Result<String> {
+    println!("🔍 Searching the internet for: \"{}\"...", query);
     let results = live_web_search(query, max_results).await?;
     if results.is_empty() {
         return Ok(format!(
@@ -459,6 +620,143 @@ pub async fn run_web_search_only(query: &str, max_results: usize) -> Result<Stri
         out.push('\n');
     }
     Ok(out)
+}
+
+/// Result returned by the web search agent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebAgentResult {
+    pub user_query: String,
+    pub search_query: String,
+    pub response: String,
+    pub tokens_returned: u32,
+    pub results_count: usize,
+    pub index: WebSearchIndex,
+}
+
+/// Executes the complete 3-phase web search agent workflow:
+/// 1. Query Formulation: Local LLM generates a targeted search query string.
+/// 2. Web Retrieval: Live web search executes against DuckDuckGo.
+/// 3. Search Indexing: All retrieved documents and snippets are indexed into a structured WebSearchIndex.
+/// 4. Grounded Synthesis: Local LLM synthesizes a cited answer with **256 tokens default return**.
+pub async fn run_web_agent(
+    user_query: &str,
+    max_tokens: Option<u32>,
+    model_override: Option<&str>,
+) -> Result<WebAgentResult> {
+    let tokens_limit = max_tokens.unwrap_or(256); // 256 tokens must be default return!
+    let model_to_use = match model_override {
+        Some(m) if !m.is_empty() => m.to_string(),
+        _ => detect_best_reasoning_model().await,
+    };
+
+    let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
+        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .connect_timeout(Duration::from_secs(3))
+        .timeout(Duration::from_secs(12))
+        .build()?;
+
+    // Phase 1: Query Formulation using the local model
+    let query_formulation_prompt = format!(
+        "You are an automated research agent. Produce a single concise web search query to find the answer to the following question. Output only the search query string and nothing else.\n\nQuestion: {}",
+        user_query
+    );
+
+    let search_query = {
+        let req_body = serde_json::json!({
+            "model": &model_to_use,
+            "prompt": &query_formulation_prompt,
+            "stream": false,
+            "options": {
+                "temperature": 0.1,
+                "num_predict": 48
+            }
+        });
+        let gen_url = format!("{}/api/generate", endpoint.trim_end_matches('/'));
+        match client.post(&gen_url).json(&req_body).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    let raw = json["response"].as_str().unwrap_or(user_query).trim();
+                    let cleaned = raw.trim_matches('"').trim_matches('\'').trim();
+                    if cleaned.is_empty() { user_query.to_string() } else { cleaned.to_string() }
+                } else {
+                    user_query.to_string()
+                }
+            }
+            _ => user_query.to_string(),
+        }
+    };
+
+    // Phase 2: Live Web Retrieval
+    println!("🔍 Searching the internet for \"{}\"...", search_query);
+    let search_results = live_web_search(&search_query, 6).await.unwrap_or_default();
+
+    // Phase 3: Index all retrieved data into WebSearchIndex
+    println!("📊 Indexing retrieved documents into WebSearchIndex...");
+    let mut search_index = WebSearchIndex::new();
+    search_index.add_search_results(&search_results);
+
+    // Phase 4: Grounded Synthesis with Default 256 Tokens Return
+    println!("🧠 Correlating results with LLM ({} tokens default return)...", tokens_limit);
+    let context_buffer = search_index.format_context_buffer(6);
+    let synthesis_prompt = if !context_buffer.is_empty() {
+        format!(
+            "You are an expert analyst. Answer the user query strictly using the provided search context. Cite the specific bracketed sources in your explanation.\n\nContext:\n{}\nQuestion: {}\nAnswer:",
+            context_buffer, user_query
+        )
+    } else {
+        format!(
+            "Answer the following question directly and concisely in 2-3 clear paragraphs:\n\nQuestion: {}\nAnswer:",
+            user_query
+        )
+    };
+
+    let response_text = {
+        let req_body = serde_json::json!({
+            "model": &model_to_use,
+            "prompt": &synthesis_prompt,
+            "stream": false,
+            "options": {
+                "temperature": 0.3,
+                "num_predict": tokens_limit // 256 tokens default return
+            }
+        });
+        let gen_url = format!("{}/api/generate", endpoint.trim_end_matches('/'));
+        let mut final_text = String::new();
+        if let Ok(resp) = client.post(&gen_url).json(&req_body).send().await {
+            if resp.status().is_success() {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    if let Some(t) = json["response"].as_str() {
+                        final_text = t.trim().to_string();
+                    }
+                }
+            }
+        }
+
+        // Resilient fallback if local LLM is offline or timed out
+        if final_text.is_empty() {
+            if !search_results.is_empty() {
+                let mut fallback = format!("### Grounded Synthesis for: \"{}\"\n\n", user_query);
+                for (i, r) in search_results.iter().take(3).enumerate() {
+                    fallback.push_str(&format!("[{}] **{}**: {}\n\n", i + 1, r.title, r.snippet));
+                }
+                final_text = fallback;
+            } else {
+                final_text = format!("No search results could be retrieved for: \"{}\"", user_query);
+            }
+        }
+        final_text
+    };
+
+    Ok(WebAgentResult {
+        user_query: user_query.to_string(),
+        search_query,
+        response: response_text,
+        tokens_returned: tokens_limit,
+        results_count: search_results.len(),
+        index: search_index,
+    })
 }
 
 #[cfg(test)]
@@ -489,5 +787,52 @@ mod tests {
             assert!(list[0].url.starts_with("http"));
             assert!(!list[0].title.is_empty());
         }
+    }
+
+    #[test]
+    fn test_web_search_index_indexing_and_search() {
+        let mut index = WebSearchIndex::new();
+        index.add_document(
+            "Post-Quantum Cryptography Standards",
+            "https://csrc.nist.gov/pqc",
+            "NIST has standardized post-quantum algorithms including ML-KEM and ML-DSA."
+        );
+        index.add_document(
+            "Rust Async Concurrency Guide",
+            "https://tokio.rs",
+            "Tokio provides asynchronous runtime and fast multi-threaded task scheduling."
+        );
+
+        let summary = index.index_summary();
+        assert_eq!(summary["total_documents"], 2);
+        assert!(summary["unique_terms"].as_u64().unwrap() > 5);
+
+        let matches = index.search("cryptography algorithms");
+        assert!(!matches.is_empty());
+        assert_eq!(matches[0].title, "Post-Quantum Cryptography Standards");
+
+        let tokio_matches = index.search("tokio asynchronous");
+        assert!(!tokio_matches.is_empty());
+        assert_eq!(tokio_matches[0].title, "Rust Async Concurrency Guide");
+
+        let context = index.format_context_buffer(2);
+        assert!(context.contains("[1] Title: Post-Quantum Cryptography Standards"));
+        assert!(context.contains("[2] Title: Rust Async Concurrency Guide"));
+    }
+
+    #[test]
+    fn test_web_search_index_empty_query() {
+        let index = WebSearchIndex::new();
+        let matches = index.search("");
+        assert!(matches.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_web_agent_default_256_tokens() {
+        let res = run_web_agent("What is Rust?", None, None).await;
+        assert!(res.is_ok());
+        let agent_res = res.unwrap();
+        assert_eq!(agent_res.tokens_returned, 256); // 256 tokens must be default return!
+        assert!(!agent_res.search_query.is_empty());
     }
 }

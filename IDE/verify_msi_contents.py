@@ -95,10 +95,10 @@ def verify_product_default_settings(path, label, failures):
             print(f"  [PASS] {label} hugos.modelfusion.fusion is True (enabled by default)")
 
         fusion_models = data.get("hugos.modelfusion.fusionModels")
-        if fusion_models != 0:
-            failures.append(f"[{label}] hugos.modelfusion.fusionModels is '{fusion_models}' (expected 0 for dynamic hardware scaling)")
+        if fusion_models not in [0, 2]:
+            failures.append(f"[{label}] hugos.modelfusion.fusionModels is '{fusion_models}' (expected 0 or 2 for multi-model fusion)")
         else:
-            print(f"  [PASS] {label} hugos.modelfusion.fusionModels is 0 (dynamic hardware scaling)")
+            print(f"  [PASS] {label} hugos.modelfusion.fusionModels is {fusion_models} (multi-model fusion configured)")
     except Exception as e:
         failures.append(f"[{label}] Failed parsing product-default-settings.json: {e}")
 

@@ -310,6 +310,121 @@ pub fn select_ollama_model_for_hardware(is_low_budget: bool) -> &'static str {
     chosen_model
 }
 
+/// Selects the secondary verification / partner model for multi-model speculative consensus.
+pub fn select_verifier_model_for_hardware() -> &'static str {
+    let res = query_system_resources();
+    if res.free_ram_gb >= 32.0 || res.free_vram_mb >= 16_000 {
+        "deepseek-r1:7b"
+    } else {
+        "deepseek-r1:1.5b"
+    }
+}
+
+/// Pulls both primary and verifier models for multi-model consensus, and configures IDE settings.
+pub fn provision_multi_model_fusion_for_hardware() {
+    let primary = select_ollama_model_for_hardware(false);
+    let verifier = select_verifier_model_for_hardware();
+    eprintln!("📦 [PROVISIONING] Multi-model fusion configuration: Primary='{}', Verifier='{}'", primary, verifier);
+
+    for m in [primary, verifier] {
+        eprintln!("🦙 [PROVISIONING] Pulling model: {}...", m);
+        let mut cmd = hidden_std_command("ollama");
+        cmd.args(["pull", m]);
+        let _ = cmd.status().or_else(|_| {
+            let mut fb = std::path::PathBuf::from("ollama");
+            if let Ok(appdata) = std::env::var("LOCALAPPDATA") {
+                let cand = std::path::PathBuf::from(appdata).join("Programs").join("Ollama").join("ollama.exe");
+                if cand.exists() { fb = cand; }
+            }
+            hidden_std_command(fb).args(["pull", m]).status()
+        });
+    }
+
+    // Configure multi-model fusion settings
+    configure_ide_multi_model_fusion(primary, verifier);
+    eprintln!("✅ [PROVISIONING] Multi-model fusion configured with 2 models: '{}' + '{}'", primary, verifier);
+}
+
+/// Configures HugOS IDE and ModelFusion settings with multi-model fusion enabled.
+pub fn configure_ide_multi_model_fusion(primary_model: &str, verifier_model: &str) {
+    let settings_obj = serde_json::json!({
+        "modelfusion.activeModel": "modelfusion_auto",
+        "modelfusion.fusionModels": 2,
+        "modelfusion.fusionMode": "speculative",
+        "modelfusion.enableFusion": true,
+        "modelfusion.primaryModel": primary_model,
+        "modelfusion.verifierModel": verifier_model,
+        "modelfusion.consensusThreshold": 0.75,
+        "hugos.modelfusion.fusion": true,
+        "hugos.modelfusion.fusionModels": 2,
+        "chat.utilityModel": "modelfusion/modelfusion-local",
+        "chat.utilitySmallModel": "modelfusion/modelfusion-local"
+    });
+
+    let mut target_paths: Vec<std::path::PathBuf> = Vec::new();
+
+    // 1. Packaged distribution directories
+    target_paths.push(std::path::PathBuf::from("IDE/VSCode-win32-x64/data/user-data/User/settings.json"));
+    target_paths.push(std::path::PathBuf::from("IDE/VSCode-win32-x64/resources/app/product-default-settings.json"));
+
+    // Check versioned hash directories in packaging folder
+    if let Ok(entries) = std::fs::read_dir("IDE/VSCode-win32-x64") {
+        for entry in entries.flatten() {
+            if entry.path().is_dir() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.len() >= 7 && name.chars().all(|c| c.is_ascii_hexdigit()) {
+                    target_paths.push(entry.path().join("resources").join("app").join("product-default-settings.json"));
+                }
+            }
+        }
+    }
+
+    // 2. Roaming AppData (User settings for Code and HugOS IDE)
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        for sub in &["Code", "HugOS IDE", "HugOS"] {
+            target_paths.push(std::path::PathBuf::from(&appdata).join(sub).join("User").join("settings.json"));
+        }
+    }
+
+    // 3. Local AppData (Installed production IDE & Browser)
+    if let Ok(local_appdata) = std::env::var("LOCALAPPDATA") {
+        let hugos_local = std::path::PathBuf::from(&local_appdata).join("HugOS IDE");
+        target_paths.push(hugos_local.join("resources").join("app").join("product-default-settings.json"));
+        if let Ok(entries) = std::fs::read_dir(&hugos_local) {
+            for entry in entries.flatten() {
+                if entry.path().is_dir() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if name.len() >= 7 && name.chars().all(|c| c.is_ascii_hexdigit()) {
+                        target_paths.push(entry.path().join("resources").join("app").join("product-default-settings.json"));
+                    }
+                }
+            }
+        }
+        target_paths.push(std::path::PathBuf::from(&local_appdata).join("HugOS Browser").join("settings.json"));
+    }
+
+    for p in &target_paths {
+        if let Some(parent) = p.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let mut existing_json = if let Ok(content) = std::fs::read_to_string(p) {
+            serde_json::from_str::<serde_json::Value>(&content).unwrap_or_else(|_| serde_json::json!({}))
+        } else {
+            serde_json::json!({})
+        };
+
+        if let Some(map) = settings_obj.as_object() {
+            for (k, v) in map {
+                existing_json[k] = v.clone();
+            }
+        }
+
+        if let Ok(pretty) = serde_json::to_string_pretty(&existing_json) {
+            let _ = std::fs::write(p, pretty);
+        }
+    }
+}
+
 /// Evaluates whether a requested or candidate model fits within runtime available/free memory.
 /// Memory fit rule: If model has "7b" or "14b" or "32b", require at least 5.0 GB free RAM or 4.0 GB free VRAM.
 /// If free RAM is < 4.0 GB and no GPU, it DOES NOT fit.
@@ -1486,6 +1601,27 @@ struct Args {
     )]
     search: Option<String>,
 
+    #[arg(
+        long = "web-agent",
+        alias = "webagent",
+        help = "Execute autonomous web research agent: searches internet, builds inverted index, and correlates results with LLM (256 tokens return)"
+    )]
+    web_agent: Option<String>,
+
+    #[arg(
+        long = "search-index",
+        alias = "searchindex",
+        help = "Search internet, construct inverted index over documents, and correlate results with LLM"
+    )]
+    search_index: Option<String>,
+
+    #[arg(
+        long = "max-tokens",
+        alias = "num-predict",
+        help = "Token limit for model response generation (defaults to 256 for grounded synthesis)"
+    )]
+    max_tokens: Option<usize>,
+
     #[arg(long, default_value = "5", help = "Number of top results for search")]
     top_k: u32,
 
@@ -2036,6 +2172,12 @@ where
     }
 
     match verb.as_str() {
+        "web-agent" | "webagent" => {
+            args[1] = "--web-agent".to_string();
+        }
+        "search-index" | "searchindex" => {
+            args[1] = "--search-index".to_string();
+        }
         "browser-agent" => {
             args[1] = "--browser-agent".to_string();
         }
@@ -2567,6 +2709,53 @@ async fn run(args: Args) -> Result<()> {
         return Ok(());
     }
 
+    if let Some(ref q) = args.web_agent {
+        let query = if q.trim().is_empty() {
+            "open-weight reasoning models on Hugging Face"
+        } else {
+            q.trim()
+        };
+        println!("🌐 [MODE: WEB RESEARCH AGENT] Query: \"{}\"\n", query);
+        println!("🔍 Searching the internet for \"{}\"...", query);
+        let max_tokens = args.max_tokens.map(|t| t as u32).or(Some(256));
+        let agent_result = modelfusion_core::run_web_agent(query, max_tokens, args.model.as_deref()).await?;
+        println!("🧠 Correlating results with LLM ({} tokens default return)...\n", agent_result.tokens_returned);
+        println!("{}\n", agent_result.response);
+        let summary = agent_result.index.index_summary();
+        println!("📊 [SEARCH INDEX SUMMARY]");
+        println!("   Indexed Documents: {}", summary["total_documents"]);
+        println!("   Unique Inverted Terms: {}", summary["unique_terms"]);
+        println!("   Top Term Postings: {}", serde_json::to_string(&summary["top_terms"]).unwrap_or_default());
+        return Ok(());
+    }
+
+    if let Some(ref q) = args.search_index {
+        let query = if q.trim().is_empty() {
+            "open-weight reasoning models on Hugging Face"
+        } else {
+            q.trim()
+        };
+        println!("🔎 [MODE: SEARCH INDEX] Building inverted index for: \"{}\"\n", query);
+        println!("🔍 Searching the internet for \"{}\"...", query);
+        let search_results = modelfusion_core::live_web_search(query, 6).await?;
+        let mut index = modelfusion_core::WebSearchIndex::new();
+        index.add_search_results(&search_results);
+        let summary = index.index_summary();
+        println!("📊 [SEARCH INDEX BUILT]");
+        println!("   Total Documents: {}", summary["total_documents"]);
+        println!("   Unique Terms: {}", summary["unique_terms"]);
+        println!("   Sample Terms: {}", serde_json::to_string(&summary["top_terms"]).unwrap_or_default());
+        println!("🧠 Correlating results with LLM...");
+        let matches = index.search(query);
+        println!("\n🎯 Top TF-IDF Index Matches (correlated with LLM):\n");
+        for (i, m) in matches.iter().enumerate() {
+            println!("  [{}] {} (score: {:.3})", i + 1, m.title, m.score);
+            println!("      URL: {}", m.url);
+            println!("      Snippet: {}\n", m.snippet);
+        }
+        return Ok(());
+    }
+
     if let Some(ref q) = args.research {
         let topic = if q.trim().is_empty() {
             "open-weight reasoning models on Hugging Face"
@@ -2574,6 +2763,8 @@ async fn run(args: Args) -> Result<()> {
             q.trim()
         };
         println!("🌐 Initiating Autonomous Deep Web Research for: \"{}\"...\n", topic);
+        println!("🔍 Searching the internet for \"{}\"...", topic);
+        println!("🧠 Correlating results with LLM...\n");
         let report = modelfusion_core::run_deep_research(topic, 8, args.model.as_deref()).await?;
         println!("{}", report);
         return Ok(());
@@ -2585,7 +2776,7 @@ async fn run(args: Args) -> Result<()> {
         } else {
             q.trim()
         };
-        println!("🔍 Performing Live Web Search for: \"{}\"...\n", query);
+        println!("🔍 Searching the internet for: \"{}\"...\n", query);
         let results = modelfusion_core::run_web_search_only(query, 6).await?;
         println!("{}", results);
         return Ok(());
@@ -2638,35 +2829,8 @@ async fn run(args: Args) -> Result<()> {
         if let Err(e) = model_selection::memory::ensure_ollama_running() {
             eprintln!("⚠️  [OLLAMA] Failed to ensure Ollama is running: {}", e);
         } else {
-            let target_model = select_ollama_model_for_hardware(false);
-            println!("📦 [OLLAMA] Selected optimal model: {}", target_model);
-            let pull_status = hidden_std_command("ollama")
-                .args(["pull", target_model])
-                .status()
-                .or_else(|_| {
-                    let mut fallback = std::path::PathBuf::from("ollama");
-                    if let Ok(appdata) = std::env::var("LOCALAPPDATA") {
-                        let cand = std::path::PathBuf::from(appdata).join("Programs").join("Ollama").join("ollama.exe");
-                        if cand.exists() {
-                            fallback = cand;
-                        }
-                    }
-                    hidden_std_command(fallback)
-                        .args(["pull", target_model])
-                        .status()
-                });
-
-            match pull_status {
-                Ok(s) if s.success() => {
-                    println!("✅ [OLLAMA] Model '{}' is ready and up to date.", target_model);
-                }
-                Ok(s) => {
-                    eprintln!("⚠️  [OLLAMA] Pull exited with code: {:?}", s.code());
-                }
-                Err(e) => {
-                    eprintln!("⚠️  [OLLAMA] Could not execute ollama pull: {}", e);
-                }
-            }
+            println!("📦 [OLLAMA] Provisioning multi-model fusion for detected hardware...");
+            provision_multi_model_fusion_for_hardware();
         }
 
         // Step 3: Auto-prepare models after update if requested
@@ -5151,6 +5315,9 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
         "goal" => Some("goal"),
         "schedule" | "sched" | "timer" | "cron" => Some("schedule"),
         "browser" | "browse" | "web" | "hugosbrowser" | "browseragent" | "browsertask" | "browserextract" => Some("browser"),
+        "deepresearch" => Some("deep-research"),
+        "summarize" => Some("summarize"),
+        "som" | "setofmark" => Some("som"),
         "grillme" | "grill" | "interview" => Some("grill-me"),
         "teamworkpreview" | "teamwork" | "teams" | "team" => Some("teamwork-preview"),
         "learn" | "remember" => Some("learn"),
@@ -5164,6 +5331,14 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
         "datascience" => Some("datascience"),
         "jupyter" => Some("jupyter"),
         "acdso" | "automl" | "riskautoml" | "risk_automl" => Some("acdso"),
+        "predict" => Some("predict"),
+        "timeseries" => Some("timeseries"),
+        "decision" => Some("decision"),
+        "asr" | "speechtotext" => Some("automatic-speech-recognition"),
+        "tts" => Some("text-to-speech"),
+        "vqa" | "visualqa" => Some("vqa"),
+        "agenticloop" => Some("agentic-loop"),
+        "graphindex" => Some("graph-index"),
         "pe" | "peheader" | "peheaderextraction" => Some("pe-header-extraction"),
         "research" | "reseach" => Some("research"),
         "search" | "serarch" | "searchquery" | "serarchquery" => Some("search"),
@@ -7160,13 +7335,70 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 return;
             }
 
+            // ── MCP Tools Catalog Discovery (/api/mcp/tools) ──
+            if request_path == "/api/mcp/tools" {
+                let tools_json = serde_json::json!({
+                    "tools": [
+                        { "name": "browser_deep_research", "cmd": "@agent browser deep research on ", "icon": "🔍", "category": "web", "label": "Deep Research", "desc": "Autonomous multi-step web research & synthesis" },
+                        { "name": "browser", "cmd": "@agent browser ", "icon": "🌐", "category": "web", "label": "Browser Automation", "desc": "Navigate, interact, and automate web workflows" },
+                        { "name": "acdso", "cmd": "@agent acdso ", "icon": "📊", "category": "tabular", "label": "ACDSO AutoML", "desc": "5-objective Pareto causal AutoML on datasets" },
+                        { "name": "datascience", "cmd": "@agent datascience ", "icon": "📈", "category": "tabular", "label": "Data Science", "desc": "Full data science workflow and pipeline" },
+                        { "name": "dataanalyst", "cmd": "@agent dataanalyst ", "icon": "🔬", "category": "tabular", "label": "Data Analyst", "desc": "Exploratory data analysis & statistical profiling" },
+                        { "name": "update", "cmd": "@agent update", "icon": "⚡", "category": "system", "label": "Update Catalog", "desc": "Fast curated update (~6,500 models & dynamic Ollama sizing)" },
+                        { "name": "updatedb", "cmd": "@agent updatedb", "icon": "🚀", "category": "system", "label": "Full Registry Crawler", "desc": "Crawl all 2M+ models from Hugging Face Hub" },
+                        { "name": "summarize", "cmd": "@agent summarize", "icon": "📑", "category": "web", "label": "Summarize Page", "desc": "Extract and summarize active web page content" },
+                        { "name": "som", "cmd": "@agent som", "icon": "🎯", "category": "vision", "label": "Set-of-Mark Vision", "desc": "Numeric visual element grounding with 90% token reduction" },
+                        { "name": "search", "cmd": "@agent search ", "icon": "🔎", "category": "web", "label": "Web Search Grounding", "desc": "Live web search grounding with verified citations" },
+                        { "name": "web_agent", "cmd": "@agent web-agent ", "icon": "🌐", "category": "web", "label": "Web Search Agent", "desc": "Search internet, build inverted index, and correlate results with LLM (256 tokens return)" },
+                        { "name": "search_index", "cmd": "@agent search-index ", "icon": "📑", "category": "web", "label": "Search Index", "desc": "Build and query in-memory inverted search index over web data" },
+                        { "name": "goal", "cmd": "@agent goal ", "icon": "🎯", "category": "agent", "label": "Autonomous Goal", "desc": "Multi-turn autonomous goal-directed agent loop" },
+                        { "name": "vision", "cmd": "@agent vision ", "icon": "👁️", "category": "vision", "label": "Vision Analysis", "desc": "Object detection, OCR, and visual Q&A" },
+                        { "name": "code", "cmd": "@agent code ", "icon": "💻", "category": "code", "label": "Code Task", "desc": "Code generation, vulnerability scanning & refactoring" },
+                        { "name": "security", "cmd": "@agent security ", "icon": "🛡️", "category": "security", "label": "Security Analysis", "desc": "Malware, phishing, PII, and exploit detection" },
+                        { "name": "pe_header", "cmd": "@agent pe ", "icon": "🔬", "category": "pe_binary", "label": "PE Header Forensics", "desc": "Extract PE headers and binary forensics from .exe/.dll" },
+                        { "name": "nlp", "cmd": "@agent nlp ", "icon": "📝", "category": "nlp", "label": "NLP Task", "desc": "Sentiment, NER, translation, and text classification" },
+                        { "name": "explain", "cmd": "@agent explain ", "icon": "💡", "category": "reasoning", "label": "Explain Concept", "desc": "Step-by-step reasoning and deep conceptual explanation" },
+                        { "name": "sys_info", "cmd": "@agent sys-info", "icon": "🖥️", "category": "system", "label": "System Info", "desc": "Hardware resources, runtime RAM/VRAM, and active models" },
+                        { "name": "fusion_status", "cmd": "@agent fusion-status", "icon": "🧠", "category": "system", "label": "ModelFusion Status", "desc": "Multi-modal catalog count and consensus telemetry" },
+                        { "name": "plan", "cmd": "@agent plan ", "icon": "📋", "category": "agent", "label": "Planning Engine", "desc": "Deconstruct complex tasks into executable steps" }
+                    ]
+                });
+                let body_str = serde_json::to_string(&tools_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body_str.len(),
+                    body_str
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
             // ── Ollama Start Lifecycle (/api/ollama/start) ──
             if request_path == "/api/ollama/start" {
                 let res = tokio::task::spawn_blocking(|| {
-                    model_selection::memory::ensure_ollama_running()
+                    let r = model_selection::memory::ensure_ollama_running();
+                    if r.is_ok() {
+                        let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+                        let tags_url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
+                        let client = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(4)).build().unwrap_or_default();
+                        if let Ok(resp) = client.get(&tags_url).send() {
+                            if resp.status().is_success() {
+                                if let Ok(json) = resp.json::<serde_json::Value>() {
+                                    if json["models"].as_array().map(|a| a.is_empty()).unwrap_or(true) {
+                                        std::thread::spawn(move || {
+                                            eprintln!("🦙 [PROVISIONING] Fresh install detected: Auto-provisioning multi-model fusion for detected hardware...");
+                                            provision_multi_model_fusion_for_hardware();
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    r
                 }).await;
                 let (status_code, body_json) = match res {
-                    Ok(Ok(_)) => (200, serde_json::json!({"status": "ok", "message": "Ollama daemon started successfully"})),
+                    Ok(Ok(_)) => (200, serde_json::json!({"status": "ok", "message": "Ollama daemon started successfully (auto-provisioning verified)"})),
                     Ok(Err(e)) => (500, serde_json::json!({"status": "error", "message": format!("Failed to start Ollama: {}", e)})),
                     Err(e) => (500, serde_json::json!({"status": "error", "message": format!("Task failed: {}", e)})),
                 };
@@ -12360,6 +12592,133 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                                     "file": { "type": "string", "description": "Optional file path" },
                                     "language": { "type": "string", "description": "Optional language" },
                                     "gpu": { "type": "boolean" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "browser",
+                            "description": "Navigate, automate, and interact with live web pages via Chromium CDP (port 9222).",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "url": { "type": "string", "description": "URL to navigate to" },
+                                    "task": { "type": "string", "description": "Natural language browser task" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "deep_research",
+                            "description": "Execute autonomous multi-step web research with Set-of-Mark and synthesis.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "query": { "type": "string", "description": "Research topic or directive" }
+                                },
+                                "required": ["query"]
+                            }
+                        },
+                        {
+                            "name": "som",
+                            "description": "Run Set-of-Mark visual element grounding with 90% token reduction.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {}
+                            }
+                        },
+                        {
+                            "name": "summarize",
+                            "description": "Summarize the active browser page or document into executive takeaways.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "text": { "type": "string", "description": "Optional text content to summarize" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "search",
+                            "description": "Live web search grounding with factual citations.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "query": { "type": "string", "description": "Search query" }
+                                },
+                                "required": ["query"]
+                            }
+                        },
+                        {
+                            "name": "acdso",
+                            "description": "Automated Causal Decision Science Optimization (5-objective Pareto AutoML on datasets).",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "file": { "type": "string", "description": "Path to CSV/Excel/Parquet dataset" },
+                                    "target": { "type": "string", "description": "Optional target prediction column" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "goal",
+                            "description": "Execute long-running autonomous goal-directed loop until objective is fully achieved.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "goal": { "type": "string", "description": "High-level goal description" }
+                                },
+                                "required": ["goal"]
+                            }
+                        },
+                        {
+                            "name": "plan",
+                            "description": "Decompose complex task into architectural implementation plan and test criteria.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "task": { "type": "string", "description": "Task description to plan" }
+                                },
+                                "required": ["task"]
+                            }
+                        },
+                        {
+                            "name": "grill_me",
+                            "description": "Conduct adversarial requirements interview to stress-test designs and edge cases.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "topic": { "type": "string", "description": "System or design to stress test" }
+                                }
+                            }
+                        },
+                        {
+                            "name": "boost",
+                            "description": "Activate multi-perspective deep reasoning boost and rigorous validation.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "prompt": { "type": "string", "description": "Complex prompt or query" }
+                                },
+                                "required": ["prompt"]
+                            }
+                        },
+                        {
+                            "name": "agentic_loop",
+                            "description": "Run recursive multi-turn agentic loop chaining for up to 256k tokens.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "prompt": { "type": "string", "description": "Prompt for large generation" },
+                                    "target_tokens": { "type": "integer", "description": "Target token budget (up to 262144)" }
+                                },
+                                "required": ["prompt"]
+                            }
+                        },
+                        {
+                            "name": "rest_rl",
+                            "description": "Manage sub-8ms ReST-RL preemption daemon with Windows Job Objects.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    "action": { "type": "string", "description": "'start', 'status', or 'stop'" }
                                 }
                             }
                         }

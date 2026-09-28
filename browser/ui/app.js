@@ -371,21 +371,57 @@ document.addEventListener('DOMContentLoaded', () => {
     if (Array.isArray(models)) {
       availableOllamaModels = models.map(m => typeof m === 'string' ? m : (m.name || m.model || '')).filter(Boolean);
     }
-    if (!settingActiveModel) return;
-    const currentVal = settingActiveModel.value || currentSettings.activeModel;
-    settingActiveModel.innerHTML = '';
-    models.forEach(m => {
-      const opt = document.createElement('option');
-      opt.value = m.name;
-      const sizeGb = m.size ? ` (${(m.size / (1024 * 1024 * 1024)).toFixed(1)} GB)` : '';
-      opt.textContent = `${m.name}${sizeGb}`;
-      settingActiveModel.appendChild(opt);
-    });
+    if (settingActiveModel) {
+      const currentVal = settingActiveModel.value || currentSettings.activeModel;
+      settingActiveModel.innerHTML = '';
+      models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.name;
+        const sizeGb = m.size ? ` (${(m.size / (1024 * 1024 * 1024)).toFixed(1)} GB)` : '';
+        opt.textContent = `${m.name}${sizeGb}`;
+        settingActiveModel.appendChild(opt);
+      });
 
-    if (currentVal && Array.from(settingActiveModel.options).some(o => o.value === currentVal)) {
-      settingActiveModel.value = currentVal;
-    } else if (models.length > 0) {
-      settingActiveModel.value = models[0].name;
+      if (currentVal && Array.from(settingActiveModel.options).some(o => o.value === currentVal)) {
+        settingActiveModel.value = currentVal;
+      } else if (models.length > 0) {
+        settingActiveModel.value = models[0].name;
+      }
+    }
+
+    // Also populate header model dropdown menu dynamically!
+    const headerMenu = document.querySelector('.header-model-dropdown-menu');
+    if (headerMenu && availableOllamaModels.length > 0) {
+      let installedSection = headerMenu.querySelector('.installed-models-section');
+      if (!installedSection) {
+        installedSection = document.createElement('div');
+        installedSection.className = 'installed-models-section';
+        headerMenu.appendChild(installedSection);
+      }
+      installedSection.innerHTML = `
+        <div class="model-dropdown-divider" style="height: 1px; background: var(--border-color); margin: 6px 0;"></div>
+        <div class="model-opt-header" style="font-size: 10px; text-transform: uppercase; color: var(--text-muted); padding: 4px 10px; font-weight: 600;">Installed Local Hardware Models</div>
+      `;
+      availableOllamaModels.forEach(mName => {
+        const opt = document.createElement('div');
+        opt.className = 'model-opt';
+        opt.setAttribute('data-model', mName);
+        opt.innerHTML = `
+          <span class="opt-name">${escapeHtml(mName)} <span style="font-size: 9px; color: #10a37f; background: rgba(16,163,127,0.1); padding: 1px 5px; border-radius: 3px;">Ready</span></span>
+          <span class="opt-desc">Direct Local Hardware Execution</span>
+        `;
+        opt.addEventListener('click', (e) => {
+          e.stopPropagation();
+          activeOllamaModel = mName;
+          currentSettings.activeModel = mName;
+          saveSettings(currentSettings);
+          const headerName = document.getElementById('header-active-model-name');
+          if (headerName) headerName.textContent = `HugOS AI (${mName})`;
+          headerMenu.classList.add('hidden');
+          termLog(`[MODEL] Switched active model to: ${mName}`, 'info');
+        });
+        installedSection.appendChild(opt);
+      });
     }
   }
 
@@ -751,29 +787,19 @@ document.addEventListener('DOMContentLoaded', () => {
         chip.className = `attachment-chip ${file.type === 'image' ? 'image-chip' : ''}`;
 
         let thumbHtml = '';
-        let badgeHtml = '';
-        let actionBtnHtml = '';
 
         if (file.type === 'image') {
           thumbHtml = `<img src="${file.dataUrl}" class="chip-thumb" alt="${file.name}">`;
-          badgeHtml = `<span class="attachment-badge image-badge">🖼️ Image</span>`;
         } else if (file.type === 'audio') {
           thumbHtml = `<span class="attachment-icon">🎙️</span>`;
-          badgeHtml = `<span class="attachment-badge audio-badge">🎙️ Audio</span>`;
         } else if (file.type === 'tabular') {
           thumbHtml = `<span class="attachment-icon">📊</span>`;
-          badgeHtml = `<span class="attachment-badge dataset-badge">📊 Tabular Dataset</span>`;
-          actionBtnHtml = `<button type="button" class="chip-action-btn btn-run-acdso" title="Run Pareto AutoML assessment">⚡ Run ACDSO</button>`;
         } else if (file.type === 'pe_binary' || file.isPeBinary) {
           thumbHtml = `<span class="attachment-icon">🔬</span>`;
-          badgeHtml = `<span class="attachment-badge doc-badge" style="background: rgba(168, 85, 247, 0.15); color: #a855f7; border-color: rgba(168, 85, 247, 0.3);">🔬 PE Binary</span>`;
-          actionBtnHtml = `<button type="button" class="chip-action-btn btn-run-pe" title="Extract PE headers and binary forensics">🔍 Extract PE</button>`;
         } else if (file.type === 'code') {
           thumbHtml = `<span class="attachment-icon">💻</span>`;
-          badgeHtml = `<span class="attachment-badge doc-badge">💻 Code</span>`;
         } else {
           thumbHtml = `<span class="attachment-icon">📄</span>`;
-          badgeHtml = `<span class="attachment-badge doc-badge">📄 Document</span>`;
         }
 
         const sizeFormatted = file.size > 1024 * 1024
@@ -784,8 +810,6 @@ document.addEventListener('DOMContentLoaded', () => {
           ${thumbHtml}
           <span class="attachment-name" title="${file.name}">${file.name}</span>
           <span class="attachment-size">${sizeFormatted}</span>
-          ${badgeHtml}
-          ${actionBtnHtml}
           <button type="button" class="attachment-remove" title="Remove attachment">✕</button>
         `;
 
@@ -793,24 +817,6 @@ document.addEventListener('DOMContentLoaded', () => {
           e.stopPropagation();
           removeAttachedFile(file.id);
         });
-
-        const acdsoBtn = chip.querySelector('.btn-run-acdso');
-        if (acdsoBtn) {
-          acdsoBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            termLog(`Triggered Pareto AutoML execution for staged dataset: ${file.name}`, 'info');
-            executeCliCommand('/acdso');
-          });
-        }
-
-        const peBtn = chip.querySelector('.btn-run-pe');
-        if (peBtn) {
-          peBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            termLog(`Triggered PE Header Forensics for staged binary: ${file.name}`, 'info');
-            executeCliCommand('--pe-header-extraction');
-          });
-        }
 
         tray.appendChild(chip);
       });
@@ -846,7 +852,7 @@ document.addEventListener('DOMContentLoaded', () => {
           attachedFiles.push(fileObj);
           renderAttachmentTray();
           updateToolMenuRelevance();
-          termLog(`[ATTACH] 📎 Attached multimodal asset: "${file.name}" (IMAGE). Ready for fusion routing.`, 'info');
+          termLog(`[ATTACH] 📎 Attached file: "${file.name}". Ready.`, 'info');
         };
         reader.readAsDataURL(file);
       } else if (audioExts.includes(ext) || mime.startsWith('audio/')) {
@@ -864,7 +870,7 @@ document.addEventListener('DOMContentLoaded', () => {
           attachedFiles.push(fileObj);
           renderAttachmentTray();
           updateToolMenuRelevance();
-          termLog(`[ATTACH] 📎 Attached multimodal asset: "${file.name}" (AUDIO). Ready for fusion routing.`, 'info');
+          termLog(`[ATTACH] 📎 Attached file: "${file.name}". Ready.`, 'info');
         };
         reader.readAsDataURL(file);
       } else if (tabularExts.includes(ext) || mime.includes('csv') || mime.includes('tab-separated')) {
@@ -884,7 +890,7 @@ document.addEventListener('DOMContentLoaded', () => {
           attachedFiles.push(fileObj);
           renderAttachmentTray();
           updateToolMenuRelevance();
-          termLog(`[ATTACH] 📎 Attached multimodal asset: "${file.name}" (TABULAR). Ready for fusion routing.`, 'info');
+          termLog(`[ATTACH] 📎 Attached file: "${file.name}". Ready.`, 'info');
         };
         reader.readAsText(file);
       } else if (peExts.includes(ext)) {
@@ -900,7 +906,7 @@ document.addEventListener('DOMContentLoaded', () => {
         attachedFiles.push(fileObj);
         renderAttachmentTray();
         updateToolMenuRelevance();
-        termLog(`[ATTACH] 📎 Attached Windows PE binary: "${file.name}". Ready for forensics & header extraction.`, 'info');
+        termLog(`[ATTACH] 📎 Attached file: "${file.name}". Ready.`, 'info');
       } else {
         const isCode = codeExts.includes(ext);
         const reader = new FileReader();
@@ -918,7 +924,7 @@ document.addEventListener('DOMContentLoaded', () => {
           attachedFiles.push(fileObj);
           renderAttachmentTray();
           updateToolMenuRelevance();
-          termLog(`[ATTACH] 📎 Attached multimodal asset: "${file.name}" (${isCode ? 'CODE' : 'DOCUMENT'}). Ready for fusion routing.`, 'info');
+          termLog(`[ATTACH] 📎 Attached file: "${file.name}". Ready.`, 'info');
         };
         reader.readAsText(file);
       }
@@ -1033,36 +1039,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const trayHero = document.getElementById('active-directives-tray-hero');
     const trayPinned = document.getElementById('active-directives-tray-pinned');
     const trays = [trayHero, trayPinned].filter(Boolean);
-
-    if (activeDirectives.size === 0) {
-      trays.forEach(tray => {
-        tray.classList.add('hidden');
-        tray.innerHTML = '';
-      });
-      return;
-    }
-
     trays.forEach(tray => {
-      tray.classList.remove('hidden');
+      tray.classList.add('hidden');
       tray.innerHTML = '';
-      activeDirectives.forEach((d) => {
-        const pill = document.createElement('div');
-        pill.className = 'active-directive-pill';
-        pill.setAttribute('data-tool-id', d.id);
-        pill.innerHTML = `
-          <span class="pill-icon">${d.icon}</span>
-          <span class="pill-label">${d.label}</span>
-          <span class="pill-tag">${d.cmd.trim()}</span>
-          <span class="pill-remove" data-tool-id="${d.id}" title="Remove directive">✕</span>
-        `;
-        pill.querySelector('.pill-remove').addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (isGenerating) return;
-          activeDirectives.delete(d.id);
-          updateToolMenuRelevance();
-        });
-        tray.appendChild(pill);
-      });
     });
   }
 
@@ -1117,7 +1096,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const lower = (prompt || '').toLowerCase().trim();
     const hasImage = files.some(f => f.type === 'image');
     const hasAudio = files.some(f => f.type === 'audio');
-    const hasTabular = files.some(f => f.type === 'tabular' || f.isTabular || f.isDataset) || lower.startsWith('/acdso') || lower.startsWith('@agent acdso');
+    const hasTabular = files.some(f => f.type === 'tabular' || f.isTabular || f.isDataset);
+    const isAcdsoRequested = lower.startsWith('/acdso') || lower.startsWith('@agent acdso') || lower.includes('automl') || lower.includes('pareto');
     const webRouting = shouldRouteToWeb(prompt || '', settings.webSearchMode || 'auto');
     const hasWeb = webRouting.routeToWeb;
     const hasCode = lower.includes('fn ') || lower.includes('def ') || lower.includes('class ') ||
@@ -1160,7 +1140,7 @@ document.addEventListener('DOMContentLoaded', () => {
       };
     }
 
-    if (hasTabular) {
+    if (isAcdsoRequested && (hasTabular || files.length > 0)) {
       return {
         name: 'Pareto AutoML & Tabular Analytics Fusion',
         primary: 'ACDSO Engine',
@@ -1172,6 +1152,21 @@ document.addEventListener('DOMContentLoaded', () => {
           `🔹 Arbiter: Pareto Knee-Point`
         ],
         task: 'tabular-analytics'
+      };
+    }
+
+    if (hasTabular) {
+      return {
+        name: 'Structured Data Synthesis Fusion',
+        primary: activeMod,
+        secondary: 'deepseek-r1:1.5b',
+        arbiter: 'Consensus Gate',
+        specialists: [
+          `🔹 Primary: ${activeMod}`,
+          `🔹 Verification: deepseek-r1`,
+          `🔹 Arbiter: Consensus Gate`
+        ],
+        task: 'document-analysis'
       };
     }
 
@@ -1274,9 +1269,20 @@ document.addEventListener('DOMContentLoaded', () => {
       lower === 'clear' ||
       lower === 'help'
     ) {
-      if (lower.startsWith('/search') || lower.startsWith('/research') || lower.startsWith('/web')) {
-        const clean = query.replace(/^\/(search|research|web)\s*/i, '');
-        return { routeToWeb: true, reason: 'Explicit search directive', cleanQuery: clean || query };
+      if (
+        lower.startsWith('/search') ||
+        lower.startsWith('/research') ||
+        lower.startsWith('/web') ||
+        lower.startsWith('@agent search') ||
+        lower.startsWith('@agent web-agent') ||
+        lower.startsWith('@agent research') ||
+        lower.startsWith('@agent browser deep research on') ||
+        lower.startsWith('@agent deep research')
+      ) {
+        const clean = query
+          .replace(/^(@agent\s+(search|web-agent|research|browser\s+deep\s+research\s+on|deep\s+research)|\/(search|research|web))\s*/i, '')
+          .trim();
+        return { routeToWeb: true, reason: 'Explicit internet search directive', cleanQuery: clean || query };
       }
       return { routeToWeb: false, reason: 'Internal CLI directive', cleanQuery: query };
     }
@@ -2341,38 +2347,47 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // 3. If models found and responding
+    // 3. If responding
     if (isHealthy) {
-      if (dotOllama) dotOllama.className = 'status-dot online';
       if (models.length > 0) {
+        if (dotOllama) dotOllama.className = 'status-dot online';
+        if (textOllama) textOllama.textContent = 'Local AI Ready';
         populateModelDropdown(models);
-      }
 
-      // Select active model
-      if (!currentSettings.activeModel || currentSettings.activeModel === DEFAULT_SETTINGS.activeModel || currentSettings.activeModel === 'modelfusion_auto') {
-        activeOllamaModel = 'modelfusion_auto';
-      } else {
-        activeOllamaModel = currentSettings.activeModel;
-      }
-
-      if (textOllama) textOllama.textContent = 'Local AI Ready';
-      const headerModelName = document.getElementById('header-active-model-name');
-      if (headerModelName) {
-        if (activeOllamaModel === 'modelfusion_auto') {
-          headerModelName.textContent = '🌟 ModelFusion Auto';
-        } else if (activeOllamaModel === 'fast_fusion') {
-          headerModelName.textContent = '⚡ Fast Fusion';
-        } else if (activeOllamaModel === 'deep_reasoning') {
-          headerModelName.textContent = '🧠 Deep Reasoning';
-        } else if (activeOllamaModel === 'qwen2.5:7b') {
-          headerModelName.textContent = 'HugOS AI';
+        if (!currentSettings.activeModel || currentSettings.activeModel === DEFAULT_SETTINGS.activeModel || currentSettings.activeModel === 'modelfusion_auto') {
+          activeOllamaModel = 'modelfusion_auto';
         } else {
-          headerModelName.textContent = `HugOS AI (${activeOllamaModel})`;
+          activeOllamaModel = currentSettings.activeModel;
         }
+
+        const headerModelName = document.getElementById('header-active-model-name');
+        if (headerModelName) {
+          if (activeOllamaModel === 'modelfusion_auto') {
+            headerModelName.textContent = '🌟 ModelFusion Auto';
+          } else if (activeOllamaModel === 'fast_fusion') {
+            headerModelName.textContent = '⚡ Fast Fusion';
+          } else if (activeOllamaModel === 'deep_reasoning') {
+            headerModelName.textContent = '🧠 Deep Reasoning';
+          } else if (activeOllamaModel === 'qwen2.5:7b') {
+            headerModelName.textContent = 'HugOS AI';
+          } else {
+            headerModelName.textContent = `HugOS AI (${activeOllamaModel})`;
+          }
+        }
+        if (activeModelBadge) activeModelBadge.textContent = activeOllamaModel;
+        if (footerActiveModel) footerActiveModel.textContent = activeOllamaModel;
+        return true;
+      } else {
+        // Fresh install: 0 models in Ollama! Trigger hardware model auto-provisioning!
+        if (dotOllama) dotOllama.className = 'status-dot starting';
+        if (textOllama) textOllama.textContent = '🟡 Provisioning hardware model...';
+        try {
+          fetch(`${ipcUrl}/api/ollama/start`, { method: 'POST' }).catch(() => {});
+        } catch (e) {}
+        // Poll until model appears
+        setTimeout(() => probeOllama(false), 3000);
+        return false;
       }
-      if (activeModelBadge) activeModelBadge.textContent = activeOllamaModel;
-      if (footerActiveModel) footerActiveModel.textContent = activeOllamaModel;
-      return true;
     }
 
     // 4. If offline and autoWake requested: auto-start Ollama via Master CLI
@@ -2381,9 +2396,19 @@ document.addEventListener('DOMContentLoaded', () => {
       if (textOllama) textOllama.textContent = '🟡 Starting Local AI Engine...';
       try {
         fetch(`${ipcUrl}/api/ollama/start`, { method: 'POST' }).catch(() => {});
-        // Poll for readiness
-        setTimeout(() => probeOllama(false), 2000);
       } catch (e) {}
+      // Poll with progressive retries
+      let retryCount = 0;
+      const pollTimer = setInterval(async () => {
+        retryCount++;
+        if (textOllama) {
+          textOllama.textContent = `🟡 Initializing Local AI... (${retryCount * 3}s)`;
+        }
+        const ok = await probeOllama(false);
+        if (ok || retryCount >= 30) {
+          clearInterval(pollTimer);
+        }
+      }, 3000);
     } else {
       if (dotOllama) dotOllama.className = 'status-dot offline';
       if (textOllama) textOllama.textContent = 'Local AI Offline';
@@ -3867,11 +3892,105 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 4. Summarize Command
     if (lower.startsWith('/summarize') || lower.startsWith('@agent summarize')) {
+      if (currentAttachments.length > 0) {
+        const fileNames = currentAttachments.map(f => f.name).join(', ');
+        termLog(`Summarizing attached file(s): ${fileNames}...`, 'info');
+        const filePayload = currentAttachments.map(f => {
+          let text = f.content || '';
+          if (f.type === 'tabular' || f.name.endsWith('.csv') || f.name.endsWith('.tsv')) {
+            const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+            const headers = lines[0] || '';
+            const rowCount = Math.max(0, lines.length - 1);
+            const preview = lines.slice(0, 25).join('\n');
+            return `Dataset: ${f.name} (${rowCount} rows, columns: ${headers})\nData Preview:\n${preview}`;
+          }
+          if (text.length > 8000) text = text.slice(0, 8000) + '\n... [truncated]';
+          return `File: ${f.name}\n${text}`;
+        }).join('\n\n');
+
+        const prompt = `Provide a comprehensive, high-density analytical summary of the attached file(s):\n\n${filePayload}\n\nDeliver:\n1. Overview & Data Purpose\n2. Key Attributes, Schema & Structure\n3. Key Patterns, Insights & Takeaways`;
+        await streamAiChat(prompt, 'You are HugOS Browser AI, an expert analytical assistant. Provide a clear, concise, structured summary of the attached file(s).');
+        clearAllAttachments();
+        return;
+      }
       termLog(`Extracting page content for semantic summarization...`, 'info');
       const pageInfo = await getActivePageText();
       termLog(`Extracted text from ${pageInfo.source} (${pageInfo.text.length} characters)`, 'sys');
       const prompt = `Summarize the following content in 3-5 key bullet points:\n\n${pageInfo.text.slice(0, 8000)}`;
       await streamAiChat(prompt, 'You are HugOS Browser AI, an expert analytical assistant. Provide a clear, concise, high-density 3-5 bullet point executive summary of the provided text.');
+      return;
+    }
+
+    // 4.5 Web Research & Search Agent Directives (@agent search, @agent web-agent, @agent search-index, @agent browser deep research on)
+    if (
+      lower.startsWith('@agent search ') || lower.startsWith('/search ') ||
+      lower.startsWith('@agent web-agent') || lower.startsWith('/web-agent') ||
+      lower.startsWith('@agent search-index') || lower.startsWith('/search-index') ||
+      lower.startsWith('@agent browser deep research on ') || lower.startsWith('@agent deep research ') ||
+      lower.startsWith('/research ')
+    ) {
+      const cleanQuery = cmd
+        .replace(/^(@agent\s+(search|web-agent|search-index|browser\s+deep\s+research\s+on|deep\s+research)|\/(search|web-agent|search-index|research))\s*/i, '')
+        .trim();
+
+      const queryToSearch = cleanQuery || currentNavUrl || 'open-weight models';
+      termLog(`[SEARCH] 🔍 Searching the internet for: "${queryToSearch}"...`, 'info');
+
+      setChatRunningState(true);
+      currentAbortController = new AbortController();
+
+      if (chatWelcome) chatWelcome.classList.add('hidden');
+      let assistantBubble = null;
+      let bubbleContent = null;
+      if (chatMessages) {
+        assistantBubble = document.createElement('div');
+        assistantBubble.className = 'msg-bubble assistant-bubble streaming';
+        assistantBubble.innerHTML = `
+          <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+            <span>🌐</span> <span>ModelFusion AI</span>
+            <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">(Web Search Grounding)</span>
+          </div>
+          <div class="bubble-content" style="color: var(--accent-color); font-weight: 500; display: flex; align-items: center; gap: 6px;">
+            <span style="display: inline-block;">🔍</span> <span>Searching the internet for &ldquo;${escapeHtml(queryToSearch)}&rdquo;&hellip;</span>
+          </div>
+        `;
+        chatMessages.appendChild(assistantBubble);
+        bubbleContent = assistantBubble.querySelector('.bubble-content');
+        if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+
+      const searchResults = await executeWebSearch(queryToSearch, currentSettings.maxSearchResults || 6);
+
+      termLog(`[SEARCH] Retrieved ${searchResults ? searchResults.length : 0} verified web sources. Correlating results with LLM...`, 'success');
+      if (searchResults && searchResults.length > 0) {
+        searchResults.forEach((r, idx) => {
+          termLog(`  [${idx + 1}] ${r.title} - ${r.url}`, 'sys');
+        });
+      }
+
+      if (bubbleContent) {
+        bubbleContent.innerHTML = `<span style="color: var(--text-muted); font-style: italic;">🔍 Searching the internet... Correlating results with LLM...</span>`;
+      }
+
+      const searchContext = (searchResults && searchResults.length > 0)
+        ? searchResults.map((r, idx) => `[${idx + 1}] Title: ${r.title}\nURL: ${r.url}\nSummary: ${r.snippet}`).join('\n\n')
+        : 'No external web search results found.';
+
+      const promptWithSearch = `User Query: ${queryToSearch}
+
+Verified Grounding Context:
+${searchContext}
+
+${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
+- Provide an accurate, factual, and comprehensive answer directly grounded in the verified context above.
+- Cite the sources inline using [1], [2], etc., matching the numbered search results.
+- Synthesize concisely with high analytical density. Default return is 256 tokens.
+- Never invent unverified dates, names, or leaders.`;
+
+      const sysPrompt = 'You are HugOS Browser AI, an intelligent assistant with live internet search capabilities. Correlate search evidence with internal reasoning, provide factual and up-to-date answers, and cite sources accurately with [1], [2] badges and markdown links.';
+
+      await streamAiChat(promptWithSearch, sysPrompt, { images: attachedImages, panel, existingBubble: assistantBubble, bubbleContent: bubbleContent });
+      if (currentAttachments.length > 0) clearAllAttachments();
       return;
     }
 
@@ -3995,7 +4114,7 @@ Instructions:
         termLogFusion(panel);
       }
       termLog(`[ROUTER] 🌐 Route: Live Web Search (${routingDecision.reason})`, 'sys');
-      termLog(`[SEARCH] 🌐 Searching the web for: "${routingDecision.cleanQuery}"...`, 'info');
+      termLog(`[SEARCH] 🔍 Searching the internet for: "${routingDecision.cleanQuery}"...`, 'info');
 
       // Set chat running state to allow stopping
       setChatRunningState(true);
@@ -4014,7 +4133,7 @@ Instructions:
             <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">(Web Search Grounding)</span>
           </div>
           <div class="bubble-content" style="color: var(--accent-color); font-weight: 500; display: flex; align-items: center; gap: 6px;">
-            <span style="display: inline-block;">🌐</span> <span>Searching the web for &ldquo;${escapeHtml(routingDecision.cleanQuery)}&rdquo;&hellip;</span>
+            <span style="display: inline-block;">🔍</span> <span>Searching the internet for &ldquo;${escapeHtml(routingDecision.cleanQuery)}&rdquo;&hellip;</span>
           </div>
         `;
         chatMessages.appendChild(assistantBubble);
@@ -4025,13 +4144,13 @@ Instructions:
       const searchResults = await executeWebSearch(routingDecision.cleanQuery, currentSettings.maxSearchResults || 5);
 
       if (searchResults && searchResults.length > 0) {
-        termLog(`[SEARCH] Retrieved ${searchResults.length} verified web sources. Correlating with local LLM knowledge...`, 'success');
+        termLog(`[SEARCH] Retrieved ${searchResults.length} verified web sources. Correlating results with LLM...`, 'success');
         searchResults.forEach((r, idx) => {
           termLog(`  [${idx + 1}] ${r.title} - ${r.url}`, 'sys');
         });
 
         if (bubbleContent) {
-          bubbleContent.innerHTML = `<span style="color: var(--text-muted); font-style: italic;">Synthesizing verified web evidence...</span>`;
+          bubbleContent.innerHTML = `<span style="color: var(--text-muted); font-style: italic;">🔍 Searching the internet... Correlating results with LLM...</span>`;
         }
 
         // Correlate live search results with LLM knowledge
@@ -4199,7 +4318,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     });
   });
 
-  // Tool / Directive buttons: toggle active directive with dynamic gating
+  // Tool / Directive buttons: Prepopulate @agent command into input (Only one command at a time!)
   document.querySelectorAll('.tool-item-btn, .tool-command-btn').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
@@ -4210,23 +4329,32 @@ If you are asked about real-world facts such as world leaders, heads of state, c
       if (btn.classList.contains('grayed-out') || btn.getAttribute('aria-disabled') === 'true') {
         return;
       }
-      const toolId = btn.getAttribute('data-tool-id') || btn.getAttribute('data-cmd');
-      const cmd = btn.getAttribute('data-cmd') || btn.textContent.trim();
-      const category = btn.getAttribute('data-category') || 'web';
+      const rawCmd = btn.getAttribute('data-cmd') || btn.textContent.trim();
+      const cmd = rawCmd.trim();
       const label = btn.querySelector('.tool-label') ? btn.querySelector('.tool-label').textContent.trim() : cmd;
-      const icon = btn.querySelector('.tool-icon') ? btn.querySelector('.tool-icon').textContent.trim() : '⚡';
 
-      if (activeDirectives.has(toolId)) {
-        activeDirectives.delete(toolId);
-        termLog(`Deselected directive: ${label} (${cmd.trim()})`, 'sys');
-      } else {
-        // Single Operation Law: clear any prior directive so unrelated multiple selections are IMPOSSIBLE!
-        activeDirectives.clear();
-        activeDirectives.set(toolId, { id: toolId, cmd, category, label, icon });
-        termLog(`Selected operation: ${label} (${cmd.trim()}). All unrelated tools grayed out.`, 'info');
+      // Clear any prior directive trays completely
+      clearAllActiveDirectives();
+
+      // Only one command at a time: Prepopulate active input with @agent command
+      const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+        ? cliPromptInputPinned
+        : cliPromptInput;
+
+      if (activeInput) {
+        const prepopVal = cmd.endsWith(' ') ? cmd : cmd + ' ';
+        activeInput.value = prepopVal;
+        activeInput.focus();
+        activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
+        activeInput.style.height = 'auto';
+        activeInput.style.height = Math.min(activeInput.scrollHeight, 160) + 'px';
       }
 
-      updateToolMenuRelevance();
+      // Highlight only this tool as active
+      document.querySelectorAll('.tool-item-btn, .tool-command-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      termLog(`[COMMAND] Prepopulated: "${cmd}". Only one command active at a time.`, 'info');
     });
   });
 
@@ -4334,13 +4462,165 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     });
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // Universal @agent Autocomplete / Prepopulation Engine
+  // ─────────────────────────────────────────────────────────────
+  const AGENT_COMMANDS = [
+    { cmd: '@agent browser deep research on ', icon: '🔍', label: 'Deep Research', desc: 'Autonomous multi-step web research & synthesis' },
+    { cmd: '@agent browser ', icon: '🌐', label: 'Web Automation', desc: 'Navigate, interact, and automate web workflows' },
+    { cmd: '@agent acdso ', icon: '📊', label: 'ACDSO AutoML', desc: '5-objective Pareto causal AutoML on datasets' },
+    { cmd: '@agent datascience ', icon: '📈', label: 'Data Science', desc: 'Full data science workflow and pipeline' },
+    { cmd: '@agent dataanalyst ', icon: '🔬', label: 'Data Analyst', desc: 'Exploratory data analysis & statistical profiling' },
+    { cmd: '@agent timeseries ', icon: '⏳', label: 'Time-Series', desc: 'Time-series forecasting with Pareto horizon' },
+    { cmd: '@agent predict ', icon: '🎯', label: 'AutoML Predict', desc: 'Target variable inference on tabular models' },
+    { cmd: '@agent decision ', icon: '⚖️', label: 'Decision Engine', desc: 'Prescriptive decision optimization & counterfactuals' },
+    { cmd: '@agent update', icon: '⚡', label: 'Update Catalog', desc: 'Fast curated update (~6,500 models & dynamic Ollama sizing)' },
+    { cmd: '@agent updatedb', icon: '🚀', label: 'Full Registry Crawler', desc: 'Crawl all 2M+ models from Hugging Face Hub' },
+    { cmd: '@agent summarize', icon: '📑', label: 'Summarize Page', desc: 'Extract and summarize active web page content' },
+    { cmd: '@agent som', icon: '🎯', label: 'Set-of-Mark Vision', desc: 'Numeric visual element grounding with 90% token reduction' },
+    { cmd: '@agent search ', icon: '🔎', label: 'Web Search Grounding', desc: 'Live web search grounding with verified citations' },
+    { cmd: '@agent web-agent ', icon: '🌐', label: 'Web Agent', desc: 'Search internet, index data, and correlate with LLM (256 tokens return)' },
+    { cmd: '@agent search-index ', icon: '📑', label: 'Search Index', desc: 'Build and query in-memory inverted search index' },
+    { cmd: '@agent goal ', icon: '🎯', label: 'Autonomous Goal', desc: 'Multi-turn autonomous goal-directed agent loop' },
+    { cmd: '@agent plan ', icon: '📐', label: 'Architect Plan', desc: 'Structured architectural decomposition & test criteria' },
+    { cmd: '@agent grill-me ', icon: '🔥', label: 'Grill Me Mode', desc: 'Adversarial requirements interview & stress-testing' },
+    { cmd: '@agent boost ', icon: '🚀', label: 'Reasoning Boost', desc: 'Deep multi-perspective reasoning & rigorous verification' },
+    { cmd: '@agent agentic-loop ', icon: '🔄', label: 'Agentic Loop', desc: 'Recursive auto-chaining for up to 256k tokens' },
+    { cmd: '@agent vision ', icon: '👁️', label: 'Vision Analysis', desc: 'Object detection, OCR, and visual Q&A' },
+    { cmd: '@agent image-classification ', icon: '🏷️', label: 'Image Classification', desc: 'Zero-shot vision classification across open models' },
+    { cmd: '@agent object-detection ', icon: '📦', label: 'Object Detection', desc: 'Visual bounding boxes and multi-target detection' },
+    { cmd: '@agent vqa ', icon: '❓', label: 'Visual Question Answering', desc: 'Direct Q&A on attached images & visual assets' },
+    { cmd: '@agent asr ', icon: '🎙️', label: 'Speech-to-Text', desc: 'Automatic speech recognition via Whisper models' },
+    { cmd: '@agent tts ', icon: '🔊', label: 'Text-to-Speech', desc: 'Text synthesis into natural audible speech' },
+    { cmd: '@agent audio ', icon: '🎵', label: 'Audio Classification', desc: 'Sound event detection & voice activity analysis' },
+    { cmd: '@agent security ', icon: '🛡️', label: 'Security Audit', desc: 'Vulnerability detection, exploit analysis & PII audit' },
+    { cmd: '@agent graph-index ', icon: '🕸️', label: 'Code Graph Index', desc: 'Extract AST relationships & call graphs' },
+    { cmd: '@agent rest-rl ', icon: '⚡', label: 'ReST-RL Daemon', desc: 'Sub-8ms Windows Job Object RL repair engine' },
+    { cmd: '@agent pe ', icon: '🔬', label: 'PE Header Forensics', desc: 'PE binary headers, imports, sections, and hashes' },
+    { cmd: '@agent active-model', icon: '🤖', label: 'Active Model', desc: 'Inspect currently loaded Ollama model & memory' },
+    { cmd: '@agent sys-info', icon: '💻', label: 'System Info', desc: 'Hardware CPU, RAM, GPU, VRAM, and storage specs' }
+  ];
+
+  let acSelectedIndex = -1;
+
+  async function loadMcpToolsIntoAutocomplete() {
+    const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+    try {
+      const res = await fetch(`${ipcUrl}/api/mcp/tools`);
+      if (res.ok) {
+        const data = await res.json();
+        const mcpTools = data.tools || [];
+        mcpTools.forEach(mt => {
+          if (!AGENT_COMMANDS.some(c => c.cmd.trim() === mt.cmd.trim())) {
+            AGENT_COMMANDS.push({
+              cmd: mt.cmd,
+              icon: mt.icon || '🛠️',
+              label: mt.label || mt.name,
+              desc: mt.desc || mt.description || 'MCP Tool'
+            });
+          }
+        });
+      }
+    } catch (e) {}
+  }
+  loadMcpToolsIntoAutocomplete();
+
+  function showAgentAutocomplete(inputEl, dropdownId) {
+    const dropdown = document.getElementById(dropdownId);
+    if (!dropdown) return;
+    const val = inputEl.value;
+
+    const atIndex = val.lastIndexOf('@');
+    if (atIndex < 0) {
+      dropdown.classList.add('hidden');
+      acSelectedIndex = -1;
+      return;
+    }
+
+    const query = val.slice(atIndex + 1).toLowerCase().replace(/^agent\s*/i, '').trim();
+
+    let filtered = AGENT_COMMANDS;
+    if (query) {
+      filtered = AGENT_COMMANDS.filter(c => {
+        const cmdLower = c.cmd.toLowerCase();
+        const labelLower = c.label.toLowerCase();
+        const descLower = c.desc.toLowerCase();
+        return cmdLower.includes(query) || labelLower.includes(query) || descLower.includes(query);
+      });
+    }
+
+    if (filtered.length === 0) {
+      dropdown.classList.add('hidden');
+      acSelectedIndex = -1;
+      return;
+    }
+
+    dropdown.innerHTML = '';
+    dropdown.classList.remove('hidden');
+    acSelectedIndex = -1;
+
+    filtered.forEach((item, idx) => {
+      const div = document.createElement('div');
+      div.className = 'agent-autocomplete-item';
+      div.setAttribute('data-index', idx);
+      div.innerHTML = `
+        <span class="ac-icon">${item.icon}</span>
+        <span class="ac-label">${escapeHtml(item.label)}</span>
+        <span class="ac-cmd">${escapeHtml(item.cmd.trim())}</span>
+        <span class="ac-desc">${escapeHtml(item.desc)}</span>
+      `;
+      div.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        inputEl.value = item.cmd.endsWith(' ') ? item.cmd : item.cmd + ' ';
+        inputEl.focus();
+        inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
+        dropdown.classList.add('hidden');
+        acSelectedIndex = -1;
+        inputEl.style.height = 'auto';
+        inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + 'px';
+      });
+      dropdown.appendChild(div);
+    });
+  }
+
+  function handleAcKeydown(e, inputEl, dropdownId) {
+    const dropdown = document.getElementById(dropdownId);
+    if (!dropdown || dropdown.classList.contains('hidden')) return false;
+    const items = dropdown.querySelectorAll('.agent-autocomplete-item');
+    if (items.length === 0) return false;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      acSelectedIndex = Math.min(acSelectedIndex + 1, items.length - 1);
+      items.forEach((it, i) => it.classList.toggle('selected', i === acSelectedIndex));
+      if (items[acSelectedIndex]) items[acSelectedIndex].scrollIntoView({ block: 'nearest' });
+      return true;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      acSelectedIndex = Math.max(acSelectedIndex - 1, 0);
+      items.forEach((it, i) => it.classList.toggle('selected', i === acSelectedIndex));
+      if (items[acSelectedIndex]) items[acSelectedIndex].scrollIntoView({ block: 'nearest' });
+      return true;
+    }
+    if (e.key === 'Tab' || (e.key === 'Enter' && acSelectedIndex >= 0)) {
+      e.preventDefault();
+      if (acSelectedIndex >= 0 && items[acSelectedIndex]) {
+        items[acSelectedIndex].dispatchEvent(new MouseEvent('mousedown'));
+      }
+      return true;
+    }
+    if (e.key === 'Escape') {
+      dropdown.classList.add('hidden');
+      acSelectedIndex = -1;
+      return true;
+    }
+    return false;
+  }
+
   function extractAndClearDirectives(userText) {
-    if (!activeDirectives || activeDirectives.size === 0) return userText;
-    const flags = Array.from(activeDirectives.values()).map(d => d.cmd.trim());
-    const missing = flags.filter(f => !userText.includes(f));
     clearAllActiveDirectives();
-    if (missing.length === 0) return userText;
-    return userText ? `${missing.join(' ')} ${userText}` : missing.join(' ');
+    return userText || '';
   }
 
   // Auto-expanding Hero Textarea & Send Button
@@ -4349,9 +4629,11 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     cliPromptInput.addEventListener('input', () => {
       cliPromptInput.style.height = 'auto';
       cliPromptInput.style.height = Math.min(cliPromptInput.scrollHeight, 160) + 'px';
+      showAgentAutocomplete(cliPromptInput, 'agent-autocomplete-hero');
     });
 
     cliPromptInput.addEventListener('keydown', (e) => {
+      if (handleAcKeydown(e, cliPromptInput, 'agent-autocomplete-hero')) return;
       if (e.key === 'Escape') {
         if (isGenerating) {
           e.preventDefault();
@@ -4362,7 +4644,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         if (isGenerating) {
-          return; // Strictly prohibit submitting another query while running!
+          return;
         }
         const raw = cliPromptInput.value.trim();
         const val = extractAndClearDirectives(raw);
@@ -4372,6 +4654,14 @@ If you are asked about real-world facts such as world leaders, heads of state, c
           executeCliCommand(val);
         }
       }
+    });
+
+    cliPromptInput.addEventListener('blur', () => {
+      setTimeout(() => {
+        const d = document.getElementById('agent-autocomplete-hero');
+        if (d) d.classList.add('hidden');
+        acSelectedIndex = -1;
+      }, 250);
     });
   }
 
@@ -4401,9 +4691,11 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     cliPromptInputPinned.addEventListener('input', () => {
       cliPromptInputPinned.style.height = 'auto';
       cliPromptInputPinned.style.height = Math.min(cliPromptInputPinned.scrollHeight, 160) + 'px';
+      showAgentAutocomplete(cliPromptInputPinned, 'agent-autocomplete-pinned');
     });
 
     cliPromptInputPinned.addEventListener('keydown', (e) => {
+      if (handleAcKeydown(e, cliPromptInputPinned, 'agent-autocomplete-pinned')) return;
       if (e.key === 'Escape') {
         if (isGenerating) {
           e.preventDefault();
@@ -4414,7 +4706,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         if (isGenerating) {
-          return; // Strictly prohibit submitting another query while running!
+          return;
         }
         const raw = cliPromptInputPinned.value.trim();
         const val = extractAndClearDirectives(raw);
@@ -4424,6 +4716,14 @@ If you are asked about real-world facts such as world leaders, heads of state, c
           executeCliCommand(val);
         }
       }
+    });
+
+    cliPromptInputPinned.addEventListener('blur', () => {
+      setTimeout(() => {
+        const d = document.getElementById('agent-autocomplete-pinned');
+        if (d) d.classList.add('hidden');
+        acSelectedIndex = -1;
+      }, 250);
     });
   }
 

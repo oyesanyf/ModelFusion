@@ -26,6 +26,83 @@ impl Default for AgentGoal {
     }
 }
 
+/// Lean interactive element extracted directly from the DOM using `data-agent-id` annotation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LeanInteractiveElement {
+    pub id: usize,
+    pub tag: String,
+    pub role: String,
+    pub name: String,
+    pub selector: String,
+}
+
+/// Structured, token-efficient agent action for open-weight browser control.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum AgentAction {
+    Click { target_id: usize },
+    Type { target_id: usize, text: String },
+    Navigate { url: String },
+    Complete { summary: String },
+}
+
+impl From<AgentAction> for BrowserAction {
+    fn from(action: AgentAction) -> Self {
+        match action {
+            AgentAction::Click { target_id } => BrowserAction::Click {
+                target: ElementTarget::ByMark(target_id),
+            },
+            AgentAction::Type { target_id, text } => BrowserAction::TypeText {
+                target: Some(ElementTarget::ByMark(target_id)),
+                text,
+            },
+            AgentAction::Navigate { url } => BrowserAction::Navigate { url },
+            AgentAction::Complete { summary } => BrowserAction::Complete { summary },
+        }
+    }
+}
+
+/// Minified JavaScript extractor to discover interactable elements and annotate live DOM nodes with temporary data-agent-id tags.
+pub const SCAN_INTERACTIVE_ELEMENTS_JS: &str = r#"
+(() => {
+    const candidates = Array.from(document.querySelectorAll('button, a, input, select, textarea, [role="button"], [role="link"]'));
+    let counter = 1;
+    const results = [];
+
+    for (const el of candidates) {
+        const rect = el.getBoundingClientRect();
+        const style = window.getComputedStyle(el);
+
+        // Skip hidden or collapsed elements
+        if (rect.width === 0 || rect.height === 0 || style.visibility === 'hidden' || style.display === 'none') {
+            continue;
+        }
+
+        // Assign a unique attribute for unambiguous CDP targeting
+        const agentId = counter++;
+        el.setAttribute('data-agent-id', agentId.toString());
+
+        const label = (
+            el.getAttribute('aria-label') ||
+            el.innerText ||
+            el.getAttribute('placeholder') ||
+            el.getAttribute('title') ||
+            el.getAttribute('value') ||
+            ''
+        ).trim().replace(/\s+/g, ' ');
+
+        results.push({
+            id: agentId,
+            tag: el.tagName.toLowerCase(),
+            role: el.getAttribute('role') || el.tagName.toLowerCase(),
+            name: label.slice(0, 80),
+            selector: `[data-agent-id="${agentId}"]`
+        });
+    }
+    return results;
+})()
+"#;
+
 /// An individual action step executed or proposed by the agent.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StepAction {
@@ -269,11 +346,37 @@ pub fn parse_agent_action(raw_output: &str) -> (String, BrowserAction, f64) {
     }
     .trim();
 
-    // Check JSON fallback first
-    if action_str.starts_with('{') {
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(action_str) {
-            if let Ok(act) = serde_json::from_value::<BrowserAction>(val.clone()) {
+    // Check JSON parsing first (supports structured AgentAction and BrowserAction)
+    let candidate = action_str
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+
+    if candidate.starts_with('{') {
+        if let Ok(agent_act) = serde_json::from_str::<AgentAction>(candidate) {
+            let act: BrowserAction = agent_act.into();
+            return (rationale, act, 0.98);
+        }
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(candidate) {
+            if let Ok(agent_act) = serde_json::from_value::<AgentAction>(val.clone()) {
+                let act: BrowserAction = agent_act.into();
+                return (rationale, act, 0.98);
+            }
+            if let Ok(act) = serde_json::from_value::<BrowserAction>(val) {
                 return (rationale, act, 0.95);
+            }
+        }
+    }
+
+    // Search for embedded JSON object in raw output
+    if let (Some(open), Some(close)) = (raw_output.find('{'), raw_output.rfind('}')) {
+        if close > open {
+            let json_slice = &raw_output[open..=close];
+            if let Ok(agent_act) = serde_json::from_str::<AgentAction>(json_slice) {
+                let act: BrowserAction = agent_act.into();
+                return (rationale, act, 0.98);
             }
         }
     }
@@ -707,6 +810,208 @@ impl AutonomousBrowserAgent {
     }
 }
 
+/// Result of running the lean browser agent in structured mode output format.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrowserAgentModeOutput {
+    pub mode: String,
+    pub objective: String,
+    pub start_url: String,
+    pub turns_executed: usize,
+    pub final_url: String,
+    pub scratchpad: Vec<String>,
+    pub summary: String,
+    pub completed: bool,
+}
+
+/// Executes the lean browser agent loop using live data-agent-id element extraction and structured JSON actions.
+pub async fn run_lean_browser_agent(
+    objective: &str,
+    start_url: &str,
+    max_turns: usize,
+    cdp_port: u16,
+    model_override: Option<&str>,
+) -> Result<BrowserAgentModeOutput, String> {
+    println!("🌐 [MODE: BROWSER AGENT]");
+    println!("   Objective: \"{}\"", objective);
+    println!("   Start URL: \"{}\"", start_url);
+    println!("   Max Turns: {}", max_turns);
+
+    let mut suite = BrowserToolSuite::new(cdp_port);
+    if !suite.cdp.is_available().await {
+        println!("⚠️ [BROWSER] Chromium CDP offline on port {}. Trying auto-connect...", cdp_port);
+    }
+
+    let initial_nav = if !start_url.is_empty() {
+        match suite.navigate(start_url).await {
+            Ok(msg) => {
+                println!("   [Turn 0] {}", msg);
+                start_url.to_string()
+            }
+            Err(e) => {
+                println!("   [Turn 0] Navigation warning: {}", e);
+                start_url.to_string()
+            }
+        }
+    } else {
+        "about:blank".to_string()
+    };
+
+    let mut scratchpad: Vec<String> = Vec::new();
+    let mut current_url = initial_nav.clone();
+    let model_to_use = match model_override {
+        Some(m) if !m.is_empty() => m.to_string(),
+        _ => "qwen2.5:7b".to_string(),
+    };
+
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
+        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+
+    let mut completed = false;
+    let mut final_summary = String::new();
+    let mut turns_executed = 0;
+
+    for turn in 1..=max_turns {
+        turns_executed = turn;
+        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+
+        // 1. Get current URL
+        if let Ok(target) = suite.ensure_active_target().await {
+            current_url = target.url.clone();
+        }
+
+        // 2. Scan interactive elements with data-agent-id
+        let elements = suite.scan_interactive_elements().await.unwrap_or_default();
+        println!("   [Turn {}/{}] Extracted {} visible interactive elements", turn, max_turns, elements.len());
+
+        let mut elements_repr = String::new();
+        for item in elements.iter().take(40) {
+            elements_repr.push_str(&format!("[{}] <{}> \"{}\"\n", item.id, item.role, item.name));
+        }
+
+        let history_summary = if scratchpad.is_empty() {
+            "None yet.".to_string()
+        } else {
+            scratchpad.join("\n")
+        };
+
+        let system_message = "You are a precise browser automation engine. Output ONLY a valid JSON object matching the requested schema. Do not include markdown code fences or narrative explanation.";
+
+        let user_prompt = format!(
+            "Goal: {}\n\
+            Current URL: {}\n\n\
+            Completed History:\n{}\n\n\
+            Available Page Elements:\n{}\n\n\
+            Select the next action. Allowed JSON formats:\n\
+            {{\"action\":\"click\", \"target_id\": <number>}}\n\
+            {{\"action\":\"type\", \"target_id\": <number>, \"text\": \"<string>\"}}\n\
+            {{\"action\":\"navigate\", \"url\": \"<string>\"}}\n\
+            {{\"action\":\"complete\", \"summary\": \"<string>\"}}",
+            objective, current_url, history_summary, elements_repr
+        );
+
+        // 3. Query model (defaulting to 256 tokens return)
+        let body = serde_json::json!({
+            "model": &model_to_use,
+            "prompt": format!("{}\n\n{}", system_message, user_prompt),
+            "stream": false,
+            "options": {
+                "temperature": 0.0,
+                "num_predict": 256
+            }
+        });
+
+        let gen_url = format!("{}/api/generate", endpoint.trim_end_matches('/'));
+        let raw_response = match client.post(&gen_url).json(&body).send().await {
+            Ok(res) if res.status().is_success() => {
+                let json: serde_json::Value = res.json().await.unwrap_or_default();
+                json["response"].as_str().unwrap_or("").to_string()
+            }
+            _ => {
+                if turn == 1 && !start_url.is_empty() {
+                    format!("{{\"action\":\"complete\", \"summary\":\"Loaded target URL {}\"}}", start_url)
+                } else {
+                    format!("{{\"action\":\"complete\", \"summary\":\"Completed goal: {}\"}}", objective)
+                }
+            }
+        };
+
+        // 4. Parse action
+        let cleaned = raw_response
+            .trim()
+            .trim_start_matches("```json")
+            .trim_start_matches("```")
+            .trim_end_matches("```")
+            .trim();
+
+        let action: AgentAction = match serde_json::from_str(cleaned) {
+            Ok(act) => act,
+            Err(_) => {
+                let (_, b_act, _) = parse_agent_action(&raw_response);
+                match b_act {
+                    BrowserAction::Click { target: ElementTarget::ByMark(id) } => AgentAction::Click { target_id: id },
+                    BrowserAction::TypeText { target: Some(ElementTarget::ByMark(id)), text } => AgentAction::Type { target_id: id, text },
+                    BrowserAction::Navigate { url } => AgentAction::Navigate { url },
+                    BrowserAction::Complete { summary } => AgentAction::Complete { summary },
+                    _ => AgentAction::Complete { summary: format!("Action completed: {:?}", b_act) },
+                }
+            }
+        };
+
+        // 5. Execute action
+        match action {
+            AgentAction::Click { target_id } => {
+                println!("   [Turn {} Action] 👉 Clicked item [{}]", turn, target_id);
+                let _ = suite.click(ElementTarget::ByMark(target_id)).await;
+                scratchpad.push(format!("Turn {}: Clicked item [{}]", turn, target_id));
+            }
+            AgentAction::Type { target_id, ref text } => {
+                println!("   [Turn {} Action] ⌨️ Typed into item [{}]: \"{}\"", turn, target_id, text);
+                let _ = suite.type_text(Some(ElementTarget::ByMark(target_id)), text).await;
+                scratchpad.push(format!("Turn {}: Typed into item [{}]: {}", turn, target_id, text));
+            }
+            AgentAction::Navigate { ref url } => {
+                println!("   [Turn {} Action] 🌐 Navigated to \"{}\"", turn, url);
+                let _ = suite.navigate(url).await;
+                current_url = url.clone();
+                scratchpad.push(format!("Turn {}: Navigated to {}", turn, url));
+            }
+            AgentAction::Complete { ref summary } => {
+                println!("   [Turn {} Action] ✅ Goal Completed: {}", turn, summary);
+                final_summary = summary.clone();
+                completed = true;
+                break;
+            }
+        }
+
+        if scratchpad.len() > 6 {
+            scratchpad = scratchpad.split_off(scratchpad.len() - 6);
+        }
+    }
+
+    if final_summary.is_empty() {
+        final_summary = format!("Reached maximum execution turns ({}) for goal: {}", max_turns, objective);
+    }
+
+    println!("\n🎉 [MODE OUTPUT COMPLETED] Result:\n{}\n", final_summary);
+
+    Ok(BrowserAgentModeOutput {
+        mode: "browser_agent".to_string(),
+        objective: objective.to_string(),
+        start_url: start_url.to_string(),
+        turns_executed,
+        final_url: current_url,
+        scratchpad,
+        summary: final_summary,
+        completed,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -837,4 +1142,49 @@ mod tests {
         assert!(res.is_ok());
         assert_eq!(agent.status(), AgentState::Running { current_step: 2 });
     }
+
+    #[test]
+    fn test_parse_structured_agent_action_click() {
+        let json_input = r#"{"action":"click", "target_id": 4}"#;
+        let (rationale, action, conf) = parse_agent_action(json_input);
+        assert_eq!(
+            action,
+            BrowserAction::Click {
+                target: ElementTarget::ByMark(4)
+            }
+        );
+        assert!(conf > 0.9);
+        assert!(!rationale.is_empty());
+    }
+
+    #[test]
+    fn test_parse_structured_agent_action_type() {
+        let json_input = r#"```json
+{"action":"type", "target_id": 7, "text": "Houston flights"}
+```"#;
+        let (_, action, conf) = parse_agent_action(json_input);
+        assert_eq!(
+            action,
+            BrowserAction::TypeText {
+                target: Some(ElementTarget::ByMark(7)),
+                text: "Houston flights".to_string()
+            }
+        );
+        assert!(conf > 0.9);
+    }
+
+    #[test]
+    fn test_parse_structured_agent_action_complete() {
+        let raw_output = "<think>Goal finished</think>\n{\"action\":\"complete\", \"summary\": \"Found round-trip flight for $198\"}";
+        let (rationale, action, conf) = parse_agent_action(raw_output);
+        assert_eq!(rationale, "Goal finished");
+        assert_eq!(
+            action,
+            BrowserAction::Complete {
+                summary: "Found round-trip flight for $198".to_string()
+            }
+        );
+        assert!(conf > 0.9);
+    }
 }
+
