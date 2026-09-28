@@ -206,22 +206,22 @@ document.addEventListener('DOMContentLoaded', () => {
   // -----------------------------------------------------------------
   // 1. Modern LLM Browser Message & Bubble Helper
   // -----------------------------------------------------------------
+  function switchViewToChat() {
+    const heroSec = document.getElementById('chat-hero-section');
+    const convView = document.getElementById('chat-conversation-view');
+    const webView = document.getElementById('webview-view');
+    if (heroSec) heroSec.classList.add('hidden');
+    if (convView) convView.classList.remove('hidden');
+    if (webView) webView.classList.add('hidden');
+    if (chatWelcome) chatWelcome.classList.add('hidden');
+  }
+
   function termLog(message, type = 'info') {
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     // Transition view from hero section to conversation stream
     if (type === 'cmd' || type === 'model-response') {
-      const heroSec = document.getElementById('chat-hero-section');
-      const convView = document.getElementById('chat-conversation-view');
-      const webView = document.getElementById('webview-view');
-      if (heroSec) heroSec.classList.add('hidden');
-      if (convView) convView.classList.remove('hidden');
-      if (webView) webView.classList.add('hidden');
-    }
-
-    // Hide welcome banner when user issues a command or model responds
-    if (chatWelcome && (type === 'cmd' || type === 'model-response')) {
-      chatWelcome.classList.add('hidden');
+      switchViewToChat();
     }
 
     if (chatMessages && (type === 'cmd' || type === 'model-response')) {
@@ -4541,6 +4541,54 @@ document.addEventListener('DOMContentLoaded', () => {
   // -----------------------------------------------------------------
   // 5. Autonomous CLI Command Execution Engine
   // -----------------------------------------------------------------
+  function parseMultiAgentDirectives(cmd) {
+    if (!cmd || typeof cmd !== 'string') {
+      return { agents: [], query: '', isMultiAgent: false, rawPrefix: '' };
+    }
+    const trimmed = cmd.trim();
+    if (!trimmed.startsWith('@') && !trimmed.startsWith('/')) {
+      return { agents: [], query: trimmed, isMultiAgent: false, rawPrefix: '' };
+    }
+
+    // Matches chained agent directives connected by &, +, ,, or and
+    // e.g. @agent arxiv & @agent search: LLM breaking out...
+    // or @agent arxiv + @agent search: ...
+    // or @agent arxiv, @agent search: ...
+    // or @agent search & @agent arxiv ...
+    // or @arxiv & @search: ...
+    // or @agent vision & @agent code: ...
+    // or @agent acdso & @agent summarize: ...
+    // or @agent pe & @agent security: ...
+    const multiRegex = /^((?:(?:@agent\s+|@|\/agent\s+|\/)(?:deep\s+research|browser\s+deep\s+research(?:\s+on)?|[a-zA-Z0-9_\-]+))(?:\s*(?:&|\+|,|\band\b)\s*(?:@agent\s+|@|\/agent\s+|\/)?(?:deep\s+research|browser\s+deep\s+research(?:\s+on)?|[a-zA-Z0-9_\-]+))+)(\s*:\s*|\s+|$)([\s\S]*)$/i;
+
+    const match = trimmed.match(multiRegex);
+    if (!match) {
+      return { agents: [], query: trimmed, isMultiAgent: false, rawPrefix: '' };
+    }
+
+    const rawAgentChain = match[1];
+    const separator = match[2];
+    const query = (match[3] || '').trim();
+    const rawPrefix = rawAgentChain + (separator.includes(':') ? ':' : '');
+
+    const splitAgents = rawAgentChain.split(/\s*(?:&|\+|,|\band\b)\s*/i);
+    const agents = splitAgents.map(a => {
+      let clean = a.replace(/^(@agent\s+|@|\/agent\s+|\/)/i, '').trim().toLowerCase();
+      if (clean === 'deep research' || clean === 'browser deep research on' || clean === 'browser deep research') {
+        clean = 'deep-research';
+      }
+      return clean;
+    }).filter(Boolean);
+
+    return {
+      agents,
+      query,
+      isMultiAgent: agents.length > 1,
+      rawPrefix
+    };
+  }
+  window.parseMultiAgentDirectives = parseMultiAgentDirectives;
+
   async function executeCliCommand(rawCmd) {
     if (isGenerating) {
       termLog('⚠️ A task is already in progress. Please wait for completion or click ⏹ to stop.', 'warn');
@@ -4548,6 +4596,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     let cmd = (rawCmd || '').trim();
     if (!cmd) return;
+
+    // Immediately switch view from hero section to conversation stream
+    switchViewToChat();
 
     // Normalize slash command to @agent directive
     if (cmd.startsWith('/') && !cmd.startsWith('//')) {
@@ -4559,12 +4610,17 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
+    const lower = cmd.toLowerCase();
+    const parsedMulti = parseMultiAgentDirectives(cmd);
+
     lastUserPrompt = cmd;
     window.lastUserPrompt = cmd;
 
     // Chat history tracking: ensure active session exists
     if (!currentSessionId) {
-      let sessionTitle = cmd.length > 36 ? cmd.slice(0, 36) + '...' : cmd;
+      let sessionTitle = parsedMulti.isMultiAgent
+        ? `${parsedMulti.rawPrefix.trim()} ${parsedMulti.query.slice(0, 25)}...`
+        : (cmd.length > 36 ? cmd.slice(0, 36) + '...' : cmd);
       if (sessionTitle.startsWith('/') && !sessionTitle.startsWith('//')) {
         const stripped = sessionTitle.slice(1).trim();
         sessionTitle = stripped.toLowerCase().startsWith('agent ') ? '@' + stripped : '@agent ' + stripped;
@@ -4583,29 +4639,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Universal "Just Attach a File" Guard:
     // If a file-requiring tool is invoked with no attachment and no explicit target, prompt user to select a file!
-    const fileCommandsRequiringTarget = [
-      '@agent acdso',
-      '@agent summarize',
-      '@agent vision',
-      '@agent image-classification',
-      '@agent object-detection',
-      '@agent vqa',
-      '@agent security',
-      '@agent pe',
-      '@agent asr',
-      '@agent audio'
-    ];
-    for (const prefix of fileCommandsRequiringTarget) {
-      if (lower === prefix || lower.startsWith(prefix + ' ')) {
-        const target = cmd.slice(prefix.length).trim();
-        if (!target && currentAttachments.length === 0) {
-          pendingAutoCommand = cmd;
-          if (filePicker) filePicker.click();
-          termLog(`📎 File required. Opening file picker to select file for ${cmd}...`, 'info');
-          return;
+    if (!parsedMulti.isMultiAgent) {
+      const fileCommandsRequiringTarget = [
+        '@agent acdso',
+        '@agent summarize',
+        '@agent vision',
+        '@agent image-classification',
+        '@agent object-detection',
+        '@agent vqa',
+        '@agent security',
+        '@agent pe',
+        '@agent asr',
+        '@agent audio'
+      ];
+      for (const prefix of fileCommandsRequiringTarget) {
+        if (lower === prefix || lower.startsWith(prefix + ' ')) {
+          const target = cmd.slice(prefix.length).trim();
+          if (!target && currentAttachments.length === 0) {
+            pendingAutoCommand = cmd;
+            if (filePicker) filePicker.click();
+            termLog(`📎 File required. Opening file picker to select file for ${cmd}...`, 'info');
+            return;
+          }
         }
       }
     }
+
     const activeSession = chatSessions.find(s => s.id === currentSessionId);
     if (activeSession) {
       const lastMsg = activeSession.messages[activeSession.messages.length - 1];
@@ -4620,9 +4679,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     termLog(cmd, 'cmd');
-    cliPromptInput.value = '';
-
-    const lower = cmd.toLowerCase();
+    if (cliPromptInput) cliPromptInput.value = '';
+    if (cliPromptInputPinned) cliPromptInputPinned.value = '';
 
     // Build attachment context if files are staged
     let attachmentContext = '';
@@ -4637,6 +4695,235 @@ document.addEventListener('DOMContentLoaded', () => {
     // Multimodal & Adaptive Fusion Resolution (initialized early for all execution branches)
     const attachedImages = currentAttachments.filter(f => f.type === 'image' && f.base64).map(f => f.base64);
     const panel = determineFusionPanel(cmd, currentAttachments, currentSettings);
+
+    try {
+      // 0. Multi-Agent Chaining & Composed Directives
+      if (parsedMulti.isMultiAgent) {
+        termLog(`[MULTI-AGENT] 🔄 Multi-agent fusion directive: [${parsedMulti.agents.map(a => '@agent ' + a).join(' & ')}] with query: "${parsedMulti.query}"`, 'info');
+
+        const hasArxiv = parsedMulti.agents.includes('arxiv');
+        const hasWebSearch = parsedMulti.agents.some(a => ['search', 'web', 'web-agent', 'deep-research', 'browser', 'search-index'].includes(a));
+        const hasVision = parsedMulti.agents.some(a => ['vision', 'image-classification', 'object-detection', 'vqa'].includes(a));
+        const hasCodeOrSec = parsedMulti.agents.some(a => ['code', 'code-gen', 'code-review', 'refactor', 'security', 'vuln-scan', 'exploit', 'malware-analysis'].includes(a));
+        const hasAcdso = parsedMulti.agents.some(a => ['acdso', 'tabular', 'tabular-classification', 'tabular-regression', 'datascience', 'dataanalyst'].includes(a));
+        const hasSummarize = parsedMulti.agents.some(a => ['summarize', 'summarize-text'].includes(a));
+        const hasPe = parsedMulti.agents.some(a => ['pe', 'decompile', 'packer-detect', 'strings'].includes(a));
+        const hasSecurity = parsedMulti.agents.some(a => ['security', 'vuln-scan', 'malware-analysis', 'exploit', 'owasp'].includes(a));
+
+        // Branch 1: arXiv + Web Search Fusion
+        if (hasArxiv && hasWebSearch) {
+          setChatRunningState(true);
+          currentAbortController = new AbortController();
+
+          if (chatWelcome) chatWelcome.classList.add('hidden');
+          let assistantBubble = null;
+          let bubbleContent = null;
+          let statusCtrl = null;
+          if (chatMessages) {
+            assistantBubble = document.createElement('div');
+            assistantBubble.className = 'msg-bubble assistant-bubble streaming';
+            assistantBubble.innerHTML = `
+              <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+                <span>📚</span> <span>arXiv Papers</span> &amp; <span>🌐</span> <span>Web Search Grounding</span>
+                <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">(Multi-Agent Scientific &amp; Web Grounding)</span>
+              </div>
+              <div class="bubble-content" style="color: var(--accent-color); font-weight: 500; display: flex; align-items: center; gap: 6px;">
+                <div class="dynamic-status-pill">
+                  <span class="status-pulse-dot"></span>
+                  <span class="status-text">Searching arXiv scientific preprints and verified web sources in parallel for: "${escapeHtml(parsedMulti.query || 'query')}"...</span>
+                </div>
+              </div>
+            `;
+            chatMessages.appendChild(assistantBubble);
+            bubbleContent = assistantBubble.querySelector('.bubble-content');
+            if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
+            statusCtrl = startDynamicStatus(assistantBubble, 'research', parsedMulti.query);
+          }
+
+          try {
+            const queryToSearch = parsedMulti.query || currentNavUrl || 'open-weight models';
+            const [arxivResults, webResults] = await Promise.all([
+              executeArxivSearch(queryToSearch, currentSettings.maxSearchResults || 5),
+              executeWebSearch(queryToSearch, currentSettings.maxSearchResults || 5)
+            ]);
+
+            const safeArxiv = arxivResults || [];
+            const safeWeb = webResults || [];
+            const combinedResults = [...safeArxiv, ...safeWeb];
+
+            termLog(`[MULTI-AGENT] Retrieved ${safeArxiv.length} arXiv papers and ${safeWeb.length} web sources. Correlating dual-source research...`, 'success');
+            if (combinedResults.length > 0) {
+              combinedResults.forEach((r, idx) => {
+                termLog(`  [${idx + 1}] ${r.title} - ${r.url}`, 'sys');
+              });
+            }
+
+            const arxivSection = safeArxiv.length > 0
+              ? safeArxiv.map((r, idx) => `[arXiv:${idx + 1}] Title: ${r.title}\nURL: ${r.url}\nSummary: ${r.snippet}`).join('\n\n')
+              : 'No arXiv scientific papers found.';
+
+            const webSection = safeWeb.length > 0
+              ? safeWeb.map((r, idx) => `[Web:${idx + 1}] Title: ${r.title}\nURL: ${r.url}\nSummary: ${r.snippet}`).join('\n\n')
+              : 'No live web sources found.';
+
+            const searchContext = `=== Scientific Research Papers (arXiv) ===\n${arxivSection}\n\n=== Verified Web Sources ===\n${webSection}`;
+
+            const promptWithSearch = `User Query: ${queryToSearch}
+
+Dual-Source Grounding Context:
+${searchContext}
+
+${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
+- Synthesize scientific research findings from arXiv papers alongside verified real-time web sources.
+- Ground all facts, findings, and technical assertions directly in the verified dual-source context above.
+- Cite sources inline using [arXiv:1], [arXiv:2] for scientific preprints and [Web:1], [Web:2] or [1], [2] for web citations.
+- Include clickable markdown links to all cited papers and web references: [Paper/Source Title](URL).
+- Highlight key research methodologies, security or architectural considerations, and concrete actionable insights.
+- Provide a rigorous, well-structured, multi-perspective synthesis. Never hallucinate unverified citations.`;
+
+            const sysPrompt = 'You are HugOS Multi-Agent Research AI, combining an academic research scientist (arXiv) and a real-time web intelligence analyst. Synthesize dual-source findings with rigorous evidence grounding, inline citations, and clickable markdown links.';
+
+            await streamAiChat(promptWithSearch, sysPrompt, {
+              images: attachedImages,
+              panel: { id: 'multi-research', name: 'arXiv + Web Search Fusion' },
+              existingBubble: assistantBubble,
+              bubbleContent: bubbleContent,
+              statusCtrl: statusCtrl
+            });
+          } catch (err) {
+            if (statusCtrl) statusCtrl.stop();
+            renderErrorCard(assistantBubble, '⚠️ Multi-Agent Research Failed', `Could not complete arXiv & Web research fusion: ${err.message}. Please check network connection and retry.`);
+          }
+          if (currentAttachments.length > 0) clearAllAttachments();
+          return;
+        }
+
+        // Branch 2: Vision + Code / Security
+        if (hasVision && hasCodeOrSec) {
+          setChatRunningState(true);
+          currentAbortController = new AbortController();
+          if (chatWelcome) chatWelcome.classList.add('hidden');
+          const isSecurity = parsedMulti.agents.some(a => ['security', 'vuln-scan', 'exploit', 'malware-analysis'].includes(a));
+          termLog(`[MULTI-AGENT] 👁️ Vision + 🛡️ Code/Security: Analyzing ${attachedImages.length > 0 ? attachedImages.length + ' image(s)' : 'input'} for ${isSecurity ? 'security vulnerability audit' : 'code implementation & architecture review'}...`, 'info');
+
+          const visionCodePrompt = parsedMulti.query
+            ? `Analyze the attached visual asset(s) and architecture diagrams for ${isSecurity ? 'cybersecurity vulnerabilities, attack surfaces, threat modeling (STRIDE), and exploit vectors' : 'software engineering implementation, architecture patterns, and system design'}. User directive: "${parsedMulti.query}".\n${attachmentContext ? '\n' + attachmentContext : ''}`
+            : `Perform a comprehensive visual and architectural ${isSecurity ? 'security audit and threat analysis' : 'code architecture review'} of the attached image(s). Identify system components, communication boundaries, potential vulnerabilities, and implementation guidelines.\n${attachmentContext ? '\n' + attachmentContext : ''}`;
+
+          const visionCodeSys = isSecurity
+            ? 'You are HugOS Multimodal Security Agent, specialized in analyzing architectural diagrams, UI mockups, and screenshots for cybersecurity vulnerabilities, threat models, attack surfaces, and concrete hardening protocols.'
+            : 'You are HugOS Multimodal Code Architect, specialized in translating visual system diagrams, wireframes, and architectural schematics into production code, design patterns, and concrete implementation blueprints.';
+
+          await streamAiChat(visionCodePrompt, visionCodeSys, {
+            images: attachedImages,
+            panel: { id: 'vision-code-sec', name: 'Vision + Code Security Fusion' }
+          });
+          if (currentAttachments.length > 0) clearAllAttachments();
+          return;
+        }
+
+        // Branch 3: ACDSO / Tabular + Summarize
+        if (hasAcdso && hasSummarize) {
+          const datasetFile = currentAttachments.find(f => f.isDataset || f.name.endsWith('.csv') || f.name.endsWith('.tsv') || f.type === 'tabular');
+          if (datasetFile && datasetFile.content) {
+            termLog(`[MULTI-AGENT] 📊 ACDSO + 📑 Summarize: Running causal AutoML and executive analytical summary on ${datasetFile.name}...`, 'info');
+            try {
+              await processTabularDataset(datasetFile.name, datasetFile.content);
+            } catch (err) {
+              termLog(`[ACDSO] Error processing tabular dataset: ${err.message}`, 'error');
+            }
+            const summaryPrompt = `Provide a comprehensive executive analytical summary of the dataset "${datasetFile.name}" and its AutoML / tabular profiling results:\n${parsedMulti.query ? 'User Focus Directive: ' + parsedMulti.query : 'Highlight key drivers, Pareto trade-offs, anomaly patterns, and strategic data recommendations.'}`;
+            await streamAiChat(summaryPrompt, 'You are HugOS Executive Data Science Agent. Deliver high-density, actionable executive summaries of tabular datasets and AutoML model results.');
+            clearAllAttachments();
+            return;
+          } else {
+            termLog(`[MULTI-AGENT] 📊 ACDSO + 📑 Summarize on URL: ${currentNavUrl || 'current page'}...`, 'info');
+            await handleAcdsoCommand(currentNavUrl);
+            const pageInfo = await getActivePageText();
+            const summaryPrompt = `Provide an executive analytical summary of the extracted tabular data and page content:\n${pageInfo.text.slice(0, 8000)}\n${parsedMulti.query ? 'Focus: ' + parsedMulti.query : ''}`;
+            await streamAiChat(summaryPrompt, 'You are HugOS Executive Data Science Agent. Provide high-density executive analytical summaries.');
+            if (currentAttachments.length > 0) clearAllAttachments();
+            return;
+          }
+        }
+
+        // Branch 4: PE + Security
+        if (hasPe && hasSecurity) {
+          const peFile = currentAttachments.find(f => f.type === 'pe_binary' || f.isPeBinary || /\.(exe|dll|sys|ocx|scr|bin)$/i.test(f.name));
+          if (peFile) {
+            if (chatWelcome) chatWelcome.classList.add('hidden');
+            if (chatMessages) {
+              const cardBubble = document.createElement('div');
+              cardBubble.className = 'msg-bubble sys-bubble';
+              cardBubble.style.background = 'rgba(59, 130, 246, 0.08)';
+              cardBubble.style.borderColor = 'rgba(59, 130, 246, 0.25)';
+              const h = peFile.peHeaders || {};
+              cardBubble.innerHTML = `
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                  <div style="display: flex; align-items: center; gap: 6px; font-weight: 600; color: #3b82f6; font-size: 12px;">
+                    <span>🔬</span> <span>PE Forensics</span> &amp; <span>🛡️</span> <span>Security Audit Fusion</span>
+                  </div>
+                  <span style="font-size: 10px; opacity: 0.7; font-family: var(--mono-font);">${escapeHtml(peFile.name)}</span>
+                </div>
+                <div style="font-size: 11.5px; line-height: 1.6; font-family: var(--mono-font);">
+                  <div><strong>Target:</strong> ${escapeHtml(peFile.name)} (${(peFile.size / 1024).toFixed(1)} KB)</div>
+                  <div><strong>Format:</strong> ${h.isDll ? 'Dynamic Link Library (DLL)' : 'Executable (EXE)'}</div>
+                  <div><strong>Architecture:</strong> ${h.machineName || 'Unknown'} (0x${(h.machine || 0).toString(16)})</div>
+                  <div><strong>Subsystem:</strong> ${h.subsystemName || 'Unknown'}</div>
+                  <div><strong>Timestamp:</strong> ${h.timestampStr || 'Unknown'}</div>
+                  <div><strong>Sections:</strong> ${h.numberOfSections || (h.sections ? h.sections.length : 0)}</div>
+                </div>
+                ${h.sections && h.sections.length > 0 ? `
+                  <div style="margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 6px;">
+                    <div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Section Table &amp; Entropy:</div>
+                    <div style="font-size: 10.5px; font-family: var(--mono-font); color: var(--text-muted); max-height: 120px; overflow-y: auto;">
+                      ${h.sections.map(s => `<div><code>${s.name.padEnd(8)}</code> VirtSize: ${s.virtualSize.toLocaleString()} B | RawSize: ${s.rawSize.toLocaleString()} B</div>`).join('')}
+                    </div>
+                  </div>
+                ` : ''}
+              `;
+              chatMessages.appendChild(cardBubble);
+              if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+
+            termLog(`[MULTI-AGENT] 🔬 PE Forensics + 🛡️ Security Audit: Analyzing ${peFile.name}...`, 'info');
+            const peSecPrompt = `Perform a combined PE forensic dissection and static threat & vulnerability audit of "${peFile.name}":\n\nPE Header & Section Data:\n${peFile.content}\n\n${parsedMulti.query ? 'User Focus Directive: ' + parsedMulti.query + '\n\n' : ''}Deliver:\n1. Architecture, Subsystem & Header Integrity\n2. Section Analysis (Entropy, Packing / UPX / Obfuscation indicators, RWE permissions)\n3. Threat Modeling & Indicator of Compromise (IoC) Heuristics\n4. Vulnerability Risk Severity & Reverse Engineering Remediation`;
+            await streamAiChat(peSecPrompt, 'You are HugOS Master Binary Security Agent, combining advanced PE reverse engineering and offensive/defensive malware threat intelligence.');
+            clearAllAttachments();
+            return;
+          } else {
+            termLog(`[MULTI-AGENT] 🔬 PE + 🛡️ Security: Executing binary security audit for: "${parsedMulti.query}"...`, 'info');
+            const pePrompt = `Perform an expert binary reverse engineering and vulnerability assessment on:\n${parsedMulti.query}\n\n${attachmentContext ? '\n' + attachmentContext : ''}Provide detailed disassembly analysis, exploit mechanics, mitigation bypasses, and secure binary development practices.`;
+            await streamAiChat(pePrompt, 'You are HugOS Master Binary Security Agent, combining advanced PE reverse engineering and offensive/defensive malware threat intelligence.');
+            if (currentAttachments.length > 0) clearAllAttachments();
+            return;
+          }
+        }
+
+        // Branch 5: General Multi-Agent Chaining
+        termLog(`[MULTI-AGENT] Composing multi-agent pipeline for [${parsedMulti.agents.map(a => '@agent ' + a).join(', ')}]...`, 'info');
+        const agentDescriptions = parsedMulti.agents.map(a => {
+          const found = AGENT_COMMANDS.find(cmdItem => cmdItem.cmd.trim().toLowerCase() === `@agent ${a}` || cmdItem.cmd.trim().toLowerCase().startsWith(`@agent ${a} `));
+          return found ? `${found.label} (${found.desc})` : `@agent ${a}`;
+        }).join('; ');
+
+        const composedPrompt = `User Multi-Agent Directive: [${parsedMulti.agents.map(a => '@agent ' + a).join(' & ')}]
+Task Query: ${parsedMulti.query || 'Execute multi-agent combined analysis.'}
+
+${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
+- Seamlessly coordinate across all requested agent specialties: ${agentDescriptions}.
+- Provide a rigorous, unified, multi-perspective synthesis addressing the user query.
+- Structure findings with clear headings, actionable conclusions, and high technical density.`;
+
+        const composedSysPrompt = `You are HugOS Multi-Agent Coordinator. You dynamically embody and orchestrate a multi-agent council of specialized AI tools: ${agentDescriptions}. Synthesize all perspectives into an authoritative, expert solution.`;
+
+        await streamAiChat(composedPrompt, composedSysPrompt, {
+          images: attachedImages,
+          panel
+        });
+        if (currentAttachments.length > 0) clearAllAttachments();
+        return;
+      }
 
     // 0. Browser Agent Control Commands (/browser approve, /browser abort, /browser status)
     if (lower === '/browser approve' || lower === '@agent browser approve' || lower === 'approve' || lower === '/approve') {
@@ -5200,6 +5487,10 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     if (currentAttachments.length > 0) {
       clearAllAttachments();
     }
+    } catch (err) {
+      termLog(`[COMMAND ERROR] ⚠️ Execution failed: ${err.message}`, 'error');
+      setChatRunningState(false);
+    }
   }
 
   // Expose to window for external integration, CDP automation, and test runner
@@ -5705,15 +5996,23 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     const atIndex = val.lastIndexOf('@');
     const slashIndex = val.lastIndexOf('/');
     let triggerIndex = -1;
-    if (atIndex >= 0 && (atIndex === 0 || /\s/.test(val[atIndex - 1]))) {
+    if (atIndex >= 0 && (atIndex === 0 || /[\s&+,]/.test(val[atIndex - 1]))) {
       triggerIndex = atIndex;
     }
-    if (slashIndex >= 0 && (slashIndex === 0 || /\s/.test(val[slashIndex - 1]))) {
+    if (slashIndex >= 0 && (slashIndex === 0 || /[\s&+,]/.test(val[slashIndex - 1]))) {
       if (slashIndex > triggerIndex) {
         triggerIndex = slashIndex;
       }
     }
     if (triggerIndex < 0) {
+      dropdown.classList.add('hidden');
+      acSelectedIndex = -1;
+      return;
+    }
+
+    // If typing past a colon ':', close dropdown
+    const remainder = val.slice(triggerIndex);
+    if (remainder.includes(':')) {
       dropdown.classList.add('hidden');
       acSelectedIndex = -1;
       return;
@@ -5753,7 +6052,9 @@ If you are asked about real-world facts such as world leaders, heads of state, c
       `;
       div.addEventListener('mousedown', (e) => {
         e.preventDefault();
-        inputEl.value = item.cmd.endsWith(' ') ? item.cmd : item.cmd + ' ';
+        const prefix = val.slice(0, triggerIndex);
+        const insertion = item.cmd.endsWith(' ') ? item.cmd : item.cmd + ' ';
+        inputEl.value = prefix + insertion;
         inputEl.focus();
         inputEl.selectionStart = inputEl.selectionEnd = inputEl.value.length;
         dropdown.classList.add('hidden');
