@@ -33,9 +33,18 @@ destinations = [
 
 for dst in destinations:
     os.makedirs(os.path.dirname(dst), exist_ok=True)
-    shutil.copy2(src, dst)
-    match = (get_sha256(dst) == src_hash)
-    print(f"[{'MATCH' if match else 'FAIL'}] {dst}")
+    if os.path.exists(dst) and get_sha256(dst) == src_hash:
+        print(f"[MATCH (Already in Parity)] {dst}")
+        continue
+    try:
+        shutil.copy2(src, dst)
+        match = (get_sha256(dst) == src_hash)
+        print(f"[{'MATCH' if match else 'FAIL'}] {dst}")
+    except PermissionError:
+        if os.path.exists(dst) and get_sha256(dst) == src_hash:
+            print(f"[MATCH (File in use, hash matched)] {dst}")
+        else:
+            print(f"[WARN: Locked by running process] {dst}")
 
 # Mirror browser UI files
 ui_dst = os.path.join(localappdata, r"HugOS Browser\ui")
@@ -43,5 +52,9 @@ if os.path.exists(ui_dst):
     for f in ["app.js", "index.html", "styles.css"]:
         src_ui = os.path.join(os.path.abspath("browser/ui"), f)
         dst_ui = os.path.join(ui_dst, f)
-        shutil.copy2(src_ui, dst_ui)
-        print(f"[COPIED UI] {src_ui} -> {dst_ui}")
+        try:
+            shutil.copy2(src_ui, dst_ui)
+            print(f"[COPIED UI] {src_ui} -> {dst_ui}")
+        except Exception as e:
+            print(f"[ERROR COPYING UI] {src_ui} -> {dst_ui}: {e}")
+

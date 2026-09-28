@@ -236,12 +236,37 @@ document.addEventListener('DOMContentLoaded', () => {
           }).join('') + `</div>`;
         }
         bubble.innerHTML = `
-          <div class="bubble-author" style="font-size: 11px; font-weight: 600; opacity: 0.85; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
-            <span>👤</span> <span>You</span>
+          <div class="bubble-author" style="font-size: 11px; font-weight: 600; opacity: 0.85; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <span>👤</span> <span>You</span>
+            </div>
+            <div class="user-bubble-actions">
+              <button type="button" class="bubble-action-btn btn-run-prompt" title="Re-run this prompt">▶ Run</button>
+              <button type="button" class="bubble-action-btn btn-edit-prompt" title="Edit in prompt bar">✏️</button>
+              <button type="button" class="bubble-action-btn btn-copy-prompt" title="Copy to clipboard">📋</button>
+            </div>
           </div>
           ${attHtml}
           <div class="user-text">${formatCitationsAndMarkdown(message)}</div>
         `;
+        const btnRun = bubble.querySelector('.btn-run-prompt');
+        if (btnRun) btnRun.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (window.runPromptFromHistory) window.runPromptFromHistory(message);
+        });
+        const btnEdit = bubble.querySelector('.btn-edit-prompt');
+        if (btnEdit) btnEdit.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (window.editPromptFromHistory) window.editPromptFromHistory(message);
+        });
+        const btnCopy = bubble.querySelector('.btn-copy-prompt');
+        if (btnCopy) btnCopy.addEventListener('click', (e) => {
+          e.stopPropagation();
+          navigator.clipboard.writeText(message).then(() => {
+            btnCopy.textContent = '✅';
+            setTimeout(() => { btnCopy.textContent = '📋'; }, 1500);
+          });
+        });
       } else if (type === 'model-response') {
         const isFusion = activeOllamaModel === 'modelfusion_auto' || activeOllamaModel === 'fast_fusion' || activeOllamaModel === 'deep_reasoning';
         const displayTitle = isFusion ? '✨ ModelFusion AI' : '🌐 HugOS AI';
@@ -1706,7 +1731,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function formatAssistantContent(text, userPrompt = '') {
-    if (!text) return '';
+    if (!text || !text.trim()) {
+      return '<div class="empty-response-notice" style="font-size: 13px; color: var(--text-muted); font-style: italic; padding: 6px 0;">No response content generated. Click <button type="button" class="bubble-action-btn btn-run-prompt" style="margin-left: 6px;" onclick="if(window.runPromptFromHistory && window.lastUserPrompt) window.runPromptFromHistory(window.lastUserPrompt)">▶ Retry Prompt</button></div>';
+    }
     const wordCount = text.split(/\s+/).length;
     const hasHeadings = /^#+\s+/m.test(text);
     const isLarge = wordCount > 180 || (hasHeadings && text.length > 300);
@@ -1940,6 +1967,27 @@ document.addEventListener('DOMContentLoaded', () => {
     renderChatHistoryList();
   }
 
+  window.runPromptFromHistory = function(promptText) {
+    if (!promptText || isGenerating) return;
+    const pendingCard = document.querySelector('.pending-prompt-card');
+    if (pendingCard) pendingCard.remove();
+    if (chatMessages && chatMessages.lastElementChild && chatMessages.lastElementChild.classList.contains('user-bubble')) {
+      const bubbleText = chatMessages.lastElementChild.querySelector('.user-text')?.textContent || '';
+      if (bubbleText.trim() === promptText.trim()) {
+        chatMessages.lastElementChild.remove();
+      }
+    }
+    executeCliCommand(promptText);
+  };
+
+  window.editPromptFromHistory = function(promptText) {
+    if (!cliPromptInput) return;
+    cliPromptInput.value = promptText;
+    cliPromptInput.style.height = 'auto';
+    cliPromptInput.style.height = Math.min(cliPromptInput.scrollHeight, 160) + 'px';
+    cliPromptInput.focus();
+  };
+
   function renderChatHistoryList() {
     const container = document.getElementById('chat-history-list');
     if (!container) return;
@@ -1953,14 +2001,25 @@ document.addEventListener('DOMContentLoaded', () => {
       const item = document.createElement('div');
       item.className = `chat-history-item ${session.id === currentSessionId ? 'active' : ''}`;
       item.dataset.sessionId = session.id;
+      const safeTitle = escapeHtml(session.title || 'Untitled Chat');
       item.innerHTML = `
-        <span class="chat-item-title" title="${session.title}">${session.title}</span>
-        <button type="button" class="chat-item-delete" title="Delete conversation">🗑️</button>
+        <span class="chat-item-title" title="${safeTitle}">${safeTitle}</span>
+        <div class="chat-item-actions">
+          <button type="button" class="chat-item-run" title="Run this chat prompt">▶</button>
+          <button type="button" class="chat-item-delete" title="Delete conversation">🗑️</button>
+        </div>
       `;
       item.addEventListener('click', (e) => {
         if (e.target.closest('.chat-item-delete')) {
           e.stopPropagation();
           deleteChatSession(session.id);
+          return;
+        }
+        if (e.target.closest('.chat-item-run')) {
+          e.stopPropagation();
+          const firstUserMsg = (session.messages || []).find(m => m.role === 'user') || { content: session.title };
+          loadChatSession(session.id);
+          window.runPromptFromHistory(firstUserMsg.content);
           return;
         }
         loadChatSession(session.id);
@@ -2006,8 +2065,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (convView) convView.classList.remove('hidden');
     if (webView) webView.classList.add('hidden');
 
+    let lastUserMsg = null;
+    let hasAssistantResponseForLastUser = false;
+
     (session.messages || []).forEach(msg => {
       if (msg.role === 'user') {
+        lastUserMsg = msg;
+        hasAssistantResponseForLastUser = false;
         const bubble = document.createElement('div');
         bubble.className = 'msg-bubble user-bubble';
         let attHtml = '';
@@ -2018,28 +2082,96 @@ document.addEventListener('DOMContentLoaded', () => {
           }).join('') + `</div>`;
         }
         bubble.innerHTML = `
-          <div class="bubble-author" style="font-size: 11px; font-weight: 600; opacity: 0.85; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
-            <span>👤</span> <span>You</span>
+          <div class="bubble-author" style="font-size: 11px; font-weight: 600; opacity: 0.85; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <span>👤</span> <span>You</span>
+            </div>
+            <div class="user-bubble-actions">
+              <button type="button" class="bubble-action-btn btn-run-prompt" title="Re-run this prompt">▶ Run</button>
+              <button type="button" class="bubble-action-btn btn-edit-prompt" title="Edit in prompt bar">✏️</button>
+              <button type="button" class="bubble-action-btn btn-copy-prompt" title="Copy to clipboard">📋</button>
+            </div>
           </div>
           ${attHtml}
           <div class="user-text">${renderMarkdown(msg.content)}</div>
         `;
+        const btnRun = bubble.querySelector('.btn-run-prompt');
+        if (btnRun) btnRun.addEventListener('click', (e) => {
+          e.stopPropagation();
+          window.runPromptFromHistory(msg.content);
+        });
+        const btnEdit = bubble.querySelector('.btn-edit-prompt');
+        if (btnEdit) btnEdit.addEventListener('click', (e) => {
+          e.stopPropagation();
+          window.editPromptFromHistory(msg.content);
+        });
+        const btnCopy = bubble.querySelector('.btn-copy-prompt');
+        if (btnCopy) btnCopy.addEventListener('click', (e) => {
+          e.stopPropagation();
+          navigator.clipboard.writeText(msg.content).then(() => {
+            btnCopy.textContent = '✅';
+            setTimeout(() => { btnCopy.textContent = '📋'; }, 1500);
+          });
+        });
         chatMessages.appendChild(bubble);
       } else {
+        hasAssistantResponseForLastUser = true;
         const bubble = document.createElement('div');
         bubble.className = 'msg-bubble assistant-bubble';
         bubble.dataset.rawText = msg.content;
         bubble.innerHTML = `
-          <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
-            <span>✨</span> <span>${msg.model || 'ModelFusion AI'}</span>
+          <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <span>✨</span> <span>${msg.model || 'ModelFusion AI'}</span>
+            </div>
+            <div class="assistant-bubble-actions">
+              <button type="button" class="bubble-action-btn btn-copy-response" title="Copy response">📋</button>
+            </div>
           </div>
           <div class="assistant-content-container">
             ${formatAssistantContent(msg.content)}
           </div>
         `;
+        const btnCopy = bubble.querySelector('.btn-copy-response');
+        if (btnCopy) btnCopy.addEventListener('click', (e) => {
+          e.stopPropagation();
+          navigator.clipboard.writeText(msg.content).then(() => {
+            btnCopy.textContent = '✅';
+            setTimeout(() => { btnCopy.textContent = '📋'; }, 1500);
+          });
+        });
         chatMessages.appendChild(bubble);
       }
     });
+
+    // If the conversation ends with a user prompt that has no assistant reply (e.g. failed, interrupted, or pending)
+    if (lastUserMsg && !hasAssistantResponseForLastUser) {
+      const pendingCard = document.createElement('div');
+      pendingCard.className = 'pending-prompt-card';
+      pendingCard.innerHTML = `
+        <div class="pending-prompt-header">
+          <span class="pending-icon">⚡</span>
+          <strong>Unfinished Prompt: No response generated yet</strong>
+        </div>
+        <div class="pending-prompt-desc">This prompt was saved without results. Click <strong>Run Now</strong> to execute it with live web & arXiv research.</div>
+        <div class="pending-prompt-actions">
+          <button type="button" class="btn-pending-run">▶ Run Now</button>
+          <button type="button" class="btn-pending-edit">✏️ Edit in Input Bar</button>
+        </div>
+      `;
+      pendingCard.querySelector('.btn-pending-run').addEventListener('click', () => {
+        window.runPromptFromHistory(lastUserMsg.content);
+      });
+      pendingCard.querySelector('.btn-pending-edit').addEventListener('click', () => {
+        window.editPromptFromHistory(lastUserMsg.content);
+      });
+      chatMessages.appendChild(pendingCard);
+
+      // Also populate prompt into the input bar automatically
+      if (cliPromptInput) {
+        window.editPromptFromHistory(lastUserMsg.content);
+      }
+    }
 
     renderChatHistoryList();
     if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -2902,6 +3034,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tempToUse = typeof currentSettings.temperature === 'number' ? currentSettings.temperature : 0.2;
     const maxTokensToUse = typeof currentSettings.maxTokens === 'number' ? currentSettings.maxTokens : 4096;
     const streamMode = currentSettings.stream !== false;
+    const activeSession = chatSessions.find(s => s.id === currentSessionId);
 
     const hasImages = options && options.images && Array.isArray(options.images) && options.images.length > 0;
     let selectedVisionModel = null;
@@ -3052,8 +3185,22 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
 
+        const contents = [];
+        if (activeSession && Array.isArray(activeSession.messages)) {
+          const history = activeSession.messages.slice(0, -1);
+          const windowedHistory = history.slice(-10);
+          for (const m of windowedHistory) {
+            if (m.role === 'user' && m.content) {
+              contents.push({ role: 'user', parts: [{ text: m.content }] });
+            } else if (m.role === 'assistant' && m.content) {
+              contents.push({ role: 'model', parts: [{ text: m.content }] });
+            }
+          }
+        }
+        contents.push({ role: 'user', parts });
+
         const geminiBody = {
-          contents: [{ role: 'user', parts }],
+          contents,
           generationConfig: {
             temperature: tempToUse,
             maxOutputTokens: maxTokensToUse
@@ -3128,9 +3275,20 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
 
-        if (assistantBubble) assistantBubble.classList.remove('streaming');
+        if (assistantBubble) {
+          assistantBubble.classList.remove('streaming');
+          assistantBubble.dataset.rawText = fullText;
+          assistantBubble.dataset.prompt = userPrompt;
+          if (bubbleContent) {
+            bubbleContent.innerHTML = formatAssistantContent(fullText, userPrompt);
+          }
+        }
+        if (activeSession) {
+          activeSession.messages.push({ role: 'assistant', content: fullText, model: modelToUse });
+          saveChatHistory();
+        }
         setChatRunningState(false);
-        return;
+        return fullText;
       } catch (geminiErr) {
         if (statusCtrl) statusCtrl.stop();
         renderErrorCard(assistantBubble, '⚠️ Google Gemini Request Failed', geminiErr.message);
@@ -3174,9 +3332,23 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const conversationMessages = [
-        { role: 'system', content: systemPrompt },
-        messagePayload
+        { role: 'system', content: systemPrompt }
       ];
+
+      // Add multi-turn context from current active session
+      if (activeSession && Array.isArray(activeSession.messages)) {
+        const history = activeSession.messages.slice(0, -1);
+        const windowedHistory = history.slice(-10);
+        for (const m of windowedHistory) {
+          if (m.role === 'user' && m.content) {
+            conversationMessages.push({ role: 'user', content: m.content });
+          } else if (m.role === 'assistant' && m.content) {
+            conversationMessages.push({ role: 'assistant', content: m.content });
+          }
+        }
+      }
+
+      conversationMessages.push(messagePayload);
 
       let fullResponse = '';
       let totalEstimatedTokens = 0;
@@ -3470,11 +3642,12 @@ document.addEventListener('DOMContentLoaded', () => {
         assistantBubble.dataset.rawText = fullResponse;
         assistantBubble.dataset.prompt = userPrompt;
         if (bubbleContent) {
+          bubbleContent.style.color = '';
+          bubbleContent.style.fontStyle = '';
           bubbleContent.innerHTML = formatAssistantContent(fullResponse, userPrompt);
         }
       }
-      const activeSession = chatSessions.find(s => s.id === currentSessionId);
-      if (activeSession) {
+      if (activeSession && fullResponse && fullResponse.trim()) {
         activeSession.messages.push({ role: 'assistant', content: fullResponse, model: modelToUse });
         saveChatHistory();
       }
@@ -3531,7 +3704,6 @@ document.addEventListener('DOMContentLoaded', () => {
               bubbleContent.innerHTML = formatAssistantContent(text, userPrompt);
             }
           }
-          const activeSession = chatSessions.find(s => s.id === currentSessionId);
           if (activeSession) {
             activeSession.messages.push({ role: 'assistant', content: text, model: modelToUse });
             saveChatHistory();
@@ -4167,12 +4339,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const currentAttachments = [...attachedFiles];
     const activeSession = chatSessions.find(s => s.id === currentSessionId);
     if (activeSession) {
-      activeSession.messages.push({
-        role: 'user',
-        content: cmd,
-        attachments: currentAttachments
-      });
-      saveChatHistory();
+      const lastMsg = activeSession.messages[activeSession.messages.length - 1];
+      if (!lastMsg || lastMsg.role !== 'user' || lastMsg.content !== cmd) {
+        activeSession.messages.push({
+          role: 'user',
+          content: cmd,
+          attachments: currentAttachments
+        });
+        saveChatHistory();
+      }
     }
 
     termLog(cmd, 'cmd');
@@ -4189,6 +4364,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return `File: ${f.name} (${f.size} bytes)\nContent:\n${snippet}`;
       }).join('\n\n') + '\n--- END ATTACHED FILES ---';
     }
+
+    // Multimodal & Adaptive Fusion Resolution (initialized early for all execution branches)
+    const attachedImages = currentAttachments.filter(f => f.type === 'image' && f.base64).map(f => f.base64);
+    const panel = determineFusionPanel(cmd, currentAttachments, currentSettings);
 
     // 0. Browser Agent Control Commands (/browser approve, /browser abort, /browser status)
     if (lower === '/browser approve' || lower === '@agent browser approve' || lower === 'approve' || lower === '/approve') {
@@ -4533,10 +4712,6 @@ Instructions:
       await runAutonomousBrowserAgent(cmd);
       return;
     }
-
-    // Multimodal & Adaptive Fusion Resolution
-    const attachedImages = currentAttachments.filter(f => f.type === 'image' && f.base64).map(f => f.base64);
-    const panel = determineFusionPanel(cmd, currentAttachments, currentSettings);
 
     // 6. Intelligent Query Routing: Web Search vs Local LLM Reasoning
     const routingDecision = shouldRouteToWeb(cmd, currentSettings.webSearchMode || 'auto');
