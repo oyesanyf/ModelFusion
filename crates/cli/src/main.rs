@@ -2231,7 +2231,8 @@ where
     if (verb == "@agent" || verb == "agent") && args.len() > 2 {
         let sub = args[2].to_lowercase();
         let sub_clean = sub.trim_start_matches('/');
-        if sub_clean == "arxiv" {
+        let has_combinator = args.iter().any(|a| a == "&" || a == "+" || a == "and" || a == "," || a.contains(" & ") || a.contains(" + "));
+        if sub_clean == "arxiv" && !has_combinator {
             args.remove(1);
             args[1] = "--arxiv".to_string();
             return args;
@@ -16389,6 +16390,21 @@ public class Pr {
         use super::preprocess_cli_args;
         let res = preprocess_cli_args(["cli", "/arxiv", "deep learning"]);
         assert_eq!(res, vec!["cli".to_string(), "--arxiv".to_string(), "deep learning".to_string()]);
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_multi_agent_chaining() {
+        use super::preprocess_cli_args;
+        let res = preprocess_cli_args(["cli", "@agent", "arxiv", "&", "@agent", "search:", "LLM breaking out"]);
+        assert_eq!(res, vec![
+            "cli".to_string(),
+            "@agent".to_string(),
+            "arxiv".to_string(),
+            "&".to_string(),
+            "@agent".to_string(),
+            "search:".to_string(),
+            "LLM breaking out".to_string()
+        ]);
     }
 
     #[test]
