@@ -167,6 +167,25 @@ document.addEventListener('DOMContentLoaded', () => {
   let isGenerating = false;
   let currentAbortController = null;
 
+  // Custom Models & Custom Fusions State
+  let customModels = [];
+  let customFusions = [];
+  let activeCustomFusion = null;
+
+  // Custom Models & Fusions DOM Elements
+  const inputCustomModelTag = document.getElementById('input-custom-model-tag');
+  const selectCustomModelType = document.getElementById('select-custom-model-type');
+  const btnAddCustomModel = document.getElementById('btn-add-custom-model');
+  const customModelsList = document.getElementById('custom-models-list');
+
+  const inputCustomFusionName = document.getElementById('input-custom-fusion-name');
+  const customFusionModelsSelect = document.getElementById('custom-fusion-models-select');
+  const customFusionPrimary = document.getElementById('custom-fusion-primary');
+  const customFusionSecondary = document.getElementById('custom-fusion-secondary');
+  const customFusionArbiter = document.getElementById('custom-fusion-arbiter');
+  const btnCreateCustomFusion = document.getElementById('btn-create-custom-fusion');
+  const customFusionsList = document.getElementById('custom-fusions-list');
+
   function pickBestInstalledOllamaModel(modelsList) {
     if (!modelsList || modelsList.length === 0) return null;
     const names = modelsList.map(m => (typeof m === 'string' ? m : (m.name || m.model || '')).trim()).filter(Boolean);
@@ -396,6 +415,508 @@ document.addEventListener('DOMContentLoaded', () => {
     updateWebModeButton();
   }
 
+  function isModelProvisioned(tag) {
+    if (!tag) return false;
+    const cleanTag = tag.toLowerCase().trim();
+    return availableOllamaModels.some(m => {
+      const lowerM = m.toLowerCase().trim();
+      return lowerM === cleanTag || lowerM.startsWith(cleanTag + ':') || cleanTag.startsWith(lowerM + ':');
+    });
+  }
+
+  function loadCustomModelsAndFusions() {
+    try {
+      const rawModels = localStorage.getItem('hugos_custom_models');
+      if (rawModels) {
+        customModels = JSON.parse(rawModels);
+      }
+    } catch (e) {
+      console.warn('Failed to load custom models from localStorage', e);
+      customModels = [];
+    }
+
+    try {
+      const rawFusions = localStorage.getItem('hugos_custom_fusions');
+      if (rawFusions) {
+        customFusions = JSON.parse(rawFusions);
+      }
+    } catch (e) {
+      console.warn('Failed to load custom fusions from localStorage', e);
+      customFusions = [];
+    }
+
+    try {
+      activeCustomFusion = localStorage.getItem('hugos_active_custom_fusion') || (currentSettings ? currentSettings.activeCustomFusion : null) || null;
+    } catch (e) {
+      activeCustomFusion = null;
+    }
+
+    syncCustomModelsFromBackend();
+  }
+
+  function saveCustomModelsAndFusions() {
+    try {
+      localStorage.setItem('hugos_custom_models', JSON.stringify(customModels));
+      localStorage.setItem('hugos_custom_fusions', JSON.stringify(customFusions));
+      if (activeCustomFusion) {
+        localStorage.setItem('hugos_active_custom_fusion', activeCustomFusion);
+      } else {
+        localStorage.removeItem('hugos_active_custom_fusion');
+      }
+    } catch (e) {
+      console.warn('Failed to save custom models/fusions to localStorage', e);
+    }
+
+    syncCustomModelsToBackend();
+  }
+
+  async function syncCustomModelsFromBackend() {
+    try {
+      const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').replace(/\/+$/, '');
+      let res = await fetch(`${ipcUrl}/api/models/custom`, { method: 'GET' }).catch(() => null);
+      if (!res || !res.ok) {
+        res = await fetch('/api/models/custom', { method: 'GET' }).catch(() => null);
+      }
+      if (res && res.ok) {
+        const data = await res.json();
+        if (data) {
+          let updated = false;
+          if (Array.isArray(data.models) && data.models.length > 0) {
+            data.models.forEach(rm => {
+              if (rm && rm.tag && !customModels.some(cm => cm.tag.toLowerCase() === rm.tag.toLowerCase())) {
+                customModels.push(rm);
+                updated = true;
+              }
+            });
+          }
+          if (Array.isArray(data.fusions) && data.fusions.length > 0) {
+            data.fusions.forEach(rf => {
+              if (rf && rf.id && !customFusions.some(cf => cf.id === rf.id)) {
+                customFusions.push(rf);
+                updated = true;
+              }
+            });
+          }
+          if (updated) {
+            try {
+              localStorage.setItem('hugos_custom_models', JSON.stringify(customModels));
+              localStorage.setItem('hugos_custom_fusions', JSON.stringify(customFusions));
+            } catch (e) {}
+            renderCustomModelsList();
+            populateCustomFusionSelects();
+            renderCustomFusionsList();
+            populateModelDropdown(availableOllamaModels);
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  async function syncCustomModelsToBackend() {
+    try {
+      const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').replace(/\/+$/, '');
+      const payload = { models: customModels, fusions: customFusions, activeFusion: activeCustomFusion };
+      await fetch(`${ipcUrl}/api/models/custom`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).catch(() =>
+        fetch('/api/models/custom', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        })
+      );
+    } catch (e) {}
+  }
+
+  async function provisionCustomModel(modelTag, itemEl) {
+    if (!modelTag) return;
+    const cleanTag = modelTag.trim();
+    let modelObj = customModels.find(m => m.tag.toLowerCase() === cleanTag.toLowerCase());
+    if (modelObj) {
+      modelObj.status = 'provisioning';
+    }
+
+    if (itemEl) {
+      const statusBadge = itemEl.querySelector('.status-badge');
+      if (statusBadge) {
+        statusBadge.className = 'status-badge status-badge-provisioning';
+        statusBadge.innerHTML = '⚡ Provisioning in IDE...';
+      }
+      const provBtn = itemEl.querySelector('.btn-model-provision');
+      if (provBtn) {
+        provBtn.disabled = true;
+        provBtn.textContent = '⚡ Provisioning...';
+      }
+    }
+
+    termLog(`[PROVISION] 🦙 IDE is provisioning custom model "${cleanTag}"...`, 'info');
+
+    try {
+      const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').replace(/\/+$/, '');
+      let res;
+      try {
+        res = await fetch(`${ipcUrl}/api/models/provision`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: cleanTag })
+        });
+      } catch (err) {
+        try {
+          res = await fetch('/api/models/provision', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: cleanTag })
+          });
+        } catch (err2) {
+          const ollamaUrl = (currentSettings.ollamaUrl || 'http://127.0.0.1:11434').replace(/\/+$/, '');
+          res = await fetch(`${ollamaUrl}/api/pull`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: cleanTag, stream: false })
+          });
+        }
+      }
+
+      if (res && res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data.status === 'error') {
+          throw new Error(data.message || 'Provisioning failed');
+        }
+        if (modelObj) {
+          modelObj.status = 'ready';
+          modelObj.provisioned = true;
+        }
+        saveCustomModelsAndFusions();
+        termLog(`[PROVISION] 🎉 Custom model "${cleanTag}" is ready for local inference!`, 'success');
+        await refreshOllamaModels();
+      } else {
+        const errText = res ? await res.text() : 'No response from server';
+        throw new Error(errText);
+      }
+    } catch (err) {
+      if (modelObj) {
+        modelObj.status = 'not_provisioned';
+      }
+      termLog(`[PROVISION] ⚠️ Provisioning custom model "${cleanTag}" failed: ${err.message}`, 'warn');
+    } finally {
+      renderCustomModelsList();
+      populateCustomFusionSelects();
+      populateModelDropdown(availableOllamaModels);
+    }
+  }
+
+  function renderCustomModelsList() {
+    if (!customModelsList) return;
+    if (customModels.length === 0) {
+      customModelsList.innerHTML = `
+        <div style="font-size: 12px; color: var(--text-muted); font-style: italic; padding: 6px 0;">
+          No custom models added yet. Enter a model tag above (e.g. <code>mistral:7b</code>) to add and provision.
+        </div>
+      `;
+      return;
+    }
+
+    customModelsList.innerHTML = '';
+    customModels.forEach(cm => {
+      const item = document.createElement('div');
+      item.className = 'custom-model-item';
+
+      const ready = cm.status === 'ready' || cm.provisioned || isModelProvisioned(cm.tag);
+      const isProvisioning = cm.status === 'provisioning';
+
+      let statusBadgeClass = 'status-badge-pending';
+      let statusBadgeText = '⏳ Not Provisioned';
+      if (isProvisioning) {
+        statusBadgeClass = 'status-badge-provisioning';
+        statusBadgeText = '⚡ Provisioning in IDE...';
+      } else if (ready) {
+        statusBadgeClass = 'status-badge-ready';
+        statusBadgeText = '✅ Ready';
+      }
+
+      item.innerHTML = `
+        <div class="custom-model-info">
+          <span class="custom-model-tag">${escapeHtml(cm.tag)}</span>
+          <span class="custom-model-type-badge">${escapeHtml(cm.type || 'ollama')}</span>
+          <span class="status-badge ${statusBadgeClass}">${statusBadgeText}</span>
+        </div>
+        <div class="custom-model-actions">
+          <button type="button" class="btn-model-action btn-model-provision" title="Provision model weights in IDE" ${isProvisioning ? 'disabled' : ''}>
+            ${isProvisioning ? '⚡ Provisioning...' : (ready ? '⚡ Re-Pull' : '⚡ Provision / Pull')}
+          </button>
+          <button type="button" class="btn-model-action btn-model-primary" title="Set as primary model">
+            Set as Primary
+          </button>
+          <button type="button" class="btn-model-action btn-model-remove" title="Remove custom model">
+            🗑️ Remove
+          </button>
+        </div>
+      `;
+
+      const provBtn = item.querySelector('.btn-model-provision');
+      if (provBtn) {
+        provBtn.addEventListener('click', () => {
+          provisionCustomModel(cm.tag, item);
+        });
+      }
+
+      const primaryBtn = item.querySelector('.btn-model-primary');
+      if (primaryBtn) {
+        primaryBtn.addEventListener('click', () => {
+          activeOllamaModel = cm.tag;
+          activeCustomFusion = null;
+          currentSettings.activeCustomFusion = null;
+          currentSettings.activeModel = cm.tag;
+          currentSettings._userCustomizedModel = true;
+          try {
+            localStorage.setItem('hugos_browser_settings', JSON.stringify(currentSettings));
+          } catch (e) {}
+          if (headerActiveModelName) {
+            headerActiveModelName.textContent = `HugOS AI (${cm.tag})`;
+          }
+          if (settingActiveModel) {
+            settingActiveModel.value = cm.tag;
+          }
+          termLog(`[MODEL] Set "${cm.tag}" as primary active model.`, 'info');
+        });
+      }
+
+      const removeBtn = item.querySelector('.btn-model-remove');
+      if (removeBtn) {
+        removeBtn.addEventListener('click', () => {
+          customModels = customModels.filter(m => m.tag !== cm.tag);
+          saveCustomModelsAndFusions();
+          renderCustomModelsList();
+          populateCustomFusionSelects();
+          populateModelDropdown(availableOllamaModels);
+          termLog(`[CUSTOM MODEL] 🗑️ Removed custom model "${cm.tag}"`, 'info');
+        });
+      }
+
+      customModelsList.appendChild(item);
+    });
+  }
+
+  function handleAddCustomModel() {
+    if (!inputCustomModelTag) return;
+    const tag = inputCustomModelTag.value.trim();
+    const type = selectCustomModelType ? selectCustomModelType.value : 'ollama';
+
+    if (!tag) {
+      termLog('[CUSTOM MODEL] ⚠️ Please enter a valid model tag (e.g. mistral:7b, deepseek-r1:14b).', 'warn');
+      return;
+    }
+
+    if (customModels.some(m => m.tag.toLowerCase() === tag.toLowerCase())) {
+      termLog(`[CUSTOM MODEL] ℹ️ Custom model "${tag}" is already in the list.`, 'info');
+      inputCustomModelTag.value = '';
+      return;
+    }
+
+    const alreadyInstalled = isModelProvisioned(tag);
+    const newModel = {
+      tag,
+      type,
+      status: alreadyInstalled ? 'ready' : 'not_provisioned',
+      provisioned: alreadyInstalled
+    };
+
+    customModels.push(newModel);
+    saveCustomModelsAndFusions();
+    inputCustomModelTag.value = '';
+    renderCustomModelsList();
+    populateCustomFusionSelects();
+    populateModelDropdown(availableOllamaModels);
+
+    termLog(`[CUSTOM MODEL] ➕ Added custom model "${tag}" (${type})`, 'info');
+
+    if (!alreadyInstalled && type === 'ollama') {
+      provisionCustomModel(tag);
+    }
+  }
+
+  function getAllSelectableModels() {
+    const set = new Set();
+    const defaults = [
+      'qwen2.5:7b',
+      'qwen2.5:32b',
+      'qwen2.5:14b',
+      'qwen2.5:1.5b',
+      'deepseek-r1:1.5b',
+      'deepseek-r1:32b',
+      'qwen2.5-vl',
+      'gemini-2.0-flash',
+      'gemini-1.5-pro'
+    ];
+    defaults.forEach(d => set.add(d));
+    availableOllamaModels.forEach(m => set.add(m));
+    customModels.forEach(cm => set.add(cm.tag));
+    return Array.from(set);
+  }
+
+  function populateCustomFusionSelects() {
+    const models = getAllSelectableModels();
+
+    if (customFusionModelsSelect) {
+      const selected = Array.from(customFusionModelsSelect.selectedOptions).map(o => o.value);
+      customFusionModelsSelect.innerHTML = '';
+      models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        if (selected.includes(m)) opt.selected = true;
+        customFusionModelsSelect.appendChild(opt);
+      });
+    }
+
+    const populateSingle = (el) => {
+      if (!el) return;
+      const cur = el.value;
+      el.innerHTML = '<option value="">(None / Optional)</option>';
+      models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        if (cur === m) opt.selected = true;
+        el.appendChild(opt);
+      });
+    };
+
+    populateSingle(customFusionPrimary);
+    populateSingle(customFusionSecondary);
+  }
+
+  function handleCreateCustomFusion() {
+    if (!inputCustomFusionName) return;
+    const name = inputCustomFusionName.value.trim();
+    if (!name) {
+      termLog('[FUSION] ⚠️ Please enter an ensemble name for the Custom Model Fusion.', 'warn');
+      return;
+    }
+
+    const selectedModels = customFusionModelsSelect
+      ? Array.from(customFusionModelsSelect.selectedOptions).map(o => o.value)
+      : [];
+
+    if (selectedModels.length < 2) {
+      termLog('[FUSION] ⚠️ Please select at least 2 models to fuse into the ensemble.', 'warn');
+      return;
+    }
+
+    const primary = customFusionPrimary ? customFusionPrimary.value || selectedModels[0] : selectedModels[0];
+    const secondary = customFusionSecondary ? customFusionSecondary.value || (selectedModels[1] || selectedModels[0]) : (selectedModels[1] || selectedModels[0]);
+    const arbiter = customFusionArbiter ? customFusionArbiter.value : 'Consensus Gate';
+
+    const newFusion = {
+      id: `cf_${Date.now()}`,
+      name,
+      models: selectedModels,
+      primary,
+      secondary,
+      arbiter
+    };
+
+    customFusions.push(newFusion);
+    saveCustomModelsAndFusions();
+    inputCustomFusionName.value = '';
+    renderCustomFusionsList();
+    populateModelDropdown(availableOllamaModels);
+
+    termLog(`[FUSION] ⚡ Created Custom Model Fusion: "${name}" with ${selectedModels.length} models`, 'success');
+  }
+
+  function activateCustomFusion(fusionId) {
+    const fusion = customFusions.find(f => f.id === fusionId);
+    if (!fusion) return;
+
+    activeCustomFusion = fusion.id;
+    currentSettings.activeCustomFusion = fusion.id;
+    currentSettings.activeModel = `custom_fusion:${fusion.id}`;
+    saveSettings();
+    saveCustomModelsAndFusions();
+
+    if (headerActiveModelName) {
+      headerActiveModelName.textContent = `🧠 ${fusion.name}`;
+    }
+
+    renderCustomFusionsList();
+    termLog(`[FUSION] 🧠 Activated Custom Model Fusion: "${fusion.name}" (${fusion.models.join(' + ')})`, 'info');
+  }
+
+  function renderCustomFusionsList() {
+    if (!customFusionsList) return;
+    if (customFusions.length === 0) {
+      customFusionsList.innerHTML = `
+        <div style="font-size: 12px; color: var(--text-muted); font-style: italic; padding: 6px 0;">
+          No custom fusions created yet. Configure and save an ensemble above.
+        </div>
+      `;
+      return;
+    }
+
+    customFusionsList.innerHTML = '';
+    customFusions.forEach(fusion => {
+      const item = document.createElement('div');
+      const isActive = activeCustomFusion === fusion.id || (currentSettings && currentSettings.activeCustomFusion === fusion.id);
+      item.className = `custom-fusion-item ${isActive ? 'active-fusion' : ''}`;
+
+      item.innerHTML = `
+        <div class="custom-fusion-header">
+          <div class="custom-fusion-name">
+            <span>🎭 ${escapeHtml(fusion.name)}</span>
+            ${isActive ? '<span style="font-size: 10px; color: #10a37f; background: rgba(16,163,127,0.15); padding: 1px 6px; border-radius: 4px; font-weight: bold;">ACTIVE</span>' : ''}
+          </div>
+          <span class="custom-fusion-arbiter-badge">${escapeHtml(fusion.arbiter)}</span>
+        </div>
+        <div class="custom-fusion-models-pills">
+          <span class="custom-fusion-pill primary-pill" title="Primary Model">★ ${escapeHtml(fusion.primary)}</span>
+          <span class="custom-fusion-pill secondary-pill" title="Secondary / Verification Model">⚡ ${escapeHtml(fusion.secondary)}</span>
+          ${fusion.models.filter(m => m !== fusion.primary && m !== fusion.secondary).map(m => `<span class="custom-fusion-pill">${escapeHtml(m)}</span>`).join('')}
+        </div>
+        <div class="custom-fusion-actions">
+          <button type="button" class="btn-model-action ${isActive ? '' : 'btn-model-provision'} btn-activate-fusion">
+            ${isActive ? '✓ Active Ensemble' : '⚡ Activate Ensemble'}
+          </button>
+          <button type="button" class="btn-model-action btn-model-remove btn-delete-fusion">
+            🗑️ Delete
+          </button>
+        </div>
+      `;
+
+      const activateBtn = item.querySelector('.btn-activate-fusion');
+      if (activateBtn && !isActive) {
+        activateBtn.addEventListener('click', () => {
+          activateCustomFusion(fusion.id);
+        });
+      }
+
+      const deleteBtn = item.querySelector('.btn-delete-fusion');
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', () => {
+          customFusions = customFusions.filter(f => f.id !== fusion.id);
+          if (activeCustomFusion === fusion.id) {
+            activeCustomFusion = null;
+            if (currentSettings.activeCustomFusion === fusion.id) {
+              currentSettings.activeCustomFusion = null;
+              currentSettings.activeModel = 'modelfusion_auto';
+              if (headerActiveModelName) {
+                headerActiveModelName.textContent = '✨ ModelFusion Auto';
+              }
+            }
+          }
+          saveCustomModelsAndFusions();
+          renderCustomFusionsList();
+          populateModelDropdown(availableOllamaModels);
+          termLog(`[FUSION] 🗑️ Deleted custom fusion "${fusion.name}"`, 'info');
+        });
+      }
+
+      customFusionsList.appendChild(item);
+    });
+  }
+
   function populateModelDropdown(models) {
     if (Array.isArray(models)) {
       availableOllamaModels = models.map(m => typeof m === 'string' ? m : (m.name || m.model || '')).filter(Boolean);
@@ -403,54 +924,158 @@ document.addEventListener('DOMContentLoaded', () => {
     if (settingActiveModel) {
       const currentVal = settingActiveModel.value || currentSettings.activeModel;
       settingActiveModel.innerHTML = '';
-      models.forEach(m => {
+
+      // Standard / Discovered Local Ollama Models
+      const ollamaGroup = document.createElement('optgroup');
+      ollamaGroup.label = 'Local Hardware Models (Ollama - Free / Offline)';
+      if (Array.isArray(models) && models.length > 0) {
+        models.forEach(m => {
+          const mName = typeof m === 'string' ? m : m.name;
+          const opt = document.createElement('option');
+          opt.value = mName;
+          const sizeGb = (m && m.size) ? ` (${(m.size / (1024 * 1024 * 1024)).toFixed(1)} GB)` : '';
+          opt.textContent = `${mName}${sizeGb}`;
+          ollamaGroup.appendChild(opt);
+        });
+      } else {
+        ['qwen2.5:7b', 'qwen2.5:32b', 'qwen2.5:14b', 'qwen2.5:1.5b', 'deepseek-r1:1.5b', 'deepseek-r1:32b'].forEach(name => {
+          const opt = document.createElement('option');
+          opt.value = name;
+          opt.textContent = name;
+          ollamaGroup.appendChild(opt);
+        });
+      }
+      settingActiveModel.appendChild(ollamaGroup);
+
+      // Custom Models Optgroup
+      if (customModels && customModels.length > 0) {
+        const customGroup = document.createElement('optgroup');
+        customGroup.label = 'Custom Models';
+        customModels.forEach(cm => {
+          const opt = document.createElement('option');
+          opt.value = cm.tag;
+          const ready = cm.status === 'ready' || cm.provisioned || isModelProvisioned(cm.tag);
+          opt.textContent = `${cm.tag} (${cm.type || 'Custom'}${ready ? ' - Ready' : ''})`;
+          customGroup.appendChild(opt);
+        });
+        settingActiveModel.appendChild(customGroup);
+      }
+
+      // Custom Model Fusions Optgroup
+      if (customFusions && customFusions.length > 0) {
+        const fusionGroup = document.createElement('optgroup');
+        fusionGroup.label = 'Custom Model Fusions';
+        customFusions.forEach(cf => {
+          const opt = document.createElement('option');
+          opt.value = `custom_fusion:${cf.id}`;
+          opt.textContent = `🧠 ${cf.name} (${cf.arbiter})`;
+          fusionGroup.appendChild(opt);
+        });
+        settingActiveModel.appendChild(fusionGroup);
+      }
+
+      // Google Gemini Cloud Models
+      const geminiGroup = document.createElement('optgroup');
+      geminiGroup.label = 'Google Gemini (Cloud Credits / API)';
+      [
+        { val: 'gemini-2.0-flash', text: 'gemini-2.0-flash (Gemini 2.0 Flash - Recommended)' },
+        { val: 'gemini-1.5-pro', text: 'gemini-1.5-pro (Gemini 1.5 Pro - 2M Context)' },
+        { val: 'gemini-1.5-flash', text: 'gemini-1.5-flash (Gemini 1.5 Flash)' }
+      ].forEach(g => {
         const opt = document.createElement('option');
-        opt.value = m.name;
-        const sizeGb = m.size ? ` (${(m.size / (1024 * 1024 * 1024)).toFixed(1)} GB)` : '';
-        opt.textContent = `${m.name}${sizeGb}`;
-        settingActiveModel.appendChild(opt);
+        opt.value = g.val;
+        opt.textContent = g.text;
+        geminiGroup.appendChild(opt);
       });
+      settingActiveModel.appendChild(geminiGroup);
 
       if (currentVal && Array.from(settingActiveModel.options).some(o => o.value === currentVal)) {
         settingActiveModel.value = currentVal;
-      } else if (models.length > 0) {
-        settingActiveModel.value = models[0].name;
+      } else if (settingActiveModel.options.length > 0) {
+        settingActiveModel.value = settingActiveModel.options[0].value;
       }
     }
 
     // Also populate header model dropdown menu dynamically!
-    const headerMenu = document.querySelector('.header-model-dropdown-menu');
-    if (headerMenu && availableOllamaModels.length > 0) {
+    const headerMenu = document.querySelector('.header-model-dropdown-menu') || document.getElementById('model-dropdown-menu');
+    if (headerMenu) {
+      // 1. Installed hardware models section
       let installedSection = headerMenu.querySelector('.installed-models-section');
-      if (!installedSection) {
-        installedSection = document.createElement('div');
-        installedSection.className = 'installed-models-section';
-        headerMenu.appendChild(installedSection);
-      }
-      installedSection.innerHTML = `
-        <div class="model-dropdown-divider" style="height: 1px; background: var(--border-color); margin: 6px 0;"></div>
-        <div class="model-opt-header" style="font-size: 10px; text-transform: uppercase; color: var(--text-muted); padding: 4px 10px; font-weight: 600;">Installed Local Hardware Models</div>
-      `;
-      availableOllamaModels.forEach(mName => {
-        const opt = document.createElement('div');
-        opt.className = 'model-opt';
-        opt.setAttribute('data-model', mName);
-        opt.innerHTML = `
-          <span class="opt-name">${escapeHtml(mName)} <span style="font-size: 9px; color: #10a37f; background: rgba(16,163,127,0.1); padding: 1px 5px; border-radius: 3px;">Ready</span></span>
-          <span class="opt-desc">Direct Local Hardware Execution</span>
+      if (availableOllamaModels.length > 0) {
+        if (!installedSection) {
+          installedSection = document.createElement('div');
+          installedSection.className = 'installed-models-section';
+          headerMenu.appendChild(installedSection);
+        }
+        installedSection.innerHTML = `
+          <div class="model-dropdown-divider" style="height: 1px; background: var(--border-color); margin: 6px 0;"></div>
+          <div class="model-opt-header" style="font-size: 10px; text-transform: uppercase; color: var(--text-muted); padding: 4px 10px; font-weight: 600;">Installed Local Hardware Models</div>
         `;
-        opt.addEventListener('click', (e) => {
-          e.stopPropagation();
-          activeOllamaModel = mName;
-          currentSettings.activeModel = mName;
-          saveSettings(currentSettings);
-          const headerName = document.getElementById('header-active-model-name');
-          if (headerName) headerName.textContent = `HugOS AI (${mName})`;
-          headerMenu.classList.add('hidden');
-          termLog(`[MODEL] Switched active model to: ${mName}`, 'info');
+        availableOllamaModels.forEach(mName => {
+          const opt = document.createElement('div');
+          opt.className = 'model-opt';
+          opt.setAttribute('data-model', mName);
+          opt.innerHTML = `
+            <span class="opt-name">${escapeHtml(mName)} <span style="font-size: 9px; color: #10a37f; background: rgba(16,163,127,0.1); padding: 1px 5px; border-radius: 3px;">Ready</span></span>
+            <span class="opt-desc">Direct Local Hardware Execution</span>
+          `;
+          installedSection.appendChild(opt);
         });
-        installedSection.appendChild(opt);
-      });
+      }
+
+      // 2. Custom Models Section in Header Menu
+      let customModelsSection = headerMenu.querySelector('.custom-models-menu-section');
+      if (customModels && customModels.length > 0) {
+        if (!customModelsSection) {
+          customModelsSection = document.createElement('div');
+          customModelsSection.className = 'custom-models-menu-section';
+          headerMenu.appendChild(customModelsSection);
+        }
+        customModelsSection.innerHTML = `
+          <div class="model-dropdown-divider" style="height: 1px; background: var(--border-color); margin: 6px 0;"></div>
+          <div class="model-opt-header" style="font-size: 10px; text-transform: uppercase; color: var(--text-muted); padding: 4px 10px; font-weight: 600;">Custom Models</div>
+        `;
+        customModels.forEach(cm => {
+          const ready = cm.status === 'ready' || cm.provisioned || isModelProvisioned(cm.tag);
+          const opt = document.createElement('div');
+          opt.className = 'model-opt';
+          opt.setAttribute('data-model', cm.tag);
+          opt.innerHTML = `
+            <span class="opt-name">🔹 ${escapeHtml(cm.tag)} <span style="font-size: 9px; color: ${ready ? '#10a37f' : '#f59e0b'}; background: ${ready ? 'rgba(16,163,127,0.1)' : 'rgba(245,158,11,0.1)'}; padding: 1px 5px; border-radius: 3px;">${ready ? 'Ready' : 'Not Provisioned'}</span></span>
+            <span class="opt-desc">Custom ${escapeHtml(cm.type || 'model')}</span>
+          `;
+          customModelsSection.appendChild(opt);
+        });
+      } else if (customModelsSection) {
+        customModelsSection.remove();
+      }
+
+      // 3. Custom Model Fusions Section in Header Menu
+      let customFusionsSection = headerMenu.querySelector('.custom-fusions-menu-section');
+      if (customFusions && customFusions.length > 0) {
+        if (!customFusionsSection) {
+          customFusionsSection = document.createElement('div');
+          customFusionsSection.className = 'custom-fusions-menu-section';
+          headerMenu.appendChild(customFusionsSection);
+        }
+        customFusionsSection.innerHTML = `
+          <div class="model-dropdown-divider" style="height: 1px; background: var(--border-color); margin: 6px 0;"></div>
+          <div class="model-opt-header" style="font-size: 10px; text-transform: uppercase; color: var(--text-muted); padding: 4px 10px; font-weight: 600;">Custom Model Fusions</div>
+        `;
+        customFusions.forEach(cf => {
+          const isActive = activeCustomFusion === cf.id || (currentSettings && currentSettings.activeCustomFusion === cf.id);
+          const opt = document.createElement('div');
+          opt.className = `model-opt ${isActive ? 'active' : ''}`;
+          opt.setAttribute('data-model', `custom_fusion:${cf.id}`);
+          opt.innerHTML = `
+            <span class="opt-name">🧠 ${escapeHtml(cf.name)} ${isActive ? '<span style="font-size: 9px; color: #10a37f; background: rgba(16,163,127,0.1); padding: 1px 5px; border-radius: 3px;">Active</span>' : ''}</span>
+            <span class="opt-desc">${escapeHtml(cf.models.join(' + '))} (${escapeHtml(cf.arbiter)})</span>
+          `;
+          customFusionsSection.appendChild(opt);
+        });
+      } else if (customFusionsSection) {
+        customFusionsSection.remove();
+      }
     }
   }
 
@@ -564,12 +1189,20 @@ document.addEventListener('DOMContentLoaded', () => {
       localStorage.removeItem('hugos_gemini_api_key');
     }
 
+    const activeModelVal = getVal('setting-active-model', DEFAULT_SETTINGS.activeModel);
+    if (activeModelVal && activeModelVal.startsWith('custom_fusion:')) {
+      activeCustomFusion = activeModelVal.replace('custom_fusion:', '');
+    } else if (activeModelVal) {
+      activeCustomFusion = null;
+    }
+
     currentSettings = {
       geminiApiKey: gemKey,
       ollamaUrl: getVal('setting-ollama-url', DEFAULT_SETTINGS.ollamaUrl).trim(),
       ipcUrl: getVal('setting-ipc-url', DEFAULT_SETTINGS.ipcUrl).trim(),
       cdpPort: getNum('setting-cdp-port', DEFAULT_SETTINGS.cdpPort),
-      activeModel: getVal('setting-active-model', DEFAULT_SETTINGS.activeModel),
+      activeModel: activeModelVal,
+      activeCustomFusion: activeCustomFusion,
       visionModel: getVal('setting-vision-model', DEFAULT_SETTINGS.visionModel).trim(),
       audioModel: getVal('setting-audio-model', DEFAULT_SETTINGS.audioModel).trim(),
       fusionModels: getNum('setting-fusion-models', DEFAULT_SETTINGS.fusionModels),
@@ -606,6 +1239,8 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Failed to save settings:', e);
     }
 
+    saveCustomModelsAndFusions();
+    renderCustomFusionsList();
     applySettings(currentSettings);
     termLog('[SYSTEM] Settings saved and applied successfully.', 'sys');
     closeSettingsModal();
@@ -1333,6 +1968,25 @@ document.addEventListener('DOMContentLoaded', () => {
   // Adaptive Multimodal Fusion Router
   // -----------------------------------------------------------------
   function determineFusionPanel(prompt, files = [], settings = {}) {
+    // 0. Active Custom Model Fusion Panel Route
+    const activeFusionId = activeCustomFusion || (settings && settings.activeCustomFusion) ||
+      (settings && settings.activeModel && settings.activeModel.startsWith('custom_fusion:') ? settings.activeModel.replace('custom_fusion:', '') : null);
+
+    if (activeFusionId && Array.isArray(customFusions) && customFusions.length > 0) {
+      const customFusion = customFusions.find(f => f.id === activeFusionId);
+      if (customFusion) {
+        return {
+          name: customFusion.name,
+          primary: customFusion.primary || customFusion.models[0] || 'qwen2.5:7b',
+          secondary: customFusion.secondary || customFusion.models[1] || null,
+          arbiter: customFusion.arbiter || 'Consensus Gate',
+          specialists: customFusion.models.map(m => `🔹 ${m}`),
+          task: 'custom-fusion-ensemble',
+          isCustomFusion: true
+        };
+      }
+    }
+
     const lower = (prompt || '').toLowerCase().trim();
     const hasImage = files.some(f => f.type === 'image');
     const hasAudio = files.some(f => f.type === 'audio');
@@ -2745,6 +3399,27 @@ document.addEventListener('DOMContentLoaded', () => {
   // Load and apply stored settings initially
   loadSettings();
 
+  // Initialize Custom Models & Custom Fusions
+  loadCustomModelsAndFusions();
+  renderCustomModelsList();
+  populateCustomFusionSelects();
+  renderCustomFusionsList();
+
+  if (btnAddCustomModel) {
+    btnAddCustomModel.addEventListener('click', handleAddCustomModel);
+  }
+  if (inputCustomModelTag) {
+    inputCustomModelTag.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleAddCustomModel();
+      }
+    });
+  }
+  if (btnCreateCustomFusion) {
+    btnCreateCustomFusion.addEventListener('click', handleCreateCustomFusion);
+  }
+
   // -----------------------------------------------------------------
   // 2. Navigation & View Switching
   // -----------------------------------------------------------------
@@ -3258,6 +3933,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     let modelToUse = currentSettings.activeModel || activeOllamaModel || 'qwen2.5:7b';
+    if (options && options.panel && options.panel.isCustomFusion && options.panel.primary) {
+      modelToUse = options.panel.primary;
+    } else if (typeof modelToUse === 'string' && modelToUse.startsWith('custom_fusion:')) {
+      const cfId = modelToUse.replace('custom_fusion:', '');
+      const cf = customFusions.find(f => f.id === cfId);
+      if (cf && cf.primary) {
+        modelToUse = cf.primary;
+      } else {
+        modelToUse = 'qwen2.5:7b';
+      }
+    }
     const ollamaUrl = (currentSettings.ollamaUrl || 'http://127.0.0.1:11434').trim().replace(/\/+$/, '');
     const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
     const tempToUse = typeof currentSettings.temperature === 'number' ? currentSettings.temperature : 0.2;
@@ -5724,16 +6410,23 @@ If you are asked about real-world facts such as world leaders, heads of state, c
       }
     });
 
-    const modelOptions = modelDropdownMenu.querySelectorAll('.model-opt');
-    modelOptions.forEach(opt => {
-      opt.addEventListener('click', () => {
-        const chosenModel = opt.getAttribute('data-model');
-        if (chosenModel) {
+    modelDropdownMenu.addEventListener('click', (e) => {
+      const opt = e.target.closest('.model-opt');
+      if (!opt) return;
+      const chosenModel = opt.getAttribute('data-model');
+      if (chosenModel) {
+        if (chosenModel.startsWith('custom_fusion:')) {
+          const fusionId = chosenModel.replace('custom_fusion:', '');
+          activateCustomFusion(fusionId);
+        } else {
+          activeCustomFusion = null;
+          currentSettings.activeCustomFusion = null;
           currentSettings.activeModel = chosenModel;
+          currentSettings._userCustomizedModel = true;
           activeOllamaModel = chosenModel;
           try {
             localStorage.setItem('hugos_browser_settings', JSON.stringify(currentSettings));
-          } catch (e) {}
+          } catch (err) {}
           if (headerActiveModelName) {
             if (chosenModel === 'modelfusion_auto') {
               headerActiveModelName.textContent = '🌟 ModelFusion Auto';
@@ -5747,11 +6440,11 @@ If you are asked about real-world facts such as world leaders, heads of state, c
               headerActiveModelName.textContent = `HugOS AI (${chosenModel})`;
             }
           }
-          modelOptions.forEach(o => o.classList.toggle('active', o === opt));
-          modelDropdownMenu.classList.add('hidden');
           termLog(`[MODEL] Active model switched to: ${chosenModel}`, 'sys');
         }
-      });
+        modelDropdownMenu.querySelectorAll('.model-opt').forEach(o => o.classList.toggle('active', o === opt));
+        modelDropdownMenu.classList.add('hidden');
+      }
     });
   }
 

@@ -7102,6 +7102,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
             let mut parsed_headers = std::collections::HashMap::new();
             let mut request_path = "/orchestrate".to_string();
             let mut raw_request_uri = "/orchestrate".to_string();
+            let mut request_method = "GET".to_string();
 
             loop {
                 let n = match socket.read(&mut buf).await {
@@ -7117,6 +7118,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         let headers_str = String::from_utf8_lossy(&request_data[..pos]);
                         let first_line = headers_str.lines().next().unwrap_or("");
                         let parts: Vec<&str> = first_line.split_whitespace().collect();
+                        if let Some(m) = parts.first() {
+                            request_method = m.to_uppercase();
+                        }
                         if parts.first().copied() == Some("OPTIONS") {
                             let cors_resp = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
                             let _ = socket.write_all(cors_resp.as_bytes()).await;
@@ -7461,6 +7465,145 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 let _ = socket.write_all(response.as_bytes()).await;
                 let _ = socket.flush().await;
                 return;
+            }
+
+            // ── Custom Models Provisioning (/api/models/provision & /api/models/pull) ──
+            if request_path == "/api/models/provision" || request_path == "/api/models/pull" {
+                let model_name = request_json.get("model")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| request_json.get("name").and_then(|v| v.as_str()))
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+
+                if model_name.is_empty() {
+                    let err_json = serde_json::json!({
+                        "status": "error",
+                        "message": "Missing 'model' or 'name' parameter in request payload."
+                    });
+                    let err_body = serde_json::to_string(&err_json).unwrap_or_default();
+                    let response = format!(
+                        "HTTP/1.1 400 Bad Request\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        err_body.len(),
+                        err_body
+                    );
+                    let _ = socket.write_all(response.as_bytes()).await;
+                    let _ = socket.flush().await;
+                    return;
+                }
+
+                eprintln!("[PROVISION] 🦙 Received provisioning request for custom model '{}'...", model_name);
+
+                // 1. Ensure Ollama daemon is running
+                let _ = tokio::task::spawn_blocking(model_selection::memory::ensure_ollama_running).await;
+
+                // 2. Resolve Ollama endpoint
+                let ollama_endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+                let pull_url = format!("{}/api/pull", ollama_endpoint.trim_end_matches('/'));
+
+                // 3. Issue request to Ollama's /api/pull with 10-minute timeout for large weights
+                let client = reqwest::Client::builder()
+                    .no_proxy()
+                    .timeout(std::time::Duration::from_secs(600))
+                    .build()
+                    .unwrap_or_default();
+
+                let pull_payload = serde_json::json!({
+                    "name": model_name,
+                    "stream": false
+                });
+
+                let resp_res = client.post(&pull_url).json(&pull_payload).send().await;
+
+                let (status_val, message_val) = match resp_res {
+                    Ok(res) if res.status().is_success() => {
+                        let body_json: serde_json::Value = res.json().await.unwrap_or_default();
+                        if let Some(err) = body_json.get("error").and_then(|v| v.as_str()) {
+                            ("error", format!("Ollama pull error: {}", err))
+                        } else {
+                            ("ok", "Model successfully provisioned and ready.".to_string())
+                        }
+                    }
+                    Ok(res) => {
+                        let err_txt = res.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                        ("error", format!("Ollama server returned error: {}", err_txt))
+                    }
+                    Err(e) => {
+                        ("error", format!("Failed to connect to Ollama daemon: {}", e))
+                    }
+                };
+
+                let result_json = serde_json::json!({
+                    "status": status_val,
+                    "model": model_name,
+                    "message": message_val
+                });
+
+                let resp_body = serde_json::to_string(&result_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Custom Models Persistence (/api/models/custom) ──
+            if request_path == "/api/models/custom" {
+                let resolved_db = resolve_db_path(Some(&db_path_str));
+                let db_dir = resolved_db.parent().unwrap_or_else(|| std::path::Path::new("IDE/db"));
+                let custom_models_path = if db_dir.exists() {
+                    db_dir.join("custom_models.json")
+                } else if std::path::Path::new("IDE/db").exists() {
+                    std::path::PathBuf::from("IDE/db/custom_models.json")
+                } else {
+                    let _ = std::fs::create_dir_all(db_dir);
+                    db_dir.join("custom_models.json")
+                };
+
+                if request_method == "POST" {
+                    if let Some(p) = custom_models_path.parent() {
+                        let _ = std::fs::create_dir_all(p);
+                    }
+                    let json_str = serde_json::to_string_pretty(&request_json).unwrap_or_else(|_| "{}".to_string());
+                    let write_res = std::fs::write(&custom_models_path, json_str);
+                    let resp_json = match write_res {
+                        Ok(_) => serde_json::json!({
+                            "status": "ok",
+                            "message": "Custom models and fusions saved successfully."
+                        }),
+                        Err(e) => serde_json::json!({
+                            "status": "error",
+                            "message": format!("Failed to save custom models: {}", e)
+                        })
+                    };
+                    let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        resp_body.len(),
+                        resp_body
+                    );
+                    let _ = socket.write_all(response.as_bytes()).await;
+                    let _ = socket.flush().await;
+                    return;
+                } else {
+                    // GET or other read methods
+                    let content = if custom_models_path.exists() {
+                        std::fs::read_to_string(&custom_models_path).unwrap_or_else(|_| "{\"models\":[],\"fusions\":[]}".to_string())
+                    } else {
+                        "{\"models\":[],\"fusions\":[]}".to_string()
+                    };
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        content.len(),
+                        content
+                    );
+                    let _ = socket.write_all(response.as_bytes()).await;
+                    let _ = socket.flush().await;
+                    return;
+                }
             }
 
             // ── MCP Tools Catalog Discovery (/api/mcp/tools) ──
@@ -16583,6 +16726,55 @@ public class Pr {
         assert!(res.is_ok());
         assert_eq!(std::env::var("GEMINI_API_KEY").unwrap(), test_key);
         assert_eq!(std::env::var("GOOGLE_GEMINI_API_KEY").unwrap(), test_key);
+    }
+
+    #[test]
+    fn test_custom_models_persistence_and_payload_parsing() {
+        // 1. Validate payload parsing for provisioning
+        let payload1 = serde_json::json!({ "model": "mistral:7b" });
+        let model1 = payload1.get("model").and_then(|v| v.as_str()).unwrap_or("");
+        assert_eq!(model1, "mistral:7b");
+
+        let payload2 = serde_json::json!({ "name": "deepseek-r1:14b" });
+        let model2 = payload2.get("model").and_then(|v| v.as_str())
+            .or_else(|| payload2.get("name").and_then(|v| v.as_str())).unwrap_or("");
+        assert_eq!(model2, "deepseek-r1:14b");
+
+        // 2. Validate custom models and fusions structure serialization and persistence
+        let temp_dir = std::env::temp_dir().join(format!("mf_custom_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let custom_file = temp_dir.join("custom_models.json");
+
+        let custom_data = serde_json::json!({
+            "models": [
+                { "tag": "mistral:7b", "type": "ollama", "status": "ready", "provisioned": true },
+                { "tag": "codellama:7b", "type": "ollama", "status": "not_provisioned", "provisioned": false }
+            ],
+            "fusions": [
+                {
+                    "id": "cf_test_123",
+                    "name": "Code & Reasoning Duo",
+                    "models": ["codellama:7b", "deepseek-r1:1.5b"],
+                    "primary": "codellama:7b",
+                    "secondary": "deepseek-r1:1.5b",
+                    "arbiter": "Consensus Gate"
+                }
+            ],
+            "activeFusion": "cf_test_123"
+        });
+
+        let json_str = serde_json::to_string_pretty(&custom_data).unwrap();
+        let write_res = std::fs::write(&custom_file, &json_str);
+        assert!(write_res.is_ok());
+
+        let read_content = std::fs::read_to_string(&custom_file).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&read_content).unwrap();
+        assert_eq!(parsed["models"].as_array().unwrap().len(), 2);
+        assert_eq!(parsed["fusions"].as_array().unwrap().len(), 1);
+        assert_eq!(parsed["fusions"][0]["name"], "Code & Reasoning Duo");
+        assert_eq!(parsed["activeFusion"], "cf_test_123");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
 
