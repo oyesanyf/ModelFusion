@@ -118,7 +118,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ipcUrl: 'http://127.0.0.1:5000',
     cdpPort: 9222,
     activeModel: 'modelfusion_auto',
-    visionModel: 'qwen2.5-vl',
+    visionModel: 'moondream',
     audioModel: 'whisper-base',
     fusionModels: 0,
     multimodalAuto: true,
@@ -1304,16 +1304,63 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Keyboard Shortcuts: Ctrl+, to open settings, Escape to close
+  // Keyboard Shortcuts: Ctrl+, to open settings, Escape to close modals
   window.addEventListener('keydown', (e) => {
+    const exportModal = document.getElementById('modal-export-confirm');
     if ((e.ctrlKey || e.metaKey) && e.key === ',') {
       e.preventDefault();
       openSettingsModal();
     } else if (e.key === 'Escape' && settingsModal && !settingsModal.classList.contains('hidden')) {
       e.preventDefault();
       closeSettingsModal();
+    } else if (e.key === 'Escape' && exportModal && !exportModal.classList.contains('hidden')) {
+      e.preventDefault();
+      hideExportModal();
     }
   });
+
+  // Export Confirmation Modal Wire-up
+  const btnSidebarExport = document.getElementById('btn-sidebar-export-history');
+  if (btnSidebarExport) {
+    btnSidebarExport.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showExportModal();
+    });
+  }
+
+  const btnRequestExport = document.getElementById('btn-request-export-chatgpt');
+  if (btnRequestExport) {
+    btnRequestExport.addEventListener('click', () => {
+      showExportModal();
+    });
+  }
+
+  const btnConfirmExport = document.getElementById('btn-confirm-export');
+  if (btnConfirmExport) {
+    btnConfirmExport.addEventListener('click', () => {
+      exportEntireChatHistory();
+      hideExportModal();
+    });
+  }
+
+  const btnCancelExport = document.getElementById('btn-cancel-export');
+  if (btnCancelExport) {
+    btnCancelExport.addEventListener('click', hideExportModal);
+  }
+
+  const btnCloseExportModal = document.getElementById('btn-close-export-modal');
+  if (btnCloseExportModal) {
+    btnCloseExportModal.addEventListener('click', hideExportModal);
+  }
+
+  const exportModalOverlay = document.getElementById('modal-export-confirm');
+  if (exportModalOverlay) {
+    exportModalOverlay.addEventListener('click', (e) => {
+      if (e.target === exportModalOverlay) {
+        hideExportModal();
+      }
+    });
+  }
 
   // Settings Tab Navigation
   settingsTabs.forEach(tab => {
@@ -1549,9 +1596,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const hasTabular = files.some(f => f.type === 'tabular' || f.isTabular || f.isDataset || /\.(csv|tsv|parquet|xlsx)$/i.test(f.name));
     const hasImage = files.some(f => f.type === 'image' || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(f.name));
     const hasAudio = files.some(f => f.type === 'audio' || /\.(wav|mp3|ogg|flac|m4a|aac)$/i.test(f.name));
+    const hasVideo = files.some(f => f.type === 'video' || /\.(mp4|webm|mkv|avi|mov|flv|wmv|m4v)$/i.test(f.name));
     const hasPe = files.some(f => f.type === 'pe_binary' || f.isPeBinary || /\.(exe|dll|sys|ocx|scr|bin|elf)$/i.test(f.name));
     const hasCode = files.some(f => f.type === 'code' || f.isCode || /\.(py|rs|js|ts|jsx|tsx|cpp|c|h|hpp|java|go|rb|php|sh|ps1|sql|html|css|json|toml|yaml|yml)$/i.test(f.name));
-    const hasDoc = files.some(f => f.type === 'document' || (!hasTabular && !hasImage && !hasAudio && !hasPe && !hasCode));
+    const hasDoc = files.some(f => f.type === 'document' || (!hasTabular && !hasImage && !hasAudio && !hasVideo && !hasPe && !hasCode));
 
     if (hasTabular) {
       addAction('@agent acdso', '▶ Run @agent acdso', true);
@@ -1566,6 +1614,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (hasAudio) {
       addAction('@agent asr', '▶ Run @agent asr', true);
       addAction('@agent audio', '@agent audio', false);
+    }
+    if (hasVideo) {
+      addAction('@agent video', '▶ Run @agent video', true);
+      addAction('@agent video-classification', '@agent video-classification', false);
     }
     if (hasPe) {
       addAction('@agent pe', '▶ Run @agent pe', true);
@@ -1611,6 +1663,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (file.type === 'image') {
           thumbHtml = `<img src="${file.dataUrl}" class="chip-thumb" alt="${file.name}">`;
+        } else if (file.type === 'video') {
+          thumbHtml = file.firstKeyframe
+            ? `<img src="${file.firstKeyframe}" class="chip-thumb" alt="${file.name}">`
+            : `<span class="attachment-icon">🎬</span>`;
         } else if (file.type === 'audio') {
           thumbHtml = `<span class="attachment-icon">🎙️</span>`;
         } else if (file.type === 'tabular') {
@@ -1627,9 +1683,12 @@ document.addEventListener('DOMContentLoaded', () => {
           ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
           : `${(file.size / 1024).toFixed(1)} KB`;
 
+        const durationBadge = file.durationStr ? `<span class="attachment-size" style="color: var(--accent-color, #10a37f); font-weight: 600;">⏱️ ${file.durationStr}</span>` : '';
+
         chip.innerHTML = `
           ${thumbHtml}
           <span class="attachment-name" title="${file.name}">${file.name}</span>
+          ${durationBadge}
           <span class="attachment-size">${sizeFormatted}</span>
           <button type="button" class="attachment-remove" title="Remove attachment">✕</button>
         `;
@@ -1692,8 +1751,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const ext = file.name.slice(((file.name.lastIndexOf('.') - 1) >>> 0) + 2).toLowerCase();
       const mime = (file.type || '').toLowerCase();
 
-      const imageExts = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg'];
+      const imageExts = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg', 'tiff'];
       const audioExts = ['wav', 'mp3', 'ogg', 'm4a', 'flac', 'aac'];
+      const videoExts = ['mp4', 'webm', 'mkv', 'avi', 'mov', 'flv', 'wmv', 'm4v'];
       const tabularExts = ['csv', 'tsv', 'parquet', 'xlsx'];
       const peExts = ['exe', 'dll', 'sys', 'ocx', 'scr', 'bin', 'elf'];
       const codeExts = ['py', 'rs', 'js', 'ts', 'jsx', 'tsx', 'cpp', 'c', 'h', 'hpp', 'java', 'go', 'rb', 'php', 'sh', 'ps1', 'sql', 'html', 'css', 'json', 'toml', 'yaml', 'yml'];
@@ -1701,35 +1761,173 @@ document.addEventListener('DOMContentLoaded', () => {
       if (imageExts.includes(ext) || mime.startsWith('image/')) {
         const reader = new FileReader();
         reader.onload = (e) => {
-          const dataUrl = e.target.result;
-          const base64 = dataUrl.replace(/^data:[^;]+;base64,/, '');
-          const fileObj = {
-            id: 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-            name: file.name,
-            size: file.size,
-            type: 'image',
-            mimeType: file.type || 'image/png',
-            dataUrl,
-            base64
+          const rawDataUrl = e.target.result;
+          // Image Normalization: render onto offscreen canvas to standardize BMP (carsgraz_002.bmp), WebP, SVG, TIFF
+          // into clean JPEG/PNG base64 that Ollama multimodal models (moondream, llava) accept without format errors.
+          const img = new Image();
+          img.onload = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              const maxDim = 1536;
+              let w = img.naturalWidth || img.width;
+              let h = img.naturalHeight || img.height;
+              if (w > maxDim || h > maxDim) {
+                if (w > h) {
+                  h = Math.round((h * maxDim) / w);
+                  w = maxDim;
+                } else {
+                  w = Math.round((w * maxDim) / h);
+                  h = maxDim;
+                }
+              }
+              canvas.width = w;
+              canvas.height = h;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0, w, h);
+              const normDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+              const normBase64 = normDataUrl.replace(/^data:[^;]+;base64,/, '');
+              const fileObj = {
+                id: 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                name: file.name,
+                size: file.size,
+                type: 'image',
+                mimeType: 'image/jpeg',
+                dataUrl: normDataUrl,
+                base64: normBase64,
+                width: w,
+                height: h
+              };
+              termLog(`[ATTACH] 📎 Attached & normalized image: "${file.name}" (${w}x${h}px). Ready.`, 'info');
+              onFileDone(fileObj);
+            } catch (err) {
+              const base64 = rawDataUrl.replace(/^data:[^;]+;base64,/, '');
+              const fileObj = {
+                id: 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                name: file.name,
+                size: file.size,
+                type: 'image',
+                mimeType: file.type || 'image/png',
+                dataUrl: rawDataUrl,
+                base64
+              };
+              termLog(`[ATTACH] 📎 Attached image: "${file.name}". Ready.`, 'info');
+              onFileDone(fileObj);
+            }
           };
-          termLog(`[ATTACH] 📎 Attached image: "${file.name}". Ready.`, 'info');
-          onFileDone(fileObj);
+          img.onerror = () => {
+            const base64 = rawDataUrl.replace(/^data:[^;]+;base64,/, '');
+            const fileObj = {
+              id: 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+              name: file.name,
+              size: file.size,
+              type: 'image',
+              mimeType: file.type || 'image/png',
+              dataUrl: rawDataUrl,
+              base64
+            };
+            termLog(`[ATTACH] 📎 Attached image: "${file.name}". Ready.`, 'info');
+            onFileDone(fileObj);
+          };
+          img.src = rawDataUrl;
         };
         reader.readAsDataURL(file);
       } else if (audioExts.includes(ext) || mime.startsWith('audio/')) {
         const reader = new FileReader();
         reader.onload = (e) => {
           const dataUrl = e.target.result;
-          const fileObj = {
-            id: 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-            name: file.name,
-            size: file.size,
-            type: 'audio',
-            mimeType: file.type || 'audio/wav',
-            dataUrl
+          const tempAudio = new Audio();
+          let loaded = false;
+          const finishAudio = (durationSec = 0) => {
+            if (loaded) return;
+            loaded = true;
+            const durStr = durationSec > 0 ? `${Math.floor(durationSec / 60)}:${String(Math.floor(durationSec % 60)).padStart(2, '0')}` : 'audio';
+            const fileObj = {
+              id: 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+              name: file.name,
+              size: file.size,
+              type: 'audio',
+              duration: durationSec,
+              durationStr: durStr,
+              mimeType: file.type || 'audio/wav',
+              dataUrl
+            };
+            termLog(`[ATTACH] 🎙️ Attached audio: "${file.name}" (${durStr}). Ready.`, 'info');
+            onFileDone(fileObj);
           };
-          termLog(`[ATTACH] 📎 Attached audio: "${file.name}". Ready.`, 'info');
-          onFileDone(fileObj);
+          tempAudio.onloadedmetadata = () => {
+            finishAudio(tempAudio.duration || 0);
+          };
+          tempAudio.onerror = () => finishAudio(0);
+          setTimeout(() => finishAudio(0), 1000);
+          tempAudio.src = dataUrl;
+        };
+        reader.readAsDataURL(file);
+      } else if (videoExts.includes(ext) || mime.startsWith('video/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const dataUrl = e.target.result;
+          const tempVideo = document.createElement('video');
+          tempVideo.preload = 'metadata';
+          tempVideo.muted = true;
+          tempVideo.playsInline = true;
+          let done = false;
+          const keyframes = [];
+
+          const finishVideo = (dur = 0) => {
+            if (done) return;
+            done = true;
+            const durStr = dur > 0 ? `${Math.floor(dur / 60)}:${String(Math.floor(dur % 60)).padStart(2, '0')}` : 'video';
+            const fileObj = {
+              id: 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+              name: file.name,
+              size: file.size,
+              type: 'video',
+              duration: dur,
+              durationStr: durStr,
+              keyframes: keyframes.map(k => k.replace(/^data:[^;]+;base64,/, '')),
+              firstKeyframe: keyframes[0] || null,
+              mimeType: file.type || 'video/mp4',
+              dataUrl
+            };
+            termLog(`[ATTACH] 🎬 Attached video: "${file.name}" (${durStr}, ${keyframes.length} keyframes). Ready.`, 'info');
+            onFileDone(fileObj);
+          };
+
+          tempVideo.onloadedmetadata = () => {
+            const dur = tempVideo.duration || 1;
+            const captureTimes = [0.1 * dur, 0.3 * dur, 0.5 * dur, 0.7 * dur, 0.9 * dur];
+            let idx = 0;
+            const captureNext = () => {
+              if (idx >= captureTimes.length) {
+                finishVideo(dur);
+                return;
+              }
+              tempVideo.currentTime = captureTimes[idx];
+            };
+            tempVideo.onseeked = () => {
+              try {
+                const canvas = document.createElement('canvas');
+                const maxDim = 640;
+                let w = tempVideo.videoWidth || 640;
+                let h = tempVideo.videoHeight || 360;
+                if (w > maxDim) {
+                  h = Math.round((h * maxDim) / w);
+                  w = maxDim;
+                }
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(tempVideo, 0, 0, w, h);
+                keyframes.push(canvas.toDataURL('image/jpeg', 0.85));
+              } catch (err) {}
+              idx++;
+              captureNext();
+            };
+            captureNext();
+          };
+          tempVideo.onerror = () => finishVideo(0);
+          setTimeout(() => finishVideo(tempVideo.duration || 0), 4000);
+          tempVideo.src = dataUrl;
         };
         reader.readAsDataURL(file);
       } else if (tabularExts.includes(ext) || mime.includes('csv') || mime.includes('tab-separated')) {
@@ -2622,6 +2820,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const actionRowHtml = `
       <div class="msg-action-bar">
+        <button type="button" class="msg-action-btn bubble-feedback-btn thumbs-up" onclick="submitBubbleFeedback(this, 'thumbs_up')" title="Good response (Reward +1.0 for RL)">
+          <span class="action-icon">👍</span>
+          <span class="action-text">Good</span>
+        </button>
+        <button type="button" class="msg-action-btn bubble-feedback-btn thumbs-down" onclick="submitBubbleFeedback(this, 'thumbs_down')" title="Bad response (Reward -1.0 for RL)">
+          <span class="action-icon">👎</span>
+          <span class="action-text">Bad</span>
+        </button>
         <button type="button" class="msg-action-btn btn-copy-msg" onclick="copyAssistantMessage(this)" title="Copy message">
           <span class="action-icon">📋</span>
           <span class="action-text">Copy</span>
@@ -2803,6 +3009,300 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
   };
+
+  window.submitBubbleFeedback = function(btn, type) {
+    const bubble = btn.closest('.assistant-bubble') || btn.closest('.msg-bubble');
+    if (!bubble) return;
+    const isGood = type === 'thumbs_up';
+    const reward = isGood ? 1.0 : -1.0;
+
+    const upBtn = bubble.querySelector('.thumbs-up');
+    const downBtn = bubble.querySelector('.thumbs-down');
+    if (upBtn) upBtn.classList.remove('active-good', 'active-bad');
+    if (downBtn) downBtn.classList.remove('active-good', 'active-bad');
+
+    if (isGood && upBtn) upBtn.classList.add('active-good');
+    if (!isGood && downBtn) downBtn.classList.add('active-bad');
+
+    const rawText = bubble.dataset.rawText || bubble.innerText || '';
+    const activeSession = chatSessions.find(s => s.id === currentSessionId);
+    let prompt = '';
+    if (activeSession && activeSession.messages) {
+      const idx = activeSession.messages.findIndex(m => m.role === 'assistant' && (m.content === rawText || rawText.includes(m.content.slice(0, 50))));
+      if (idx > 0) {
+        prompt = activeSession.messages[idx - 1].content || '';
+      }
+      if (idx >= 0) {
+        activeSession.messages[idx].feedback = {
+          rating: type,
+          reward,
+          timestamp: Date.now()
+        };
+        saveChatHistory();
+      }
+    }
+
+    const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+    const isCode = prompt.includes('fn ') || prompt.includes('def ') || prompt.includes('function ') || prompt.includes('class ') || prompt.includes('```');
+    const payload = {
+      prompt: prompt.slice(0, 1000),
+      model: currentSettings.activeModel || 'modelfusion_auto',
+      response: rawText.slice(0, 1000),
+      reward,
+      context: isCode ? 1 : 0,
+      arm: 1,
+      feedback_type: type
+    };
+
+    fetch(`${ipcUrl}/api/rl/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).catch(() => {
+      fetch('/api/rl/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).catch(() => {});
+    });
+
+    if (isGood) {
+      termLog('[RL] 🎯 Positive reward (+1.0) applied to Multi-Armed Bandit policy & saved for DPO training.', 'success');
+    } else {
+      termLog('[RL] 🎯 Negative reward (-1.0) applied to Multi-Armed Bandit policy & saved for DPO training.', 'warn');
+    }
+  };
+
+  function showExportModal() {
+    const modal = document.getElementById('modal-export-confirm');
+    if (modal) modal.classList.remove('hidden');
+  }
+
+  function hideExportModal() {
+    const modal = document.getElementById('modal-export-confirm');
+    if (modal) modal.classList.add('hidden');
+  }
+
+  function exportEntireChatHistory() {
+    try {
+      const sessions = chatSessions || [];
+      if (sessions.length === 0) {
+        termLog('[EXPORT] ⚠️ No conversation history found to export.', 'warn');
+        return;
+      }
+
+      // 1. ChatGPT-compatible conversations.json
+      const chatgptExport = sessions.map(s => {
+        const mapping = {};
+        let parentId = null;
+        const msgList = s.messages || [];
+
+        msgList.forEach((m, idx) => {
+          const msgId = m.id || `msg_${s.id}_${idx}`;
+          mapping[msgId] = {
+            id: msgId,
+            message: {
+              id: msgId,
+              author: {
+                role: m.role || 'user',
+                name: m.role === 'assistant' ? (m.model || 'ModelFusion') : null,
+                metadata: m.feedback ? { feedback: m.feedback } : {}
+              },
+              create_time: m.timestamp ? Math.floor(m.timestamp / 1000) : Math.floor(s.timestamp / 1000),
+              update_time: null,
+              content: {
+                content_type: 'text',
+                parts: [m.content || '']
+              },
+              status: 'finished_successfully',
+              end_turn: true,
+              weight: 1.0,
+              recipient: 'all'
+            },
+            parent: parentId,
+            children: []
+          };
+          if (parentId && mapping[parentId]) {
+            mapping[parentId].children.push(msgId);
+          }
+          parentId = msgId;
+        });
+
+        return {
+          title: s.title || 'Untitled Conversation',
+          create_time: s.timestamp ? Math.floor(s.timestamp / 1000) : Math.floor(Date.now() / 1000),
+          update_time: s.timestamp ? Math.floor(s.timestamp / 1000) : Math.floor(Date.now() / 1000),
+          mapping,
+          moderation_results: [],
+          current_node: parentId,
+          conversation_id: s.id,
+          model: s.model || currentSettings.activeModel || 'modelfusion_auto'
+        };
+      });
+
+      // 2. Offline readable chat.html (Dark theme standalone viewer)
+      const chatHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ModelFusion / HugOS Conversation History</title>
+<style>
+  :root {
+    --bg-dark: #0f172a;
+    --bg-sidebar: #1e293b;
+    --bg-bubble-user: #334155;
+    --bg-bubble-asst: #1e293b;
+    --text-primary: #f8fafc;
+    --text-muted: #94a3b8;
+    --accent: #10a37f;
+    --border: rgba(255, 255, 255, 0.1);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-dark); color: var(--text-primary); display: flex; height: 100vh; overflow: hidden; }
+  #sidebar { width: 320px; background: var(--bg-sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+  .sidebar-header { padding: 16px; border-bottom: 1px solid var(--border); font-size: 15px; font-weight: 700; display: flex; align-items: center; justify-content: space-between; }
+  .sidebar-search { padding: 10px 16px; border-bottom: 1px solid var(--border); }
+  .sidebar-search input { width: 100%; padding: 8px 12px; background: rgba(0,0,0,0.25); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 13px; }
+  .session-list { flex: 1; overflow-y: auto; padding: 8px; }
+  .session-item { padding: 10px 12px; border-radius: 6px; cursor: pointer; margin-bottom: 4px; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); transition: all 0.15s; }
+  .session-item:hover, .session-item.active { background: rgba(255,255,255,0.08); color: var(--text-primary); }
+  .session-item.active { border-left: 3px solid var(--accent); }
+  #chat-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .chat-view-header { padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--bg-dark); font-size: 16px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; }
+  .chat-view-messages { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+  .message { max-width: 800px; padding: 14px 18px; border-radius: 12px; line-height: 1.6; font-size: 14.5px; }
+  .message.user { align-self: flex-end; background: var(--bg-bubble-user); }
+  .message.assistant { align-self: flex-start; background: var(--bg-bubble-asst); border: 1px solid var(--border); }
+  .message-author { font-size: 11px; font-weight: 600; color: var(--accent); margin-bottom: 6px; }
+  pre { background: #000; padding: 12px; border-radius: 8px; overflow-x: auto; margin: 10px 0; font-family: monospace; font-size: 13px; }
+  code { font-family: monospace; background: rgba(255,255,255,0.1); padding: 2px 4px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <div class="sidebar-header">
+    <span>Conversations (${sessions.length})</span>
+  </div>
+  <div class="sidebar-search">
+    <input type="text" id="searchInput" placeholder="Search chats..." oninput="filterSessions(this.value)">
+  </div>
+  <div class="session-list" id="sessionList"></div>
+</div>
+<div id="chat-view">
+  <div class="chat-view-header">
+    <span id="chatTitle">Select a conversation</span>
+    <span id="chatMeta" style="font-size: 12px; color: var(--text-muted);"></span>
+  </div>
+  <div class="chat-view-messages" id="chatMessages"></div>
+</div>
+<script>
+  const data = ${JSON.stringify(sessions)};
+  const listEl = document.getElementById('sessionList');
+  const msgsEl = document.getElementById('chatMessages');
+  const titleEl = document.getElementById('chatTitle');
+  const metaEl = document.getElementById('chatMeta');
+  let activeId = data[0] ? data[0].id : null;
+
+  function renderList(items) {
+    listEl.innerHTML = '';
+    items.forEach(s => {
+      const div = document.createElement('div');
+      div.className = 'session-item' + (s.id === activeId ? ' active' : '');
+      div.textContent = s.title || 'Untitled Conversation';
+      div.onclick = () => selectSession(s.id);
+      listEl.appendChild(div);
+    });
+  }
+
+  function filterSessions(q) {
+    const lower = q.toLowerCase();
+    const filtered = data.filter(s => (s.title || '').toLowerCase().includes(lower));
+    renderList(filtered);
+  }
+
+  function selectSession(id) {
+    activeId = id;
+    renderList(data);
+    const s = data.find(item => item.id === id);
+    if (!s) return;
+    titleEl.textContent = s.title || 'Untitled Conversation';
+    metaEl.textContent = new Date(s.timestamp || Date.now()).toLocaleString() + ' • ' + (s.messages ? s.messages.length : 0) + ' messages';
+    msgsEl.innerHTML = '';
+    (s.messages || []).forEach(m => {
+      const msgDiv = document.createElement('div');
+      msgDiv.className = 'message ' + m.role;
+      const author = document.createElement('div');
+      author.className = 'message-author';
+      author.textContent = m.role === 'user' ? 'You' : (m.model || 'ModelFusion AI');
+      const text = document.createElement('div');
+      text.style.whiteSpace = 'pre-wrap';
+      text.textContent = m.content || '';
+      msgDiv.appendChild(author);
+      msgDiv.appendChild(text);
+      msgsEl.appendChild(msgDiv);
+    });
+  }
+
+  renderList(data);
+  if (activeId) selectSession(activeId);
+<\/script>
+</body>
+</html>`;
+
+      // 3. RL Feedback dataset (prompt-response pairs formatted for DPO fine-tuning)
+      const rlFeedbackDataset = [];
+      sessions.forEach(s => {
+        const msgs = s.messages || [];
+        msgs.forEach((m, idx) => {
+          if (m.role === 'assistant' && m.feedback) {
+            const promptMsg = idx > 0 ? msgs[idx - 1] : null;
+            if (promptMsg) {
+              rlFeedbackDataset.push({
+                prompt: promptMsg.content || '',
+                response: m.content || '',
+                model: m.model || s.model || 'modelfusion',
+                reward: m.feedback.reward || (m.feedback.rating === 'thumbs_up' ? 1.0 : -1.0),
+                rating: m.feedback.rating || 'thumbs_up',
+                timestamp: m.feedback.timestamp || Date.now()
+              });
+            }
+          }
+        });
+      });
+
+      // Trigger downloads
+      const downloadFile = (filename, content, mime) => {
+        const blob = new Blob([content], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      };
+
+      downloadFile('conversations.json', JSON.stringify(chatgptExport, null, 2), 'application/json');
+      setTimeout(() => {
+        downloadFile('chat.html', chatHtml, 'text/html');
+      }, 200);
+      if (rlFeedbackDataset.length > 0) {
+        setTimeout(() => {
+          downloadFile('rl_feedback_dataset.json', JSON.stringify(rlFeedbackDataset, null, 2), 'application/json');
+        }, 400);
+      }
+
+      termLog(`[EXPORT] 📦 Successfully exported entire chat history (${sessions.length} conversations) in ChatGPT format!`, 'success');
+    } catch (err) {
+      termLog(`[EXPORT] ❌ Export failed: ${err.message}`, 'error');
+    }
+  }
+
+  window.showExportModal = showExportModal;
+  window.hideExportModal = hideExportModal;
+  window.exportEntireChatHistory = exportEntireChatHistory;
 
   // -----------------------------------------------------------------
   // Chat History Management (localStorage: hugos_chat_history)
@@ -3956,19 +4456,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (hasImages) {
       // Vision model selection: check configured vision model or discover installed vision tags
-      selectedVisionModel = currentSettings.visionModel || 'qwen2.5-vl';
+      selectedVisionModel = currentSettings.visionModel || 'moondream';
       try {
         const tagsRes = await fetch(`${ollamaUrl}/api/tags`, { method: 'GET' });
         if (tagsRes.ok) {
           const tagsData = await tagsRes.json();
-          const candidate = (currentSettings.visionModel || 'qwen2.5-vl').toLowerCase();
+          const candidate = (currentSettings.visionModel || 'moondream').toLowerCase();
           const exactMatch = (tagsData.models || []).find(m => m.name.toLowerCase() === candidate || m.name.toLowerCase().startsWith(candidate + ':'));
           if (exactMatch) {
             selectedVisionModel = exactMatch.name;
           } else {
             const anyVision = (tagsData.models || []).find(m => {
               const n = m.name.toLowerCase();
-              return n.includes('-vl') || n.includes('vision') || n.includes('llava') || n.includes('bakllava');
+              return n.includes('moondream') || n.includes('llava') || n.includes('-vl') || n.includes('vision') || n.includes('minicpm') || n.includes('bakllava');
             });
             if (anyVision) {
               selectedVisionModel = anyVision.name;
@@ -5323,6 +5823,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const currentAttachments = [...attachedFiles];
 
+    // Export Entire History Directive
+    if (lower === '@agent export' || lower === '/export' || lower.startsWith('@agent export ') || lower.startsWith('/export ')) {
+      showExportModal();
+      return;
+    }
+
     // Universal "Just Attach a File" Guard:
     // If a file-requiring tool is invoked with no attachment and no explicit target, prompt user to select a file!
     if (!parsedMulti.isMultiAgent) {
@@ -5336,7 +5842,8 @@ document.addEventListener('DOMContentLoaded', () => {
         '@agent security',
         '@agent pe',
         '@agent asr',
-        '@agent audio'
+        '@agent audio',
+        '@agent video'
       ];
       for (const prefix of fileCommandsRequiringTarget) {
         if (lower === prefix || lower.startsWith(prefix + ' ')) {
@@ -5747,12 +6254,13 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
       }
     }
 
-    // 2.7 Vision & Multimodal Directives (@agent vision, @agent image-classification, @agent object-detection, @agent vqa)
+    // 2.7 Vision & Multimodal Directives (@agent vision, @agent image-classification, @agent object-detection, @agent vqa, or any query on attached image)
     if (
       lower.startsWith('@agent vision') || lower.startsWith('/vision') ||
       lower.startsWith('@agent image-classification') || lower.startsWith('/image-classification') ||
       lower.startsWith('@agent object-detection') || lower.startsWith('/object-detection') ||
-      lower.startsWith('@agent vqa') || lower.startsWith('/vqa')
+      lower.startsWith('@agent vqa') || lower.startsWith('/vqa') ||
+      attachedImages.length > 0
     ) {
       const userQuery = cmd.replace(/^(@agent\s+(vision|image-classification|object-detection|vqa)|\/(vision|image-classification|object-detection|vqa))\s*/i, '').trim();
       let visionPrompt = '';
@@ -5768,18 +6276,70 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
         visionPrompt = `Visual Question Answering (VQA):\nQuestion: ${userQuery || 'What is happening in this image and what are the key visual details?'}`;
         visionSys = 'You are HugOS Vision AI, an expert visual question answering reasoning model. Answer questions about image content with extreme precision and detail.';
       } else {
-        visionPrompt = userQuery
-          ? `Analyze the attached image(s) according to this directive: "${userQuery}". Provide a comprehensive, high-resolution breakdown.`
-          : `Provide a comprehensive visual analysis of the attached image(s), describing key subjects, text/OCR content, layout, styling, and prominent details.`;
+        visionPrompt = userQuery || cmd;
         visionSys = 'You are HugOS Vision AI, an advanced multimodal vision-language model. Deliver accurate, detailed, and insightful visual descriptions and analytical reasoning.';
       }
 
       if (attachedImages.length > 0) {
-        termLog(`[VISION] Processing ${attachedImages.length} attached image(s) with multimodal vision panel...`, 'info');
+        termLog(`[VISION] 👁️ Processing ${attachedImages.length} attached image(s) with local multimodal vision model...`, 'info');
         await streamAiChat(visionPrompt, visionSys, { images: attachedImages, panel: { id: 'vision', name: 'Vision Multimodal Fusion' } });
         clearAllAttachments();
         return;
       }
+    }
+
+    // 2.8 Audio & Acoustic Directives (@agent asr, @agent audio, or any question asked with audio attached)
+    const audioAttachments = currentAttachments.filter(f => f.type === 'audio' || /\.(wav|mp3|ogg|flac|m4a|aac)$/i.test(f.name));
+    const isAudioCmd = lower.startsWith('@agent asr') || lower.startsWith('/asr') || lower.startsWith('@agent audio') || lower.startsWith('/audio');
+    if (isAudioCmd || audioAttachments.length > 0) {
+      const audioFile = audioAttachments[0];
+      const audioQuery = isAudioCmd
+        ? cmd.replace(/^(@agent\s+(asr|audio)|\/(asr|audio))\s*/i, '').trim()
+        : cmd;
+
+      let audioPrompt = '';
+      if (lower.startsWith('@agent asr') || lower.startsWith('/asr')) {
+        audioPrompt = `Perform Automatic Speech Recognition (ASR) and acoustic transcription of the attached audio ${audioFile ? `("${audioFile.name}", duration: ${audioFile.durationStr || 'N/A'})` : ''}.
+User instructions: ${audioQuery || 'Transcribe all spoken words with high fidelity, punctuation, and speaker turns'}.`;
+      } else if (lower.startsWith('@agent audio') || lower.startsWith('/audio')) {
+        audioPrompt = `Perform comprehensive sound classification, acoustic scene analysis, and audio event detection on the attached audio ${audioFile ? `("${audioFile.name}", duration: ${audioFile.durationStr || 'N/A'})` : ''}.
+User instructions: ${audioQuery || 'Classify background acoustic environment, non-speech sound effects, music, and voice characteristics'}.`;
+      } else {
+        audioPrompt = `Audio Question Answering & Acoustic Reasoning:
+Attached audio: ${audioFile ? `"${audioFile.name}" (Format: ${audioFile.mimeType || 'audio'}, Duration: ${audioFile.durationStr || 'N/A'}, Size: ${(audioFile.size / 1024).toFixed(1)} KB)` : 'Audio stream'}
+User question: "${audioQuery}"
+
+Please provide a detailed, accurate response addressing the user's question regarding this audio file.`;
+      }
+
+      const audioSys = 'You are HugOS Audio & Speech AI, an expert in automatic speech recognition (ASR), acoustic signal processing, environmental sound classification, and audio reasoning. Provide clear, accurate, and insightful analysis.';
+      termLog(`[AUDIO] 🎙️ Processing audio directive with HugOS Audio AI${audioFile ? ` for "${audioFile.name}"` : ''}...`, 'info');
+      await streamAiChat(audioPrompt, audioSys, { panel: { id: 'audio', name: 'Audio & Speech Acoustic Fusion' } });
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
+
+    // 2.9 Video & Temporal Directives (@agent video, @agent video-classification, or any question asked with video attached)
+    const videoAttachments = currentAttachments.filter(f => f.type === 'video' || /\.(mp4|webm|mkv|avi|mov|flv|wmv|m4v)$/i.test(f.name));
+    const isVideoCmd = lower.startsWith('@agent video') || lower.startsWith('/video');
+    if (isVideoCmd || videoAttachments.length > 0) {
+      const vidFile = videoAttachments[0];
+      const vidQuery = isVideoCmd
+        ? cmd.replace(/^(@agent\s+video(?:-classification)?|\/video(?:-classification)?)\s*/i, '').trim()
+        : cmd;
+
+      const videoKeyframes = vidFile && vidFile.keyframes ? vidFile.keyframes : [];
+      const videoPrompt = `Video Temporal Analysis & Question Answering:
+Attached video: "${vidFile ? vidFile.name : 'video'}" (Duration: ${vidFile ? vidFile.durationStr : 'N/A'}, Extracted Keyframes: ${videoKeyframes.length})
+User question / directive: "${vidQuery || 'Analyze the actions, sequence of events, and visual elements in this video'}"
+
+Analyze the temporal progression across the sampled video keyframes, describing actions, scene changes, key entities, and answering the user's inquiry.`;
+
+      const videoSys = 'You are HugOS Video AI, specialized in action recognition, video temporal reasoning, scene cut detection, and visual motion analysis.';
+      termLog(`[VIDEO] 🎬 Processing video with ${videoKeyframes.length} extracted keyframes...`, 'info');
+      await streamAiChat(videoPrompt, videoSys, { images: videoKeyframes, panel: { id: 'video', name: 'Temporal Video Fusion' } });
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
     }
 
     // 3. ACDSO AutoML Table Extraction (Supports URLs and Attached Datasets)

@@ -2737,9 +2737,12 @@ async fn run(args: Args) -> Result<()> {
         return Ok(());
     }
 
-    // Auto-start Ollama if it is not running
+    // Auto-start Ollama and background FFmpeg check
     if args.prompt.is_some() || args.query.is_some() || args.server || args.mcp || args.browser || args.browser_task.is_some() || args.browser_extract.is_some() || args.ensure_ollama {
         let _ = model_selection::memory::ensure_ollama_running();
+        std::thread::spawn(|| {
+            let _ = model_selection::memory::ensure_ffmpeg_available();
+        });
     }
 
     if args.ensure_ollama {
@@ -7086,6 +7089,10 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
         }
     });
 
+    std::thread::spawn(|| {
+        let _ = model_selection::memory::ensure_ffmpeg_available();
+    });
+
     loop {
         let (mut socket, _) = match listener.accept().await {
             Ok(val) => val,
@@ -7611,6 +7618,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 let tools_json = serde_json::json!({
                     "tools": [
                         { "name": "browser", "cmd": "@agent browser ", "icon": "🌐", "category": "web", "label": "Browser Automation", "desc": "Navigate, interact, and automate web workflows" },
+                        { "name": "video", "cmd": "@agent video ", "icon": "🎬", "category": "multimodal", "label": "Video Analysis", "desc": "Process video streams, extract keyframes, classify actions & video QA" },
                         { "name": "browser_deep_research", "cmd": "@agent browser deep research on ", "icon": "🔍", "category": "web", "label": "Deep Research", "desc": "Autonomous multi-step web research & synthesis" },
                         { "name": "arxiv", "cmd": "@agent arxiv ", "icon": "📚", "category": "web", "label": "arXiv Papers", "desc": "Direct search of arXiv scientific preprints and research papers" },
                         { "name": "som", "cmd": "@agent som", "icon": "🎯", "category": "web", "label": "Set-of-Mark Vision", "desc": "Numeric visual element grounding with 90% token reduction" },
@@ -7946,6 +7954,132 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 return;
             }
 
+            // ── RL Feedback Endpoint (/api/rl/feedback) ──
+            if request_path == "/api/rl/feedback" {
+                let prompt = request_json.get("prompt").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let model = request_json.get("model").and_then(|v| v.as_str()).unwrap_or("default").to_string();
+                let feedback_type = request_json.get("feedback_type").and_then(|v| v.as_str()).unwrap_or("thumbs_up").to_string();
+                let reward = request_json.get("reward").and_then(|v| v.as_f64()).unwrap_or_else(|| {
+                    if feedback_type == "thumbs_down" { -1.0 } else { 1.0 }
+                });
+                let context = request_json.get("context").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                let arm = request_json.get("arm").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+
+                let ctx_idx = context.min(3);
+                let arm_idx = arm.min(1);
+
+                let resolved_db = resolve_db_path(Some(&db_path_str));
+                let db_dir = resolved_db.parent().unwrap_or_else(|| std::path::Path::new("IDE/db"));
+
+                // 1. Update BanditState in bandit_state.json
+                let mut state = load_bandit_state(db_dir);
+                let count = state.counts[ctx_idx][arm_idx];
+                let val = state.values[ctx_idx][arm_idx];
+                state.counts[ctx_idx][arm_idx] += 1;
+                let new_val = val + (reward - val) / (count + 1) as f64;
+                state.values[ctx_idx][arm_idx] = new_val;
+                save_bandit_state(db_dir, &state);
+
+                // 2. Also update AdaptiveController if active
+                {
+                    let mut ctrl = get_adaptive_controller(db_dir).lock().unwrap();
+                    let is_code = prompt.contains("fn ") || prompt.contains("def ") || prompt.contains("function ") || prompt.contains("class ") || prompt.contains("```");
+                    let complexity = if is_code { 0.7 } else if prompt.len() > 300 { 0.6 } else { 0.3 };
+                    let feature_state = FeatureState::new(complexity, 16.0, 4000.0, prompt.len(), is_code, false, false, false);
+                    let candidate_actions = DecisionAction::default_candidate_actions();
+                    let action = if arm_idx == 1 {
+                        candidate_actions.iter().find(|a| a.consensus_panel_size > 1).cloned().unwrap_or_else(|| candidate_actions[0].clone())
+                    } else {
+                        candidate_actions[0].clone()
+                    };
+                    ctrl.update(&feature_state, &action, reward, Some(0.0));
+                    let checkpoint_path = db_dir.join("adaptive_rl_policy.json");
+                    let _ = ctrl.save_checkpoint(&checkpoint_path);
+                }
+
+                // 3. Record feedback pair into IDE/db/rl_feedback_pairs.json for offline DPO/RLHF training
+                let feedback_path = db_dir.join("rl_feedback_pairs.json");
+                let mut pairs: Vec<serde_json::Value> = if feedback_path.exists() {
+                    std::fs::read_to_string(&feedback_path)
+                        .ok()
+                        .and_then(|c| serde_json::from_str(&c).ok())
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+
+                let response_text = request_json.get("response").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let pair_record = serde_json::json!({
+                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                    "prompt": prompt,
+                    "model": model,
+                    "response": response_text,
+                    "reward": reward,
+                    "context": ctx_idx,
+                    "arm": arm_idx,
+                    "feedback_type": feedback_type
+                });
+                pairs.push(pair_record);
+
+                if let Some(parent) = feedback_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                if let Ok(content) = serde_json::to_string_pretty(&pairs) {
+                    let _ = std::fs::write(&feedback_path, content);
+                }
+
+                // 4. Return JSON response
+                let resp_json = serde_json::json!({
+                    "status": "ok",
+                    "message": "Bandit policy and RL feedback updated successfully",
+                    "reward": reward,
+                    "new_val": new_val
+                });
+                let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── FFmpeg Status Probe (/api/ffmpeg/status) ──
+            if request_path == "/api/ffmpeg/status" {
+                let status_res = model_selection::memory::ensure_ffmpeg_available();
+                let (available, path_str, version_str) = match status_res {
+                    Ok(p) => {
+                        let ver_out = model_selection::memory::create_hidden_command(&p)
+                            .arg("-version")
+                            .output()
+                            .ok();
+                        let ver = ver_out.and_then(|o| {
+                            let text = String::from_utf8_lossy(&o.stdout).to_string();
+                            text.lines().next().map(|l| l.trim().to_string())
+                        }).unwrap_or_else(|| "FFmpeg".to_string());
+                        (true, p.to_string_lossy().to_string(), ver)
+                    }
+                    Err(e) => (false, String::new(), format!("Unavailable: {}", e)),
+                };
+
+                let resp_json = serde_json::json!({
+                    "available": available,
+                    "path": path_str,
+                    "version": version_str
+                });
+                let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
             // ── Ollama Chat Proxy (/api/chat) ──
             if request_path == "/api/chat" {
                 let client = reqwest::Client::builder()
@@ -8000,6 +8134,29 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         resolved
                     );
                     current_json["model"] = serde_json::json!(resolved);
+                }
+
+                // Vision Model Auto-Resolution: Text-only models reject requests with images and return 400.
+                let has_images = current_json.get("images").and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(false)
+                    || current_json.get("messages").and_then(|v| v.as_array()).map(|msgs| {
+                        msgs.iter().any(|m| m.get("images").and_then(|img| img.as_array()).map(|a| !a.is_empty()).unwrap_or(false))
+                    }).unwrap_or(false);
+
+                if has_images {
+                    let is_vision_model = |m: &str| {
+                        let lower = m.to_lowercase();
+                        lower.contains("moondream") || lower.contains("llava") || lower.contains("vision") || lower.contains("-vl") || lower.contains("minicpm")
+                    };
+                    let cur_model = current_json.get("model").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    if !is_vision_model(&cur_model) {
+                        if let Some(vm) = installed_models.iter().find(|m| is_vision_model(m)) {
+                            eprintln!("[SERVER] 👁️ Request contains images. Switching text-only model '{}' -> vision model '{}'", cur_model, vm);
+                            current_json["model"] = serde_json::json!(vm);
+                        } else {
+                            eprintln!("[SERVER] 👁️ Request contains images. Defaulting to 'moondream'");
+                            current_json["model"] = serde_json::json!("moondream");
+                        }
+                    }
                 }
 
                 // Factual knowledge grounding & anti-hallucination guardrail for low-resource tiers
@@ -10964,7 +11121,13 @@ sequenceDiagram
                             let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
                                 .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
                             let dynamic_model = if has_images && model_override.is_none() {
-                                "qwen2.5-vl".to_string()
+                                let probe_client = reqwest::Client::new();
+                                let installed = fetch_installed_ollama_models(&probe_client, &endpoint).await;
+                                let is_vision_model = |m: &str| {
+                                    let lower = m.to_lowercase();
+                                    lower.contains("moondream") || lower.contains("llava") || lower.contains("vision") || lower.contains("-vl") || lower.contains("minicpm")
+                                };
+                                installed.iter().find(|m| is_vision_model(m)).cloned().unwrap_or_else(|| "moondream".to_string())
                             } else {
                                 resolve_dynamic_ollama_model(model_override.as_deref(), budget <= 0.5, &endpoint).await
                             };
@@ -11514,6 +11677,88 @@ sequenceDiagram
                     let folder = request_json["folder"].as_str().unwrap_or("").to_string();
                     let prompt = request_json["prompt"].as_str().unwrap_or("").to_string();
                     run_cli_subcommand(&["--folder".to_string(), folder, "--prompt".to_string(), prompt], db_path_val).await
+                }
+                "/api/rl/feedback" => {
+                    let prompt = request_json.get("prompt").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let model = request_json.get("model").and_then(|v| v.as_str()).unwrap_or("default").to_string();
+                    let feedback_type = request_json.get("feedback_type").and_then(|v| v.as_str()).unwrap_or("thumbs_up").to_string();
+                    let reward = request_json.get("reward").and_then(|v| v.as_f64()).unwrap_or_else(|| {
+                        if feedback_type == "thumbs_down" { -1.0 } else { 1.0 }
+                    });
+                    let context = request_json.get("context").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                    let arm = request_json.get("arm").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+
+                    let ctx_idx = context.min(3);
+                    let arm_idx = arm.min(1);
+
+                    let db_dir = db_path_val.parent().unwrap_or_else(|| std::path::Path::new("IDE/db"));
+                    let mut state = load_bandit_state(db_dir);
+                    let count = state.counts[ctx_idx][arm_idx];
+                    let val = state.values[ctx_idx][arm_idx];
+                    state.counts[ctx_idx][arm_idx] += 1;
+                    let new_val = val + (reward - val) / (count + 1) as f64;
+                    state.values[ctx_idx][arm_idx] = new_val;
+                    save_bandit_state(db_dir, &state);
+
+                    let feedback_path = db_dir.join("rl_feedback_pairs.json");
+                    let mut pairs: Vec<serde_json::Value> = if feedback_path.exists() {
+                        std::fs::read_to_string(&feedback_path)
+                            .ok()
+                            .and_then(|c| serde_json::from_str(&c).ok())
+                            .unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
+
+                    let response_text = request_json.get("response").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let pair_record = serde_json::json!({
+                        "timestamp": chrono::Utc::now().to_rfc3339(),
+                        "prompt": prompt,
+                        "model": model,
+                        "response": response_text,
+                        "reward": reward,
+                        "context": ctx_idx,
+                        "arm": arm_idx,
+                        "feedback_type": feedback_type
+                    });
+                    pairs.push(pair_record);
+
+                    if let Some(parent) = feedback_path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    if let Ok(content) = serde_json::to_string_pretty(&pairs) {
+                        let _ = std::fs::write(&feedback_path, content);
+                    }
+
+                    serde_json::json!({
+                        "status": "ok",
+                        "message": "Bandit policy and RL feedback updated successfully",
+                        "reward": reward,
+                        "new_val": new_val
+                    }).to_string()
+                }
+                "/api/ffmpeg/status" => {
+                    let status_res = model_selection::memory::ensure_ffmpeg_available();
+                    let (available, path_str, version_str) = match status_res {
+                        Ok(p) => {
+                            let ver_out = model_selection::memory::create_hidden_command(&p)
+                                .arg("-version")
+                                .output()
+                                .ok();
+                            let ver = ver_out.and_then(|o| {
+                                let text = String::from_utf8_lossy(&o.stdout).to_string();
+                                text.lines().next().map(|l| l.trim().to_string())
+                            }).unwrap_or_else(|| "FFmpeg".to_string());
+                            (true, p.to_string_lossy().to_string(), ver)
+                        }
+                        Err(e) => (false, String::new(), format!("Unavailable: {}", e)),
+                    };
+
+                    serde_json::json!({
+                        "available": available,
+                        "path": path_str,
+                        "version": version_str
+                    }).to_string()
                 }
                 "/report-bandit-feedback" => {
                     let context = request_json["context"].as_u64().unwrap_or(0) as usize;
