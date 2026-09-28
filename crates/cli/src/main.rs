@@ -2160,6 +2160,57 @@ struct Args {
 
     #[arg(long, help = "Force re-indexing of all files ignoring cache")]
     force: bool,
+
+    #[arg(long, help = "Configure and persist Google Gemini API key")]
+    gemini_key: Option<String>,
+}
+
+pub fn set_and_persist_gemini_key(key: &str) -> Result<()> {
+    let clean_key = key.trim().trim_matches(|c: char| c == '"' || c == '\'' || c == '`');
+    if clean_key.is_empty() {
+        anyhow::bail!("Google Gemini API key cannot be empty.");
+    }
+    std::env::set_var("GEMINI_API_KEY", clean_key);
+    std::env::set_var("GOOGLE_GEMINI_API_KEY", clean_key);
+
+    #[cfg(windows)]
+    {
+        use std::process::Command;
+        let escaped = clean_key.replace('\'', "''");
+        let ps_cmd = format!("[Environment]::SetEnvironmentVariable('GEMINI_API_KEY', '{}', 'User')", escaped);
+        let _ = Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_cmd])
+            .output();
+    }
+
+    let env_path = std::path::Path::new(".env");
+    let mut lines: Vec<String> = if env_path.exists() {
+        std::fs::read_to_string(env_path)
+            .unwrap_or_default()
+            .lines()
+            .map(|s| s.to_string())
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    let key_line = format!("GEMINI_API_KEY={}", clean_key);
+    let mut found = false;
+    for l in lines.iter_mut() {
+        if l.starts_with("GEMINI_API_KEY=") || l.starts_with("GOOGLE_GEMINI_API_KEY=") {
+            *l = key_line.clone();
+            found = true;
+            break;
+        }
+    }
+    if !found {
+        lines.push(key_line);
+    }
+    let new_content = lines.join("\n") + "\n";
+    let _ = std::fs::write(env_path, new_content);
+
+    println!("✅ Google Gemini API key configured and persisted successfully.");
+    Ok(())
 }
 
 pub fn preprocess_cli_args<I, T>(raw_args: I) -> Vec<String>
@@ -2185,11 +2236,35 @@ where
             args[1] = "--arxiv".to_string();
             return args;
         }
+        if (sub_clean == "key" || sub_clean == "keys") && args.len() > 3 && args[3].to_lowercase() == "gemini" {
+            let key = if args.len() > 4 { args[4].clone() } else { String::new() };
+            args.remove(1);
+            args[1] = "--gemini-key".to_string();
+            if !key.is_empty() {
+                args[2] = key;
+                args.truncate(3);
+            } else {
+                args.truncate(2);
+            }
+            return args;
+        }
     }
 
     match verb.as_str() {
         "arxiv" | "/arxiv" | "@agent/arxiv" | "@agent:arxiv" => {
             args[1] = "--arxiv".to_string();
+        }
+        "key" | "keys" | "/key" | "/keys" => {
+            if args.len() > 2 && args[2].to_lowercase() == "gemini" {
+                let key = if args.len() > 3 { args[3].clone() } else { String::new() };
+                args[1] = "--gemini-key".to_string();
+                if !key.is_empty() {
+                    args[2] = key;
+                    args.truncate(3);
+                } else {
+                    args.truncate(2);
+                }
+            }
         }
         "web-agent" | "webagent" => {
             args[1] = "--web-agent".to_string();
@@ -2347,6 +2422,11 @@ fn main() -> Result<()> {
     let raw_args: Vec<String> = std::env::args().collect();
     let preprocessed = preprocess_cli_args(raw_args);
     let args = Args::parse_from(preprocessed);
+
+    if let Some(ref key) = args.gemini_key {
+        set_and_persist_gemini_key(key)?;
+        return Ok(());
+    }
 
     if args.ide {
         if let Some(ide_exe) = find_hugos_ide_exe() {
@@ -5331,7 +5411,7 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
         "stats" | "statsd" => Some("stats"),
         "sysinfo" => Some("sys-info"),
         "mcp" => Some("mcp"),
-        "keys" | "apikeys" => Some("keys"),
+        "keys" | "key" | "apikeys" | "apikey" => Some("keys"),
         "command" | "commands" | "help" => Some("command"),
         "comment" | "comments" | "doc" | "docs" => Some("comment"),
         "createfile" | "create_file" | "newfile" | "new_file" | "touch" | "writefile" | "write_file" => Some("createfile"),
@@ -8941,11 +9021,31 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         },
                                         // ── Original fast-interception commands ──
                                         "keys" => {
-                                            let openai_st = if std::env::var("OPENAI_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "[LOADED]" } else { "[DISABLED]" };
-                                            let anthropic_st = if std::env::var("ANTHROPIC_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "[LOADED]" } else { "[DISABLED]" };
-                                            let gemini_st = if std::env::var("GEMINI_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "[LOADED]" } else { "[DISABLED]" };
-                                            let hf_st = if std::env::var("HF_TOKEN").or_else(|_| std::env::var("HUGGINGFACE_API_KEY")).map(|s| !s.trim().is_empty()).unwrap_or(true) { "[LOADED]" } else { "[DISABLED]" };
-                                            (idx, format!("🔑 **ModelFusion API Key Status & Integrations**\n\n- **openai**: {}\n- **anthropic**: {}\n- **gemini**: {}\n- **huggingface**: {}\n\n*Configure API keys in VS Code Settings (`Ctrl+,` → search `hugos.modelfusion`)*", openai_st, anthropic_st, gemini_st, hf_st))
+                                            let parts: Vec<&str> = args_owned.split_whitespace().collect();
+                                            if !parts.is_empty() && (parts[0].eq_ignore_ascii_case("gemini") || parts[0].eq_ignore_ascii_case("google")) {
+                                                if parts.len() > 1 {
+                                                    let raw_k = parts[1..].join(" ");
+                                                    let clean_k = raw_k.trim().trim_matches(|c: char| c == '"' || c == '\'' || c == '`');
+                                                    if let Err(e) = set_and_persist_gemini_key(clean_k) {
+                                                        (idx, format!("❌ **Failed to save Gemini API key**: {}", e))
+                                                    } else {
+                                                        let masked = if clean_k.len() > 8 {
+                                                            format!("{}...{}", &clean_k[..4], &clean_k[clean_k.len()-4..])
+                                                        } else {
+                                                            "****".to_string()
+                                                        };
+                                                        (idx, format!("🔑 **Google Gemini API Key Configured & Persisted**\n\n- **Key**: `{}`\n- **Environment**: `GEMINI_API_KEY` set for current session and persisted to Windows User environment.\n- **Storage**: Appended to local `.env`.\n- **Enabled Models**: `gemini-2.0-flash` (Recommended), `gemini-1.5-pro` (2M Context), `gemini-1.5-flash`.\n\nYou can now use Gemini models in HugOS Browser UI and CLI!", masked))
+                                                    }
+                                                } else {
+                                                    (idx, "⚠️ **Missing Key**: Provide your Gemini key: `/key gemini <YOUR_KEY>` or `@agent key gemini <YOUR_KEY>`".to_string())
+                                                }
+                                            } else {
+                                                let openai_st = if std::env::var("OPENAI_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "[LOADED]" } else { "[DISABLED]" };
+                                                let anthropic_st = if std::env::var("ANTHROPIC_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "[LOADED]" } else { "[DISABLED]" };
+                                                let gemini_st = if std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_GEMINI_API_KEY")).map(|s| !s.trim().is_empty()).unwrap_or(false) { "[LOADED]" } else { "[DISABLED]" };
+                                                let hf_st = if std::env::var("HF_TOKEN").or_else(|_| std::env::var("HUGGINGFACE_API_KEY")).map(|s| !s.trim().is_empty()).unwrap_or(true) { "[LOADED]" } else { "[DISABLED]" };
+                                                (idx, format!("🔑 **ModelFusion API Key Status & Integrations**\n\n- **openai**: {}\n- **anthropic**: {}\n- **gemini**: {}\n- **huggingface**: {}\n\n*Configure API keys in VS Code Settings (`Ctrl+,` → search `hugos.modelfusion`)* or via `/key gemini <KEY>`", openai_st, anthropic_st, gemini_st, hf_st))
+                                            }
                                         },
                                         "mcp" => {
                                             std::env::set_var("MODELFUSION_MCP", "true");
@@ -13420,7 +13520,7 @@ pub fn parse_slash_commands_in_prompt(
 
         let normalized_cmd = match raw_cmd.as_str() {
             "/evove" | "/evoce" | "/evovle" | "/evolv" | "/evolution" => "/evolve".to_string(),
-            "/api-keys" => "/keys".to_string(),
+            "/key" => "/keys".to_string(),
             "/sys-info" => "/sysinfo".to_string(),
             "/db-stats" => "/stats".to_string(),
             "/clearcache" => "/clear_cache".to_string(),
@@ -13513,6 +13613,22 @@ pub fn parse_slash_commands_in_prompt(
                 let (val, act) = get_arg(&cleaned_rest);
                 std::env::set_var("MODELFUSION_API_KEYS", &val);
                 actual_prompt = act;
+            }
+            "/keys" | "/key" => {
+                let (val, act) = get_arg(&cleaned_rest);
+                if val.eq_ignore_ascii_case("gemini") || val.eq_ignore_ascii_case("google") {
+                    let (gem_key, gem_act) = get_arg(&act);
+                    if !gem_key.is_empty() {
+                        let _ = set_and_persist_gemini_key(&gem_key);
+                    }
+                    actual_prompt = gem_act;
+                } else if !val.is_empty() {
+                    std::env::set_var("MODELFUSION_API_KEYS", &val);
+                    actual_prompt = act;
+                } else {
+                    std::env::set_var("MODELFUSION_TASK_OVERRIDE", "keys");
+                    actual_prompt = act;
+                }
             }
             "/load-model" => {
                 let (val, act) = get_arg(&cleaned_rest);
@@ -16261,6 +16377,52 @@ public class Pr {
         assert!(!is_factual_query("const x = 10; console.log(x);"));
         assert!(!is_factual_query("Write a rust program that sorts an array"));
         assert!(!is_factual_query(""));
+    }
+
+    #[test]
+    fn test_gemini_key_arg_and_command_preprocessing() {
+        use super::{preprocess_cli_args, canonicalize_command, Args};
+        use clap::Parser;
+
+        // 1. Direct --gemini-key flag parsing
+        let parsed = Args::parse_from(["cli", "--gemini-key", "AIzaSyDirectTestKey123"]);
+        assert_eq!(parsed.gemini_key, Some("AIzaSyDirectTestKey123".to_string()));
+
+        // 2. Preprocessing /key gemini <KEY>
+        let args1 = preprocess_cli_args(["cli", "key", "gemini", "AIzaSyKeyTest456"]);
+        assert_eq!(args1, vec!["cli", "--gemini-key", "AIzaSyKeyTest456"]);
+        let parsed1 = Args::parse_from(args1);
+        assert_eq!(parsed1.gemini_key, Some("AIzaSyKeyTest456".to_string()));
+
+        // 3. Preprocessing /keys gemini <KEY>
+        let args2 = preprocess_cli_args(["cli", "keys", "gemini", "AIzaSyKeysTest789"]);
+        assert_eq!(args2, vec!["cli", "--gemini-key", "AIzaSyKeysTest789"]);
+
+        // 4. Preprocessing @agent key gemini <KEY>
+        let args3 = preprocess_cli_args(["cli", "@agent", "key", "gemini", "AIzaSyAgentKeyTestABC"]);
+        assert_eq!(args3, vec!["cli", "--gemini-key", "AIzaSyAgentKeyTestABC"]);
+
+        // 5. Preprocessing @agent /key gemini <KEY>
+        let args4 = preprocess_cli_args(["cli", "@agent", "/key", "gemini", "AIzaSyAgentSlashKeyTestDEF"]);
+        assert_eq!(args4, vec!["cli", "--gemini-key", "AIzaSyAgentSlashKeyTestDEF"]);
+
+        // 6. Canonicalize command
+        assert_eq!(canonicalize_command("key"), Some("keys"));
+        assert_eq!(canonicalize_command("/key"), Some("keys"));
+        assert_eq!(canonicalize_command("/keys"), Some("keys"));
+        assert_eq!(canonicalize_command("@agent key"), Some("keys"));
+        assert_eq!(canonicalize_command("@agent /key"), Some("keys"));
+    }
+
+    #[test]
+    fn test_set_and_persist_gemini_key_env() {
+        use super::set_and_persist_gemini_key;
+
+        let test_key = "AIzaSyUnitTestKey_998877";
+        let res = set_and_persist_gemini_key(test_key);
+        assert!(res.is_ok());
+        assert_eq!(std::env::var("GEMINI_API_KEY").unwrap(), test_key);
+        assert_eq!(std::env::var("GOOGLE_GEMINI_API_KEY").unwrap(), test_key);
     }
 }
 

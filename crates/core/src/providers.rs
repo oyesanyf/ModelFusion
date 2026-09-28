@@ -183,8 +183,56 @@ impl LLMProvider for OpenAIProvider {
         &self.config
     }
 
-    async fn generate_response(&self, _prompt: &str) -> Result<ProviderResult> {
-        bail!("Paid models (OpenAI) are disabled and removed per system requirements.");
+    async fn generate_response(&self, prompt: &str) -> Result<ProviderResult> {
+        let key_opt = self.api_key.as_deref().filter(|s| !s.trim().is_empty())
+            .map(|s| s.to_string())
+            .or_else(|| std::env::var("OPENAI_API_KEY").ok())
+            .filter(|s| !s.trim().is_empty());
+        let key = match key_opt {
+            Some(ref k) => k.trim().to_string(),
+            None => bail!("OpenAI API key is not configured. Set OPENAI_API_KEY environment variable or enter it in HugOS Settings."),
+        };
+
+        let model = if self.config.model_id.starts_with("gpt-") || self.config.model_id.starts_with("o1") || self.config.model_id.starts_with("o3") {
+            &self.config.model_id
+        } else {
+            "gpt-4o-mini"
+        };
+
+        let start = Instant::now();
+        let body = serde_json::json!({
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": self.config.temperature,
+            "max_tokens": self.config.max_tokens
+        });
+
+        let res = self.client.post("https://api.openai.com/v1/chat/completions")
+            .bearer_auth(&key)
+            .json(&body)
+            .send()
+            .await?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let err_text = res.text().await.unwrap_or_default();
+            bail!("OpenAI API error (HTTP {}): {}", status, err_text);
+        }
+
+        let json: serde_json::Value = res.json().await?;
+        let content = json["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        let tokens_used = json["usage"]["total_tokens"].as_u64().unwrap_or(0) as usize;
+        let latency_ms = start.elapsed().as_millis() as f64;
+        Ok(ProviderResult {
+            content,
+            tokens_used,
+            cost: 0.0,
+            latency_ms,
+            answer_type: "OPENAI_ANSWER".to_string(),
+        })
     }
 }
 
@@ -214,8 +262,59 @@ impl LLMProvider for AnthropicProvider {
         &self.config
     }
 
-    async fn generate_response(&self, _prompt: &str) -> Result<ProviderResult> {
-        bail!("Paid models (Anthropic) are disabled and removed per system requirements.");
+    async fn generate_response(&self, prompt: &str) -> Result<ProviderResult> {
+        let key_opt = self.api_key.as_deref().filter(|s| !s.trim().is_empty())
+            .map(|s| s.to_string())
+            .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
+            .filter(|s| !s.trim().is_empty());
+        let key = match key_opt {
+            Some(ref k) => k.trim().to_string(),
+            None => bail!("Anthropic API key is not configured. Set ANTHROPIC_API_KEY environment variable or enter it in HugOS Settings."),
+        };
+
+        let model = if self.config.model_id.starts_with("claude-") {
+            &self.config.model_id
+        } else {
+            "claude-3-5-sonnet-20241022"
+        };
+
+        let start = Instant::now();
+        let body = serde_json::json!({
+            "model": model,
+            "max_tokens": self.config.max_tokens,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": self.config.temperature
+        });
+
+        let res = self.client.post("https://api.anthropic.com/v1/messages")
+            .header("x-api-key", &key)
+            .header("anthropic-version", "2023-06-01")
+            .json(&body)
+            .send()
+            .await?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let err_text = res.text().await.unwrap_or_default();
+            bail!("Anthropic API error (HTTP {}): {}", status, err_text);
+        }
+
+        let json: serde_json::Value = res.json().await?;
+        let content = json["content"][0]["text"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        let input_tokens = json["usage"]["input_tokens"].as_u64().unwrap_or(0);
+        let output_tokens = json["usage"]["output_tokens"].as_u64().unwrap_or(0);
+        let tokens_used = (input_tokens + output_tokens) as usize;
+        let latency_ms = start.elapsed().as_millis() as f64;
+        Ok(ProviderResult {
+            content,
+            tokens_used,
+            cost: 0.0,
+            latency_ms,
+            answer_type: "ANTHROPIC_ANSWER".to_string(),
+        })
     }
 }
 
@@ -234,7 +333,10 @@ impl GeminiProvider {
             .timeout(Duration::from_secs(config.timeout_seconds))
             .build()
             .unwrap_or_default();
-        let api_key = std::env::var("GOOGLE_GEMINI_API_KEY").ok();
+        let api_key = std::env::var("GEMINI_API_KEY")
+            .or_else(|_| std::env::var("GOOGLE_GEMINI_API_KEY"))
+            .ok()
+            .filter(|s| !s.trim().is_empty());
         Self { config, client, api_key }
     }
 }
@@ -245,8 +347,56 @@ impl LLMProvider for GeminiProvider {
         &self.config
     }
 
-    async fn generate_response(&self, _prompt: &str) -> Result<ProviderResult> {
-        bail!("Paid models (Gemini) are disabled and removed per system requirements.");
+    async fn generate_response(&self, prompt: &str) -> Result<ProviderResult> {
+        let key_opt = self.api_key.as_deref().filter(|s| !s.trim().is_empty())
+            .map(|s| s.to_string())
+            .or_else(|| std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_GEMINI_API_KEY")).ok())
+            .filter(|s| !s.trim().is_empty());
+        let key = match key_opt {
+            Some(ref k) => k.trim().to_string(),
+            None => bail!("Google Gemini API key is not configured. Set GEMINI_API_KEY environment variable or enter it in HugOS Settings."),
+        };
+        let model = if self.config.model_id.starts_with("gemini") {
+            &self.config.model_id
+        } else if self.config.name.starts_with("gemini") {
+            &self.config.name
+        } else {
+            "gemini-2.0-flash"
+        };
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+            model, key
+        );
+        let body = serde_json::json!({
+            "contents": [{
+                "parts": [{ "text": prompt }]
+            }],
+            "generationConfig": {
+                "temperature": self.config.temperature,
+                "maxOutputTokens": self.config.max_tokens
+            }
+        });
+        let start = Instant::now();
+        let res = self.client.post(&url).json(&body).send().await?;
+        let status = res.status();
+        if !status.is_success() {
+            let err_text = res.text().await.unwrap_or_default();
+            bail!("Google Gemini API error (HTTP {}): {}", status, err_text);
+        }
+        let json: serde_json::Value = res.json().await?;
+        let content = json["candidates"][0]["content"]["parts"][0]["text"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        let tokens_used = json["usageMetadata"]["totalTokenCount"].as_u64().unwrap_or(0) as usize;
+        let latency_ms = start.elapsed().as_millis() as f64;
+        Ok(ProviderResult {
+            content,
+            tokens_used,
+            cost: 0.0,
+            latency_ms,
+            answer_type: "GEMINI_ANSWER".to_string(),
+        })
     }
 }
 
