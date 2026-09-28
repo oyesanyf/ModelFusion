@@ -32,13 +32,15 @@
           <span class="nav-item-text">Deep research</span>
         </button>
 
-        <!-- Collapsible Tools & Directives Accordion -->
-        <div class="sidebar-tools-accordion" id="sidebar-tools-accordion">
+        <div class="sidebar-section-divider"></div>
+
+        <!-- Collapsible Tools & Directives Accordion (Default Collapsed for Distinct Demarcation) -->
+        <div class="sidebar-tools-accordion collapsed" id="sidebar-tools-accordion">
           <button type="button" class="sidebar-tools-header" id="sidebar-tools-toggle" title="Toggle ModelFusion Tools &amp; Directives (All 161+ Tools)">
             <span class="tools-header-icon">🛠️</span>
             <span class="tools-header-title">Tools &amp; Directives</span>
             <span class="tools-header-badge">161</span>
-            <span class="tools-header-chevron" id="tools-accordion-chevron">▾</span>
+            <span class="tools-header-chevron" id="tools-accordion-chevron">▸</span>
           </button>
           <div class="sidebar-tools-body" id="sidebar-tools-body">
             <!-- 1. Web & Browser -->
@@ -46,24 +48,24 @@
               <button type="button" class="tool-category-header" data-cat="web" title="Web &amp; Browser Tools">
                 <span class="cat-icon">🌐</span>
                 <span class="cat-title">Web &amp; Browser</span>
-                <span class="cat-chevron">▾</span>
+                <span class="cat-chevron">▸</span>
               </button>
-              <div class="tool-category-content">
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_browser" data-category="web" data-cmd="/browser " data-original-title="Interactive Web Browser" title="Interactive Web Browser">
+              <div class="tool-category-content collapsed">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_browser" data-category="web" data-cmd="@agent browser " data-original-title="Interactive Web Browser" title="Interactive Web Browser">
                   <span class="tool-btn-left"><span class="tool-icon">🌐</span><span class="tool-label">Web Automation</span></span>
-                  <span class="tool-tag">/browser</span>
+                  <span class="tool-tag">@browser</span>
                 </button>
                 <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_deep_research" data-category="web" data-cmd="@agent browser deep research on " data-original-title="Autonomous Deep Research" title="Autonomous Deep Research">
                   <span class="tool-btn-left"><span class="tool-icon">🔍</span><span class="tool-label">Deep Research</span></span>
-                  <span class="tool-tag">research</span>
+                  <span class="tool-tag">@research</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_som" data-category="web" data-cmd="/som" data-original-title="Set-of-Mark Visual Grounding" title="Set-of-Mark Visual Grounding">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_som" data-category="web" data-cmd="@agent som" data-original-title="Set-of-Mark Visual Grounding" title="Set-of-Mark Visual Grounding">
                   <span class="tool-btn-left"><span class="tool-icon">🎯</span><span class="tool-label">Set-of-Mark Vision</span></span>
-                  <span class="tool-tag">/som</span>
+                  <span class="tool-tag">@som</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_summarize" data-category="web" data-cmd="/summarize " data-original-title="Summarize Active Web Page" title="Summarize Active Web Page">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_summarize" data-category="web" data-cmd="@agent summarize" data-original-title="Summarize Active Web Page" title="Summarize Active Web Page">
                   <span class="tool-btn-left"><span class="tool-icon">📑</span><span class="tool-label">Page Summary</span></span>
-                  <span class="tool-tag">/summarize</span>
+                  <span class="tool-tag">@summarize</span>
                 </button>
               </div>
             </div>
@@ -76,29 +78,29 @@
                 <span class="cat-chevron">▸</span>
               </button>
               <div class="tool-category-content collapsed">
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_acdso" data-category="tabular" data-cmd="/acdso " data-original-title="Automated Causal Decision Science Optimization" title="Automated Causal Decision Science Optimization">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_acdso" data-category="tabular" data-cmd="@agent acdso " data-original-title="Automated Causal Decision Science Optimization" title="Automated Causal Decision Science Optimization">
                   <span class="tool-btn-left"><span class="tool-icon">📊</span><span class="tool-label">AutoML Engine</span></span>
-                  <span class="tool-tag">/acdso</span>
+                  <span class="tool-tag">@acdso</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_datascience" data-category="tabular" data-cmd="--datascience " data-original-title="Data Science Pipeline" title="Data Science Pipeline">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_datascience" data-category="tabular" data-cmd="@agent datascience " data-original-title="Data Science Pipeline" title="Data Science Pipeline">
                   <span class="tool-btn-left"><span class="tool-icon">📈</span><span class="tool-label">Data Science</span></span>
-                  <span class="tool-tag">--ds</span>
+                  <span class="tool-tag">@datascience</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_dataanalyst" data-category="tabular" data-cmd="--dataanalyst " data-original-title="Exploratory Data Analysis" title="Exploratory Data Analysis">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_dataanalyst" data-category="tabular" data-cmd="@agent dataanalyst " data-original-title="Exploratory Data Analysis" title="Exploratory Data Analysis">
                   <span class="tool-btn-left"><span class="tool-icon">🔬</span><span class="tool-label">Data Analyst</span></span>
-                  <span class="tool-tag">--analyst</span>
+                  <span class="tool-tag">@dataanalyst</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_timeseries" data-category="tabular" data-cmd="--timeseries --horizon 7 " data-original-title="Time-Series Forecasting" title="Time-Series Forecasting">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_timeseries" data-category="tabular" data-cmd="@agent timeseries " data-original-title="Time-Series Forecasting" title="Time-Series Forecasting">
                   <span class="tool-btn-left"><span class="tool-icon">⏳</span><span class="tool-label">Time-Series</span></span>
-                  <span class="tool-tag">--series</span>
+                  <span class="tool-tag">@timeseries</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_predict" data-category="tabular" data-cmd="--predict " data-original-title="AutoML Model Prediction" title="AutoML Model Prediction">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_predict" data-category="tabular" data-cmd="@agent predict " data-original-title="AutoML Model Prediction" title="AutoML Model Prediction">
                   <span class="tool-btn-left"><span class="tool-icon">🎯</span><span class="tool-label">AutoML Predict</span></span>
-                  <span class="tool-tag">--predict</span>
+                  <span class="tool-tag">@predict</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_decision" data-category="tabular" data-cmd="--decision " data-original-title="Prescriptive Decision Optimization" title="Prescriptive Decision Optimization">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_decision" data-category="tabular" data-cmd="@agent decision " data-original-title="Prescriptive Decision Optimization" title="Prescriptive Decision Optimization">
                   <span class="tool-btn-left"><span class="tool-icon">⚖️</span><span class="tool-label">Decision Engine</span></span>
-                  <span class="tool-tag">--decision</span>
+                  <span class="tool-tag">@decision</span>
                 </button>
               </div>
             </div>
@@ -111,25 +113,25 @@
                 <span class="cat-chevron">▸</span>
               </button>
               <div class="tool-category-content collapsed">
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_goal" data-category="agent" data-cmd="--goal " data-original-title="Long-Running Autonomous Goal Mode" title="Long-Running Autonomous Goal Mode">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_goal" data-category="agent" data-cmd="@agent goal " data-original-title="Long-Running Autonomous Goal Mode" title="Long-Running Autonomous Goal Mode">
                   <span class="tool-btn-left"><span class="tool-icon">🎯</span><span class="tool-label">Autonomous Goal</span></span>
-                  <span class="tool-tag">--goal</span>
+                  <span class="tool-tag">@goal</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_plan" data-category="agent" data-cmd="--plan " data-original-title="Structured Architecture Plan" title="Structured Architecture Plan">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_plan" data-category="agent" data-cmd="@agent plan " data-original-title="Structured Architecture Plan" title="Structured Architecture Plan">
                   <span class="tool-btn-left"><span class="tool-icon">📐</span><span class="tool-label">Architect Plan</span></span>
-                  <span class="tool-tag">--plan</span>
+                  <span class="tool-tag">@plan</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_grill_me" data-category="agent" data-cmd="--grill-me " data-original-title="Adversarial Requirements Interview" title="Adversarial Requirements Interview">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_grill_me" data-category="agent" data-cmd="@agent grill-me " data-original-title="Adversarial Requirements Interview" title="Adversarial Requirements Interview">
                   <span class="tool-btn-left"><span class="tool-icon">🔥</span><span class="tool-label">Grill Me Mode</span></span>
-                  <span class="tool-tag">--grill</span>
+                  <span class="tool-tag">@grill-me</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_boost" data-category="agent" data-cmd="--boost " data-original-title="Deep Reasoning Boost" title="Deep Reasoning Boost">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_boost" data-category="agent" data-cmd="@agent boost " data-original-title="Deep Reasoning Boost" title="Deep Reasoning Boost">
                   <span class="tool-btn-left"><span class="tool-icon">🚀</span><span class="tool-label">Reasoning Boost</span></span>
-                  <span class="tool-tag">--boost</span>
+                  <span class="tool-tag">@boost</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_agentic_loop" data-category="agent" data-cmd="--agentic-loop --target-tokens 65536 " data-original-title="Recursive Agentic Loop" title="Recursive Agentic Loop">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_agentic_loop" data-category="agent" data-cmd="@agent agentic-loop " data-original-title="Recursive Agentic Loop" title="Recursive Agentic Loop">
                   <span class="tool-btn-left"><span class="tool-icon">🔄</span><span class="tool-label">Agentic Loop</span></span>
-                  <span class="tool-tag">--loop</span>
+                  <span class="tool-tag">@loop</span>
                 </button>
               </div>
             </div>
@@ -142,21 +144,21 @@
                 <span class="cat-chevron">▸</span>
               </button>
               <div class="tool-category-content collapsed">
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_vision" data-category="vision" data-cmd="/vision " data-original-title="Vision Analysis &amp; Grounding" title="Vision Analysis &amp; Grounding">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_vision" data-category="vision" data-cmd="@agent vision " data-original-title="Vision Analysis &amp; Grounding" title="Vision Analysis &amp; Grounding">
                   <span class="tool-btn-left"><span class="tool-icon">👁️</span><span class="tool-label">Vision Analysis</span></span>
-                  <span class="tool-tag">/vision</span>
+                  <span class="tool-tag">@vision</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_image_classification" data-category="vision" data-cmd="--image-classification " data-original-title="Zero-Shot Image Classification" title="Zero-Shot Image Classification">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_image_classification" data-category="vision" data-cmd="@agent image-classification " data-original-title="Zero-Shot Image Classification" title="Zero-Shot Image Classification">
                   <span class="tool-btn-left"><span class="tool-icon">🏷️</span><span class="tool-label">Classification</span></span>
-                  <span class="tool-tag">--classify</span>
+                  <span class="tool-tag">@classify</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_object_detection" data-category="vision" data-cmd="--object-detection " data-original-title="Visual Object Detection" title="Visual Object Detection">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_object_detection" data-category="vision" data-cmd="@agent object-detection " data-original-title="Visual Object Detection" title="Visual Object Detection">
                   <span class="tool-btn-left"><span class="tool-icon">📦</span><span class="tool-label">Object Detection</span></span>
-                  <span class="tool-tag">--detect</span>
+                  <span class="tool-tag">@detect</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_vqa" data-category="vision" data-cmd="--visual-question-answering " data-original-title="Visual Question Answering" title="Visual Question Answering">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_vqa" data-category="vision" data-cmd="@agent vqa " data-original-title="Visual Question Answering" title="Visual Question Answering">
                   <span class="tool-btn-left"><span class="tool-icon">❓</span><span class="tool-label">Visual QA</span></span>
-                  <span class="tool-tag">--vqa</span>
+                  <span class="tool-tag">@vqa</span>
                 </button>
               </div>
             </div>
@@ -169,17 +171,17 @@
                 <span class="cat-chevron">▸</span>
               </button>
               <div class="tool-category-content collapsed">
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_asr" data-category="audio" data-cmd="--automatic-speech-recognition " data-original-title="Speech-to-Text (ASR)" title="Speech-to-Text (ASR)">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_asr" data-category="audio" data-cmd="@agent asr " data-original-title="Speech-to-Text (ASR)" title="Speech-to-Text (ASR)">
                   <span class="tool-btn-left"><span class="tool-icon">🎙️</span><span class="tool-label">Speech-to-Text</span></span>
-                  <span class="tool-tag">--asr</span>
+                  <span class="tool-tag">@asr</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_tts" data-category="audio" data-cmd="--text-to-speech " data-original-title="Text-to-Speech (TTS)" title="Text-to-Speech (TTS)">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_tts" data-category="audio" data-cmd="@agent tts " data-original-title="Text-to-Speech (TTS)" title="Text-to-Speech (TTS)">
                   <span class="tool-btn-left"><span class="tool-icon">🔊</span><span class="tool-label">Text-to-Speech</span></span>
-                  <span class="tool-tag">--tts</span>
+                  <span class="tool-tag">@tts</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_audio_classification" data-category="audio" data-cmd="--audio-classification " data-original-title="Audio Classification" title="Audio Classification">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_audio_classification" data-category="audio" data-cmd="@agent audio " data-original-title="Audio Classification" title="Audio Classification">
                   <span class="tool-btn-left"><span class="tool-icon">🎵</span><span class="tool-label">Audio Classify</span></span>
-                  <span class="tool-tag">--audio</span>
+                  <span class="tool-tag">@audio</span>
                 </button>
               </div>
             </div>
@@ -192,17 +194,17 @@
                 <span class="cat-chevron">▸</span>
               </button>
               <div class="tool-category-content collapsed">
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_vuln_detection" data-category="code" data-cmd="--code-vulnerability-detection " data-original-title="Code Vulnerability Audit" title="Code Vulnerability Audit">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_vuln_detection" data-category="code" data-cmd="@agent security " data-original-title="Code Vulnerability Audit" title="Code Vulnerability Audit">
                   <span class="tool-btn-left"><span class="tool-icon">🛡️</span><span class="tool-label">Security Audit</span></span>
-                  <span class="tool-tag">--vuln</span>
+                  <span class="tool-tag">@security</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_graph_index" data-category="code" data-cmd="--graph-index " data-original-title="Code Graph Knowledge Index" title="Code Graph Knowledge Index">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_graph_index" data-category="code" data-cmd="@agent graph-index " data-original-title="Code Graph Knowledge Index" title="Code Graph Knowledge Index">
                   <span class="tool-btn-left"><span class="tool-icon">🕸️</span><span class="tool-label">Code Graph Index</span></span>
-                  <span class="tool-tag">--graph</span>
+                  <span class="tool-tag">@graph</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_rest_rl" data-category="code" data-cmd="--rest-rl start" data-original-title="Start ReST-RL Daemon" title="Start ReST-RL Daemon">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_rest_rl" data-category="code" data-cmd="@agent rest-rl " data-original-title="Start ReST-RL Daemon" title="Start ReST-RL Daemon">
                   <span class="tool-btn-left"><span class="tool-icon">⚡</span><span class="tool-label">ReST-RL Daemon</span></span>
-                  <span class="tool-tag">--rest-rl</span>
+                  <span class="tool-tag">@rest-rl</span>
                 </button>
               </div>
             </div>
@@ -215,9 +217,9 @@
                 <span class="cat-chevron">▸</span>
               </button>
               <div class="tool-category-content collapsed">
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_pe_header" data-category="pe_binary" data-cmd="--pe-header-extraction " data-original-title="PE Header Extraction &amp; Forensics" title="PE Header Extraction &amp; Forensics">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_pe_header" data-category="pe_binary" data-cmd="@agent pe " data-original-title="PE Header Extraction &amp; Forensics" title="PE Header Extraction &amp; Forensics">
                   <span class="tool-btn-left"><span class="tool-icon">🔬</span><span class="tool-label">PE Header Forensics</span></span>
-                  <span class="tool-tag">--pe</span>
+                  <span class="tool-tag">@pe</span>
                 </button>
               </div>
             </div>
@@ -230,26 +232,28 @@
                 <span class="cat-chevron">▸</span>
               </button>
               <div class="tool-category-content collapsed">
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_update" data-category="system" data-cmd="--update" data-original-title="Fast Curated Engine (~6.5k models)" title="Fast Curated Engine (~6.5k models)">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_update" data-category="system" data-cmd="@agent update" data-original-title="Fast Curated Engine (~6.5k models)" title="Fast Curated Engine (~6.5k models)">
                   <span class="tool-btn-left"><span class="tool-icon">⚡</span><span class="tool-label">Curated Update</span></span>
-                  <span class="tool-tag">--update</span>
+                  <span class="tool-tag">@update</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_updatedb" data-category="system" data-cmd="--updatedb" data-original-title="Continuous Hub Crawler (All 2M+ models)" title="Continuous Hub Crawler (All 2M+ models)">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_updatedb" data-category="system" data-cmd="@agent updatedb" data-original-title="Continuous Hub Crawler (All 2M+ models)" title="Continuous Hub Crawler (All 2M+ models)">
                   <span class="tool-btn-left"><span class="tool-icon">🌐</span><span class="tool-label">Hub 2M+ Crawler</span></span>
-                  <span class="tool-tag">--updatedb</span>
+                  <span class="tool-tag">@updatedb</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_active_model" data-category="system" data-cmd="--active-model" data-original-title="Inspect Active Ollama Model" title="Inspect Active Ollama Model">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_active_model" data-category="system" data-cmd="@agent active-model" data-original-title="Inspect Active Ollama Model" title="Inspect Active Ollama Model">
                   <span class="tool-btn-left"><span class="tool-icon">🤖</span><span class="tool-label">Active Model</span></span>
-                  <span class="tool-tag">--model</span>
+                  <span class="tool-tag">@model</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_sys_info" data-category="system" data-cmd="--sys-info" data-original-title="System Hardware &amp; VRAM" title="System Hardware &amp; VRAM">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_sys_info" data-category="system" data-cmd="@agent sys-info" data-original-title="System Hardware &amp; VRAM" title="System Hardware &amp; VRAM">
                   <span class="tool-btn-left"><span class="tool-icon">💻</span><span class="tool-label">Hardware &amp; VRAM</span></span>
-                  <span class="tool-tag">--sys-info</span>
+                  <span class="tool-tag">@sys-info</span>
                 </button>
               </div>
             </div>
           </div>
         </div>
+
+        <div class="sidebar-section-divider"></div>
 
         <div class="sidebar-chat-history" id="sidebar-chat-history">
           <div class="chat-history-header">Recent chats</div>
@@ -365,7 +369,8 @@
             <div class="attachment-tray hidden" id="attachment-tray"></div>
             <div class="floating-input-capsule">
               <button type="button" class="capsule-btn attach-btn" id="btn-attach" title="Attach image, dataset, code, or document">+</button>
-              <textarea id="cli-prompt-input" rows="1" placeholder="Ask HugOS..." spellcheck="false"></textarea>
+              <textarea id="cli-prompt-input" rows="1" placeholder="Ask HugOS... (Type @agent for tools)" spellcheck="false"></textarea>
+              <div class="agent-autocomplete-dropdown hidden" id="agent-autocomplete-hero"></div>
               <button type="button" class="capsule-pill" id="btn-web-mode" title="Toggle Web Search Mode">
                 <span id="web-mode-icon">🌐</span>
                 <span id="web-mode-label">Web</span>
@@ -392,7 +397,8 @@
               <div class="attachment-tray hidden" id="attachment-tray-pinned"></div>
               <div class="floating-input-capsule">
                 <button type="button" class="capsule-btn attach-btn" id="btn-attach-pinned" title="Attach file or image">+</button>
-                <textarea id="cli-prompt-input-pinned" rows="1" placeholder="Ask HugOS..." spellcheck="false"></textarea>
+                <textarea id="cli-prompt-input-pinned" rows="1" placeholder="Ask HugOS... (Type @agent for tools)" spellcheck="false"></textarea>
+                <div class="agent-autocomplete-dropdown hidden" id="agent-autocomplete-pinned"></div>
                 <button type="button" class="capsule-pill" id="btn-web-mode-pinned" title="Toggle Web Search Mode">
                   <span id="web-mode-icon-pinned">🌐</span>
                   <span id="web-mode-label-pinned">Web</span>

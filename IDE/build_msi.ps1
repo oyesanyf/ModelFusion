@@ -481,7 +481,12 @@ $defaultSettings = @{
     "chat.utilityModel" = "modelfusion/modelfusion-local"
     "chat.utilitySmallModel" = "modelfusion/modelfusion-local"
     "hugos.modelfusion.fusion" = $true
-    "hugos.modelfusion.fusionModels" = 0
+    "hugos.modelfusion.fusionModels" = 2
+    "modelfusion.enableFusion" = $true
+    "modelfusion.fusionModels" = 2
+    "modelfusion.fusionMode" = "speculative"
+    "modelfusion.activeModel" = "modelfusion_auto"
+    "modelfusion.consensusThreshold" = 0.75
     "github.copilot.enable" = @{ "*" = $false }
     "github.gitAuthentication" = $false
     "git.autofetch" = $false

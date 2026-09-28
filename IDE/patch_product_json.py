@@ -216,7 +216,12 @@ def patch_product_file(file_path, proposals):
 DEFAULT_SETTINGS = {
     "workbench.accounts.experimental.showEntitlements": False,
     "extensions.autoUpdate": False,
-    "hugos.modelfusion.fusionModels": 0,
+    "hugos.modelfusion.fusionModels": 2,
+    "modelfusion.fusionModels": 2,
+    "modelfusion.enableFusion": True,
+    "modelfusion.fusionMode": "speculative",
+    "modelfusion.activeModel": "modelfusion_auto",
+    "modelfusion.consensusThreshold": 0.75,
     "chat.utilitySmallModel": "modelfusion/modelfusion-local",
     "github.copilot.enable": {
         "*": False

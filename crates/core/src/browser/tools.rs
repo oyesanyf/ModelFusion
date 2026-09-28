@@ -102,6 +102,19 @@ impl BrowserToolSuite {
         Ok(target)
     }
 
+    /// Injects JavaScript to extract visible interactive nodes into a clean, token-efficient array
+    /// annotated with real-time data-agent-id attributes.
+    pub async fn scan_interactive_elements(&mut self) -> Result<Vec<super::agent::LeanInteractiveElement>, String> {
+        let cdp_target = self.ensure_active_target().await?;
+        let res = self.cdp.evaluate(&cdp_target, super::agent::SCAN_INTERACTIVE_ELEMENTS_JS).await?;
+        let elements: Vec<super::agent::LeanInteractiveElement> = if let Some(val) = res.get("value") {
+            serde_json::from_value(val.clone()).map_err(|e| format!("Failed to parse interactive elements: {}", e))?
+        } else {
+            Vec::new()
+        };
+        Ok(elements)
+    }
+
     /// Dispatches an action enum directly.
     pub async fn execute_action(&mut self, action: BrowserAction) -> BrowserActionResult {
         match action {

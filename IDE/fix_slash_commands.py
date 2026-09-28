@@ -67,7 +67,8 @@ UNMINIFIED_BLOCK = r'''
       "audio-classification","voice-activity-detection","emotion-recognition","video-classification",
       "text-to-speech","text-to-image","image-super-resolution","table-question-answering","feature-ranking","error",
       "research","reseach","search","rl","restrl","rest-rl","createfile","create-file","create_file","newfile","new-file","new_file",
-      "btw","goal","schedule","browser","browser-agent","grill-me","grillme","teamwork-preview","teamworkpreview","learn","boost","generative_ui","generative-ui","genui","ui"
+      "btw","goal","schedule","browser","browser-agent","grill-me","grillme","teamwork-preview","teamworkpreview","learn","boost","generative_ui","generative-ui","genui","ui",
+      "som","deep-research","deepresearch","timeseries","decision","agentic-loop","agenticloop"
     ]);
     const normCmd = (cmd) => {
       if (!cmd) return "";
@@ -77,6 +78,8 @@ UNMINIFIED_BLOCK = r'''
       l = l.replace(/^[\\/@]+/, "");
       l = l.trim();
       if (l === "browser-agent" || l === "browseragent") return "browser";
+      if (l === "deepresearch") return "deep-research";
+      if (l === "agenticloop") return "agentic-loop";
       if (l === "rl" || l === "restrl") return "rest-rl";
       if (l === "create-file" || l === "create_file" || l === "newfile" || l === "new-file" || l === "new_file") return "createfile";
       if (l === "grillme") return "grill-me";

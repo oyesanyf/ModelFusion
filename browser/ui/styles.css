@@ -2857,48 +2857,97 @@ body.theme-light {
   color: #0d0d0d;
 }
 
-/* Theme White Enhancements for Sidebar Tools & Directives */
+/* Theme White Enhancements for Sidebar Tools & Directives (Distinct Demarcation) */
+body.theme-white .sidebar-section-divider {
+  background: #e2e8f0;
+}
+
 body.theme-white .sidebar-tools-accordion {
-  background: #fcfcfc;
-  border-color: #e5e7eb;
+  background: #f1f5f9;
+  border: 1.5px solid #cbd5e1;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+body.theme-white .sidebar-tools-accordion:not(.collapsed) {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
 body.theme-white .sidebar-tools-header {
-  color: #111827;
+  color: #0f172a;
+  background: #f1f5f9;
 }
 
 body.theme-white .sidebar-tools-header:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: #e2e8f0;
+  color: #000000;
+}
+
+body.theme-white .sidebar-tools-accordion:not(.collapsed) .sidebar-tools-header {
+  background: #e2e8f0;
+  border-bottom: 1.5px solid #cbd5e1;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+body.theme-white .tools-header-badge {
+  background: #0d9488;
+  color: #ffffff;
+  box-shadow: 0 1px 2px rgba(13, 148, 136, 0.35);
+}
+
+body.theme-white .tools-header-chevron {
+  color: #334155;
+  font-weight: 700;
+}
+
+body.theme-white .sidebar-tools-body {
+  background: #f8fafc;
+}
+
+body.theme-white .tool-category {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 body.theme-white .tool-category-header,
 body.theme-white .category-header,
 body.theme-white .tool-category-btn {
-  color: #374151;
+  color: #1e293b;
+  background: #ffffff;
 }
 
 body.theme-white .tool-category-header:hover,
 body.theme-white .category-header:hover,
 body.theme-white .tool-category-btn:hover {
-  background: rgba(0, 0, 0, 0.05);
-  color: #111827;
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+body.theme-white .tool-category-content {
+  background: #f8fafc;
+  border-left: 2px solid #94a3b8;
 }
 
 body.theme-white .tool-item-btn {
-  background: rgba(0, 0, 0, 0.02);
-  border-color: rgba(0, 0, 0, 0.06);
-  color: #1f2937;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #1e293b;
 }
 
 body.theme-white .tool-item-btn:hover {
-  background: rgba(0, 0, 0, 0.06);
-  border-color: rgba(0, 0, 0, 0.12);
-  color: #111827;
+  background: #f1f5f9;
+  border-color: #94a3b8;
+  color: #0f172a;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 body.theme-white .tool-tag {
-  background: rgba(0, 0, 0, 0.06);
-  color: #4b5563;
+  background: #e2e8f0;
+  color: #334155;
+  font-weight: 600;
 }
 
 /* B. theme-dark (ChatGPT Sleek Dark: #212121 canvas, #171717 sidebar, #2f2f2f input capsule, #ececec text, #ffffff send button) */
@@ -3218,14 +3267,27 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
 /* -------------------------------------------------------------
    9b. Sidebar Tools & Directives Accordion (All 161+ Tools)
 ------------------------------------------------------------- */
+.sidebar-section-divider {
+  height: 1px;
+  background: var(--border-color, rgba(255, 255, 255, 0.08));
+  margin: 10px 4px;
+  flex-shrink: 0;
+}
+
 .sidebar-tools-accordion {
   margin: 6px 0;
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--bg-secondary, rgba(255, 255, 255, 0.03));
-  overflow: visible;
-  transition: all 0.2s ease;
+  overflow: hidden;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   flex-shrink: 0;
+}
+
+.sidebar-tools-accordion:not(.collapsed) .sidebar-tools-header {
+  border-bottom: 1px solid var(--border-color);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
 }
 
 .sidebar-tools-header {
@@ -3247,7 +3309,7 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
   text-align: left;
   border-radius: 8px;
   overflow: visible;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease;
   user-select: none;
   box-sizing: border-box;
 }
@@ -3300,11 +3362,7 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
   width: 14px;
   height: 14px;
   flex-shrink: 0;
-  transition: transform 0.2s ease;
-}
-
-.sidebar-tools-accordion.collapsed .tools-header-chevron {
-  transform: rotate(-90deg);
+  transition: color 0.15s ease;
 }
 
 .sidebar-tools-accordion.collapsed .sidebar-tools-body {
@@ -3314,9 +3372,9 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
 .sidebar-tools-body {
   display: flex;
   flex-direction: column;
-  padding: 4px 6px 8px;
+  padding: 6px 6px 8px;
   overflow: visible;
-  gap: 2px;
+  gap: 3px;
 }
 
 .tool-category {
@@ -4139,6 +4197,93 @@ textarea.generating-locked {
 .btn-safety-abort:hover {
   background: rgba(239, 68, 68, 0.35) !important;
   transform: translateY(-1px) !important;
+}
+
+/* ───────────────────────────────────────────────────────────── */
+/* Floating @agent Autocomplete Dropdown Menu                    */
+/* ───────────────────────────────────────────────────────────── */
+.agent-autocomplete-dropdown {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--bg-primary, #ffffff);
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 12px;
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.15);
+  z-index: 10020;
+  padding: 6px 0;
+  backdrop-filter: blur(8px);
+}
+
+body.theme-white .agent-autocomplete-dropdown,
+body.theme-light .agent-autocomplete-dropdown {
+  background: #ffffff;
+  border-color: #e5e5e5;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.1);
+}
+
+body.theme-dark-plus .agent-autocomplete-dropdown,
+body.theme-obsidian .agent-autocomplete-dropdown,
+body.theme-midnight .agent-autocomplete-dropdown {
+  background: #1e1e1e;
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.agent-autocomplete-dropdown.hidden {
+  display: none !important;
+}
+
+.agent-autocomplete-item {
+  padding: 8px 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-primary, #1a1a1a);
+  transition: background 0.1s ease;
+  user-select: none;
+}
+
+.agent-autocomplete-item:hover,
+.agent-autocomplete-item.selected {
+  background: var(--hover-bg, rgba(16, 163, 127, 0.1));
+}
+
+.agent-autocomplete-item .ac-icon {
+  font-size: 15px;
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+}
+
+.agent-autocomplete-item .ac-label {
+  font-weight: 600;
+  color: var(--text-primary, #1a1a1a);
+}
+
+.agent-autocomplete-item .ac-cmd {
+  font-family: var(--mono-font, ui-monospace, monospace);
+  font-size: 11px;
+  color: #10a37f;
+  background: rgba(16, 163, 127, 0.08);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 4px;
+}
+
+.agent-autocomplete-item .ac-desc {
+  font-size: 11px;
+  color: var(--text-muted, #888);
+  margin-left: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
 }
 
 
