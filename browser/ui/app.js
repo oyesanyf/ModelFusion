@@ -1272,17 +1272,19 @@ document.addEventListener('DOMContentLoaded', () => {
       if (
         lower.startsWith('/search') ||
         lower.startsWith('/research') ||
+        lower.startsWith('/arxiv') ||
         lower.startsWith('/web') ||
         lower.startsWith('@agent search') ||
         lower.startsWith('@agent web-agent') ||
         lower.startsWith('@agent research') ||
+        lower.startsWith('@agent arxiv') ||
         lower.startsWith('@agent browser deep research on') ||
         lower.startsWith('@agent deep research')
       ) {
         const clean = query
-          .replace(/^(@agent\s+(search|web-agent|research|browser\s+deep\s+research\s+on|deep\s+research)|\/(search|research|web))\s*/i, '')
+          .replace(/^(@agent\s+(search|web-agent|research|arxiv|browser\s+deep\s+research\s+on|deep\s+research)|\/(search|research|arxiv|web))\s*/i, '')
           .trim();
-        return { routeToWeb: true, reason: 'Explicit internet search directive', cleanQuery: clean || query };
+        return { routeToWeb: true, reason: 'Explicit internet & arXiv search directive', cleanQuery: clean || query };
       }
       return { routeToWeb: false, reason: 'Internal CLI directive', cleanQuery: query };
     }
@@ -1413,6 +1415,165 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     return [];
+  }
+
+  async function executeArxivSearch(query, maxResults = 5) {
+    const limit = Math.min(Math.max(1, maxResults || 5), 10);
+    const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+
+    // 1. Try ModelFusion Master CLI IPC endpoint :5000/api/arxiv
+    try {
+      const res = await fetch(`${ipcUrl}/api/arxiv?q=${encodeURIComponent(query)}&max_results=${limit}`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.results && Array.isArray(data.results) && data.results.length > 0) {
+          return data.results;
+        }
+      }
+    } catch (e) {
+      console.warn('IPC arXiv endpoint unreachable, attempting direct fallback...', e);
+    }
+
+    // 2. Direct arXiv Atom Gateway
+    try {
+      const arxivUrl = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&start=0&max_results=${limit}`;
+      const res = await fetch(arxivUrl);
+      if (res.ok) {
+        const xmlText = await res.text();
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+        const entries = xmlDoc.getElementsByTagName('entry');
+        const results = [];
+        for (let i = 0; i < entries.length; i++) {
+          const entry = entries[i];
+          const rawTitle = (entry.getElementsByTagName('title')[0]?.textContent || '').trim().replace(/\s+/g, ' ');
+          let rawId = (entry.getElementsByTagName('id')[0]?.textContent || '').trim();
+          if (rawId.startsWith('http://arxiv.org/abs/')) {
+            rawId = rawId.replace('http://', 'https://');
+          } else if (!rawId.startsWith('https://')) {
+            rawId = 'https://arxiv.org/abs/' + rawId;
+          }
+          const rawSummary = (entry.getElementsByTagName('summary')[0]?.textContent || '').trim().replace(/\s+/g, ' ');
+          const authorNodes = entry.getElementsByTagName('author');
+          const authors = [];
+          for (let a = 0; a < Math.min(authorNodes.length, 3); a++) {
+            const name = authorNodes[a].getElementsByTagName('name')[0]?.textContent?.trim();
+            if (name) authors.push(name);
+          }
+          const pubDate = (entry.getElementsByTagName('published')[0]?.textContent || '').trim();
+          const year = pubDate.length >= 4 ? pubDate.slice(0, 4) : '';
+          const authorStr = authors.join(', ');
+          const formattedTitle = (authorStr && year)
+            ? `[arXiv] ${rawTitle} (${authorStr}, ${year})`
+            : (authorStr ? `[arXiv] ${rawTitle} (${authorStr})` : (year ? `[arXiv] ${rawTitle} (${year})` : `[arXiv] ${rawTitle}`));
+
+          if (rawTitle && rawId) {
+            results.push({
+              title: formattedTitle,
+              url: rawId,
+              snippet: rawSummary
+            });
+          }
+        }
+        if (results.length > 0) return results;
+      }
+    } catch (e) {
+      console.warn('Direct arXiv gateway unreachable:', e);
+    }
+
+    return [];
+  }
+
+  // -----------------------------------------------------------------
+  // Dynamic Rotating Status Engine & Explicit Error Reporting
+  // -----------------------------------------------------------------
+  function startDynamicStatus(bubbleElement, type = 'research', customContext = '') {
+    const researchStates = [
+      "🔍 Searching the internet & arXiv...",
+      "📑 Collecting facts & evidence...",
+      "⚖️ Deliberating key principles...",
+      "🧠 Thinking through findings...",
+      "🔬 Cross-referencing citations & papers...",
+      "📊 Correlating data points...",
+      "💡 Synthesizing grounded analysis...",
+      "✍️ Formulating response..."
+    ];
+
+    const reasoningStates = [
+      "🧠 Thinking...",
+      "⚖️ Deliberating approach...",
+      "📚 Collecting facts & knowledge...",
+      "🧩 Analyzing logical constraints...",
+      "💡 Exploring optimal solution...",
+      "✍️ Formulating response..."
+    ];
+
+    const states = (type === 'research' || type === 'web' || type === 'arxiv') ? researchStates : reasoningStates;
+    let step = 0;
+    let stopped = false;
+
+    const renderState = () => {
+      if (stopped || !bubbleElement) return;
+      const text = states[step % states.length];
+      const contentEl = bubbleElement.querySelector('.bubble-content');
+      if (contentEl) {
+        contentEl.innerHTML = `
+          <div class="dynamic-status-pill">
+            <span class="status-pulse-dot"></span>
+            <span class="status-text">${escapeHtml(text)}</span>
+          </div>
+        `;
+      }
+      step++;
+    };
+
+    renderState();
+    const interval = setInterval(renderState, 1500);
+
+    return {
+      stop: () => {
+        if (stopped) return;
+        stopped = true;
+        clearInterval(interval);
+      },
+      setError: (msg, details = '') => {
+        if (stopped) return;
+        stopped = true;
+        clearInterval(interval);
+        renderErrorCard(bubbleElement, msg, details);
+      }
+    };
+  }
+
+  function renderErrorCard(bubbleElement, errorTitle, errorMsg) {
+    if (!bubbleElement) return;
+    bubbleElement.classList.remove('streaming');
+    const contentEl = bubbleElement.querySelector('.bubble-content') || bubbleElement;
+    contentEl.style.color = '';
+    contentEl.style.fontStyle = '';
+    const safeTitle = escapeHtml(errorTitle || '⚠️ Error Occurred');
+    const safeMsg = escapeHtml(errorMsg || 'An unexpected error occurred during execution. Please check that local AI services are running.');
+    contentEl.innerHTML = `
+      <div class="agent-error-card">
+        <div class="error-card-header">
+          <span class="error-icon">⚠️</span>
+          <strong>${safeTitle}</strong>
+        </div>
+        <div class="error-card-body">
+          ${safeMsg}
+        </div>
+        <div class="error-card-actions">
+          <button type="button" class="error-retry-btn" onclick="if(window.executeCliCommand && window.lastUserPrompt){window.executeCliCommand(window.lastUserPrompt);}">
+            🔄 Retry
+          </button>
+        </div>
+      </div>
+    `;
+    termLog(`[ERROR] ${safeTitle}: ${errorMsg}`, 'error');
+    setChatRunningState(false);
   }
 
   function renderMarkdown(text) {
@@ -2756,6 +2917,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Create assistant bubble in chatMessages (or reuse existing bubble from search phase)
     let assistantBubble = options && options.existingBubble ? options.existingBubble : null;
     let bubbleContent = options && options.bubbleContent ? options.bubbleContent : null;
+    let statusCtrl = options && options.statusCtrl ? options.statusCtrl : null;
     if (chatMessages && !assistantBubble) {
       assistantBubble = document.createElement('div');
       assistantBubble.className = 'msg-bubble assistant-bubble streaming';
@@ -2764,11 +2926,20 @@ document.addEventListener('DOMContentLoaded', () => {
           <span>${isFusionMode ? '✨' : '🌐'}</span> <span>${authorDisplayTitle}</span>
           <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">${authorDisplaySub}</span>
         </div>
-        <div class="bubble-content" style="color: var(--text-muted); font-style: italic;">Thinking...</div>
+        <div class="bubble-content" style="color: var(--text-muted); font-style: italic;">
+          <div class="dynamic-status-pill">
+            <span class="status-pulse-dot"></span>
+            <span class="status-text">Thinking...</span>
+          </div>
+        </div>
       `;
       chatMessages.appendChild(assistantBubble);
       bubbleContent = assistantBubble.querySelector('.bubble-content');
       if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    if (!statusCtrl && assistantBubble) {
+      statusCtrl = startDynamicStatus(assistantBubble, 'reasoning', userPrompt);
     }
 
     // Status indicator for terminalScreen
@@ -2998,6 +3169,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!streamMode) {
           const data = await res.json();
+          if (statusCtrl) { statusCtrl.stop(); statusCtrl = null; }
           turnResponse = data.message?.content || data.response || '';
           doneReason = data.done_reason || '';
           fullResponse += (turn > 0 ? '\n\n' : '') + turnResponse;
@@ -3035,6 +3207,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const chunk = parsed.message?.content || parsed.response || '';
                 if (parsed.done_reason) doneReason = parsed.done_reason;
                 if (chunk) {
+                  if (statusCtrl) {
+                    statusCtrl.stop();
+                    statusCtrl = null;
+                  }
                   turnResponse += chunk;
                   fullResponse += chunk;
                   totalEstimatedTokens += Math.max(1, Math.round(chunk.length / 4));
@@ -3065,6 +3241,10 @@ document.addEventListener('DOMContentLoaded', () => {
               const chunk = parsed.message?.content || parsed.response || '';
               if (parsed.done_reason) doneReason = parsed.done_reason;
               if (chunk) {
+                if (statusCtrl) {
+                  statusCtrl.stop();
+                  statusCtrl = null;
+                }
                 turnResponse += chunk;
                 fullResponse += chunk;
                 totalEstimatedTokens += Math.max(1, Math.round(chunk.length / 4));
@@ -3123,6 +3303,10 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       return fullResponse;
     } catch (err) {
+      if (statusCtrl) {
+        statusCtrl.stop();
+        statusCtrl = null;
+      }
       if (err.name === 'AbortError' || currentAbortController?.signal?.aborted) {
         if (assistantBubble) {
           assistantBubble.classList.remove('streaming');
@@ -3187,18 +3371,18 @@ document.addEventListener('DOMContentLoaded', () => {
       const fallbackDisplayModel = resolvedOllamaModel && resolvedOllamaModel !== 'modelfusion_auto' ? resolvedOllamaModel : 'qwen2.5:7b';
       statusLine.textContent = `[${time}] Error connecting to local AI engine (${err.message}). Ensure Ollama is running at ${ollamaUrl} with an installed model (e.g. ${fallbackDisplayModel}).`;
       if (assistantBubble) {
-        assistantBubble.classList.remove('streaming');
-        if (bubbleContent) {
-          let switchPrompt = '';
-          if (window.location.protocol === 'file:') {
-            switchPrompt = '<div style="margin-top: 8px;"><a href="http://localhost:5000/index.html" class="hero-chip" style="font-size: 11px; padding: 4px 10px; display: inline-block; text-decoration: none; cursor: pointer;">Switch to http://localhost:5000</a></div>';
-          }
-          bubbleContent.innerHTML = `<span style="color: var(--error-color);">⚠️ Connection Error: ${err.message}. Ensure Ollama is running at ${ollamaUrl} with an installed model (e.g. ${fallbackDisplayModel}).</span>${switchPrompt}`;
+        let switchPrompt = '';
+        if (window.location.protocol === 'file:') {
+          switchPrompt = '<br><a href="http://localhost:5000/index.html" class="hero-chip" style="font-size: 11px; padding: 4px 10px; display: inline-block; margin-top: 6px; text-decoration: none; cursor: pointer;">Switch to http://localhost:5000</a>';
         }
+        renderErrorCard(assistantBubble, '⚠️ Local AI Engine Unreachable', `Connection Error: ${err.message}. Ensure Ollama is running at ${ollamaUrl} with an installed model (e.g. ${fallbackDisplayModel}). Check that 'ollama serve' is running or restart the application.${switchPrompt}`);
       }
       responseLine.remove();
       return null;
     } finally {
+      if (statusCtrl) {
+        statusCtrl.stop();
+      }
       setChatRunningState(false);
       currentAbortController = null;
     }
@@ -3784,6 +3968,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!cmd) return;
 
     lastUserPrompt = cmd;
+    window.lastUserPrompt = cmd;
 
     // Chat history tracking: ensure active session exists
     if (!currentSessionId) {
@@ -3921,20 +4106,24 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // 4.5 Web Research & Search Agent Directives (@agent search, @agent web-agent, @agent search-index, @agent browser deep research on)
+    // 4.5 Web Research & Search Agent Directives (@agent search, @agent web-agent, @agent search-index, @agent browser deep research on, @agent arxiv)
     if (
       lower.startsWith('@agent search ') || lower.startsWith('/search ') ||
       lower.startsWith('@agent web-agent') || lower.startsWith('/web-agent') ||
       lower.startsWith('@agent search-index') || lower.startsWith('/search-index') ||
       lower.startsWith('@agent browser deep research on ') || lower.startsWith('@agent deep research ') ||
-      lower.startsWith('/research ')
+      lower.startsWith('/research ') ||
+      lower.startsWith('@agent arxiv ') || lower.startsWith('/arxiv ')
     ) {
+      const isArxivOnly = lower.startsWith('@agent arxiv ') || lower.startsWith('/arxiv ');
+      const isDeepResearch = lower.startsWith('@agent browser deep research on ') || lower.startsWith('@agent deep research ') || lower.startsWith('/research ');
+
       const cleanQuery = cmd
-        .replace(/^(@agent\s+(search|web-agent|search-index|browser\s+deep\s+research\s+on|deep\s+research)|\/(search|web-agent|search-index|research))\s*/i, '')
+        .replace(/^(@agent\s+(search|web-agent|search-index|browser\s+deep\s+research\s+on|deep\s+research|arxiv)|\/(search|web-agent|search-index|research|arxiv))\s*/i, '')
         .trim();
 
       const queryToSearch = cleanQuery || currentNavUrl || 'open-weight models';
-      termLog(`[SEARCH] 🔍 Searching the internet for: "${queryToSearch}"...`, 'info');
+      termLog(`[RESEARCH] 🔍 ${isArxivOnly ? 'Searching arXiv preprints' : (isDeepResearch ? 'Deep Research (Web + arXiv)' : 'Searching the internet')} for: "${queryToSearch}"...`, 'info');
 
       setChatRunningState(true);
       currentAbortController = new AbortController();
@@ -3942,41 +4131,60 @@ document.addEventListener('DOMContentLoaded', () => {
       if (chatWelcome) chatWelcome.classList.add('hidden');
       let assistantBubble = null;
       let bubbleContent = null;
+      let statusCtrl = null;
       if (chatMessages) {
         assistantBubble = document.createElement('div');
         assistantBubble.className = 'msg-bubble assistant-bubble streaming';
         assistantBubble.innerHTML = `
           <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
-            <span>🌐</span> <span>ModelFusion AI</span>
-            <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">(Web Search Grounding)</span>
+            <span>${isArxivOnly ? '📚' : (isDeepResearch ? '🔬' : '🌐')}</span> <span>ModelFusion AI</span>
+            <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">${isArxivOnly ? '(arXiv Research Papers)' : (isDeepResearch ? '(Deep Research: Web + arXiv)' : '(Web Search Grounding)')}</span>
           </div>
           <div class="bubble-content" style="color: var(--accent-color); font-weight: 500; display: flex; align-items: center; gap: 6px;">
-            <span style="display: inline-block;">🔍</span> <span>Searching the internet for &ldquo;${escapeHtml(queryToSearch)}&rdquo;&hellip;</span>
+            <div class="dynamic-status-pill">
+              <span class="status-pulse-dot"></span>
+              <span class="status-text">${isArxivOnly ? 'Searching arXiv scientific preprints...' : 'Searching the internet & arXiv...'}</span>
+            </div>
           </div>
         `;
         chatMessages.appendChild(assistantBubble);
         bubbleContent = assistantBubble.querySelector('.bubble-content');
         if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
+        statusCtrl = startDynamicStatus(assistantBubble, isArxivOnly ? 'arxiv' : 'research', queryToSearch);
       }
 
-      const searchResults = await executeWebSearch(queryToSearch, currentSettings.maxSearchResults || 6);
+      try {
+        let combinedResults = [];
 
-      termLog(`[SEARCH] Retrieved ${searchResults ? searchResults.length : 0} verified web sources. Correlating results with LLM...`, 'success');
-      if (searchResults && searchResults.length > 0) {
-        searchResults.forEach((r, idx) => {
-          termLog(`  [${idx + 1}] ${r.title} - ${r.url}`, 'sys');
-        });
-      }
+        if (isArxivOnly) {
+          const arxivResults = await executeArxivSearch(queryToSearch, currentSettings.maxSearchResults || 6);
+          combinedResults = arxivResults || [];
+        } else if (isDeepResearch) {
+          // Directive: "anytime deep research is used it must use arXiv"
+          // Query live web search AND arXiv in parallel
+          const [webRes, arxivRes] = await Promise.all([
+            executeWebSearch(queryToSearch, currentSettings.maxSearchResults || 5),
+            executeArxivSearch(queryToSearch, 5)
+          ]);
+          combinedResults = [...(webRes || []), ...(arxivRes || [])];
+        } else {
+          // Standard web search / web-agent
+          const searchResults = await executeWebSearch(queryToSearch, currentSettings.maxSearchResults || 6);
+          combinedResults = searchResults || [];
+        }
 
-      if (bubbleContent) {
-        bubbleContent.innerHTML = `<span style="color: var(--text-muted); font-style: italic;">🔍 Searching the internet... Correlating results with LLM...</span>`;
-      }
+        termLog(`[RESEARCH] Retrieved ${combinedResults.length} verified sources (${isDeepResearch ? 'Web + arXiv' : (isArxivOnly ? 'arXiv' : 'Web')}). Correlating results with LLM...`, 'success');
+        if (combinedResults.length > 0) {
+          combinedResults.forEach((r, idx) => {
+            termLog(`  [${idx + 1}] ${r.title} - ${r.url}`, 'sys');
+          });
+        }
 
-      const searchContext = (searchResults && searchResults.length > 0)
-        ? searchResults.map((r, idx) => `[${idx + 1}] Title: ${r.title}\nURL: ${r.url}\nSummary: ${r.snippet}`).join('\n\n')
-        : 'No external web search results found.';
+        const searchContext = combinedResults.length > 0
+          ? combinedResults.map((r, idx) => `[${idx + 1}] Title: ${r.title}\nURL: ${r.url}\nSummary: ${r.snippet}`).join('\n\n')
+          : 'No external research results found.';
 
-      const promptWithSearch = `User Query: ${queryToSearch}
+        const promptWithSearch = `User Query: ${queryToSearch}
 
 Verified Grounding Context:
 ${searchContext}
@@ -3985,11 +4193,24 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
 - Provide an accurate, factual, and comprehensive answer directly grounded in the verified context above.
 - Cite the sources inline using [1], [2], etc., matching the numbered search results.
 - Synthesize concisely with high analytical density. Default return is 256 tokens.
-- Never invent unverified dates, names, or leaders.`;
+- Include markdown links to the sources [Title](URL) where relevant.
+- Never invent unverified dates, names, or citations.`;
 
-      const sysPrompt = 'You are HugOS Browser AI, an intelligent assistant with live internet search capabilities. Correlate search evidence with internal reasoning, provide factual and up-to-date answers, and cite sources accurately with [1], [2] badges and markdown links.';
+        const sysPrompt = isArxivOnly
+          ? 'You are HugOS Browser AI, an expert academic and scientific research assistant. Correlate arXiv preprints and research papers, synthesize key findings, methodologies, and citations accurately with markdown links.'
+          : 'You are HugOS Browser AI, an intelligent assistant with live internet search and arXiv scientific research capabilities. Correlate search evidence with internal reasoning, provide factual and up-to-date answers, and cite sources accurately with [1], [2] badges and markdown links.';
 
-      await streamAiChat(promptWithSearch, sysPrompt, { images: attachedImages, panel, existingBubble: assistantBubble, bubbleContent: bubbleContent });
+        await streamAiChat(promptWithSearch, sysPrompt, {
+          images: attachedImages,
+          panel,
+          existingBubble: assistantBubble,
+          bubbleContent: bubbleContent,
+          statusCtrl: statusCtrl
+        });
+      } catch (err) {
+        if (statusCtrl) statusCtrl.stop();
+        renderErrorCard(assistantBubble, '⚠️ Research Failed', `Could not complete research: ${err.message}. Please check your connection and retry.`);
+      }
       if (currentAttachments.length > 0) clearAllAttachments();
       return;
     }
@@ -4120,10 +4341,11 @@ Instructions:
       setChatRunningState(true);
       currentAbortController = new AbortController();
 
-      // Immediately render assistant chat bubble with live searching status
+      // Immediately render assistant chat bubble with dynamic status
       if (chatWelcome) chatWelcome.classList.add('hidden');
       let assistantBubble = null;
       let bubbleContent = null;
+      let statusCtrl = null;
       if (chatMessages) {
         assistantBubble = document.createElement('div');
         assistantBubble.className = 'msg-bubble assistant-bubble streaming';
@@ -4133,25 +4355,39 @@ Instructions:
             <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">(Web Search Grounding)</span>
           </div>
           <div class="bubble-content" style="color: var(--accent-color); font-weight: 500; display: flex; align-items: center; gap: 6px;">
-            <span style="display: inline-block;">🔍</span> <span>Searching the internet for &ldquo;${escapeHtml(routingDecision.cleanQuery)}&rdquo;&hellip;</span>
+            <div class="dynamic-status-pill">
+              <span class="status-pulse-dot"></span>
+              <span class="status-text">Searching the internet & arXiv...</span>
+            </div>
           </div>
         `;
         chatMessages.appendChild(assistantBubble);
         bubbleContent = assistantBubble.querySelector('.bubble-content');
         if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
+        statusCtrl = startDynamicStatus(assistantBubble, 'research', routingDecision.cleanQuery);
       }
 
-      const searchResults = await executeWebSearch(routingDecision.cleanQuery, currentSettings.maxSearchResults || 5);
+      const isResearchTopic = /research|paper|arxiv|pre-?print|study|algorithm|model/i.test(routingDecision.cleanQuery);
+      let searchResults = [];
+      try {
+        if (isResearchTopic) {
+          const [webRes, arxivRes] = await Promise.all([
+            executeWebSearch(routingDecision.cleanQuery, currentSettings.maxSearchResults || 5),
+            executeArxivSearch(routingDecision.cleanQuery, 4)
+          ]);
+          searchResults = [...(webRes || []), ...(arxivRes || [])];
+        } else {
+          searchResults = await executeWebSearch(routingDecision.cleanQuery, currentSettings.maxSearchResults || 5);
+        }
+      } catch (searchErr) {
+        termLog(`[SEARCH] Search error: ${searchErr.message}`, 'warn');
+      }
 
       if (searchResults && searchResults.length > 0) {
-        termLog(`[SEARCH] Retrieved ${searchResults.length} verified web sources. Correlating results with LLM...`, 'success');
+        termLog(`[SEARCH] Retrieved ${searchResults.length} verified web & arXiv sources. Correlating results with LLM...`, 'success');
         searchResults.forEach((r, idx) => {
           termLog(`  [${idx + 1}] ${r.title} - ${r.url}`, 'sys');
         });
-
-        if (bubbleContent) {
-          bubbleContent.innerHTML = `<span style="color: var(--text-muted); font-style: italic;">🔍 Searching the internet... Correlating results with LLM...</span>`;
-        }
 
         // Correlate live search results with LLM knowledge
         const searchContext = searchResults.map((r, idx) => {
@@ -4170,23 +4406,32 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
 - Cite the sources inline using [1], [2], etc., matching the numbered search results above.
 - Include clickable markdown links to the sources [Title](URL) where relevant.`;
 
-        const sysPrompt = 'You are HugOS AI, an intelligent assistant with live internet search capabilities. Correlate search evidence with internal reasoning, provide factual and up-to-date answers, and cite sources accurately with [1], [2] badges and markdown links. Never invent false names, leaders, or relocated capitals.';
+        const sysPrompt = 'You are HugOS AI, an intelligent assistant with live internet search and arXiv capabilities. Correlate search evidence with internal reasoning, provide factual and up-to-date answers, and cite sources accurately with [1], [2] badges and markdown links. Never invent false names, leaders, or relocated capitals.';
 
-        await streamAiChat(promptWithSearch, sysPrompt, { images: attachedImages, panel, existingBubble: assistantBubble, bubbleContent: bubbleContent });
+        await streamAiChat(promptWithSearch, sysPrompt, {
+          images: attachedImages,
+          panel,
+          existingBubble: assistantBubble,
+          bubbleContent: bubbleContent,
+          statusCtrl: statusCtrl
+        });
         if (currentAttachments.length > 0) clearAllAttachments();
         return;
       } else {
         termLog(`[SEARCH] No live web results returned. Falling back to local model with strict factual guardrails.`, 'warn');
-        if (bubbleContent) {
-          bubbleContent.innerHTML = `<span style="color: var(--text-muted); font-style: italic;">Thinking...</span>`;
-        }
         const promptWithGuardrail = `${cmd}
 
 Important Factual Constraint:
 If you are asked about real-world facts such as world leaders, heads of state, country capitals, or historical dates and you are not 100% certain, state clearly that you do not have verified up-to-date records rather than fabricating false names or places. Never invent fictional political leaders or relocated capitals.`;
 
         const sysPrompt = 'You are HugOS Browser AI, an expert, accurate assistant built into the ModelFusion browser environment. Provide clear, direct, and factually accurate answers. If uncertain of real-world facts, state so honestly.';
-        await streamAiChat(promptWithGuardrail, sysPrompt, { images: attachedImages, panel, existingBubble: assistantBubble, bubbleContent: bubbleContent });
+        await streamAiChat(promptWithGuardrail, sysPrompt, {
+          images: attachedImages,
+          panel,
+          existingBubble: assistantBubble,
+          bubbleContent: bubbleContent,
+          statusCtrl: statusCtrl
+        });
         if (currentAttachments.length > 0) clearAllAttachments();
         return;
       }
@@ -4478,6 +4723,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     { cmd: '@agent updatedb', icon: '🚀', label: 'Full Registry Crawler', desc: 'Crawl all 2M+ models from Hugging Face Hub' },
     { cmd: '@agent summarize', icon: '📑', label: 'Summarize Page', desc: 'Extract and summarize active web page content' },
     { cmd: '@agent som', icon: '🎯', label: 'Set-of-Mark Vision', desc: 'Numeric visual element grounding with 90% token reduction' },
+    { cmd: '@agent arxiv ', icon: '📚', label: 'arXiv Papers', desc: 'Direct search of arXiv scientific preprints and research papers' },
     { cmd: '@agent search ', icon: '🔎', label: 'Web Search Grounding', desc: 'Live web search grounding with verified citations' },
     { cmd: '@agent web-agent ', icon: '🌐', label: 'Web Agent', desc: 'Search internet, index data, and correlate with LLM (256 tokens return)' },
     { cmd: '@agent search-index ', icon: '📑', label: 'Search Index', desc: 'Build and query in-memory inverted search index' },

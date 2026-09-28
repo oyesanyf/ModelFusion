@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="HugOS Browser" Manufacturer="HugOS Team" Version="1.0.42" UpgradeCode="e98c7d08-91cb-4248-bfa5-765c96ddeca6" Scope="perUser">
+  <Package Name="HugOS Browser" Manufacturer="HugOS Team" Version="1.0.45" UpgradeCode="e98c7d08-91cb-4248-bfa5-765c96ddeca6" Scope="perUser">
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." Schedule="afterInstallInitialize" AllowSameVersionUpgrades="yes" />
 
     <MediaTemplate EmbedCab="yes" />
@@ -22,9 +22,17 @@
         </Directory>
         <Directory Id="dir_5" Name="db">
         </Directory>
-        <Directory Id="dir_6" Name="extension">
+        <Directory Id="dir_6" Name="dist">
+          <Directory Id="dir_7" Name="win-unpacked">
+            <Directory Id="dir_8" Name="resources">
+              <Directory Id="dir_9" Name="bin">
+              </Directory>
+            </Directory>
+          </Directory>
         </Directory>
-        <Directory Id="dir_7" Name="ui">
+        <Directory Id="dir_10" Name="extension">
+        </Directory>
+        <Directory Id="dir_11" Name="ui">
         </Directory>
 
       </Directory>
@@ -85,38 +93,44 @@
       <Component Id="cmp_10" Guid="*" Directory="dir_5">
         <File Id="fil_10" Source="db\hf_models.db" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_11" Guid="*" Directory="dir_6">
-        <File Id="fil_11" Source="extension\background.js" KeyPath="yes" />
+      <Component Id="cmp_11" Guid="*" Directory="dir_9">
+        <File Id="fil_11" Source="dist\win-unpacked\resources\bin\cli.exe" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_12" Guid="*" Directory="dir_6">
-        <File Id="fil_12" Source="extension\content.js" KeyPath="yes" />
+      <Component Id="cmp_12" Guid="*" Directory="dir_9">
+        <File Id="fil_12" Source="dist\win-unpacked\resources\bin\clibrowser.exe" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_13" Guid="*" Directory="dir_6">
-        <File Id="fil_13" Source="extension\manifest.json" KeyPath="yes" />
+      <Component Id="cmp_13" Guid="*" Directory="dir_10">
+        <File Id="fil_13" Source="extension\background.js" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_14" Guid="*" Directory="dir_6">
-        <File Id="fil_14" Source="extension\sidepanel.html" KeyPath="yes" />
+      <Component Id="cmp_14" Guid="*" Directory="dir_10">
+        <File Id="fil_14" Source="extension\content.js" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_15" Guid="*" Directory="dir_6">
-        <File Id="fil_15" Source="extension\sidepanel.js" KeyPath="yes" />
+      <Component Id="cmp_15" Guid="*" Directory="dir_10">
+        <File Id="fil_15" Source="extension\manifest.json" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_16" Guid="*" Directory="dir_6">
-        <File Id="fil_16" Source="extension\styles.css" KeyPath="yes" />
+      <Component Id="cmp_16" Guid="*" Directory="dir_10">
+        <File Id="fil_16" Source="extension\sidepanel.html" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_17" Guid="*" Directory="INSTALLFOLDER">
-        <File Id="fil_17" Source="generate_wix.js" KeyPath="yes" />
+      <Component Id="cmp_17" Guid="*" Directory="dir_10">
+        <File Id="fil_17" Source="extension\sidepanel.js" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_18" Guid="*" Directory="INSTALLFOLDER">
-        <File Id="fil_18" Source="README.md" KeyPath="yes" />
+      <Component Id="cmp_18" Guid="*" Directory="dir_10">
+        <File Id="fil_18" Source="extension\styles.css" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_19" Guid="*" Directory="dir_7">
-        <File Id="fil_19" Source="ui\app.js" KeyPath="yes" />
+      <Component Id="cmp_19" Guid="*" Directory="INSTALLFOLDER">
+        <File Id="fil_19" Source="generate_wix.js" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_20" Guid="*" Directory="dir_7">
-        <File Id="fil_20" Source="ui\index.html" KeyPath="yes" />
+      <Component Id="cmp_20" Guid="*" Directory="INSTALLFOLDER">
+        <File Id="fil_20" Source="README.md" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_21" Guid="*" Directory="dir_7">
-        <File Id="fil_21" Source="ui\styles.css" KeyPath="yes" />
+      <Component Id="cmp_21" Guid="*" Directory="dir_11">
+        <File Id="fil_21" Source="ui\app.js" KeyPath="yes" />
+      </Component>
+      <Component Id="cmp_22" Guid="*" Directory="dir_11">
+        <File Id="fil_22" Source="ui\index.html" KeyPath="yes" />
+      </Component>
+      <Component Id="cmp_23" Guid="*" Directory="dir_11">
+        <File Id="fil_23" Source="ui\styles.css" KeyPath="yes" />
       </Component>
     </ComponentGroup>
   </Package>

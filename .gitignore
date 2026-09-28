@@ -40,3 +40,4 @@ __pycache__/
 *.msi
 IDE/HugOS.msi
 IDE/cli.exe
+browser/dist/

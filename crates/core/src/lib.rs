@@ -14,8 +14,9 @@ pub use providers::{create_provider, LLMProvider, ModelConfig, ProviderResult};
 pub use task_handler::ComprehensiveTaskHandler;
 pub use task_processor::UniversalTaskProcessor;
 pub use web_research::{
-    live_web_search, run_deep_research, run_web_agent, run_web_search_only, IndexedDocument,
-    IndexedMatch, SearchResult, TermPosting, WebAgentResult, WebSearchIndex,
+    live_web_search, parse_arxiv_atom, run_deep_research, run_web_agent, run_web_search_only,
+    search_arxiv, IndexedDocument, IndexedMatch, SearchResult, TermPosting, WebAgentResult,
+    WebSearchIndex,
 };
 pub use browser::{
     AgentGoal, AgentState, AutonomousBrowserAgent, BrowserAction, BrowserActionResult,
