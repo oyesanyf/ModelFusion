@@ -3794,26 +3794,144 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
   padding-right: 6px;
 }
 
+.chat-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.chat-item-run,
 .chat-item-delete {
   background: transparent;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
   opacity: 0;
-  padding: 2px 4px;
+  padding: 2px 5px;
   border-radius: 4px;
-  transition: opacity 0.15s ease, color 0.15s ease;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 
+.chat-history-item:hover .chat-item-run,
 .chat-history-item:hover .chat-item-delete {
-  opacity: 0.7;
+  opacity: 0.75;
+}
+
+.chat-item-run:hover {
+  opacity: 1 !important;
+  color: var(--accent-color);
+  background: rgba(16, 163, 127, 0.12);
 }
 
 .chat-item-delete:hover {
   opacity: 1 !important;
   color: var(--error-color);
-  background: rgba(239, 68, 68, 0.1);
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.user-bubble-actions,
+.assistant-bubble-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.bubble-action-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  line-height: 1.2;
+}
+
+.bubble-action-btn:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+.bubble-action-btn.btn-run-prompt:hover {
+  color: #10a37f;
+  border-color: #10a37f;
+}
+
+.pending-prompt-card {
+  margin: 10px 0 16px;
+  padding: 12px 16px;
+  background: rgba(234, 179, 8, 0.08);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: fadeIn 0.2s ease;
+}
+
+.pending-prompt-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #eab308;
+}
+
+.pending-prompt-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.pending-prompt-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn-pending-run {
+  background: var(--accent-color);
+  color: #ffffff;
+  border: none;
+  padding: 5px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+
+.btn-pending-run:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.btn-pending-edit {
+  background: var(--bg-capsule);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.15s ease;
+}
+
+.btn-pending-edit:hover {
+  background: var(--hover-bg);
 }
 
 /* -------------------------------------------------------------
