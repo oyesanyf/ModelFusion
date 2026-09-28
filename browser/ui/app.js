@@ -84,6 +84,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnCancelSettings = document.getElementById('btn-cancel-settings');
   const btnSaveSettings = document.getElementById('btn-save-settings');
   const btnResetSettings = document.getElementById('btn-reset-settings');
+  const btnTestGemini = document.getElementById('btn-test-gemini');
+  const resultTestGemini = document.getElementById('result-test-gemini');
   const btnTestOllama = document.getElementById('btn-test-ollama');
   const resultTestOllama = document.getElementById('result-test-ollama');
   const btnTestIpc = document.getElementById('btn-test-ipc');
@@ -111,6 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Default Settings Schema
   const DEFAULT_SETTINGS = {
+    geminiApiKey: '',
     ollamaUrl: 'http://127.0.0.1:11434',
     ipcUrl: 'http://127.0.0.1:5000',
     cdpPort: 9222,
@@ -435,6 +438,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (el) el.checked = !!val;
     };
 
+    setVal('setting-gemini-key', s.geminiApiKey || localStorage.getItem('hugos_gemini_api_key') || '');
     setVal('setting-ollama-url', s.ollamaUrl);
     setVal('setting-ipc-url', s.ipcUrl);
     setVal('setting-cdp-port', s.cdpPort);
@@ -527,7 +531,15 @@ document.addEventListener('DOMContentLoaded', () => {
       return el ? el.checked : fallback;
     };
 
+    const gemKey = getVal('setting-gemini-key', '').trim();
+    if (gemKey) {
+      localStorage.setItem('hugos_gemini_api_key', gemKey);
+    } else {
+      localStorage.removeItem('hugos_gemini_api_key');
+    }
+
     currentSettings = {
+      geminiApiKey: gemKey,
       ollamaUrl: getVal('setting-ollama-url', DEFAULT_SETTINGS.ollamaUrl).trim(),
       ipcUrl: getVal('setting-ipc-url', DEFAULT_SETTINGS.ipcUrl).trim(),
       cdpPort: getNum('setting-cdp-port', DEFAULT_SETTINGS.cdpPort),
@@ -2190,6 +2202,53 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Test Google Gemini API Key
+  if (btnTestGemini) {
+    btnTestGemini.addEventListener('click', async () => {
+      const keyInput = document.getElementById('setting-gemini-key');
+      const key = (keyInput ? keyInput.value : (currentSettings.geminiApiKey || localStorage.getItem('hugos_gemini_api_key') || '')).trim();
+      if (!key) {
+        if (resultTestGemini) {
+          resultTestGemini.className = 'test-result error';
+          resultTestGemini.textContent = '✗ Please enter a Google Gemini API key';
+          resultTestGemini.style.display = 'inline-block';
+        }
+        return;
+      }
+      if (resultTestGemini) {
+        resultTestGemini.className = 'test-result';
+        resultTestGemini.textContent = 'Verifying with Google Gemini API...';
+        resultTestGemini.style.display = 'inline-block';
+      }
+
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`);
+        if (res.ok) {
+          const data = await res.json();
+          const gemModels = (data.models || []).filter(m => m.name && m.name.includes('gemini'));
+          if (resultTestGemini) {
+            resultTestGemini.className = 'test-result success';
+            resultTestGemini.textContent = `✓ Valid Key (${gemModels.length} Gemini models accessible)`;
+          }
+          localStorage.setItem('hugos_gemini_api_key', key);
+          currentSettings.geminiApiKey = key;
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          const errMsg = errData.error && errData.error.message ? errData.error.message : `HTTP ${res.status}`;
+          if (resultTestGemini) {
+            resultTestGemini.className = 'test-result error';
+            resultTestGemini.textContent = `✗ Verification failed: ${errMsg}`;
+          }
+        }
+      } catch (err) {
+        if (resultTestGemini) {
+          resultTestGemini.className = 'test-result error';
+          resultTestGemini.textContent = `✗ Network error: ${err.message}`;
+        }
+      }
+    });
+  }
+
   // Test Ollama Connection
   if (btnTestOllama) {
     btnTestOllama.addEventListener('click', async () => {
@@ -2900,7 +2959,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let authorDisplayTitle = 'HugOS AI';
     let authorDisplaySub = `(${modelToUse}${hasImages ? ' • Vision' : ''})`;
 
-    if (isFusionMode) {
+    if (modelToUse.toLowerCase().startsWith('gemini')) {
+      authorDisplayTitle = 'Google Gemini';
+      authorDisplaySub = `(${modelToUse} • Cloud Credits)`;
+    } else if (isFusionMode) {
       authorDisplayTitle = 'ModelFusion AI';
       if (modelToUse === 'fast_fusion') {
         authorDisplaySub = '(Speculative Consensus: qwen2.5:7b + deepseek-r1:1.5b)';
@@ -2923,7 +2985,7 @@ document.addEventListener('DOMContentLoaded', () => {
       assistantBubble.className = 'msg-bubble assistant-bubble streaming';
       assistantBubble.innerHTML = `
         <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
-          <span>${isFusionMode ? '✨' : '🌐'}</span> <span>${authorDisplayTitle}</span>
+          <span>${modelToUse.toLowerCase().startsWith('gemini') ? '✨' : (isFusionMode ? '✨' : '🌐')}</span> <span>${authorDisplayTitle}</span>
           <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">${authorDisplaySub}</span>
         </div>
         <div class="bubble-content" style="color: var(--text-muted); font-style: italic;">
@@ -2956,6 +3018,125 @@ document.addEventListener('DOMContentLoaded', () => {
     responseLine.className = 'term-line model-response';
     if (terminalScreen) {
       terminalScreen.appendChild(responseLine);
+    }
+
+    // Google Gemini Direct Cloud Execution
+    if (modelToUse.toLowerCase().startsWith('gemini')) {
+      const geminiKey = (currentSettings.geminiApiKey || localStorage.getItem('hugos_gemini_api_key') || '').trim();
+      if (!geminiKey) {
+        if (statusCtrl) statusCtrl.stop();
+        renderErrorCard(
+          assistantBubble,
+          '🔑 Google Gemini API Key Required',
+          'You selected Google Gemini, but no API key is configured. Please enter your Gemini API key in Settings (⚙️) under Models, or run `@agent key gemini <API_KEY>`.'
+        );
+        setChatRunningState(false);
+        return;
+      }
+
+      try {
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelToUse)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(geminiKey)}`;
+        const parts = [{ text: userPrompt }];
+        if (hasImages && Array.isArray(options.images)) {
+          for (const img of options.images) {
+            if (typeof img === 'string' && img.startsWith('data:image/')) {
+              const [header, b64] = img.split(';base64,');
+              const mimeType = header.replace('data:', '');
+              parts.push({
+                inline_data: {
+                  mime_type: mimeType,
+                  data: b64
+                }
+              });
+            }
+          }
+        }
+
+        const geminiBody = {
+          contents: [{ role: 'user', parts }],
+          generationConfig: {
+            temperature: tempToUse,
+            maxOutputTokens: maxTokensToUse
+          }
+        };
+        if (systemPrompt) {
+          geminiBody.systemInstruction = {
+            parts: [{ text: systemPrompt }]
+          };
+        }
+
+        const gRes = await fetch(geminiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(geminiBody),
+          signal: currentAbortController ? currentAbortController.signal : undefined
+        });
+
+        if (!gRes.ok) {
+          const errText = await gRes.text().catch(() => '');
+          let msg = `HTTP ${gRes.status}`;
+          try {
+            const errObj = JSON.parse(errText);
+            if (errObj.error && errObj.error.message) msg = errObj.error.message;
+          } catch (_) {
+            if (errText) msg = errText;
+          }
+          throw new Error(msg);
+        }
+
+        if (statusCtrl) statusCtrl.stop();
+        if (bubbleContent) bubbleContent.innerHTML = '';
+
+        let fullText = '';
+        const reader = gRes.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('data:')) {
+              const dataStr = trimmed.slice(5).trim();
+              if (dataStr) {
+                try {
+                  const dataJson = JSON.parse(dataStr);
+                  const chunkText = dataJson.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                  if (chunkText) {
+                    fullText += chunkText;
+                    if (bubbleContent) {
+                      bubbleContent.innerHTML = renderMarkdown(fullText);
+                      if (currentSettings.autoScroll !== false && chatMessages) {
+                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                      }
+                    }
+                    if (responseLine) {
+                      responseLine.textContent = fullText;
+                      if (currentSettings.autoScroll !== false && terminalScreen) {
+                        terminalScreen.scrollTop = terminalScreen.scrollHeight;
+                      }
+                    }
+                  }
+                } catch (_) {}
+              }
+            }
+          }
+        }
+
+        if (assistantBubble) assistantBubble.classList.remove('streaming');
+        setChatRunningState(false);
+        return;
+      } catch (geminiErr) {
+        if (statusCtrl) statusCtrl.stop();
+        renderErrorCard(assistantBubble, '⚠️ Google Gemini Request Failed', geminiErr.message);
+        setChatRunningState(false);
+        return;
+      }
     }
 
     const messagePayload = {
@@ -4018,6 +4199,36 @@ document.addEventListener('DOMContentLoaded', () => {
       await window.abortBrowserAgent(currentAgentId);
       return;
     }
+
+    // 0.1 Cloud Provider API Key Management (@agent key gemini <KEY>)
+    if (lower.startsWith('@agent key gemini ') || lower.startsWith('/key gemini ') || lower.startsWith('/keys gemini ') || lower.startsWith('@agent keys gemini ')) {
+      const key = cmd.replace(/^(@agent (?:key|keys) gemini|\/(?:key|keys) gemini)\s+/i, '').trim();
+      if (key) {
+        localStorage.setItem('hugos_gemini_api_key', key);
+        currentSettings.geminiApiKey = key;
+        const keyInput = document.getElementById('setting-gemini-key');
+        if (keyInput) keyInput.value = key;
+        termLog('🔑 Google Gemini API key saved to local settings and persisted.', 'success');
+        
+        if (chatWelcome) chatWelcome.classList.add('hidden');
+        if (chatMessages) {
+          const confBubble = document.createElement('div');
+          confBubble.className = 'msg-bubble assistant-bubble';
+          confBubble.innerHTML = `
+            <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: #10a37f; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+              <span>🔑</span> <span>ModelFusion Cloud Keys</span>
+            </div>
+            <div class="bubble-content" style="color: var(--text-primary); line-height: 1.5;">
+              <p>✅ <strong>Google Gemini API Key Configured Successfully!</strong></p>
+              <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Your Gemini key has been saved to your browser session and settings. You can now choose <code>gemini-2.0-flash</code> or <code>gemini-1.5-pro</code> in Settings (⚙️) or execute prompts directly with your Google Gemini cloud credits.</p>
+            </div>
+          `;
+          chatMessages.appendChild(confBubble);
+          if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        return;
+      }
+    }
     if (lower === '/browser status' || lower === '@agent browser status') {
       const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
       try {
@@ -4723,6 +4934,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     { cmd: '@agent updatedb', icon: '🚀', label: 'Full Registry Crawler', desc: 'Crawl all 2M+ models from Hugging Face Hub' },
     { cmd: '@agent summarize', icon: '📑', label: 'Summarize Page', desc: 'Extract and summarize active web page content' },
     { cmd: '@agent som', icon: '🎯', label: 'Set-of-Mark Vision', desc: 'Numeric visual element grounding with 90% token reduction' },
+    { cmd: '@agent key gemini ', icon: '🔑', label: 'Google Gemini Key', desc: 'Configure Google Gemini API key to use Gemini 2.0 Flash / 1.5 Pro' },
     { cmd: '@agent arxiv ', icon: '📚', label: 'arXiv Papers', desc: 'Direct search of arXiv scientific preprints and research papers' },
     { cmd: '@agent search ', icon: '🔎', label: 'Web Search Grounding', desc: 'Live web search grounding with verified citations' },
     { cmd: '@agent web-agent ', icon: '🌐', label: 'Web Agent', desc: 'Search internet, index data, and correlate with LLM (256 tokens return)' },
