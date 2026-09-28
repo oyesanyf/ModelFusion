@@ -58,3 +58,30 @@ if os.path.exists(ui_dst):
         except Exception as e:
             print(f"[ERROR COPYING UI] {src_ui} -> {dst_ui}: {e}")
 
+# Mirror launcher scripts
+launcher_dst = os.path.join(localappdata, r"HugOS Browser\Chromium-win32-x64")
+if os.path.exists(launcher_dst):
+    for f in ["hugos-browser.bat", "hugos-browser.vbs", "run_hidden.vbs"]:
+        src_l = os.path.join(os.path.abspath("browser/Chromium-win32-x64"), f)
+        dst_l = os.path.join(launcher_dst, f)
+        if os.path.exists(src_l):
+            try:
+                shutil.copy2(src_l, dst_l)
+                print(f"[COPIED LAUNCHER] {src_l} -> {dst_l}")
+            except Exception as e:
+                print(f"[ERROR COPYING LAUNCHER] {src_l} -> {dst_l}: {e}")
+
+# Mirror extension files
+ext_dst = os.path.join(localappdata, r"HugOS Browser\extension")
+if os.path.exists(ext_dst):
+    for f in ["background.js", "content.js", "manifest.json", "sidepanel.html", "sidepanel.js", "styles.css"]:
+        src_e = os.path.join(os.path.abspath("browser/extension"), f)
+        dst_e = os.path.join(ext_dst, f)
+        if os.path.exists(src_e):
+            try:
+                shutil.copy2(src_e, dst_e)
+                print(f"[COPIED EXTENSION] {src_e} -> {dst_e}")
+            except Exception as e:
+                print(f"[ERROR COPYING EXTENSION] {src_e} -> {dst_e}: {e}")
+
+
