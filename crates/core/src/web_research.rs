@@ -371,6 +371,174 @@ pub async fn live_web_search(query: &str, max_results: usize) -> Result<Vec<Sear
     Ok(results)
 }
 
+/// Helper to extract text content inside `<tag>` or `<tag ...>` in an XML chunk.
+fn extract_tag_content(block: &str, tag: &str) -> Option<String> {
+    let open_pat = format!("<{}", tag);
+    let close_pat = format!("</{}>", tag);
+    let mut cursor = 0;
+    while let Some(pos) = block[cursor..].find(&open_pat) {
+        let tag_start = cursor + pos;
+        let rest = &block[tag_start + open_pat.len()..];
+        if let Some(c) = rest.chars().next() {
+            if c == '>' || c.is_whitespace() || c == '/' {
+                if let Some(gt) = rest.find('>') {
+                    let content_start = tag_start + open_pat.len() + gt + 1;
+                    if let Some(close_pos) = block[content_start..].find(&close_pat) {
+                        return Some(block[content_start..content_start + close_pos].to_string());
+                    }
+                }
+            }
+        }
+        cursor = tag_start + open_pat.len();
+    }
+    None
+}
+
+/// Helper to extract up to `max_authors` author names from arXiv entry `<author>` tags.
+fn extract_arxiv_authors(block: &str, max_authors: usize) -> Vec<String> {
+    let mut authors = Vec::new();
+    let mut cursor = 0;
+    while let Some(author_start) = block[cursor..].find("<author>") {
+        let abs_start = cursor + author_start;
+        if let Some(author_end) = block[abs_start..].find("</author>") {
+            let author_block = &block[abs_start..abs_start + author_end];
+            if let Some(name) = extract_tag_content(author_block, "name") {
+                let clean = clean_html_entities(&name);
+                if !clean.is_empty() {
+                    authors.push(clean);
+                }
+            }
+            cursor = abs_start + author_end + "</author>".len();
+            if authors.len() >= max_authors {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    authors
+}
+
+/// Parses an arXiv Atom XML feed into a vector of SearchResult items.
+pub fn parse_arxiv_atom(xml: &str) -> Vec<SearchResult> {
+    let mut results = Vec::new();
+    for entry_chunk in xml.split("<entry>").skip(1) {
+        let block = match entry_chunk.find("</entry>") {
+            Some(end) => &entry_chunk[..end],
+            None => entry_chunk,
+        };
+
+        let raw_title = extract_tag_content(block, "title").unwrap_or_default();
+        let clean_title = clean_html_entities(&raw_title);
+        if clean_title.is_empty() {
+            continue;
+        }
+
+        let raw_id = extract_tag_content(block, "id").unwrap_or_default();
+        let clean_id = raw_id.trim();
+        let url = if clean_id.starts_with("http://arxiv.org/abs/") {
+            clean_id.replacen("http://", "https://", 1)
+        } else if clean_id.starts_with("https://arxiv.org/abs/") {
+            clean_id.to_string()
+        } else if clean_id.starts_with("http://") {
+            clean_id.replacen("http://", "https://", 1)
+        } else if clean_id.contains("arxiv.org") {
+            format!("https://{}", clean_id.trim_start_matches("http://").trim_start_matches("https://"))
+        } else if !clean_id.is_empty() {
+            format!("https://arxiv.org/abs/{}", clean_id)
+        } else {
+            String::new()
+        };
+
+        if url.is_empty() {
+            continue;
+        }
+
+        let raw_summary = extract_tag_content(block, "summary").unwrap_or_default();
+        let clean_summary = clean_html_entities(&raw_summary);
+
+        let authors = extract_arxiv_authors(block, 3);
+        let authors_str = authors.join(", ");
+
+        let year = extract_tag_content(block, "published")
+            .and_then(|pub_date| {
+                let trimmed = pub_date.trim();
+                if trimmed.len() >= 4 && trimmed[..4].chars().all(|c| c.is_ascii_digit()) {
+                    Some(trimmed[..4].to_string())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+
+        let formatted_title = match (!authors_str.is_empty(), !year.is_empty()) {
+            (true, true) => format!("[arXiv] {} ({}, {})", clean_title, authors_str, year),
+            (true, false) => format!("[arXiv] {} ({})", clean_title, authors_str),
+            (false, true) => format!("[arXiv] {} ({})", clean_title, year),
+            (false, false) => format!("[arXiv] {}", clean_title),
+        };
+
+        results.push(SearchResult {
+            title: formatted_title,
+            url,
+            snippet: clean_summary,
+        });
+    }
+    results
+}
+
+/// Searches the arXiv API for preprints and scientific papers.
+/// Gracefully handles errors and timeouts, returning an empty vector on failure.
+pub async fn search_arxiv(query: &str, max_results: usize) -> Result<Vec<SearchResult>> {
+    let clean_q = query.trim();
+    if clean_q.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let encoded_query = encode_query(clean_q);
+    let limit = max_results.max(1);
+    let url = format!(
+        "https://export.arxiv.org/api/query?search_query=all:{}&start=0&max_results={}",
+        encoded_query, limit
+    );
+
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .user_agent("ModelFusion-DeepResearch/1.0 (https://github.com/oyesanyf/ModelFusion)")
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("Failed to create arXiv reqwest client: {}", e);
+            return Ok(Vec::new());
+        }
+    };
+
+    let resp = match client.get(&url).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            log::warn!("arXiv API request failed for query '{}': {}", clean_q, e);
+            return Ok(Vec::new());
+        }
+    };
+
+    if !resp.status().is_success() {
+        log::warn!("arXiv API HTTP error: {}", resp.status());
+        return Ok(Vec::new());
+    }
+
+    let body = match resp.text().await {
+        Ok(b) => b,
+        Err(e) => {
+            log::warn!("Failed reading arXiv API response text: {}", e);
+            return Ok(Vec::new());
+        }
+    };
+
+    Ok(parse_arxiv_atom(&body))
+}
+
+
 /// Auto-detects the best local reasoning model available in Ollama (DeepSeek-R1 or Qwen 2.5).
 pub async fn detect_best_reasoning_model() -> String {
     let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
@@ -540,63 +708,34 @@ Guidelines:
     Ok(fallback_report)
 }
 
-/// Executes research: attempts the Python smolagents / web research script first,
-/// falling back to native Rust search + reasoning synthesis.
+/// Executes research: searches the live web and arXiv scientific papers in parallel,
+/// indexes all retrieved documents into WebSearchIndex, and synthesizes an authoritative report.
 pub async fn run_deep_research(
     query: &str,
     max_results: usize,
     model_override: Option<&str>,
 ) -> Result<String> {
-    // 1. Try invoking Python web_research_agent.py if available
-    let mut script_candidates = vec![
-        std::path::PathBuf::from("src/scripts/web_research_agent.py"),
-        std::path::PathBuf::from("../src/scripts/web_research_agent.py"),
-        std::path::PathBuf::from("../../src/scripts/web_research_agent.py"),
-    ];
+    println!("🔍 Searching the internet & arXiv for \"{}\"...", query);
+    let (web_res, arxiv_res) = tokio::join!(
+        live_web_search(query, max_results),
+        search_arxiv(query, 5)
+    );
+    let web_results = web_res.unwrap_or_default();
+    let arxiv_results = arxiv_res.unwrap_or_default();
+    let n_web = web_results.len();
+    let m_arxiv = arxiv_results.len();
+    println!(
+        "Retrieved {} web sources and {} arXiv papers. Correlating results with LLM...",
+        n_web, m_arxiv
+    );
 
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(exe_dir) = exe_path.parent() {
-            script_candidates.push(exe_dir.join("src").join("scripts").join("web_research_agent.py"));
-            if let Some(install_root) = exe_dir.parent() {
-                script_candidates.push(install_root.join("src").join("scripts").join("web_research_agent.py"));
-                script_candidates.push(install_root.join("resources").join("app").join("src").join("scripts").join("web_research_agent.py"));
-            }
-        }
-    }
+    let mut combined_results = web_results;
+    combined_results.extend(arxiv_results);
 
-    let mut py_script = None;
-    for c in &script_candidates {
-        if c.exists() {
-            py_script = Some(c.clone());
-            break;
-        }
-    }
+    let mut search_index = WebSearchIndex::new();
+    search_index.add_search_results(&combined_results);
 
-    if let Some(script) = py_script {
-        let mut cmd = tokio::process::Command::new("python");
-        #[cfg(windows)]
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-        cmd.arg(&script).arg(query);
-        cmd.arg("--max-results").arg(max_results.to_string());
-        if let Some(m) = model_override {
-            cmd.arg("--model").arg(m);
-        }
-
-        if let Ok(output) = cmd.output().await {
-            if output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !stdout.is_empty() && !stdout.starts_with("⚠️") {
-                    return Ok(stdout);
-                }
-            }
-        }
-    }
-
-    // 2. Resilient Native Rust Execution:
-    println!("🔍 Searching the internet for: \"{}\"...", query);
-    let search_results = live_web_search(query, max_results).await?;
-    println!("🧠 Correlating results with LLM...");
-    synthesize_research(query, &search_results, model_override).await
+    synthesize_research(query, &combined_results, model_override).await
 }
 
 /// Quick live search only: retrieves results and formats markdown links with snippets.
@@ -688,9 +827,23 @@ pub async fn run_web_agent(
         }
     };
 
-    // Phase 2: Live Web Retrieval
-    println!("🔍 Searching the internet for \"{}\"...", search_query);
-    let search_results = live_web_search(&search_query, 6).await.unwrap_or_default();
+    // Phase 2: Live Web & arXiv Retrieval
+    println!("🔍 Searching the internet & arXiv for \"{}\"...", search_query);
+    let (web_res, arxiv_res) = tokio::join!(
+        live_web_search(&search_query, 6),
+        search_arxiv(&search_query, 5)
+    );
+    let web_results = web_res.unwrap_or_default();
+    let arxiv_results = arxiv_res.unwrap_or_default();
+    let n_web = web_results.len();
+    let m_arxiv = arxiv_results.len();
+    println!(
+        "Retrieved {} web sources and {} arXiv papers. Correlating results with LLM...",
+        n_web, m_arxiv
+    );
+
+    let mut search_results = web_results;
+    search_results.extend(arxiv_results);
 
     // Phase 3: Index all retrieved data into WebSearchIndex
     println!("📊 Indexing retrieved documents into WebSearchIndex...");
@@ -834,5 +987,54 @@ mod tests {
         let agent_res = res.unwrap();
         assert_eq!(agent_res.tokens_returned, 256); // 256 tokens must be default return!
         assert!(!agent_res.search_query.is_empty());
+    }
+
+    #[test]
+    fn test_parse_arxiv_atom_entry() {
+        let sample_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>http://arxiv.org/abs/2303.08774v1</id>
+    <published>2023-03-15T17:59:44Z</published>
+    <title>  GPT-4 Technical
+       Report  </title>
+    <summary>   We present GPT-4, a large multimodal model
+ capable of processing image and text inputs.  </summary>
+    <author><name>OpenAI</name></author>
+    <author><name>Josh Achiam</name></author>
+    <author><name>Steven Adler</name></author>
+    <author><name>Fourth Author</name></author>
+  </entry>
+</feed>"#;
+
+        let results = parse_arxiv_atom(sample_xml);
+        assert_eq!(results.len(), 1);
+        let first = &results[0];
+        assert_eq!(first.url, "https://arxiv.org/abs/2303.08774v1");
+        assert_eq!(first.title, "[arXiv] GPT-4 Technical Report (OpenAI, Josh Achiam, Steven Adler, 2023)");
+        assert_eq!(first.snippet, "We present GPT-4, a large multimodal model capable of processing image and text inputs.");
+    }
+
+    #[test]
+    fn test_web_search_index_with_arxiv_results() {
+        let mut index = WebSearchIndex::new();
+        let arxiv_res = SearchResult {
+            title: "[arXiv] Deep Residual Learning for Image Recognition (Kaiming He, Xiangyu Zhang, 2015)".to_string(),
+            url: "https://arxiv.org/abs/1512.03385".to_string(),
+            snippet: "Deeper neural networks are more difficult to train. We present a residual learning framework to ease training.".to_string(),
+        };
+        let web_res = SearchResult {
+            title: "ResNet Architecture Overview".to_string(),
+            url: "https://example.com/resnet".to_string(),
+            snippet: "ResNet introduced skip connections allowing networks up to 152 layers.".to_string(),
+        };
+
+        index.add_search_results(&[web_res, arxiv_res]);
+        let summary = index.index_summary();
+        assert_eq!(summary["total_documents"], 2);
+
+        let matches = index.search("residual learning");
+        assert!(!matches.is_empty());
+        assert!(matches.iter().any(|m| m.url == "https://arxiv.org/abs/1512.03385"));
     }
 }

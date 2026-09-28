@@ -1616,6 +1616,12 @@ struct Args {
     search_index: Option<String>,
 
     #[arg(
+        long,
+        help = "Search arXiv scientific papers and preprints directly"
+    )]
+    arxiv: Option<String>,
+
+    #[arg(
         long = "max-tokens",
         alias = "num-predict",
         help = "Token limit for model response generation (defaults to 256 for grounded synthesis)"
@@ -2171,7 +2177,20 @@ where
         return args;
     }
 
+    if (verb == "@agent" || verb == "agent") && args.len() > 2 {
+        let sub = args[2].to_lowercase();
+        let sub_clean = sub.trim_start_matches('/');
+        if sub_clean == "arxiv" {
+            args.remove(1);
+            args[1] = "--arxiv".to_string();
+            return args;
+        }
+    }
+
     match verb.as_str() {
+        "arxiv" | "/arxiv" | "@agent/arxiv" | "@agent:arxiv" => {
+            args[1] = "--arxiv".to_string();
+        }
         "web-agent" | "webagent" => {
             args[1] = "--web-agent".to_string();
         }
@@ -2762,11 +2781,38 @@ async fn run(args: Args) -> Result<()> {
         } else {
             q.trim()
         };
-        println!("🌐 Initiating Autonomous Deep Web Research for: \"{}\"...\n", topic);
-        println!("🔍 Searching the internet for \"{}\"...", topic);
-        println!("🧠 Correlating results with LLM...\n");
+        println!("🌐 Initiating Autonomous Deep Web & arXiv Research for: \"{}\"...\n", topic);
         let report = modelfusion_core::run_deep_research(topic, 8, args.model.as_deref()).await?;
         println!("{}", report);
+        return Ok(());
+    }
+
+    if let Some(ref _q) = args.arxiv {
+        let combined_q = match (&args.arxiv, &args.query) {
+            (Some(a), Some(pos)) if !pos.is_empty() => format!("{} {}", a, pos),
+            (Some(a), _) => a.clone(),
+            _ => String::new(),
+        };
+        let query = if combined_q.trim().is_empty() {
+            "large language models"
+        } else {
+            combined_q.trim()
+        };
+        println!("🔍 Searching arXiv for: \"{}\"...\n", query);
+        let results = modelfusion_core::search_arxiv(query, 8).await?;
+        if results.is_empty() {
+            println!("⚠️ No arXiv papers found for: \"{}\". Please check internet connectivity.", query);
+        } else {
+            println!("📚 Top arXiv Scientific Papers for: \"{}\"\n", query);
+            for (i, r) in results.iter().enumerate() {
+                println!("{}. **[{}]({})**", i + 1, r.title, r.url);
+                if !r.snippet.is_empty() {
+                    println!("   {}\n", r.snippet);
+                } else {
+                    println!();
+                }
+            }
+        }
         return Ok(());
     }
 
@@ -3552,7 +3598,7 @@ async fn run(args: Args) -> Result<()> {
 
         if let Ok(rq) = std::env::var("MODELFUSION_RESEARCH_QUERY") {
             if !rq.is_empty() {
-                println!("🌐 Initiating Autonomous Deep Web Research for: \"{}\"...\n", rq);
+                println!("🌐 Initiating Autonomous Deep Web & arXiv Research for: \"{}\"...\n", rq);
                 let report = modelfusion_core::run_deep_research(&rq, 8, args.model.as_deref()).await?;
                 println!("{}", report);
                 return Ok(());
@@ -3575,7 +3621,7 @@ async fn run(args: Args) -> Result<()> {
                 println!("{}", results);
                 return Ok(());
             } else {
-                println!("🌐 Initiating Autonomous Deep Web Research for: \"{}\"...\n", topic);
+                println!("🌐 Initiating Autonomous Deep Web & arXiv Research for: \"{}\"...\n", topic);
                 let report = modelfusion_core::run_deep_research(&topic, 8, args.model.as_deref()).await?;
                 println!("{}", report);
                 return Ok(());
@@ -5340,6 +5386,7 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
         "agenticloop" => Some("agentic-loop"),
         "graphindex" => Some("graph-index"),
         "pe" | "peheader" | "peheaderextraction" => Some("pe-header-extraction"),
+        "arxiv" | "arxivpaper" | "arxivpapers" => Some("arxiv"),
         "research" | "reseach" => Some("research"),
         "search" | "serarch" | "searchquery" | "serarchquery" => Some("search"),
         "analyzefile" => Some("analyze_file"),
@@ -7351,6 +7398,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         { "name": "search", "cmd": "@agent search ", "icon": "🔎", "category": "web", "label": "Web Search Grounding", "desc": "Live web search grounding with verified citations" },
                         { "name": "web_agent", "cmd": "@agent web-agent ", "icon": "🌐", "category": "web", "label": "Web Search Agent", "desc": "Search internet, build inverted index, and correlate results with LLM (256 tokens return)" },
                         { "name": "search_index", "cmd": "@agent search-index ", "icon": "📑", "category": "web", "label": "Search Index", "desc": "Build and query in-memory inverted search index over web data" },
+                        { "name": "arxiv", "cmd": "@agent arxiv ", "icon": "📚", "category": "web", "label": "arXiv Papers", "desc": "Direct search of arXiv scientific preprints and research papers" },
                         { "name": "goal", "cmd": "@agent goal ", "icon": "🎯", "category": "agent", "label": "Autonomous Goal", "desc": "Multi-turn autonomous goal-directed agent loop" },
                         { "name": "vision", "cmd": "@agent vision ", "icon": "👁️", "category": "vision", "label": "Vision Analysis", "desc": "Object detection, OCR, and visual Q&A" },
                         { "name": "code", "cmd": "@agent code ", "icon": "💻", "category": "code", "label": "Code Task", "desc": "Code generation, vulnerability scanning & refactoring" },
@@ -7859,6 +7907,57 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     Err(e) => {
                         let err_json = serde_json::json!({
                             "error": format!("Web search failed: {}", e),
+                            "query": query,
+                            "count": 0,
+                            "results": []
+                        });
+                        (serde_json::to_string(&err_json).unwrap_or_default(), 200, "OK")
+                    }
+                };
+
+                let response = format!(
+                    "HTTP/1.1 {} {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    status_code,
+                    status_text,
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Live arXiv Search Endpoint (/api/arxiv) ──
+            if request_path == "/api/arxiv" {
+                let (query, max_results) = parse_query_and_limit_from_request(&raw_request_uri, &request_json);
+                if query.is_empty() {
+                    let err_json = serde_json::json!({
+                        "error": "Query parameter 'q' or 'query' is required"
+                    });
+                    let err_body = serde_json::to_string(&err_json).unwrap_or_default();
+                    let response = format!(
+                        "HTTP/1.1 400 Bad Request\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        err_body.len(),
+                        err_body
+                    );
+                    let _ = socket.write_all(response.as_bytes()).await;
+                    let _ = socket.flush().await;
+                    return;
+                }
+
+                eprintln!("[SERVER] 📚 Live arXiv search request: query={:?}, max_results={}", query, max_results);
+                let (resp_body, status_code, status_text) = match modelfusion_core::search_arxiv(&query, max_results).await {
+                    Ok(results) => {
+                        let resp_json = serde_json::json!({
+                            "query": query,
+                            "count": results.len(),
+                            "results": results
+                        });
+                        (serde_json::to_string(&resp_json).unwrap_or_default(), 200, "OK")
+                    }
+                    Err(e) => {
+                        let err_json = serde_json::json!({
+                            "error": format!("arXiv search failed: {}", e),
                             "query": query,
                             "count": 0,
                             "results": []
@@ -9154,11 +9253,32 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                      "research" => {
                                          let topic = args_owned.trim();
                                          if topic.is_empty() {
-                                             (idx, "🌐 **ModelFusion Deep Web Research Agent**: Active & Operational (<1ms Fast Interception).\n\nSpecify a research topic:\n- `@agent --research <topic>`\n- `/research <topic>`\n\n*Example*: `/research latest advancements in small reasoning models`".to_string())
+                                             (idx, "🌐 **ModelFusion Deep Web & arXiv Research Agent**: Active & Operational (<1ms Fast Interception).\n\nSpecify a research topic:\n- `@agent --research <topic>`\n- `/research <topic>`\n\n*Example*: `/research latest advancements in small reasoning models`".to_string())
                                          } else {
                                              let report = modelfusion_core::run_deep_research(topic, 8, model_override_opt.as_deref()).await
                                                  .unwrap_or_else(|e| format!("⚠️ Research agent error: {}", e));
-                                             (idx, format!("🌐 **Deep Web Research Agent**\n\n{}", report))
+                                             (idx, format!("🌐 **Deep Web & arXiv Research Agent**\n\n{}", report))
+                                         }
+                                     },
+                                     "arxiv" => {
+                                         let query = args_owned.trim();
+                                         if query.is_empty() {
+                                             (idx, "📚 **ModelFusion arXiv Research**: Active & Operational (<1ms Fast Interception).\n\nSpecify a query or topic:\n- `@agent arxiv <query>`\n- `/arxiv <query>`\n\n*Example*: `/arxiv quantum error correction`".to_string())
+                                         } else {
+                                             match modelfusion_core::search_arxiv(query, 6).await {
+                                                 Ok(papers) if !papers.is_empty() => {
+                                                     let mut out = format!("📚 **arXiv Papers for: \"{}\"**\n\n", query);
+                                                     for (i, p) in papers.iter().enumerate() {
+                                                         out.push_str(&format!("{}. **[{}]({})**\n", i + 1, p.title, p.url));
+                                                         if !p.snippet.is_empty() {
+                                                             out.push_str(&format!("   {}\n\n", p.snippet));
+                                                         }
+                                                     }
+                                                     (idx, out)
+                                                 }
+                                                 Ok(_) => (idx, format!("⚠️ No arXiv papers found for: \"{}\".", query)),
+                                                 Err(e) => (idx, format!("⚠️ arXiv search error: {}", e)),
+                                             }
                                          }
                                      },
                                      "search" => {
@@ -10425,14 +10545,14 @@ sequenceDiagram
                             is_complex);
 
                         if let Some((is_search_only, topic)) = detect_natural_language_research(&user_msg_for_check) {
-                            eprintln!("[SERVER] 🌐 Intercepted natural language web research request: is_search={}, topic={:?}", is_search_only, topic);
+                            eprintln!("[SERVER] 🌐 Intercepted natural language web & arXiv research request: is_search={}, topic={:?}", is_search_only, topic);
                             if is_search_only {
                                 return modelfusion_core::run_web_search_only(&topic, 6).await
                                     .map(|res| format!("🔍 **Live Web Search**\n\n{}", res))
                                     .unwrap_or_else(|e| format!("⚠️ Web search error: {}", e));
                             } else {
                                 return modelfusion_core::run_deep_research(&topic, 8, model_override.as_deref()).await
-                                    .map(|rep| format!("🌐 **Deep Web Research Agent**\n\n{}", rep))
+                                    .map(|rep| format!("🌐 **Deep Web & arXiv Research Agent**\n\n{}", rep))
                                     .unwrap_or_else(|e| format!("⚠️ Research agent error: {}", e));
                             }
                         }
@@ -15988,6 +16108,27 @@ public class Pr {
 
         let res_sys = preprocess_cli_args(["cli", "--sys-info"]);
         assert_eq!(res_sys, vec!["cli".to_string(), "--sys-info".to_string()]);
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_arxiv() {
+        use super::preprocess_cli_args;
+        let res = preprocess_cli_args(["cli", "arxiv", "quantum computing"]);
+        assert_eq!(res, vec!["cli".to_string(), "--arxiv".to_string(), "quantum computing".to_string()]);
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_agent_arxiv() {
+        use super::preprocess_cli_args;
+        let res = preprocess_cli_args(["cli", "@agent", "arxiv", "machine learning"]);
+        assert_eq!(res, vec!["cli".to_string(), "--arxiv".to_string(), "machine learning".to_string()]);
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_slash_arxiv() {
+        use super::preprocess_cli_args;
+        let res = preprocess_cli_args(["cli", "/arxiv", "deep learning"]);
+        assert_eq!(res, vec!["cli".to_string(), "--arxiv".to_string(), "deep learning".to_string()]);
     }
 
     #[test]
