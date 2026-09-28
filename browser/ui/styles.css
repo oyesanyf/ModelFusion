@@ -769,6 +769,53 @@ body {
   box-shadow: 0 0 16px rgba(99, 102, 241, 0.4) !important;
 }
 
+/* Attachment Tray Actions & Smart Chips */
+.attachment-tray-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  width: 100%;
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.tray-action-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 11px;
+  cursor: pointer;
+  border: 1px solid var(--border-color, #334155);
+  background: var(--bg-secondary, #1e293b);
+  color: var(--text-primary, #e2e8f0);
+  transition: all 0.15s ease;
+  user-select: none;
+  line-height: 1.4;
+  font-family: inherit;
+}
+
+.tray-action-chip:hover {
+  border-color: var(--accent-color, #10a37f);
+  background: rgba(16, 163, 127, 0.12);
+  color: #ffffff;
+}
+
+.tray-action-chip.tray-run-btn {
+  background: #10a37f;
+  border-color: #10a37f;
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.tray-action-chip.tray-run-btn:hover {
+  background: #0e8e6e;
+  border-color: #0e8e6e;
+  transform: translateY(-1px);
+}
+
 /* Multimodal Model Fusion Banner */
 .fusion-banner {
   background: linear-gradient(135deg, rgba(30, 27, 75, 0.7), rgba(49, 14, 61, 0.7));
@@ -2694,25 +2741,34 @@ body.theme-warm .chat-input-box {
   box-shadow: 0 4px 22px rgba(0,0,0,0.1);
 }
 
+.floating-input-capsule.drag-over-input {
+  border-color: #10a37f !important;
+  box-shadow: 0 0 16px rgba(16, 163, 127, 0.45) !important;
+  background: rgba(16, 163, 127, 0.06) !important;
+}
+
 .capsule-btn.attach-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  background: transparent;
-  border: none;
-  font-size: 20px;
-  font-weight: 300;
-  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  font-size: 15px;
+  color: var(--text-primary, #e2e8f0);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  flex-shrink: 0;
 }
 
 .capsule-btn.attach-btn:hover {
-  background: var(--hover-bg);
-  color: var(--text-primary);
+  background: #10a37f;
+  border-color: #10a37f;
+  color: #ffffff;
+  transform: scale(1.08);
+  box-shadow: 0 2px 8px rgba(16, 163, 127, 0.35);
 }
 
 .floating-input-capsule textarea {
@@ -3894,6 +3950,27 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
   display: flex;
   gap: 8px;
   margin-top: 4px;
+}
+
+.btn-pending-file {
+  background: #10a37f;
+  color: #ffffff;
+  border: none;
+  padding: 5px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+  box-shadow: 0 1px 4px rgba(16, 163, 127, 0.3);
+}
+
+.btn-pending-file:hover {
+  background: #0e8e6e;
+  transform: translateY(-1px);
 }
 
 .btn-pending-run {

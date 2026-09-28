@@ -150,6 +150,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let currentSettings = { ...DEFAULT_SETTINGS };
   let attachedFiles = []; // Staged attachment objects: [{ id, name, size, type, content, isDataset }]
+  let pendingAutoCommand = null;
   let activeDirectives = new Map(); // Staged tool directives: Map<toolId, { id, cmd, category, label, icon }>
 
   // Navigation state
@@ -802,6 +803,154 @@ document.addEventListener('DOMContentLoaded', () => {
   // -----------------------------------------------------------------
   // Multimodal File Attachment & Preview Tray
   // -----------------------------------------------------------------
+  // -----------------------------------------------------------------
+  // Portable Executable (PE) Forensic Parser (In-Browser Binary Analysis)
+  // -----------------------------------------------------------------
+  function parsePeHeader(arrayBuffer) {
+    if (!arrayBuffer || arrayBuffer.byteLength < 64) return null;
+    try {
+      const dv = new DataView(arrayBuffer);
+      const dosMagic = dv.getUint16(0, false);
+      if (dosMagic !== 0x4D5A && dosMagic !== 0x5A4D) return null; // 'MZ'
+
+      const e_lfanew = dv.getUint32(0x3C, true);
+      if (e_lfanew + 24 > arrayBuffer.byteLength) return null;
+
+      const peSig = dv.getUint32(e_lfanew, true);
+      if (peSig !== 0x00004550) return null; // 'PE\0\0'
+
+      const machine = dv.getUint16(e_lfanew + 4, true);
+      const numberOfSections = dv.getUint16(e_lfanew + 6, true);
+      const timeDateStamp = dv.getUint32(e_lfanew + 8, true);
+      const sizeOfOptionalHeader = dv.getUint16(e_lfanew + 20, true);
+      const characteristics = dv.getUint16(e_lfanew + 22, true);
+      const isDll = (characteristics & 0x2000) !== 0;
+
+      let machineName = 'Unknown (0x' + machine.toString(16) + ')';
+      if (machine === 0x014c) machineName = 'x86 (32-bit)';
+      else if (machine === 0x8664) machineName = 'x64 (AMD64 64-bit)';
+      else if (machine === 0xaa64) machineName = 'ARM64';
+      else if (machine === 0x01c0) machineName = 'ARM';
+      else if (machine === 0x0200) machineName = 'Intel Itanium (IA-64)';
+
+      let timestampStr = '';
+      try {
+        timestampStr = new Date(timeDateStamp * 1000).toUTCString();
+      } catch (e) {
+        timestampStr = `0x${timeDateStamp.toString(16)}`;
+      }
+
+      const optOffset = e_lfanew + 24;
+      let optMagic = 0;
+      let subsystem = 0;
+      let subsystemName = 'Unknown';
+      if (sizeOfOptionalHeader > 0 && optOffset + 70 <= arrayBuffer.byteLength) {
+        optMagic = dv.getUint16(optOffset, true);
+        subsystem = dv.getUint16(optOffset + 68, true);
+        if (subsystem === 1) subsystemName = 'Native / Device Driver';
+        else if (subsystem === 2) subsystemName = 'Windows GUI (Graphical)';
+        else if (subsystem === 3) subsystemName = 'Windows CUI (Console)';
+        else if (subsystem === 7) subsystemName = 'POSIX CUI';
+        else if (subsystem === 9) subsystemName = 'Windows CE GUI';
+        else if (subsystem === 10) subsystemName = 'EFI Application';
+        else if (subsystem === 14) subsystemName = 'Xbox';
+        else subsystemName = `Subsystem ${subsystem}`;
+      }
+
+      const sectionTableOffset = optOffset + sizeOfOptionalHeader;
+      const sections = [];
+      for (let i = 0; i < numberOfSections; i++) {
+        const secOffset = sectionTableOffset + (i * 40);
+        if (secOffset + 40 > arrayBuffer.byteLength) break;
+        let nameChars = [];
+        for (let b = 0; b < 8; b++) {
+          const c = dv.getUint8(secOffset + b);
+          if (c === 0) break;
+          nameChars.push(String.fromCharCode(c));
+        }
+        const secName = nameChars.join('');
+        const virtualSize = dv.getUint32(secOffset + 8, true);
+        const virtualAddress = dv.getUint32(secOffset + 12, true);
+        const rawSize = dv.getUint32(secOffset + 16, true);
+        const rawPointer = dv.getUint32(secOffset + 20, true);
+        const secCharacteristics = dv.getUint32(secOffset + 36, true);
+        sections.push({
+          name: secName,
+          virtualSize,
+          virtualAddress,
+          rawSize,
+          rawPointer,
+          characteristics: secCharacteristics
+        });
+      }
+
+      return {
+        machine,
+        machineName,
+        numberOfSections,
+        timeDateStamp,
+        timestampStr,
+        subsystem,
+        subsystemName,
+        isDll,
+        optMagic,
+        sections
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function getSmartActionsForAttachments(files) {
+    const actions = [];
+    const seenCmds = new Set();
+    function addAction(cmd, label, isRun) {
+      if (!seenCmds.has(cmd)) {
+        seenCmds.add(cmd);
+        actions.push({ cmd, label, isRun: !!isRun });
+      }
+    }
+
+    const hasTabular = files.some(f => f.type === 'tabular' || f.isTabular || f.isDataset || /\.(csv|tsv|parquet|xlsx)$/i.test(f.name));
+    const hasImage = files.some(f => f.type === 'image' || /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(f.name));
+    const hasAudio = files.some(f => f.type === 'audio' || /\.(wav|mp3|ogg|flac|m4a|aac)$/i.test(f.name));
+    const hasPe = files.some(f => f.type === 'pe_binary' || f.isPeBinary || /\.(exe|dll|sys|ocx|scr|bin|elf)$/i.test(f.name));
+    const hasCode = files.some(f => f.type === 'code' || f.isCode || /\.(py|rs|js|ts|jsx|tsx|cpp|c|h|hpp|java|go|rb|php|sh|ps1|sql|html|css|json|toml|yaml|yml)$/i.test(f.name));
+    const hasDoc = files.some(f => f.type === 'document' || (!hasTabular && !hasImage && !hasAudio && !hasPe && !hasCode));
+
+    if (hasTabular) {
+      addAction('@agent acdso', '▶ Run @agent acdso', true);
+      addAction('@agent datascience', '@agent datascience', false);
+      addAction('@agent summarize', '@agent summarize', false);
+    }
+    if (hasImage) {
+      addAction('@agent vision', '▶ Run @agent vision', true);
+      addAction('@agent image-classification', '@agent image-classification', false);
+      addAction('@agent vqa', '@agent vqa', false);
+    }
+    if (hasAudio) {
+      addAction('@agent asr', '▶ Run @agent asr', true);
+      addAction('@agent audio', '@agent audio', false);
+    }
+    if (hasPe) {
+      addAction('@agent pe', '▶ Run @agent pe', true);
+      addAction('@agent security', '@agent security', false);
+    }
+    if (hasCode) {
+      addAction('@agent security', '▶ Run @agent security', true);
+      addAction('@agent graph-index', '@agent graph-index', false);
+      addAction('@agent summarize', '@agent summarize', false);
+    }
+    if (hasDoc && !hasTabular && !hasCode) {
+      addAction('@agent summarize', '▶ Run @agent summarize', true);
+    }
+
+    return actions;
+  }
+
+  // -----------------------------------------------------------------
+  // Multimodal File Attachment & Preview Tray
+  // -----------------------------------------------------------------
   function renderAttachmentTray() {
     const trayPinned = document.getElementById('attachment-tray-pinned');
     const trays = [attachmentTray, trayPinned].filter(Boolean);
@@ -857,12 +1006,54 @@ document.addEventListener('DOMContentLoaded', () => {
 
         tray.appendChild(chip);
       });
+
+      // Render smart 1-click @command action chips customized for file types
+      const smartActions = getSmartActionsForAttachments(attachedFiles);
+      if (smartActions.length > 0) {
+        const actionsContainer = document.createElement('div');
+        actionsContainer.className = 'attachment-tray-actions';
+        smartActions.forEach(action => {
+          const actionBtn = document.createElement('button');
+          actionBtn.type = 'button';
+          actionBtn.className = `tray-action-chip ${action.isRun ? 'tray-run-btn' : ''}`;
+          actionBtn.textContent = action.label;
+          actionBtn.title = `Execute ${action.cmd} on attached file(s)`;
+          actionBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            executeCliCommand(action.cmd);
+          });
+          actionsContainer.appendChild(actionBtn);
+        });
+        tray.appendChild(actionsContainer);
+      }
     });
   }
 
   function handleFiles(files) {
     if (!files || files.length === 0) return;
-    Array.from(files).forEach(file => {
+    const fileList = Array.from(files);
+    let pendingCount = fileList.length;
+
+    function onFileDone(fileObj) {
+      if (fileObj) attachedFiles.push(fileObj);
+      pendingCount--;
+      if (pendingCount <= 0) {
+        renderAttachmentTray();
+        updateToolMenuRelevance();
+        if (pendingAutoCommand) {
+          const toRun = pendingAutoCommand;
+          pendingAutoCommand = null;
+          const lastFile = fileList[fileList.length - 1];
+          termLog(`📎 Staged "${lastFile.name}". Auto-executing: ${toRun}`, 'success');
+          setTimeout(() => {
+            executeCliCommand(toRun);
+          }, 50);
+        }
+      }
+    }
+
+    fileList.forEach(file => {
       const ext = file.name.slice(((file.name.lastIndexOf('.') - 1) >>> 0) + 2).toLowerCase();
       const mime = (file.type || '').toLowerCase();
 
@@ -886,10 +1077,8 @@ document.addEventListener('DOMContentLoaded', () => {
             dataUrl,
             base64
           };
-          attachedFiles.push(fileObj);
-          renderAttachmentTray();
-          updateToolMenuRelevance();
-          termLog(`[ATTACH] 📎 Attached file: "${file.name}". Ready.`, 'info');
+          termLog(`[ATTACH] 📎 Attached image: "${file.name}". Ready.`, 'info');
+          onFileDone(fileObj);
         };
         reader.readAsDataURL(file);
       } else if (audioExts.includes(ext) || mime.startsWith('audio/')) {
@@ -904,10 +1093,8 @@ document.addEventListener('DOMContentLoaded', () => {
             mimeType: file.type || 'audio/wav',
             dataUrl
           };
-          attachedFiles.push(fileObj);
-          renderAttachmentTray();
-          updateToolMenuRelevance();
-          termLog(`[ATTACH] 📎 Attached file: "${file.name}". Ready.`, 'info');
+          termLog(`[ATTACH] 📎 Attached audio: "${file.name}". Ready.`, 'info');
+          onFileDone(fileObj);
         };
         reader.readAsDataURL(file);
       } else if (tabularExts.includes(ext) || mime.includes('csv') || mime.includes('tab-separated')) {
@@ -924,26 +1111,44 @@ document.addEventListener('DOMContentLoaded', () => {
             mimeType: file.type || 'text/csv',
             content
           };
-          attachedFiles.push(fileObj);
-          renderAttachmentTray();
-          updateToolMenuRelevance();
-          termLog(`[ATTACH] 📎 Attached file: "${file.name}". Ready.`, 'info');
+          termLog(`[ATTACH] 📎 Attached dataset: "${file.name}". Ready.`, 'info');
+          onFileDone(fileObj);
         };
         reader.readAsText(file);
       } else if (peExts.includes(ext)) {
-        const fileObj = {
-          id: 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-          name: file.name,
-          size: file.size,
-          type: 'pe_binary',
-          isPeBinary: true,
-          mimeType: 'application/vnd.microsoft.portable-executable',
-          content: `[PE Binary: ${file.name} (${file.size} bytes)]`
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const arrayBuffer = e.target.result;
+          const peHeaders = parsePeHeader(arrayBuffer);
+          let peContent = '';
+          if (peHeaders) {
+            peContent = `[Portable Executable (PE) Forensics: ${file.name}]\n` +
+              `Format: ${peHeaders.isDll ? 'Dynamic Link Library (DLL)' : 'Executable (EXE)'}\n` +
+              `Architecture: ${peHeaders.machineName} (Machine: 0x${peHeaders.machine.toString(16)})\n` +
+              `Subsystem: ${peHeaders.subsystemName}\n` +
+              `Timestamp: ${peHeaders.timestampStr} (0x${peHeaders.timeDateStamp.toString(16)})\n` +
+              `Number of Sections: ${peHeaders.numberOfSections}\n` +
+              `Optional Header: ${peHeaders.optMagic === 0x20b ? 'PE32+ (64-bit)' : (peHeaders.optMagic === 0x10b ? 'PE32 (32-bit)' : 'None')}\n\n` +
+              `Sections:\n` +
+              peHeaders.sections.map(s => `  ${s.name.padEnd(8)} | VirtSize: ${s.virtualSize.toLocaleString()} B | RawSize: ${s.rawSize.toLocaleString()} B | Flags: 0x${s.characteristics.toString(16)}`).join('\n');
+          } else {
+            peContent = `[PE Binary: ${file.name} (${file.size} bytes)]`;
+          }
+
+          const fileObj = {
+            id: 'att_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            name: file.name,
+            size: file.size,
+            type: 'pe_binary',
+            isPeBinary: true,
+            peHeaders,
+            mimeType: 'application/vnd.microsoft.portable-executable',
+            content: peContent
+          };
+          termLog(`[ATTACH] 📎 Attached binary: "${file.name}" (${(file.size / 1024).toFixed(1)} KB). PE parsed. Ready.`, 'info');
+          onFileDone(fileObj);
         };
-        attachedFiles.push(fileObj);
-        renderAttachmentTray();
-        updateToolMenuRelevance();
-        termLog(`[ATTACH] 📎 Attached file: "${file.name}". Ready.`, 'info');
+        reader.readAsArrayBuffer(file.slice(0, 4096));
       } else {
         const isCode = codeExts.includes(ext);
         const reader = new FileReader();
@@ -958,10 +1163,8 @@ document.addEventListener('DOMContentLoaded', () => {
             mimeType: file.type || 'text/plain',
             content
           };
-          attachedFiles.push(fileObj);
-          renderAttachmentTray();
-          updateToolMenuRelevance();
-          termLog(`[ATTACH] 📎 Attached file: "${file.name}". Ready.`, 'info');
+          termLog(`[ATTACH] 📎 Attached ${isCode ? 'code' : 'file'}: "${file.name}". Ready.`, 'info');
+          onFileDone(fileObj);
         };
         reader.readAsText(file);
       }
@@ -1957,6 +2160,19 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {
       chatSessions = [];
     }
+    let modified = false;
+    if (Array.isArray(chatSessions)) {
+      chatSessions.forEach(session => {
+        if (session && typeof session.title === 'string' && session.title.startsWith('/') && !session.title.startsWith('//')) {
+          const stripped = session.title.slice(1).trim();
+          session.title = stripped.toLowerCase().startsWith('agent ') ? '@' + stripped : '@agent ' + stripped;
+          modified = true;
+        }
+      });
+      if (modified) {
+        saveChatHistory();
+      }
+    }
     renderChatHistoryList();
   }
 
@@ -2146,19 +2362,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // If the conversation ends with a user prompt that has no assistant reply (e.g. failed, interrupted, or pending)
     if (lastUserMsg && !hasAssistantResponseForLastUser) {
+      const promptContent = (lastUserMsg.content || '').trim();
+      const isFileCommand = /^\/?(@agent\s+)?(acdso|summarize|vision|image-classification|object-detection|vqa|pe|security|asr|audio|datascience|dataanalyst|timeseries|predict)/i.test(promptContent);
+
       const pendingCard = document.createElement('div');
       pendingCard.className = 'pending-prompt-card';
       pendingCard.innerHTML = `
         <div class="pending-prompt-header">
-          <span class="pending-icon">⚡</span>
+          <span class="pending-icon">${isFileCommand ? '📎' : '⚡'}</span>
           <strong>Unfinished Prompt: No response generated yet</strong>
         </div>
-        <div class="pending-prompt-desc">This prompt was saved without results. Click <strong>Run Now</strong> to execute it with live web & arXiv research.</div>
+        <div class="pending-prompt-desc">${isFileCommand ? 'This directive requires a file or dataset. Attach your file to execute.' : 'This prompt was saved without results. Click <strong>Run Now</strong> to execute it with live web & arXiv research.'}</div>
         <div class="pending-prompt-actions">
+          ${isFileCommand ? '<button type="button" class="btn-pending-file">📎 Pick File &amp; Run</button>' : ''}
           <button type="button" class="btn-pending-run">▶ Run Now</button>
           <button type="button" class="btn-pending-edit">✏️ Edit in Input Bar</button>
         </div>
       `;
+      if (isFileCommand) {
+        const btnFile = pendingCard.querySelector('.btn-pending-file');
+        if (btnFile) {
+          btnFile.addEventListener('click', () => {
+            pendingAutoCommand = promptContent;
+            if (filePicker) filePicker.click();
+            termLog(`📎 Select a file to process with ${promptContent}...`, 'info');
+          });
+        }
+      }
       pendingCard.querySelector('.btn-pending-run').addEventListener('click', () => {
         window.runPromptFromHistory(lastUserMsg.content);
       });
@@ -2172,7 +2402,6 @@ document.addEventListener('DOMContentLoaded', () => {
         window.editPromptFromHistory(lastUserMsg.content);
       }
     }
-
     renderChatHistoryList();
     if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
   }
@@ -2540,7 +2769,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         // Natural language query: launch autonomous browser research
         termLog(`Interpreted query as browser research: "${url}"`, 'info');
-        executeCliCommand(`/browser ${url}`);
+        executeCliCommand(`@agent browser ${url}`);
         return;
       }
     }
@@ -4317,15 +4546,29 @@ document.addEventListener('DOMContentLoaded', () => {
       termLog('⚠️ A task is already in progress. Please wait for completion or click ⏹ to stop.', 'warn');
       return;
     }
-    const cmd = rawCmd.trim();
+    let cmd = (rawCmd || '').trim();
     if (!cmd) return;
+
+    // Normalize slash command to @agent directive
+    if (cmd.startsWith('/') && !cmd.startsWith('//')) {
+      const stripped = cmd.slice(1).trim();
+      if (stripped.toLowerCase().startsWith('agent ')) {
+        cmd = '@' + stripped;
+      } else {
+        cmd = '@agent ' + stripped;
+      }
+    }
 
     lastUserPrompt = cmd;
     window.lastUserPrompt = cmd;
 
     // Chat history tracking: ensure active session exists
     if (!currentSessionId) {
-      const sessionTitle = cmd.length > 36 ? cmd.slice(0, 36) + '...' : cmd;
+      let sessionTitle = cmd.length > 36 ? cmd.slice(0, 36) + '...' : cmd;
+      if (sessionTitle.startsWith('/') && !sessionTitle.startsWith('//')) {
+        const stripped = sessionTitle.slice(1).trim();
+        sessionTitle = stripped.toLowerCase().startsWith('agent ') ? '@' + stripped : '@agent ' + stripped;
+      }
       const newSession = {
         id: 'chat_' + Date.now(),
         title: sessionTitle,
@@ -4337,6 +4580,32 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const currentAttachments = [...attachedFiles];
+
+    // Universal "Just Attach a File" Guard:
+    // If a file-requiring tool is invoked with no attachment and no explicit target, prompt user to select a file!
+    const fileCommandsRequiringTarget = [
+      '@agent acdso',
+      '@agent summarize',
+      '@agent vision',
+      '@agent image-classification',
+      '@agent object-detection',
+      '@agent vqa',
+      '@agent security',
+      '@agent pe',
+      '@agent asr',
+      '@agent audio'
+    ];
+    for (const prefix of fileCommandsRequiringTarget) {
+      if (lower === prefix || lower.startsWith(prefix + ' ')) {
+        const target = cmd.slice(prefix.length).trim();
+        if (!target && currentAttachments.length === 0) {
+          pendingAutoCommand = cmd;
+          if (filePicker) filePicker.click();
+          termLog(`📎 File required. Opening file picker to select file for ${cmd}...`, 'info');
+          return;
+        }
+      }
+    }
     const activeSession = chatSessions.find(s => s.id === currentSessionId);
     if (activeSession) {
       const lastMsg = activeSession.messages[activeSession.messages.length - 1];
@@ -4442,6 +4711,102 @@ document.addEventListener('DOMContentLoaded', () => {
         termLog('Interactive elements indexed with 90% visual token reduction.', 'sys');
       }
       return;
+    }
+
+    // 2.5 PE Header Forensics Directive (@agent pe)
+    if (lower.startsWith('@agent pe') || lower.startsWith('/pe')) {
+      const peFile = currentAttachments.find(f => f.type === 'pe_binary' || f.isPeBinary || /\.(exe|dll|sys|ocx|scr|bin)$/i.test(f.name));
+      if (peFile) {
+        if (chatWelcome) chatWelcome.classList.add('hidden');
+        if (chatMessages) {
+          const cardBubble = document.createElement('div');
+          cardBubble.className = 'msg-bubble sys-bubble';
+          cardBubble.style.background = 'rgba(59, 130, 246, 0.08)';
+          cardBubble.style.borderColor = 'rgba(59, 130, 246, 0.25)';
+          const h = peFile.peHeaders || {};
+          cardBubble.innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+              <div style="display: flex; align-items: center; gap: 6px; font-weight: 600; color: #3b82f6; font-size: 12px;">
+                <span>🔬</span> <span>Portable Executable (PE) Forensic Header</span>
+              </div>
+              <span style="font-size: 10px; opacity: 0.7; font-family: var(--mono-font);">${escapeHtml(peFile.name)}</span>
+            </div>
+            <div style="font-size: 11.5px; line-height: 1.6; font-family: var(--mono-font);">
+              <div><strong>Target:</strong> ${escapeHtml(peFile.name)} (${(peFile.size / 1024).toFixed(1)} KB)</div>
+              <div><strong>Format:</strong> ${h.isDll ? 'Dynamic Link Library (DLL)' : 'Executable (EXE)'}</div>
+              <div><strong>Architecture:</strong> ${h.machineName || 'Unknown'} (0x${(h.machine || 0).toString(16)})</div>
+              <div><strong>Subsystem:</strong> ${h.subsystemName || 'Unknown'}</div>
+              <div><strong>Timestamp:</strong> ${h.timestampStr || 'Unknown'}</div>
+              <div><strong>Sections:</strong> ${h.numberOfSections || (h.sections ? h.sections.length : 0)}</div>
+            </div>
+            ${h.sections && h.sections.length > 0 ? `
+              <div style="margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 6px;">
+                <div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Section Table:</div>
+                <div style="font-size: 10.5px; font-family: var(--mono-font); color: var(--text-muted); max-height: 120px; overflow-y: auto;">
+                  ${h.sections.map(s => `<div><code>${s.name.padEnd(8)}</code> VirtSize: ${s.virtualSize.toLocaleString()} B | RawSize: ${s.rawSize.toLocaleString()} B</div>`).join('')}
+                </div>
+              </div>
+            ` : ''}
+          `;
+          chatMessages.appendChild(cardBubble);
+          if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        termLog(`[PE FORENSICS] Analyzing PE binary: ${peFile.name}...`, 'info');
+        const pePrompt = `Analyze the following Windows Portable Executable (PE) binary header and metadata for security, architecture, and behavioral profile:\n\n${peFile.content}\n\nProvide:\n1. Architecture & Execution Subsystem Analysis\n2. Section Analysis (entropy, memory footprint, suspicious characteristics)\n3. Threat Assessment & Static Indicator Summary`;
+        await streamAiChat(pePrompt, 'You are HugOS Browser AI, an expert reverse engineer and binary forensics specialist. Provide an accurate, high-density technical analysis of the PE binary structure, sections, and security characteristics.');
+        clearAllAttachments();
+        return;
+      }
+    }
+
+    // 2.6 Security & Vulnerability Audit Directive (@agent security)
+    if (lower.startsWith('@agent security') || lower.startsWith('/security')) {
+      const targetFile = currentAttachments[0];
+      if (targetFile) {
+        termLog(`[SECURITY AUDIT] Auditing ${targetFile.name} for vulnerabilities and risks...`, 'info');
+        let secContent = targetFile.content || '';
+        if (secContent.length > 15000) secContent = secContent.slice(0, 15000) + '\n... [truncated]';
+        const secPrompt = `Perform a comprehensive static security and vulnerability audit of the attached ${targetFile.type === 'pe_binary' ? 'binary metadata' : 'source code'} file: "${targetFile.name}":\n\n${secContent}\n\nDeliver:\n1. Vulnerability Assessment (OWASP Top 10, Memory Safety, Buffer Overflows, Injection, Cryptographic Flaws)\n2. CWE Identification & Risk Severity Scoring (Critical/High/Medium/Low)\n3. Concrete Remediation & Hardening Recommendations`;
+        await streamAiChat(secPrompt, 'You are HugOS Browser AI, an elite cybersecurity and application security audit assistant. Perform rigorous static analysis, vulnerability detection, and secure coding review.');
+        clearAllAttachments();
+        return;
+      }
+    }
+
+    // 2.7 Vision & Multimodal Directives (@agent vision, @agent image-classification, @agent object-detection, @agent vqa)
+    if (
+      lower.startsWith('@agent vision') || lower.startsWith('/vision') ||
+      lower.startsWith('@agent image-classification') || lower.startsWith('/image-classification') ||
+      lower.startsWith('@agent object-detection') || lower.startsWith('/object-detection') ||
+      lower.startsWith('@agent vqa') || lower.startsWith('/vqa')
+    ) {
+      const userQuery = cmd.replace(/^(@agent\s+(vision|image-classification|object-detection|vqa)|\/(vision|image-classification|object-detection|vqa))\s*/i, '').trim();
+      let visionPrompt = '';
+      let visionSys = '';
+
+      if (lower.startsWith('@agent image-classification') || lower.startsWith('/image-classification')) {
+        visionPrompt = `Classify the primary subjects, scene, categories, and dominant visual elements in the attached image(s). User notes: ${userQuery || 'Identify all classes and confidence factors'}.`;
+        visionSys = 'You are HugOS Vision AI, specialized in multi-label image classification, scene recognition, and fine-grained visual categorization.';
+      } else if (lower.startsWith('@agent object-detection') || lower.startsWith('/object-detection')) {
+        visionPrompt = `Detect and enumerate all distinct objects, people, entities, coordinates/relative locations, and counts in the attached image(s). User notes: ${userQuery || 'List all detected objects and locations'}.`;
+        visionSys = 'You are HugOS Vision AI, specialized in object detection, spatial enumeration, and visual entity grounding.';
+      } else if (lower.startsWith('@agent vqa') || lower.startsWith('/vqa')) {
+        visionPrompt = `Visual Question Answering (VQA):\nQuestion: ${userQuery || 'What is happening in this image and what are the key visual details?'}`;
+        visionSys = 'You are HugOS Vision AI, an expert visual question answering reasoning model. Answer questions about image content with extreme precision and detail.';
+      } else {
+        visionPrompt = userQuery
+          ? `Analyze the attached image(s) according to this directive: "${userQuery}". Provide a comprehensive, high-resolution breakdown.`
+          : `Provide a comprehensive visual analysis of the attached image(s), describing key subjects, text/OCR content, layout, styling, and prominent details.`;
+        visionSys = 'You are HugOS Vision AI, an advanced multimodal vision-language model. Deliver accurate, detailed, and insightful visual descriptions and analytical reasoning.';
+      }
+
+      if (attachedImages.length > 0) {
+        termLog(`[VISION] Processing ${attachedImages.length} attached image(s) with multimodal vision panel...`, 'info');
+        await streamAiChat(visionPrompt, visionSys, { images: attachedImages, panel: { id: 'vision', name: 'Vision Multimodal Fusion' } });
+        clearAllAttachments();
+        return;
+      }
     }
 
     // 3. ACDSO AutoML Table Extraction (Supports URLs and Attached Datasets)
@@ -4949,7 +5314,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     });
   });
 
-  // Tool / Directive buttons: Prepopulate @agent command into input (Only one command at a time!)
+  // Tool / Directive buttons: Instant file execution & Prepopulate @agent command
   document.querySelectorAll('.tool-item-btn, .tool-command-btn').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
@@ -4963,11 +5328,24 @@ If you are asked about real-world facts such as world leaders, heads of state, c
       const rawCmd = btn.getAttribute('data-cmd') || btn.textContent.trim();
       const cmd = rawCmd.trim();
       const label = btn.querySelector('.tool-label') ? btn.querySelector('.tool-label').textContent.trim() : cmd;
+      const cat = btn.getAttribute('data-category') || '';
 
       // Clear any prior directive trays completely
       clearAllActiveDirectives();
 
-      // Only one command at a time: Prepopulate active input with @agent command
+      const isFileTool = ['tabular', 'vision', 'audio', 'pe_binary', 'code'].includes(cat) ||
+                         cmd.includes('summarize') || cmd.includes('acdso') || cmd.includes('pe') || cmd.includes('security');
+
+      // If attachedFiles.length > 0: Immediately execute on staged file(s)!
+      if (isFileTool && attachedFiles.length > 0) {
+        document.querySelectorAll('.tool-item-btn, .tool-command-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        termLog(`[ACTION] Executing ${cmd} on ${attachedFiles.length} attached file(s)...`, 'info');
+        executeCliCommand(cmd);
+        return;
+      }
+
+      // If attachedFiles.length === 0: Prepopulate active input with @agent command
       const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
         ? cliPromptInputPinned
         : cliPromptInput;
@@ -4985,7 +5363,36 @@ If you are asked about real-world facts such as world leaders, heads of state, c
       document.querySelectorAll('.tool-item-btn, .tool-command-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
 
-      termLog(`[COMMAND] Prepopulated: "${cmd}". Only one command active at a time.`, 'info');
+      if (isFileTool) {
+        pendingAutoCommand = cmd;
+        if (filePicker) filePicker.click();
+        termLog(`📎 Select a file to process with ${cmd}...`, 'info');
+      } else {
+        pendingAutoCommand = null;
+        termLog(`[COMMAND] Prepopulated: "${cmd}". Only one command active at a time.`, 'info');
+      }
+    });
+  });
+
+  // Drag and drop directly onto floating input capsules
+  document.querySelectorAll('.floating-input-capsule').forEach(capsule => {
+    capsule.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      capsule.classList.add('drag-over-input');
+    });
+    capsule.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      capsule.classList.remove('drag-over-input');
+    });
+    capsule.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      capsule.classList.remove('drag-over-input');
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        handleFiles(e.dataTransfer.files);
+      }
     });
   });
 
@@ -5097,41 +5504,173 @@ If you are asked about real-world facts such as world leaders, heads of state, c
   // Universal @agent Autocomplete / Prepopulation Engine
   // ─────────────────────────────────────────────────────────────
   const AGENT_COMMANDS = [
+    { cmd: '@agent browser ', icon: '🌐', label: 'Browser Automation', desc: 'Navigate, interact, and automate web workflows' },
     { cmd: '@agent browser deep research on ', icon: '🔍', label: 'Deep Research', desc: 'Autonomous multi-step web research & synthesis' },
-    { cmd: '@agent browser ', icon: '🌐', label: 'Web Automation', desc: 'Navigate, interact, and automate web workflows' },
+    { cmd: '@agent arxiv ', icon: '📚', label: 'arXiv Papers', desc: 'Direct search of arXiv scientific preprints and research papers' },
+    { cmd: '@agent som', icon: '🎯', label: 'Set-of-Mark Vision', desc: 'Numeric visual element grounding with 90% token reduction' },
+    { cmd: '@agent summarize', icon: '📑', label: 'Summarize Page', desc: 'Extract and summarize active web page content' },
+    { cmd: '@agent search ', icon: '🔎', label: 'Web Search Grounding', desc: 'Live web search grounding with verified citations' },
+    { cmd: '@agent web-agent ', icon: '🌐', label: 'Web Search Agent', desc: 'Search internet, build inverted index, and correlate results with LLM' },
+    { cmd: '@agent search-index ', icon: '📑', label: 'Search Index', desc: 'Build and query in-memory inverted search index over web data' },
+    { cmd: '@agent browser navigate ', icon: '🧭', label: 'Browser Navigate', desc: 'Direct viewport navigation to specific URL' },
+    { cmd: '@agent browser extract ', icon: '📋', label: 'DOM Extraction', desc: 'Extract structured clean text and interactive nodes from DOM' },
     { cmd: '@agent acdso ', icon: '📊', label: 'ACDSO AutoML', desc: '5-objective Pareto causal AutoML on datasets' },
     { cmd: '@agent datascience ', icon: '📈', label: 'Data Science', desc: 'Full data science workflow and pipeline' },
     { cmd: '@agent dataanalyst ', icon: '🔬', label: 'Data Analyst', desc: 'Exploratory data analysis & statistical profiling' },
     { cmd: '@agent timeseries ', icon: '⏳', label: 'Time-Series', desc: 'Time-series forecasting with Pareto horizon' },
     { cmd: '@agent predict ', icon: '🎯', label: 'AutoML Predict', desc: 'Target variable inference on tabular models' },
     { cmd: '@agent decision ', icon: '⚖️', label: 'Decision Engine', desc: 'Prescriptive decision optimization & counterfactuals' },
-    { cmd: '@agent update', icon: '⚡', label: 'Update Catalog', desc: 'Fast curated update (~6,500 models & dynamic Ollama sizing)' },
-    { cmd: '@agent updatedb', icon: '🚀', label: 'Full Registry Crawler', desc: 'Crawl all 2M+ models from Hugging Face Hub' },
-    { cmd: '@agent summarize', icon: '📑', label: 'Summarize Page', desc: 'Extract and summarize active web page content' },
-    { cmd: '@agent som', icon: '🎯', label: 'Set-of-Mark Vision', desc: 'Numeric visual element grounding with 90% token reduction' },
-    { cmd: '@agent key gemini ', icon: '🔑', label: 'Google Gemini Key', desc: 'Configure Google Gemini API key to use Gemini 2.0 Flash / 1.5 Pro' },
-    { cmd: '@agent arxiv ', icon: '📚', label: 'arXiv Papers', desc: 'Direct search of arXiv scientific preprints and research papers' },
-    { cmd: '@agent search ', icon: '🔎', label: 'Web Search Grounding', desc: 'Live web search grounding with verified citations' },
-    { cmd: '@agent web-agent ', icon: '🌐', label: 'Web Agent', desc: 'Search internet, index data, and correlate with LLM (256 tokens return)' },
-    { cmd: '@agent search-index ', icon: '📑', label: 'Search Index', desc: 'Build and query in-memory inverted search index' },
+    { cmd: '@agent tabular-classification ', icon: '🏷️', label: 'Tabular Classify', desc: 'Gradient-boosted decision trees and ensemble classifiers' },
+    { cmd: '@agent tabular-regression ', icon: '📉', label: 'Tabular Regress', desc: 'Continuous target estimation and causal effect regression' },
+    { cmd: '@agent feature-engineering ', icon: '⚙️', label: 'Feature Engineer', desc: 'Automated polynomial, categorical, and interaction features' },
+    { cmd: '@agent data-clean ', icon: '🧹', label: 'Dataset Cleaner', desc: 'Imputation, outlier removal, and schema validation' },
+    { cmd: '@agent correlation ', icon: '🔢', label: 'Correlation Matrix', desc: 'Pearson, Spearman, and mutual information correlation' },
+    { cmd: '@agent anomaly-detection ', icon: '🚨', label: 'Anomaly Detection', desc: 'Isolation Forest and Local Outlier Factor anomaly scoring' },
+    { cmd: '@agent pareto ', icon: '📐', label: 'Pareto Optimizer', desc: 'Multi-objective trade-off surface computation' },
+    { cmd: '@agent clustering ', icon: '🫧', label: 'Data Clustering', desc: 'K-Means, HDBSCAN, and spectral clustering partitions' },
+    { cmd: '@agent shap-explain ', icon: '💡', label: 'SHAP Interpretability', desc: 'Shapley additive explanations and feature importance' },
+    { cmd: '@agent vision ', icon: '👁️', label: 'Vision Analysis', desc: 'Object detection, OCR, and visual Q&A' },
+    { cmd: '@agent image-classification ', icon: '🏷️', label: 'Image Classify', desc: 'Zero-shot vision classification across open models' },
+    { cmd: '@agent object-detection ', icon: '📦', label: 'Object Detection', desc: 'Visual bounding boxes and multi-target detection' },
+    { cmd: '@agent vqa ', icon: '❓', label: 'Visual QA', desc: 'Direct Q&A on attached images & visual assets' },
+    { cmd: '@agent image-segmentation ', icon: '✂️', label: 'Image Segment', desc: 'Semantic and instance pixel-level segmentation masks' },
+    { cmd: '@agent text-to-image ', icon: '🎨', label: 'Text to Image', desc: 'High-fidelity diffusion image generation from prompt' },
+    { cmd: '@agent image-to-text ', icon: '📝', label: 'Image Captioning', desc: 'Dense visual captioning and narrative extraction' },
+    { cmd: '@agent image-to-image ', icon: '🖼️', label: 'Image to Image', desc: 'Style transfer, super-resolution, and image refinement' },
+    { cmd: '@agent depth-estimation ', icon: '📏', label: 'Depth Estimation', desc: 'Monocular 3D depth map and surface normal estimation' },
+    { cmd: '@agent doc-vqa ', icon: '📄', label: 'Document VQA', desc: 'Visual document understanding on invoices, receipts & forms' },
+    { cmd: '@agent zero-shot-image ', icon: '🎯', label: 'Zero-Shot Image', desc: 'Open-vocabulary image classification without fine-tuning' },
+    { cmd: '@agent zero-shot-detect ', icon: '🔍', label: 'Zero-Shot Detect', desc: 'Open-vocabulary bounding box object localization' },
+    { cmd: '@agent mask-generation ', icon: '🎭', label: 'Mask Generation', desc: 'Segment Anything (SAM) promptable foreground masks' },
+    { cmd: '@agent keypoint-detection ', icon: '📍', label: 'Keypoint Detect', desc: 'Human pose, facial landmarks, and skeletal joint tracking' },
+    { cmd: '@agent video-classification ', icon: '🎬', label: 'Video Classify', desc: 'Action recognition, temporal scene cuts, and video tags' },
+    { cmd: '@agent text-to-video ', icon: '📹', label: 'Text to Video', desc: 'Temporal video sequence generation from text description' },
+    { cmd: '@agent unconditional-image ', icon: '✨', label: 'Image Synthesis', desc: 'Unconditional generative synthesis from learned priors' },
+    { cmd: '@agent ocr ', icon: '🔤', label: 'OCR Text Extract', desc: 'Multi-language printed and handwritten optical text reading' },
+    { cmd: '@agent face-detection ', icon: '👤', label: 'Face Detection', desc: 'Facial bounding boxes, expression, and demographic cues' },
+    { cmd: '@agent image-enhance ', icon: '🌟', label: 'Image Super-Res', desc: 'Denoising, deblurring, and 4x AI resolution upscaling' },
+    { cmd: '@agent inpainting ', icon: '🖌️', label: 'Image Inpainting', desc: 'Masked area reconstruction and contextual object removal' },
+    { cmd: '@agent image-similarity ', icon: '🪞', label: 'Visual Similarity', desc: 'CLIP embedding cosine similarity between images' },
+    { cmd: '@agent nsfw-detect ', icon: '🛡️', label: 'NSFW Filter', desc: 'Safety filtering, sensitive content, and moderation check' },
+    { cmd: '@agent scene-understanding ', icon: '🏞️', label: 'Scene Parsing', desc: 'Indoor/outdoor holistic scene topology and spatial parsing' },
+    { cmd: '@agent color-palette ', icon: '🎨', label: 'Palette Extraction', desc: 'Dominant hexadecimal color palette and visual harmony' },
+    { cmd: '@agent asr ', icon: '🎙️', label: 'Speech-to-Text', desc: 'Automatic speech recognition via Whisper models' },
+    { cmd: '@agent tts ', icon: '🔊', label: 'Text-to-Speech', desc: 'Text synthesis into natural audible speech' },
+    { cmd: '@agent audio ', icon: '🎵', label: 'Audio Classify', desc: 'Sound event detection & voice activity analysis' },
+    { cmd: '@agent vad ', icon: '🗣️', label: 'Voice Activity', desc: 'Real-time speech vs silence endpoint segmentation' },
+    { cmd: '@agent audio-to-audio ', icon: '🎚️', label: 'Audio Denoise', desc: 'Background noise cancellation and voice isolation' },
+    { cmd: '@agent text-to-audio ', icon: '🎶', label: 'Text to Sound', desc: 'Synthesize custom sound effects and acoustic ambiances' },
+    { cmd: '@agent speaker-diarization ', icon: '👥', label: 'Speaker Diarization', desc: 'Who spoke when: multi-speaker segmentation & clustering' },
+    { cmd: '@agent speaker-id ', icon: '🆔', label: 'Speaker ID', desc: 'Voiceprint embedding verification and speaker matching' },
+    { cmd: '@agent music-gen ', icon: '🎼', label: 'Music Generation', desc: 'Instrumental and polyphonic music generation from prompts' },
+    { cmd: '@agent sound-event ', icon: '🔔', label: 'Sound Event Detect', desc: 'Identify siren, glass break, baby cry, and environmental cues' },
+    { cmd: '@agent speech-enhance ', icon: '🎧', label: 'Speech Enhance', desc: 'Spectral restoration and vocal clarity enhancement' },
+    { cmd: '@agent source-separation ', icon: '✂️', label: 'Audio Separation', desc: 'Stems splitting: vocals, drums, bass, and instruments' },
+    { cmd: '@agent voice-emotion ', icon: '😊', label: 'Voice Emotion', desc: 'Prosodic speech emotion and affective state recognition' },
+    { cmd: '@agent audio-lang-id ', icon: '🌍', label: 'Spoken Language ID', desc: 'Identify spoken language across 100+ global dialects' },
+    { cmd: '@agent tempo ', icon: '⏱️', label: 'Tempo & BPM', desc: 'Rhythm tracking, beat onset, and BPM tempo estimation' },
+    { cmd: '@agent nlp ', icon: '📝', label: 'NLP Pipeline', desc: 'Sentiment, NER, translation, and text classification' },
+    { cmd: '@agent text-generation ', icon: '✍️', label: 'Text Generation', desc: 'Open-ended causal text completion and synthesis' },
+    { cmd: '@agent text2text ', icon: '🔄', label: 'Text-to-Text', desc: 'Seq2Seq transformation, rewriting, and standardization' },
+    { cmd: '@agent translation ', icon: '🌐', label: 'Translation', desc: 'Neural machine translation across 200+ languages' },
+    { cmd: '@agent question-answering ', icon: '💬', label: 'Question Answering', desc: 'Extractive and generative reading comprehension' },
+    { cmd: '@agent table-qa ', icon: '📊', label: 'Table QA', desc: 'Direct natural language querying over tabular structures' },
+    { cmd: '@agent zero-shot ', icon: '🎯', label: 'Zero-Shot Text', desc: 'Categorize text into arbitrary candidate label sets' },
+    { cmd: '@agent text-classification ', icon: '🏷️', label: 'Text Classify', desc: 'Fine-tuned intent, category, and sentiment labels' },
+    { cmd: '@agent token-classification ', icon: '🔠', label: 'Token Classify', desc: 'Token-level entity, POS tag, and boundary classification' },
+    { cmd: '@agent sentence-similarity ', icon: '🔗', label: 'Sentence Similarity', desc: 'Bi-encoder semantic similarity scoring and ranking' },
+    { cmd: '@agent conversational ', icon: '🗣️', label: 'Chat Assistant', desc: 'Multi-turn persona-grounded conversational agent' },
+    { cmd: '@agent fill-mask ', icon: '🎭', label: 'Masked LM Fill', desc: 'Predict masked tokens via bidirectional context' },
+    { cmd: '@agent multiple-choice ', icon: '🔘', label: 'Multiple Choice', desc: 'Select most plausible completion from candidate options' },
+    { cmd: '@agent sentiment ', icon: '❤️', label: 'Sentiment Analysis', desc: 'Positive, negative, neutral, and emotional intensity' },
+    { cmd: '@agent summarize-text ', icon: '📜', label: 'Text Summarize', desc: 'Abstractive and extractive multi-paragraph summarization' },
+    { cmd: '@agent grammar ', icon: '✍️', label: 'Grammar Check', desc: 'Orthographic, syntactic, and stylistic error correction' },
+    { cmd: '@agent paraphrase ', icon: '🔁', label: 'Paraphraser', desc: 'Alternative phrasing preserving core semantic intent' },
+    { cmd: '@agent ner ', icon: '🏷️', label: 'Named Entity Rec', desc: 'Extract names, locations, dates, and organizations' },
+    { cmd: '@agent keywords ', icon: '🔑', label: 'Keyword Extractor', desc: 'KeyBERT and TF-IDF keyphrase significance extraction' },
+    { cmd: '@agent semantic-search ', icon: '🔎', label: 'Semantic Search', desc: 'Dense vector retrieval over embedded corpus documents' },
+    { cmd: '@agent hallucination-eval ', icon: '🛡️', label: 'Hallucination Check', desc: 'Cross-reference text claims against source ground truth' },
+    { cmd: '@agent prompt-expand ', icon: '🪄', label: 'Prompt Expander', desc: 'Enrich sparse prompts with context and constraints' },
+    { cmd: '@agent chain-of-thought ', icon: '🧠', label: 'Chain-of-Thought', desc: 'Step-by-step rationalized deductive derivation' },
+    { cmd: '@agent toxicity ', icon: '⚠️', label: 'Toxicity Detection', desc: 'Identify profanity, harassment, hate speech, and threats' },
+    { cmd: '@agent intent ', icon: '🎯', label: 'Intent Recognition', desc: 'Identify actionable user objective and routing class' },
+    { cmd: '@agent relation-extract ', icon: '🕸️', label: 'Relation Extraction', desc: 'Extract subject-predicate-object knowledge triples' },
+    { cmd: '@agent topic-model ', icon: '🗂️', label: 'Topic Modeling', desc: 'Unsupervised discovery of semantic themes across docs' },
+    { cmd: '@agent simplify ', icon: '💡', label: 'Text Simplifier', desc: 'Convert dense academic jargon into plain English' },
+    { cmd: '@agent lang-detect ', icon: '🔤', label: 'Language Detection', desc: 'Determine ISO language code from raw text snippet' },
+    { cmd: '@agent citation ', icon: '📖', label: 'Citation Generator', desc: 'Generate BibTeX, APA, IEEE, and Chicago references' },
+    { cmd: '@agent code ', icon: '💻', label: 'Code Intelligence', desc: 'Code generation, vulnerability scanning & refactoring' },
+    { cmd: '@agent code-gen ', icon: '⚡', label: 'Code Generation', desc: 'Multi-language function and module synthesis' },
+    { cmd: '@agent infill ', icon: '🧩', label: 'Code Infilling', desc: 'Fill-in-the-middle code completion from context' },
+    { cmd: '@agent code-review ', icon: '🧐', label: 'Code Review', desc: 'Automated code review for maintainability & bugs' },
+    { cmd: '@agent refactor ', icon: '🔨', label: 'Code Refactoring', desc: 'Restructure code without altering functional behavior' },
+    { cmd: '@agent test-gen ', icon: '🧪', label: 'Unit Test Gen', desc: 'Generate high-coverage unit tests and assertions' },
+    { cmd: '@agent graph-index ', icon: '🕸️', label: 'Code Graph Index', desc: 'Extract AST relationships & call graphs' },
+    { cmd: '@agent rest-rl ', icon: '⚡', label: 'ReST-RL Daemon', desc: 'Sub-8ms Windows Job Object RL repair engine' },
+    { cmd: '@agent ast-parse ', icon: '🌲', label: 'AST Tree Parse', desc: 'Parse source into concrete syntax trees and tokens' },
+    { cmd: '@agent docstring ', icon: '📝', label: 'Docstring Gen', desc: 'Synthesize Google/Sphinx/Rustdoc documentation comments' },
+    { cmd: '@agent type-infer ', icon: '🏷️', label: 'Type Inference', desc: 'Infer strong static types for dynamic languages' },
+    { cmd: '@agent sql ', icon: '🗄️', label: 'SQL Generator', desc: 'Translate natural language queries into optimized SQL' },
+    { cmd: '@agent regex ', icon: '🔍', label: 'Regex Builder', desc: 'Construct and explain complex regular expressions' },
+    { cmd: '@agent git-commit ', icon: '📦', label: 'Git Commit Message', desc: 'Generate Conventional Commit messages from diffs' },
+    { cmd: '@agent lint-fix ', icon: '🪛', label: 'Automated Lint Fix', desc: 'Auto-repair linting, formatting, and stylistic warnings' },
+    { cmd: '@agent perf-audit ', icon: '⏱️', label: 'Performance Profiler', desc: 'Algorithmic complexity Big-O analysis and bottlenecks' },
+    { cmd: '@agent deps ', icon: '📦', label: 'Dependency Analysis', desc: 'Detect obsolete or vulnerable third-party dependencies' },
+    { cmd: '@agent api-docs ', icon: '📚', label: 'API Doc Generator', desc: 'Generate OpenAPI / Swagger specifications from code' },
+    { cmd: '@agent code-translate ', icon: '🔀', label: 'Code Translation', desc: 'Transpile code between Python, Rust, TS, Go, C++' },
+    { cmd: '@agent dockerfile ', icon: '🐳', label: 'Dockerfile Gen', desc: 'Generate multi-stage secure container Dockerfiles' },
+    { cmd: '@agent security ', icon: '🛡️', label: 'Security Analysis', desc: 'Malware, phishing, PII, and exploit detection' },
+    { cmd: '@agent pe ', icon: '🔬', label: 'PE Header Forensics', desc: 'Extract PE headers and binary forensics from .exe/.dll' },
+    { cmd: '@agent vuln-scan ', icon: '🪲', label: 'Vulnerability Scan', desc: 'Static analysis for buffer overflows, use-after-free, injection' },
+    { cmd: '@agent malware-analysis ', icon: '🦠', label: 'Malware Analysis', desc: 'Heuristic static malware indicators and evasion patterns' },
+    { cmd: '@agent mem-forensics ', icon: '💾', label: 'Memory Forensics', desc: 'Analyze core dumps, heap allocations, and stack frames' },
+    { cmd: '@agent pii-scan ', icon: '🔒', label: 'PII Scanner', desc: 'Discover SSNs, credit cards, emails, and confidential data' },
+    { cmd: '@agent entropy ', icon: '📐', label: 'Entropy Scan', desc: 'Compute Shannon entropy to detect packed or encrypted sections' },
+    { cmd: '@agent strings ', icon: '🧵', label: 'Strings Extractor', desc: 'Extract and filter printable ASCII and Unicode strings' },
+    { cmd: '@agent exploit ', icon: '💥', label: 'Exploit Analyzer', desc: 'Assess proof-of-concept exploits and remediation steps' },
+    { cmd: '@agent decompile ', icon: '🧬', label: 'Decompilation', desc: 'Explain disassembled assembly and high-level pseudocode' },
+    { cmd: '@agent net-audit ', icon: '🌐', label: 'Network Traffic Audit', desc: 'Inspect PCAP captures and suspicious beaconing traffic' },
+    { cmd: '@agent yara ', icon: '📜', label: 'YARA Rule Gen', desc: 'Synthesize YARA detection rules for indicators of compromise' },
+    { cmd: '@agent tls-inspect ', icon: '🔐', label: 'TLS Inspector', desc: 'Verify certificates, cipher suites, and handshake health' },
+    { cmd: '@agent owasp ', icon: '🛡️', label: 'OWASP Audit', desc: 'Comprehensive audit against OWASP Top 10 vulnerabilities' },
+    { cmd: '@agent packer-detect ', icon: '📦', label: 'Packer Detector', desc: 'Detect UPX, Themida, VMProtect, and known binary packers' },
+    { cmd: '@agent secret-scan ', icon: '🔑', label: 'Secret Leak Scan', desc: 'Identify committed API tokens, private keys, and passwords' },
+    { cmd: '@agent medical ', icon: '🏥', label: 'Medical Analysis', desc: 'Clinical notes analysis, biomedical research summarization' },
+    { cmd: '@agent legal ', icon: '⚖️', label: 'Legal Review', desc: 'Contract clause analysis, indemnification and liability audit' },
+    { cmd: '@agent finance ', icon: '💰', label: 'Financial Analysis', desc: 'Balance sheet parsing, earnings call sentiment & ratios' },
+    { cmd: '@agent robotics ', icon: '🤖', label: 'Robotics Kinematics', desc: 'Inverse kinematics, trajectory planning, and actuator dynamics' },
+    { cmd: '@agent rl ', icon: '🎮', label: 'Reinforcement Learning', desc: 'Markov decision processes, Q-learning, and policy gradients' },
+    { cmd: '@agent graph-ml ', icon: '🕸️', label: 'Graph ML', desc: 'Node classification and link prediction on knowledge graphs' },
+    { cmd: '@agent chemistry ', icon: '🧪', label: 'Molecular Chemistry', desc: 'SMILES molecular representation and reaction properties' },
+    { cmd: '@agent climate ', icon: '🌍', label: 'Climate Science', desc: 'Atmospheric sensor modeling and weather trend forecasting' },
+    { cmd: '@agent patent ', icon: '📜', label: 'Patent Prior Art', desc: 'Cross-reference claims and patent infringement discovery' },
+    { cmd: '@agent tab-domain ', icon: '📑', label: 'Domain Tabular', desc: 'Healthcare and financial domain-specific tabular modeling' },
+    { cmd: '@agent fusion ', icon: '🧠', label: 'Multimodal Fusion', desc: 'Cross-modal late fusion combining vision, text, and data' },
+    { cmd: '@agent av-align ', icon: '🎬', label: 'Audio-Visual Grounding', desc: 'Align audio spectrogram events with visual video frames' },
+    { cmd: '@agent physics ', icon: '⚛️', label: 'Physics Modeling', desc: 'Hamiltonian and classical Newtonian mechanics simulations' },
+    { cmd: '@agent bioinformatics ', icon: '🧬', label: 'Bioinformatics', desc: 'DNA sequence alignment and protein folding predictions' },
+    { cmd: '@agent geospatial ', icon: '🗺️', label: 'GIS Geospatial', desc: 'Geohash coordinate queries and satellite imagery analytics' },
     { cmd: '@agent goal ', icon: '🎯', label: 'Autonomous Goal', desc: 'Multi-turn autonomous goal-directed agent loop' },
-    { cmd: '@agent plan ', icon: '📐', label: 'Architect Plan', desc: 'Structured architectural decomposition & test criteria' },
+    { cmd: '@agent plan ', icon: '📋', label: 'Planning Engine', desc: 'Deconstruct complex tasks into executable steps' },
     { cmd: '@agent grill-me ', icon: '🔥', label: 'Grill Me Mode', desc: 'Adversarial requirements interview & stress-testing' },
     { cmd: '@agent boost ', icon: '🚀', label: 'Reasoning Boost', desc: 'Deep multi-perspective reasoning & rigorous verification' },
     { cmd: '@agent agentic-loop ', icon: '🔄', label: 'Agentic Loop', desc: 'Recursive auto-chaining for up to 256k tokens' },
-    { cmd: '@agent vision ', icon: '👁️', label: 'Vision Analysis', desc: 'Object detection, OCR, and visual Q&A' },
-    { cmd: '@agent image-classification ', icon: '🏷️', label: 'Image Classification', desc: 'Zero-shot vision classification across open models' },
-    { cmd: '@agent object-detection ', icon: '📦', label: 'Object Detection', desc: 'Visual bounding boxes and multi-target detection' },
-    { cmd: '@agent vqa ', icon: '❓', label: 'Visual Question Answering', desc: 'Direct Q&A on attached images & visual assets' },
-    { cmd: '@agent asr ', icon: '🎙️', label: 'Speech-to-Text', desc: 'Automatic speech recognition via Whisper models' },
-    { cmd: '@agent tts ', icon: '🔊', label: 'Text-to-Speech', desc: 'Text synthesis into natural audible speech' },
-    { cmd: '@agent audio ', icon: '🎵', label: 'Audio Classification', desc: 'Sound event detection & voice activity analysis' },
-    { cmd: '@agent security ', icon: '🛡️', label: 'Security Audit', desc: 'Vulnerability detection, exploit analysis & PII audit' },
-    { cmd: '@agent graph-index ', icon: '🕸️', label: 'Code Graph Index', desc: 'Extract AST relationships & call graphs' },
-    { cmd: '@agent rest-rl ', icon: '⚡', label: 'ReST-RL Daemon', desc: 'Sub-8ms Windows Job Object RL repair engine' },
-    { cmd: '@agent pe ', icon: '🔬', label: 'PE Header Forensics', desc: 'PE binary headers, imports, sections, and hashes' },
+    { cmd: '@agent explain ', icon: '💡', label: 'Explain Concept', desc: 'Step-by-step reasoning and deep conceptual explanation' },
+    { cmd: '@agent cot ', icon: '🧠', label: 'Chain-of-Thought', desc: 'Explicit chain-of-thought derivation with evidence checks' },
+    { cmd: '@agent critic ', icon: '🧐', label: 'Self-Critique', desc: 'Adversarially evaluate draft solutions for edge case flaws' },
+    { cmd: '@agent synthesize ', icon: '🪢', label: 'Synthesis Engine', desc: 'Synthesize multiple divergent viewpoints into one consensus' },
+    { cmd: '@agent decompose ', icon: '🧩', label: 'Decomposition', desc: 'Break massive requirements into atomic subtasks' },
+    { cmd: '@agent delegate ', icon: '🤝', label: 'Subagent Delegate', desc: 'Dispatch specialized micro-tasks to background subagents' },
+    { cmd: '@agent verify ', icon: '✅', label: 'Step Verification', desc: 'Formal verification of outputs against input constraints' },
+    { cmd: '@agent backtrack ', icon: '↩️', label: 'Backtrack Rollback', desc: 'Rollback erroneous reasoning branches to previous valid state' },
+    { cmd: '@agent reflection ', icon: '🪞', label: 'Error Reflection', desc: 'Analyze execution failure traces and synthesize self-corrections' },
+    { cmd: '@agent adversarial ', icon: '⚔️', label: 'Adversarial Test', desc: 'Subject assumptions and architecture to worst-case stresses' },
+    { cmd: '@agent update', icon: '⚡', label: 'Update Catalog', desc: 'Fast curated update (~6,500 models & dynamic Ollama sizing)' },
+    { cmd: '@agent updatedb', icon: '🚀', label: 'Full Registry Crawler', desc: 'Crawl all 2M+ models from Hugging Face Hub' },
     { cmd: '@agent active-model', icon: '🤖', label: 'Active Model', desc: 'Inspect currently loaded Ollama model & memory' },
-    { cmd: '@agent sys-info', icon: '💻', label: 'System Info', desc: 'Hardware CPU, RAM, GPU, VRAM, and storage specs' }
+    { cmd: '@agent sys-info', icon: '🖥️', label: 'System Info', desc: 'Hardware resources, runtime RAM/VRAM, and active models' },
+    { cmd: '@agent fusion-status', icon: '🧠', label: 'ModelFusion Status', desc: 'Multi-modal catalog count and consensus telemetry' },
+    { cmd: '@agent key gemini ', icon: '🔑', label: 'Gemini API Key', desc: 'Configure Google Gemini API key for cloud model inference' }
   ];
 
   let acSelectedIndex = -1;
@@ -5164,13 +5703,23 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     const val = inputEl.value;
 
     const atIndex = val.lastIndexOf('@');
-    if (atIndex < 0) {
+    const slashIndex = val.lastIndexOf('/');
+    let triggerIndex = -1;
+    if (atIndex >= 0 && (atIndex === 0 || /\s/.test(val[atIndex - 1]))) {
+      triggerIndex = atIndex;
+    }
+    if (slashIndex >= 0 && (slashIndex === 0 || /\s/.test(val[slashIndex - 1]))) {
+      if (slashIndex > triggerIndex) {
+        triggerIndex = slashIndex;
+      }
+    }
+    if (triggerIndex < 0) {
       dropdown.classList.add('hidden');
       acSelectedIndex = -1;
       return;
     }
 
-    const query = val.slice(atIndex + 1).toLowerCase().replace(/^agent\s*/i, '').trim();
+    const query = val.slice(triggerIndex + 1).toLowerCase().replace(/^agent\s*/i, '').trim();
 
     let filtered = AGENT_COMMANDS;
     if (query) {
@@ -5433,7 +5982,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
         termLog(`Quick Launch triggered: ${tile.querySelector('.tile-title')?.textContent || url}`, 'info');
 
         if (action === 'acdso') {
-          executeCliCommand(`/acdso ${url}`);
+          executeCliCommand(`@agent acdso ${url}`);
         } else {
           navigateTo(url);
         }
@@ -5443,14 +5992,14 @@ If you are asked about real-world facts such as world leaders, heads of state, c
 
 
   // Action buttons
-  if (btnSom) btnSom.addEventListener('click', () => executeCliCommand('/som'));
-  if (btnAcdso) btnAcdso.addEventListener('click', () => executeCliCommand(`/acdso ${currentNavUrl || ''}`));
-  if (btnSummarize) btnSummarize.addEventListener('click', () => executeCliCommand('/summarize'));
+  if (btnSom) btnSom.addEventListener('click', () => executeCliCommand('@agent som'));
+  if (btnAcdso) btnAcdso.addEventListener('click', () => executeCliCommand(`@agent acdso ${currentNavUrl || ''}`));
+  if (btnSummarize) btnSummarize.addEventListener('click', () => executeCliCommand('@agent summarize'));
   if (btnResearch) btnResearch.addEventListener('click', () => executeCliCommand(`@agent browser deep research on ${currentNavUrl || 'top trending AI models'}`));
 
-  if (btnWvSom) btnWvSom.addEventListener('click', () => executeCliCommand('/som'));
-  if (btnWvTables) btnWvTables.addEventListener('click', () => executeCliCommand(`/acdso ${currentNavUrl}`));
-  if (btnWvSummarize) btnWvSummarize.addEventListener('click', () => executeCliCommand('/summarize'));
+  if (btnWvSom) btnWvSom.addEventListener('click', () => executeCliCommand('@agent som'));
+  if (btnWvTables) btnWvTables.addEventListener('click', () => executeCliCommand(`@agent acdso ${currentNavUrl}`));
+  if (btnWvSummarize) btnWvSummarize.addEventListener('click', () => executeCliCommand('@agent summarize'));
 
   // Clear & Copy Console / Chat
   if (btnClearConsole) {
