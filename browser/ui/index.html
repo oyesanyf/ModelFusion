@@ -152,6 +152,10 @@
                   <span class="tool-btn-left"><span class="tool-icon">👁️</span><span class="tool-label">Vision Analysis</span></span>
                   <span class="tool-tag">@vision</span>
                 </button>
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_video" data-category="vision" data-cmd="@agent video " data-original-title="Video Analysis &amp; Temporal QA" title="Video Analysis &amp; Temporal QA">
+                  <span class="tool-btn-left"><span class="tool-icon">🎬</span><span class="tool-label">Video Analysis</span></span>
+                  <span class="tool-tag">@video</span>
+                </button>
                 <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_image_classification" data-category="vision" data-cmd="@agent image-classification " data-original-title="Zero-Shot Image Classification" title="Zero-Shot Image Classification">
                   <span class="tool-btn-left"><span class="tool-icon">🏷️</span><span class="tool-label">Classification</span></span>
                   <span class="tool-tag">@classify</span>
@@ -260,7 +264,10 @@
         <div class="sidebar-section-divider"></div>
 
         <div class="sidebar-chat-history" id="sidebar-chat-history">
-          <div class="chat-history-header">Recent chats</div>
+          <div class="chat-history-header">
+            <span>Recent chats</span>
+            <button type="button" class="chat-history-export-btn" id="btn-sidebar-export-history" title="Export Entire Conversation History (ChatGPT Format)">📥</button>
+          </div>
           <div class="chat-history-list" id="chat-history-list"></div>
         </div>
       </nav>
@@ -447,7 +454,7 @@
         </div>
 
         <!-- Hidden DOM Bridges for JS Compatibility -->
-        <input type="file" id="file-picker" style="display: none !important;" multiple accept="image/*,audio/*,.csv,.tsv,.parquet,.xlsx,.json,.pdf,.py,.rs,.js,.ts,.html,.css,.md,.txt,.exe,.dll,.sys,.bin">
+        <input type="file" id="file-picker" style="display: none !important;" multiple accept="image/*,audio/*,video/*,.mp4,.webm,.mkv,.avi,.mov,.flv,.wmv,.m4v,.csv,.tsv,.parquet,.xlsx,.json,.pdf,.py,.rs,.js,.ts,.html,.css,.md,.txt,.exe,.dll,.sys,.bin">
         <div style="display: none !important;" aria-hidden="true">
           <div id="dashboard-view"></div>
           <button id="btn-run-cli"></button>
@@ -511,6 +518,10 @@
           <button type="button" class="settings-tab" data-tab="tab-storage">
             <span class="tab-icon">📁</span>
             <span class="tab-text">Storage</span>
+          </button>
+          <button type="button" class="settings-tab" data-tab="tab-data-controls">
+            <span class="tab-icon">📦</span>
+            <span class="tab-text">Data controls</span>
           </button>
           <button type="button" class="settings-tab" data-tab="tab-keyboard">
             <span class="tab-icon">⌨️</span>
@@ -1180,6 +1191,34 @@
             </div>
           </div>
 
+          <!-- 5b. DATA CONTROLS & EXPORT TAB -->
+          <div class="settings-tab-pane" id="pane-tab-data-controls">
+            <div class="settings-pane-header">
+              <h3>Data Controls &amp; Export</h3>
+              <p>Manage privacy, conversation history exports, and reinforcement learning preferences.</p>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">Export entire conversation history</label>
+                <span class="setting-desc">Request an export of your entire conversation history, custom models, and RL preferences in standard ChatGPT data format (conversations.json and offline chat.html).</span>
+              </div>
+              <div class="setting-control">
+                <button type="button" class="action-btn" id="btn-request-export-chatgpt">Export data</button>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
+                <label class="setting-label">Reinforcement Learning Feedback</label>
+                <span class="setting-desc">Use thumbs up / thumbs down feedback to adaptively tune model routing, Pareto thresholds, and generate DPO preference datasets.</span>
+              </div>
+              <div class="setting-control">
+                <span class="badge-bandit-status">Active (Multi-Armed Bandit Online Policy)</span>
+              </div>
+            </div>
+          </div>
+
           <!-- 6. KEYBOARD SHORTCUTS TAB -->
           <div class="settings-tab-pane" id="pane-tab-keyboard">
             <div class="settings-pane-header">
@@ -1538,6 +1577,49 @@
             <div><strong>Multi-Modal Catalog DB:</strong> <code id="mf-modal-db-path">IDE/db/hf_models.db</code> (<span id="mf-modal-db-size">Indexed &amp; Verified</span>)</div>
           </div>
         </div>
+      </div>
+    </div>
+  <!-- Export Confirmation Modal -->
+  <div class="export-modal-overlay hidden" id="modal-export-confirm">
+    <div class="export-modal-dialog">
+      <div class="export-modal-header">
+        <div class="export-modal-title">
+          <span>📦</span>
+          <span>Export data</span>
+        </div>
+        <button type="button" class="export-modal-close-btn" id="btn-close-export-modal" title="Close (Esc)">✕</button>
+      </div>
+      <div class="export-modal-body">
+        <p class="export-modal-message">
+          Are you sure you want to export your entire chat history? A download of your conversation archive (<strong>conversations.json</strong>, standalone readable <strong>chat.html</strong>, and <strong>rl_feedback_dataset.json</strong>) will begin immediately.
+        </p>
+        <div class="export-modal-details">
+          <div class="export-detail-item">
+            <span class="detail-icon">💬</span>
+            <div class="detail-content">
+              <strong>Conversation Archive</strong>
+              <span>All conversation sessions, user and assistant messages, timestamps, models used, and tool directives in standard ChatGPT schema.</span>
+            </div>
+          </div>
+          <div class="export-detail-item">
+            <span class="detail-icon">🌐</span>
+            <div class="detail-content">
+              <strong>Offline Readable HTML</strong>
+              <span>Standalone dark-theme web archive with left navigation to view and search conversations offline.</span>
+            </div>
+          </div>
+          <div class="export-detail-item">
+            <span class="detail-icon">🎯</span>
+            <div class="detail-content">
+              <strong>RL &amp; DPO Dataset</strong>
+              <span>Formatted prompt-response pairs with rewards (+1.0 / -1.0) for Direct Preference Optimization and fine-tuning.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="export-modal-footer">
+        <button type="button" class="cli-btn-secondary" id="btn-cancel-export">Cancel</button>
+        <button type="button" class="action-btn" id="btn-confirm-export">Confirm export</button>
       </div>
     </div>
   </div>

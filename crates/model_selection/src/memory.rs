@@ -923,8 +923,210 @@ pub fn is_ollama_model_cached(model_id: &str) -> bool {
     })
 }
 
+/// Ensure FFmpeg is available on the system.
+/// Auto-discovers FFmpeg across PATH, standard paths, WinGet packages, local bundle paths,
+/// or automatically installs it silently if missing.
+pub fn ensure_ffmpeg_available() -> Result<std::path::PathBuf, String> {
+    // 1. Probe PATH via `where` on Windows or `which` on Unix
+    #[cfg(windows)]
+    let check_cmd = "where";
+    #[cfg(not(windows))]
+    let check_cmd = "which";
 
+    if let Ok(output) = create_hidden_command(check_cmd).arg("ffmpeg").output() {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                let p = std::path::PathBuf::from(line.trim());
+                if p.is_file() {
+                    return Ok(p);
+                }
+            }
+        }
+    }
 
+    // 2. Check candidate filesystem paths
+    let mut candidates = Vec::new();
+    if let Ok(curr_exe) = std::env::current_exe() {
+        if let Some(parent) = curr_exe.parent() {
+            candidates.push(parent.join("ffmpeg.exe"));
+            candidates.push(parent.join("ffmpeg"));
+        }
+    }
+    candidates.push(std::path::PathBuf::from("IDE/bin/ffmpeg.exe"));
+    candidates.push(std::path::PathBuf::from("browser/bin/ffmpeg.exe"));
+    candidates.push(std::path::PathBuf::from("IDE/bin/ffmpeg"));
+    candidates.push(std::path::PathBuf::from("browser/bin/ffmpeg"));
+
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        let lad = std::path::PathBuf::from(&local_app_data);
+        candidates.push(lad.join("ModelFusion").join("bin").join("ffmpeg.exe"));
+        candidates.push(lad.join("ffmpeg").join("bin").join("ffmpeg.exe"));
+        candidates.push(lad.join("Programs").join("ffmpeg").join("bin").join("ffmpeg.exe"));
+        candidates.push(lad.join("Microsoft").join("WinGet").join("Links").join("ffmpeg.exe"));
+
+        // Scan WinGet package directories
+        let winget_pkg_dir = lad.join("Microsoft").join("WinGet").join("Packages");
+        if winget_pkg_dir.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(&winget_pkg_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    if name.contains("FFmpeg") {
+                        if let Ok(subentries) = std::fs::read_dir(&path) {
+                            for sub in subentries.flatten() {
+                                let sub_path = sub.path();
+                                candidates.push(sub_path.join("bin").join("ffmpeg.exe"));
+                                candidates.push(sub_path.join("ffmpeg.exe"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if let Ok(prog_files) = std::env::var("ProgramFiles") {
+        let pf = std::path::PathBuf::from(&prog_files);
+        candidates.push(pf.join("ffmpeg").join("bin").join("ffmpeg.exe"));
+        candidates.push(pf.join("FFmpeg").join("bin").join("ffmpeg.exe"));
+    }
+    candidates.push(std::path::PathBuf::from(r"C:\Program Files\ffmpeg\bin\ffmpeg.exe"));
+
+    for cand in &candidates {
+        if cand.is_file() {
+            // Found existing binary! Inject directory into current process PATH and HKCU Environment
+            if let Some(parent) = cand.parent() {
+                let current_path = std::env::var("PATH").unwrap_or_default();
+                std::env::set_var("PATH", format!("{};{}", parent.display(), current_path));
+
+                #[cfg(windows)]
+                {
+                    let dir_str = parent.to_string_lossy().to_string();
+                    let query_out = create_hidden_command("reg")
+                        .args(["query", "HKCU\\Environment", "/v", "Path"])
+                        .output();
+                    let mut existing_user_path = String::new();
+                    if let Ok(out) = query_out {
+                        if out.status.success() {
+                            let text = String::from_utf8_lossy(&out.stdout);
+                            for line in text.lines() {
+                                let trimmed = line.trim();
+                                if trimmed.starts_with("Path") {
+                                    if let Some(val) = trimmed.split_whitespace().last() {
+                                        existing_user_path = val.to_string();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !existing_user_path.to_lowercase().contains(&dir_str.to_lowercase()) {
+                        let new_user_path = if existing_user_path.is_empty() {
+                            dir_str
+                        } else {
+                            format!("{};{}", existing_user_path.trim_end_matches(';'), dir_str)
+                        };
+                        let _ = create_hidden_command("reg")
+                            .args(["add", "HKCU\\Environment", "/v", "Path", "/t", "REG_EXPAND_SZ", "/d", &new_user_path, "/f"])
+                            .status();
+                    }
+                }
+            }
+            return Ok(cand.clone());
+        }
+    }
+
+    // 3. If not found on Windows, attempt silent auto-installation
+    #[cfg(windows)]
+    {
+        eprintln!("🎬 [FFMPEG] FFmpeg not found. Attempting automated silent installation...");
+        let winget_res = create_hidden_command("winget")
+            .args([
+                "install",
+                "--id",
+                "Gyan.FFmpeg",
+                "--accept-package-agreements",
+                "--accept-source-agreements",
+                "--silent",
+                "--disable-interactivity",
+            ])
+            .status();
+
+        if let Ok(st) = winget_res {
+            if st.success() {
+                eprintln!("🎬 [FFMPEG] WinGet installation succeeded. Re-scanning candidates...");
+            }
+        }
+
+        // Re-check after WinGet
+        for cand in &candidates {
+            if cand.is_file() {
+                if let Some(parent) = cand.parent() {
+                    let current_path = std::env::var("PATH").unwrap_or_default();
+                    std::env::set_var("PATH", format!("{};{}", parent.display(), current_path));
+                }
+                return Ok(cand.clone());
+            }
+        }
+
+        // 4. Fallback direct download and extraction
+        let temp_dir = std::env::temp_dir();
+        let zip_path = temp_dir.join("ffmpeg-essentials.zip");
+        let extract_dir = temp_dir.join("ffmpeg_extract");
+        let target_dir = std::env::var("LOCALAPPDATA")
+            .map(|l| std::path::PathBuf::from(l).join("ModelFusion").join("bin"))
+            .unwrap_or_else(|_| std::path::PathBuf::from("IDE/bin"));
+        let target_ffmpeg = target_dir.join("ffmpeg.exe");
+
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(180))
+            .build()
+            .unwrap_or_default();
+
+        if let Ok(mut r) = client.get("https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip").send() {
+            if r.status().is_success() {
+                if let Ok(mut f) = std::fs::File::create(&zip_path) {
+                    if std::io::copy(&mut r, &mut f).is_ok() {
+                        let _ = std::fs::create_dir_all(&extract_dir);
+                        let ps_cmd = format!(
+                            "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
+                            zip_path.display(),
+                            extract_dir.display()
+                        );
+                        let _ = create_hidden_command("powershell")
+                            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_cmd])
+                            .status();
+
+                        // Find extracted ffmpeg.exe
+                        if let Ok(entries) = std::fs::read_dir(&extract_dir) {
+                            for ent in entries.flatten() {
+                                let cand = ent.path().join("bin").join("ffmpeg.exe");
+                                if cand.is_file() {
+                                    let _ = std::fs::create_dir_all(&target_dir);
+                                    let _ = std::fs::copy(&cand, &target_ffmpeg);
+                                    let current_path = std::env::var("PATH").unwrap_or_default();
+                                    std::env::set_var("PATH", format!("{};{}", target_dir.display(), current_path));
+                                    return Ok(target_ffmpeg);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if target_ffmpeg.is_file() {
+            return Ok(target_ffmpeg);
+        }
+    }
+
+    Err("FFmpeg executable could not be found or installed. Please install FFmpeg (winget install Gyan.FFmpeg)".to_string())
+}
+
+/// Check if FFmpeg is available.
+pub fn is_ffmpeg_available() -> bool {
+    ensure_ffmpeg_available().is_ok()
+}
 
 #[cfg(test)]
 mod tests {
