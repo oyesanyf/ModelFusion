@@ -60,8 +60,20 @@ if ($dbSrc) {
     $browserBinDb = Join-Path $browserDir "bin\db\hf_models.db"
     New-Item -ItemType Directory -Force -Path (Split-Path $browserDb -Parent) | Out-Null
     New-Item -ItemType Directory -Force -Path (Split-Path $browserBinDb -Parent) | Out-Null
-    Copy-Item -Path $dbSrc -Destination $browserDb -Force
-    Copy-Item -Path $dbSrc -Destination $browserBinDb -Force
+    try {
+        if (-not (Test-Path $browserDb) -or (Get-Item $browserDb).Length -ne (Get-Item $dbSrc).Length) {
+            Copy-Item -Path $dbSrc -Destination $browserDb -Force
+        }
+    } catch {
+        Write-Host "[WARN] $browserDb in use, proceeding with existing file." -ForegroundColor Yellow
+    }
+    try {
+        if (-not (Test-Path $browserBinDb) -or (Get-Item $browserBinDb).Length -ne (Get-Item $dbSrc).Length) {
+            Copy-Item -Path $dbSrc -Destination $browserBinDb -Force
+        }
+    } catch {
+        Write-Host "[WARN] $browserBinDb in use, proceeding with existing file." -ForegroundColor Yellow
+    }
     Write-Host "[OK] Staged hf_models.db ($( (Get-Item $browserDb).Length ) bytes) into browser\db and browser\bin\db" -ForegroundColor Green
 } else {
     Write-Host "[WARNING] No populated hf_models.db found for browser packaging." -ForegroundColor Yellow

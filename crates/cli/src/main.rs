@@ -1146,6 +1146,12 @@ fn spawn_rest_rl_daemon() -> Result<(), String> {
     Ok(())
 }
 
+pub async fn handle_rest_rl_command(subaction: &str, args: &[String]) -> String {
+    let mut parts = vec![subaction.to_string()];
+    parts.extend_from_slice(args);
+    handle_rest_rl(&parts).await
+}
+
 pub async fn handle_rest_rl(args_list: &[String]) -> String {
     let subcmd = args_list.first().map(|s| s.trim()).filter(|s| !s.is_empty()).unwrap_or("status");
     let clean_sub = subcmd.trim_start_matches('/').trim_start_matches('-').to_lowercase();
@@ -2227,6 +2233,11 @@ where
         let sub = args[2].to_lowercase();
         let sub_clean = sub.trim_start_matches('/');
         let has_combinator = args.iter().any(|a| a == "&" || a == "+" || a == "and" || a == "," || a.contains(" & ") || a.contains(" + "));
+        if (sub_clean == "markers" || sub_clean == "marker" || sub_clean == "som") && !has_combinator {
+            args.remove(1);
+            args[1] = "som".to_string();
+            return args;
+        }
         if sub_clean == "arxiv" && !has_combinator {
             args.remove(1);
             args[1] = "--arxiv".to_string();
@@ -2247,6 +2258,9 @@ where
     }
 
     match verb.as_str() {
+        "markers" | "marker" | "/markers" | "/marker" | "@agent/markers" | "@agent:markers" | "@markers" => {
+            args[1] = "som".to_string();
+        }
         "arxiv" | "/arxiv" | "@agent/arxiv" | "@agent:arxiv" => {
             args[1] = "--arxiv".to_string();
         }
@@ -5442,7 +5456,7 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
         "browser" | "browse" | "web" | "hugosbrowser" | "browseragent" | "browsertask" | "browserextract" => Some("browser"),
         "deepresearch" => Some("deep-research"),
         "summarize" => Some("summarize"),
-        "som" | "setofmark" => Some("som"),
+        "markers" | "marker" | "visualmarkers" | "som" | "setofmark" => Some("som"),
         "grillme" | "grill" | "interview" => Some("grill-me"),
         "teamworkpreview" | "teamwork" | "teams" | "team" => Some("teamwork-preview"),
         "learn" | "remember" => Some("learn"),
@@ -7652,7 +7666,8 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         { "name": "video", "cmd": "@agent video ", "icon": "🎬", "category": "multimodal", "label": "Video Analysis", "desc": "Process video streams, extract keyframes, classify actions & video QA" },
                         { "name": "browser_deep_research", "cmd": "@agent browser deep research on ", "icon": "🔍", "category": "web", "label": "Deep Research", "desc": "Autonomous multi-step web research & synthesis" },
                         { "name": "arxiv", "cmd": "@agent arxiv ", "icon": "📚", "category": "web", "label": "arXiv Papers", "desc": "Direct search of arXiv scientific preprints and research papers" },
-                        { "name": "som", "cmd": "@agent som", "icon": "🎯", "category": "web", "label": "Set-of-Mark Vision", "desc": "Numeric visual element grounding with 90% token reduction" },
+                        { "name": "markers", "cmd": "@agent markers ", "icon": "🎯", "category": "web", "label": "Visual Element Markers", "desc": "Numeric visual element grounding with 90% token reduction" },
+                        { "name": "som", "cmd": "@agent markers ", "icon": "🎯", "category": "web", "label": "Visual Element Markers", "desc": "Numeric visual element grounding with 90% token reduction" },
                         { "name": "summarize", "cmd": "@agent summarize", "icon": "📑", "category": "web", "label": "Summarize Page", "desc": "Extract and summarize active web page content" },
                         { "name": "search", "cmd": "@agent search ", "icon": "🔎", "category": "web", "label": "Web Search Grounding", "desc": "Live web search grounding with verified citations" },
                         { "name": "web_agent", "cmd": "@agent web-agent ", "icon": "🌐", "category": "web", "label": "Web Search Agent", "desc": "Search internet, build inverted index, and correlate results with LLM" },
@@ -7855,6 +7870,61 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                     body_str.len(),
                     body_str
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── ReST-RL Daemon Lifecycle & Inspection (/api/restrl/status, /api/restrl/start, /api/restrl/stop) ──
+            if request_path == "/api/restrl/status" {
+                let status_res = rpc_call_rest_rl("agent/status", serde_json::json!({})).await;
+                let is_running = status_res.is_ok();
+                let data = status_res.unwrap_or(serde_json::json!({ "status": "stopped" }));
+                let resp_json = serde_json::json!({
+                    "status": if is_running { "running" } else { "stopped" },
+                    "running": is_running,
+                    "details": data
+                });
+                let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            if request_path == "/api/restrl/start" {
+                let out = handle_rest_rl_command("start", &[]).await;
+                let resp_json = serde_json::json!({
+                    "status": "ok",
+                    "output": out
+                });
+                let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            if request_path == "/api/restrl/stop" {
+                let out = handle_rest_rl_command("stop", &[]).await;
+                let resp_json = serde_json::json!({
+                    "status": "ok",
+                    "output": out
+                });
+                let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
                 );
                 let _ = socket.write_all(response.as_bytes()).await;
                 let _ = socket.flush().await;
@@ -8165,6 +8235,98 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 let target_tokens = request_json.get("target_tokens").and_then(|v| v.as_u64()).map(|v| v as usize).unwrap_or(32768);
                 let chunk_tokens = request_json.get("chunk_tokens").and_then(|v| v.as_u64()).map(|v| v as usize).unwrap_or(4096);
                 let max_loops = request_json.get("max_loops").and_then(|v| v.as_u64()).map(|v| v as usize).unwrap_or(32);
+
+                // 0. ReST-RL Directive Interceptor: Directly invoke handle_rest_rl_command and return formatted response
+                let mut restrl_prompt_opt: Option<String> = None;
+                if let Some(messages) = request_json.get("messages").and_then(|m| m.as_array()) {
+                    for msg in messages.iter().rev() {
+                        if msg.get("role").and_then(|r| r.as_str()) == Some("user") {
+                            if let Some(content) = msg.get("content").and_then(|c| c.as_str()) {
+                                restrl_prompt_opt = Some(content.trim().to_string());
+                            }
+                            break;
+                        }
+                    }
+                }
+                if restrl_prompt_opt.is_none() {
+                    if let Some(p) = request_json.get("prompt").and_then(|p| p.as_str()) {
+                        restrl_prompt_opt = Some(p.trim().to_string());
+                    }
+                }
+
+                if let Some(ref prompt_str) = restrl_prompt_opt {
+                    let p_lower = prompt_str.to_lowercase();
+                    let is_restrl = p_lower.starts_with("@agent rest-rl")
+                        || p_lower.starts_with("/rest-rl")
+                        || p_lower.starts_with("@rest-rl")
+                        || p_lower.starts_with("@agent rl")
+                        || p_lower.starts_with("/rl")
+                        || p_lower.starts_with("@rl")
+                        || p_lower.starts_with("@agent restrl")
+                        || p_lower.starts_with("/restrl")
+                        || p_lower.starts_with("@restrl")
+                        || p_lower == "rest-rl"
+                        || p_lower == "restrl"
+                        || p_lower == "rl";
+
+                    if is_restrl {
+                        let stripped = if p_lower.starts_with("@agent rest-rl") {
+                            &prompt_str[14..]
+                        } else if p_lower.starts_with("@agent restrl") {
+                            &prompt_str[13..]
+                        } else if p_lower.starts_with("@agent rl") {
+                            &prompt_str[9..]
+                        } else if p_lower.starts_with("/rest-rl") || p_lower.starts_with("@rest-rl") {
+                            &prompt_str[8..]
+                        } else if p_lower.starts_with("/restrl") || p_lower.starts_with("@restrl") {
+                            &prompt_str[7..]
+                        } else if p_lower.starts_with("/rl") || p_lower.starts_with("@rl") {
+                            &prompt_str[3..]
+                        } else {
+                            ""
+                        };
+
+                        let parts: Vec<String> = stripped.split_whitespace().map(|s| s.to_string()).collect();
+                        let subaction = parts.first().map(|s| s.as_str()).unwrap_or("status");
+                        let subargs = if parts.len() > 1 { &parts[1..] } else { &[] };
+                        let result = handle_rest_rl_command(subaction, subargs).await;
+
+                        if is_streaming {
+                            let chunk1 = serde_json::json!({
+                                "model": "rest-rl",
+                                "message": { "role": "assistant", "content": result },
+                                "done": false
+                            });
+                            let chunk2 = serde_json::json!({
+                                "model": "rest-rl",
+                                "done": true
+                            });
+                            let body = format!("{}\n{}\n", chunk1, chunk2);
+                            let response = format!(
+                                "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/x-ndjson\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                                body.len(),
+                                body
+                            );
+                            let _ = socket.write_all(response.as_bytes()).await;
+                            let _ = socket.flush().await;
+                        } else {
+                            let resp_json = serde_json::json!({
+                                "model": "rest-rl",
+                                "message": { "role": "assistant", "content": result },
+                                "done": true
+                            });
+                            let body = serde_json::to_string(&resp_json).unwrap_or_default();
+                            let response = format!(
+                                "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                                body.len(),
+                                body
+                            );
+                            let _ = socket.write_all(response.as_bytes()).await;
+                            let _ = socket.flush().await;
+                        }
+                        return;
+                    }
+                }
 
                 // 1. Ensure Ollama daemon is active
                 let tags_probe_url = format!("{}/api/tags", ollama_endpoint.trim_end_matches('/'));
@@ -13463,8 +13625,16 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                             }
                         },
                         {
+                            "name": "markers",
+                            "description": "Run Visual Element Markers grounding with 90% token reduction.",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {}
+                            }
+                        },
+                        {
                             "name": "som",
-                            "description": "Run Set-of-Mark visual element grounding with 90% token reduction.",
+                            "description": "Run Visual Element Markers grounding with 90% token reduction (alias for markers).",
                             "inputSchema": {
                                 "type": "object",
                                 "properties": {}
@@ -16864,6 +17034,23 @@ public class Pr {
         use super::preprocess_cli_args;
         let res = preprocess_cli_args(["cli", "/arxiv", "deep learning"]);
         assert_eq!(res, vec!["cli".to_string(), "--arxiv".to_string(), "deep learning".to_string()]);
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_markers() {
+        use super::{preprocess_cli_args, canonicalize_command};
+        let res1 = preprocess_cli_args(["cli", "markers"]);
+        assert_eq!(res1, vec!["cli".to_string(), "som".to_string()]);
+
+        let res2 = preprocess_cli_args(["cli", "@agent", "markers"]);
+        assert_eq!(res2, vec!["cli".to_string(), "som".to_string()]);
+
+        let res3 = preprocess_cli_args(["cli", "/markers"]);
+        assert_eq!(res3, vec!["cli".to_string(), "som".to_string()]);
+
+        assert_eq!(canonicalize_command("markers"), Some("som"));
+        assert_eq!(canonicalize_command("@agent markers"), Some("som"));
+        assert_eq!(canonicalize_command("/markers"), Some("som"));
     }
 
     #[test]
