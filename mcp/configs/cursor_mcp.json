@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "modelfusion": {
+      "command": "d:\\harfile\\ModelFusion\\target\\release\\cli.exe",
+      "args": [
+        "--mcp",
+        "--db-path",
+        "d:\\harfile\\ModelFusion\\IDE\\db\\hf_models.db"
+      ],
+      "env": {
+        "LOCAL_OLLAMA_ENDPOINT": "http://127.0.0.1:11434"
+      }
+    }
+  }
+}

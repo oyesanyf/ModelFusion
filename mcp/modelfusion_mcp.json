@@ -1,0 +1,39 @@
+{
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/specification/main/schema/schema.json",
+  "name": "ModelFusion MCP Server",
+  "description": "Universal compound intelligence MCP server providing local 45-task AI orchestration, ACDSO Pareto AutoML, PE binary forensics, ReST-RL autonomous reasoning, arXiv scientific synthesis, and dynamic hardware sizing.",
+  "version": "1.0.0",
+  "author": "HugOS Team",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oyesanyf/ModelFusion"
+  },
+  "protocolVersion": "2024-11-05",
+  "capabilities": {
+    "tools": {
+      "listChanged": false
+    },
+    "resources": {
+      "subscribe": false,
+      "listChanged": false
+    }
+  },
+  "entrypoint": {
+    "command": "cli.exe",
+    "args": ["--mcp"],
+    "transports": ["stdio", "http-sse"]
+  },
+  "environment": {
+    "LOCAL_OLLAMA_ENDPOINT": "http://127.0.0.1:11434",
+    "MODELFUSION_PORT": "5000"
+  },
+  "categories": [
+    "Machine Learning",
+    "AutoML",
+    "Multi-Modal AI",
+    "Binary Forensics",
+    "Developer Tools",
+    "Autonomous Agents"
+  ]
+}

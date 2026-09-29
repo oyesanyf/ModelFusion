@@ -482,12 +482,21 @@ pub fn ensure_ollama_running() -> Result<(), String> {
     {
         let _ = create_hidden_command("reg")
             .args(["add", "HKCU\\Environment", "/v", "OLLAMA_ORIGINS", "/t", "REG_SZ", "/d", "*", "/f"])
-            .status();
+            .output();
     }
 
     // First check: is it already running?
     if is_ollama_responding(&endpoint) {
         return Ok(());
+    }
+
+    // If not responding, ensure any hung/dead instances are terminated so port 11434 is immediately freed
+    #[cfg(windows)]
+    {
+        let _ = create_hidden_command("taskkill")
+            .args(["/F", "/IM", "ollama.exe", "/IM", "ollama_llama_server.exe", "/T"])
+            .output();
+        std::thread::sleep(std::time::Duration::from_millis(500));
     }
 
     // Check if Ollama is installed: PATH first, then common installation paths
@@ -634,7 +643,7 @@ pub fn ensure_ollama_running() -> Result<(), String> {
                     };
                     let _ = create_hidden_command("reg")
                         .args(["add", "HKCU\\Environment", "/v", "Path", "/t", "REG_EXPAND_SZ", "/d", &new_user_path, "/f"])
-                        .status();
+                        .output();
                 }
             }
         }
@@ -655,7 +664,7 @@ pub fn ensure_ollama_running() -> Result<(), String> {
     {
         let _ = create_hidden_command("reg")
             .args(["add", "HKCU\\Environment", "/v", "OLLAMA_ORIGINS", "/t", "REG_SZ", "/d", "*", "/f"])
-            .status();
+            .output();
     }
 
     // Launch ollama serve as a detached background process with OLLAMA_ORIGINS=* and CREATE_NO_WINDOW
@@ -691,6 +700,30 @@ pub fn ensure_ollama_running() -> Result<(), String> {
     }
 
     Err("Ollama failed to start within 30 seconds. Please start it manually with 'ollama serve'.".to_string())
+}
+
+/// Forcefully recover and restart Ollama if it is unresponsive, hung, or returning 500.
+/// Kills any orphaned or stalled runner/daemon processes and starts a fresh `ollama serve`.
+pub fn recover_and_restart_ollama() -> Result<(), String> {
+    eprintln!("🦙 [OLLAMA WATCHDOG] 🔄 Initiating deep recovery & restart of Ollama engine...");
+
+    #[cfg(windows)]
+    {
+        let _ = create_hidden_command("taskkill")
+            .args(["/F", "/IM", "ollama.exe", "/IM", "ollama_llama_server.exe", "/T"])
+            .output();
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = std::process::Command::new("pkill")
+            .args(["-9", "-f", "ollama"])
+            .output();
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+    }
+
+    // Now start clean daemon with OLLAMA_ORIGINS=*
+    ensure_ollama_running()
 }
 
 /// Check if an OpenVINO model is cached/pre-converted on disk.
@@ -1028,7 +1061,7 @@ pub fn ensure_ffmpeg_available() -> Result<std::path::PathBuf, String> {
                         };
                         let _ = create_hidden_command("reg")
                             .args(["add", "HKCU\\Environment", "/v", "Path", "/t", "REG_EXPAND_SZ", "/d", &new_user_path, "/f"])
-                            .status();
+                            .output();
                     }
                 }
             }

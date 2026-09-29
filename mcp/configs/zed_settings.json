@@ -1,0 +1,10 @@
+{
+  "context_servers": {
+    "modelfusion": {
+      "command": {
+        "path": "d:\\harfile\\ModelFusion\\mcp\\scripts\\run_mcp.bat",
+        "args": []
+      }
+    }
+  }
+}

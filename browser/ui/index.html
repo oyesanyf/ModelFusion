@@ -210,7 +210,7 @@
                   <span class="tool-btn-left"><span class="tool-icon">🕸️</span><span class="tool-label">Code Graph Index</span></span>
                   <span class="tool-tag">@graph</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_rest_rl" data-category="code" data-cmd="@agent rest-rl " data-original-title="Start ReST-RL Daemon" title="Start ReST-RL Daemon">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_rest_rl" data-category="system" data-cmd="@agent rest-rl status" data-original-title="ReST-RL Daemon Status" title="ReST-RL Daemon Status">
                   <span class="tool-btn-left"><span class="tool-icon">⚡</span><span class="tool-label">ReST-RL Daemon</span></span>
                   <span class="tool-tag">@rest-rl</span>
                 </button>
@@ -823,22 +823,6 @@
 
             <div class="setting-item">
               <div class="setting-info">
-                <label for="setting-gemini-key" class="setting-label">Google Gemini API Key</label>
-                <span class="setting-desc">Use your Google Gemini API credits with frontier cloud models (Gemini 2.0 Flash, 1.5 Pro, 1.5 Flash).</span>
-              </div>
-              <div class="setting-control-group">
-                <div class="setting-input-row">
-                  <input type="password" id="setting-gemini-key" class="setting-input" placeholder="AIzaSy..." spellcheck="false">
-                  <button type="button" class="setting-test-btn" id="btn-test-gemini">Test Key</button>
-                </div>
-                <div class="test-result-wrapper">
-                  <span class="test-result" id="result-test-gemini"></span>
-                </div>
-              </div>
-            </div>
-
-            <div class="setting-item">
-              <div class="setting-info">
                 <label for="setting-ollama-url" class="setting-label">Local Ollama REST API</label>
                 <span class="setting-desc">Base URL for local Ollama HTTP REST API serving workhorse models.</span>
               </div>
@@ -900,11 +884,6 @@
                       <option value="qwen2.5:1.5b">qwen2.5:1.5b (Ultra-Lightweight 1.5B)</option>
                       <option value="deepseek-r1:1.5b">deepseek-r1:1.5b (Distilled Reasoning)</option>
                       <option value="deepseek-r1:32b">deepseek-r1:32b (DeepSeek R1 32B)</option>
-                    </optgroup>
-                    <optgroup label="Google Gemini (Cloud Credits / API)">
-                      <option value="gemini-2.0-flash">gemini-2.0-flash (Gemini 2.0 Flash - Recommended)</option>
-                      <option value="gemini-1.5-pro">gemini-1.5-pro (Gemini 1.5 Pro - 2M Context)</option>
-                      <option value="gemini-1.5-flash">gemini-1.5-flash (Gemini 1.5 Flash)</option>
                     </optgroup>
                   </select>
                   <button type="button" class="setting-test-btn" id="btn-refresh-models">Refresh Tags</button>
@@ -981,6 +960,42 @@
                 </div>
                 <div id="custom-fusions-list" class="custom-fusions-list" style="margin-top: 12px; display: flex; flex-direction: column; gap: 8px;">
                   <!-- Dynamically populated custom fusions list -->
+                </div>
+              </div>
+            </div>
+
+            <!-- ReST-RL Autonomous Reasoning Subsystem Section -->
+            <div class="setting-item restrl-section" style="flex-direction: column; align-items: stretch;">
+              <div class="setting-info" style="margin-bottom: 10px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <label class="setting-label">🧠 HugOS ReST-RL Autonomous Reasoning Daemon</label>
+                  <span id="restrl-status-badge" class="badge" style="font-size: 11px; padding: 3px 8px; border-radius: 4px; background: rgba(16, 163, 127, 0.15); color: #10a37f; border: 1px solid rgba(16, 163, 127, 0.3);">🟢 Running</span>
+                </div>
+                <span class="setting-desc">Sub-50ms preemption background RL worker using Windows Job Objects and unified PRM/logprob scoring with zero-impact resource caps (strict 40% VRAM cap, mutation testing gate M_kill &gt;= 0.5).</span>
+              </div>
+              <div class="setting-control-group" style="max-width: 100%;">
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
+                  <button type="button" class="action-btn" id="btn-restrl-start" style="font-size: 12px; padding: 7px 14px;">▶ Start Daemon</button>
+                  <button type="button" class="action-btn" id="btn-restrl-stop" style="font-size: 12px; padding: 7px 14px; background: rgba(239, 68, 68, 0.15); color: #ef4444; border-color: rgba(239, 68, 68, 0.3);">⏹ Stop Daemon</button>
+                  <button type="button" class="setting-test-btn" id="btn-restrl-status" style="font-size: 12px; padding: 7px 14px;">🔄 Refresh Status</button>
+                </div>
+                <div id="restrl-metrics-panel" style="background: var(--bg-secondary, rgba(255,255,255,0.03)); border: 1px solid var(--border-color, #333); border-radius: 8px; padding: 12px; font-size: 12px; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px;">
+                  <div>
+                    <div style="color: var(--text-muted); font-size: 11px; margin-bottom: 2px;">Queue Length</div>
+                    <div id="restrl-metric-queue" style="font-weight: 600; font-family: var(--mono-font);">0 tasks</div>
+                  </div>
+                  <div>
+                    <div style="color: var(--text-muted); font-size: 11px; margin-bottom: 2px;">Processed Tasks</div>
+                    <div id="restrl-metric-processed" style="font-weight: 600; font-family: var(--mono-font);">0 completed</div>
+                  </div>
+                  <div>
+                    <div style="color: var(--text-muted); font-size: 11px; margin-bottom: 2px;">Active Hardware Tier</div>
+                    <div id="restrl-metric-tier" style="font-weight: 600; font-family: var(--mono-font);">Tier 3 (Auto)</div>
+                  </div>
+                  <div>
+                    <div style="color: var(--text-muted); font-size: 11px; margin-bottom: 2px;">Preemption Latency</div>
+                    <div id="restrl-metric-latency" style="font-weight: 600; font-family: var(--mono-font); color: #10a37f;">&lt;8ms (Job Object)</div>
+                  </div>
                 </div>
               </div>
             </div>
