@@ -2756,13 +2756,44 @@ document.addEventListener('DOMContentLoaded', () => {
     // 10. Blockquotes
     safe = safe.replace(/^>\s+(.*)$/gm, '<blockquote>$1</blockquote>');
 
+    // 10.5 Markdown Tables (| col1 | col2 |)
+    safe = safe.replace(/((?:^\|[^\n]+\|\r?\n?)+)/gm, (tableMatch) => {
+      const rows = tableMatch.trim().split(/\r?\n/).filter(r => r.trim().startsWith('|'));
+      if (rows.length < 2) return tableMatch;
+      let html = '<div class="table-responsive"><table class="markdown-table">';
+      let isHeader = true;
+      for (let r = 0; r < rows.length; r++) {
+        const row = rows[r].trim();
+        if (/^\|[\s\-:|]+\|$/.test(row)) {
+          isHeader = false;
+          continue;
+        }
+        const cells = row.split('|').slice(1, -1);
+        if (isHeader && r === 0) {
+          html += '<thead><tr>';
+          for (const c of cells) {
+            html += `<th>${c.trim()}</th>`;
+          }
+          html += '</tr></thead><tbody>';
+        } else {
+          html += '<tr>';
+          for (const c of cells) {
+            html += `<td>${c.trim()}</td>`;
+          }
+          html += '</tr>';
+        }
+      }
+      html += '</tbody></table></div>';
+      return html;
+    });
+
     // 11. Paragraphs (split by double newlines)
     const paragraphs = safe.split(/\n\n+/);
     safe = paragraphs.map(p => {
       p = p.trim();
       if (!p) return '';
       if (p.startsWith('<h1') || p.startsWith('<h2') || p.startsWith('<h3') || p.startsWith('<h4') ||
-          p.startsWith('<ul') || p.startsWith('<ol') || p.startsWith('<blockquote') || p.startsWith('___CODEBLOCK_')) {
+          p.startsWith('<ul') || p.startsWith('<ol') || p.startsWith('<blockquote') || p.startsWith('<div class="table-responsive"') || p.startsWith('___CODEBLOCK_')) {
         return p;
       }
       return `<p>${p.replace(/\n/g, '<br>')}</p>`;
@@ -4912,6 +4943,10 @@ document.addEventListener('DOMContentLoaded', () => {
           if (bubbleContent) {
             bubbleContent.style.color = '';
             bubbleContent.style.fontStyle = '';
+            bubbleContent.style.fontWeight = '';
+            bubbleContent.style.display = 'block';
+            bubbleContent.style.alignItems = '';
+            bubbleContent.style.gap = '';
             bubbleContent.innerHTML = renderMarkdown(fullResponse);
           }
         } else {
@@ -4954,6 +4989,10 @@ document.addEventListener('DOMContentLoaded', () => {
                   if (bubbleContent) {
                     bubbleContent.style.color = '';
                     bubbleContent.style.fontStyle = '';
+                    bubbleContent.style.fontWeight = '';
+                    bubbleContent.style.display = 'block';
+                    bubbleContent.style.alignItems = '';
+                    bubbleContent.style.gap = '';
                     bubbleContent.innerHTML = renderMarkdown(fullResponse);
                   }
                   responseLine.textContent = fullResponse;
@@ -5040,6 +5079,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (bubbleContent) {
           bubbleContent.style.color = '';
           bubbleContent.style.fontStyle = '';
+          bubbleContent.style.fontWeight = '';
+          bubbleContent.style.display = 'block';
+          bubbleContent.style.alignItems = '';
+          bubbleContent.style.gap = '';
           bubbleContent.innerHTML = formatAssistantContent(fullResponse, userPrompt);
         }
       }
@@ -5968,7 +6011,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span>📚</span> <span>arXiv Papers</span> &amp; <span>🌐</span> <span>Web Search Grounding</span>
                 <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">(Multi-Agent Scientific &amp; Web Grounding)</span>
               </div>
-              <div class="bubble-content" style="color: var(--accent-color); font-weight: 500; display: flex; align-items: center; gap: 6px;">
+              <div class="bubble-content" style="color: var(--accent-color); font-weight: 500;">
                 <div class="dynamic-status-pill">
                   <span class="status-pulse-dot"></span>
                   <span class="status-text">Searching arXiv scientific preprints and verified web sources in parallel for: "${escapeHtml(parsedMulti.query || 'query')}"...</span>
@@ -6642,7 +6685,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
             <span>${isArxivOnly ? '📚' : (isDeepResearch ? '🔬' : '🌐')}</span> <span>ModelFusion AI</span>
             <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">${isArxivOnly ? '(arXiv Research Papers)' : (isDeepResearch ? '(Deep Research: Web + arXiv)' : '(Web Search Grounding)')}</span>
           </div>
-          <div class="bubble-content" style="color: var(--accent-color); font-weight: 500; display: flex; align-items: center; gap: 6px;">
+          <div class="bubble-content" style="color: var(--accent-color); font-weight: 500;">
             <div class="dynamic-status-pill">
               <span class="status-pulse-dot"></span>
               <span class="status-text">${isArxivOnly ? 'Searching arXiv scientific preprints...' : 'Searching the internet & arXiv...'}</span>
@@ -6692,9 +6735,10 @@ Verified Grounding Context:
 ${searchContext}
 
 ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
-- Provide an accurate, factual, and comprehensive answer directly grounded in the verified context above.
-- Cite the sources inline using [1], [2], etc., matching the numbered search results.
-- Synthesize concisely with high analytical density. Default return is 256 tokens.
+- Provide an accurate, factual, in-depth, and comprehensive academic exploration directly grounded in the verified context above.
+- Structure your response cleanly using markdown headings (###) for major sections: Theoretical Foundations, Historical Timeline & Evolution, Mathematical/Cryptographic Scheme, Real-World Implementations, Security & Threat Model, and Practical Performance Trade-offs.
+- Do NOT output your entire response as a markdown table. Use standard paragraphs, subheadings, and bullet lists for prose. Tables should only be used for compact parameter comparison matrices.
+- Cite sources inline using [1], [2], etc., matching the numbered search results.
 - Include markdown links to the sources [Title](URL) where relevant.
 - Never invent unverified dates, names, or citations.`;
 
@@ -6852,7 +6896,7 @@ Instructions:
             <span>🌐</span> <span>ModelFusion AI</span>
             <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">(Web Search Grounding)</span>
           </div>
-          <div class="bubble-content" style="color: var(--accent-color); font-weight: 500; display: flex; align-items: center; gap: 6px;">
+          <div class="bubble-content" style="color: var(--accent-color); font-weight: 500;">
             <div class="dynamic-status-pill">
               <span class="status-pulse-dot"></span>
               <span class="status-text">Searching the internet & arXiv...</span>
