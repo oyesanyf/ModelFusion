@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "modelfusion": {
+      "command": "d:\\harfile\\ModelFusion\\mcp\\scripts\\run_mcp.bat",
+      "args": [],
+      "description": "ModelFusion Universal Compound Intelligence MCP Server (AutoML, 45+ Tasks, PE Forensics, ReST-RL, Dynamic Ollama Sizing)",
+      "enabled": true
+    }
+  }
+}

@@ -23,15 +23,16 @@ ModelFusion is an open-weight compound intelligence system and autonomous operat
 
 ---
 
-## 🏛️ The Three Pillars of ModelFusion: CLI • IDE • Browser
+## 🏛️ The Four Pillars of ModelFusion: CLI • IDE • Browser • MCP Server
 
-ModelFusion delivers a unified, zero-cloud compound intelligence ecosystem across three distinct, deeply integrated form factors. Every visitor to ModelFusion has instant access to the exact modality suited for their workflow:
+ModelFusion delivers a unified, zero-cloud compound intelligence ecosystem across four distinct, deeply integrated form factors. Every visitor to ModelFusion has instant access to the exact modality suited for their workflow:
 
 | Pillar | Form Factor | Primary Entrypoint | Core Capabilities & Highlights |
 | :--- | :--- | :--- | :--- |
-| **1. Master CLI** | 🖥️ **Headless & Embedded Engine** | `cli.exe` (174 Flags) | Dynamic runtime RAM hardware sizing, 2M+ model catalog crawler (`--updatedb`), ACDSO 5-objective Pareto AutoML, local Ollama lifecycle manager, MCP server, and headless automation. |
+| **1. Master CLI** | 🖥️ **Headless & Embedded Engine** | `cli.exe` (174 Flags) | Dynamic runtime RAM hardware sizing, 2M+ model catalog crawler (`--updatedb`), ACDSO 5-objective Pareto AutoML, local Ollama lifecycle manager, and headless automation. |
 | **2. HugOS IDE** | 💻 **AI-Native Development Environment** | `HugOS.exe` (Code-OSS Fork) | Sub-8ms ReST-RL preemption with Windows Job Objects, virtual in-memory diffs (`restrl-diff://`), background auto-revival watchdog, and native chat panel with multi-modal intent classification. |
 | **3. HugOS Browser** | 🌐 **AI-Native Web Operating System** | `hugos-browser.bat` / `--browser` | Chromium CDP integration (port 9222), Set-of-Mark (SoM) visual grounding, 90% token-pruned DOM filter, RFC-4180 table extraction into ACDSO, 12-category settings drawer, and ChatGPT canvas/ergonomic parity. |
+| **4. MCP Server** | 🔌 **Universal Agent Tool Protocol** | `cli.exe --mcp` / `mcp/` | Model Context Protocol JSON-RPC 2.0 stdio server exposing 103 specialized tools, ACDSO Pareto AutoML, 45+ multi-modal tasks, PE forensics, and dynamic Ollama models to Claude Desktop, Cursor, Antigravity, VS Code, and Zed. |
 
 ```mermaid
 graph TD
@@ -40,15 +41,18 @@ graph TD
     B -->|Terminal & Pipelines| P1[🖥️ Master CLI: cli.exe]
     B -->|Code Engineering & ReST-RL| P2[💻 HugOS IDE: HugOS.exe]
     B -->|Web Research & Navigation| P3[🌐 HugOS Browser: hugos-browser.bat]
+    B -->|Agentic Desktop Tools| P4[🔌 Universal MCP Server: cli.exe --mcp]
     
     P1 --> K[Unified Compound Intelligence Kernel]
     P2 --> K
     P3 --> K
+    P4 --> K
     
     K --> M1[Dynamic RAM Sizing: Qwen 2.5 32B / 14B / 7B / 1.5B]
     K --> M2[SQLite Catalog: 6,438 Curated / 1.27M+ Full Registry]
     K --> M3[ACDSO 5-Objective Pareto AutoML Engine]
     K --> M4[Multi-Model Consensus Deliberation: --fusion-models]
+    K --> M5[103 Standard MCP Tools: 2024-11-05 Protocol]
 ```
 
 ### 🚀 Parallel Quickstarts: Choose Your Modality
@@ -102,9 +106,25 @@ cli.exe --browser-extract "https://en.wikipedia.org/wiki/List_of_countries_by_GD
 ```
 👉 *Read the full [HugOS Browser Technical Manual](browser/README.md), [Interactive Browser Agent Simulator](docs/screens/hugos_browser_agent_simulator.html), and [Browser Architecture Section](#-hugos-browser-dedicated-modelfusion-ai-web-environment).*
 
+#### 🔌 Pillar 4: ModelFusion Universal MCP Server
+For integrating 103 local AI tools, ACDSO Pareto AutoML, and multi-modal tasks directly into **Claude Desktop**, **Cursor**, **Google Antigravity**, **VS Code**, and **Zed**:
+```powershell
+# 1. Run automated test client to verify handshake and 103 MCP tools
+python mcp\client\test_mcp_connection.py
+
+# 2. Launch MCP stdio server directly via launcher script
+.\mcp\scripts\run_mcp.bat
+
+# 3. Claude Desktop Configuration (%APPDATA%\Claude\claude_desktop_config.json):
+# { "mcpServers": { "modelfusion": { "command": "cmd.exe", "args": ["/c", "d:\\harfile\\ModelFusion\\mcp\\scripts\\run_mcp.bat"] } } }
+```
+👉 *Read the full [ModelFusion MCP Integration Guide](mcp/README.md) and [Exhaustive 103-Tool Reference Manual](mcp/tools_reference.md).*
+
 ---
 
 ### 📚 Documentation, Interactive Screens & Architecture Reports
+*   [**🔌 ModelFusion Universal MCP Server Guide**](mcp/README.md) — Connects 103 local AI tools, ACDSO AutoML, and 45+ tasks into Claude Desktop, Cursor, Antigravity, VS Code, and Zed.
+*   [**🔌 MCP Exhaustive 103-Tool Reference Manual**](mcp/tools_reference.md) — Comprehensive schemas, parameters, and examples for all 103 tools supported by the ModelFusion MCP Server.
 *   [**🌐 HugOS Browser AI Environment**](#-hugos-browser-dedicated-modelfusion-ai-web-environment) — Dedicated Chromium AI browsing environment with Set-of-Mark visual grounding, table extraction into ACDSO, 12-category settings drawer, and ChatGPT canvas fidelity.
 *   [**HugOS Browser Technical Manual**](browser/README.md) — Architecture, CDP protocol, Set-of-Mark token pruning, consensus panel sizing, and extension configuration.
 *   [**Interactive Screens & UI Catalog**](docs/screens/README.md) — Standalone ChatGPT-style simulators, aligned Generative UI widgets, 5-theme switchers, and browser interfaces.

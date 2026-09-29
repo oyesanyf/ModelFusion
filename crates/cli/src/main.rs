@@ -324,9 +324,9 @@ pub fn select_verifier_model_for_hardware() -> &'static str {
 pub fn provision_multi_model_fusion_for_hardware() {
     let primary = select_ollama_model_for_hardware(false);
     let verifier = select_verifier_model_for_hardware();
-    eprintln!("📦 [PROVISIONING] Multi-model fusion configuration: Primary='{}', Verifier='{}'", primary, verifier);
+    eprintln!("📦 [PROVISIONING] Multi-model fusion configuration: Primary='{}', Verifier='{}', Vision='moondream'", primary, verifier);
 
-    for m in [primary, verifier] {
+    for m in [primary, verifier, "moondream"] {
         eprintln!("🦙 [PROVISIONING] Pulling model: {}...", m);
         let mut cmd = hidden_std_command("ollama");
         cmd.args(["pull", m]);
@@ -342,7 +342,7 @@ pub fn provision_multi_model_fusion_for_hardware() {
 
     // Configure multi-model fusion settings
     configure_ide_multi_model_fusion(primary, verifier);
-    eprintln!("✅ [PROVISIONING] Multi-model fusion configured with 2 models: '{}' + '{}'", primary, verifier);
+    eprintln!("✅ [PROVISIONING] Multi-model fusion configured with 3 models: '{}' + '{}' + 'moondream'", primary, verifier);
 }
 
 /// Configures HugOS IDE and ModelFusion settings with multi-model fusion enabled.
@@ -943,17 +943,12 @@ async fn generate_active_models_markdown(db_path_opt: Option<&str>) -> String {
         out.push_str("- **Cache Directory**: `ov_models/` (0 cached IR models — Intel CPU/GPU/NPU acceleration ready)\n");
     }
 
-    // 4. Cloud API Providers
-    out.push_str("\n#### ☁️ 4. Cloud API Providers & Integrations\n");
-    let openai_st = if std::env::var("OPENAI_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "🟢 [LOADED]" } else { "⚪ [NOT CONFIGURED]" };
-    let anthropic_st = if std::env::var("ANTHROPIC_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "🟢 [LOADED]" } else { "⚪ [NOT CONFIGURED]" };
-    let gemini_st = if std::env::var("GEMINI_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "🟢 [LOADED]" } else { "⚪ [NOT CONFIGURED]" };
-    let hf_st = if std::env::var("HF_TOKEN").or_else(|_| std::env::var("HUGGINGFACE_API_KEY")).map(|s| !s.trim().is_empty()).unwrap_or(false) { "🟢 [LOADED]" } else { "🟢 [ANONYMOUS/DEFAULT]" };
-
-    out.push_str(&format!("- **OpenAI**: {}\n", openai_st));
-    out.push_str(&format!("- **Anthropic**: {}\n", anthropic_st));
-    out.push_str(&format!("- **Google Gemini**: {}\n", gemini_st));
+    // 4. Local Execution & Runtime Status
+    out.push_str("\n#### 🏛️ 4. Local Open-Weight Runtime Status\n");
+    let hf_st = if std::env::var("HF_TOKEN").or_else(|_| std::env::var("HUGGINGFACE_API_KEY")).map(|s| !s.trim().is_empty()).unwrap_or(false) { "🟢 [AUTHENTICATED]" } else { "🟢 [ANONYMOUS/DEFAULT]" };
+    out.push_str("- **Local AI Engine**: 🟢 [Ollama Local Runtime Active]\n");
     out.push_str(&format!("- **Hugging Face Hub**: {}\n", hf_st));
+    out.push_str("- **Paid Cloud APIs**: 🔒 [Disabled - 100% Free Local Models]\n");
 
     out
 }
@@ -2161,7 +2156,7 @@ struct Args {
     #[arg(long, help = "Force re-indexing of all files ignoring cache")]
     force: bool,
 
-    #[arg(long, help = "Configure and persist Google Gemini API key")]
+    #[arg(long, help = "Configure and persist Google Gemini API key (Deprecated: paid models disabled)", hide = true)]
     gemini_key: Option<String>,
 }
 
@@ -2424,8 +2419,8 @@ fn main() -> Result<()> {
     let preprocessed = preprocess_cli_args(raw_args);
     let args = Args::parse_from(preprocessed);
 
-    if let Some(ref key) = args.gemini_key {
-        set_and_persist_gemini_key(key)?;
+    if let Some(ref _key) = args.gemini_key {
+        println!("ℹ️ Google Gemini and paid cloud models have been disabled. HugOS operates entirely on 100% free, local open-weight hardware models.");
         return Ok(());
     }
 
@@ -7020,6 +7015,38 @@ pub async fn fetch_installed_ollama_models(client: &reqwest::Client, ollama_endp
     Vec::new()
 }
 
+fn strip_images_from_chat_payload(val: &mut serde_json::Value) {
+    if let Some(obj) = val.as_object_mut() {
+        obj.remove("images");
+        if let Some(msgs) = obj.get_mut("messages").and_then(|m| m.as_array_mut()) {
+            for msg in msgs.iter_mut() {
+                if let Some(m_obj) = msg.as_object_mut() {
+                    m_obj.remove("images");
+                }
+            }
+        }
+    }
+}
+
+fn prepend_note_to_user_message(val: &mut serde_json::Value, note: &str) {
+    if let Some(msgs) = val.get_mut("messages").and_then(|m| m.as_array_mut()) {
+        for msg in msgs.iter_mut().rev() {
+            if msg.get("role").and_then(|r| r.as_str()) == Some("user") {
+                if let Some(content) = msg.get_mut("content") {
+                    if let Some(text) = content.as_str() {
+                        *content = serde_json::json!(format!("{}{}", note, text));
+                    }
+                }
+                break;
+            }
+        }
+    } else if let Some(prompt) = val.get_mut("prompt") {
+        if let Some(text) = prompt.as_str() {
+            *prompt = serde_json::json!(format!("{}{}", note, text));
+        }
+    }
+}
+
 async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: bool) -> Result<()> {
     // 0. Pre-bind health probe: If another instance (cliide, clibrowser, or cli) is already serving port, reuse it gracefully
     let probe_client = reqwest::Client::builder()
@@ -7057,11 +7084,11 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
     
     let db_path_opt = db_path.clone();
 
-    // Background Ollama Healthcheck Watchdog: periodically verifies Ollama liveness every 15s and auto-wakes if down
+    // Background Ollama Healthcheck Watchdog: periodically verifies Ollama liveness every 3s and auto-wakes if down
     tokio::spawn(async {
         let client = reqwest::Client::builder()
             .no_proxy()
-            .timeout(std::time::Duration::from_secs(3))
+            .timeout(std::time::Duration::from_secs(2))
             .build()
             .unwrap_or_default();
         let ollama_endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
@@ -7069,7 +7096,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
         let mut consecutive_failures = 0;
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
+            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
             match client.get(&tags_url).send().await {
                 Ok(res) if res.status().is_success() => {
                     if consecutive_failures > 0 {
@@ -7077,12 +7104,16 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     }
                     consecutive_failures = 0;
                 }
+                Ok(res) if res.status().is_server_error() => {
+                    eprintln!("[SERVER WATCHDOG] ⚠️ Ollama returned server error {} at {}. Auto-recovering Ollama daemon...", res.status(), tags_url);
+                    let _ = tokio::task::spawn_blocking(model_selection::memory::recover_and_restart_ollama).await;
+                    consecutive_failures = 0;
+                }
                 _ => {
                     consecutive_failures += 1;
-                    if consecutive_failures >= 2 {
-                        eprintln!("[SERVER WATCHDOG] ⚠️ Ollama engine unresponsive at {} (failure count: {}). Auto-waking Ollama daemon...", tags_url, consecutive_failures);
-                        let _ = model_selection::memory::ensure_ollama_running();
-                        consecutive_failures = 0;
+                    if consecutive_failures >= 1 {
+                        eprintln!("[SERVER WATCHDOG] ⚠️ Ollama engine unresponsive at {} (check {}). Auto-waking Ollama daemon...", tags_url, consecutive_failures);
+                        let _ = tokio::task::spawn_blocking(model_selection::memory::ensure_ollama_running).await;
                     }
                 }
             }
@@ -7720,7 +7751,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         { "name": "refactor", "cmd": "@agent refactor ", "icon": "🔨", "category": "code", "label": "Code Refactoring", "desc": "Restructure code without altering functional behavior" },
                         { "name": "test_gen", "cmd": "@agent test-gen ", "icon": "🧪", "category": "code", "label": "Unit Test Gen", "desc": "Generate high-coverage unit tests and assertions" },
                         { "name": "graph_index", "cmd": "@agent graph-index ", "icon": "🕸️", "category": "code", "label": "Code Graph Index", "desc": "Extract AST relationships & call graphs" },
-                        { "name": "rest_rl", "cmd": "@agent rest-rl ", "icon": "⚡", "category": "code", "label": "ReST-RL Daemon", "desc": "Sub-8ms Windows Job Object RL repair engine" },
+                        { "name": "rest_rl", "cmd": "@agent rest-rl status", "icon": "⚡", "category": "system", "label": "ReST-RL Daemon", "desc": "Sub-8ms Windows Job Object RL repair engine" },
                         { "name": "ast_parse", "cmd": "@agent ast-parse ", "icon": "🌲", "category": "code", "label": "AST Tree Parse", "desc": "Parse source into concrete syntax trees and tokens" },
                         { "name": "docstring", "cmd": "@agent docstring ", "icon": "📝", "category": "code", "label": "Docstring Gen", "desc": "Synthesize Google/Sphinx/Rustdoc documentation comments" },
                         { "name": "type_infer", "cmd": "@agent type-infer ", "icon": "🏷️", "category": "code", "label": "Type Inference", "desc": "Infer strong static types for dynamic languages" },
@@ -7783,8 +7814,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         { "name": "updatedb", "cmd": "@agent updatedb", "icon": "🚀", "category": "system", "label": "Full Registry Crawler", "desc": "Crawl all 2M+ models from Hugging Face Hub" },
                         { "name": "active_model", "cmd": "@agent active-model", "icon": "🤖", "category": "system", "label": "Active Model", "desc": "Inspect currently loaded Ollama model & memory" },
                         { "name": "sys_info", "cmd": "@agent sys-info", "icon": "🖥️", "category": "system", "label": "System Info", "desc": "Hardware resources, runtime RAM/VRAM, and active models" },
-                        { "name": "fusion_status", "cmd": "@agent fusion-status", "icon": "🧠", "category": "system", "label": "ModelFusion Status", "desc": "Multi-modal catalog count and consensus telemetry" },
-                        { "name": "key_gemini", "cmd": "@agent key gemini ", "icon": "🔑", "category": "system", "label": "Gemini API Key", "desc": "Configure Google Gemini API key for cloud model inference" }
+                        { "name": "fusion_status", "cmd": "@agent fusion-status", "icon": "🧠", "category": "system", "label": "ModelFusion Status", "desc": "Multi-modal catalog count and consensus telemetry" }
                     ]
                 });
                 let body_str = serde_json::to_string(&tools_json).unwrap_or_default();
@@ -7798,33 +7828,74 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 return;
             }
 
-            // ── Ollama Start Lifecycle (/api/ollama/start) ──
-            if request_path == "/api/ollama/start" {
+            // ── Watchdog Status & Health Probe (/api/watchdog/status) ──
+            if request_path == "/api/watchdog/status" {
+                let client = reqwest::Client::builder().no_proxy().timeout(std::time::Duration::from_millis(1500)).build().unwrap_or_default();
+                let ollama_endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+                let tags_probe_url = format!("{}/api/tags", ollama_endpoint.trim_end_matches('/'));
+                let mut is_alive = false;
+                let mut models = Vec::new();
+                if let Ok(res) = client.get(&tags_probe_url).send().await {
+                    if res.status().is_success() {
+                        is_alive = true;
+                        if let Ok(json_val) = res.json::<serde_json::Value>().await {
+                            models = extract_model_names_from_tags_json(&json_val);
+                        }
+                    }
+                }
+                let resp_json = serde_json::json!({
+                    "status": "ok",
+                    "server": "healthy",
+                    "port": port,
+                    "ollama_alive": is_alive,
+                    "models": models
+                });
+                let body_str = serde_json::to_string(&resp_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body_str.len(),
+                    body_str
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Ollama Start & Watchdog Wake Lifecycle (/api/ollama/start, /api/ollama/wake, /api/watchdog/wake) ──
+            if request_path == "/api/ollama/start" || request_path == "/api/ollama/wake" || request_path == "/api/watchdog/wake" {
                 let res = tokio::task::spawn_blocking(|| {
-                    let r = model_selection::memory::ensure_ollama_running();
+                    let mut r = model_selection::memory::ensure_ollama_running();
+                    if r.is_err() {
+                        eprintln!("[WATCHDOG WAKE] 🔄 Standard start failed. Attempting deep recovery restart...");
+                        r = model_selection::memory::recover_and_restart_ollama();
+                    }
                     if r.is_ok() {
                         let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
                         let tags_url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
                         let client = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(4)).build().unwrap_or_default();
-                        if let Ok(resp) = client.get(&tags_url).send() {
-                            if resp.status().is_success() {
-                                if let Ok(json) = resp.json::<serde_json::Value>() {
-                                    if json["models"].as_array().map(|a| a.is_empty()).unwrap_or(true) {
-                                        std::thread::spawn(move || {
-                                            eprintln!("🦙 [PROVISIONING] Fresh install detected: Auto-provisioning multi-model fusion for detected hardware...");
-                                            provision_multi_model_fusion_for_hardware();
-                                        });
+                        for _ in 0..10 {
+                            if let Ok(resp) = client.get(&tags_url).send() {
+                                if resp.status().is_success() {
+                                    if let Ok(json) = resp.json::<serde_json::Value>() {
+                                        if json["models"].as_array().map(|a| a.is_empty()).unwrap_or(true) {
+                                            std::thread::spawn(move || {
+                                                eprintln!("🦙 [PROVISIONING] Fresh install detected: Auto-provisioning multi-model fusion for detected hardware...");
+                                                provision_multi_model_fusion_for_hardware();
+                                            });
+                                        }
                                     }
+                                    break;
                                 }
                             }
+                            std::thread::sleep(std::time::Duration::from_millis(300));
                         }
                     }
                     r
                 }).await;
                 let (status_code, body_json) = match res {
                     Ok(Ok(_)) => (200, serde_json::json!({"status": "ok", "message": "Ollama daemon started successfully (auto-provisioning verified)"})),
-                    Ok(Err(e)) => (500, serde_json::json!({"status": "error", "message": format!("Failed to start Ollama: {}", e)})),
-                    Err(e) => (500, serde_json::json!({"status": "error", "message": format!("Task failed: {}", e)})),
+                    Ok(Err(e)) => (200, serde_json::json!({"status": "warning", "message": format!("Recovery in progress: {}", e)})),
+                    Err(e) => (200, serde_json::json!({"status": "warning", "message": format!("Task in progress: {}", e)})),
                 };
                 let body_str = serde_json::to_string(&body_json).unwrap_or_default();
                 let response = format!(
@@ -8102,12 +8173,20 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     .send()
                     .await
                 {
-                    Ok(r) => r.status().is_success() || r.status().as_u16() < 500,
+                    Ok(r) => r.status().is_success(),
                     Err(_) => false,
                 };
                 if !is_alive {
-                    eprintln!("[SERVER] ⚠️ Ollama is not responding at {}. Auto-healing Ollama daemon...", ollama_endpoint);
+                    eprintln!("[SERVER WATCHER] ⚠️ Ollama is not responding at {}. Auto-healing Ollama daemon...", ollama_endpoint);
                     let _ = tokio::task::spawn_blocking(model_selection::memory::ensure_ollama_running).await;
+                    for _ in 0..10 {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                        if let Ok(r) = client.get(&tags_probe_url).send().await {
+                            if r.status().is_success() {
+                                break;
+                            }
+                        }
+                    }
                 }
 
                 // 2. Resolve requested model ("modelfusion_auto", empty, or uninstalled -> pick best installed model)
@@ -8145,7 +8224,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 if has_images {
                     let is_vision_model = |m: &str| {
                         let lower = m.to_lowercase();
-                        lower.contains("moondream") || lower.contains("llava") || lower.contains("vision") || lower.contains("-vl") || lower.contains("minicpm")
+                        lower.contains("moondream") || lower.contains("llava") || lower.contains("vision") || lower.contains("-vl") || lower.contains("minicpm") || lower.contains("bakllava")
                     };
                     let cur_model = current_json.get("model").and_then(|v| v.as_str()).unwrap_or("").to_string();
                     if !is_vision_model(&cur_model) {
@@ -8153,8 +8232,22 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             eprintln!("[SERVER] 👁️ Request contains images. Switching text-only model '{}' -> vision model '{}'", cur_model, vm);
                             current_json["model"] = serde_json::json!(vm);
                         } else {
-                            eprintln!("[SERVER] 👁️ Request contains images. Defaulting to 'moondream'");
-                            current_json["model"] = serde_json::json!("moondream");
+                            eprintln!("[SERVER WATCHDOG] 👁️ Request contains images but NO vision model installed in Ollama. Auto-triggering background pull for 'moondream'...");
+                            tokio::spawn(async move {
+                                let _ = tokio::task::spawn_blocking(move || {
+                                    let _ = hidden_std_command("ollama").args(["pull", "moondream"]).output();
+                                }).await;
+                            });
+
+                            // Sanitize payload so text model does not crash Ollama with HTTP 500
+                            strip_images_from_chat_payload(&mut current_json);
+                            prepend_note_to_user_message(
+                                &mut current_json,
+                                "Note: An image was attached to this prompt, but local multimodal vision model ('moondream') is currently being downloaded in the background. Visual inspection will be available once download completes. Processing text reasoning below:\n\n"
+                            );
+                            let fallback = select_best_installed_ollama_model(&installed_models).unwrap_or_else(|| "qwen2.5:7b".to_string());
+                            eprintln!("[SERVER WATCHDOG] 🔄 Falling back to installed text model '{}' with stripped images", fallback);
+                            current_json["model"] = serde_json::json!(fallback);
                         }
                     }
                 }
@@ -8327,47 +8420,64 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 }
 
                 let post_bytes = serde_json::to_vec(&current_json).unwrap_or_else(|_| body.to_vec());
-                let mut res = match client.post(&chat_url).header("Content-Type", "application/json").body(post_bytes).send().await {
+                let mut res = match client.post(&chat_url).header("Content-Type", "application/json").body(post_bytes.clone()).send().await {
                     Ok(r) => r,
                     Err(e) => {
-                        let err_json = serde_json::json!({
-                            "error": format!("Ollama proxy error: {}", e)
-                        });
-                        let err_body = serde_json::to_string(&err_json).unwrap_or_default();
-                        let response = format!(
-                            "HTTP/1.1 502 Bad Gateway\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                            err_body.len(),
-                            err_body
-                        );
-                        let _ = socket.write_all(response.as_bytes()).await;
-                        let _ = socket.flush().await;
-                        return;
+                        eprintln!("[SERVER WATCHER] ⚠️ Initial connection to Ollama failed: {}. Auto-waking Ollama daemon and retrying...", e);
+                        let _ = tokio::task::spawn_blocking(model_selection::memory::ensure_ollama_running).await;
+                        tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
+                        match client.post(&chat_url).header("Content-Type", "application/json").body(post_bytes.clone()).send().await {
+                            Ok(retry_r) => retry_r,
+                            Err(retry_e) => {
+                                let err_json = serde_json::json!({
+                                    "error": format!("Ollama daemon connection failed after auto-wake attempt: {}", retry_e),
+                                    "status": "error"
+                                });
+                                let err_body = serde_json::to_string(&err_json).unwrap_or_default();
+                                let response = format!(
+                                    "HTTP/1.1 502 Bad Gateway\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                                    err_body.len(),
+                                    err_body
+                                );
+                                let _ = socket.write_all(response.as_bytes()).await;
+                                let _ = socket.flush().await;
+                                return;
+                            }
+                        }
                     }
                 };
 
-                // Auto-healing 404 fallback: model not found in Ollama
-                if res.status() == reqwest::StatusCode::NOT_FOUND {
+                // Auto-healing fallback if Ollama returned 404 (model not found) OR 500/502/503 (runner crash / server error)
+                if res.status().is_server_error() || res.status() == reqwest::StatusCode::NOT_FOUND {
                     let failed_model = current_json.get("model").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    eprintln!("[SERVER] ⚠️ Ollama returned 404 for model '{}'. Querying installed models for fallback...", failed_model);
+                    eprintln!("[SERVER WATCHER] ⚠️ Ollama returned status {} for model '{}'. Auto-healing daemon and switching to fallback...", res.status(), failed_model);
+
+                    if res.status().is_server_error() {
+                        let _ = tokio::task::spawn_blocking(model_selection::memory::recover_and_restart_ollama).await;
+                        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+                    }
+
                     let installed = fetch_installed_ollama_models(&client, &ollama_endpoint).await;
                     let candidates: Vec<String> = installed.into_iter().filter(|m| m != &failed_model).collect();
                     if let Some(fallback_model) = select_best_installed_ollama_model(&candidates) {
-                        eprintln!("[SERVER] 🔄 Auto-healing 404: re-dispatching request with fallback model '{}'", fallback_model);
+                        eprintln!("[SERVER WATCHER] 🔄 Auto-healing fallback: switching model '{}' -> '{}'", failed_model, fallback_model);
                         current_json["model"] = serde_json::json!(&fallback_model);
+                        let is_vision_model = |m: &str| {
+                            let lower = m.to_lowercase();
+                            lower.contains("moondream") || lower.contains("llava") || lower.contains("vision") || lower.contains("-vl") || lower.contains("minicpm") || lower.contains("bakllava")
+                        };
+                        if !is_vision_model(&fallback_model) {
+                            strip_images_from_chat_payload(&mut current_json);
+                        }
                         let retry_bytes = serde_json::to_vec(&current_json).unwrap_or_default();
                         if let Ok(retry_res) = client.post(&chat_url).header("Content-Type", "application/json").body(retry_bytes).send().await {
                             if retry_res.status().is_success() {
                                 res = retry_res;
-                                let optimal = select_ollama_model_for_hardware(false).to_string();
-                                if optimal != fallback_model {
-                                    tokio::spawn(async move {
-                                        eprintln!("[SERVER] ⬇️ Background pull initiated for optimal model: {}", optimal);
-                                        let _ = tokio::task::spawn_blocking(move || {
-                                            let _ = hidden_std_command("ollama").args(["pull", &optimal]).output();
-                                        }).await;
-                                    });
-                                }
                             }
+                        }
+                    } else if let Ok(retry_res) = client.post(&chat_url).header("Content-Type", "application/json").body(post_bytes.clone()).send().await {
+                        if retry_res.status().is_success() {
+                            res = retry_res;
                         }
                     }
                 }
@@ -9467,29 +9577,11 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         // ── Original fast-interception commands ──
                                         "keys" => {
                                             let parts: Vec<&str> = args_owned.split_whitespace().collect();
-                                            if !parts.is_empty() && (parts[0].eq_ignore_ascii_case("gemini") || parts[0].eq_ignore_ascii_case("google")) {
-                                                if parts.len() > 1 {
-                                                    let raw_k = parts[1..].join(" ");
-                                                    let clean_k = raw_k.trim().trim_matches(|c: char| c == '"' || c == '\'' || c == '`');
-                                                    if let Err(e) = set_and_persist_gemini_key(clean_k) {
-                                                        (idx, format!("❌ **Failed to save Gemini API key**: {}", e))
-                                                    } else {
-                                                        let masked = if clean_k.len() > 8 {
-                                                            format!("{}...{}", &clean_k[..4], &clean_k[clean_k.len()-4..])
-                                                        } else {
-                                                            "****".to_string()
-                                                        };
-                                                        (idx, format!("🔑 **Google Gemini API Key Configured & Persisted**\n\n- **Key**: `{}`\n- **Environment**: `GEMINI_API_KEY` set for current session and persisted to Windows User environment.\n- **Storage**: Appended to local `.env`.\n- **Enabled Models**: `gemini-2.0-flash` (Recommended), `gemini-1.5-pro` (2M Context), `gemini-1.5-flash`.\n\nYou can now use Gemini models in HugOS Browser UI and CLI!", masked))
-                                                    }
-                                                } else {
-                                                    (idx, "⚠️ **Missing Key**: Provide your Gemini key: `/key gemini <YOUR_KEY>` or `@agent key gemini <YOUR_KEY>`".to_string())
-                                                }
+                                            if !parts.is_empty() && (parts[0].eq_ignore_ascii_case("gemini") || parts[0].eq_ignore_ascii_case("google") || parts[0].eq_ignore_ascii_case("openai") || parts[0].eq_ignore_ascii_case("anthropic")) {
+                                                (idx, "ℹ️ **Paid Cloud Models Disabled**: HugOS operates on 100% free, local open-weight models (Ollama, local HuggingFace GGUFs, and OpenVINO). No paid cloud API subscriptions or external tokens are required.".to_string())
                                             } else {
-                                                let openai_st = if std::env::var("OPENAI_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "[LOADED]" } else { "[DISABLED]" };
-                                                let anthropic_st = if std::env::var("ANTHROPIC_API_KEY").map(|s| !s.trim().is_empty()).unwrap_or(false) { "[LOADED]" } else { "[DISABLED]" };
-                                                let gemini_st = if std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_GEMINI_API_KEY")).map(|s| !s.trim().is_empty()).unwrap_or(false) { "[LOADED]" } else { "[DISABLED]" };
-                                                let hf_st = if std::env::var("HF_TOKEN").or_else(|_| std::env::var("HUGGINGFACE_API_KEY")).map(|s| !s.trim().is_empty()).unwrap_or(true) { "[LOADED]" } else { "[DISABLED]" };
-                                                (idx, format!("🔑 **ModelFusion API Key Status & Integrations**\n\n- **openai**: {}\n- **anthropic**: {}\n- **gemini**: {}\n- **huggingface**: {}\n\n*Configure API keys in VS Code Settings (`Ctrl+,` → search `hugos.modelfusion`)* or via `/key gemini <KEY>`", openai_st, anthropic_st, gemini_st, hf_st))
+                                                let hf_st = if std::env::var("HF_TOKEN").or_else(|_| std::env::var("HUGGINGFACE_API_KEY")).map(|s| !s.trim().is_empty()).unwrap_or(true) { "[ACTIVE]" } else { "[DISABLED]" };
+                                                (idx, format!("🔑 **ModelFusion Local Runtime & Key Status**\n\n- **Ollama Local Engine**: [ACTIVE]\n- **Hugging Face Hub**: {}\n- **Paid Cloud APIs**: [DISABLED - 100% Free Local Models]\n\nHugOS runs entirely on local open-weight hardware models with full privacy and zero cloud fees.", hf_st))
                                             }
                                         },
                                         "mcp" => {
@@ -9607,7 +9699,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                         },
                                         "command" => {
                                             let sys = query_system_resources();
-                                            (idx, format!("🤖 **ModelFusion Commands & System Directory**\n\n- **Engine**: Active & Operational (<1ms Fast Interception)\n- **System**: {} ({} Cores), {:.2} GB RAM free\n- **GPU**: {} ({} MB free VRAM)\n\n### Available Slash Commands & CLI Directives:\n- `/active-model` (or `--active-model`) — All models currently in use by the IDE (Ollama runtime, SQLite pipelines, OpenVINO cache)\n- `/research <topic>` (or `--research`) — Autonomous deep web research using open-weight models (Qwen 2.5 / DeepSeek-R1) and DuckDuckGo search\n- `/search <query>` (or `--search`) — Live web search and snippet extraction\n- `/stats` (or `--stats`) — Real-time system resource allocation and database metrics\n- `/sysinfo` (or `--sys-info`) — Detailed hardware specifications, CPU cores, RAM, and disk drives\n- `/tasks` (or `--tasks [category]`) — Multi-modal task capabilities and top database models (audio, vision, nlp, security, legal)\n- `/keys` (or `--keys`) — Cloud API key configuration (OpenAI, Anthropic, Gemini, HF)\n- `/comment` — Add inline explanations and docstrings to code\n- `/evolve` — OpenEvolve iterative code optimization\n- `/security` — CyberSecurity audit and vulnerability fixes\n- `/refactor` — Code structure refactoring\n- `/optimize` — Performance optimization\n- `/version` (or `-v`) — Engine and build version\n- `/rl [status|start|stop|enqueue]` (or `/restrl`, `--rest-rl`) — HugOS ReST-RL / GRPO recursive reinforcement learning and idle preemption engine\n- `/update` — Fast curated update (~6,500 models) and local Ollama hardware model provisioning\n- `/updatedb` — Full registry crawler for all 2M+ Hugging Face models", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb))
+                                            (idx, format!("🤖 **ModelFusion Commands & System Directory**\n\n- **Engine**: Active & Operational (<1ms Fast Interception)\n- **System**: {} ({} Cores), {:.2} GB RAM free\n- **GPU**: {} ({} MB free VRAM)\n\n### Available Slash Commands & CLI Directives:\n- `/active-model` (or `--active-model`) — All models currently in use by the IDE (Ollama runtime, SQLite pipelines, OpenVINO cache)\n- `/research <topic>` (or `--research`) — Autonomous deep web research using open-weight models (Qwen 2.5 / DeepSeek-R1) and DuckDuckGo search\n- `/search <query>` (or `--search`) — Live web search and snippet extraction\n- `/stats` (or `--stats`) — Real-time system resource allocation and database metrics\n- `/sysinfo` (or `--sys-info`) — Detailed hardware specifications, CPU cores, RAM, and disk drives\n- `/tasks` (or `--tasks [category]`) — Multi-modal task capabilities and top database models (audio, vision, nlp, security, legal)\n- `/keys` (or `--keys`) — Local runtime status (100% free open-weight models enabled, paid cloud models disabled)\n- `/comment` — Add inline explanations and docstrings to code\n- `/evolve` — OpenEvolve iterative code optimization\n- `/security` — CyberSecurity audit and vulnerability fixes\n- `/refactor` — Code structure refactoring\n- `/optimize` — Performance optimization\n- `/version` (or `-v`) — Engine and build version\n- `/rl [status|start|stop|enqueue]` (or `/restrl`, `--rest-rl`) — HugOS ReST-RL / GRPO recursive reinforcement learning and idle preemption engine\n- `/update` — Fast curated update (~6,500 models) and local Ollama hardware model provisioning\n- `/updatedb` — Full registry crawler for all 2M+ Hugging Face models", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb))
                                         },
                                         "comment" | "doc" => {
                                              let attached = extract_attached_code_context(&prompt_for_cmd);
@@ -14149,13 +14241,7 @@ pub fn parse_slash_commands_in_prompt(
             }
             "/keys" | "/key" => {
                 let (val, act) = get_arg(&cleaned_rest);
-                if val.eq_ignore_ascii_case("gemini") || val.eq_ignore_ascii_case("google") {
-                    let (gem_key, gem_act) = get_arg(&act);
-                    if !gem_key.is_empty() {
-                        let _ = set_and_persist_gemini_key(&gem_key);
-                    }
-                    actual_prompt = gem_act;
-                } else if !val.is_empty() {
+                if !val.is_empty() {
                     std::env::set_var("MODELFUSION_API_KEYS", &val);
                     actual_prompt = act;
                 } else {

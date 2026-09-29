@@ -1,0 +1,13 @@
+{
+  "experimental": {
+    "modelContextProtocolServers": [
+      {
+        "transport": {
+          "type": "stdio",
+          "command": "d:\\harfile\\ModelFusion\\mcp\\scripts\\run_mcp.bat",
+          "args": []
+        }
+      }
+    ]
+  }
+}

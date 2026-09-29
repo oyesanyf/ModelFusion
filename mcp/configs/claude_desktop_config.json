@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "modelfusion": {
+      "command": "cmd.exe",
+      "args": [
+        "/c",
+        "d:\\harfile\\ModelFusion\\mcp\\scripts\\run_mcp.bat"
+      ],
+      "env": {
+        "LOCAL_OLLAMA_ENDPOINT": "http://127.0.0.1:11434"
+      }
+    }
+  }
+}
