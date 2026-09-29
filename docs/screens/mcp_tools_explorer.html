@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ModelFusion MCP Server • 103-Tool Interactive Explorer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090b10;
+      --card-bg: #11141c;
+      --card-border: #1e2433;
+      --card-hover: #192030;
+      --accent: #10a37f;
+      --accent-glow: rgba(16, 163, 127, 0.25);
+      --text-main: #f0f3f8;
+      --text-muted: #8b9bb4;
+      --tag-bg: #1c2333;
+      --tag-border: #2a344d;
+      --req-bg: rgba(239, 68, 68, 0.15);
+      --req-text: #f87171;
+      --opt-bg: rgba(148, 163, 184, 0.12);
+      --opt-text: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding: 32px 24px;
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    header {
+      margin-bottom: 28px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      background: var(--tag-bg);
+      border: 1px solid var(--tag-border);
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 12px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, #ffffff 30%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    p.subtitle {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      max-width: 800px;
+    }
+    .stats-bar {
+      display: flex;
+      gap: 16px;
+      margin: 20px 0;
+      flex-wrap: wrap;
+    }
+    .stat-pill {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      padding: 8px 16px;
+      border-radius: 10px;
+      font-size: 0.88rem;
+    }
+    .stat-pill strong {
+      color: var(--accent);
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .search-panel {
+      position: sticky;
+      top: 16px;
+      z-index: 100;
+      background: rgba(9, 11, 16, 0.92);
+      backdrop-filter: blur(16px);
+      padding: 16px 0;
+      border-bottom: 1px solid var(--card-border);
+      margin-bottom: 24px;
+    }
+    .search-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .search-input {
+      flex: 1;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: #fff;
+      padding: 12px 18px;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-family: inherit;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+    .search-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    .categories-bar {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 6px;
+    }
+    .cat-btn {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s ease;
+    }
+    .cat-btn:hover, .cat-btn.active {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+    .tools-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+      gap: 16px;
+    }
+    .tool-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.2s ease;
+    }
+    .tool-card:hover {
+      border-color: #2e384e;
+      background: var(--card-hover);
+      transform: translateY(-2px);
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .tool-title {
+      font-size: 1.12rem;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+      color: #60a5fa;
+    }
+    .card-meta {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .idx-tag {
+      background: var(--tag-bg);
+      border: 1px solid var(--tag-border);
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .cat-tag {
+      background: rgba(16, 163, 127, 0.12);
+      border: 1px solid rgba(16, 163, 127, 0.3);
+      color: var(--accent);
+      font-size: 0.72rem;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+    .tool-desc {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      line-height: 1.45;
+    }
+    .param-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 16px;
+    }
+    .param-chip {
+      font-size: 0.75rem;
+      font-family: 'JetBrains Mono', monospace;
+      padding: 2px 8px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .param-req {
+      background: var(--req-bg);
+      color: var(--req-text);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+    }
+    .param-opt {
+      background: var(--opt-bg);
+      color: var(--opt-text);
+      border: 1px solid var(--tag-border);
+    }
+    .card-actions {
+      display: flex;
+      gap: 8px;
+      padding-top: 12px;
+      border-top: 1px solid #1a202c;
+    }
+    .action-btn {
+      flex: 1;
+      padding: 7px 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      border-radius: 8px;
+      border: 1px solid var(--card-border);
+      background: #161b26;
+      color: var(--text-main);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+    .action-btn:hover {
+      background: #202738;
+      border-color: #3b4763;
+    }
+    .action-btn.copy:active {
+      background: var(--accent);
+      color: #fff;
+    }
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(8px);
+      z-index: 999;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal-box {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      width: 100%;
+      max-width: 720px;
+      max-height: 85vh;
+      overflow-y: auto;
+      padding: 24px;
+      position: relative;
+    }
+    .modal-close {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1.5rem;
+      cursor: pointer;
+    }
+    pre.code-block {
+      background: #090b10;
+      border: 1px solid #1e2433;
+      padding: 16px;
+      border-radius: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      overflow-x: auto;
+      color: #38bdf8;
+      margin-top: 12px;
+    }
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--accent);
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+      z-index: 10000;
+    }
+    #toast.show {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="badge">🔌 MCP 2024-11-05 SPECIFICATION COMPLIANT</div>
+      <h1>ModelFusion MCP Tools Explorer</h1>
+      <p class="subtitle">Complete catalog of 103 high-performance tools exposed by the ModelFusion Master CLI stdio server. Search, inspect schemas, and copy JSON-RPC tool call payloads instantly.</p>
+      
+      <div class="stats-bar">
+        <div class="stat-pill">Total Tools: <strong>103</strong></div>
+        <div class="stat-pill">Showing: <strong id="lbl-count">103</strong></div>
+        <div class="stat-pill">Protocol: <strong>JSON-RPC 2.0 stdio</strong></div>
+        <div class="stat-pill">Execution Engine: <strong>cli.exe --mcp</strong></div>
+      </div>
+    </header>
+
+    <div class="search-panel">
+      <div class="search-row">
+        <input type="text" id="search-input" class="search-input" placeholder="🔍 Search by tool name, parameter, description, or task keyword (e.g. vision, acdso, rest_rl, ner)...">
+      </div>
+      <div class="categories-bar" id="cat-bar">
+        <button class="cat-btn active" data-cat="all">All (103)</button>
+      </div>
+    </div>
+
+    <div class="tools-grid" id="tools-container"></div>
+  </div>
+
+  <div class="modal-overlay" id="modal">
+    <div class="modal-box">
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+      <h2 id="modal-title" style="font-family:'JetBrains Mono',monospace;color:#60a5fa;margin-bottom:8px;"></h2>
+      <p id="modal-desc" style="color:var(--text-muted);font-size:0.9rem;margin-bottom:16px;"></p>
+      <h4 style="font-size:0.9rem;color:#f0f3f8;margin-bottom:6px;">Input Schema:</h4>
+      <pre class="code-block" id="modal-schema"></pre>
+      <h4 style="font-size:0.9rem;color:#f0f3f8;margin-top:16px;margin-bottom:6px;">Sample JSON-RPC Tool Call:</h4>
+      <pre class="code-block" id="modal-call"></pre>
+      <div style="margin-top:20px;display:flex;justify-content:flex-end;">
+        <button class="action-btn" style="background:var(--accent);color:#fff;border-color:var(--accent);padding:8px 18px;" onclick="copyModalCall()">📋 Copy JSON-RPC Call</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast">Copied to clipboard!</div>
+
+  <script>
+    const TOOLS_DATA = [{"description": "Execute the ModelFusion CLI with ANY combination of flags. This is the universal tool \u00e2\u20ac\u201d use it when no specialized tool fits. Supported flags: --file <path>, --folder <path>, --prompt <text>, --task <task_name>, --budget <float>, --chain-of-thought, --gpu, --cpu, --ollama, --openvino, --onnx, --vllm, --model <model_id>, --fusion, --fusion-models <N>, --fusion-mode <multi-model|multi-sample>, --selection-strategy <strategy>, --delegation, --recursion, --context-auto, --context <text>, --verbose, --debug, --language <lang>, --full, --score, --judge, --plan, --enable-innovations, --workflow-optimization, --semantic-analysis, --temporal-tracking, --predictive-mode, --innovation-level <N>, --real-options, --prompt-quality-scoring, --enable-ml, --enable-ml-selection, --ml-learning, --ml-ensemble-method <method>, --ml-confidence-threshold <float>, --ml-fallback <true|false>, --enable-slash-commands", "inputSchema": {"properties": {"args": {"description": "Array of CLI arguments (e.g., ['--prompt', 'explain recursion', '--ollama', '--gpu'])", "items": {"type": "string"}, "type": "array"}}, "required": ["args"], "type": "object"}, "name": "execute", "index": 1, "category": "Core Orchestration"}, {"description": "Fast direct answer for general knowledge questions (non-coding). Calls Ollama directly, bypassing orchestration for ~2-3 second responses. Use for: geography, history, math, science, trivia, definitions, translations, general knowledge.", "inputSchema": {"properties": {"model": {"description": "Ollama model (default: qwen2.5:3b). Options: qwen2.5:0.5b, qwen2.5:1.5b, qwen2.5:3b, qwen2.5:7b, llama3.2:3b", "type": "string"}, "question": {"description": "The question to answer", "type": "string"}}, "required": ["question"], "type": "object"}, "name": "quick_answer", "index": 2, "category": "Core Orchestration"}, {"description": "Run the full ModelFusion orchestration pipeline: task detection \u00e2\u2020\u2019 model selection \u00e2\u2020\u2019 execution. Best for coding questions, complex analysis, and tasks that benefit from intelligent model routing.", "inputSchema": {"properties": {"budget": {"description": "Model size limit in billions (1=tiny, 3=balanced, 7=quality)", "type": "number"}, "chain_of_thought": {"description": "Enable step-by-step reasoning", "type": "boolean"}, "cpu": {"type": "boolean"}, "delegation": {"description": "Multi-agent task routing", "type": "boolean"}, "fusion": {"description": "Use panel of models for higher quality", "type": "boolean"}, "gpu": {"type": "boolean"}, "prompt": {"description": "The prompt or task description", "type": "string"}, "recursion": {"description": "Recursive task decomposition", "type": "boolean"}, "selection_strategy": {"description": "Strategy: multi_objective, latency, accuracy, cost, performance", "type": "string"}, "task_override": {"description": "Force task type (text-generation, code-analysis, summarization, etc.)", "type": "string"}}, "required": ["prompt"], "type": "object"}, "name": "orchestrate", "index": 3, "category": "Core Orchestration"}, {"description": "Analyze, review, or process a specific file using ModelFusion. Supports code review, vulnerability scanning, summarization, and custom analysis.", "inputSchema": {"properties": {"budget": {"type": "number"}, "file": {"description": "Absolute path to file", "type": "string"}, "full": {"description": "Enable comprehensive analysis", "type": "boolean"}, "gpu": {"type": "boolean"}, "prompt": {"description": "Analysis instructions", "type": "string"}}, "required": ["file", "prompt"], "type": "object"}, "name": "analyze_file", "index": 4, "category": "File & Project Intelligence"}, {"description": "Analyze or review an entire directory/project using ModelFusion. Supports code review, architecture analysis, and project-wide scanning.", "inputSchema": {"properties": {"budget": {"type": "number"}, "folder": {"description": "Absolute path to folder", "type": "string"}, "full": {"type": "boolean"}, "gpu": {"type": "boolean"}, "prompt": {"description": "Analysis instructions", "type": "string"}}, "required": ["folder", "prompt"], "type": "object"}, "name": "analyze_folder", "index": 5, "category": "File & Project Intelligence"}, {"description": "Run specialized NLP tasks: sentiment-analysis, text-classification, summarization, translation, question-answering, ner (named entity recognition), emotion-detection, sarcasm-detection, paraphrase-generation, grammar-correction, language-detection, reading-level-assessment, anonymization, coreference-resolution, fill-mask, feature-extraction, sentence-similarity, zero-shot-classification, stance-detection, bias-detection.", "inputSchema": {"properties": {"gpu": {"type": "boolean"}, "language": {"description": "Target language for translation (default: en)", "type": "string"}, "task": {"description": "NLP task name (e.g., 'sentiment-analysis', 'translation', 'summarization', 'ner', 'emotion-detection')", "type": "string"}, "text": {"description": "Input text to process", "type": "string"}}, "required": ["task", "text"], "type": "object"}, "name": "nlp_task", "index": 6, "category": "High-Level Task Dispatchers"}, {"description": "Run security-focused NLP analysis: spam-detection, malware-text-detection, phishing-detection, pii-detection (personally identifiable information), hate-speech-detection, cyberbullying-detection, fake-news-detection, hallucination-detection, generation-groundedness, code-vulnerability-detection.", "inputSchema": {"properties": {"file": {"description": "Optional file path to scan", "type": "string"}, "gpu": {"type": "boolean"}, "task": {"description": "Security task (e.g., 'spam-detection', 'pii-detection', 'phishing-detection', 'code-vulnerability-detection')", "type": "string"}, "text": {"description": "Text or code to analyze", "type": "string"}}, "required": ["task", "text"], "type": "object"}, "name": "security_analysis", "index": 7, "category": "High-Level Task Dispatchers"}, {"description": "Run code-specific AI tasks: code-vulnerability-detection, code-summary-generation, code-clone-detection, text-generation (for code), causal-language-modeling. Also supports --plan for AI-powered planning and --judge for LLM-as-a-Judge evaluation.", "inputSchema": {"properties": {"file": {"description": "Optional source file path", "type": "string"}, "gpu": {"type": "boolean"}, "judge": {"description": "Enable LLM-as-a-Judge evaluation", "type": "boolean"}, "plan": {"description": "Enable AI planning mode", "type": "boolean"}, "score": {"description": "Enable response scoring", "type": "boolean"}, "task": {"description": "Code task (e.g., 'code-vulnerability-detection', 'code-summary-generation', 'code-clone-detection')", "type": "string"}, "text": {"description": "Code or description", "type": "string"}}, "required": ["task", "text"], "type": "object"}, "name": "code_task", "index": 8, "category": "High-Level Task Dispatchers"}, {"description": "Run domain-specific NLP: legal-judgment-classification, contract-clause-classification, case-outcome-prediction, financial-ner, financial-sentiment-analysis, legal-ner, biomedical-ner, chemical-reaction-ner, scientific-abstract-summarization, citation-intent-classification, table-question-answering, feature-ranking.", "inputSchema": {"properties": {"gpu": {"type": "boolean"}, "task": {"description": "Domain task (e.g., 'financial-sentiment-analysis', 'legal-ner', 'biomedical-ner', 'contract-clause-classification')", "type": "string"}, "text": {"description": "Text to analyze", "type": "string"}}, "required": ["task", "text"], "type": "object"}, "name": "domain_task", "index": 9, "category": "High-Level Task Dispatchers"}, {"description": "Run image, audio, and video AI tasks: image-classification, object-detection, image-segmentation, visual-question-answering, document-question-answering, zero-shot-image-classification, depth-estimation, image-feature-extraction, image-super-resolution, text-to-image, automatic-speech-recognition, audio-classification, voice-activity-detection, emotion-recognition, video-classification, text-to-speech.", "inputSchema": {"properties": {"file": {"description": "Path to image/audio/video file", "type": "string"}, "gpu": {"type": "boolean"}, "prompt": {"description": "Question or instruction for the task", "type": "string"}, "task": {"description": "Multimodal task (e.g., 'image-classification', 'object-detection', 'automatic-speech-recognition')", "type": "string"}}, "required": ["task"], "type": "object"}, "name": "multimodal_task", "index": 10, "category": "High-Level Task Dispatchers"}, {"description": "Semantic search with HyDE (Hypothetical Document Embeddings). Add documents to the index, then search with natural language queries. Supports interactive question refinement and multiple HyDE variants.", "inputSchema": {"properties": {"action": {"description": "'search' to query, 'add' to index documents, 'demo' to run demo", "type": "string"}, "documents_path": {"description": "Path to documents to add (for 'add' action)", "type": "string"}, "hyde_variants": {"description": "Generate multiple HyDE variants", "type": "boolean"}, "query": {"description": "Search query (for 'search' action)", "type": "string"}, "top_k": {"description": "Number of results (default: 5)", "type": "integer"}, "use_hyde": {"description": "Use interactive HyDE refinement", "type": "boolean"}}, "required": ["action"], "type": "object"}, "name": "semantic_search", "index": 11, "category": "Autonomous Agents & AutoML"}, {"description": "Run data science workflows on CSV/Excel files. Supports: full data analyst workflow, comprehensive data science flow, Jupyter notebook launch, and PDF report export.", "inputSchema": {"properties": {"export_pdf": {"description": "Export results as PDF", "type": "boolean"}, "file": {"description": "Path to CSV/Excel file", "type": "string"}, "mode": {"description": "'analyst' for data analyst, 'science' for full data science, 'jupyter' for notebook", "type": "string"}, "prompt": {"description": "Analysis instructions", "type": "string"}}, "required": ["mode"], "type": "object"}, "name": "data_science", "index": 12, "category": "Autonomous Agents & AutoML"}, {"description": "Extract PE header information and perform security analysis on Windows executables (.exe, .dll).", "inputSchema": {"properties": {"file": {"description": "Absolute path to the PE executable", "type": "string"}, "prompt": {"description": "Analysis instructions (default: 'Perform PE analysis')", "type": "string"}}, "required": ["file"], "type": "object"}, "name": "pe_header_extraction", "index": 13, "category": "CyberSecurity & Safety"}, {"description": "Manage AI models: prepare/convert models to OpenVINO IR format, set weight format (fp16/int8/int4), configure SINQ quantization, save/load ML models.", "inputSchema": {"properties": {"action": {"description": "'prepare' to convert model, 'prepare-all' to batch convert, 'sinq' to quantize", "type": "string"}, "model_id": {"description": "HuggingFace model ID to prepare", "type": "string"}, "sinq_group_size": {"description": "SINQ group size (default: 64)", "type": "integer"}, "sinq_nbits": {"description": "SINQ bit-width (default: 4)", "type": "integer"}, "weight_format": {"description": "fp16, int8, or int4 (default: int8)", "type": "string"}}, "required": ["action"], "type": "object"}, "name": "model_management", "index": 14, "category": "Autonomous Agents & AutoML"}, {"description": "Generate analysis reports in various formats: PDF, markdown, text, JSON, or Word.", "inputSchema": {"properties": {"file": {"description": "File or folder to analyze for the report", "type": "string"}, "format": {"description": "Report format: pdf, md, text, json, word (default: md)", "type": "string"}, "output_path": {"description": "Where to save the report", "type": "string"}, "prompt": {"description": "Report content/analysis instructions", "type": "string"}}, "required": ["prompt", "output_path"], "type": "object"}, "name": "reporting", "index": 15, "category": "Autonomous Agents & AutoML"}, {"description": "Manage the ML-based model selection system: retrain models, clean up old training data, view analytics, configure ensemble methods.", "inputSchema": {"properties": {"action": {"description": "'retrain' to force retrain, 'cleanup' to clean old data, 'analytics' to view stats", "type": "string"}, "cleanup_days": {"description": "For cleanup: delete data older than N days", "type": "integer"}}, "required": ["action"], "type": "object"}, "name": "ml_management", "index": 16, "category": "Autonomous Agents & AutoML"}, {"description": "Get detected system hardware specifications: CPU, RAM, GPU, disk space.", "inputSchema": {"properties": {}, "type": "object"}, "name": "get_system_info", "index": 17, "category": "System Telemetry & Lifecycle"}, {"description": "Get database status and model categorization statistics.", "inputSchema": {"properties": {}, "type": "object"}, "name": "get_database_stats", "index": 18, "category": "System Telemetry & Lifecycle"}, {"description": "List available models and tasks. Filter by: audio, image, text, all.", "inputSchema": {"properties": {"category": {"description": "Category filter (audio, image, text, all)", "type": "string"}}, "type": "object"}, "name": "list_tasks", "index": 19, "category": "System Telemetry & Lifecycle"}, {"description": "Update the HuggingFace models database with latest models.", "inputSchema": {"properties": {}, "type": "object"}, "name": "update_database", "index": 20, "category": "System Telemetry & Lifecycle"}, {"description": "Restore config and database from backups.", "inputSchema": {"properties": {}, "type": "object"}, "name": "restore_backup", "index": 21, "category": "System Telemetry & Lifecycle"}, {"description": "Clear all cached model data and weights.", "inputSchema": {"properties": {}, "type": "object"}, "name": "clear_cache", "index": 22, "category": "System Telemetry & Lifecycle"}, {"description": "Get model decision-making statistics and selection history.", "inputSchema": {"properties": {}, "type": "object"}, "name": "get_decision_stats", "index": 23, "category": "System Telemetry & Lifecycle"}, {"description": "Get novel AI component statistics and module list.", "inputSchema": {"properties": {}, "type": "object"}, "name": "get_novel_ai_stats", "index": 24, "category": "System Telemetry & Lifecycle"}, {"description": "Get model performance metrics and latency statistics.", "inputSchema": {"properties": {}, "type": "object"}, "name": "get_performance_stats", "index": 25, "category": "System Telemetry & Lifecycle"}, {"description": "Get model cache status, sizes, and database health info.", "inputSchema": {"properties": {}, "type": "object"}, "name": "get_cache_stats", "index": 26, "category": "System Telemetry & Lifecycle"}, {"description": "Get personalized model recommendations based on decision scores.", "inputSchema": {"properties": {}, "type": "object"}, "name": "get_model_recommendations", "index": 27, "category": "System Telemetry & Lifecycle"}, {"description": "Get models ranked for a specific task category.", "inputSchema": {"properties": {"category": {"description": "Task category (e.g., text-generation, summarization, code-vulnerability-detection)", "type": "string"}}, "required": ["category"], "type": "object"}, "name": "get_model_ranking", "index": 28, "category": "System Telemetry & Lifecycle"}, {"description": "Get ML model selection and performance analytics.", "inputSchema": {"properties": {}, "type": "object"}, "name": "get_ml_analytics", "index": 29, "category": "System Telemetry & Lifecycle"}, {"description": "Provide feedback on model quality to update bandit rewards for improved future selection.", "inputSchema": {"properties": {"arm": {"description": "Arm ID (0=Single, 1=Fusion)", "type": "integer"}, "context": {"description": "Context ID (0=Simple, 1=Complex/Coding)", "type": "integer"}, "reward": {"description": "Score: 1.0=good, 0.0=poor", "type": "number"}}, "required": ["context", "arm", "reward"], "type": "object"}, "name": "report_bandit_feedback", "index": 30, "category": "System Telemetry & Lifecycle"}, {"description": "Execute ModelFusion --text-classification for text classification.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "text_classification", "index": 31, "category": "NLP & Linguistics"}, {"description": "Execute ModelFusion --token-classification for token classification.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "token_classification", "index": 32, "category": "NLP & Linguistics"}, {"description": "Execute ModelFusion --question-answering for question answering.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "question_answering", "index": 33, "category": "NLP & Linguistics"}, {"description": "Execute ModelFusion --text-generation for text generation.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "text_generation", "index": 34, "category": "NLP & Linguistics"}, {"description": "Execute ModelFusion --summarization for summarization.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "summarization", "index": 35, "category": "NLP & Linguistics"}, {"description": "Execute ModelFusion --translation for translation.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "translation", "index": 36, "category": "NLP & Linguistics"}, {"description": "Execute ModelFusion --fill-mask for fill mask.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "fill_mask", "index": 37, "category": "NLP & Linguistics"}, {"description": "Execute ModelFusion --text2text-generation for text2text generation.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "text2text_generation", "index": 38, "category": "NLP & Linguistics"}, {"description": "Execute ModelFusion --language-detection for language detection.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "language_detection", "index": 39, "category": "NLP & Linguistics"}, {"description": "Execute ModelFusion --grammar-correction for grammar correction.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "grammar_correction", "index": 40, "category": "NLP & Linguistics"}, {"description": "Execute ModelFusion --paraphrase-generation for paraphrase generation.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "paraphrase_generation", "index": 41, "category": "NLP & Linguistics"}, {"description": "Execute ModelFusion --causal-language-modeling for causal language modeling.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "causal_language_modeling", "index": 42, "category": "NLP & Linguistics"}, {"description": "Execute ModelFusion --zero-shot-classification for zero shot classification.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "zero_shot_classification", "index": 43, "category": "NLP & Linguistics"}, {"description": "Execute ModelFusion --feature-extraction for feature extraction.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "feature_extraction", "index": 44, "category": "NLP & Linguistics"}, {"description": "Execute ModelFusion --sentence-similarity for sentence similarity.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "sentence_similarity", "index": 45, "category": "NLP & Linguistics"}, {"description": "Execute ModelFusion --anonymization for anonymization.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "anonymization", "index": 46, "category": "NLP & Linguistics"}, {"description": "Execute ModelFusion --coreference-resolution for coreference resolution.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "coreference_resolution", "index": 47, "category": "NLP & Linguistics"}, {"description": "Execute ModelFusion --spam-detection for spam detection.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "spam_detection", "index": 48, "category": "CyberSecurity & Safety"}, {"description": "Execute ModelFusion --malware-text-detection for malware text detection.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "malware_text_detection", "index": 49, "category": "CyberSecurity & Safety"}, {"description": "Execute ModelFusion --phishing-detection for phishing detection.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "phishing_detection", "index": 50, "category": "CyberSecurity & Safety"}, {"description": "Execute ModelFusion --pii-detection for pii detection.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "pii_detection", "index": 51, "category": "CyberSecurity & Safety"}, {"description": "Execute ModelFusion --hate-speech-detection for hate speech detection.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "hate_speech_detection", "index": 52, "category": "CyberSecurity & Safety"}, {"description": "Execute ModelFusion --cyberbullying-detection for cyberbullying detection.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "cyberbullying_detection", "index": 53, "category": "CyberSecurity & Safety"}, {"description": "Execute ModelFusion --fake-news-detection for fake news detection.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "fake_news_detection", "index": 54, "category": "CyberSecurity & Safety"}, {"description": "Execute ModelFusion --legal-judgment-classification for legal judgment classification.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "legal_judgment_classification", "index": 55, "category": "Domain Reasoning (Legal/Fin/Bio)"}, {"description": "Execute ModelFusion --contract-clause-classification for contract clause classification.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "contract_clause_classification", "index": 56, "category": "Domain Reasoning (Legal/Fin/Bio)"}, {"description": "Execute ModelFusion --case-outcome-prediction for case outcome prediction.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "case_outcome_prediction", "index": 57, "category": "Domain Reasoning (Legal/Fin/Bio)"}, {"description": "Execute ModelFusion --financial-ner for financial ner.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "financial_ner", "index": 58, "category": "Domain Reasoning (Legal/Fin/Bio)"}, {"description": "Execute ModelFusion --legal-ner for legal ner.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "legal_ner", "index": 59, "category": "Domain Reasoning (Legal/Fin/Bio)"}, {"description": "Execute ModelFusion --biomedical-ner for biomedical ner.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "biomedical_ner", "index": 60, "category": "Domain Reasoning (Legal/Fin/Bio)"}, {"description": "Execute ModelFusion --chemical-reaction-ner for chemical reaction ner.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "chemical_reaction_ner", "index": 61, "category": "Domain Reasoning (Legal/Fin/Bio)"}, {"description": "Execute ModelFusion --financial-sentiment-analysis for financial sentiment analysis.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "financial_sentiment_analysis", "index": 62, "category": "Domain Reasoning (Legal/Fin/Bio)"}, {"description": "Execute ModelFusion --scientific-abstract-summarization for scientific abstract summarization.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "scientific_abstract_summarization", "index": 63, "category": "Domain Reasoning (Legal/Fin/Bio)"}, {"description": "Execute ModelFusion --emotion-detection for emotion detection.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "emotion_detection", "index": 64, "category": "Ethics, Bias & Groundedness"}, {"description": "Execute ModelFusion --sarcasm-detection for sarcasm detection.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "sarcasm_detection", "index": 65, "category": "Ethics, Bias & Groundedness"}, {"description": "Execute ModelFusion --stance-detection for stance detection.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "stance_detection", "index": 66, "category": "Ethics, Bias & Groundedness"}, {"description": "Execute ModelFusion --bias-detection for bias detection.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "bias_detection", "index": 67, "category": "Ethics, Bias & Groundedness"}, {"description": "Execute ModelFusion --hallucination-detection for hallucination detection.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "hallucination_detection", "index": 68, "category": "Ethics, Bias & Groundedness"}, {"description": "Execute ModelFusion --reading-level-assessment for reading level assessment.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "reading_level_assessment", "index": 69, "category": "Ethics, Bias & Groundedness"}, {"description": "Execute ModelFusion --generation-groundedness for generation groundedness.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "generation_groundedness", "index": 70, "category": "Ethics, Bias & Groundedness"}, {"description": "Execute ModelFusion --citation-intent-classification for citation intent classification.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "citation_intent_classification", "index": 71, "category": "Ethics, Bias & Groundedness"}, {"description": "Execute ModelFusion --code-summary-generation for code summary generation.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "code_summary_generation", "index": 72, "category": "Code Intelligence"}, {"description": "Execute ModelFusion --code-clone-detection for code clone detection.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "code_clone_detection", "index": 73, "category": "Code Intelligence"}, {"description": "Execute ModelFusion --image-classification for image classification.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "image_classification", "index": 74, "category": "Multi-Modal (Vision/Audio/Video)"}, {"description": "Execute ModelFusion --object-detection for object detection.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "object_detection", "index": 75, "category": "Multi-Modal (Vision/Audio/Video)"}, {"description": "Execute ModelFusion --image-segmentation for image segmentation.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "image_segmentation", "index": 76, "category": "Multi-Modal (Vision/Audio/Video)"}, {"description": "Execute ModelFusion --visual-question-answering for visual question answering.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "visual_question_answering", "index": 77, "category": "Multi-Modal (Vision/Audio/Video)"}, {"description": "Execute ModelFusion --document-question-answering for document question answering.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "document_question_answering", "index": 78, "category": "Multi-Modal (Vision/Audio/Video)"}, {"description": "Execute ModelFusion --zero-shot-image-classification for zero shot image classification.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "zero_shot_image_classification", "index": 79, "category": "Multi-Modal (Vision/Audio/Video)"}, {"description": "Execute ModelFusion --depth-estimation for depth estimation.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "depth_estimation", "index": 80, "category": "Multi-Modal (Vision/Audio/Video)"}, {"description": "Execute ModelFusion --image-feature-extraction for image feature extraction.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "image_feature_extraction", "index": 81, "category": "Multi-Modal (Vision/Audio/Video)"}, {"description": "Execute ModelFusion --automatic-speech-recognition for automatic speech recognition.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "automatic_speech_recognition", "index": 82, "category": "Multi-Modal (Vision/Audio/Video)"}, {"description": "Execute ModelFusion --audio-classification for audio classification.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "audio_classification", "index": 83, "category": "Multi-Modal (Vision/Audio/Video)"}, {"description": "Execute ModelFusion --voice-activity-detection for voice activity detection.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "voice_activity_detection", "index": 84, "category": "Multi-Modal (Vision/Audio/Video)"}, {"description": "Execute ModelFusion --emotion-recognition for emotion recognition.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "emotion_recognition", "index": 85, "category": "Multi-Modal (Vision/Audio/Video)"}, {"description": "Execute ModelFusion --video-classification for video classification.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "video_classification", "index": 86, "category": "Multi-Modal (Vision/Audio/Video)"}, {"description": "Execute ModelFusion --text-to-speech for text to speech.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "text_to_speech", "index": 87, "category": "Multi-Modal (Vision/Audio/Video)"}, {"description": "Execute ModelFusion --text-to-image for text to image.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "text_to_image", "index": 88, "category": "Multi-Modal (Vision/Audio/Video)"}, {"description": "Execute ModelFusion --image-super-resolution for image super resolution.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "image_super_resolution", "index": 89, "category": "Multi-Modal (Vision/Audio/Video)"}, {"description": "Execute ModelFusion --table-question-answering for table question answering.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "table_question_answering", "index": 90, "category": "Multi-Modal (Vision/Audio/Video)"}, {"description": "Execute ModelFusion --feature-ranking for feature ranking.", "inputSchema": {"properties": {"file": {"description": "Optional file path", "type": "string"}, "gpu": {"type": "boolean"}, "language": {"description": "Optional language", "type": "string"}, "prompt": {"description": "Task instructions", "type": "string"}, "text": {"description": "Input text or code", "type": "string"}}, "type": "object"}, "name": "feature_ranking", "index": 91, "category": "Multi-Modal (Vision/Audio/Video)"}, {"description": "Navigate, automate, and interact with live web pages via Chromium CDP (port 9222).", "inputSchema": {"properties": {"task": {"description": "Natural language browser task", "type": "string"}, "url": {"description": "URL to navigate to", "type": "string"}}, "type": "object"}, "name": "browser", "index": 92, "category": "Autonomous Agents & AutoML"}, {"description": "Execute autonomous multi-step web research with Set-of-Mark and synthesis.", "inputSchema": {"properties": {"query": {"description": "Research topic or directive", "type": "string"}}, "required": ["query"], "type": "object"}, "name": "deep_research", "index": 93, "category": "Autonomous Agents & AutoML"}, {"description": "Run Set-of-Mark visual element grounding with 90% token reduction.", "inputSchema": {"properties": {}, "type": "object"}, "name": "som", "index": 94, "category": "Autonomous Agents & AutoML"}, {"description": "Summarize the active browser page or document into executive takeaways.", "inputSchema": {"properties": {"text": {"description": "Optional text content to summarize", "type": "string"}}, "type": "object"}, "name": "summarize", "index": 95, "category": "Autonomous Agents & AutoML"}, {"description": "Live web search grounding with factual citations.", "inputSchema": {"properties": {"query": {"description": "Search query", "type": "string"}}, "required": ["query"], "type": "object"}, "name": "search", "index": 96, "category": "Autonomous Agents & AutoML"}, {"description": "Automated Causal Decision Science Optimization (5-objective Pareto AutoML on datasets).", "inputSchema": {"properties": {"file": {"description": "Path to CSV/Excel/Parquet dataset", "type": "string"}, "target": {"description": "Optional target prediction column", "type": "string"}}, "type": "object"}, "name": "acdso", "index": 97, "category": "Autonomous Agents & AutoML"}, {"description": "Execute long-running autonomous goal-directed loop until objective is fully achieved.", "inputSchema": {"properties": {"goal": {"description": "High-level goal description", "type": "string"}}, "required": ["goal"], "type": "object"}, "name": "goal", "index": 98, "category": "Autonomous Agents & AutoML"}, {"description": "Decompose complex task into architectural implementation plan and test criteria.", "inputSchema": {"properties": {"task": {"description": "Task description to plan", "type": "string"}}, "required": ["task"], "type": "object"}, "name": "plan", "index": 99, "category": "Autonomous Agents & AutoML"}, {"description": "Conduct adversarial requirements interview to stress-test designs and edge cases.", "inputSchema": {"properties": {"topic": {"description": "System or design to stress test", "type": "string"}}, "type": "object"}, "name": "grill_me", "index": 100, "category": "Autonomous Agents & AutoML"}, {"description": "Activate multi-perspective deep reasoning boost and rigorous validation.", "inputSchema": {"properties": {"prompt": {"description": "Complex prompt or query", "type": "string"}}, "required": ["prompt"], "type": "object"}, "name": "boost", "index": 101, "category": "Autonomous Agents & AutoML"}, {"description": "Run recursive multi-turn agentic loop chaining for up to 256k tokens.", "inputSchema": {"properties": {"prompt": {"description": "Prompt for large generation", "type": "string"}, "target_tokens": {"description": "Target token budget (up to 262144)", "type": "integer"}}, "required": ["prompt"], "type": "object"}, "name": "agentic_loop", "index": 102, "category": "Autonomous Agents & AutoML"}, {"description": "Manage sub-8ms ReST-RL preemption daemon with Windows Job Objects.", "inputSchema": {"properties": {"action": {"description": "'start', 'status', or 'stop'", "type": "string"}}, "type": "object"}, "name": "rest_rl", "index": 103, "category": "Autonomous Agents & AutoML"}];
+    let activeCategory = 'all';
+    let currentModalTool = null;
+
+    // Build Categories
+    const cats = new Set();
+    TOOLS_DATA.forEach(t => cats.add(t.category));
+    const catBar = document.getElementById('cat-bar');
+    cats.forEach(c => {
+      const count = TOOLS_DATA.filter(t => t.category === c).length;
+      const btn = document.createElement('button');
+      btn.className = 'cat-btn';
+      btn.setAttribute('data-cat', c);
+      btn.textContent = `${c} (${count})`;
+      catBar.appendChild(btn);
+    });
+
+    catBar.addEventListener('click', (e) => {
+      if (e.target.classList.contains('cat-btn')) {
+        document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        activeCategory = e.target.getAttribute('data-cat');
+        renderTools();
+      }
+    });
+
+    document.getElementById('search-input').addEventListener('input', () => {
+      renderTools();
+    });
+
+    function renderTools() {
+      const q = document.getElementById('search-input').value.toLowerCase().trim();
+      const container = document.getElementById('tools-container');
+      container.innerHTML = '';
+
+      const filtered = TOOLS_DATA.filter(t => {
+        const matchCat = activeCategory === 'all' || t.category === activeCategory;
+        if (!matchCat) return false;
+        if (!q) return true;
+
+        const inName = t.name.toLowerCase().includes(q);
+        const inDesc = (t.description || '').toLowerCase().includes(q);
+        const inCat = t.category.toLowerCase().includes(q);
+        const props = Object.keys(t.inputSchema?.properties || {}).join(' ').toLowerCase();
+        const inProps = props.includes(q);
+        return inName || inDesc || inCat || inProps;
+      });
+
+      document.getElementById('lbl-count').textContent = filtered.length;
+
+      filtered.forEach(t => {
+        const card = document.createElement('div');
+        card.className = 'tool-card';
+
+        const props = t.inputSchema?.properties || {};
+        const reqs = t.inputSchema?.required || [];
+        const paramKeys = Object.keys(props);
+
+        let paramsHtml = '';
+        if (paramKeys.length === 0) {
+          paramsHtml = '<span class="param-chip param-opt">No parameters</span>';
+        } else {
+          paramKeys.slice(0, 6).forEach(k => {
+            const isReq = reqs.includes(k);
+            paramsHtml += `<span class="param-chip ${isReq ? 'param-req' : 'param-opt'}">${isReq ? '● ' : ''}${k}</span>`;
+          });
+          if (paramKeys.length > 6) {
+            paramsHtml += `<span class="param-chip param-opt">+${paramKeys.length - 6} more</span>`;
+          }
+        }
+
+        card.innerHTML = `
+          <div>
+            <div class="card-header">
+              <span class="tool-title">${t.name}</span>
+              <div class="card-meta">
+                <span class="idx-tag">#${t.index}</span>
+                <span class="cat-tag">${t.category}</span>
+              </div>
+            </div>
+            <p class="tool-desc" title="${(t.description || '').replace(/"/g, '&quot;')}">${t.description || 'No description provided.'}</p>
+          </div>
+          <div>
+            <div class="param-list">${paramsHtml}</div>
+            <div class="card-actions">
+              <button class="action-btn" onclick="openModal(${t.index})">🔍 Inspect Schema</button>
+              <button class="action-btn copy" onclick="copyToolCall(${t.index})">📋 Copy Call</button>
+            </div>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function openModal(idx) {
+      const t = TOOLS_DATA.find(x => x.index === idx);
+      if (!t) return;
+      currentModalTool = t;
+
+      document.getElementById('modal-title').textContent = t.name;
+      document.getElementById('modal-desc').textContent = t.description;
+      document.getElementById('modal-schema').textContent = JSON.stringify(t.inputSchema, null, 2);
+
+      const sampleCall = generateSampleCall(t);
+      document.getElementById('modal-call').textContent = JSON.stringify(sampleCall, null, 2);
+
+      document.getElementById('modal').classList.add('active');
+    }
+
+    function closeModal() {
+      document.getElementById('modal').classList.remove('active');
+    }
+
+    function generateSampleCall(t) {
+      const props = t.inputSchema?.properties || {};
+      const reqs = t.inputSchema?.required || [];
+      const args = {};
+
+      reqs.forEach(r => {
+        const type = props[r]?.type || 'string';
+        if (type === 'number') args[r] = 7;
+        else if (type === 'boolean') args[r] = true;
+        else if (type === 'array') args[r] = ["--prompt", "example query"];
+        else args[r] = "sample input value";
+      });
+
+      if (reqs.length === 0 && Object.keys(props).length > 0) {
+        Object.keys(props).slice(0, 2).forEach(k => {
+          const type = props[k]?.type || 'string';
+          if (type === 'number') args[k] = 3;
+          else if (type === 'boolean') args[k] = true;
+          else args[k] = "sample";
+        });
+      }
+
+      return {
+        jsonrpc: "2.0",
+        id: t.index,
+        method: "tools/call",
+        params: {
+          name: t.name,
+          arguments: args
+        }
+      };
+    }
+
+    function copyToolCall(idx) {
+      const t = TOOLS_DATA.find(x => x.index === idx);
+      if (!t) return;
+      const call = generateSampleCall(t);
+      navigator.clipboard.writeText(JSON.stringify(call, null, 2)).then(() => {
+        showToast(`Copied tool call for "${t.name}"!`);
+      });
+    }
+
+    function copyModalCall() {
+      if (!currentModalTool) return;
+      copyToolCall(currentModalTool.index);
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2000);
+    }
+
+    // Initial render
+    renderTools();
+  </script>
+</body>
+</html>
