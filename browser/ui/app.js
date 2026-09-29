@@ -1658,6 +1658,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (hasDoc && !hasTabular && !hasCode) {
       addAction('@agent summarize', '▶ Run @agent summarize', true);
+      addAction('@agent humanize', '✍️ @agent humanize', true);
+      addAction('@agent translate-humanize to Spanish: ', '🗣️ @agent translate-humanize', false);
     }
 
     return actions;
@@ -6141,6 +6143,8 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
   }
   window.parseMultiAgentDirectives = parseMultiAgentDirectives;
 
+  let pendingPromptDirective = null;
+
   async function executeCliCommand(rawCmd) {
     if (isGenerating) {
       termLog('⚠️ A task is already in progress. Please wait for completion or click ⏹ to stop.', 'warn');
@@ -6148,6 +6152,22 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
     }
     let cmd = (rawCmd || '').trim();
     if (!cmd) return;
+
+    // Resolve any pending prompt directive if user just entered raw unadorned text
+    if (pendingPromptDirective && !cmd.startsWith('@') && !cmd.startsWith('/')) {
+      if (pendingPromptDirective.type === 'humanize') {
+        cmd = `@agent humanize ${cmd}`;
+      } else if (pendingPromptDirective.type === 'translate') {
+        cmd = `@agent translate to ${pendingPromptDirective.lang || 'English'}: ${cmd}`;
+      } else if (pendingPromptDirective.type === 'translate-humanize') {
+        cmd = `@agent translate-humanize to ${pendingPromptDirective.lang || 'English'}: ${cmd}`;
+      } else if (pendingPromptDirective.type === 'style-transfer') {
+        cmd = `@agent style-transfer to ${pendingPromptDirective.style || 'conversational'}: ${cmd}`;
+      }
+      pendingPromptDirective = null;
+    } else {
+      pendingPromptDirective = null;
+    }
 
     // Immediately switch view from hero section to conversation stream
     switchViewToChat();
@@ -6972,9 +6992,26 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       }
 
       if (!textToHumanize) {
+        if (activeSession && activeSession.messages.length > 0 && activeSession.messages[activeSession.messages.length - 1].content === cmd) {
+          activeSession.messages.pop();
+          saveChatHistory();
+        }
+        if (chatMessages && chatMessages.lastElementChild && chatMessages.lastElementChild.classList.contains('user-bubble')) {
+          chatMessages.lastElementChild.remove();
+        }
         termLog('✍️ Please provide or paste the text you would like to humanize.', 'warn');
-        if (cliPromptInput) cliPromptInput.placeholder = 'Paste or type text to humanize here...';
-        if (cliPromptInputPinned) cliPromptInputPinned.placeholder = 'Paste or type text to humanize here...';
+        const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+          ? cliPromptInputPinned
+          : cliPromptInput;
+        if (activeInput) {
+          activeInput.placeholder = 'Paste or type text to humanize here...';
+          activeInput.value = '@agent humanize ';
+          activeInput.focus();
+          activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
+          activeInput.style.height = 'auto';
+          activeInput.style.height = Math.min(activeInput.scrollHeight, 160) + 'px';
+        }
+        pendingPromptDirective = { type: 'humanize' };
         return;
       }
 
@@ -7001,11 +7038,11 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       return;
     }
 
-    // 4.06 Native Speaker Translation & Humanize Directive (@agent translate-humanize, @agent humanize-translate, /translate-humanize, @trans-human)
+    // 4.06 Native Speaker Translation & Humanize Directive (@agent translate-humanize, @agent humanize-translate, /translate-humanize, @trans-human, /trans-human, @agent trans-human)
     if (
-      /^(@agent\s+translate-humanize|@translate-humanize|\/translate-humanize|@trans-human|\/trans-human|@agent\s+humanize-translate|@humanize-translate|\/humanize-translate)(\s*[:\s]|$)/i.test(cmd)
+      /^(@agent\s+translate-humanize|@translate-humanize|\/translate-humanize|@agent\s+trans-human|@trans-human|\/trans-human|@agent\s+transhuman|@transhuman|\/transhuman|@agent\s+humanize-translate|@humanize-translate|\/humanize-translate)(\s*[:\s]|$)/i.test(cmd)
     ) {
-      let rest = cmd.replace(/^(@agent\s+translate-humanize|@translate-humanize|\/translate-humanize|@trans-human|\/trans-human|@agent\s+humanize-translate|@humanize-translate|\/humanize-translate)(?:\s*[:]\s*|\s*)/i, '').trim();
+      let rest = cmd.replace(/^(@agent\s+translate-humanize|@translate-humanize|\/translate-humanize|@agent\s+trans-human|@trans-human|\/trans-human|@agent\s+transhuman|@transhuman|\/transhuman|@agent\s+humanize-translate|@humanize-translate|\/humanize-translate)(?:\s*[:]\s*|\s*)/i, '').trim();
       let targetLang = 'English';
       let textToTranslate = '';
 
@@ -7038,9 +7075,26 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       }
 
       if (!textToTranslate) {
+        if (activeSession && activeSession.messages.length > 0 && activeSession.messages[activeSession.messages.length - 1].content === cmd) {
+          activeSession.messages.pop();
+          saveChatHistory();
+        }
+        if (chatMessages && chatMessages.lastElementChild && chatMessages.lastElementChild.classList.contains('user-bubble')) {
+          chatMessages.lastElementChild.remove();
+        }
         termLog('🗣️ Please provide or paste the text you would like to translate and humanize.', 'warn');
-        if (cliPromptInput) cliPromptInput.placeholder = `Paste or type text to translate into ${targetLang} and humanize...`;
-        if (cliPromptInputPinned) cliPromptInputPinned.placeholder = `Paste or type text to translate into ${targetLang} and humanize...`;
+        const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+          ? cliPromptInputPinned
+          : cliPromptInput;
+        if (activeInput) {
+          activeInput.placeholder = `Paste or type text to translate into ${targetLang} and humanize...`;
+          activeInput.value = `@agent translate-humanize to ${targetLang}: `;
+          activeInput.focus();
+          activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
+          activeInput.style.height = 'auto';
+          activeInput.style.height = Math.min(activeInput.scrollHeight, 160) + 'px';
+        }
+        pendingPromptDirective = { type: 'translate-humanize', lang: targetLang };
         return;
       }
 
@@ -7067,12 +7121,12 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       return;
     }
 
-    // 4.07 Multilingual Translation Directive (@agent translate, /translate, @translate, @agent translation)
+    // 4.07 Multilingual Translation Directive (@agent translate, /translate, @translate, @agent translation, @agent trans, /trans, @trans)
     if (
-      (/^(@agent\s+translate\b|@translate\b|\/translate\b|@agent\s+translation\b|@translation\b|\/translation\b)/i.test(cmd)) &&
-      !/^(@agent\s+translate-humanize|@translate-humanize|\/translate-humanize)/i.test(cmd)
+      (/^(@agent\s+translate\b|@translate\b|\/translate\b|@agent\s+translation\b|@translation\b|\/translation\b|@agent\s+trans\b|@trans\b|\/trans\b)/i.test(cmd)) &&
+      !/^(@agent\s+(?:translate-humanize|trans-human|transhuman)|@(?:translate-humanize|trans-human|transhuman)|\/(?:translate-humanize|trans-human|transhuman))/i.test(cmd)
     ) {
-      let rest = cmd.replace(/^(@agent\s+translate|@agent\s+translation|\/translate|\/translation|@translate|@translation)(?:\s*[:]\s*|\s*)/i, '').trim();
+      let rest = cmd.replace(/^(@agent\s+translate\b|@agent\s+translation\b|\/translate\b|\/translation\b|@translate\b|@translation\b|@agent\s+trans\b|@trans\b|\/trans\b)(?:\s*[:]\s*|\s*)/i, '').trim();
       let targetLang = 'English';
       let textToTranslate = '';
 
@@ -7105,9 +7159,26 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       }
 
       if (!textToTranslate) {
+        if (activeSession && activeSession.messages.length > 0 && activeSession.messages[activeSession.messages.length - 1].content === cmd) {
+          activeSession.messages.pop();
+          saveChatHistory();
+        }
+        if (chatMessages && chatMessages.lastElementChild && chatMessages.lastElementChild.classList.contains('user-bubble')) {
+          chatMessages.lastElementChild.remove();
+        }
         termLog('🌐 Please provide or paste the text you would like to translate.', 'warn');
-        if (cliPromptInput) cliPromptInput.placeholder = `Paste or type text to translate into ${targetLang}...`;
-        if (cliPromptInputPinned) cliPromptInputPinned.placeholder = `Paste or type text to translate into ${targetLang}...`;
+        const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+          ? cliPromptInputPinned
+          : cliPromptInput;
+        if (activeInput) {
+          activeInput.placeholder = `Paste or type text to translate into ${targetLang}...`;
+          activeInput.value = `@agent translate to ${targetLang}: `;
+          activeInput.focus();
+          activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
+          activeInput.style.height = 'auto';
+          activeInput.style.height = Math.min(activeInput.scrollHeight, 160) + 'px';
+        }
+        pendingPromptDirective = { type: 'translate', lang: targetLang };
         return;
       }
 
@@ -7134,7 +7205,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     if (
       /^(@agent\s+style-transfer|@style-transfer|\/style-transfer|@agent\s+style\b|@style\b|\/style\b)/i.test(cmd)
     ) {
-      let rest = cmd.replace(/^(@agent\s+style-transfer|@style-transfer|@agent\s+style|\/style-transfer|\/style|@style)(?:\s*[:]\s*|\s*)/i, '').trim();
+      let rest = cmd.replace(/^(@agent\s+style-transfer|@style-transfer|@agent\s+style\b|\/style-transfer|\/style\b|@style\b)(?:\s*[:]\s*|\s*)/i, '').trim();
       let targetStyle = 'conversational';
       let textToStyle = '';
 
@@ -7167,9 +7238,26 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       }
 
       if (!textToStyle) {
+        if (activeSession && activeSession.messages.length > 0 && activeSession.messages[activeSession.messages.length - 1].content === cmd) {
+          activeSession.messages.pop();
+          saveChatHistory();
+        }
+        if (chatMessages && chatMessages.lastElementChild && chatMessages.lastElementChild.classList.contains('user-bubble')) {
+          chatMessages.lastElementChild.remove();
+        }
         termLog('🎨 Please provide or paste the text you would like to transfer style for.', 'warn');
-        if (cliPromptInput) cliPromptInput.placeholder = `Paste or type text to convert into ${targetStyle} style...`;
-        if (cliPromptInputPinned) cliPromptInputPinned.placeholder = `Paste or type text to convert into ${targetStyle} style...`;
+        const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+          ? cliPromptInputPinned
+          : cliPromptInput;
+        if (activeInput) {
+          activeInput.placeholder = `Paste or type text to convert into ${targetStyle} style...`;
+          activeInput.value = `@agent style-transfer to ${targetStyle}: `;
+          activeInput.focus();
+          activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
+          activeInput.style.height = 'auto';
+          activeInput.style.height = Math.min(activeInput.scrollHeight, 160) + 'px';
+        }
+        pendingPromptDirective = { type: 'style-transfer', style: targetStyle };
         return;
       }
 
@@ -7668,6 +7756,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
           content.classList.remove('collapsed');
           if (chevron) chevron.textContent = '▾';
         }
+        transCatHeader.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
       const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
         ? cliPromptInputPinned
@@ -7687,6 +7776,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
   // -------------------------------------------------------------
   const sidebarToolsToggle = document.getElementById('sidebar-tools-toggle');
   const sidebarToolsAccordion = document.getElementById('sidebar-tools-accordion');
+
   if (sidebarToolsToggle && sidebarToolsAccordion) {
     sidebarToolsToggle.addEventListener('click', () => {
       sidebarToolsAccordion.classList.toggle('collapsed');
@@ -7732,7 +7822,8 @@ If you are asked about real-world facts such as world leaders, heads of state, c
 
       const isFileTool = !cmd.includes('rest-rl') && !cmd.includes('restrl') && (
         ['tabular', 'vision', 'audio', 'pe_binary', 'code'].includes(cat) ||
-        cmd.includes('summarize') || cmd.includes('acdso') || cmd.includes('pe') || cmd.includes('security')
+        cmd.includes('summarize') || cmd.includes('acdso') || cmd.includes('pe') || cmd.includes('security') ||
+        cmd.trim() === '@agent humanize'
       );
 
       // If attachedFiles.length > 0: Immediately execute on staged file(s)!

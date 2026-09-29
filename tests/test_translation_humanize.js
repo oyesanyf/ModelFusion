@@ -51,19 +51,37 @@ const testInputs = [
   { cmd: '/translate to German: Good morning', expectedType: 'translate', lang: 'German', expectedText: 'Good morning' },
   { cmd: '@translate to Yoruba: Thank you', expectedType: 'translate', lang: 'Yoruba', expectedText: 'Thank you' },
   { cmd: '@agent translation Bonjour', expectedType: 'translate', lang: 'English', expectedText: 'Bonjour' },
+  { cmd: '@agent trans to Spanish: Hello world', expectedType: 'translate', lang: 'Spanish', expectedText: 'Hello world' },
+  { cmd: '/trans to Italian: Good evening', expectedType: 'translate', lang: 'Italian', expectedText: 'Good evening' },
+  { cmd: '@trans to Dutch: How are you', expectedType: 'translate', lang: 'Dutch', expectedText: 'How are you' },
   { cmd: '@agent translate to Spanish:', expectedType: 'translate', lang: 'Spanish', expectedText: '' },
   { cmd: '@agent translate to French', expectedType: 'translate', lang: 'French', expectedText: '' },
   { cmd: '@agent translate-humanize to French: We welcome your feedback', expectedType: 'translate-humanize', lang: 'French', expectedText: 'We welcome your feedback' },
   { cmd: '/translate-humanize to Japanese: See you tomorrow', expectedType: 'translate-humanize', lang: 'Japanese', expectedText: 'See you tomorrow' },
   { cmd: '@trans-human to Spanish: What is going on?', expectedType: 'translate-humanize', lang: 'Spanish', expectedText: 'What is going on?' },
+  { cmd: '/trans-human to French: Bonjour le monde', expectedType: 'translate-humanize', lang: 'French', expectedText: 'Bonjour le monde' },
+  { cmd: '@agent trans-human to German: Guten Tag', expectedType: 'translate-humanize', lang: 'German', expectedText: 'Guten Tag' },
+  { cmd: '@transhuman to Italian: Ciao a tutti', expectedType: 'translate-humanize', lang: 'Italian', expectedText: 'Ciao a tutti' },
+  { cmd: '/transhuman to Portuguese: Obrigado', expectedType: 'translate-humanize', lang: 'Portuguese', expectedText: 'Obrigado' },
   { cmd: '@translate-humanize to French: Bonjour le monde', expectedType: 'translate-humanize', lang: 'French', expectedText: 'Bonjour le monde' },
   { cmd: '@agent translate-humanize to French:', expectedType: 'translate-humanize', lang: 'French', expectedText: '' },
   { cmd: '@agent style-transfer to executive: We made good money this quarter', expectedType: 'style-transfer', style: 'executive', expectedText: 'We made good money this quarter' },
   { cmd: '/style-transfer to academic: It works nicely', expectedType: 'style-transfer', style: 'academic', expectedText: 'It works nicely' },
   { cmd: '@style-transfer to journalistic: Breaking development unfolds', expectedType: 'style-transfer', style: 'journalistic', expectedText: 'Breaking development unfolds' },
   { cmd: '@style to conversational: Greetings esteemed colleague', expectedType: 'style-transfer', style: 'conversational', expectedText: 'Greetings esteemed colleague' },
+  { cmd: '/style to storytelling: Once upon a time in the valley', expectedType: 'style-transfer', style: 'storytelling', expectedText: 'Once upon a time in the valley' },
   { cmd: '@agent style-transfer to conversational:', expectedType: 'style-transfer', style: 'conversational', expectedText: '' }
 ];
+
+const transHumanRegex = /^(@agent\s+translate-humanize|@translate-humanize|\/translate-humanize|@agent\s+trans-human|@trans-human|\/trans-human|@agent\s+transhuman|@transhuman|\/transhuman|@agent\s+humanize-translate|@humanize-translate|\/humanize-translate)(\s*[:\s]|$)/i;
+const transHumanReplace = /^(@agent\s+translate-humanize|@translate-humanize|\/translate-humanize|@agent\s+trans-human|@trans-human|\/trans-human|@agent\s+transhuman|@transhuman|\/transhuman|@agent\s+humanize-translate|@humanize-translate|\/humanize-translate)(?:\s*[:]\s*|\s*)/i;
+
+const translateRegex = /^(@agent\s+translate\b|@translate\b|\/translate\b|@agent\s+translation\b|@translation\b|\/translation\b|@agent\s+trans\b|@trans\b|\/trans\b)/i;
+const translateGuard = /^(@agent\s+(?:translate-humanize|trans-human|transhuman)|@(?:translate-humanize|trans-human|transhuman)|\/(?:translate-humanize|trans-human|transhuman))/i;
+const translateReplace = /^(@agent\s+translate\b|@agent\s+translation\b|\/translate\b|\/translation\b|@translate\b|@translation\b|@agent\s+trans\b|@trans\b|\/trans\b)(?:\s*[:]\s*|\s*)/i;
+
+const styleRegex = /^(@agent\s+style-transfer|@style-transfer|\/style-transfer|@agent\s+style\b|@style\b|\/style\b)/i;
+const styleReplace = /^(@agent\s+style-transfer|@style-transfer|@agent\s+style\b|\/style-transfer|\/style\b|@style\b)(?:\s*[:]\s*|\s*)/i;
 
 for (const test of testInputs) {
   let cmd = test.cmd;
@@ -87,10 +105,10 @@ for (const test of testInputs) {
     assert.strictEqual(text, test.expectedText, `Extracted text mismatch for ${test.cmd}`);
   } else if (test.expectedType === 'translate-humanize') {
     assert(
-      /^(@agent\s+translate-humanize|@translate-humanize|\/translate-humanize|@trans-human|\/trans-human|@agent\s+humanize-translate|@humanize-translate|\/humanize-translate)(\s*[:\s]|$)/i.test(cmd),
-      `Failed to match translate-humanize: ${test.cmd}`
+      transHumanRegex.test(cmd),
+      `Failed to match translate-humanize: ${test.cmd} (normalized: ${cmd})`
     );
-    let rest = cmd.replace(/^(@agent\s+translate-humanize|@translate-humanize|\/translate-humanize|@trans-human|\/trans-human|@agent\s+humanize-translate|@humanize-translate|\/humanize-translate)(?:\s*[:]\s*|\s*)/i, '').trim();
+    let rest = cmd.replace(transHumanReplace, '').trim();
     let targetLang = 'English';
     let textToTranslate = '';
     const toMatch = rest.match(/^(?:to|into)\s+([A-Za-z\s]+?)(?:[:,\-]\s*|\s+|$)(.*)$/is);
@@ -110,11 +128,10 @@ for (const test of testInputs) {
     assert.strictEqual(textToTranslate, test.expectedText, `Extracted text mismatch for ${test.cmd}`);
   } else if (test.expectedType === 'translate') {
     assert(
-      (/^(@agent\s+translate\b|@translate\b|\/translate\b|@agent\s+translation\b|@translation\b|\/translation\b)/i.test(cmd)) &&
-      !/^(@agent\s+translate-humanize|@translate-humanize|\/translate-humanize)/i.test(cmd),
-      `Failed to match translate: ${test.cmd}`
+      translateRegex.test(cmd) && !translateGuard.test(cmd),
+      `Failed to match translate: ${test.cmd} (normalized: ${cmd})`
     );
-    let rest = cmd.replace(/^(@agent\s+translate|@agent\s+translation|\/translate|\/translation|@translate|@translation)(?:\s*[:]\s*|\s*)/i, '').trim();
+    let rest = cmd.replace(translateReplace, '').trim();
     let targetLang = 'English';
     let textToTranslate = '';
     const toMatch = rest.match(/^(?:to|into)\s+([A-Za-z\s]+?)(?:[:,\-]\s*|\s+|$)(.*)$/is);
@@ -134,10 +151,10 @@ for (const test of testInputs) {
     assert.strictEqual(textToTranslate, test.expectedText, `Extracted text mismatch for ${test.cmd}`);
   } else if (test.expectedType === 'style-transfer') {
     assert(
-      /^(@agent\s+style-transfer|@style-transfer|\/style-transfer|@agent\s+style\b|@style\b|\/style\b)/i.test(cmd),
-      `Failed to match style-transfer: ${test.cmd}`
+      styleRegex.test(cmd),
+      `Failed to match style-transfer: ${test.cmd} (normalized: ${cmd})`
     );
-    let rest = cmd.replace(/^(@agent\s+style-transfer|@style-transfer|@agent\s+style|\/style-transfer|\/style|@style)(?:\s*[:]\s*|\s*)/i, '').trim();
+    let rest = cmd.replace(styleReplace, '').trim();
     let targetStyle = 'conversational';
     let textToStyle = '';
     const toMatch = rest.match(/^(?:to|into)\s+([A-Za-z\-\s]+?)(?:[:,\-]\s*|\s+|$)(.*)$/is);
@@ -158,5 +175,20 @@ for (const test of testInputs) {
   }
 }
 
+// 3. Test pendingPromptDirective resolution logic
+let pending = { type: 'humanize' };
+let rawInput = 'Here is the raw text to humanize';
+if (pending && !rawInput.startsWith('@') && !rawInput.startsWith('/')) {
+  rawInput = `@agent ${pending.type} ${rawInput}`;
+  pending = null;
+}
+assert.strictEqual(rawInput, '@agent humanize Here is the raw text to humanize');
+assert.strictEqual(pending, null);
+
+// 4. Test document attachment smart action chips
+assert(appContent.includes("addAction('@agent humanize'"), 'Missing smart action chip for humanize on document attachment');
+assert(appContent.includes("addAction('@agent translate-humanize to Spanish: '"), 'Missing smart action chip for translate-humanize on document attachment');
+
 console.log(`✓ All ${testInputs.length} test directive patterns passed extraction validation`);
+console.log('✓ Pending directive and document smart action checks passed');
 console.log('✅ ALL TESTS PASSED!');
