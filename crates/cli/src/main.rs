@@ -15811,6 +15811,54 @@ public class Pr {
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_multithreading_and_semaphore_concurrency() {
+        use super::{inference_sem, fast_inference_sem, heavy_inference_slots, fast_inference_slots};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let heavy = inference_sem();
+        let expected_heavy = heavy_inference_slots();
+        assert!(expected_heavy >= 1, "Heavy inference slots must be at least 1");
+        assert_eq!(heavy.available_permits(), expected_heavy);
+
+        let fast = fast_inference_sem();
+        let expected_fast = fast_inference_slots();
+        assert!(expected_fast >= 4, "Fast inference slots must be at least 4");
+        assert_eq!(fast.available_permits(), expected_fast);
+
+        // Test concurrent async acquisition across worker threads
+        let active_counter = Arc::new(AtomicUsize::new(0));
+        let max_observed = Arc::new(AtomicUsize::new(0));
+        let mut handles = Vec::new();
+
+        for _ in 0..12 {
+            let sem_clone = fast.clone();
+            let active = active_counter.clone();
+            let max_obs = max_observed.clone();
+
+            handles.push(tokio::spawn(async move {
+                let _permit = sem_clone.acquire().await.expect("Failed to acquire permit");
+                let cur = active.fetch_add(1, Ordering::SeqCst) + 1;
+                max_obs.fetch_max(cur, Ordering::SeqCst);
+                
+                // Simulate work yielding to other threads in the Tokio pool
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                
+                active.fetch_sub(1, Ordering::SeqCst);
+            }));
+        }
+
+        for h in handles {
+            h.await.expect("Task panicked");
+        }
+
+        // Verify permits are fully restored
+        assert_eq!(fast.available_permits(), expected_fast);
+        assert_eq!(active_counter.load(Ordering::SeqCst), 0);
+        assert!(max_observed.load(Ordering::SeqCst) <= expected_fast);
+    }
 }
 
 
