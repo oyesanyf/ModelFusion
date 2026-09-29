@@ -915,7 +915,14 @@ if (-not (Test-Path $wixExe)) {
 Write-Host "[INFO] Using WiX Toolset at: $wixExe" -ForegroundColor Yellow
 
 # Ensure Windows Installer service is running before WiX database generation
-Start-Service -Name msiserver -ErrorAction SilentlyContinue
+try {
+    net start msiserver 2>$null
+    $msiSvc = Get-Service msiserver -ErrorAction SilentlyContinue
+    if ($msiSvc -and $msiSvc.Status -ne 'Running') {
+        Start-Service -Name msiserver -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+    }
+} catch {}
 
 # Run wix build with multi-threaded cabinet compression and bind path
 & $wixExe build -b $PSScriptRoot -arch x64 -ct 4 $wxsPath -out $msiPath

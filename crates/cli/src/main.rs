@@ -9,6 +9,8 @@ pub use browser_fusion::{
     BrowserArbitrationDecision, BrowserFusionArbiter, ConsensusType, SpecialistType,
 };
 pub mod mcp_catalog;
+pub mod humanizer;
+pub use humanizer::ProseHumanizer;
 
 use anyhow::Result;
 use clap::Parser;
@@ -1421,6 +1423,7 @@ DATABASE & MODEL UPDATE COMMANDS:
   --updatedb            Full registry crawler: continuously ingests ALL 2M+ models from Hugging Face
                         Hub (cursor-paginated in 1,000-model batches, whether junk or not)
   --max-models <N>      Cap the number of models during --updatedb (defaults to unlimited)
+  --humanize <TEXT>     Rewrite passage into natural, fluid human prose using anti-AI stylometry
   --db-path <PATH>      Target SQLite database path (e.g. IDE/db/hf_models.db)
 
 EXAMPLES:
@@ -1430,6 +1433,9 @@ EXAMPLES:
   # ReST-RL daemon status and control
   cli.exe --rest-rl status
   cli.exe --rl start
+
+  # Natural human prose rewriting (anti-AI detection)
+  cli.exe --humanize \"Furthermore, this passage requires optimization...\"
 
   # Fast curated update + Ollama model setup
   cli.exe --update --db-path \"IDE/db/hf_models.db\"
@@ -1447,6 +1453,9 @@ struct Args {
     // ---------------------------------------------------------
     #[arg(long, help = "Path to file for analysis or processing")]
     file: Option<String>,
+
+    #[arg(long, help = "Rewrite passage into natural, fluid human prose using anti-AI stylometry")]
+    humanize: Option<String>,
 
     #[arg(long, help = "Path to folder for code review or analysis")]
     folder: Option<String>,
@@ -2244,6 +2253,16 @@ where
             args[1] = "--arxiv".to_string();
             return args;
         }
+        if sub_clean == "humanize" && !has_combinator {
+            args.remove(1);
+            args[1] = "--humanize".to_string();
+            if args.len() > 3 {
+                let combined = args[2..].join(" ");
+                args.truncate(2);
+                args.push(combined);
+            }
+            return args;
+        }
         if (sub_clean == "key" || sub_clean == "keys") && args.len() > 3 && args[3].to_lowercase() == "gemini" {
             let key = if args.len() > 4 { args[4].clone() } else { String::new() };
             args.remove(1);
@@ -2360,7 +2379,23 @@ where
         "rl" | "restrl" | "rest-rl" => {
             args[1] = "--rl".to_string();
         }
+        "humanize" | "/humanize" | "@agent/humanize" | "@agent:humanize" | "@humanize" => {
+            args[1] = "--humanize".to_string();
+            if args.len() > 3 {
+                let combined = args[2..].join(" ");
+                args.truncate(2);
+                args.push(combined);
+            }
+        }
         _ => {}
+    }
+
+    if args.len() > 2 && args[1] == "--humanize" {
+        if args.len() > 3 {
+            let combined = args[2..].join(" ");
+            args.truncate(2);
+            args.push(combined);
+        }
     }
 
     args
@@ -2748,7 +2783,7 @@ async fn run(args: Args) -> Result<()> {
     }
 
     // Auto-start Ollama and background FFmpeg check
-    if args.prompt.is_some() || args.query.is_some() || args.server || args.mcp || args.browser || args.browser_task.is_some() || args.browser_extract.is_some() || args.ensure_ollama {
+    if args.prompt.is_some() || args.query.is_some() || args.server || args.mcp || args.browser || args.browser_task.is_some() || args.browser_extract.is_some() || args.ensure_ollama || args.humanize.is_some() {
         let _ = model_selection::memory::ensure_ollama_running();
         std::thread::spawn(|| {
             let _ = model_selection::memory::ensure_ffmpeg_available();
@@ -2919,6 +2954,33 @@ async fn run(args: Args) -> Result<()> {
         println!("🔍 Searching the internet for: \"{}\"...\n", query);
         let results = modelfusion_core::run_web_search_only(query, 6).await?;
         println!("{}", results);
+        return Ok(());
+    }
+
+    if let Some(ref text) = args.humanize {
+        let input_text = text.trim();
+        if input_text.is_empty() {
+            eprintln!("Error: No text provided to humanize. Usage: cli.exe --humanize \"<text>\" or cli.exe humanize \"<text>\"");
+            return Ok(());
+        }
+
+        let _ = model_selection::memory::ensure_ollama_running();
+        let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+        let model = args.model.clone().unwrap_or_else(|| {
+            let sys = query_system_resources();
+            select_ollama_model_from_sys(false, &sys).to_string()
+        });
+
+        println!("✍️ Humanizing text with ProseHumanizer (model: {}, endpoint: {})...", model, endpoint);
+        let humanizer = humanizer::ProseHumanizer::new(&endpoint, &model);
+        match humanizer.humanize(input_text).await {
+            Ok(output) => {
+                println!("\n{}", output);
+            }
+            Err(e) => {
+                eprintln!("Error humanizing text: {}", e);
+            }
+        }
         return Ok(());
     }
 
@@ -11858,6 +11920,52 @@ sequenceDiagram
                         "path": path_str,
                         "version": version_str
                     }).to_string()
+                }
+                "/api/humanize" => {
+                    let text = request_json.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let model_opt = request_json.get("model").and_then(|v| v.as_str());
+                    let endpoint_opt = request_json.get("endpoint").and_then(|v| v.as_str());
+
+                    let resolved_model = if let Some(m) = model_opt {
+                        if !m.is_empty() && m != "modelfusion_auto" {
+                            m.to_string()
+                        } else {
+                            let sys = query_system_resources();
+                            select_ollama_model_from_sys(false, &sys).to_string()
+                        }
+                    } else {
+                        let sys = query_system_resources();
+                        select_ollama_model_from_sys(false, &sys).to_string()
+                    };
+
+                    let endpoint = if let Some(ep) = endpoint_opt {
+                        if !ep.is_empty() {
+                            format!("{}/v1/chat/completions", ep.trim_end_matches('/'))
+                        } else {
+                            "http://127.0.0.1:11434/v1/chat/completions".to_string()
+                        }
+                    } else {
+                        let base = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+                        format!("{}/v1/chat/completions", base.trim_end_matches('/'))
+                    };
+
+                    let humanizer = humanizer::ProseHumanizer::new(&endpoint, &resolved_model);
+                    match humanizer.humanize(&text).await {
+                        Ok(humanized) => {
+                            serde_json::json!({
+                                "status": "ok",
+                                "humanized": humanized,
+                                "model": resolved_model
+                            }).to_string()
+                        }
+                        Err(e) => {
+                            serde_json::json!({
+                                "status": "error",
+                                "error": format!("Humanize failed: {}", e),
+                                "model": resolved_model
+                            }).to_string()
+                        }
+                    }
                 }
                 "/report-bandit-feedback" => {
                     let context = request_json["context"].as_u64().unwrap_or(0) as usize;

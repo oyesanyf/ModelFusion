@@ -1058,7 +1058,14 @@ Attach any file via the `📎` button or drag-and-drop:
 | **Catalog Offline Index** | None | **1,271,167 Models across 45 Hugging Face Tasks** |
 | **Ergonomics & Visuals** | Standard browser UI | **ChatGPT Visual Parity, Clean White, Canvas Cards** |
 
-### 11. Concrete Executable Command Examples
+### 11. Translation & Humanize Suite (Anti-AI Stylometry, Native Translation & Style Transfer)
+HugOS Browser provides a dedicated **Translation & Humanize** operational suite embedded in the sidebar (`🌐 Translation & Humanize`) and available via conversational directives:
+- **`@agent humanize <text>` / `/humanize <text>` / `@humanize <text>`**: Anti-AI stylometry rewriting that increases burstiness, varies sentence rhythm, and eliminates formulaic AI markers. Ingests direct text prompts, attached files (`.pdf`, `.txt`, `.docx`), or previous assistant answers. Backed by Rust `ProseHumanizer` (`cli.exe --humanize "<text>"` or `POST /api/humanize`).
+- **`@agent translate to <lang>: <text>` / `/translate to <lang>: <text>` / `@translate to <lang>: <text>`**: High-precision neural translation across 200+ global languages preserving tone and nuances.
+- **`@agent translate-humanize to <lang>: <text>` / `/translate-humanize ...` / `@trans-human ...`**: Dual-action pipeline translating into the target language and polishing with authentic native-speaker phrasing.
+- **`@agent style-transfer to <style>: <text>` / `/style-transfer ...` / `@style ...`**: Style conversion across conversational, executive, academic, journalistic, and narrative modes.
+
+### 12. Concrete Executable Command Examples
 
 #### Standalone Master CLI Commands
 ```powershell

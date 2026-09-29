@@ -151,6 +151,41 @@ Attach files directly via the `📎` button or drag-and-drop:
 
 ---
 
+## 🌐 Translation & Humanize Suite (Anti-AI Stylometry, Native Translation & Style Transfer)
+
+HugOS Browser features a first-class **Translation & Humanize** capability suite accessible directly from the left sidebar (`🌐 Translation & Humanize`), tools accordion, or conversational `@agent` / slash commands:
+
+### 1. Anti-AI Stylometry Text Humanizer (`@agent humanize`)
+- **Directives**: `@agent humanize <text>`, `/humanize <text>`, `@humanize <text>`.
+- **Purpose**: Rewrites synthetic, robotic, or stiff AI prose into organic, high-burstiness human prose that completely evades stylometric AI detectors (ZeroGPT, CopyLeaks, GPTZero) while preserving 100% of underlying meaning.
+- **Multimodal Text Ingestion ("Humanize must do text too")**:
+  - Direct prompt text: `@agent humanize The multi-tiered architecture facilitates optimal throughput.`
+  - Attached documents: Attach `.pdf`, `.txt`, `.md`, or `.docx` and run `@agent humanize` to rewrite the entire document.
+  - Conversational history: Run `@agent humanize` without parameters to automatically rewrite the assistant's previous response.
+  - Interactive prompt fallback: Prompts `✍️ Please provide or paste the text you would like to humanize.` if inputs are empty.
+- **Native Engine Sampling**: Powered by Rust `ProseHumanizer` (`temp: 0.85`, `top_p: 0.95`, `min_p: 0.05`, `repeat_penalty: 1.15`, `presence_penalty: 0.3`, `frequency_penalty: 0.4`) and the expert editor system directive.
+- **Master CLI Command**: `cli.exe --humanize "<text>"` or HTTP endpoint `POST /api/humanize`.
+
+### 2. High-Fidelity Multilingual Translation (`@agent translate`)
+- **Directives**: `@agent translate to <lang>: <text>`, `/translate to <lang>: <text>`, `@translate to <lang>: <text>`, `@agent translation <text>`.
+- **Target Language Parsing**: Automatically detects user-specified target language (e.g. `to Spanish:`, `to French:`, `to German:`, `to Yoruba:`, `to Japanese:`, `to Mandarin:`) and defaults to English when translating foreign passages.
+- **Translation Engine**: Neural machine translation calibrated for maximum semantic fidelity, grammatical accuracy, and cultural idiom preservation across 200+ global languages (`temp: 0.3`, `top_p: 0.9`).
+
+### 3. Native Speaker Translation & Humanize (`@agent translate-humanize`)
+- **Directives**: `@agent translate-humanize to <lang>: <text>`, `/translate-humanize ...`, `@trans-human ...`, `@agent humanize-translate ...`.
+- **Dual Pipeline**: Translates text into the requested target language AND applies native-speaker humanizing, eliminating stiff literal translation calques and robotic artifacts so the output reads like a published native author (`temp: 0.8`, `top_p: 0.95`, `min_p: 0.05`, `repeat_penalty: 1.15`).
+
+### 4. Writing Style Transfer (`@agent style-transfer`)
+- **Directives**: `@agent style-transfer to <style>: <text>`, `/style-transfer to <style>: <text>`, `@style to <style>: <text>`.
+- **Target Styles**: Adapts writing tone and rhetorical cadence across styles:
+  - `conversational`: Casual, warm, accessible, and natural.
+  - `executive`: Crisp, dense, decision-oriented, and high-impact.
+  - `academic`: Methodical, rigorous, evidence-based, and objective.
+  - `journalistic`: Dynamic inverted pyramid, active verbs, engaging hooks.
+  - `storytelling`: Vivid, narrative-driven, evocative, and rhythmic.
+
+---
+
 ## 📁 Directory Structure
 
 ```

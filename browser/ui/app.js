@@ -122,8 +122,9 @@ document.addEventListener('DOMContentLoaded', () => {
     audioModel: 'whisper-base',
     fusionModels: 0,
     multimodalAuto: true,
-    temperature: 0.2,
-    maxTokens: 4096,
+    naturalVoice: true,
+    temperature: 0.75,
+    maxTokens: 8192,
     stream: true,
     sizingStrategy: 'runtime_ram',
     domBudget: 16000,
@@ -275,6 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 1. Modern LLM Browser Message & Bubble Helper
   // -----------------------------------------------------------------
   function switchViewToChat() {
+    clearSomMarks();
     const heroSec = document.getElementById('chat-hero-section');
     const convView = document.getElementById('chat-conversation-view');
     const webView = document.getElementById('webview-view');
@@ -1146,6 +1148,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setVal('setting-audio-model', s.audioModel || DEFAULT_SETTINGS.audioModel);
     setVal('setting-fusion-models', s.fusionModels !== undefined ? s.fusionModels : DEFAULT_SETTINGS.fusionModels);
     setCheck('setting-multimodal-auto', s.multimodalAuto !== false);
+    setCheck('setting-natural-voice', s.naturalVoice !== false);
     setVal('setting-temperature', s.temperature);
     if (valTemperature) {
       valTemperature.textContent = parseFloat(s.temperature).toFixed(2);
@@ -1230,6 +1233,7 @@ document.addEventListener('DOMContentLoaded', () => {
       audioModel: getVal('setting-audio-model', DEFAULT_SETTINGS.audioModel).trim(),
       fusionModels: getNum('setting-fusion-models', DEFAULT_SETTINGS.fusionModels),
       multimodalAuto: getCheck('setting-multimodal-auto', DEFAULT_SETTINGS.multimodalAuto),
+      naturalVoice: getCheck('setting-natural-voice', DEFAULT_SETTINGS.naturalVoice),
       temperature: parseFloat(getVal('setting-temperature', DEFAULT_SETTINGS.temperature)),
       maxTokens: getNum('setting-max-tokens', DEFAULT_SETTINGS.maxTokens),
       agenticLoopEnabled: getCheck('setting-agentic-loop-enable', DEFAULT_SETTINGS.agenticLoopEnabled),
@@ -1654,6 +1658,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (hasDoc && !hasTabular && !hasCode) {
       addAction('@agent summarize', '▶ Run @agent summarize', true);
+      addAction('@agent humanize', '✍️ @agent humanize', true);
+      addAction('@agent translate-humanize to Spanish: ', '🗣️ @agent translate-humanize', false);
     }
 
     return actions;
@@ -2374,13 +2380,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Auto Mode: Intelligent routing
-    const lower = query.toLowerCase().trim();
+    const lower = (query || '').toLowerCase().trim();
 
-    // 1. Explicit internal commands / tool directives
+    // 1. Explicit internal commands / tool directives (@agent search, /search, etc.)
     if (
       lower.startsWith('/') ||
       lower.startsWith('--') ||
       lower.startsWith('@agent') ||
+      lower.startsWith('@') ||
       lower.startsWith('hugos') ||
       lower === 'clear' ||
       lower === 'help'
@@ -2395,19 +2402,53 @@ document.addEventListener('DOMContentLoaded', () => {
         lower.startsWith('@agent research') ||
         lower.startsWith('@agent arxiv') ||
         lower.startsWith('@agent browser deep research on') ||
-        lower.startsWith('@agent deep research')
+        lower.startsWith('@agent deep research') ||
+        lower.startsWith('@search') ||
+        lower.startsWith('@arxiv')
       ) {
         const clean = query
-          .replace(/^(@agent\s+(search|web-agent|research|arxiv|browser\s+deep\s+research\s+on|deep\s+research)|\/(search|research|arxiv|web))\s*/i, '')
+          .replace(/^(@agent\s+(search|web-agent|research|arxiv|browser\s+deep\s+research\s+on|deep\s+research)|\/(search|research|arxiv|web)|@(search|arxiv))\s*/i, '')
           .trim();
         return { routeToWeb: true, reason: 'Explicit internet & arXiv search directive', cleanQuery: clean || query };
       }
       return { routeToWeb: false, reason: 'Internal CLI directive', cleanQuery: query };
     }
 
-    // 2. Pure code generation or coding questions should stay with local LLM
-    const isCodeQuery =
-      lower.startsWith('write a ') ||
+    // 2. Explicit user intent to search the internet (e.g. "search for ...", "google ...", "look up on google ...")
+    const explicitSearchPatterns = [
+      /^(search (for|the web for|online for|google)|look up (online|on the web|on google)|browse the web for|google)\s+/i,
+      /\b(search the web|search on google|look up on google)\b/i
+    ];
+    for (const pat of explicitSearchPatterns) {
+      if (pat.test(lower)) {
+        const clean = query.replace(/^(search (the web for|for|online for|google)|look up on (the web|google)|browse the web for|google)\s*/i, '').trim();
+        return { routeToWeb: true, reason: 'Explicit search intent detected', cleanQuery: clean || query };
+      }
+    }
+
+    // 3. Strict real-time / live information requiring external internet data
+    const livePatterns = [
+      /\b(today'?s|current|live|latest)\s+(weather|forecast|stock price|temperature|crypto price|exchange rate)\b/i,
+      /\b(breaking news|latest news today)\b/i
+    ];
+    for (const pat of livePatterns) {
+      if (pat.test(lower)) {
+        return { routeToWeb: true, reason: 'Real-time live information detected', cleanQuery: query };
+      }
+    }
+
+    // 4. Multi-turn Follow-up Questions in an ongoing chat session stay in QA by default
+    if (typeof chatSessions !== 'undefined' && Array.isArray(chatSessions)) {
+      const activeSession = chatSessions.find(s => s.id === currentSessionId);
+      if (activeSession && Array.isArray(activeSession.messages) && activeSession.messages.some(m => m.role === 'assistant')) {
+        return { routeToWeb: false, reason: 'Follow-up question in active chat session (QA default)', cleanQuery: query };
+      }
+    }
+
+    // 5. Creative writing, stories, novels, books, essays, code generation & logic reasoning stay with local LLM
+    const isCreativeOrCodeQuery =
+      /^(write|draft|compose|author|create|tell me a story|tell a story)\b/i.test(lower) ||
+      /\b(book about|short book|comic book|coloring book|history book|guide book|textbook|handbook|story|novel|poem|poetry|essay|chapter|fiction|script|song|lyrics|speech)\b/i.test(lower) ||
       lower.startsWith('implement ') ||
       lower.startsWith('create a function') ||
       lower.startsWith('refactor ') ||
@@ -2418,64 +2459,17 @@ document.addEventListener('DOMContentLoaded', () => {
       lower.includes('function ') ||
       lower.includes('```');
 
-    if (isCodeQuery && !lower.includes('latest') && !lower.includes('release') && !lower.includes('version 202')) {
-      return { routeToWeb: false, reason: 'Internal coding & logic reasoning', cleanQuery: query };
+    if (isCreativeOrCodeQuery) {
+      return { routeToWeb: false, reason: 'Internal creative, coding & logic reasoning', cleanQuery: query };
     }
 
-    // 3. Mathematical or arithmetic evaluations
+    // 6. Mathematical or arithmetic evaluations
     if (/^[0-9+\-*/^().\s]+$/.test(lower) || lower.startsWith('calculate ') || lower.startsWith('solve ')) {
       return { routeToWeb: false, reason: 'Deterministic mathematical calculation', cleanQuery: query };
     }
 
-    // 4. Temporal / recency keywords indicating live data requirement
-    const recencyKeywords = [
-      'today', 'yesterday', 'tomorrow', 'current', 'currently', 'latest', 'recent', 'recently',
-      'news', 'price', 'weather', 'stock', 'score', 'who won', 'what happened',
-      'release date', 'roadmap', 'schedule', '2024', '2025', '2026', 'trending', 'election'
-    ];
-    for (const kw of recencyKeywords) {
-      const regex = new RegExp(`\\b${kw}\\b`, 'i');
-      if (regex.test(lower)) {
-        return { routeToWeb: true, reason: `Temporal keyword detected: "${kw}"`, cleanQuery: query };
-      }
-    }
-
-    // 5. Search intent & factual knowledge patterns
-    const searchIntents = [
-      'search for', 'find out', 'look up', 'search on google', 'search the web',
-      'who is', 'who was', 'where is', 'when was', 'what is the current', 'how much is',
-      'president of', 'prime minister of', 'capital of', 'leader of', 'ruler of',
-      'monarch of', 'king of', 'queen of', 'chancellor of', 'governor of', 'mayor of',
-      'population of', 'currency of', 'flag of', 'history of', 'head of state of',
-      'official language of', 'bordering countries of', 'gdp of', 'who founded',
-      'who invented', 'how old is', 'who won', 'what happened to', 'who is the current',
-      'tell me the capital', 'who leads', 'who rules'
-    ];
-    for (const intent of searchIntents) {
-      if (lower.includes(intent)) {
-        let clean = query;
-        if (lower.startsWith('search for ')) clean = query.slice(11);
-        else if (lower.startsWith('look up ')) clean = query.slice(8);
-        return { routeToWeb: true, reason: `Factual knowledge query detected: "${intent}"`, cleanQuery: clean };
-      }
-    }
-
-    // Check political/geographical titles combined with "of"
-    if (/\b(president|prime\s+minister|capital|leader|population|currency|ruler|governor|mayor|chancellor|monarch|head\s+of\s+state)\s+of\b/i.test(lower)) {
-      return { routeToWeb: true, reason: 'Political/geographical leadership query detected', cleanQuery: query };
-    }
-
-    // 6. Check if current model is small (<= 3B) or low-resource system
-    const activeModelName = (currentSettings.activeModel || activeOllamaModel || '').toLowerCase();
-    const isSmallModel = activeModelName.includes('1.5b') || activeModelName.includes('0.5b') || activeModelName.includes('3b') || activeModelName.includes('1b');
-    if (isSmallModel && !isCodeQuery) {
-      if (lower.includes('?') || lower.startsWith('what ') || lower.startsWith('who ') || lower.startsWith('where ') || lower.startsWith('when ') || lower.startsWith('which ') || lower.startsWith('how ')) {
-        return { routeToWeb: true, reason: `Low-resource model grounding (${activeModelName || 'small model'})`, cleanQuery: query };
-      }
-    }
-
-    // Default to local LLM internal reasoning
-    return { routeToWeb: false, reason: 'Internal reasoning sufficient', cleanQuery: query };
+    // Default: Fast QA via local LLM internal reasoning (no @command, respects follow-up questions and token size)
+    return { routeToWeb: false, reason: 'QA by default (no explicit @command)', cleanQuery: query };
   }
 
   async function executeWebSearch(query, maxResults = 5) {
@@ -3473,7 +3467,27 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function clearSomMarks() {
+    document.querySelectorAll('.som-mark-badge').forEach(b => b.remove());
+    try {
+      if (browserFrame && browserFrame.contentDocument) {
+        browserFrame.contentDocument.querySelectorAll('.som-mark-badge').forEach(b => b.remove());
+      }
+    } catch (e) {}
+  }
+  window.clearSomMarks = clearSomMarks;
+
   function startNewChatSession() {
+    clearSomMarks();
+    try {
+      if (browserFrame) {
+        browserFrame.src = 'about:blank';
+      }
+    } catch (e) {}
+    currentNavUrl = '';
+    if (omniboxInput) omniboxInput.value = '';
+    if (wvCurrentUrl) wvCurrentUrl.textContent = 'about:blank';
+
     currentSessionId = null;
     if (chatMessages) chatMessages.innerHTML = '';
     const heroSec = document.getElementById('chat-hero-section');
@@ -3499,6 +3513,16 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function loadChatSession(id) {
+    clearSomMarks();
+    try {
+      if (browserFrame) {
+        browserFrame.src = 'about:blank';
+      }
+    } catch (e) {}
+    currentNavUrl = '';
+    if (omniboxInput) omniboxInput.value = '';
+    if (wvCurrentUrl) wvCurrentUrl.textContent = 'about:blank';
+
     const session = chatSessions.find(s => s.id === id);
     if (!session) return;
     currentSessionId = id;
@@ -4054,6 +4078,28 @@ document.addEventListener('DOMContentLoaded', () => {
   function showDashboard() {
     dashboardView.classList.remove('hidden');
     webviewView.classList.add('hidden');
+    try {
+      if (browserFrame) {
+        browserFrame.src = 'about:blank';
+      }
+    } catch (e) {}
+
+    // Clean up any Set-of-Mark badges from the DOM
+    clearSomMarks();
+
+    // Correctly restore either hero section or conversation view depending on whether messages exist
+    const heroSec = document.getElementById('chat-hero-section');
+    const convView = document.getElementById('chat-conversation-view');
+    const hasMessages = chatMessages && chatMessages.children.length > 0;
+
+    if (hasMessages) {
+      if (heroSec) heroSec.classList.add('hidden');
+      if (convView) convView.classList.remove('hidden');
+    } else {
+      if (heroSec) heroSec.classList.remove('hidden');
+      if (convView) convView.classList.add('hidden');
+    }
+
     omniboxInput.value = '';
     currentNavUrl = '';
     wvCurrentUrl.textContent = 'about:blank';
@@ -4578,8 +4624,44 @@ document.addEventListener('DOMContentLoaded', () => {
     termLog('⏹ Response generation stopped by user.', 'warn');
   }
 
+  // ---------------------------------------------------------------------------
+  // Natural Human Stylometric Engine Directives & Anti-AI Detection Rules
+  // ---------------------------------------------------------------------------
+  const NATURAL_HUMAN_PROSE_DIRECTIVE = `
+Write in a natural, authentic, human voice. Strictly adhere to these human stylometry rules:
+- High Burstiness: Radically vary sentence lengths and rhythms. Mix short, punchy sentences with longer, layered, descriptive compound clauses. Never write multiple sentences of uniform length.
+- Eliminate AI Clichés: NEVER use synthetic AI buzzwords or filler words: "delve", "tapestry", "beacon", "testament", "pivotal", "vibrant", "nestled", "whimsical", "crucial", "multifaceted", "paramount", "landscape", "realm", "bustling", "foster", "harness".
+- Eliminate Formulaic Transitions: NEVER use robotic transition bridges: "Furthermore", "Moreover", "In conclusion", "In summary", "It is important to remember", "As we have seen", "First and foremost", "Needless to say". Use natural conversational shifts.
+- No Throat-Clearing or Preachiness: Jump directly into the answer. Do not start with generic pleasantries or restate the question. Do not end with a generic moralizing summary paragraph.
+- Organic Cadence: Use idiomatic English, active voice, concrete sensory details, and genuine emotional resonance.
+`.trim();
+
+  const NATURAL_HUMAN_EDITOR_INSTRUCTION = "You are an expert editor who rewrites stiff, synthetic, or overly robotic text into natural, fluid human prose. Write in continuous, organic paragraphs using conversational syntax. Vary your sentence lengths deliberately to maintain rhythm. Avoid corporate buzzwords, formulaic transition words, unnecessary bullet points, and decorative adjectives. Do not add meta commentary, apologies, or introductory remarks. Return only the revised text.";
+
+  const DEFAULT_HUMAN_SYSTEM_PROMPT = `You are HugOS Browser AI, an insightful, authentic human-voice assistant built into the ModelFusion browser environment. Provide engaging, vivid, helpful answers that read like natural human thought.\n\n${NATURAL_HUMAN_PROSE_DIRECTIVE}`;
+
+  function isCodeOrMathTask(prompt, sysPrompt, options = {}) {
+    if (options && options.taskType) {
+      const t = String(options.taskType).toLowerCase();
+      if (['code', 'math', 'pe_binary', 'security', 'binary', 'decompilation', 'analysis', 'dockerfile', 'ast'].includes(t)) return true;
+      if (['creative', 'prose', 'humanize', 'qa', 'story', 'book', 'essay', 'translation', 'translate', 'style-transfer', 'translate-humanize'].includes(t)) return false;
+    }
+    const text = `${prompt || ''} ${sysPrompt || ''}`.toLowerCase();
+    if (/^\s*(@agent\s+(code|code-gen|infill|code-review|refactor|test-gen|graph-index|rest-rl|ast-parse|pe|sec|security|exploit|decompile|yara|dockerfile|code-translate)|\/(code|refactor|test))\b/i.test(prompt)) {
+      return true;
+    }
+    const codePatterns = [
+      /\b(write|generate|refactor|debug|fix)\s+(a\s+|some\s+)?([a-z0-9_+-]+\s+)?(function|script|algorithm|code|program|query|regex|regexes|sql|unit\s+test|dockerfile)\b/i,
+      /\b(solve|calculate|compute|derivative|integral|equation|matrix|algebra|calculus)\b/i,
+      /```(python|javascript|typescript|rust|c\+\+|cpp|c|go|java|html|css|sql|bash|sh|ps1)/i,
+      /\b(impl\s+|def\s+|fn\s+|function\s*\(|class\s+\w+|public\s+static\s+void)\b/i,
+      /\b(reverse\s+engineer|pe\s+binary|disassembl|decompil|vulnerability\s+audit)\b/i
+    ];
+    return codePatterns.some(regex => regex.test(text));
+  }
+
   // Real Streaming AI Chat via local Ollama endpoint with fallback to IPC
-  async function streamAiChat(userPrompt, systemPrompt = 'You are HugOS Browser AI, an expert, accurate assistant built into the ModelFusion browser environment. Provide clear, direct, concise, and helpful answers.', options = {}) {
+  async function streamAiChat(userPrompt, systemPrompt = DEFAULT_HUMAN_SYSTEM_PROMPT, options = {}) {
     if (!currentAbortController || currentAbortController.signal.aborted) {
       currentAbortController = new AbortController();
     }
@@ -4600,8 +4682,32 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const ollamaUrl = (currentSettings.ollamaUrl || 'http://127.0.0.1:11434').trim().replace(/\/+$/, '');
     const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
-    const tempToUse = typeof currentSettings.temperature === 'number' ? currentSettings.temperature : 0.2;
-    const maxTokensToUse = typeof currentSettings.maxTokens === 'number' ? currentSettings.maxTokens : 4096;
+
+    const isCodeOrMath = isCodeOrMathTask(userPrompt, systemPrompt, options);
+
+    let tempToUse;
+    if (options && typeof options.temperature === 'number') {
+      tempToUse = options.temperature;
+    } else if (isCodeOrMath) {
+      tempToUse = 0.2; // Precision temp for code/math
+    } else {
+      tempToUse = typeof currentSettings.temperature === 'number' ? currentSettings.temperature : 0.75;
+    }
+
+    const topPToUse = (options && typeof options.top_p === 'number') ? options.top_p : 0.9;
+    const minPToUse = (options && typeof options.min_p === 'number') ? options.min_p : 0.05;
+    const repeatPenaltyToUse = (options && typeof options.repeat_penalty === 'number') ? options.repeat_penalty : 1.15;
+    const presencePenaltyToUse = (options && typeof options.presence_penalty === 'number') ? options.presence_penalty : 0.1;
+    const frequencyPenaltyToUse = (options && typeof options.frequency_penalty === 'number') ? options.frequency_penalty : 0.1;
+
+    let effectiveSysPrompt = systemPrompt;
+    if (currentSettings.naturalVoice !== false && !isCodeOrMath && !effectiveSysPrompt.includes('High Burstiness') && !effectiveSysPrompt.includes('expert editor who rewrites')) {
+      effectiveSysPrompt = `${effectiveSysPrompt}\n\n${NATURAL_HUMAN_PROSE_DIRECTIVE}`;
+    }
+
+    const maxTokensToUse = (options && typeof options.maxTokens === 'number' && options.maxTokens > 0)
+      ? options.maxTokens
+      : (typeof currentSettings.maxTokens === 'number' && currentSettings.maxTokens > 0 ? currentSettings.maxTokens : 8192);
     const streamMode = currentSettings.stream !== false;
     const activeSession = chatSessions.find(s => s.id === currentSessionId);
 
@@ -4661,7 +4767,22 @@ document.addEventListener('DOMContentLoaded', () => {
     let authorDisplayTitle = 'HugOS AI';
     let authorDisplaySub = `(${modelToUse}${hasImages ? ' • Vision' : ''})`;
 
-    if (isFusionMode) {
+    if (options && options.panel && options.panel.id === 'humanize') {
+      authorDisplayTitle = 'HugOS Humanizer';
+      authorDisplaySub = `(✍️ Anti-AI Stylometry • High Burstiness • ${modelToUse})`;
+    } else if (options && options.panel && options.panel.id === 'translate') {
+      authorDisplayTitle = 'HugOS Translator';
+      authorDisplaySub = `(🌐 Multilingual Translation • ${modelToUse})`;
+    } else if (options && options.panel && options.panel.id === 'translate-humanize') {
+      authorDisplayTitle = 'HugOS Native Translator';
+      authorDisplaySub = `(🗣️ Native Humanized Translation • ${modelToUse})`;
+    } else if (options && options.panel && options.panel.id === 'style-transfer') {
+      authorDisplayTitle = 'HugOS Style Transfer';
+      authorDisplaySub = `(🎨 Adaptive Stylometry • ${modelToUse})`;
+    } else if (options && options.panel && options.panel.id === 'reasoning') {
+      authorDisplayTitle = 'HugOS AI (Boost)';
+      authorDisplaySub = `(🚀 Deep Reasoning Boost • ${modelToUse})`;
+    } else if (isFusionMode) {
       authorDisplayTitle = 'ModelFusion AI';
       if (modelToUse === 'fast_fusion') {
         authorDisplaySub = '(Speculative Consensus: qwen2.5:7b + deepseek-r1:1.5b)';
@@ -4671,6 +4792,12 @@ document.addEventListener('DOMContentLoaded', () => {
         authorDisplaySub = '(Adaptive Consensus: Vision + DOM NLP + Reasoning)';
       }
     }
+
+    const authorIcon = (options && options.panel && options.panel.id === 'humanize') ? '✍️'
+      : (options && options.panel && options.panel.id === 'translate') ? '🌐'
+      : (options && options.panel && options.panel.id === 'translate-humanize') ? '🗣️'
+      : (options && options.panel && options.panel.id === 'style-transfer') ? '🎨'
+      : (isFusionMode ? '✨' : '🌐');
 
     // Hide welcome screen
     if (chatWelcome) chatWelcome.classList.add('hidden');
@@ -4684,7 +4811,7 @@ document.addEventListener('DOMContentLoaded', () => {
       assistantBubble.className = 'msg-bubble assistant-bubble streaming';
       assistantBubble.innerHTML = `
         <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
-          <span>${isFusionMode ? '✨' : '🌐'}</span> <span>${authorDisplayTitle}</span>
+          <span>${authorIcon}</span> <span>${authorDisplayTitle}</span>
           <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">${authorDisplaySub}</span>
         </div>
         <div class="bubble-content" style="color: var(--text-muted); font-style: italic;">
@@ -4751,14 +4878,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (ipcUrl && !chatEndpoints.includes(ipcUrl)) chatEndpoints.push(ipcUrl);
       }
 
-      const isAgenticLoop = currentSettings.agenticLoopEnabled !== false && maxTokensToUse > 4096;
-      const targetTokens = maxTokensToUse;
-      const chunkSize = currentSettings.agenticChunkSize || (targetTokens >= 65536 ? 8192 : 4096);
-      const maxLoops = isAgenticLoop ? Math.min(64, Math.ceil(targetTokens / chunkSize)) : 1;
-      const numCtxToUse = isAgenticLoop ? Math.max(16384, Math.min(65536, targetTokens)) : (maxTokensToUse > 4096 ? 16384 : 8192);
+      const isGoalDirective = Boolean(
+        (options && (options.isGoal || options.allowContinuation || options.agenticLoop)) ||
+        (/^\s*(@agent\s+goal|\/goal|@goal|@agent\s+agentic-loop|\/agentic-loop|@agent\s+loop)\b/i.test(userPrompt)) ||
+        (options && options.rawCmd && /^\s*(@agent\s+goal|\/goal|@goal|@agent\s+agentic-loop|\/agentic-loop|@agent\s+loop)\b/i.test(options.rawCmd))
+      );
+      const isAgenticLoop = isGoalDirective && currentSettings.agenticLoopEnabled !== false;
+      const targetTokens = (options && typeof options.maxTokens === 'number' && options.maxTokens > 0)
+        ? options.maxTokens
+        : (isAgenticLoop ? Math.max(maxTokensToUse, 32768) : maxTokensToUse);
+      const chunkSize = currentSettings.agenticChunkSize || (targetTokens >= 65536 ? 8192 : Math.min(targetTokens, 8192));
+      const maxLoops = isAgenticLoop ? (options && options.maxLoops ? options.maxLoops : Math.min(64, Math.ceil(targetTokens / chunkSize))) : 1;
+      const numCtxToUse = Math.max(16384, isAgenticLoop ? Math.min(32768, targetTokens) : 16384);
 
       let agenticBadge = null;
-      if (isAgenticLoop && assistantBubble) {
+      if (isAgenticLoop && maxLoops > 1 && assistantBubble) {
         agenticBadge = document.createElement('div');
         agenticBadge.className = 'agentic-loop-badge';
         agenticBadge.innerHTML = `🔄 Agentic Loop: Turn 1/${maxLoops} • 0 tokens`;
@@ -4766,18 +4900,15 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const conversationMessages = [
-        { role: 'system', content: systemPrompt }
+        { role: 'system', content: effectiveSysPrompt }
       ];
-
-      if (isAgenticLoop && targetTokens > 4096) {
-        const depthInstruction = `\n\n[COMPREHENSIVE DEPTH DIRECTIVE: The user has allocated an extensive output budget of ~${Math.round(targetTokens).toLocaleString()} tokens. Provide an in-depth, exhaustive, comprehensive exploration with rich historical context, detailed structural breakdowns, data, and complete analytical sub-sections to match this depth.]`;
-        conversationMessages[0].content += depthInstruction;
-      }
 
       // Add multi-turn context from current active session
       if (activeSession && Array.isArray(activeSession.messages)) {
-        const history = activeSession.messages.slice(0, -1);
-        const windowedHistory = history.slice(-10);
+        const lastMsg = activeSession.messages[activeSession.messages.length - 1];
+        const isLastMsgCurrentUser = Boolean(lastMsg && lastMsg.role === 'user');
+        const history = isLastMsgCurrentUser ? activeSession.messages.slice(0, -1) : activeSession.messages;
+        const windowedHistory = history.slice(-30);
         for (const m of windowedHistory) {
           if (m.role === 'user' && m.content) {
             conversationMessages.push({ role: 'user', content: m.content });
@@ -4797,26 +4928,31 @@ document.addEventListener('DOMContentLoaded', () => {
           agenticBadge.innerHTML = `🔄 Agentic Loop: Turn ${turn + 1}/${maxLoops} • ~${Math.round(totalEstimatedTokens).toLocaleString()} / ${targetTokens.toLocaleString()} tokens`;
         }
 
-        // Maintain sliding prompt window to avoid unbounded KV cache bloat and TTFT slowdowns across deep turns
+        // Maintain generous prompt window across deep turns
         let activeMessages = conversationMessages;
-        if (conversationMessages.length > 8) {
+        if (conversationMessages.length > 32) {
           activeMessages = [
             conversationMessages[0],
-            conversationMessages[1],
-            ...conversationMessages.slice(-6)
+            ...conversationMessages.slice(-30)
           ];
         }
 
-        const currentTurnChunk = isAgenticLoop ? chunkSize : maxTokensToUse;
+        const currentTurnChunk = isAgenticLoop ? Math.min(chunkSize, targetTokens) : maxTokensToUse;
+        const currentOllamaOptions = {
+          temperature: tempToUse,
+          num_predict: currentTurnChunk,
+          num_ctx: numCtxToUse,
+          top_p: topPToUse,
+          min_p: minPToUse,
+          repeat_penalty: repeatPenaltyToUse,
+          presence_penalty: presencePenaltyToUse,
+          frequency_penalty: frequencyPenaltyToUse
+        };
         const reqBodyStr = JSON.stringify({
           model: resolvedOllamaModel,
           messages: activeMessages,
           stream: streamMode,
-          options: {
-            temperature: tempToUse,
-            num_predict: currentTurnChunk,
-            num_ctx: numCtxToUse
-          }
+          options: currentOllamaOptions
         });
 
         let res = null;
@@ -4830,11 +4966,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 model: resolvedOllamaModel,
                 messages: activeMessages,
                 stream: streamMode,
-                options: {
-                  temperature: tempToUse,
-                  num_predict: currentTurnChunk,
-                  num_ctx: numCtxToUse
-                }
+                options: currentOllamaOptions
               }),
               signal: currentAbortController ? currentAbortController.signal : undefined
             });
@@ -4892,11 +5024,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     model: resolvedOllamaModel,
                     messages: activeMessages,
                     stream: streamMode,
-                    options: {
-                      temperature: tempToUse,
-                      num_predict: currentTurnChunk,
-                      num_ctx: numCtxToUse
-                    }
+                    options: currentOllamaOptions
                   }),
                   signal: currentAbortController ? currentAbortController.signal : undefined
                 });
@@ -4973,11 +5101,7 @@ document.addEventListener('DOMContentLoaded', () => {
                       model: resolvedOllamaModel,
                       messages: activeMessages,
                       stream: streamMode,
-                      options: {
-                        temperature: tempToUse,
-                        num_predict: currentTurnChunk,
-                        num_ctx: numCtxToUse
-                      }
+                      options: currentOllamaOptions
                     }),
                     signal: currentAbortController ? currentAbortController.signal : undefined
                   });
@@ -5174,9 +5298,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const codeFences = (fullResponse.match(/```/g) || []).length;
         const hasUnclosedCodeBlock = codeFences % 2 !== 0;
-        const hasRemainingBudget = isAgenticLoop && (totalEstimatedTokens < targetTokens * 0.85);
-        const turnHadSubstantialContent = turnResponse.trim().length > 120;
-        const shouldContinue = (doneReason === 'length' || hasUnclosedCodeBlock || (hasRemainingBudget && turnHadSubstantialContent)) && !isApology;
+        // Continuation ONLY if cut off mid-thought due to length or unclosed code block
+        const wasCutOff = (doneReason === 'length' || hasUnclosedCodeBlock);
+        const shouldContinue = wasCutOff && !isApology;
 
         if (!shouldContinue) {
           termLog(`[AGENTIC LOOP] Output generation reached natural completion (${Math.round(totalEstimatedTokens).toLocaleString()} tokens).`, 'info');
@@ -5187,9 +5311,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const curTurn = turn + 1;
         const continuationPrompt = hasUnclosedCodeBlock
           ? `Continue writing the code seamlessly from where you stopped. Do not repeat code already written or output pleasantries.`
-          : `Proceed immediately to the next comprehensive dimension of this research topic without repeating any previous points, summaries, pleasantries, or apologies. Detail the next technical layer, mathematical formulation, practical system architecture, concrete benchmarks, and real-world deployment challenges to satisfy the requested long-form depth.`;
+          : `Continue seamlessly from where you stopped. Do not repeat text already written or output pleasantries.`;
         conversationMessages.push({ role: 'user', content: continuationPrompt });
-        fullResponse += '\n\n';
+        if (!hasUnclosedCodeBlock) {
+          if (!fullResponse.endsWith('\n') && !fullResponse.endsWith(' ')) {
+            fullResponse += '\n\n';
+          } else if (!fullResponse.endsWith('\n\n')) {
+            fullResponse += '\n';
+          }
+        }
 
         termLog(`[AGENTIC LOOP] 🔄 Turn ${curTurn}/${maxLoops} completed (~${Math.round(totalEstimatedTokens).toLocaleString()} tokens). Chaining next expansion turn...`, 'info');
       }
@@ -5600,16 +5730,34 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function isBrowserAgentDirective(task) {
-    if (!task) return false;
-    const lower = task.toLowerCase().trim();
-    if (lower.startsWith('agent ') || lower.startsWith('autonomous ') || lower.startsWith('goal ') || lower.startsWith('run ') || lower.startsWith('--agent')) {
+    if (!task || typeof task !== 'string') return false;
+    const trimmed = task.trim();
+    if (!trimmed) return false;
+
+    // 1. Immediate negative guards: creative writing, coding, math, general questions, story requests
+    const negativeStartPattern = /^(write|draft|compose|author|create|generate|tell|explain|describe|summarize|review|teach|what|why|how|when|who|where is|can you|could you)\b/i;
+    const negativeContentPattern = /\b(book about|short book|comic book|coloring book|history book|guide book|textbook|handbook|story|novel|poem|poetry|essay|article|paragraph|chapter|fiction|script|song|lyrics|speech|code|function|program|class|algorithm)\b/i;
+
+    if (negativeStartPattern.test(trimmed) || negativeContentPattern.test(trimmed)) {
+      return false;
+    }
+
+    const lower = trimmed.toLowerCase();
+    if (lower.startsWith('agent ') || lower.startsWith('autonomous ') || lower.startsWith('goal ') || lower.startsWith('--agent')) {
       return true;
     }
-    const intentKeywords = [
-      'buy ', 'purchase ', 'shop ', 'book ', 'flight', 'hotel', 'order ', 'fill form', 'fill out',
-      'reserve', 'checkout', 'add to cart', 'find and buy', 'compare prices', 'sign up', 'register'
+
+    // 2. Explicit phrase patterns for web automation
+    const automationPatterns = [
+      /\b(buy|purchase|order)\s+.+\s+(on|from|at)\s+(amazon|ebay|walmart|bestbuy|target|aliexpress|online|website)\b/i,
+      /\b(book|reserve)\s+(a\s+)?(flight|flights|hotel|hotels|airline\s+ticket|tickets?|room|table|cab|ride|car|airbnb)\b/i,
+      /\b(flight|flights)\s+from\s+.+\s+to\b/i,
+      /\b(fill\s+out|fill\s+in|submit)\s+(the\s+)?(form|application|survey|registration)\b/i,
+      /\b(add\s+to\s+cart|proceed\s+to\s+checkout)\b/i,
+      /\b(sign\s*up|register\s+account)\s+(on|at|for)\b/i
     ];
-    return intentKeywords.some(kw => lower.includes(kw));
+
+    return automationPatterns.some(pattern => pattern.test(trimmed));
   }
 
   let currentAgentId = null;
@@ -5834,8 +5982,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Execute Autonomous Workflow (either connected daemon or high-fidelity in-browser engine)
     const sleep = ms => new Promise(r => setTimeout(r, ms));
-    const isShopping = /buy|purchase|shop|amazon|cart|price/i.test(goal);
-    const isBooking = /book|flight|hotel|reserve|ticket/i.test(goal);
+    const isShopping = (/\b(buy|purchase|checkout|add to cart)\b/i.test(goal) || /\b(shop|order)\s+(for|at|on|online)\b/i.test(goal) || /\bamazon\b/i.test(goal)) && !/\b(workshop|order of operations|book about|short book|comic book|textbook|handbook|story|novel|write|explain|tell|summarize)\b/i.test(goal);
+    const isBooking = (/\b(flight|flights|airline|hotel|hotels|motel|reservations?)\b/i.test(goal) || /\b(book|reserve)\s+(a\s+)?(flight|flights|hotel|hotels|ticket|tickets?|room|table|reservation)\b/i.test(goal)) && !/\b(book about|short book|comic book|textbook|handbook|story|novel|write|explain|tell|summarize)\b/i.test(goal);
 
     try {
       // Step 1: Destination & Navigation
@@ -5995,6 +6143,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   window.parseMultiAgentDirectives = parseMultiAgentDirectives;
 
+  let pendingPromptDirective = null;
+
   async function executeCliCommand(rawCmd) {
     if (isGenerating) {
       termLog('⚠️ A task is already in progress. Please wait for completion or click ⏹ to stop.', 'warn');
@@ -6002,6 +6152,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     let cmd = (rawCmd || '').trim();
     if (!cmd) return;
+
+    // Resolve any pending prompt directive if user just entered raw unadorned text
+    if (pendingPromptDirective && !cmd.startsWith('@') && !cmd.startsWith('/')) {
+      if (pendingPromptDirective.type === 'humanize') {
+        cmd = `@agent humanize ${cmd}`;
+      } else if (pendingPromptDirective.type === 'translate') {
+        cmd = `@agent translate to ${pendingPromptDirective.lang || 'English'}: ${cmd}`;
+      } else if (pendingPromptDirective.type === 'translate-humanize') {
+        cmd = `@agent translate-humanize to ${pendingPromptDirective.lang || 'English'}: ${cmd}`;
+      } else if (pendingPromptDirective.type === 'style-transfer') {
+        cmd = `@agent style-transfer to ${pendingPromptDirective.style || 'conversational'}: ${cmd}`;
+      }
+      pendingPromptDirective = null;
+    } else {
+      pendingPromptDirective = null;
+    }
 
     // Immediately switch view from hero section to conversation stream
     switchViewToChat();
@@ -6337,6 +6503,29 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
         if (currentAttachments.length > 0) clearAllAttachments();
         return;
       }
+
+    // 0.05 Autonomous Multi-Turn Goal / Agentic Loop Directives (@agent goal, /goal, @goal, @agent agentic-loop, /agentic-loop)
+    const goalDirectiveMatch = cmd.match(/^\s*(@agent\s+(?:goal|agentic-loop|loop)|\/(?:goal|agentic-loop|loop)|@(?:goal|agentic-loop|loop))(?:\s+|:\s*|$)(.*)$/is);
+    if (goalDirectiveMatch) {
+      const cleanGoal = (goalDirectiveMatch[2] || '').trim();
+      if (!cleanGoal) {
+        termLog('Usage: @agent goal <describe multi-step goal or mission>', 'warn');
+        return;
+      }
+      termLog(`🎯 [GOAL RUNNER] Multi-turn autonomous goal directive initiated: "${cleanGoal}"`, 'info');
+      const goalSysPrompt = 'You are HugOS Autonomous Goal Agent. You execute complex, multi-stage goals systematically and thoroughly. Solve each phase completely with working code, precise derivations, and actionable implementation.';
+      const goalPrompt = attachmentContext ? `${cleanGoal}\n\n${attachmentContext}` : cleanGoal;
+      await streamAiChat(goalPrompt, goalSysPrompt, {
+        images: attachedImages,
+        panel: { id: 'reasoning', name: 'Autonomous Goal Agent' },
+        isGoal: true,
+        allowContinuation: true,
+        maxTokens: 65536,
+        rawCmd: cmd
+      });
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
 
     // 0. Browser Agent Control Commands (/browser approve, /browser abort, /browser status)
     if (lower === '/browser approve' || lower === '@agent browser approve' || lower === 'approve' || lower === '/approve') {
@@ -6780,6 +6969,354 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       return;
     }
 
+    // 4.05 Anti-AI Stylometry Humanize Directive (@agent humanize, /humanize, @humanize)
+    if (
+      lower === '@agent humanize' || lower.startsWith('@agent humanize ') ||
+      lower === '/humanize' || lower.startsWith('/humanize ') ||
+      lower === '@humanize' || lower.startsWith('@humanize ') ||
+      /^(@agent\s+humanize|@humanize|\/humanize)(\s*[:\s]|$)/i.test(cmd)
+    ) {
+      let textToHumanize = cmd.replace(/^(@agent\s+humanize|\/humanize|@humanize)(?:\s*[:]\s*|\s*)/i, '').trim();
+
+      // Check if text was in attachments if query was empty
+      if (!textToHumanize && currentAttachments.length > 0) {
+        textToHumanize = currentAttachments.map(f => f.content || '').join('\n\n').trim();
+      }
+
+      // If still empty, check preceding assistant or user message
+      if (!textToHumanize && activeSession && Array.isArray(activeSession.messages)) {
+        const prevMsg = activeSession.messages.slice(0, -1).reverse().find(m => m.content && !/^(@agent\s+humanize|\/humanize|@humanize)\b/i.test(m.content));
+        if (prevMsg) {
+          textToHumanize = prevMsg.content;
+        }
+      }
+
+      if (!textToHumanize) {
+        if (activeSession && activeSession.messages.length > 0 && activeSession.messages[activeSession.messages.length - 1].content === cmd) {
+          activeSession.messages.pop();
+          saveChatHistory();
+        }
+        if (chatMessages && chatMessages.lastElementChild && chatMessages.lastElementChild.classList.contains('user-bubble')) {
+          chatMessages.lastElementChild.remove();
+        }
+        termLog('✍️ Please provide or paste the text you would like to humanize.', 'warn');
+        const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+          ? cliPromptInputPinned
+          : cliPromptInput;
+        if (activeInput) {
+          activeInput.placeholder = 'Paste or type text to humanize here...';
+          activeInput.value = '@agent humanize ';
+          activeInput.focus();
+          activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
+          activeInput.style.height = 'auto';
+          activeInput.style.height = Math.min(activeInput.scrollHeight, 160) + 'px';
+        }
+        pendingPromptDirective = { type: 'humanize' };
+        return;
+      }
+
+      termLog(`✍️ [HUMANIZER] Rewriting text with high burstiness & natural human stylometry...`, 'info');
+
+      const humanizePrompt = `Rewrite the following passage into natural, organic human prose:\n\n${textToHumanize}`;
+      const humanizePanel = {
+        id: 'humanize',
+        name: 'Anti-AI Stylometry Humanizer'
+      };
+
+      await streamAiChat(humanizePrompt, NATURAL_HUMAN_EDITOR_INSTRUCTION, {
+        taskType: 'humanize',
+        temperature: 0.85,
+        top_p: 0.95,
+        min_p: 0.05,
+        repeat_penalty: 1.15,
+        presence_penalty: 0.3,
+        frequency_penalty: 0.4,
+        panel: humanizePanel
+      });
+
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
+
+    // 4.06 Native Speaker Translation & Humanize Directive (@agent translate-humanize, @agent humanize-translate, /translate-humanize, @trans-human, /trans-human, @agent trans-human)
+    if (
+      /^(@agent\s+translate-humanize|@translate-humanize|\/translate-humanize|@agent\s+trans-human|@trans-human|\/trans-human|@agent\s+transhuman|@transhuman|\/transhuman|@agent\s+humanize-translate|@humanize-translate|\/humanize-translate)(\s*[:\s]|$)/i.test(cmd)
+    ) {
+      let rest = cmd.replace(/^(@agent\s+translate-humanize|@translate-humanize|\/translate-humanize|@agent\s+trans-human|@trans-human|\/trans-human|@agent\s+transhuman|@transhuman|\/transhuman|@agent\s+humanize-translate|@humanize-translate|\/humanize-translate)(?:\s*[:]\s*|\s*)/i, '').trim();
+      let targetLang = 'English';
+      let textToTranslate = '';
+
+      // Parse target language: e.g. "to French: hello world", "into Spanish - hello", "to German hello", "French: hello"
+      const toMatch = rest.match(/^(?:to|into)\s+([A-Za-z\s]+?)(?:[:,\-]\s*|\s+|$)(.*)$/is);
+      if (toMatch) {
+        targetLang = toMatch[1].trim() || 'English';
+        textToTranslate = (toMatch[2] || '').trim();
+      } else {
+        const colonMatch = rest.match(/^([A-Za-z]+)\s*[:]\s*(.*)$/is);
+        if (colonMatch && !['http', 'https', 'file'].includes(colonMatch[1].toLowerCase())) {
+          targetLang = colonMatch[1].trim();
+          textToTranslate = (colonMatch[2] || '').trim();
+        } else {
+          textToTranslate = rest;
+        }
+      }
+
+      // Check attachments if text is empty
+      if (!textToTranslate && currentAttachments.length > 0) {
+        textToTranslate = currentAttachments.map(f => f.content || '').join('\n\n').trim();
+      }
+
+      // Check prior messages if text is empty
+      if (!textToTranslate && activeSession && Array.isArray(activeSession.messages)) {
+        const prevMsg = activeSession.messages.slice(0, -1).reverse().find(m => m.content && !/^(@agent\s+(translate|humanize)|@translate|@humanize|@trans-human|\/translate|\/humanize)/i.test(m.content));
+        if (prevMsg) {
+          textToTranslate = prevMsg.content;
+        }
+      }
+
+      if (!textToTranslate) {
+        if (activeSession && activeSession.messages.length > 0 && activeSession.messages[activeSession.messages.length - 1].content === cmd) {
+          activeSession.messages.pop();
+          saveChatHistory();
+        }
+        if (chatMessages && chatMessages.lastElementChild && chatMessages.lastElementChild.classList.contains('user-bubble')) {
+          chatMessages.lastElementChild.remove();
+        }
+        termLog('🗣️ Please provide or paste the text you would like to translate and humanize.', 'warn');
+        const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+          ? cliPromptInputPinned
+          : cliPromptInput;
+        if (activeInput) {
+          activeInput.placeholder = `Paste or type text to translate into ${targetLang} and humanize...`;
+          activeInput.value = `@agent translate-humanize to ${targetLang}: `;
+          activeInput.focus();
+          activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
+          activeInput.style.height = 'auto';
+          activeInput.style.height = Math.min(activeInput.scrollHeight, 160) + 'px';
+        }
+        pendingPromptDirective = { type: 'translate-humanize', lang: targetLang };
+        return;
+      }
+
+      termLog(`🗣️ [TRANSLATE-HUMANIZE] Translating to ${targetLang} and applying native-speaker humanizing...`, 'info');
+
+      const transHumanSysPrompt = "You are a bilingual native-speaker editor and translator. Translate the given text into the target language and humanize it so it reads with authentic, native cadence, natural idiomatic expressions, varied sentence structures, and organic human rhythm. Eliminate all stiffness, awkward calques, and literal translation artifacts while preserving the core factual intent. Do not add any introductory explanations, meta-commentary, or translator notes. Return only the polished native text.";
+      const transHumanPrompt = `Translate the following text into natural, idiomatic ${targetLang} as spoken and written by an authentic native speaker:\n\n${textToTranslate}`;
+
+      await streamAiChat(transHumanPrompt, transHumanSysPrompt, {
+        taskType: 'humanize',
+        temperature: 0.8,
+        top_p: 0.95,
+        min_p: 0.05,
+        repeat_penalty: 1.15,
+        presence_penalty: 0.25,
+        frequency_penalty: 0.3,
+        panel: {
+          id: 'translate-humanize',
+          name: `Native Translation & Humanize (${targetLang})`
+        }
+      });
+
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
+
+    // 4.07 Multilingual Translation Directive (@agent translate, /translate, @translate, @agent translation, @agent trans, /trans, @trans)
+    if (
+      (/^(@agent\s+translate\b|@translate\b|\/translate\b|@agent\s+translation\b|@translation\b|\/translation\b|@agent\s+trans\b|@trans\b|\/trans\b)/i.test(cmd)) &&
+      !/^(@agent\s+(?:translate-humanize|trans-human|transhuman)|@(?:translate-humanize|trans-human|transhuman)|\/(?:translate-humanize|trans-human|transhuman))/i.test(cmd)
+    ) {
+      let rest = cmd.replace(/^(@agent\s+translate\b|@agent\s+translation\b|\/translate\b|\/translation\b|@translate\b|@translation\b|@agent\s+trans\b|@trans\b|\/trans\b)(?:\s*[:]\s*|\s*)/i, '').trim();
+      let targetLang = 'English';
+      let textToTranslate = '';
+
+      // Parse target language: e.g. "to Spanish: hello world", "into German - hello", "to French hello", "Spanish: hello"
+      const toMatch = rest.match(/^(?:to|into)\s+([A-Za-z\s]+?)(?:[:,\-]\s*|\s+|$)(.*)$/is);
+      if (toMatch) {
+        targetLang = toMatch[1].trim() || 'English';
+        textToTranslate = (toMatch[2] || '').trim();
+      } else {
+        const colonMatch = rest.match(/^([A-Za-z]+)\s*[:]\s*(.*)$/is);
+        if (colonMatch && !['http', 'https', 'file'].includes(colonMatch[1].toLowerCase())) {
+          targetLang = colonMatch[1].trim();
+          textToTranslate = (colonMatch[2] || '').trim();
+        } else {
+          textToTranslate = rest;
+        }
+      }
+
+      // Check attachments if text is empty
+      if (!textToTranslate && currentAttachments.length > 0) {
+        textToTranslate = currentAttachments.map(f => f.content || '').join('\n\n').trim();
+      }
+
+      // Check prior messages if text is empty
+      if (!textToTranslate && activeSession && Array.isArray(activeSession.messages)) {
+        const prevMsg = activeSession.messages.slice(0, -1).reverse().find(m => m.content && !/^(@agent\s+trans|@trans|\/trans)/i.test(m.content));
+        if (prevMsg) {
+          textToTranslate = prevMsg.content;
+        }
+      }
+
+      if (!textToTranslate) {
+        if (activeSession && activeSession.messages.length > 0 && activeSession.messages[activeSession.messages.length - 1].content === cmd) {
+          activeSession.messages.pop();
+          saveChatHistory();
+        }
+        if (chatMessages && chatMessages.lastElementChild && chatMessages.lastElementChild.classList.contains('user-bubble')) {
+          chatMessages.lastElementChild.remove();
+        }
+        termLog('🌐 Please provide or paste the text you would like to translate.', 'warn');
+        const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+          ? cliPromptInputPinned
+          : cliPromptInput;
+        if (activeInput) {
+          activeInput.placeholder = `Paste or type text to translate into ${targetLang}...`;
+          activeInput.value = `@agent translate to ${targetLang}: `;
+          activeInput.focus();
+          activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
+          activeInput.style.height = 'auto';
+          activeInput.style.height = Math.min(activeInput.scrollHeight, 160) + 'px';
+        }
+        pendingPromptDirective = { type: 'translate', lang: targetLang };
+        return;
+      }
+
+      termLog(`🌐 [TRANSLATE] Translating text to ${targetLang}...`, 'info');
+
+      const translateSysPrompt = "You are an expert multilingual translator. Translate the given text accurately, idiomatically, and fluently into the target language. Preserve the original meaning, tone, nuances, and formatting. Do not add introductory remarks, explanations, or meta-commentary. Output only the translated text.";
+      const translatePrompt = `Translate the following text into ${targetLang}:\n\n${textToTranslate}`;
+
+      await streamAiChat(translatePrompt, translateSysPrompt, {
+        taskType: 'translation',
+        temperature: 0.3,
+        top_p: 0.9,
+        panel: {
+          id: 'translate',
+          name: `Multilingual Translator (${targetLang})`
+        }
+      });
+
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
+
+    // 4.08 Writing Style Transfer Directive (@agent style-transfer, /style-transfer, @style, @agent style)
+    if (
+      /^(@agent\s+style-transfer|@style-transfer|\/style-transfer|@agent\s+style\b|@style\b|\/style\b)/i.test(cmd)
+    ) {
+      let rest = cmd.replace(/^(@agent\s+style-transfer|@style-transfer|@agent\s+style\b|\/style-transfer|\/style\b|@style\b)(?:\s*[:]\s*|\s*)/i, '').trim();
+      let targetStyle = 'conversational';
+      let textToStyle = '';
+
+      // Parse target style: e.g. "to executive: our revenue grew", "into academic - we tested", "to casual hello"
+      const toMatch = rest.match(/^(?:to|into)\s+([A-Za-z\-\s]+?)(?:[:,\-]\s*|\s+|$)(.*)$/is);
+      if (toMatch) {
+        targetStyle = toMatch[1].trim() || 'conversational';
+        textToStyle = (toMatch[2] || '').trim();
+      } else {
+        const colonMatch = rest.match(/^([A-Za-z\-]+)\s*[:]\s*(.*)$/is);
+        if (colonMatch && !['http', 'https', 'file'].includes(colonMatch[1].toLowerCase())) {
+          targetStyle = colonMatch[1].trim();
+          textToStyle = (colonMatch[2] || '').trim();
+        } else {
+          textToStyle = rest;
+        }
+      }
+
+      // Check attachments if text is empty
+      if (!textToStyle && currentAttachments.length > 0) {
+        textToStyle = currentAttachments.map(f => f.content || '').join('\n\n').trim();
+      }
+
+      // Check prior messages if text is empty
+      if (!textToStyle && activeSession && Array.isArray(activeSession.messages)) {
+        const prevMsg = activeSession.messages.slice(0, -1).reverse().find(m => m.content && !/^(@agent\s+style|@style|\/style)/i.test(m.content));
+        if (prevMsg) {
+          textToStyle = prevMsg.content;
+        }
+      }
+
+      if (!textToStyle) {
+        if (activeSession && activeSession.messages.length > 0 && activeSession.messages[activeSession.messages.length - 1].content === cmd) {
+          activeSession.messages.pop();
+          saveChatHistory();
+        }
+        if (chatMessages && chatMessages.lastElementChild && chatMessages.lastElementChild.classList.contains('user-bubble')) {
+          chatMessages.lastElementChild.remove();
+        }
+        termLog('🎨 Please provide or paste the text you would like to transfer style for.', 'warn');
+        const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+          ? cliPromptInputPinned
+          : cliPromptInput;
+        if (activeInput) {
+          activeInput.placeholder = `Paste or type text to convert into ${targetStyle} style...`;
+          activeInput.value = `@agent style-transfer to ${targetStyle}: `;
+          activeInput.focus();
+          activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
+          activeInput.style.height = 'auto';
+          activeInput.style.height = Math.min(activeInput.scrollHeight, 160) + 'px';
+        }
+        pendingPromptDirective = { type: 'style-transfer', style: targetStyle };
+        return;
+      }
+
+      termLog(`🎨 [STYLE-TRANSFER] Adapting writing style to ${targetStyle}...`, 'info');
+
+      const styleSysPrompt = "You are a master stylistic editor. Rewrite the given text to match the requested style while fully preserving the underlying meaning and information. Employ natural vocabulary, authentic rhetorical patterns, and characteristic tone for that style without sounding artificial or exaggerated. Do not add meta-commentary, justifications, or preamble. Return only the stylized text.";
+      const stylePrompt = `Rewrite the following text in an authentic ${targetStyle} style:\n\n${textToStyle}`;
+
+      await streamAiChat(stylePrompt, styleSysPrompt, {
+        taskType: 'humanize',
+        temperature: 0.8,
+        top_p: 0.95,
+        min_p: 0.05,
+        repeat_penalty: 1.15,
+        presence_penalty: 0.3,
+        frequency_penalty: 0.35,
+        panel: {
+          id: 'style-transfer',
+          name: `Writing Style Transfer (${targetStyle})`
+        }
+      });
+
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
+
+    // 4.1 Deep Thinking Boost Directive (@agent boost, /boost, @boost)
+    if (lower === '@agent boost' || lower.startsWith('@agent boost ') || lower === '/boost' || lower.startsWith('/boost ') || lower === '@boost' || lower.startsWith('@boost ')) {
+      const boostQuery = cmd.replace(/^(@agent\s+boost|\/boost|@boost)\s*/i, '').trim();
+      let queryToRun = boostQuery;
+      if (!queryToRun && activeSession && Array.isArray(activeSession.messages)) {
+        const prevUserMsg = activeSession.messages.slice(0, -1).reverse().find(m => m.role === 'user' && m.content);
+        if (prevUserMsg) {
+          queryToRun = `Provide deep analytical reasoning, comprehensive exploration, and rigorous evaluation for: "${prevUserMsg.content}"`;
+        }
+      }
+      if (!queryToRun) {
+        queryToRun = 'Please provide deep analytical reasoning and comprehensive exploration.';
+      }
+      termLog(`[BOOST] 🚀 Deep Thinking Boost activated for: "${queryToRun}"`, 'info');
+      const boostPrompt = attachmentContext ? `${queryToRun}\n\n${attachmentContext}` : queryToRun;
+      const boostSysPrompt = 'You are HugOS AI running in Deep Thinking Boost mode. Provide comprehensive, deeply reasoned, highly structured, and rigorous answers. Think methodically, explore multiple perspectives, evaluate trade-offs, and ensure complete thoroughness.';
+
+      if (activeSession && Array.isArray(activeSession.messages) && activeSession.messages.length > 0) {
+        const last = activeSession.messages[activeSession.messages.length - 1];
+        if (last && last.role === 'user') {
+          last.content = queryToRun;
+          saveChatHistory();
+        }
+      }
+
+      await streamAiChat(boostPrompt, boostSysPrompt, {
+        images: attachedImages,
+        panel: { id: 'reasoning', name: 'Deep Reasoning Boost' }
+      });
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
+
     // 4.5 Web Research & Search Agent Directives (@agent search, @agent web-agent, @agent search-index, @agent browser deep research on, @agent arxiv)
     if (
       lower.startsWith('@agent search ') || lower.startsWith('/search ') ||
@@ -6989,12 +7526,6 @@ Instructions:
 
       const sysPrompt = 'You are HugOS Browser AI, executing real computer and browser navigation. Deliver clear, accurate, and comprehensive factual answers directly synthesized from the live web.';
       await streamAiChat(browserPrompt, sysPrompt);
-      return;
-    }
-
-    // Autonomous Multi-Step Browser Agent: intercept direct natural language directives (e.g. "Buy keyboard on amazon", "Book flight from JFK to LAX")
-    if (isBrowserAgentDirective(cmd) && !cmd.startsWith('/') && !cmd.startsWith('@')) {
-      await runAutonomousBrowserAgent(cmd);
       return;
     }
 
@@ -7209,11 +7740,43 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     });
   }
 
+  const sidebarTranslationHumanize = document.getElementById('sidebar-translation-humanize');
+  if (sidebarTranslationHumanize) {
+    sidebarTranslationHumanize.addEventListener('click', () => {
+      if (sidebarToolsAccordion && sidebarToolsAccordion.classList.contains('collapsed')) {
+        sidebarToolsAccordion.classList.remove('collapsed');
+        const chevron = document.getElementById('tools-accordion-chevron');
+        if (chevron) chevron.textContent = '▾';
+      }
+      const transCatHeader = document.querySelector('.tool-category-header[data-cat="translation"]');
+      if (transCatHeader) {
+        const content = transCatHeader.nextElementSibling;
+        const chevron = transCatHeader.querySelector('.cat-chevron');
+        if (content && content.classList.contains('collapsed')) {
+          content.classList.remove('collapsed');
+          if (chevron) chevron.textContent = '▾';
+        }
+        transCatHeader.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+      const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+        ? cliPromptInputPinned
+        : cliPromptInput;
+      if (activeInput) {
+        activeInput.value = '@agent translate-humanize ';
+        activeInput.focus();
+        activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
+        activeInput.style.height = 'auto';
+        activeInput.style.height = Math.min(activeInput.scrollHeight, 160) + 'px';
+      }
+    });
+  }
+
   // -------------------------------------------------------------
   // Sidebar Tools & Directives Accordion (All 161+ Tools)
   // -------------------------------------------------------------
   const sidebarToolsToggle = document.getElementById('sidebar-tools-toggle');
   const sidebarToolsAccordion = document.getElementById('sidebar-tools-accordion');
+
   if (sidebarToolsToggle && sidebarToolsAccordion) {
     sidebarToolsToggle.addEventListener('click', () => {
       sidebarToolsAccordion.classList.toggle('collapsed');
@@ -7259,7 +7822,8 @@ If you are asked about real-world facts such as world leaders, heads of state, c
 
       const isFileTool = !cmd.includes('rest-rl') && !cmd.includes('restrl') && (
         ['tabular', 'vision', 'audio', 'pe_binary', 'code'].includes(cat) ||
-        cmd.includes('summarize') || cmd.includes('acdso') || cmd.includes('pe') || cmd.includes('security')
+        cmd.includes('summarize') || cmd.includes('acdso') || cmd.includes('pe') || cmd.includes('security') ||
+        cmd.trim() === '@agent humanize'
       );
 
       // If attachedFiles.length > 0: Immediately execute on staged file(s)!
@@ -7506,6 +8070,8 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     { cmd: '@agent nlp ', icon: '📝', label: 'NLP Pipeline', desc: 'Sentiment, NER, translation, and text classification' },
     { cmd: '@agent text-generation ', icon: '✍️', label: 'Text Generation', desc: 'Open-ended causal text completion and synthesis' },
     { cmd: '@agent text2text ', icon: '🔄', label: 'Text-to-Text', desc: 'Seq2Seq transformation, rewriting, and standardization' },
+    { cmd: '@agent translate ', icon: '🌐', label: 'Multilingual Translation', desc: 'Accurate and idiomatic translation across 200+ languages' },
+    { cmd: '@agent translate-humanize ', icon: '🗣️', label: 'Native Translation & Humanize', desc: 'Translate into target language with native-speaker cadence & authentic flow' },
     { cmd: '@agent translation ', icon: '🌐', label: 'Translation', desc: 'Neural machine translation across 200+ languages' },
     { cmd: '@agent question-answering ', icon: '💬', label: 'Question Answering', desc: 'Extractive and generative reading comprehension' },
     { cmd: '@agent table-qa ', icon: '📊', label: 'Table QA', desc: 'Direct natural language querying over tabular structures' },
@@ -7519,6 +8085,8 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     { cmd: '@agent sentiment ', icon: '❤️', label: 'Sentiment Analysis', desc: 'Positive, negative, neutral, and emotional intensity' },
     { cmd: '@agent summarize-text ', icon: '📜', label: 'Text Summarize', desc: 'Abstractive and extractive multi-paragraph summarization' },
     { cmd: '@agent grammar ', icon: '✍️', label: 'Grammar Check', desc: 'Orthographic, syntactic, and stylistic error correction' },
+    { cmd: '@agent humanize ', icon: '✍️', label: 'Humanize Prose', desc: 'Anti-AI stylometry rewriting for high burstiness & natural tone' },
+    { cmd: '@agent style-transfer ', icon: '🎨', label: 'Writing Style Transfer', desc: 'Transfer tone and style to conversational, executive, academic, or journalistic' },
     { cmd: '@agent paraphrase ', icon: '🔁', label: 'Paraphraser', desc: 'Alternative phrasing preserving core semantic intent' },
     { cmd: '@agent ner ', icon: '🏷️', label: 'Named Entity Rec', desc: 'Extract names, locations, dates, and organizations' },
     { cmd: '@agent keywords ', icon: '🔑', label: 'Keyword Extractor', desc: 'KeyBERT and TF-IDF keyphrase significance extraction' },

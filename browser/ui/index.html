@@ -31,6 +31,10 @@
           <span class="nav-item-icon">🔍</span>
           <span class="nav-item-text">Deep research</span>
         </button>
+        <button type="button" class="sidebar-nav-item" id="sidebar-translation-humanize" title="Translation &amp; Humanize (Anti-AI Stylometry)">
+          <span class="nav-item-icon">🌐</span>
+          <span class="nav-item-text">Translation &amp; Humanize</span>
+        </button>
 
         <div class="sidebar-section-divider"></div>
 
@@ -136,6 +140,33 @@
                 <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_agentic_loop" data-category="agent" data-cmd="@agent agentic-loop " data-original-title="Self-Correcting Task Loop" title="Self-Correcting Task Loop">
                   <span class="tool-btn-left"><span class="tool-icon">🔄</span><span class="tool-label">Self-Correcting Task Loop</span></span>
                   <span class="tool-tag">@loop</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Translation & Humanize -->
+            <div class="tool-category">
+              <button type="button" class="tool-category-header" data-cat="translation" title="Translation &amp; Humanize (Anti-AI Stylometry)">
+                <span class="cat-icon">🌐</span>
+                <span class="cat-title">Translation &amp; Humanize</span>
+                <span class="cat-chevron">▸</span>
+              </button>
+              <div class="tool-category-content collapsed">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_humanize" data-category="translation" data-cmd="@agent humanize " data-original-title="Humanize Text (Anti-AI Stylometry)" title="Humanize Text (Anti-AI Stylometry)">
+                  <span class="tool-btn-left"><span class="tool-icon">✍️</span><span class="tool-label">Humanize Text (Anti-AI)</span></span>
+                  <span class="tool-tag">@humanize</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_translate" data-category="translation" data-cmd="@agent translate to Spanish: " data-original-title="Accurate Multilingual Translation" title="Accurate Multilingual Translation">
+                  <span class="tool-btn-left"><span class="tool-icon">🌐</span><span class="tool-label">Multilingual Translation</span></span>
+                  <span class="tool-tag">@translate</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_translate_humanize" data-category="translation" data-cmd="@agent translate-humanize to French: " data-original-title="Native Speaker Translation &amp; Humanize" title="Native Speaker Translation &amp; Humanize">
+                  <span class="tool-btn-left"><span class="tool-icon">🗣️</span><span class="tool-label">Native Translation &amp; Humanize</span></span>
+                  <span class="tool-tag">@trans-human</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_style_transfer" data-category="translation" data-cmd="@agent style-transfer to conversational: " data-original-title="Transfer Writing Style (Casual, Academic, Executive)" title="Transfer Writing Style (Casual, Academic, Executive)">
+                  <span class="tool-btn-left"><span class="tool-icon">🎨</span><span class="tool-label">Writing Style Transfer</span></span>
+                  <span class="tool-tag">@style</span>
                 </button>
               </div>
             </div>
@@ -1052,12 +1083,25 @@
 
             <div class="setting-item">
               <div class="setting-info">
+                <label class="setting-label">Natural Human Voice (Anti-AI Stylometry)</label>
+                <span class="setting-desc">Injects dynamic burstiness, varied cadence, and bans robotic AI clichés for undetectable natural human prose.</span>
+              </div>
+              <div class="setting-control">
+                <label class="setting-toggle-label">
+                  <input type="checkbox" id="setting-natural-voice" checked>
+                  <span class="toggle-text">Natural Human Voice Active</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
                 <label for="setting-temperature" class="setting-label">Sampling Temperature</label>
-                <span class="setting-desc">Lower values (0.1–0.3) provide analytical determinism; higher values increase variety.</span>
+                <span class="setting-desc">Natural human default (0.75) promotes burstiness &amp; flow; code tasks auto-scale to precision (0.20).</span>
               </div>
               <div class="setting-control slider-control">
-                <input type="range" id="setting-temperature" class="setting-slider" min="0.0" max="1.0" step="0.05" value="0.2">
-                <span class="slider-val" id="val-temperature">0.20</span>
+                <input type="range" id="setting-temperature" class="setting-slider" min="0.0" max="1.0" step="0.05" value="0.75">
+                <span class="slider-val" id="val-temperature">0.75</span>
               </div>
             </div>
 
@@ -1071,8 +1115,8 @@
                   <option value="256">256 tokens (Ultra-Concise Micro-Budget)</option>
                   <option value="512">512 tokens (Short Summary)</option>
                   <option value="2048">2048 tokens (Concise)</option>
-                  <option value="4096" selected>4096 tokens (Default Production)</option>
-                  <option value="8192">8192 tokens (Extended Context)</option>
+                  <option value="4096">4096 tokens (Standard Production)</option>
+                  <option value="8192" selected>8192 tokens (Default Production / Generous Output)</option>
                   <option value="16384">16384 tokens (Full Research Report)</option>
                   <option value="32768">32768 tokens (Agentic Loop: 32k - Extended Architecture)</option>
                   <option value="65536">65536 tokens (Agentic Loop: 64k - Full Application Modules)</option>
