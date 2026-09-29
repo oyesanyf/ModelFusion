@@ -99,10 +99,10 @@ function Sign-FileWithCert {
     }
 }
 
-# 4. Copy ModelFusion CLI (cliide.exe and cli.exe) into the packaged folder
-$cliSrcPath = Join-Path (Split-Path $PSScriptRoot -Parent) "target\release\cliide.exe"
+# 4. Copy ModelFusion CLI (cli.exe and cliide.exe) into the packaged folder
+$cliSrcPath = Join-Path (Split-Path $PSScriptRoot -Parent) "target\release\cli.exe"
 if (-not (Test-Path $cliSrcPath)) {
-    $cliSrcPath = Join-Path (Split-Path $PSScriptRoot -Parent) "target\release\cli.exe"
+    $cliSrcPath = Join-Path (Split-Path $PSScriptRoot -Parent) "target\release\cliide.exe"
 }
 if (-not (Test-Path $cliSrcPath)) {
     Write-Host "[ERROR] ModelFusion cliide.exe / cli.exe not found at $cliSrcPath. Run 'cargo build --release' first." -ForegroundColor Red

@@ -186,23 +186,72 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnCreateCustomFusion = document.getElementById('btn-create-custom-fusion');
   const customFusionsList = document.getElementById('custom-fusions-list');
 
+  function detectGpuVramMb() {
+    try {
+      const canvas = document.createElement('canvas');
+      const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+      if (gl) {
+        const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+        if (debugInfo) {
+          const renderer = (gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || '').toLowerCase();
+          if (/3090|4090|a100|h100|a6000|6000 ada/.test(renderer)) return 24000;
+          if (/4080|3080\s*ti|4070\s*ti\s*super|7900/.test(renderer)) return 16000;
+          if (/4070|3080|6700|6800/.test(renderer)) return 12000;
+          if (/rtx\s*4000|3070|4060|3060|2080|2070|2060/.test(renderer)) return 8000;
+        }
+      }
+    } catch (e) {}
+    return 8000; // Safe default for standard GPUs
+  }
+
   function pickBestInstalledOllamaModel(modelsList) {
     if (!modelsList || modelsList.length === 0) return null;
     const names = modelsList.map(m => (typeof m === 'string' ? m : (m.name || m.model || '')).trim()).filter(Boolean);
     if (names.length === 0) return null;
 
-    const priorities = [
-      'qwen2.5:32b',
-      'qwen2.5:14b',
-      'qwen2.5:7b',
-      'deepseek-r1:32b',
-      'deepseek-r1:14b',
-      'deepseek-r1:8b',
-      'deepseek-r1:7b',
-      'deepseek-r1:1.5b',
-      'qwen2.5:3b',
-      'qwen2.5:1.5b'
-    ];
+    if (window.hardwareOptimalModel) {
+      const match = names.find(n => n.toLowerCase() === window.hardwareOptimalModel.toLowerCase() || n.toLowerCase().startsWith(window.hardwareOptimalModel.toLowerCase() + ':'));
+      if (match) return match;
+    }
+
+    const vramMb = detectGpuVramMb();
+    let priorities = [];
+
+    if (vramMb >= 22000) {
+      // 24GB+ VRAM (RTX 4090, 3090, A100) -> 32B fits fully in VRAM
+      priorities = [
+        'qwen2.5:32b',
+        'deepseek-r1:32b',
+        'qwen2.5:14b',
+        'deepseek-r1:14b',
+        'qwen2.5:7b',
+        'deepseek-r1:7b',
+        'deepseek-r1:1.5b'
+      ];
+    } else if (vramMb >= 12000) {
+      // 12-16GB VRAM (RTX 4070, 4080, 3080) -> 14B fits in VRAM
+      priorities = [
+        'qwen2.5:14b',
+        'deepseek-r1:14b',
+        'qwen2.5:7b',
+        'deepseek-r1:7b',
+        'deepseek-r1:8b',
+        'qwen2.5:32b',
+        'deepseek-r1:1.5b'
+      ];
+    } else {
+      // <= 8GB VRAM (Quadro RTX 4000, RTX 3070, 4060, laptops) -> 7B fits 100% in VRAM for CRAZY FAST inference!
+      priorities = [
+        'qwen2.5:7b',
+        'deepseek-r1:7b',
+        'deepseek-r1:8b',
+        'qwen2.5:3b',
+        'deepseek-r1:1.5b',
+        'qwen2.5:1.5b',
+        'qwen2.5:14b',
+        'qwen2.5:32b'
+      ];
+    }
 
     for (const p of priorities) {
       const found = names.find(n => n.toLowerCase() === p.toLowerCase() || n.toLowerCase().startsWith(p.toLowerCase() + ':'));
@@ -2741,14 +2790,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // 8. Inline code `code`
     safe = safe.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
 
-    // 9. Lists
+    // 9. Lists (linear non-backtracking matching)
     // Unordered lists (- or *)
-    safe = safe.replace(/^[\*\-]\s+(.*)$/gm, '<li>$1</li>');
-    safe = safe.replace(/(<li>.*<\/li>(\n|$))+/g, '<ul>$&</ul>');
+    safe = safe.replace(/^[\*\-]\s+([^\n]+)$/gm, '<li>$1</li>');
+    safe = safe.replace(/(?:<li>[^\n]*<\/li>(?:\n|$))+/g, '<ul>$&</ul>');
 
     // Ordered lists (1. 2. etc)
-    safe = safe.replace(/^\d+\.\s+(.*)$/gm, '<oli>$1</oli>');
-    safe = safe.replace(/(<oli>.*<\/oli>(\n|$))+/g, match => {
+    safe = safe.replace(/^\d+\.\s+([^\n]+)$/gm, '<oli>$1</oli>');
+    safe = safe.replace(/(?:<oli>[^\n]*<\/oli>(?:\n|$))+/g, match => {
       const inner = match.replace(/<oli>/g, '<li>').replace(/<\/oli>/g, '</li>');
       return `<ol>${inner}</ol>`;
     });
@@ -4202,6 +4251,17 @@ document.addEventListener('DOMContentLoaded', () => {
           }).catch(() => {});
         }
 
+        // Query Master CLI for hardware-optimal model sizing
+        try {
+          const mfStatusRes = await fetch(`${ipcUrl}/api/modelfusion/status`).catch(() => null);
+          if (mfStatusRes && mfStatusRes.ok) {
+            const mfData = await mfStatusRes.json();
+            if (mfData && mfData.active_hardware_model) {
+              window.hardwareOptimalModel = mfData.active_hardware_model;
+            }
+          }
+        } catch (_) {}
+
         if (!currentSettings.activeModel || currentSettings.activeModel === DEFAULT_SETTINGS.activeModel || currentSettings.activeModel === 'modelfusion_auto') {
           activeOllamaModel = 'modelfusion_auto';
         } else {
@@ -4693,8 +4753,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const isAgenticLoop = currentSettings.agenticLoopEnabled !== false && maxTokensToUse > 4096;
       const targetTokens = maxTokensToUse;
-      const chunkSize = currentSettings.agenticChunkSize || 4096;
-      const maxLoops = isAgenticLoop ? Math.min(32, Math.ceil(targetTokens / chunkSize)) : 1;
+      const chunkSize = currentSettings.agenticChunkSize || (targetTokens >= 65536 ? 8192 : 4096);
+      const maxLoops = isAgenticLoop ? Math.min(64, Math.ceil(targetTokens / chunkSize)) : 1;
+      const numCtxToUse = isAgenticLoop ? Math.max(16384, Math.min(65536, targetTokens)) : (maxTokensToUse > 4096 ? 16384 : 8192);
 
       let agenticBadge = null;
       if (isAgenticLoop && assistantBubble) {
@@ -4736,14 +4797,25 @@ document.addEventListener('DOMContentLoaded', () => {
           agenticBadge.innerHTML = `🔄 Agentic Loop: Turn ${turn + 1}/${maxLoops} • ~${Math.round(totalEstimatedTokens).toLocaleString()} / ${targetTokens.toLocaleString()} tokens`;
         }
 
+        // Maintain sliding prompt window to avoid unbounded KV cache bloat and TTFT slowdowns across deep turns
+        let activeMessages = conversationMessages;
+        if (conversationMessages.length > 8) {
+          activeMessages = [
+            conversationMessages[0],
+            conversationMessages[1],
+            ...conversationMessages.slice(-6)
+          ];
+        }
+
         const currentTurnChunk = isAgenticLoop ? chunkSize : maxTokensToUse;
         const reqBodyStr = JSON.stringify({
           model: resolvedOllamaModel,
-          messages: conversationMessages,
+          messages: activeMessages,
           stream: streamMode,
           options: {
             temperature: tempToUse,
-            num_predict: currentTurnChunk
+            num_predict: currentTurnChunk,
+            num_ctx: numCtxToUse
           }
         });
 
@@ -4756,11 +4828,12 @@ document.addEventListener('DOMContentLoaded', () => {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 model: resolvedOllamaModel,
-                messages: conversationMessages,
+                messages: activeMessages,
                 stream: streamMode,
                 options: {
                   temperature: tempToUse,
-                  num_predict: currentTurnChunk
+                  num_predict: currentTurnChunk,
+                  num_ctx: numCtxToUse
                 }
               }),
               signal: currentAbortController ? currentAbortController.signal : undefined
@@ -4817,11 +4890,12 @@ document.addEventListener('DOMContentLoaded', () => {
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
                     model: resolvedOllamaModel,
-                    messages: conversationMessages,
+                    messages: activeMessages,
                     stream: streamMode,
                     options: {
                       temperature: tempToUse,
-                      num_predict: currentTurnChunk
+                      num_predict: currentTurnChunk,
+                      num_ctx: numCtxToUse
                     }
                   }),
                   signal: currentAbortController ? currentAbortController.signal : undefined
@@ -4840,7 +4914,7 @@ document.addEventListener('DOMContentLoaded', () => {
               res = candidateRes;
               break;
             } else {
-              lastFetchErr = new Error(`Endpoint ${ep} returned HTTP ${candidateRes.status}`);
+              lastFetchErr = new Error(`Endpoint ${ep}/api/chat returned HTTP ${candidateRes.status}`);
             }
           } catch (epErr) {
             lastFetchErr = epErr;
@@ -4897,11 +4971,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                       model: resolvedOllamaModel,
-                      messages: conversationMessages,
+                      messages: activeMessages,
                       stream: streamMode,
                       options: {
                         temperature: tempToUse,
-                        num_predict: currentTurnChunk
+                        num_predict: currentTurnChunk,
+                        num_ctx: numCtxToUse
                       }
                     }),
                     signal: currentAbortController ? currentAbortController.signal : undefined
@@ -4956,6 +5031,56 @@ document.addEventListener('DOMContentLoaded', () => {
 
           statusLine.textContent = `[${time}] 🤖 ModelFusion Engine (${modelToUse}) ${isAgenticLoop ? `[Turn ${turn + 1}/${maxLoops}] ` : ''}streaming:`;
 
+          let renderScheduled = null;
+          let lastRenderTime = 0;
+          const RENDER_INTERVAL_MS = 25; // Silky smooth ~40fps throttled DOM render
+
+          const renderStreamDom = (force = false) => {
+            const now = performance.now();
+            if (force || now - lastRenderTime >= RENDER_INTERVAL_MS) {
+              if (renderScheduled) {
+                cancelAnimationFrame(renderScheduled);
+                renderScheduled = null;
+              }
+              lastRenderTime = now;
+              if (bubbleContent) {
+                bubbleContent.style.color = '';
+                bubbleContent.style.fontStyle = '';
+                bubbleContent.style.fontWeight = '';
+                bubbleContent.style.display = 'block';
+                bubbleContent.style.alignItems = '';
+                bubbleContent.style.gap = '';
+                bubbleContent.innerHTML = renderMarkdown(fullResponse);
+              }
+              if (isAgenticLoop && agenticBadge) {
+                agenticBadge.innerHTML = `🔄 Agentic Loop: Turn ${turn + 1}/${maxLoops} • ~${Math.round(totalEstimatedTokens).toLocaleString()} / ${targetTokens.toLocaleString()} tokens`;
+              }
+              if (currentSettings.autoScroll !== false && chatMessages) {
+                chatMessages.scrollTop = 99999999;
+              }
+            } else if (!renderScheduled) {
+              renderScheduled = requestAnimationFrame(() => {
+                renderScheduled = null;
+                lastRenderTime = performance.now();
+                if (bubbleContent) {
+                  bubbleContent.style.color = '';
+                  bubbleContent.style.fontStyle = '';
+                  bubbleContent.style.fontWeight = '';
+                  bubbleContent.style.display = 'block';
+                  bubbleContent.style.alignItems = '';
+                  bubbleContent.style.gap = '';
+                  bubbleContent.innerHTML = renderMarkdown(fullResponse);
+                }
+                if (isAgenticLoop && agenticBadge) {
+                  agenticBadge.innerHTML = `🔄 Agentic Loop: Turn ${turn + 1}/${maxLoops} • ~${Math.round(totalEstimatedTokens).toLocaleString()} / ${targetTokens.toLocaleString()} tokens`;
+                }
+                if (currentSettings.autoScroll !== false && chatMessages) {
+                  chatMessages.scrollTop = 99999999;
+                }
+              });
+            }
+          };
+
           while (true) {
             if (currentAbortController && currentAbortController.signal.aborted) {
               break;
@@ -4967,6 +5092,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const lines = buffer.split('\n');
             buffer = lines.pop(); // Retain incomplete fragment
 
+            let packetChunk = '';
             for (const line of lines) {
               const trimmed = line.trim();
               if (!trimmed) continue;
@@ -4979,34 +5105,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 if (parsed.done_reason) doneReason = parsed.done_reason;
                 if (chunk) {
-                  if (statusCtrl) {
-                    statusCtrl.stop();
-                    statusCtrl = null;
-                  }
-                  turnResponse += chunk;
-                  fullResponse += chunk;
-                  totalEstimatedTokens += Math.max(1, Math.round(chunk.length / 4));
-                  if (bubbleContent) {
-                    bubbleContent.style.color = '';
-                    bubbleContent.style.fontStyle = '';
-                    bubbleContent.style.fontWeight = '';
-                    bubbleContent.style.display = 'block';
-                    bubbleContent.style.alignItems = '';
-                    bubbleContent.style.gap = '';
-                    bubbleContent.innerHTML = renderMarkdown(fullResponse);
-                  }
-                  responseLine.textContent = fullResponse;
-                  if (isAgenticLoop && agenticBadge && totalEstimatedTokens % 80 === 0) {
-                    agenticBadge.innerHTML = `🔄 Agentic Loop: Turn ${turn + 1}/${maxLoops} • ~${Math.round(totalEstimatedTokens).toLocaleString()} / ${targetTokens.toLocaleString()} tokens`;
-                  }
-                  if (currentSettings.autoScroll !== false) {
-                    if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
-                    if (terminalScreen) terminalScreen.scrollTop = terminalScreen.scrollHeight;
-                  }
+                  packetChunk += chunk;
                 }
               } catch (e) {
                 // Malformed fragment, skip
               }
+            }
+
+            if (packetChunk) {
+              if (statusCtrl) {
+                statusCtrl.stop();
+                statusCtrl = null;
+              }
+              turnResponse += packetChunk;
+              fullResponse += packetChunk;
+              totalEstimatedTokens += Math.max(1, Math.round(packetChunk.length / 4));
+              renderStreamDom(false);
             }
           }
 
@@ -5031,6 +5145,19 @@ document.addEventListener('DOMContentLoaded', () => {
               }
             } catch (e) {}
           }
+
+          // Force final render of turn
+          renderStreamDom(true);
+          if (renderScheduled) {
+            cancelAnimationFrame(renderScheduled);
+            renderScheduled = null;
+          }
+          if (responseLine) {
+            responseLine.textContent = fullResponse;
+          }
+          if (terminalScreen && currentSettings.autoScroll !== false) {
+            terminalScreen.scrollTop = 99999999;
+          }
         }
 
         // Check continuation condition for next turn in agentic loop
@@ -5047,10 +5174,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const codeFences = (fullResponse.match(/```/g) || []).length;
         const hasUnclosedCodeBlock = codeFences % 2 !== 0;
-        const isNearLimit = turnResponse.length >= currentTurnChunk * 2.2;
-        const shouldContinue = doneReason === 'length' || hasUnclosedCodeBlock || (isNearLimit && totalEstimatedTokens < targetTokens * 0.9);
+        const hasRemainingBudget = isAgenticLoop && (totalEstimatedTokens < targetTokens * 0.85);
+        const turnHadSubstantialContent = turnResponse.trim().length > 120;
+        const shouldContinue = (doneReason === 'length' || hasUnclosedCodeBlock || (hasRemainingBudget && turnHadSubstantialContent)) && !isApology;
 
         if (!shouldContinue) {
+          termLog(`[AGENTIC LOOP] Output generation reached natural completion (${Math.round(totalEstimatedTokens).toLocaleString()} tokens).`, 'info');
           break;
         }
 
@@ -5058,7 +5187,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const curTurn = turn + 1;
         const continuationPrompt = hasUnclosedCodeBlock
           ? `Continue writing the code seamlessly from where you stopped. Do not repeat code already written or output pleasantries.`
-          : `Continue expanding this comprehensive response seamlessly. Proceed with the next detailed sections, analytical depth, and structured exploration to thoroughly fulfill the requested long-form depth without repeating previous text, pleasantries, or apologies.`;
+          : `Proceed immediately to the next comprehensive dimension of this research topic without repeating any previous points, summaries, pleasantries, or apologies. Detail the next technical layer, mathematical formulation, practical system architecture, concrete benchmarks, and real-world deployment challenges to satisfy the requested long-form depth.`;
         conversationMessages.push({ role: 'user', content: continuationPrompt });
         fullResponse += '\n\n';
 

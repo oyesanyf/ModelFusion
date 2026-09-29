@@ -11404,7 +11404,7 @@ sequenceDiagram
                                 eprintln!("[SERVER] 🔄 Agentic Loop Looping active in /orchestrate: target_tokens={}, chunk_tokens={}, max_loops={}", target_tokens, chunk_tokens, max_loops);
                                 let mut accumulated_content = String::new();
                                 let mut loop_messages = messages.clone();
-                                let actual_loops = max_loops.min(32).min((target_tokens + chunk_tokens - 1) / chunk_tokens);
+                                let actual_loops = max_loops.min(64).min((target_tokens + chunk_tokens - 1) / chunk_tokens);
 
                                 for turn in 0..actual_loops {
                                     let turn_body = serde_json::json!({
@@ -11438,8 +11438,13 @@ sequenceDiagram
 
                                             let code_fences = accumulated_content.matches("```").count();
                                             let unclosed = code_fences % 2 != 0;
-                                            let near_limit = turn_text.len() >= chunk_tokens * 2;
-                                            let should_continue = done_reason == "length" || unclosed || near_limit;
+                                            let estimated_tokens = accumulated_content.len() / 4;
+                                            let has_remaining_budget = estimated_tokens < (target_tokens * 85 / 100);
+                                            let substantial = turn_text.trim().len() > 120;
+                                            let is_apology = turn_text.to_lowercase().contains("i cannot continue without more details")
+                                                || turn_text.to_lowercase().contains("i am sorry, but i can't provide")
+                                                || turn_text.to_lowercase().contains("i'm sorry, but i can't provide");
+                                            let should_continue = (done_reason == "length" || unclosed || (has_remaining_budget && substantial)) && !is_apology;
 
                                             if !should_continue {
                                                 break;
@@ -11455,6 +11460,14 @@ sequenceDiagram
                                                     "role": "user",
                                                     "content": cont_prompt
                                                 }));
+                                                // Window messages if history grows too long to prevent KV cache bloat and TTFT latency
+                                                if arr.len() > 8 {
+                                                    let first_two = vec![arr[0].clone(), arr[1].clone()];
+                                                    let tail: Vec<serde_json::Value> = arr.iter().rev().take(6).cloned().collect();
+                                                    let mut new_arr = first_two;
+                                                    new_arr.extend(tail.into_iter().rev());
+                                                    *arr = new_arr;
+                                                }
                                             }
                                             eprintln!("[SERVER] 🔄 Agentic Loop: Turn {}/{} complete. Chaining next turn...", turn + 1, actual_loops);
                                         }
