@@ -538,6 +538,47 @@ body {
   transition: all 0.3s ease;
 }
 
+.bubble-content {
+  display: block !important;
+  width: 100%;
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+.bubble-content p {
+  margin: 0 0 10px 0;
+  line-height: 1.6;
+  white-space: normal;
+  word-break: normal;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  margin: 12px 0;
+}
+
+.markdown-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 8px 0;
+}
+
+.markdown-table th,
+.markdown-table td {
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.markdown-table th {
+  background: rgba(255, 255, 255, 0.06);
+  font-weight: 600;
+  color: var(--accent-color, #10a37f);
+}
+
 .status-pulse-dot {
   width: 8px;
   height: 8px;

@@ -2,17 +2,17 @@
   <img src="assets/logo.png" alt="ModelFusion Logo" width="220px" style="border-radius: 12px; box-shadow: 0px 4px 20px rgba(0, 0, 0, 0.35);" />
 </p>
 
-<h1 align="center">ModelFusion • HugOS IDE • HugOS Browser</h1>
+<h1 align="center">ModelFusion CLI • HugOS IDE • HugOS Browser • Universal MCP Server</h1>
 
 <p align="center">
-  <strong>Universal Compound Intelligence Operating System • Autonomous ReST-RL Reasoning • Sub-50ms Kernel Preemption • 2M+ Multi-Modal Model Mesh • AI-Native Chromium Browser</strong>
+  <strong>Universal Compound Intelligence Operating System • Autonomous ReST-RL Reasoning • Sub-50ms Kernel Preemption • 173-Tool MCP Catalog • AI-Native Chromium Browser</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/oyesanyf/ModelFusion/releases/tag/v1.0.0-beta.153"><img src="https://img.shields.io/badge/Release-v1.0.0--beta.153-emerald?style=for-the-badge&logo=github&logoColor=white" alt="Release Build 153" /></a>
+  <a href="https://github.com/oyesanyf/ModelFusion/releases/tag/v1.0.0-beta.205"><img src="https://img.shields.io/badge/Release-v1.0.0--beta.205-emerald?style=for-the-badge&logo=github&logoColor=white" alt="Release Build 205" /></a>
   <img src="https://img.shields.io/badge/HugOS%20Browser-Chromium%20AI%20Runtime-06b6d4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="HugOS Browser" />
-  <img src="https://img.shields.io/badge/Tests-150%2F150%20Passing-brightgreen?style=for-the-badge&logo=rust&logoColor=white" alt="Tests" />
-  <img src="https://img.shields.io/badge/Parity-7--Way%20Bit--Identical-blue?style=for-the-badge&logo=windows&logoColor=white" alt="7-Way Parity" />
+  <img src="https://img.shields.io/badge/MCP%20Tools-173%20Tools%20%7C%2011%20Domains-8b5cf6?style=for-the-badge&logo=anthropic&logoColor=white" alt="MCP 173 Tools" />
+  <img src="https://img.shields.io/badge/Parity-12--Way%20Bit--Identical-blue?style=for-the-badge&logo=windows&logoColor=white" alt="12-Way Parity" />
   <img src="https://img.shields.io/badge/Preemption-%3C8ms%20Job%20Object-purple?style=for-the-badge&logo=windows&logoColor=white" alt="Preemption" />
   <img src="https://img.shields.io/badge/Catalog-2M%2B%20Models%20%7C%2045%20Tasks-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black" alt="HuggingFace Models" />
 </p>
@@ -32,7 +32,7 @@ ModelFusion delivers a unified, zero-cloud compound intelligence ecosystem acros
 | **1. Master CLI** | 🖥️ **Headless & Embedded Engine** | `cli.exe` (174 Flags) | Dynamic runtime RAM hardware sizing, 2M+ model catalog crawler (`--updatedb`), ACDSO 5-objective Pareto AutoML, local Ollama lifecycle manager, and headless automation. |
 | **2. HugOS IDE** | 💻 **AI-Native Development Environment** | `HugOS.exe` (Code-OSS Fork) | Sub-8ms ReST-RL preemption with Windows Job Objects, virtual in-memory diffs (`restrl-diff://`), background auto-revival watchdog, and native chat panel with multi-modal intent classification. |
 | **3. HugOS Browser** | 🌐 **AI-Native Web Operating System** | `hugos-browser.bat` / `--browser` | Chromium CDP integration (port 9222), Set-of-Mark (SoM) visual grounding, 90% token-pruned DOM filter, RFC-4180 table extraction into ACDSO, 12-category settings drawer, and ChatGPT canvas/ergonomic parity. |
-| **4. MCP Server** | 🔌 **Universal Agent Tool Protocol** | `cli.exe --mcp` / `mcp/` | Model Context Protocol JSON-RPC 2.0 stdio server exposing 104 specialized tools, ACDSO Pareto AutoML, 45+ multi-modal tasks, PE forensics, and dynamic Ollama models to Claude Desktop, Cursor, Antigravity, VS Code, and Zed. |
+| **4. Universal MCP Server** | 🔌 **Universal Agent Tool Protocol** | `cli.exe --mcp` / `mcp/` | Model Context Protocol JSON-RPC 2.0 stdio server exposing **173 specialized tools** (including all 161 core agent tools), ACDSO Pareto AutoML, 45+ multi-modal tasks, PE forensics, and dynamic Ollama models to Cursor, VS Code, Windsurf, Claude Desktop, Antigravity, and Zed. |
 
 ```mermaid
 graph TD
@@ -52,7 +52,7 @@ graph TD
     K --> M2[SQLite Catalog: 6,438 Curated / 1.27M+ Full Registry]
     K --> M3[ACDSO 5-Objective Pareto AutoML Engine]
     K --> M4[Multi-Model Consensus Deliberation: --fusion-models]
-    K --> M5[104 Standard MCP Tools: 2024-11-05 Protocol]
+    K --> M5[173 Standard MCP Tools: 2024-11-05 Protocol]
 ```
 
 ### 🚀 Parallel Quickstarts: Choose Your Modality
@@ -107,24 +107,114 @@ cli.exe --browser-extract "https://en.wikipedia.org/wiki/List_of_countries_by_GD
 👉 *Read the full [HugOS Browser Technical Manual](browser/README.md), [Interactive Browser Agent Simulator](docs/screens/hugos_browser_agent_simulator.html), and [Browser Architecture Section](#-hugos-browser-dedicated-modelfusion-ai-web-environment).*
 
 #### 🔌 Pillar 4: ModelFusion Universal MCP Server
-For integrating 104 local AI tools, ACDSO Pareto AutoML, and multi-modal tasks directly into **Claude Desktop**, **Cursor**, **Google Antigravity**, **VS Code**, and **Zed**:
+The ModelFusion Model Context Protocol (MCP) Server bridges all frontier desktop AI assistants and modern IDEs to ModelFusion's local multi-modal engine, ACDSO 5-objective Pareto AutoML, and 2M+ model catalog across **173 specialized tools** (including all 161 core agent tools across 11 functional domains).
+
 ```powershell
-# 1. Run automated test client to verify handshake and 104 MCP tools
+# 1. Verify live stdio JSON-RPC handshake and all 173 MCP tools
 python mcp\client\test_mcp_connection.py
 
-# 2. Launch MCP stdio server directly via launcher script
+# 2. Launch the MCP stdio server directly
 .\mcp\scripts\run_mcp.bat
-
-# 3. Claude Desktop Configuration (%APPDATA%\Claude\claude_desktop_config.json):
-# { "mcpServers": { "modelfusion": { "command": "cmd.exe", "args": ["/c", "d:\\harfile\\ModelFusion\\mcp\\scripts\\run_mcp.bat"] } } }
 ```
-👉 *Read the full [ModelFusion MCP Integration Guide](mcp/README.md) and [Exhaustive 104-Tool Reference Manual](mcp/tools_reference.md).*
+
+##### 🛠️ How to Install & Configure MCP in Any IDE:
+
+* **Cursor IDE** (`.cursor/mcp.json` or Settings → Features → MCP):
+  ```json
+  {
+    "mcpServers": {
+      "modelfusion": {
+        "command": "d:\\harfile\\ModelFusion\\target\\release\\cli.exe",
+        "args": ["--mcp", "--db-path", "d:\\harfile\\ModelFusion\\IDE\\db\\hf_models.db"],
+        "env": { "LOCAL_OLLAMA_ENDPOINT": "http://127.0.0.1:11434" }
+      }
+    }
+  }
+  ```
+
+* **VS Code (with Continue.dev)** (`~/.continue/config.json`):
+  ```json
+  {
+    "experimental": {
+      "modelContextProtocolServers": [
+        {
+          "transport": {
+            "type": "stdio",
+            "command": "d:\\harfile\\ModelFusion\\target\\release\\cli.exe",
+            "args": ["--mcp", "--db-path", "d:\\harfile\\ModelFusion\\IDE\\db\\hf_models.db"]
+          }
+        }
+      ]
+    }
+  }
+  ```
+
+* **VS Code (with Roo Code / Cline)** (`cline_mcp_settings.json`):
+  ```json
+  {
+    "mcpServers": {
+      "modelfusion": {
+        "command": "d:\\harfile\\ModelFusion\\target\\release\\cli.exe",
+        "args": ["--mcp"],
+        "disabled": false,
+        "autoApprove": []
+      }
+    }
+  }
+  ```
+
+* **Windsurf IDE (Codeium Cascade)** (`~/.codeium/windsurf/mcp_config.json`):
+  ```json
+  {
+    "mcpServers": {
+      "modelfusion": {
+        "command": "d:\\harfile\\ModelFusion\\target\\release\\cli.exe",
+        "args": ["--mcp", "--db-path", "d:\\harfile\\ModelFusion\\IDE\\db\\hf_models.db"]
+      }
+    }
+  }
+  ```
+
+* **Claude Desktop** (`%APPDATA%\Claude\claude_desktop_config.json`):
+  ```json
+  {
+    "mcpServers": {
+      "modelfusion": {
+        "command": "d:\\harfile\\ModelFusion\\mcp\\scripts\\run_mcp.bat",
+        "args": []
+      }
+    }
+  }
+  ```
+
+* **Zed Editor** (`~/.config/zed/settings.json`):
+  ```json
+  {
+    "context_servers": {
+      "modelfusion": {
+        "command": {
+          "path": "d:\\harfile\\ModelFusion\\target\\release\\cli.exe",
+          "args": ["--mcp"]
+        }
+      }
+    }
+  }
+  ```
+
+* **Google Antigravity**:
+  Add [`mcp/configs/antigravity_mcp.json`](mcp/configs/antigravity_mcp.json) into your active Antigravity workspace or MCP configuration.
+
+* **HugOS IDE**:
+  **Zero configuration required!** Built-in natively. The IDE background watcher connects to `cli.exe` and exposes all 173 tools via `@agent <tool_name>` in chat, terminal, and the Document Canvas.
+
+👉 *Read the full [ModelFusion MCP Integration Guide](mcp/README.md), explore tools via [Interactive MCP Tools Explorer](docs/screens/mcp_tools_explorer.html), and browse the [Exhaustive 173-Tool Reference Manual](mcp/tools_reference.md).*
 
 ---
 
 ### 📚 Documentation, Interactive Screens & Architecture Reports
-*   [**🔌 ModelFusion Universal MCP Server Guide**](mcp/README.md) — Connects 104 local AI tools, ACDSO AutoML, and 45+ tasks into Claude Desktop, Cursor, Antigravity, VS Code, and Zed.
-*   [**🔌 MCP Exhaustive 104-Tool Reference Manual**](mcp/tools_reference.md) — Comprehensive schemas, parameters, and examples for all 104 tools supported by the ModelFusion MCP Server.
+*   [**🔌 ModelFusion Universal MCP Server Guide**](mcp/README.md) — Connects 173 local AI tools (including all 161 core agent tools), ACDSO AutoML, and 45+ tasks into Cursor, VS Code, Windsurf, Claude Desktop, Antigravity, and Zed.
+*   [**🔌 MCP Exhaustive 173-Tool Reference Manual**](mcp/tools_reference.md) — Comprehensive schemas, parameters, and examples for all 173 tools across 11 functional domains.
+*   [**🔌 Interactive MCP Tools Explorer**](docs/screens/mcp_tools_explorer.html) — Searchable web interface with category filters, schema modal viewer, and one-click JSON-RPC call copy.
 *   [**🌐 HugOS Browser AI Environment**](#-hugos-browser-dedicated-modelfusion-ai-web-environment) — Dedicated Chromium AI browsing environment with Set-of-Mark visual grounding, table extraction into ACDSO, 12-category settings drawer, and ChatGPT canvas fidelity.
 *   [**HugOS Browser Technical Manual**](browser/README.md) — Architecture, CDP protocol, Set-of-Mark token pruning, consensus panel sizing, and extension configuration.
 *   [**Interactive Screens & UI Catalog**](docs/screens/README.md) — Standalone ChatGPT-style simulators, aligned Generative UI widgets, 5-theme switchers, and browser interfaces.
@@ -1326,19 +1416,25 @@ HugOS runs completely private and offline out-of-the-box. If desired, configure 
 └─────────────────────────────────────────────────┘
 ```
 
-### 🔌 MCP Integration
+### 🔌 Universal MCP Integration (173 Tools Across 11 Domains)
 
-HugOS IDE includes a built-in MCP (Model Context Protocol) server exposing tools:
+The ModelFusion MCP Server exposes **173 specialized tools** (including all 161 core agent tools) over standard JSON-RPC 2.0 stdio:
 
-| Tool | Description |
-|:-----|:-----------|
-| `quick_answer` | Fast Q&A via the 1.5b model |
-| `run_modelfusion` | Full orchestration pipeline |
-| `analyze_file` | File analysis with context |
-| `search_models` | Search 2M+ model database |
-| `system_info` | Hardware detection (RAM, GPU, disk) |
+| Category | Tool Count | Core Capabilities | Representative Tools |
+|:---|:---:|:---|:---|
+| **Core Orchestration** | 3 | Dynamic task routing, multi-model consensus, fast direct inference | `execute`, `quick_answer`, `orchestrate` |
+| **Code Intelligence** | 21 | AST parsing, type inference, generation, reviews, refactors, tests | `analyze_file`, `code_gen`, `refactor`, `test_gen`, `ast_parse` |
+| **Autonomous Browser** | 11 | Live Chromium navigation, Set-of-Mark visual grounding, research | `browser`, `markers`, `som`, `summarize`, `search` |
+| **Reasoning & Agents** | 15 | Multi-turn loops, planning, adversarial stress-testing, reflection | `goal`, `plan`, `grill_me`, `boost`, `agentic_loop` |
+| **NLP & Linguistics** | 30 | Classification, extraction, translation, sentiment, semantic search | `nlp`, `text_generation`, `translation`, `ner` |
+| **Computer Vision** | 25 | Object detection, visual QA, OCR, segmentation, image-to-text | `vision`, `object_detection`, `vqa`, `ocr` |
+| **Audio & Speech** | 15 | Whisper ASR, TTS, speaker diarization, voice activity detection | `asr`, `tts`, `vad`, `speaker_diarization` |
+| **Domain Sciences** | 16 | Legal judgment, biomedical NER, financial sentiment, robotics | `medical`, `legal`, `finance`, `robotics` |
+| **AutoML & Tabular** | 15 | 5-objective Pareto AutoML, time-series forecasting, anomaly scans | `acdso`, `datascience`, `timeseries`, `predict` |
+| **CyberSecurity** | 16 | PE header forensics, malware analysis, YARA, secrets audit | `security`, `pe`, `vuln_scan`, `malware_analysis` |
+| **System Lifecycle** | 6 | ReST-RL daemon management, database crawler, hardware telemetry | `rest_rl`, `update`, `updatedb`, `sys_info` |
 
-Access via `cli.exe --mcp` or through any MCP-compatible client.
+Access via `cli.exe --mcp` or through any MCP-compatible client (**Cursor**, **VS Code**, **Windsurf**, **Claude Desktop**, **Zed**, **Google Antigravity**).
 
 ---
 
