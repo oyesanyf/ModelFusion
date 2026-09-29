@@ -4642,7 +4642,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
     if (options && options.taskType) {
       const t = String(options.taskType).toLowerCase();
       if (['code', 'math', 'pe_binary', 'security', 'binary', 'decompilation', 'analysis', 'dockerfile', 'ast'].includes(t)) return true;
-      if (['creative', 'prose', 'humanize', 'qa', 'story', 'book', 'essay'].includes(t)) return false;
+      if (['creative', 'prose', 'humanize', 'qa', 'story', 'book', 'essay', 'translation', 'translate', 'style-transfer', 'translate-humanize'].includes(t)) return false;
     }
     const text = `${prompt || ''} ${sysPrompt || ''}`.toLowerCase();
     if (/^\s*(@agent\s+(code|code-gen|infill|code-review|refactor|test-gen|graph-index|rest-rl|ast-parse|pe|sec|security|exploit|decompile|yara|dockerfile|code-translate)|\/(code|refactor|test))\b/i.test(prompt)) {
@@ -4768,6 +4768,15 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
     if (options && options.panel && options.panel.id === 'humanize') {
       authorDisplayTitle = 'HugOS Humanizer';
       authorDisplaySub = `(✍️ Anti-AI Stylometry • High Burstiness • ${modelToUse})`;
+    } else if (options && options.panel && options.panel.id === 'translate') {
+      authorDisplayTitle = 'HugOS Translator';
+      authorDisplaySub = `(🌐 Multilingual Translation • ${modelToUse})`;
+    } else if (options && options.panel && options.panel.id === 'translate-humanize') {
+      authorDisplayTitle = 'HugOS Native Translator';
+      authorDisplaySub = `(🗣️ Native Humanized Translation • ${modelToUse})`;
+    } else if (options && options.panel && options.panel.id === 'style-transfer') {
+      authorDisplayTitle = 'HugOS Style Transfer';
+      authorDisplaySub = `(🎨 Adaptive Stylometry • ${modelToUse})`;
     } else if (options && options.panel && options.panel.id === 'reasoning') {
       authorDisplayTitle = 'HugOS AI (Boost)';
       authorDisplaySub = `(🚀 Deep Reasoning Boost • ${modelToUse})`;
@@ -4782,6 +4791,12 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
       }
     }
 
+    const authorIcon = (options && options.panel && options.panel.id === 'humanize') ? '✍️'
+      : (options && options.panel && options.panel.id === 'translate') ? '🌐'
+      : (options && options.panel && options.panel.id === 'translate-humanize') ? '🗣️'
+      : (options && options.panel && options.panel.id === 'style-transfer') ? '🎨'
+      : (isFusionMode ? '✨' : '🌐');
+
     // Hide welcome screen
     if (chatWelcome) chatWelcome.classList.add('hidden');
 
@@ -4794,7 +4809,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
       assistantBubble.className = 'msg-bubble assistant-bubble streaming';
       assistantBubble.innerHTML = `
         <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
-          <span>${isFusionMode ? '✨' : '🌐'}</span> <span>${authorDisplayTitle}</span>
+          <span>${authorIcon}</span> <span>${authorDisplayTitle}</span>
           <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">${authorDisplaySub}</span>
         </div>
         <div class="bubble-content" style="color: var(--text-muted); font-style: italic;">
@@ -6935,8 +6950,13 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     }
 
     // 4.05 Anti-AI Stylometry Humanize Directive (@agent humanize, /humanize, @humanize)
-    if (lower === '@agent humanize' || lower.startsWith('@agent humanize ') || lower === '/humanize' || lower.startsWith('/humanize ') || lower === '@humanize' || lower.startsWith('@humanize ')) {
-      let textToHumanize = cmd.replace(/^(@agent\s+humanize|\/humanize|@humanize)\s*/i, '').trim();
+    if (
+      lower === '@agent humanize' || lower.startsWith('@agent humanize ') ||
+      lower === '/humanize' || lower.startsWith('/humanize ') ||
+      lower === '@humanize' || lower.startsWith('@humanize ') ||
+      /^(@agent\s+humanize|@humanize|\/humanize)(\s*[:\s]|$)/i.test(cmd)
+    ) {
+      let textToHumanize = cmd.replace(/^(@agent\s+humanize|\/humanize|@humanize)(?:\s*[:]\s*|\s*)/i, '').trim();
 
       // Check if text was in attachments if query was empty
       if (!textToHumanize && currentAttachments.length > 0) {
@@ -6945,20 +6965,20 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 
       // If still empty, check preceding assistant or user message
       if (!textToHumanize && activeSession && Array.isArray(activeSession.messages)) {
-        const prevMsg = activeSession.messages.slice(0, -1).reverse().find(m => m.content && !m.content.startsWith('@agent humanize') && !m.content.startsWith('/humanize'));
+        const prevMsg = activeSession.messages.slice(0, -1).reverse().find(m => m.content && !/^(@agent\s+humanize|\/humanize|@humanize)\b/i.test(m.content));
         if (prevMsg) {
           textToHumanize = prevMsg.content;
         }
       }
 
       if (!textToHumanize) {
-        termLog('✍️ Humanizer requires text to rewrite. Please provide text or attach a document.', 'warn');
+        termLog('✍️ Please provide or paste the text you would like to humanize.', 'warn');
         if (cliPromptInput) cliPromptInput.placeholder = 'Paste or type text to humanize here...';
         if (cliPromptInputPinned) cliPromptInputPinned.placeholder = 'Paste or type text to humanize here...';
         return;
       }
 
-      termLog(`✍️ [HUMANIZER] Rewriting passage with high burstiness & natural human stylometry...`, 'info');
+      termLog(`✍️ [HUMANIZER] Rewriting text with high burstiness & natural human stylometry...`, 'info');
 
       const humanizePrompt = `Rewrite the following passage into natural, organic human prose:\n\n${textToHumanize}`;
       const humanizePanel = {
@@ -6970,9 +6990,206 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         taskType: 'humanize',
         temperature: 0.85,
         top_p: 0.95,
+        min_p: 0.05,
+        repeat_penalty: 1.15,
         presence_penalty: 0.3,
         frequency_penalty: 0.4,
         panel: humanizePanel
+      });
+
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
+
+    // 4.06 Native Speaker Translation & Humanize Directive (@agent translate-humanize, @agent humanize-translate, /translate-humanize, @trans-human)
+    if (
+      /^(@agent\s+translate-humanize|@translate-humanize|\/translate-humanize|@trans-human|\/trans-human|@agent\s+humanize-translate|@humanize-translate|\/humanize-translate)(\s*[:\s]|$)/i.test(cmd)
+    ) {
+      let rest = cmd.replace(/^(@agent\s+translate-humanize|@translate-humanize|\/translate-humanize|@trans-human|\/trans-human|@agent\s+humanize-translate|@humanize-translate|\/humanize-translate)(?:\s*[:]\s*|\s*)/i, '').trim();
+      let targetLang = 'English';
+      let textToTranslate = '';
+
+      // Parse target language: e.g. "to French: hello world", "into Spanish - hello", "to German hello", "French: hello"
+      const toMatch = rest.match(/^(?:to|into)\s+([A-Za-z\s]+?)(?:[:,\-]\s*|\s+|$)(.*)$/is);
+      if (toMatch) {
+        targetLang = toMatch[1].trim() || 'English';
+        textToTranslate = (toMatch[2] || '').trim();
+      } else {
+        const colonMatch = rest.match(/^([A-Za-z]+)\s*[:]\s*(.*)$/is);
+        if (colonMatch && !['http', 'https', 'file'].includes(colonMatch[1].toLowerCase())) {
+          targetLang = colonMatch[1].trim();
+          textToTranslate = (colonMatch[2] || '').trim();
+        } else {
+          textToTranslate = rest;
+        }
+      }
+
+      // Check attachments if text is empty
+      if (!textToTranslate && currentAttachments.length > 0) {
+        textToTranslate = currentAttachments.map(f => f.content || '').join('\n\n').trim();
+      }
+
+      // Check prior messages if text is empty
+      if (!textToTranslate && activeSession && Array.isArray(activeSession.messages)) {
+        const prevMsg = activeSession.messages.slice(0, -1).reverse().find(m => m.content && !/^(@agent\s+(translate|humanize)|@translate|@humanize|@trans-human|\/translate|\/humanize)/i.test(m.content));
+        if (prevMsg) {
+          textToTranslate = prevMsg.content;
+        }
+      }
+
+      if (!textToTranslate) {
+        termLog('🗣️ Please provide or paste the text you would like to translate and humanize.', 'warn');
+        if (cliPromptInput) cliPromptInput.placeholder = `Paste or type text to translate into ${targetLang} and humanize...`;
+        if (cliPromptInputPinned) cliPromptInputPinned.placeholder = `Paste or type text to translate into ${targetLang} and humanize...`;
+        return;
+      }
+
+      termLog(`🗣️ [TRANSLATE-HUMANIZE] Translating to ${targetLang} and applying native-speaker humanizing...`, 'info');
+
+      const transHumanSysPrompt = "You are a bilingual native-speaker editor and translator. Translate the given text into the target language and humanize it so it reads with authentic, native cadence, natural idiomatic expressions, varied sentence structures, and organic human rhythm. Eliminate all stiffness, awkward calques, and literal translation artifacts while preserving the core factual intent. Do not add any introductory explanations, meta-commentary, or translator notes. Return only the polished native text.";
+      const transHumanPrompt = `Translate the following text into natural, idiomatic ${targetLang} as spoken and written by an authentic native speaker:\n\n${textToTranslate}`;
+
+      await streamAiChat(transHumanPrompt, transHumanSysPrompt, {
+        taskType: 'humanize',
+        temperature: 0.8,
+        top_p: 0.95,
+        min_p: 0.05,
+        repeat_penalty: 1.15,
+        presence_penalty: 0.25,
+        frequency_penalty: 0.3,
+        panel: {
+          id: 'translate-humanize',
+          name: `Native Translation & Humanize (${targetLang})`
+        }
+      });
+
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
+
+    // 4.07 Multilingual Translation Directive (@agent translate, /translate, @translate, @agent translation)
+    if (
+      (/^(@agent\s+translate\b|@translate\b|\/translate\b|@agent\s+translation\b|@translation\b|\/translation\b)/i.test(cmd)) &&
+      !/^(@agent\s+translate-humanize|@translate-humanize|\/translate-humanize)/i.test(cmd)
+    ) {
+      let rest = cmd.replace(/^(@agent\s+translate|@agent\s+translation|\/translate|\/translation|@translate|@translation)(?:\s*[:]\s*|\s*)/i, '').trim();
+      let targetLang = 'English';
+      let textToTranslate = '';
+
+      // Parse target language: e.g. "to Spanish: hello world", "into German - hello", "to French hello", "Spanish: hello"
+      const toMatch = rest.match(/^(?:to|into)\s+([A-Za-z\s]+?)(?:[:,\-]\s*|\s+|$)(.*)$/is);
+      if (toMatch) {
+        targetLang = toMatch[1].trim() || 'English';
+        textToTranslate = (toMatch[2] || '').trim();
+      } else {
+        const colonMatch = rest.match(/^([A-Za-z]+)\s*[:]\s*(.*)$/is);
+        if (colonMatch && !['http', 'https', 'file'].includes(colonMatch[1].toLowerCase())) {
+          targetLang = colonMatch[1].trim();
+          textToTranslate = (colonMatch[2] || '').trim();
+        } else {
+          textToTranslate = rest;
+        }
+      }
+
+      // Check attachments if text is empty
+      if (!textToTranslate && currentAttachments.length > 0) {
+        textToTranslate = currentAttachments.map(f => f.content || '').join('\n\n').trim();
+      }
+
+      // Check prior messages if text is empty
+      if (!textToTranslate && activeSession && Array.isArray(activeSession.messages)) {
+        const prevMsg = activeSession.messages.slice(0, -1).reverse().find(m => m.content && !/^(@agent\s+trans|@trans|\/trans)/i.test(m.content));
+        if (prevMsg) {
+          textToTranslate = prevMsg.content;
+        }
+      }
+
+      if (!textToTranslate) {
+        termLog('🌐 Please provide or paste the text you would like to translate.', 'warn');
+        if (cliPromptInput) cliPromptInput.placeholder = `Paste or type text to translate into ${targetLang}...`;
+        if (cliPromptInputPinned) cliPromptInputPinned.placeholder = `Paste or type text to translate into ${targetLang}...`;
+        return;
+      }
+
+      termLog(`🌐 [TRANSLATE] Translating text to ${targetLang}...`, 'info');
+
+      const translateSysPrompt = "You are an expert multilingual translator. Translate the given text accurately, idiomatically, and fluently into the target language. Preserve the original meaning, tone, nuances, and formatting. Do not add introductory remarks, explanations, or meta-commentary. Output only the translated text.";
+      const translatePrompt = `Translate the following text into ${targetLang}:\n\n${textToTranslate}`;
+
+      await streamAiChat(translatePrompt, translateSysPrompt, {
+        taskType: 'translation',
+        temperature: 0.3,
+        top_p: 0.9,
+        panel: {
+          id: 'translate',
+          name: `Multilingual Translator (${targetLang})`
+        }
+      });
+
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
+
+    // 4.08 Writing Style Transfer Directive (@agent style-transfer, /style-transfer, @style, @agent style)
+    if (
+      /^(@agent\s+style-transfer|@style-transfer|\/style-transfer|@agent\s+style\b|@style\b|\/style\b)/i.test(cmd)
+    ) {
+      let rest = cmd.replace(/^(@agent\s+style-transfer|@style-transfer|@agent\s+style|\/style-transfer|\/style|@style)(?:\s*[:]\s*|\s*)/i, '').trim();
+      let targetStyle = 'conversational';
+      let textToStyle = '';
+
+      // Parse target style: e.g. "to executive: our revenue grew", "into academic - we tested", "to casual hello"
+      const toMatch = rest.match(/^(?:to|into)\s+([A-Za-z\-\s]+?)(?:[:,\-]\s*|\s+|$)(.*)$/is);
+      if (toMatch) {
+        targetStyle = toMatch[1].trim() || 'conversational';
+        textToStyle = (toMatch[2] || '').trim();
+      } else {
+        const colonMatch = rest.match(/^([A-Za-z\-]+)\s*[:]\s*(.*)$/is);
+        if (colonMatch && !['http', 'https', 'file'].includes(colonMatch[1].toLowerCase())) {
+          targetStyle = colonMatch[1].trim();
+          textToStyle = (colonMatch[2] || '').trim();
+        } else {
+          textToStyle = rest;
+        }
+      }
+
+      // Check attachments if text is empty
+      if (!textToStyle && currentAttachments.length > 0) {
+        textToStyle = currentAttachments.map(f => f.content || '').join('\n\n').trim();
+      }
+
+      // Check prior messages if text is empty
+      if (!textToStyle && activeSession && Array.isArray(activeSession.messages)) {
+        const prevMsg = activeSession.messages.slice(0, -1).reverse().find(m => m.content && !/^(@agent\s+style|@style|\/style)/i.test(m.content));
+        if (prevMsg) {
+          textToStyle = prevMsg.content;
+        }
+      }
+
+      if (!textToStyle) {
+        termLog('🎨 Please provide or paste the text you would like to transfer style for.', 'warn');
+        if (cliPromptInput) cliPromptInput.placeholder = `Paste or type text to convert into ${targetStyle} style...`;
+        if (cliPromptInputPinned) cliPromptInputPinned.placeholder = `Paste or type text to convert into ${targetStyle} style...`;
+        return;
+      }
+
+      termLog(`🎨 [STYLE-TRANSFER] Adapting writing style to ${targetStyle}...`, 'info');
+
+      const styleSysPrompt = "You are a master stylistic editor. Rewrite the given text to match the requested style while fully preserving the underlying meaning and information. Employ natural vocabulary, authentic rhetorical patterns, and characteristic tone for that style without sounding artificial or exaggerated. Do not add meta-commentary, justifications, or preamble. Return only the stylized text.";
+      const stylePrompt = `Rewrite the following text in an authentic ${targetStyle} style:\n\n${textToStyle}`;
+
+      await streamAiChat(stylePrompt, styleSysPrompt, {
+        taskType: 'humanize',
+        temperature: 0.8,
+        top_p: 0.95,
+        min_p: 0.05,
+        repeat_penalty: 1.15,
+        presence_penalty: 0.3,
+        frequency_penalty: 0.35,
+        panel: {
+          id: 'style-transfer',
+          name: `Writing Style Transfer (${targetStyle})`
+        }
       });
 
       if (currentAttachments.length > 0) clearAllAttachments();
@@ -7435,6 +7652,36 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     });
   }
 
+  const sidebarTranslationHumanize = document.getElementById('sidebar-translation-humanize');
+  if (sidebarTranslationHumanize) {
+    sidebarTranslationHumanize.addEventListener('click', () => {
+      if (sidebarToolsAccordion && sidebarToolsAccordion.classList.contains('collapsed')) {
+        sidebarToolsAccordion.classList.remove('collapsed');
+        const chevron = document.getElementById('tools-accordion-chevron');
+        if (chevron) chevron.textContent = '▾';
+      }
+      const transCatHeader = document.querySelector('.tool-category-header[data-cat="translation"]');
+      if (transCatHeader) {
+        const content = transCatHeader.nextElementSibling;
+        const chevron = transCatHeader.querySelector('.cat-chevron');
+        if (content && content.classList.contains('collapsed')) {
+          content.classList.remove('collapsed');
+          if (chevron) chevron.textContent = '▾';
+        }
+      }
+      const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+        ? cliPromptInputPinned
+        : cliPromptInput;
+      if (activeInput) {
+        activeInput.value = '@agent translate-humanize ';
+        activeInput.focus();
+        activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
+        activeInput.style.height = 'auto';
+        activeInput.style.height = Math.min(activeInput.scrollHeight, 160) + 'px';
+      }
+    });
+  }
+
   // -------------------------------------------------------------
   // Sidebar Tools & Directives Accordion (All 161+ Tools)
   // -------------------------------------------------------------
@@ -7732,6 +7979,8 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     { cmd: '@agent nlp ', icon: '📝', label: 'NLP Pipeline', desc: 'Sentiment, NER, translation, and text classification' },
     { cmd: '@agent text-generation ', icon: '✍️', label: 'Text Generation', desc: 'Open-ended causal text completion and synthesis' },
     { cmd: '@agent text2text ', icon: '🔄', label: 'Text-to-Text', desc: 'Seq2Seq transformation, rewriting, and standardization' },
+    { cmd: '@agent translate ', icon: '🌐', label: 'Multilingual Translation', desc: 'Accurate and idiomatic translation across 200+ languages' },
+    { cmd: '@agent translate-humanize ', icon: '🗣️', label: 'Native Translation & Humanize', desc: 'Translate into target language with native-speaker cadence & authentic flow' },
     { cmd: '@agent translation ', icon: '🌐', label: 'Translation', desc: 'Neural machine translation across 200+ languages' },
     { cmd: '@agent question-answering ', icon: '💬', label: 'Question Answering', desc: 'Extractive and generative reading comprehension' },
     { cmd: '@agent table-qa ', icon: '📊', label: 'Table QA', desc: 'Direct natural language querying over tabular structures' },
@@ -7746,6 +7995,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     { cmd: '@agent summarize-text ', icon: '📜', label: 'Text Summarize', desc: 'Abstractive and extractive multi-paragraph summarization' },
     { cmd: '@agent grammar ', icon: '✍️', label: 'Grammar Check', desc: 'Orthographic, syntactic, and stylistic error correction' },
     { cmd: '@agent humanize ', icon: '✍️', label: 'Humanize Prose', desc: 'Anti-AI stylometry rewriting for high burstiness & natural tone' },
+    { cmd: '@agent style-transfer ', icon: '🎨', label: 'Writing Style Transfer', desc: 'Transfer tone and style to conversational, executive, academic, or journalistic' },
     { cmd: '@agent paraphrase ', icon: '🔁', label: 'Paraphraser', desc: 'Alternative phrasing preserving core semantic intent' },
     { cmd: '@agent ner ', icon: '🏷️', label: 'Named Entity Rec', desc: 'Extract names, locations, dates, and organizations' },
     { cmd: '@agent keywords ', icon: '🔑', label: 'Keyword Extractor', desc: 'KeyBERT and TF-IDF keyphrase significance extraction' },
