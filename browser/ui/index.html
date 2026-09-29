@@ -137,6 +137,10 @@
                   <span class="tool-btn-left"><span class="tool-icon">🔄</span><span class="tool-label">Self-Correcting Task Loop</span></span>
                   <span class="tool-tag">@loop</span>
                 </button>
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_humanize" data-category="agent" data-cmd="@agent humanize " data-original-title="Anti-AI Stylometry Prose Humanizer" title="Anti-AI Stylometry Prose Humanizer">
+                  <span class="tool-btn-left"><span class="tool-icon">✍️</span><span class="tool-label">Humanize Prose (Anti-AI)</span></span>
+                  <span class="tool-tag">@humanize</span>
+                </button>
               </div>
             </div>
 
@@ -1052,12 +1056,25 @@
 
             <div class="setting-item">
               <div class="setting-info">
+                <label class="setting-label">Natural Human Voice (Anti-AI Stylometry)</label>
+                <span class="setting-desc">Injects dynamic burstiness, varied cadence, and bans robotic AI clichés for undetectable natural human prose.</span>
+              </div>
+              <div class="setting-control">
+                <label class="setting-toggle-label">
+                  <input type="checkbox" id="setting-natural-voice" checked>
+                  <span class="toggle-text">Natural Human Voice Active</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
                 <label for="setting-temperature" class="setting-label">Sampling Temperature</label>
-                <span class="setting-desc">Lower values (0.1–0.3) provide analytical determinism; higher values increase variety.</span>
+                <span class="setting-desc">Natural human default (0.75) promotes burstiness &amp; flow; code tasks auto-scale to precision (0.20).</span>
               </div>
               <div class="setting-control slider-control">
-                <input type="range" id="setting-temperature" class="setting-slider" min="0.0" max="1.0" step="0.05" value="0.2">
-                <span class="slider-val" id="val-temperature">0.20</span>
+                <input type="range" id="setting-temperature" class="setting-slider" min="0.0" max="1.0" step="0.05" value="0.75">
+                <span class="slider-val" id="val-temperature">0.75</span>
               </div>
             </div>
 

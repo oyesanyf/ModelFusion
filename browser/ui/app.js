@@ -122,7 +122,8 @@ document.addEventListener('DOMContentLoaded', () => {
     audioModel: 'whisper-base',
     fusionModels: 0,
     multimodalAuto: true,
-    temperature: 0.2,
+    naturalVoice: true,
+    temperature: 0.75,
     maxTokens: 8192,
     stream: true,
     sizingStrategy: 'runtime_ram',
@@ -1147,6 +1148,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setVal('setting-audio-model', s.audioModel || DEFAULT_SETTINGS.audioModel);
     setVal('setting-fusion-models', s.fusionModels !== undefined ? s.fusionModels : DEFAULT_SETTINGS.fusionModels);
     setCheck('setting-multimodal-auto', s.multimodalAuto !== false);
+    setCheck('setting-natural-voice', s.naturalVoice !== false);
     setVal('setting-temperature', s.temperature);
     if (valTemperature) {
       valTemperature.textContent = parseFloat(s.temperature).toFixed(2);
@@ -1231,6 +1233,7 @@ document.addEventListener('DOMContentLoaded', () => {
       audioModel: getVal('setting-audio-model', DEFAULT_SETTINGS.audioModel).trim(),
       fusionModels: getNum('setting-fusion-models', DEFAULT_SETTINGS.fusionModels),
       multimodalAuto: getCheck('setting-multimodal-auto', DEFAULT_SETTINGS.multimodalAuto),
+      naturalVoice: getCheck('setting-natural-voice', DEFAULT_SETTINGS.naturalVoice),
       temperature: parseFloat(getVal('setting-temperature', DEFAULT_SETTINGS.temperature)),
       maxTokens: getNum('setting-max-tokens', DEFAULT_SETTINGS.maxTokens),
       agenticLoopEnabled: getCheck('setting-agentic-loop-enable', DEFAULT_SETTINGS.agenticLoopEnabled),
@@ -4619,8 +4622,44 @@ document.addEventListener('DOMContentLoaded', () => {
     termLog('⏹ Response generation stopped by user.', 'warn');
   }
 
+  // ---------------------------------------------------------------------------
+  // Natural Human Stylometric Engine Directives & Anti-AI Detection Rules
+  // ---------------------------------------------------------------------------
+  const NATURAL_HUMAN_PROSE_DIRECTIVE = `
+Write in a natural, authentic, human voice. Strictly adhere to these human stylometry rules:
+- High Burstiness: Radically vary sentence lengths and rhythms. Mix short, punchy sentences with longer, layered, descriptive compound clauses. Never write multiple sentences of uniform length.
+- Eliminate AI Clichés: NEVER use synthetic AI buzzwords or filler words: "delve", "tapestry", "beacon", "testament", "pivotal", "vibrant", "nestled", "whimsical", "crucial", "multifaceted", "paramount", "landscape", "realm", "bustling", "foster", "harness".
+- Eliminate Formulaic Transitions: NEVER use robotic transition bridges: "Furthermore", "Moreover", "In conclusion", "In summary", "It is important to remember", "As we have seen", "First and foremost", "Needless to say". Use natural conversational shifts.
+- No Throat-Clearing or Preachiness: Jump directly into the answer. Do not start with generic pleasantries or restate the question. Do not end with a generic moralizing summary paragraph.
+- Organic Cadence: Use idiomatic English, active voice, concrete sensory details, and genuine emotional resonance.
+`.trim();
+
+  const NATURAL_HUMAN_EDITOR_INSTRUCTION = "You are an expert editor who rewrites stiff, synthetic, or overly robotic text into natural, fluid human prose. Write in continuous, organic paragraphs using conversational syntax. Vary your sentence lengths deliberately to maintain rhythm. Avoid corporate buzzwords, formulaic transition words, unnecessary bullet points, and decorative adjectives. Do not add meta commentary, apologies, or introductory remarks. Return only the revised text.";
+
+  const DEFAULT_HUMAN_SYSTEM_PROMPT = `You are HugOS Browser AI, an insightful, authentic human-voice assistant built into the ModelFusion browser environment. Provide engaging, vivid, helpful answers that read like natural human thought.\n\n${NATURAL_HUMAN_PROSE_DIRECTIVE}`;
+
+  function isCodeOrMathTask(prompt, sysPrompt, options = {}) {
+    if (options && options.taskType) {
+      const t = String(options.taskType).toLowerCase();
+      if (['code', 'math', 'pe_binary', 'security', 'binary', 'decompilation', 'analysis', 'dockerfile', 'ast'].includes(t)) return true;
+      if (['creative', 'prose', 'humanize', 'qa', 'story', 'book', 'essay'].includes(t)) return false;
+    }
+    const text = `${prompt || ''} ${sysPrompt || ''}`.toLowerCase();
+    if (/^\s*(@agent\s+(code|code-gen|infill|code-review|refactor|test-gen|graph-index|rest-rl|ast-parse|pe|sec|security|exploit|decompile|yara|dockerfile|code-translate)|\/(code|refactor|test))\b/i.test(prompt)) {
+      return true;
+    }
+    const codePatterns = [
+      /\b(write|generate|refactor|debug|fix)\s+(a\s+|some\s+)?([a-z0-9_+-]+\s+)?(function|script|algorithm|code|program|query|regex|regexes|sql|unit\s+test|dockerfile)\b/i,
+      /\b(solve|calculate|compute|derivative|integral|equation|matrix|algebra|calculus)\b/i,
+      /```(python|javascript|typescript|rust|c\+\+|cpp|c|go|java|html|css|sql|bash|sh|ps1)/i,
+      /\b(impl\s+|def\s+|fn\s+|function\s*\(|class\s+\w+|public\s+static\s+void)\b/i,
+      /\b(reverse\s+engineer|pe\s+binary|disassembl|decompil|vulnerability\s+audit)\b/i
+    ];
+    return codePatterns.some(regex => regex.test(text));
+  }
+
   // Real Streaming AI Chat via local Ollama endpoint with fallback to IPC
-  async function streamAiChat(userPrompt, systemPrompt = 'You are HugOS Browser AI, an expert, accurate assistant built into the ModelFusion browser environment. Provide clear, direct, concise, and helpful answers.', options = {}) {
+  async function streamAiChat(userPrompt, systemPrompt = DEFAULT_HUMAN_SYSTEM_PROMPT, options = {}) {
     if (!currentAbortController || currentAbortController.signal.aborted) {
       currentAbortController = new AbortController();
     }
@@ -4641,7 +4680,29 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const ollamaUrl = (currentSettings.ollamaUrl || 'http://127.0.0.1:11434').trim().replace(/\/+$/, '');
     const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
-    const tempToUse = typeof currentSettings.temperature === 'number' ? currentSettings.temperature : 0.2;
+
+    const isCodeOrMath = isCodeOrMathTask(userPrompt, systemPrompt, options);
+
+    let tempToUse;
+    if (options && typeof options.temperature === 'number') {
+      tempToUse = options.temperature;
+    } else if (isCodeOrMath) {
+      tempToUse = 0.2; // Precision temp for code/math
+    } else {
+      tempToUse = typeof currentSettings.temperature === 'number' ? currentSettings.temperature : 0.75;
+    }
+
+    const topPToUse = (options && typeof options.top_p === 'number') ? options.top_p : 0.9;
+    const minPToUse = (options && typeof options.min_p === 'number') ? options.min_p : 0.05;
+    const repeatPenaltyToUse = (options && typeof options.repeat_penalty === 'number') ? options.repeat_penalty : 1.15;
+    const presencePenaltyToUse = (options && typeof options.presence_penalty === 'number') ? options.presence_penalty : 0.1;
+    const frequencyPenaltyToUse = (options && typeof options.frequency_penalty === 'number') ? options.frequency_penalty : 0.1;
+
+    let effectiveSysPrompt = systemPrompt;
+    if (currentSettings.naturalVoice !== false && !isCodeOrMath && !effectiveSysPrompt.includes('High Burstiness') && !effectiveSysPrompt.includes('expert editor who rewrites')) {
+      effectiveSysPrompt = `${effectiveSysPrompt}\n\n${NATURAL_HUMAN_PROSE_DIRECTIVE}`;
+    }
+
     const maxTokensToUse = (options && typeof options.maxTokens === 'number' && options.maxTokens > 0)
       ? options.maxTokens
       : (typeof currentSettings.maxTokens === 'number' && currentSettings.maxTokens > 0 ? currentSettings.maxTokens : 8192);
@@ -4704,7 +4765,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let authorDisplayTitle = 'HugOS AI';
     let authorDisplaySub = `(${modelToUse}${hasImages ? ' • Vision' : ''})`;
 
-    if (options && options.panel && options.panel.id === 'reasoning') {
+    if (options && options.panel && options.panel.id === 'humanize') {
+      authorDisplayTitle = 'HugOS Humanizer';
+      authorDisplaySub = `(✍️ Anti-AI Stylometry • High Burstiness • ${modelToUse})`;
+    } else if (options && options.panel && options.panel.id === 'reasoning') {
       authorDisplayTitle = 'HugOS AI (Boost)';
       authorDisplaySub = `(🚀 Deep Reasoning Boost • ${modelToUse})`;
     } else if (isFusionMode) {
@@ -4819,7 +4883,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const conversationMessages = [
-        { role: 'system', content: systemPrompt }
+        { role: 'system', content: effectiveSysPrompt }
       ];
 
       // Add multi-turn context from current active session
@@ -4857,15 +4921,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const currentTurnChunk = isAgenticLoop ? Math.min(chunkSize, targetTokens) : maxTokensToUse;
+        const currentOllamaOptions = {
+          temperature: tempToUse,
+          num_predict: currentTurnChunk,
+          num_ctx: numCtxToUse,
+          top_p: topPToUse,
+          min_p: minPToUse,
+          repeat_penalty: repeatPenaltyToUse,
+          presence_penalty: presencePenaltyToUse,
+          frequency_penalty: frequencyPenaltyToUse
+        };
         const reqBodyStr = JSON.stringify({
           model: resolvedOllamaModel,
           messages: activeMessages,
           stream: streamMode,
-          options: {
-            temperature: tempToUse,
-            num_predict: currentTurnChunk,
-            num_ctx: numCtxToUse
-          }
+          options: currentOllamaOptions
         });
 
         let res = null;
@@ -4879,11 +4949,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 model: resolvedOllamaModel,
                 messages: activeMessages,
                 stream: streamMode,
-                options: {
-                  temperature: tempToUse,
-                  num_predict: currentTurnChunk,
-                  num_ctx: numCtxToUse
-                }
+                options: currentOllamaOptions
               }),
               signal: currentAbortController ? currentAbortController.signal : undefined
             });
@@ -4941,11 +5007,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     model: resolvedOllamaModel,
                     messages: activeMessages,
                     stream: streamMode,
-                    options: {
-                      temperature: tempToUse,
-                      num_predict: currentTurnChunk,
-                      num_ctx: numCtxToUse
-                    }
+                    options: currentOllamaOptions
                   }),
                   signal: currentAbortController ? currentAbortController.signal : undefined
                 });
@@ -5022,11 +5084,7 @@ document.addEventListener('DOMContentLoaded', () => {
                       model: resolvedOllamaModel,
                       messages: activeMessages,
                       stream: streamMode,
-                      options: {
-                        temperature: tempToUse,
-                        num_predict: currentTurnChunk,
-                        num_ctx: numCtxToUse
-                      }
+                      options: currentOllamaOptions
                     }),
                     signal: currentAbortController ? currentAbortController.signal : undefined
                   });
@@ -6876,6 +6934,51 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       return;
     }
 
+    // 4.05 Anti-AI Stylometry Humanize Directive (@agent humanize, /humanize, @humanize)
+    if (lower === '@agent humanize' || lower.startsWith('@agent humanize ') || lower === '/humanize' || lower.startsWith('/humanize ') || lower === '@humanize' || lower.startsWith('@humanize ')) {
+      let textToHumanize = cmd.replace(/^(@agent\s+humanize|\/humanize|@humanize)\s*/i, '').trim();
+
+      // Check if text was in attachments if query was empty
+      if (!textToHumanize && currentAttachments.length > 0) {
+        textToHumanize = currentAttachments.map(f => f.content || '').join('\n\n').trim();
+      }
+
+      // If still empty, check preceding assistant or user message
+      if (!textToHumanize && activeSession && Array.isArray(activeSession.messages)) {
+        const prevMsg = activeSession.messages.slice(0, -1).reverse().find(m => m.content && !m.content.startsWith('@agent humanize') && !m.content.startsWith('/humanize'));
+        if (prevMsg) {
+          textToHumanize = prevMsg.content;
+        }
+      }
+
+      if (!textToHumanize) {
+        termLog('✍️ Humanizer requires text to rewrite. Please provide text or attach a document.', 'warn');
+        if (cliPromptInput) cliPromptInput.placeholder = 'Paste or type text to humanize here...';
+        if (cliPromptInputPinned) cliPromptInputPinned.placeholder = 'Paste or type text to humanize here...';
+        return;
+      }
+
+      termLog(`✍️ [HUMANIZER] Rewriting passage with high burstiness & natural human stylometry...`, 'info');
+
+      const humanizePrompt = `Rewrite the following passage into natural, organic human prose:\n\n${textToHumanize}`;
+      const humanizePanel = {
+        id: 'humanize',
+        name: 'Anti-AI Stylometry Humanizer'
+      };
+
+      await streamAiChat(humanizePrompt, NATURAL_HUMAN_EDITOR_INSTRUCTION, {
+        taskType: 'humanize',
+        temperature: 0.85,
+        top_p: 0.95,
+        presence_penalty: 0.3,
+        frequency_penalty: 0.4,
+        panel: humanizePanel
+      });
+
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
+
     // 4.1 Deep Thinking Boost Directive (@agent boost, /boost, @boost)
     if (lower === '@agent boost' || lower.startsWith('@agent boost ') || lower === '/boost' || lower.startsWith('/boost ') || lower === '@boost' || lower.startsWith('@boost ')) {
       const boostQuery = cmd.replace(/^(@agent\s+boost|\/boost|@boost)\s*/i, '').trim();
@@ -7642,6 +7745,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     { cmd: '@agent sentiment ', icon: '❤️', label: 'Sentiment Analysis', desc: 'Positive, negative, neutral, and emotional intensity' },
     { cmd: '@agent summarize-text ', icon: '📜', label: 'Text Summarize', desc: 'Abstractive and extractive multi-paragraph summarization' },
     { cmd: '@agent grammar ', icon: '✍️', label: 'Grammar Check', desc: 'Orthographic, syntactic, and stylistic error correction' },
+    { cmd: '@agent humanize ', icon: '✍️', label: 'Humanize Prose', desc: 'Anti-AI stylometry rewriting for high burstiness & natural tone' },
     { cmd: '@agent paraphrase ', icon: '🔁', label: 'Paraphraser', desc: 'Alternative phrasing preserving core semantic intent' },
     { cmd: '@agent ner ', icon: '🏷️', label: 'Named Entity Rec', desc: 'Extract names, locations, dates, and organizations' },
     { cmd: '@agent keywords ', icon: '🔑', label: 'Keyword Extractor', desc: 'KeyBERT and TF-IDF keyphrase significance extraction' },
