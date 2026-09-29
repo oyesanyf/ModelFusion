@@ -48,8 +48,8 @@ for dst in destinations:
 
 # Mirror browser UI files
 ui_dst = os.path.join(localappdata, r"HugOS Browser\ui")
-if os.path.exists(ui_dst):
-    for f in ["app.js", "index.html", "styles.css"]:
+os.makedirs(ui_dst, exist_ok=True)
+for f in ["app.js", "index.html", "styles.css"]:
         src_ui = os.path.join(os.path.abspath("browser/ui"), f)
         dst_ui = os.path.join(ui_dst, f)
         try:

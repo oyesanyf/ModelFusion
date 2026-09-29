@@ -4642,7 +4642,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const ollamaUrl = (currentSettings.ollamaUrl || 'http://127.0.0.1:11434').trim().replace(/\/+$/, '');
     const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
     const tempToUse = typeof currentSettings.temperature === 'number' ? currentSettings.temperature : 0.2;
-    const maxTokensToUse = typeof currentSettings.maxTokens === 'number' && currentSettings.maxTokens > 0 ? currentSettings.maxTokens : 8192;
+    const maxTokensToUse = (options && typeof options.maxTokens === 'number' && options.maxTokens > 0)
+      ? options.maxTokens
+      : (typeof currentSettings.maxTokens === 'number' && currentSettings.maxTokens > 0 ? currentSettings.maxTokens : 8192);
     const streamMode = currentSettings.stream !== false;
     const activeSession = chatSessions.find(s => s.id === currentSessionId);
 
@@ -4795,11 +4797,18 @@ document.addEventListener('DOMContentLoaded', () => {
         if (ipcUrl && !chatEndpoints.includes(ipcUrl)) chatEndpoints.push(ipcUrl);
       }
 
-      const targetTokens = maxTokensToUse;
+      const isGoalDirective = Boolean(
+        (options && (options.isGoal || options.allowContinuation || options.agenticLoop)) ||
+        (/^\s*(@agent\s+goal|\/goal|@goal|@agent\s+agentic-loop|\/agentic-loop|@agent\s+loop)\b/i.test(userPrompt)) ||
+        (options && options.rawCmd && /^\s*(@agent\s+goal|\/goal|@goal|@agent\s+agentic-loop|\/agentic-loop|@agent\s+loop)\b/i.test(options.rawCmd))
+      );
+      const isAgenticLoop = isGoalDirective && currentSettings.agenticLoopEnabled !== false;
+      const targetTokens = (options && typeof options.maxTokens === 'number' && options.maxTokens > 0)
+        ? options.maxTokens
+        : (isAgenticLoop ? Math.max(maxTokensToUse, 32768) : maxTokensToUse);
       const chunkSize = currentSettings.agenticChunkSize || (targetTokens >= 65536 ? 8192 : Math.min(targetTokens, 8192));
-      const isAgenticLoop = currentSettings.agenticLoopEnabled !== false && targetTokens > chunkSize;
-      const maxLoops = isAgenticLoop ? Math.min(64, Math.ceil(targetTokens / chunkSize)) : 1;
-      const numCtxToUse = Math.max(16384, isAgenticLoop ? Math.min(65536, targetTokens) : 16384);
+      const maxLoops = isAgenticLoop ? (options && options.maxLoops ? options.maxLoops : Math.min(64, Math.ceil(targetTokens / chunkSize))) : 1;
+      const numCtxToUse = Math.max(16384, isAgenticLoop ? Math.min(32768, targetTokens) : 16384);
 
       let agenticBadge = null;
       if (isAgenticLoop && maxLoops > 1 && assistantBubble) {
@@ -4812,11 +4821,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const conversationMessages = [
         { role: 'system', content: systemPrompt }
       ];
-
-      if (isAgenticLoop && maxLoops > 1 && targetTokens > 8192) {
-        const depthInstruction = `\n\n[COMPREHENSIVE DEPTH DIRECTIVE: The user has allocated an extensive output budget of ~${Math.round(targetTokens).toLocaleString()} tokens. Provide an in-depth, exhaustive, comprehensive exploration with rich historical context, detailed structural breakdowns, data, and complete analytical sub-sections to match this depth.]`;
-        conversationMessages[0].content += depthInstruction;
-      }
 
       // Add multi-turn context from current active session
       if (activeSession && Array.isArray(activeSession.messages)) {
@@ -4852,7 +4856,7 @@ document.addEventListener('DOMContentLoaded', () => {
           ];
         }
 
-        const currentTurnChunk = isAgenticLoop ? chunkSize : Math.max(maxTokensToUse, 8192);
+        const currentTurnChunk = isAgenticLoop ? Math.min(chunkSize, targetTokens) : maxTokensToUse;
         const reqBodyStr = JSON.stringify({
           model: resolvedOllamaModel,
           messages: activeMessages,
@@ -5219,9 +5223,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const codeFences = (fullResponse.match(/```/g) || []).length;
         const hasUnclosedCodeBlock = codeFences % 2 !== 0;
-        const hasRemainingBudget = isAgenticLoop && (totalEstimatedTokens < targetTokens * 0.85);
-        const turnHadSubstantialContent = turnResponse.trim().length > 120;
-        const shouldContinue = (doneReason === 'length' || hasUnclosedCodeBlock || (hasRemainingBudget && turnHadSubstantialContent)) && !isApology;
+        // Continuation ONLY if cut off mid-thought due to length or unclosed code block
+        const wasCutOff = (doneReason === 'length' || hasUnclosedCodeBlock);
+        const shouldContinue = wasCutOff && !isApology;
 
         if (!shouldContinue) {
           termLog(`[AGENTIC LOOP] Output generation reached natural completion (${Math.round(totalEstimatedTokens).toLocaleString()} tokens).`, 'info');
@@ -5232,9 +5236,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const curTurn = turn + 1;
         const continuationPrompt = hasUnclosedCodeBlock
           ? `Continue writing the code seamlessly from where you stopped. Do not repeat code already written or output pleasantries.`
-          : `Proceed immediately to the next comprehensive dimension of this research topic without repeating any previous points, summaries, pleasantries, or apologies. Detail the next technical layer, mathematical formulation, practical system architecture, concrete benchmarks, and real-world deployment challenges to satisfy the requested long-form depth.`;
+          : `Continue seamlessly from where you stopped. Do not repeat text already written or output pleasantries.`;
         conversationMessages.push({ role: 'user', content: continuationPrompt });
-        fullResponse += '\n\n';
+        if (!hasUnclosedCodeBlock) {
+          if (!fullResponse.endsWith('\n') && !fullResponse.endsWith(' ')) {
+            fullResponse += '\n\n';
+          } else if (!fullResponse.endsWith('\n\n')) {
+            fullResponse += '\n';
+          }
+        }
 
         termLog(`[AGENTIC LOOP] 🔄 Turn ${curTurn}/${maxLoops} completed (~${Math.round(totalEstimatedTokens).toLocaleString()} tokens). Chaining next expansion turn...`, 'info');
       }
@@ -6400,6 +6410,29 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
         if (currentAttachments.length > 0) clearAllAttachments();
         return;
       }
+
+    // 0.05 Autonomous Multi-Turn Goal / Agentic Loop Directives (@agent goal, /goal, @goal, @agent agentic-loop, /agentic-loop)
+    const goalDirectiveMatch = cmd.match(/^\s*(@agent\s+(?:goal|agentic-loop|loop)|\/(?:goal|agentic-loop|loop)|@(?:goal|agentic-loop|loop))(?:\s+|:\s*|$)(.*)$/is);
+    if (goalDirectiveMatch) {
+      const cleanGoal = (goalDirectiveMatch[2] || '').trim();
+      if (!cleanGoal) {
+        termLog('Usage: @agent goal <describe multi-step goal or mission>', 'warn');
+        return;
+      }
+      termLog(`🎯 [GOAL RUNNER] Multi-turn autonomous goal directive initiated: "${cleanGoal}"`, 'info');
+      const goalSysPrompt = 'You are HugOS Autonomous Goal Agent. You execute complex, multi-stage goals systematically and thoroughly. Solve each phase completely with working code, precise derivations, and actionable implementation.';
+      const goalPrompt = attachmentContext ? `${cleanGoal}\n\n${attachmentContext}` : cleanGoal;
+      await streamAiChat(goalPrompt, goalSysPrompt, {
+        images: attachedImages,
+        panel: { id: 'reasoning', name: 'Autonomous Goal Agent' },
+        isGoal: true,
+        allowContinuation: true,
+        maxTokens: 65536,
+        rawCmd: cmd
+      });
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
 
     // 0. Browser Agent Control Commands (/browser approve, /browser abort, /browser status)
     if (lower === '/browser approve' || lower === '@agent browser approve' || lower === 'approve' || lower === '/approve') {
