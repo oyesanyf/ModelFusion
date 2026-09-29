@@ -2598,6 +2598,48 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // -----------------------------------------------------------------
+  // Live Grounding Sources Immediate Display Engine
+  // -----------------------------------------------------------------
+  function renderResearchSourcesCard(container, results) {
+    if (!container || !results || results.length === 0) return;
+    container.style.display = 'block';
+
+    const sourcesHtml = results.map((r, idx) => {
+      const isArxiv = (r.url && r.url.includes('arxiv.org')) || (r.title && r.title.startsWith('[arXiv]'));
+      const cleanTitle = r.title ? r.title.replace(/^\[arXiv\]\s*/i, '') : 'Untitled Source';
+      const tag = isArxiv ? 'arXiv' : 'Web';
+      const tagClass = isArxiv ? 'source-tag-arxiv' : 'source-tag-web';
+      let domain = tag;
+      try {
+        if (r.url) domain = new URL(r.url).hostname.replace(/^www\./, '');
+      } catch (_) {}
+
+      const escapedUrl = escapeHtml(r.url || '#');
+      const escapedTitle = escapeHtml(cleanTitle);
+      const snippetText = (r.snippet || '').trim().replace(/\s+/g, ' ');
+      const escapedSnippet = escapeHtml(snippetText.slice(0, 180) + (snippetText.length > 180 ? '...' : ''));
+
+      return `
+        <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer" class="source-chip" title="${escapedSnippet}">
+          <span class="source-tag ${tagClass}">[${tag}]</span>
+          <span class="source-title">${escapedTitle}</span>
+          <span class="source-domain">${escapeHtml(domain)}</span>
+        </a>
+      `;
+    }).join('');
+
+    container.innerHTML = `
+      <div class="research-sources-header">
+        <span class="sources-icon">📚</span>
+        <span>Verified Grounding Sources (${results.length} Found)</span>
+      </div>
+      <div class="research-sources-grid">
+        ${sourcesHtml}
+      </div>
+    `;
+  }
+
+  // -----------------------------------------------------------------
   // Dynamic Rotating Status Engine & Explicit Error Reporting
   // -----------------------------------------------------------------
   function startDynamicStatus(bubbleElement, type = 'research', customContext = '') {
@@ -2624,18 +2666,36 @@ document.addEventListener('DOMContentLoaded', () => {
     const states = (type === 'research' || type === 'web' || type === 'arxiv') ? researchStates : reasoningStates;
     let step = 0;
     let stopped = false;
+    let pinnedText = '';
+
+    const ensurePill = () => {
+      if (!bubbleElement) return null;
+      let pill = bubbleElement.querySelector('.dynamic-status-pill');
+      if (pill) return pill;
+
+      // Find appropriate mount target without destroying existing children
+      const statusBar = bubbleElement.querySelector('.research-status-bar');
+      const contentEl = bubbleElement.querySelector('.bubble-content');
+      const targetContainer = statusBar || contentEl || bubbleElement;
+
+      pill = document.createElement('div');
+      pill.className = 'dynamic-status-pill';
+      pill.innerHTML = `
+        <span class="status-pulse-dot"></span>
+        <span class="status-text">${escapeHtml(pinnedText || states[0])}</span>
+      `;
+      targetContainer.prepend(pill);
+      return pill;
+    };
 
     const renderState = () => {
       if (stopped || !bubbleElement) return;
+      if (pinnedText) return; // Retain explicit status override
       const text = states[step % states.length];
-      const contentEl = bubbleElement.querySelector('.bubble-content');
-      if (contentEl) {
-        contentEl.innerHTML = `
-          <div class="dynamic-status-pill">
-            <span class="status-pulse-dot"></span>
-            <span class="status-text">${escapeHtml(text)}</span>
-          </div>
-        `;
+      const pill = ensurePill();
+      if (pill) {
+        const textEl = pill.querySelector('.status-text');
+        if (textEl) textEl.textContent = text;
       }
       step++;
     };
@@ -2643,16 +2703,40 @@ document.addEventListener('DOMContentLoaded', () => {
     renderState();
     const interval = setInterval(renderState, 1500);
 
+    const stopController = () => {
+      if (stopped) return;
+      stopped = true;
+      clearInterval(interval);
+      if (bubbleElement) {
+        const pill = bubbleElement.querySelector('.dynamic-status-pill');
+        if (pill) pill.remove();
+        const statusBar = bubbleElement.querySelector('.research-status-bar');
+        if (statusBar && statusBar.children.length === 0) {
+          statusBar.style.display = 'none';
+        }
+      }
+    };
+
     return {
-      stop: () => {
-        if (stopped) return;
-        stopped = true;
-        clearInterval(interval);
+      stop: stopController,
+      hide: stopController,
+      setText: (newText) => {
+        if (stopped || !bubbleElement) return;
+        pinnedText = newText || '';
+        const pill = ensurePill();
+        if (pill && newText) {
+          const textEl = pill.querySelector('.status-text');
+          if (textEl) textEl.textContent = newText;
+        }
       },
       setError: (msg, details = '') => {
         if (stopped) return;
         stopped = true;
         clearInterval(interval);
+        if (bubbleElement) {
+          const pill = bubbleElement.querySelector('.dynamic-status-pill');
+          if (pill) pill.remove();
+        }
         renderErrorCard(bubbleElement, msg, details);
       }
     };
@@ -4819,10 +4903,11 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
             <span class="status-pulse-dot"></span>
             <span class="status-text">Thinking...</span>
           </div>
+          <div class="stream-content"></div>
         </div>
       `;
       chatMessages.appendChild(assistantBubble);
-      bubbleContent = assistantBubble.querySelector('.bubble-content');
+      bubbleContent = assistantBubble.querySelector('.stream-content') || assistantBubble.querySelector('.bubble-content');
       if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
@@ -5130,6 +5215,14 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
         let turnResponse = '';
         let doneReason = '';
 
+        const getStreamTarget = () => {
+          if (assistantBubble) {
+            const sc = assistantBubble.querySelector('.stream-content');
+            if (sc) return sc;
+          }
+          return bubbleContent;
+        };
+
         if (!streamMode) {
           const data = await res.json();
           if (statusCtrl) { statusCtrl.stop(); statusCtrl = null; }
@@ -5139,14 +5232,15 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
           totalEstimatedTokens += Math.max(1, Math.round(turnResponse.length / 4));
           statusLine.textContent = `[${time}] 🤖 ModelFusion Engine (${modelToUse}) completed:`;
           responseLine.innerHTML = renderMarkdown(fullResponse);
-          if (bubbleContent) {
-            bubbleContent.style.color = '';
-            bubbleContent.style.fontStyle = '';
-            bubbleContent.style.fontWeight = '';
-            bubbleContent.style.display = 'block';
-            bubbleContent.style.alignItems = '';
-            bubbleContent.style.gap = '';
-            bubbleContent.innerHTML = renderMarkdown(fullResponse);
+          const targetEl = getStreamTarget();
+          if (targetEl) {
+            targetEl.style.color = '';
+            targetEl.style.fontStyle = '';
+            targetEl.style.fontWeight = '';
+            targetEl.style.display = 'block';
+            targetEl.style.alignItems = '';
+            targetEl.style.gap = '';
+            targetEl.innerHTML = renderMarkdown(fullResponse);
           }
         } else {
           const reader = res.body.getReader();
@@ -5155,9 +5249,101 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
 
           statusLine.textContent = `[${time}] 🤖 ModelFusion Engine (${modelToUse}) ${isAgenticLoop ? `[Turn ${turn + 1}/${maxLoops}] ` : ''}streaming:`;
 
+          // Real-Time Thinking State & Controllers
+          let thinkingBox = assistantBubble ? assistantBubble.querySelector('.model-thinking-box') : null;
+          let thinkingLabel = thinkingBox ? thinkingBox.querySelector('.thinking-label') : null;
+          let thinkingContent = thinkingBox ? thinkingBox.querySelector('.thinking-content') : null;
+
+          let isThinking = false;
+          let thinkingText = '';
+          let thinkingStartTime = 0;
+          let thinkingTimer = null;
+          let thinkingFinished = false;
+
+          const startThinking = () => {
+            if (thinkingFinished) return;
+            if (!isThinking) {
+              isThinking = true;
+              thinkingStartTime = performance.now();
+
+              // Ensure thinkingBox element exists in DOM
+              if (!thinkingBox && assistantBubble) {
+                thinkingBox = document.createElement('details');
+                thinkingBox.className = 'model-thinking-box';
+                thinkingBox.open = true;
+                thinkingBox.innerHTML = `
+                  <summary class="thinking-header">
+                    <span class="thinking-icon">🧠</span>
+                    <span class="thinking-label">Thinking (0.0s)...</span>
+                  </summary>
+                  <div class="thinking-content"></div>
+                `;
+                const streamTarget = assistantBubble.querySelector('.stream-content');
+                const sourcesCard = assistantBubble.querySelector('.research-sources-card');
+                const parentContainer = assistantBubble.querySelector('.bubble-content') || assistantBubble;
+                if (streamTarget) {
+                  parentContainer.insertBefore(thinkingBox, streamTarget);
+                } else if (sourcesCard && sourcesCard.nextSibling) {
+                  parentContainer.insertBefore(thinkingBox, sourcesCard.nextSibling);
+                } else {
+                  parentContainer.appendChild(thinkingBox);
+                }
+              }
+              if (thinkingBox) {
+                thinkingBox.style.display = 'block';
+                thinkingBox.open = true;
+                thinkingLabel = thinkingBox.querySelector('.thinking-label');
+                thinkingContent = thinkingBox.querySelector('.thinking-content');
+              }
+
+              if (thinkingTimer) clearInterval(thinkingTimer);
+              thinkingTimer = setInterval(() => {
+                if (thinkingLabel && isThinking) {
+                  const elapsed = ((performance.now() - thinkingStartTime) / 1000).toFixed(1);
+                  thinkingLabel.textContent = `Thinking (${elapsed}s)...`;
+                }
+              }, 100);
+            }
+          };
+
+          const appendThinkingTokens = (tokens) => {
+            if (!tokens) return;
+            startThinking();
+            thinkingText += tokens;
+            if (thinkingContent) {
+              thinkingContent.textContent = thinkingText;
+              thinkingContent.scrollTop = thinkingContent.scrollHeight;
+            }
+            if (currentSettings.autoScroll !== false && chatMessages) {
+              chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+          };
+
+          const finishThinking = () => {
+            if (isThinking && !thinkingFinished) {
+              isThinking = false;
+              thinkingFinished = true;
+              if (thinkingTimer) {
+                clearInterval(thinkingTimer);
+                thinkingTimer = null;
+              }
+              const totalSec = Math.max(0.1, (performance.now() - thinkingStartTime) / 1000).toFixed(1);
+              if (thinkingLabel) {
+                thinkingLabel.textContent = `✓ Deliberated for ${totalSec}s`;
+              }
+              if (statusCtrl) {
+                statusCtrl.stop();
+                statusCtrl = null;
+              }
+            }
+          };
+
+          let inThinkTag = false;
+          let pendingTagPrefix = '';
+
           let renderScheduled = null;
           let lastRenderTime = 0;
-          const RENDER_INTERVAL_MS = 25; // Silky smooth ~40fps throttled DOM render
+          const RENDER_INTERVAL_MS = 16; // ~60fps ultra-fast firehose spit-out
 
           const renderStreamDom = (force = false) => {
             const now = performance.now();
@@ -5167,14 +5353,15 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
                 renderScheduled = null;
               }
               lastRenderTime = now;
-              if (bubbleContent) {
-                bubbleContent.style.color = '';
-                bubbleContent.style.fontStyle = '';
-                bubbleContent.style.fontWeight = '';
-                bubbleContent.style.display = 'block';
-                bubbleContent.style.alignItems = '';
-                bubbleContent.style.gap = '';
-                bubbleContent.innerHTML = renderMarkdown(fullResponse);
+              const targetEl = getStreamTarget();
+              if (targetEl) {
+                targetEl.style.color = '';
+                targetEl.style.fontStyle = '';
+                targetEl.style.fontWeight = '';
+                targetEl.style.display = 'block';
+                targetEl.style.alignItems = '';
+                targetEl.style.gap = '';
+                targetEl.innerHTML = renderMarkdown(fullResponse);
               }
               if (isAgenticLoop && agenticBadge) {
                 agenticBadge.innerHTML = `🔄 Agentic Loop: Turn ${turn + 1}/${maxLoops} • ~${Math.round(totalEstimatedTokens).toLocaleString()} / ${targetTokens.toLocaleString()} tokens`;
@@ -5186,14 +5373,15 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
               renderScheduled = requestAnimationFrame(() => {
                 renderScheduled = null;
                 lastRenderTime = performance.now();
-                if (bubbleContent) {
-                  bubbleContent.style.color = '';
-                  bubbleContent.style.fontStyle = '';
-                  bubbleContent.style.fontWeight = '';
-                  bubbleContent.style.display = 'block';
-                  bubbleContent.style.alignItems = '';
-                  bubbleContent.style.gap = '';
-                  bubbleContent.innerHTML = renderMarkdown(fullResponse);
+                const targetEl = getStreamTarget();
+                if (targetEl) {
+                  targetEl.style.color = '';
+                  targetEl.style.fontStyle = '';
+                  targetEl.style.fontWeight = '';
+                  targetEl.style.display = 'block';
+                  targetEl.style.alignItems = '';
+                  targetEl.style.gap = '';
+                  targetEl.innerHTML = renderMarkdown(fullResponse);
                 }
                 if (isAgenticLoop && agenticBadge) {
                   agenticBadge.innerHTML = `🔄 Agentic Loop: Turn ${turn + 1}/${maxLoops} • ~${Math.round(totalEstimatedTokens).toLocaleString()} / ${targetTokens.toLocaleString()} tokens`;
@@ -5202,6 +5390,71 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
                   chatMessages.scrollTop = 99999999;
                 }
               });
+            }
+          };
+
+          const processContentChunk = (rawChunk) => {
+            let text = pendingTagPrefix + rawChunk;
+            pendingTagPrefix = '';
+
+            while (text.length > 0) {
+              if (!inThinkTag) {
+                const thinkOpenIdx = text.indexOf('<think>');
+                if (thinkOpenIdx !== -1) {
+                  // Content before <think>
+                  const beforeContent = text.slice(0, thinkOpenIdx);
+                  if (beforeContent) {
+                    if (isThinking) finishThinking();
+                    if (statusCtrl) { statusCtrl.stop(); statusCtrl = null; }
+                    turnResponse += beforeContent;
+                    fullResponse += beforeContent;
+                    totalEstimatedTokens += Math.max(1, Math.round(beforeContent.length / 4));
+                    renderStreamDom(false);
+                  }
+                  inThinkTag = true;
+                  startThinking();
+                  text = text.slice(thinkOpenIdx + 7);
+                } else {
+                  // Check if text ends with a partial '<think>'
+                  const matchPartial = text.match(/<t(?:h(?:i(?:n(?:k)?)?)?)?$/);
+                  if (matchPartial) {
+                    pendingTagPrefix = matchPartial[0];
+                    text = text.slice(0, matchPartial.index);
+                  }
+                  if (text) {
+                    if (isThinking) finishThinking();
+                    if (statusCtrl) { statusCtrl.stop(); statusCtrl = null; }
+                    turnResponse += text;
+                    fullResponse += text;
+                    totalEstimatedTokens += Math.max(1, Math.round(text.length / 4));
+                    renderStreamDom(false);
+                  }
+                  break;
+                }
+              } else {
+                // Inside <think> tag
+                const thinkCloseIdx = text.indexOf('</think>');
+                if (thinkCloseIdx !== -1) {
+                  const thinkingPortion = text.slice(0, thinkCloseIdx);
+                  if (thinkingPortion) {
+                    appendThinkingTokens(thinkingPortion);
+                  }
+                  finishThinking();
+                  inThinkTag = false;
+                  text = text.slice(thinkCloseIdx + 8);
+                } else {
+                  // Check if text ends with a partial '</think>'
+                  const matchPartial = text.match(/<\/(?:t(?:h(?:i(?:n(?:k)?)?)?)?)?$/) || text.match(/<$/);
+                  if (matchPartial) {
+                    pendingTagPrefix = matchPartial[0];
+                    text = text.slice(0, matchPartial.index);
+                  }
+                  if (text) {
+                    appendThinkingTokens(text);
+                  }
+                  break;
+                }
+              }
             }
           };
 
@@ -5222,12 +5475,16 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
               if (!trimmed) continue;
               try {
                 const parsed = JSON.parse(trimmed);
-                const chunk = parsed.message?.content || parsed.response || '';
-                const thinkingChunk = parsed.message?.thinking || '';
-                if (thinkingChunk && statusCtrl) {
-                  statusCtrl.setText(`🧠 Thinking: ${thinkingChunk.trim().slice(-60)}`);
-                }
                 if (parsed.done_reason) doneReason = parsed.done_reason;
+
+                // 1. Native Ollama API thinking field
+                const thinkingChunk = parsed.message?.thinking || '';
+                if (thinkingChunk) {
+                  appendThinkingTokens(thinkingChunk);
+                }
+
+                // 2. Main content / response
+                const chunk = parsed.message?.content || parsed.response || '';
                 if (chunk) {
                   packetChunk += chunk;
                 }
@@ -5237,14 +5494,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
             }
 
             if (packetChunk) {
-              if (statusCtrl) {
-                statusCtrl.stop();
-                statusCtrl = null;
-              }
-              turnResponse += packetChunk;
-              fullResponse += packetChunk;
-              totalEstimatedTokens += Math.max(1, Math.round(packetChunk.length / 4));
-              renderStreamDom(false);
+              processContentChunk(packetChunk);
             }
           }
 
@@ -5252,22 +5502,29 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
           if (buffer.trim()) {
             try {
               const parsed = JSON.parse(buffer.trim());
-              const chunk = parsed.message?.content || parsed.response || '';
-              const thinkingChunk = parsed.message?.thinking || '';
-              if (thinkingChunk && statusCtrl) {
-                statusCtrl.setText(`🧠 Thinking: ${thinkingChunk.trim().slice(-60)}`);
-              }
               if (parsed.done_reason) doneReason = parsed.done_reason;
+              if (parsed.message?.thinking) {
+                appendThinkingTokens(parsed.message.thinking);
+              }
+              const chunk = parsed.message?.content || parsed.response || '';
               if (chunk) {
-                if (statusCtrl) {
-                  statusCtrl.stop();
-                  statusCtrl = null;
-                }
-                turnResponse += chunk;
-                fullResponse += chunk;
-                totalEstimatedTokens += Math.max(1, Math.round(chunk.length / 4));
+                processContentChunk(chunk);
               }
             } catch (e) {}
+          }
+
+          // Flush any pending tag prefix if stream ended
+          if (pendingTagPrefix) {
+            if (inThinkTag) {
+              appendThinkingTokens(pendingTagPrefix);
+            } else {
+              fullResponse += pendingTagPrefix;
+              turnResponse += pendingTagPrefix;
+            }
+            pendingTagPrefix = '';
+          }
+          if (isThinking) {
+            finishThinking();
           }
 
           // Force final render of turn
@@ -6306,29 +6563,61 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
                 <span>📚</span> <span>arXiv Papers</span> &amp; <span>🌐</span> <span>Web Search Grounding</span>
                 <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">(Multi-Agent Scientific &amp; Web Grounding)</span>
               </div>
-              <div class="bubble-content" style="color: var(--accent-color); font-weight: 500;">
-                <div class="dynamic-status-pill">
-                  <span class="status-pulse-dot"></span>
-                  <span class="status-text">Searching arXiv scientific preprints and verified web sources in parallel for: "${escapeHtml(parsedMulti.query || 'query')}"...</span>
+              <div class="bubble-content">
+                <div class="research-status-bar">
+                  <div class="dynamic-status-pill">
+                    <span class="status-pulse-dot"></span>
+                    <span class="status-text">Searching arXiv scientific preprints and verified web sources in parallel for: "${escapeHtml(parsedMulti.query || 'query')}"...</span>
+                  </div>
                 </div>
+                <div class="research-sources-card" style="display: none;"></div>
+                <details class="model-thinking-box" style="display: none;" open>
+                  <summary class="thinking-header">
+                    <span class="thinking-icon">🧠</span>
+                    <span class="thinking-label">Thinking...</span>
+                  </summary>
+                  <div class="thinking-content"></div>
+                </details>
+                <div class="stream-content"></div>
               </div>
             `;
             chatMessages.appendChild(assistantBubble);
-            bubbleContent = assistantBubble.querySelector('.bubble-content');
+            const sourcesCardEl = assistantBubble.querySelector('.research-sources-card');
+            const streamContentEl = assistantBubble.querySelector('.stream-content');
             if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
             statusCtrl = startDynamicStatus(assistantBubble, 'research', parsedMulti.query);
           }
 
           try {
             const queryToSearch = parsedMulti.query || currentNavUrl || 'open-weight models';
-            const [arxivResults, webResults] = await Promise.all([
-              executeArxivSearch(queryToSearch, currentSettings.maxSearchResults || 5),
-              executeWebSearch(queryToSearch, currentSettings.maxSearchResults || 5)
-            ]);
+            let combinedResults = [];
+            const updateSourcesImmediately = (newResults) => {
+              if (!newResults || newResults.length === 0) return;
+              for (const item of newResults) {
+                if (!combinedResults.some(existing => existing.url === item.url || (existing.title && existing.title === item.title))) {
+                  combinedResults.push(item);
+                }
+              }
+              if (sourcesCardEl && combinedResults.length > 0) {
+                renderResearchSourcesCard(sourcesCardEl, combinedResults);
+                if (currentSettings.autoScroll !== false && chatMessages) {
+                  chatMessages.scrollTop = chatMessages.scrollHeight;
+                }
+              }
+            };
+
+            const pArxiv = executeArxivSearch(queryToSearch, currentSettings.maxSearchResults || 5)
+              .then(res => { updateSourcesImmediately(res); return res; });
+            const pWeb = executeWebSearch(queryToSearch, currentSettings.maxSearchResults || 5)
+              .then(res => { updateSourcesImmediately(res); return res; });
+            const [arxivResults, webResults] = await Promise.all([pArxiv, pWeb]);
 
             const safeArxiv = arxivResults || [];
             const safeWeb = webResults || [];
-            const combinedResults = [...safeArxiv, ...safeWeb];
+
+            if (statusCtrl) {
+              statusCtrl.setText('⚡ Synthesizing dual-source research with Local AI...');
+            }
 
             termLog(`[MULTI-AGENT] Retrieved ${safeArxiv.length} arXiv papers and ${safeWeb.length} web sources. Correlating dual-source research...`, 'success');
             if (combinedResults.length > 0) {
@@ -6366,7 +6655,7 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
               images: attachedImages,
               panel: { id: 'multi-research', name: 'arXiv + Web Search Fusion' },
               existingBubble: assistantBubble,
-              bubbleContent: bubbleContent,
+              bubbleContent: streamContentEl || bubbleContent,
               statusCtrl: statusCtrl
             });
           } catch (err) {
@@ -7341,7 +7630,8 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 
       if (chatWelcome) chatWelcome.classList.add('hidden');
       let assistantBubble = null;
-      let bubbleContent = null;
+      let streamContentEl = null;
+      let sourcesCardEl = null;
       let statusCtrl = null;
       if (chatMessages) {
         assistantBubble = document.createElement('div');
@@ -7351,37 +7641,67 @@ Analyze the temporal progression across the sampled video keyframes, describing 
             <span>${isArxivOnly ? '📚' : (isDeepResearch ? '🔬' : '🌐')}</span> <span>ModelFusion AI</span>
             <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">${isArxivOnly ? '(arXiv Research Papers)' : (isDeepResearch ? '(Deep Research: Web + arXiv)' : '(Web Search Grounding)')}</span>
           </div>
-          <div class="bubble-content" style="color: var(--accent-color); font-weight: 500;">
-            <div class="dynamic-status-pill">
-              <span class="status-pulse-dot"></span>
-              <span class="status-text">${isArxivOnly ? 'Searching arXiv scientific preprints...' : 'Searching the internet & arXiv...'}</span>
+          <div class="bubble-content">
+            <div class="research-status-bar">
+              <div class="dynamic-status-pill">
+                <span class="status-pulse-dot"></span>
+                <span class="status-text">${isArxivOnly ? 'Searching arXiv scientific preprints...' : 'Searching the internet & arXiv...'}</span>
+              </div>
             </div>
+            <div class="research-sources-card" style="display: none;"></div>
+            <details class="model-thinking-box" style="display: none;" open>
+              <summary class="thinking-header">
+                <span class="thinking-icon">🧠</span>
+                <span class="thinking-label">Thinking...</span>
+              </summary>
+              <div class="thinking-content"></div>
+            </details>
+            <div class="stream-content"></div>
           </div>
         `;
         chatMessages.appendChild(assistantBubble);
-        bubbleContent = assistantBubble.querySelector('.bubble-content');
+        sourcesCardEl = assistantBubble.querySelector('.research-sources-card');
+        streamContentEl = assistantBubble.querySelector('.stream-content');
         if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
         statusCtrl = startDynamicStatus(assistantBubble, isArxivOnly ? 'arxiv' : 'research', queryToSearch);
       }
 
       try {
         let combinedResults = [];
+        const updateSourcesImmediately = (newResults) => {
+          if (!newResults || newResults.length === 0) return;
+          for (const item of newResults) {
+            if (!combinedResults.some(existing => existing.url === item.url || (existing.title && existing.title === item.title))) {
+              combinedResults.push(item);
+            }
+          }
+          if (sourcesCardEl && combinedResults.length > 0) {
+            renderResearchSourcesCard(sourcesCardEl, combinedResults);
+            if (currentSettings.autoScroll !== false && chatMessages) {
+              chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+          }
+        };
 
         if (isArxivOnly) {
           const arxivResults = await executeArxivSearch(queryToSearch, currentSettings.maxSearchResults || 6);
-          combinedResults = arxivResults || [];
+          updateSourcesImmediately(arxivResults);
         } else if (isDeepResearch) {
           // Directive: "anytime deep research is used it must use arXiv"
-          // Query live web search AND arXiv in parallel
-          const [webRes, arxivRes] = await Promise.all([
-            executeWebSearch(queryToSearch, currentSettings.maxSearchResults || 5),
-            executeArxivSearch(queryToSearch, 5)
-          ]);
-          combinedResults = [...(webRes || []), ...(arxivRes || [])];
+          // Query live web search AND arXiv in parallel with immediate spit-out as each arrives
+          const pWeb = executeWebSearch(queryToSearch, currentSettings.maxSearchResults || 5)
+            .then(res => { updateSourcesImmediately(res); return res; });
+          const pArxiv = executeArxivSearch(queryToSearch, 5)
+            .then(res => { updateSourcesImmediately(res); return res; });
+          await Promise.all([pWeb, pArxiv]);
         } else {
           // Standard web search / web-agent
           const searchResults = await executeWebSearch(queryToSearch, currentSettings.maxSearchResults || 6);
-          combinedResults = searchResults || [];
+          updateSourcesImmediately(searchResults);
+        }
+
+        if (statusCtrl) {
+          statusCtrl.setText('⚡ Synthesizing grounded analysis with Local AI...');
         }
 
         termLog(`[RESEARCH] Retrieved ${combinedResults.length} verified sources (${isDeepResearch ? 'Web + arXiv' : (isArxivOnly ? 'arXiv' : 'Web')}). Correlating results with LLM...`, 'success');
@@ -7416,7 +7736,7 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
           images: attachedImages,
           panel,
           existingBubble: assistantBubble,
-          bubbleContent: bubbleContent,
+          bubbleContent: streamContentEl,
           statusCtrl: statusCtrl
         });
       } catch (err) {
@@ -7546,7 +7866,8 @@ Instructions:
       // Immediately render assistant chat bubble with dynamic status
       if (chatWelcome) chatWelcome.classList.add('hidden');
       let assistantBubble = null;
-      let bubbleContent = null;
+      let streamContentEl = null;
+      let sourcesCardEl = null;
       let statusCtrl = null;
       if (chatMessages) {
         assistantBubble = document.createElement('div');
@@ -7556,36 +7877,67 @@ Instructions:
             <span>🌐</span> <span>ModelFusion AI</span>
             <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">(Web Search Grounding)</span>
           </div>
-          <div class="bubble-content" style="color: var(--accent-color); font-weight: 500;">
-            <div class="dynamic-status-pill">
-              <span class="status-pulse-dot"></span>
-              <span class="status-text">Searching the internet & arXiv...</span>
+          <div class="bubble-content">
+            <div class="research-status-bar">
+              <div class="dynamic-status-pill">
+                <span class="status-pulse-dot"></span>
+                <span class="status-text">Searching the internet & arXiv...</span>
+              </div>
             </div>
+            <div class="research-sources-card" style="display: none;"></div>
+            <details class="model-thinking-box" style="display: none;" open>
+              <summary class="thinking-header">
+                <span class="thinking-icon">🧠</span>
+                <span class="thinking-label">Thinking...</span>
+              </summary>
+              <div class="thinking-content"></div>
+            </details>
+            <div class="stream-content"></div>
           </div>
         `;
         chatMessages.appendChild(assistantBubble);
-        bubbleContent = assistantBubble.querySelector('.bubble-content');
+        sourcesCardEl = assistantBubble.querySelector('.research-sources-card');
+        streamContentEl = assistantBubble.querySelector('.stream-content');
         if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
         statusCtrl = startDynamicStatus(assistantBubble, 'research', routingDecision.cleanQuery);
       }
 
       const isResearchTopic = /research|paper|arxiv|pre-?print|study|algorithm|model/i.test(routingDecision.cleanQuery);
       let searchResults = [];
+      const updateSourcesImmediately = (newResults) => {
+        if (!newResults || newResults.length === 0) return;
+        for (const item of newResults) {
+          if (!searchResults.some(existing => existing.url === item.url || (existing.title && existing.title === item.title))) {
+            searchResults.push(item);
+          }
+        }
+        if (sourcesCardEl && searchResults.length > 0) {
+          renderResearchSourcesCard(sourcesCardEl, searchResults);
+          if (currentSettings.autoScroll !== false && chatMessages) {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+          }
+        }
+      };
+
       try {
         if (isResearchTopic) {
-          const [webRes, arxivRes] = await Promise.all([
-            executeWebSearch(routingDecision.cleanQuery, currentSettings.maxSearchResults || 5),
-            executeArxivSearch(routingDecision.cleanQuery, 4)
-          ]);
-          searchResults = [...(webRes || []), ...(arxivRes || [])];
+          const pWeb = executeWebSearch(routingDecision.cleanQuery, currentSettings.maxSearchResults || 5)
+            .then(res => { updateSourcesImmediately(res); return res; });
+          const pArxiv = executeArxivSearch(routingDecision.cleanQuery, 4)
+            .then(res => { updateSourcesImmediately(res); return res; });
+          await Promise.all([pWeb, pArxiv]);
         } else {
-          searchResults = await executeWebSearch(routingDecision.cleanQuery, currentSettings.maxSearchResults || 5);
+          const results = await executeWebSearch(routingDecision.cleanQuery, currentSettings.maxSearchResults || 5);
+          updateSourcesImmediately(results);
         }
       } catch (searchErr) {
         termLog(`[SEARCH] Search error: ${searchErr.message}`, 'warn');
       }
 
       if (searchResults && searchResults.length > 0) {
+        if (statusCtrl) {
+          statusCtrl.setText('⚡ Synthesizing grounded analysis with Local AI...');
+        }
         termLog(`[SEARCH] Retrieved ${searchResults.length} verified web & arXiv sources. Correlating results with LLM...`, 'success');
         searchResults.forEach((r, idx) => {
           termLog(`  [${idx + 1}] ${r.title} - ${r.url}`, 'sys');
@@ -7614,7 +7966,7 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
           images: attachedImages,
           panel,
           existingBubble: assistantBubble,
-          bubbleContent: bubbleContent,
+          bubbleContent: streamContentEl,
           statusCtrl: statusCtrl
         });
         if (currentAttachments.length > 0) clearAllAttachments();
