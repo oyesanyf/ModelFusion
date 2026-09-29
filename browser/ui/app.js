@@ -4677,6 +4677,11 @@ document.addEventListener('DOMContentLoaded', () => {
         { role: 'system', content: systemPrompt }
       ];
 
+      if (isAgenticLoop && targetTokens > 4096) {
+        const depthInstruction = `\n\n[COMPREHENSIVE DEPTH DIRECTIVE: The user has allocated an extensive output budget of ~${Math.round(targetTokens).toLocaleString()} tokens. Provide an in-depth, exhaustive, comprehensive exploration with rich historical context, detailed structural breakdowns, data, and complete analytical sub-sections to match this depth.]`;
+        conversationMessages[0].content += depthInstruction;
+      }
+
       // Add multi-turn context from current active session
       if (activeSession && Array.isArray(activeSession.messages)) {
         const history = activeSession.messages.slice(0, -1);
@@ -4933,6 +4938,10 @@ document.addEventListener('DOMContentLoaded', () => {
               try {
                 const parsed = JSON.parse(trimmed);
                 const chunk = parsed.message?.content || parsed.response || '';
+                const thinkingChunk = parsed.message?.thinking || '';
+                if (thinkingChunk && statusCtrl) {
+                  statusCtrl.setText(`🧠 Thinking: ${thinkingChunk.trim().slice(-60)}`);
+                }
                 if (parsed.done_reason) doneReason = parsed.done_reason;
                 if (chunk) {
                   if (statusCtrl) {
@@ -4967,6 +4976,10 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
               const parsed = JSON.parse(buffer.trim());
               const chunk = parsed.message?.content || parsed.response || '';
+              const thinkingChunk = parsed.message?.thinking || '';
+              if (thinkingChunk && statusCtrl) {
+                statusCtrl.setText(`🧠 Thinking: ${thinkingChunk.trim().slice(-60)}`);
+              }
               if (parsed.done_reason) doneReason = parsed.done_reason;
               if (chunk) {
                 if (statusCtrl) {
@@ -4986,6 +4999,13 @@ document.addEventListener('DOMContentLoaded', () => {
           break;
         }
 
+        // Check if turn generated an unhelpful continuation apology or refusal
+        const isApology = /I('m| am) sorry, but I can't provide.*Part/i.test(turnResponse) || /^I cannot continue without more details/i.test(turnResponse.trim());
+        if (isApology && turn > 0) {
+          termLog(`[AGENTIC LOOP] ⚠️ Turn ${turn + 1} generated a continuation apology. Halting loop to preserve previous comprehensive output.`, 'warn');
+          break;
+        }
+
         const codeFences = (fullResponse.match(/```/g) || []).length;
         const hasUnclosedCodeBlock = codeFences % 2 !== 0;
         const isNearLimit = turnResponse.length >= currentTurnChunk * 2.2;
@@ -4996,13 +5016,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         conversationMessages.push({ role: 'assistant', content: turnResponse });
-        const nextTurn = turn + 2;
         const curTurn = turn + 1;
-        const continuationPrompt = `Great, now write Part ${nextTurn} based on Part ${curTurn}. Continue seamlessly from where you stopped without repeating previous code or pleasantries.`;
+        const continuationPrompt = hasUnclosedCodeBlock
+          ? `Continue writing the code seamlessly from where you stopped. Do not repeat code already written or output pleasantries.`
+          : `Continue expanding this comprehensive response seamlessly. Proceed with the next detailed sections, analytical depth, and structured exploration to thoroughly fulfill the requested long-form depth without repeating previous text, pleasantries, or apologies.`;
         conversationMessages.push({ role: 'user', content: continuationPrompt });
         fullResponse += '\n\n';
 
-        termLog(`[AGENTIC LOOP] 🔄 Turn ${curTurn}/${maxLoops} completed (~${Math.round(totalEstimatedTokens).toLocaleString()} tokens). Chaining Part ${nextTurn}...`, 'info');
+        termLog(`[AGENTIC LOOP] 🔄 Turn ${curTurn}/${maxLoops} completed (~${Math.round(totalEstimatedTokens).toLocaleString()} tokens). Chaining next expansion turn...`, 'info');
       }
 
       if (isAgenticLoop && agenticBadge) {

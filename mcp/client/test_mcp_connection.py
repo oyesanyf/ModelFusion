@@ -10,6 +10,13 @@ import subprocess
 import sys
 import time
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 def find_cli_bin():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     repo_root = os.path.abspath(os.path.join(script_dir, "..", ".."))
@@ -52,6 +59,7 @@ def test_mcp_stdio():
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        encoding="utf-8",
         bufsize=1
     )
     

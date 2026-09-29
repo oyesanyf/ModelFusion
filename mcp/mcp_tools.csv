@@ -1,104 +1,174 @@
-Index,Tool Name,Category,Parameter Count,Parameters,Required Parameters,Description
-1,execute,Core Orchestration,1,args,args,"Execute the ModelFusion CLI with ANY combination of flags. This is the universal tool â€” use it when no specialized tool fits. Supported flags: --file <path>, --folder <path>, --prompt <text>, --task <task_name>, --budget <float>, --chain-of-thought, --gpu, --cpu, --ollama, --openvino, --onnx, --vllm, --model <model_id>, --fusion, --fusion-models <N>, --fusion-mode <multi-model|multi-sample>, --selection-strategy <strategy>, --delegation, --recursion, --context-auto, --context <text>, --verbose, --debug, --language <lang>, --full, --score, --judge, --plan, --enable-innovations, --workflow-optimization, --semantic-analysis, --temporal-tracking, --predictive-mode, --innovation-level <N>, --real-options, --prompt-quality-scoring, --enable-ml, --enable-ml-selection, --ml-learning, --ml-ensemble-method <method>, --ml-confidence-threshold <float>, --ml-fallback <true|false>, --enable-slash-commands"
-2,quick_answer,Core Orchestration,2,"model, question",question,"Fast direct answer for general knowledge questions (non-coding). Calls Ollama directly, bypassing orchestration for ~2-3 second responses. Use for: geography, history, math, science, trivia, definitions, translations, general knowledge."
-3,orchestrate,Core Orchestration,10,"budget, chain_of_thought, cpu, delegation, fusion, gpu, prompt, recursion, selection_strategy, task_override",prompt,"Run the full ModelFusion orchestration pipeline: task detection â†’ model selection â†’ execution. Best for coding questions, complex analysis, and tasks that benefit from intelligent model routing."
-4,analyze_file,File & Project Intelligence,5,"budget, file, full, gpu, prompt","file, prompt","Analyze, review, or process a specific file using ModelFusion. Supports code review, vulnerability scanning, summarization, and custom analysis."
-5,analyze_folder,File & Project Intelligence,5,"budget, folder, full, gpu, prompt","folder, prompt","Analyze or review an entire directory/project using ModelFusion. Supports code review, architecture analysis, and project-wide scanning."
-6,nlp_task,High-Level Task Dispatchers,4,"gpu, language, task, text","task, text","Run specialized NLP tasks: sentiment-analysis, text-classification, summarization, translation, question-answering, ner (named entity recognition), emotion-detection, sarcasm-detection, paraphrase-generation, grammar-correction, language-detection, reading-level-assessment, anonymization, coreference-resolution, fill-mask, feature-extraction, sentence-similarity, zero-shot-classification, stance-detection, bias-detection."
-7,security_analysis,High-Level Task Dispatchers,4,"file, gpu, task, text","task, text","Run security-focused NLP analysis: spam-detection, malware-text-detection, phishing-detection, pii-detection (personally identifiable information), hate-speech-detection, cyberbullying-detection, fake-news-detection, hallucination-detection, generation-groundedness, code-vulnerability-detection."
-8,code_task,High-Level Task Dispatchers,7,"file, gpu, judge, plan, score, task, text","task, text","Run code-specific AI tasks: code-vulnerability-detection, code-summary-generation, code-clone-detection, text-generation (for code), causal-language-modeling. Also supports --plan for AI-powered planning and --judge for LLM-as-a-Judge evaluation."
-9,domain_task,High-Level Task Dispatchers,3,"gpu, task, text","task, text","Run domain-specific NLP: legal-judgment-classification, contract-clause-classification, case-outcome-prediction, financial-ner, financial-sentiment-analysis, legal-ner, biomedical-ner, chemical-reaction-ner, scientific-abstract-summarization, citation-intent-classification, table-question-answering, feature-ranking."
-10,multimodal_task,High-Level Task Dispatchers,4,"file, gpu, prompt, task",task,"Run image, audio, and video AI tasks: image-classification, object-detection, image-segmentation, visual-question-answering, document-question-answering, zero-shot-image-classification, depth-estimation, image-feature-extraction, image-super-resolution, text-to-image, automatic-speech-recognition, audio-classification, voice-activity-detection, emotion-recognition, video-classification, text-to-speech."
-11,semantic_search,Autonomous Agents & AutoML,6,"action, documents_path, hyde_variants, query, top_k, use_hyde",action,"Semantic search with HyDE (Hypothetical Document Embeddings). Add documents to the index, then search with natural language queries. Supports interactive question refinement and multiple HyDE variants."
-12,data_science,Autonomous Agents & AutoML,4,"export_pdf, file, mode, prompt",mode,"Run data science workflows on CSV/Excel files. Supports: full data analyst workflow, comprehensive data science flow, Jupyter notebook launch, and PDF report export."
-13,pe_header_extraction,CyberSecurity & Safety,2,"file, prompt",file,"Extract PE header information and perform security analysis on Windows executables (.exe, .dll)."
-14,model_management,Autonomous Agents & AutoML,5,"action, model_id, sinq_group_size, sinq_nbits, weight_format",action,"Manage AI models: prepare/convert models to OpenVINO IR format, set weight format (fp16/int8/int4), configure SINQ quantization, save/load ML models."
-15,reporting,Autonomous Agents & AutoML,4,"file, format, output_path, prompt","prompt, output_path","Generate analysis reports in various formats: PDF, markdown, text, JSON, or Word."
-16,ml_management,Autonomous Agents & AutoML,2,"action, cleanup_days",action,"Manage the ML-based model selection system: retrain models, clean up old training data, view analytics, configure ensemble methods."
-17,get_system_info,System Telemetry & Lifecycle,0,,,"Get detected system hardware specifications: CPU, RAM, GPU, disk space."
-18,get_database_stats,System Telemetry & Lifecycle,0,,,Get database status and model categorization statistics.
-19,list_tasks,System Telemetry & Lifecycle,1,category,,"List available models and tasks. Filter by: audio, image, text, all."
-20,update_database,System Telemetry & Lifecycle,0,,,Update the HuggingFace models database with latest models.
-21,restore_backup,System Telemetry & Lifecycle,0,,,Restore config and database from backups.
-22,clear_cache,System Telemetry & Lifecycle,0,,,Clear all cached model data and weights.
-23,get_decision_stats,System Telemetry & Lifecycle,0,,,Get model decision-making statistics and selection history.
-24,get_novel_ai_stats,System Telemetry & Lifecycle,0,,,Get novel AI component statistics and module list.
-25,get_performance_stats,System Telemetry & Lifecycle,0,,,Get model performance metrics and latency statistics.
-26,get_cache_stats,System Telemetry & Lifecycle,0,,,"Get model cache status, sizes, and database health info."
-27,get_model_recommendations,System Telemetry & Lifecycle,0,,,Get personalized model recommendations based on decision scores.
-28,get_model_ranking,System Telemetry & Lifecycle,1,category,category,Get models ranked for a specific task category.
-29,get_ml_analytics,System Telemetry & Lifecycle,0,,,Get ML model selection and performance analytics.
-30,report_bandit_feedback,System Telemetry & Lifecycle,3,"arm, context, reward","context, arm, reward",Provide feedback on model quality to update bandit rewards for improved future selection.
-31,text_classification,NLP & Linguistics,5,"file, gpu, language, prompt, text",,Execute ModelFusion --text-classification for text classification.
-32,token_classification,NLP & Linguistics,5,"file, gpu, language, prompt, text",,Execute ModelFusion --token-classification for token classification.
-33,question_answering,NLP & Linguistics,5,"file, gpu, language, prompt, text",,Execute ModelFusion --question-answering for question answering.
-34,text_generation,NLP & Linguistics,5,"file, gpu, language, prompt, text",,Execute ModelFusion --text-generation for text generation.
-35,summarization,NLP & Linguistics,5,"file, gpu, language, prompt, text",,Execute ModelFusion --summarization for summarization.
-36,translation,NLP & Linguistics,5,"file, gpu, language, prompt, text",,Execute ModelFusion --translation for translation.
-37,fill_mask,NLP & Linguistics,5,"file, gpu, language, prompt, text",,Execute ModelFusion --fill-mask for fill mask.
-38,text2text_generation,NLP & Linguistics,5,"file, gpu, language, prompt, text",,Execute ModelFusion --text2text-generation for text2text generation.
-39,language_detection,NLP & Linguistics,5,"file, gpu, language, prompt, text",,Execute ModelFusion --language-detection for language detection.
-40,grammar_correction,NLP & Linguistics,5,"file, gpu, language, prompt, text",,Execute ModelFusion --grammar-correction for grammar correction.
-41,paraphrase_generation,NLP & Linguistics,5,"file, gpu, language, prompt, text",,Execute ModelFusion --paraphrase-generation for paraphrase generation.
-42,causal_language_modeling,NLP & Linguistics,5,"file, gpu, language, prompt, text",,Execute ModelFusion --causal-language-modeling for causal language modeling.
-43,zero_shot_classification,NLP & Linguistics,5,"file, gpu, language, prompt, text",,Execute ModelFusion --zero-shot-classification for zero shot classification.
-44,feature_extraction,NLP & Linguistics,5,"file, gpu, language, prompt, text",,Execute ModelFusion --feature-extraction for feature extraction.
-45,sentence_similarity,NLP & Linguistics,5,"file, gpu, language, prompt, text",,Execute ModelFusion --sentence-similarity for sentence similarity.
-46,anonymization,NLP & Linguistics,5,"file, gpu, language, prompt, text",,Execute ModelFusion --anonymization for anonymization.
-47,coreference_resolution,NLP & Linguistics,5,"file, gpu, language, prompt, text",,Execute ModelFusion --coreference-resolution for coreference resolution.
-48,spam_detection,CyberSecurity & Safety,5,"file, gpu, language, prompt, text",,Execute ModelFusion --spam-detection for spam detection.
-49,malware_text_detection,CyberSecurity & Safety,5,"file, gpu, language, prompt, text",,Execute ModelFusion --malware-text-detection for malware text detection.
-50,phishing_detection,CyberSecurity & Safety,5,"file, gpu, language, prompt, text",,Execute ModelFusion --phishing-detection for phishing detection.
-51,pii_detection,CyberSecurity & Safety,5,"file, gpu, language, prompt, text",,Execute ModelFusion --pii-detection for pii detection.
-52,hate_speech_detection,CyberSecurity & Safety,5,"file, gpu, language, prompt, text",,Execute ModelFusion --hate-speech-detection for hate speech detection.
-53,cyberbullying_detection,CyberSecurity & Safety,5,"file, gpu, language, prompt, text",,Execute ModelFusion --cyberbullying-detection for cyberbullying detection.
-54,fake_news_detection,CyberSecurity & Safety,5,"file, gpu, language, prompt, text",,Execute ModelFusion --fake-news-detection for fake news detection.
-55,legal_judgment_classification,Domain Reasoning (Legal/Fin/Bio),5,"file, gpu, language, prompt, text",,Execute ModelFusion --legal-judgment-classification for legal judgment classification.
-56,contract_clause_classification,Domain Reasoning (Legal/Fin/Bio),5,"file, gpu, language, prompt, text",,Execute ModelFusion --contract-clause-classification for contract clause classification.
-57,case_outcome_prediction,Domain Reasoning (Legal/Fin/Bio),5,"file, gpu, language, prompt, text",,Execute ModelFusion --case-outcome-prediction for case outcome prediction.
-58,financial_ner,Domain Reasoning (Legal/Fin/Bio),5,"file, gpu, language, prompt, text",,Execute ModelFusion --financial-ner for financial ner.
-59,legal_ner,Domain Reasoning (Legal/Fin/Bio),5,"file, gpu, language, prompt, text",,Execute ModelFusion --legal-ner for legal ner.
-60,biomedical_ner,Domain Reasoning (Legal/Fin/Bio),5,"file, gpu, language, prompt, text",,Execute ModelFusion --biomedical-ner for biomedical ner.
-61,chemical_reaction_ner,Domain Reasoning (Legal/Fin/Bio),5,"file, gpu, language, prompt, text",,Execute ModelFusion --chemical-reaction-ner for chemical reaction ner.
-62,financial_sentiment_analysis,Domain Reasoning (Legal/Fin/Bio),5,"file, gpu, language, prompt, text",,Execute ModelFusion --financial-sentiment-analysis for financial sentiment analysis.
-63,scientific_abstract_summarization,Domain Reasoning (Legal/Fin/Bio),5,"file, gpu, language, prompt, text",,Execute ModelFusion --scientific-abstract-summarization for scientific abstract summarization.
-64,emotion_detection,"Ethics, Bias & Groundedness",5,"file, gpu, language, prompt, text",,Execute ModelFusion --emotion-detection for emotion detection.
-65,sarcasm_detection,"Ethics, Bias & Groundedness",5,"file, gpu, language, prompt, text",,Execute ModelFusion --sarcasm-detection for sarcasm detection.
-66,stance_detection,"Ethics, Bias & Groundedness",5,"file, gpu, language, prompt, text",,Execute ModelFusion --stance-detection for stance detection.
-67,bias_detection,"Ethics, Bias & Groundedness",5,"file, gpu, language, prompt, text",,Execute ModelFusion --bias-detection for bias detection.
-68,hallucination_detection,"Ethics, Bias & Groundedness",5,"file, gpu, language, prompt, text",,Execute ModelFusion --hallucination-detection for hallucination detection.
-69,reading_level_assessment,"Ethics, Bias & Groundedness",5,"file, gpu, language, prompt, text",,Execute ModelFusion --reading-level-assessment for reading level assessment.
-70,generation_groundedness,"Ethics, Bias & Groundedness",5,"file, gpu, language, prompt, text",,Execute ModelFusion --generation-groundedness for generation groundedness.
-71,citation_intent_classification,"Ethics, Bias & Groundedness",5,"file, gpu, language, prompt, text",,Execute ModelFusion --citation-intent-classification for citation intent classification.
-72,code_summary_generation,Code Intelligence,5,"file, gpu, language, prompt, text",,Execute ModelFusion --code-summary-generation for code summary generation.
-73,code_clone_detection,Code Intelligence,5,"file, gpu, language, prompt, text",,Execute ModelFusion --code-clone-detection for code clone detection.
-74,image_classification,Multi-Modal (Vision/Audio/Video),5,"file, gpu, language, prompt, text",,Execute ModelFusion --image-classification for image classification.
-75,object_detection,Multi-Modal (Vision/Audio/Video),5,"file, gpu, language, prompt, text",,Execute ModelFusion --object-detection for object detection.
-76,image_segmentation,Multi-Modal (Vision/Audio/Video),5,"file, gpu, language, prompt, text",,Execute ModelFusion --image-segmentation for image segmentation.
-77,visual_question_answering,Multi-Modal (Vision/Audio/Video),5,"file, gpu, language, prompt, text",,Execute ModelFusion --visual-question-answering for visual question answering.
-78,document_question_answering,Multi-Modal (Vision/Audio/Video),5,"file, gpu, language, prompt, text",,Execute ModelFusion --document-question-answering for document question answering.
-79,zero_shot_image_classification,Multi-Modal (Vision/Audio/Video),5,"file, gpu, language, prompt, text",,Execute ModelFusion --zero-shot-image-classification for zero shot image classification.
-80,depth_estimation,Multi-Modal (Vision/Audio/Video),5,"file, gpu, language, prompt, text",,Execute ModelFusion --depth-estimation for depth estimation.
-81,image_feature_extraction,Multi-Modal (Vision/Audio/Video),5,"file, gpu, language, prompt, text",,Execute ModelFusion --image-feature-extraction for image feature extraction.
-82,automatic_speech_recognition,Multi-Modal (Vision/Audio/Video),5,"file, gpu, language, prompt, text",,Execute ModelFusion --automatic-speech-recognition for automatic speech recognition.
-83,audio_classification,Multi-Modal (Vision/Audio/Video),5,"file, gpu, language, prompt, text",,Execute ModelFusion --audio-classification for audio classification.
-84,voice_activity_detection,Multi-Modal (Vision/Audio/Video),5,"file, gpu, language, prompt, text",,Execute ModelFusion --voice-activity-detection for voice activity detection.
-85,emotion_recognition,Multi-Modal (Vision/Audio/Video),5,"file, gpu, language, prompt, text",,Execute ModelFusion --emotion-recognition for emotion recognition.
-86,video_classification,Multi-Modal (Vision/Audio/Video),5,"file, gpu, language, prompt, text",,Execute ModelFusion --video-classification for video classification.
-87,text_to_speech,Multi-Modal (Vision/Audio/Video),5,"file, gpu, language, prompt, text",,Execute ModelFusion --text-to-speech for text to speech.
-88,text_to_image,Multi-Modal (Vision/Audio/Video),5,"file, gpu, language, prompt, text",,Execute ModelFusion --text-to-image for text to image.
-89,image_super_resolution,Multi-Modal (Vision/Audio/Video),5,"file, gpu, language, prompt, text",,Execute ModelFusion --image-super-resolution for image super resolution.
-90,table_question_answering,Multi-Modal (Vision/Audio/Video),5,"file, gpu, language, prompt, text",,Execute ModelFusion --table-question-answering for table question answering.
-91,feature_ranking,Multi-Modal (Vision/Audio/Video),5,"file, gpu, language, prompt, text",,Execute ModelFusion --feature-ranking for feature ranking.
-92,browser,Autonomous Agents & AutoML,2,"task, url",,"Navigate, automate, and interact with live web pages via Chromium CDP (port 9222)."
-93,deep_research,Autonomous Agents & AutoML,1,query,query,Execute autonomous multi-step web research with Set-of-Mark and synthesis.
-94,som,Autonomous Agents & AutoML,0,,,Run Set-of-Mark visual element grounding with 90% token reduction.
-95,summarize,Autonomous Agents & AutoML,1,text,,Summarize the active browser page or document into executive takeaways.
-96,search,Autonomous Agents & AutoML,1,query,query,Live web search grounding with factual citations.
-97,acdso,Autonomous Agents & AutoML,2,"file, target",,Automated Causal Decision Science Optimization (5-objective Pareto AutoML on datasets).
-98,goal,Autonomous Agents & AutoML,1,goal,goal,Execute long-running autonomous goal-directed loop until objective is fully achieved.
-99,plan,Autonomous Agents & AutoML,1,task,task,Decompose complex task into architectural implementation plan and test criteria.
-100,grill_me,Autonomous Agents & AutoML,1,topic,,Conduct adversarial requirements interview to stress-test designs and edge cases.
-101,boost,Autonomous Agents & AutoML,1,prompt,prompt,Activate multi-perspective deep reasoning boost and rigorous validation.
-102,agentic_loop,Autonomous Agents & AutoML,2,"prompt, target_tokens",prompt,Run recursive multi-turn agentic loop chaining for up to 256k tokens.
-103,rest_rl,Autonomous Agents & AutoML,1,action,,Manage sub-8ms ReST-RL preemption daemon with Windows Job Objects.
+Index,Name,Category,ParametersCount,RequiredParameters,Description
+1,execute,Core Orchestration,1,args,Execute ModelFusion CLI with ANY combination of flags
+2,quick_answer,Core Orchestration,2,question,Fast direct answer for general knowledge questions (non-coding) via Ollama in 2-3s
+3,orchestrate,Core Orchestration,6,prompt,Full pipeline: task detection → model selection → multi-model deliberation → execution
+4,analyze_file,Code Intelligence,2,"file, prompt","Analyze, review, or process a specific file with ModelFusion"
+5,analyze_folder,Code Intelligence,2,"folder, prompt","Analyze, audit, or review an entire directory/project"
+6,browser,Autonomous Browser & Research,3,prompt,"Navigate, interact, and automate web workflows"
+7,video,Multi-Modal & Domain Sciences,3,prompt,"Process video streams, extract keyframes, classify actions & video QA"
+8,browser_deep_research,Autonomous Browser & Research,3,prompt,Autonomous multi-step web research & synthesis
+9,arxiv,Autonomous Browser & Research,3,prompt,Direct search of arXiv scientific preprints and research papers
+10,markers,Autonomous Browser & Research,0,*None*,Numeric visual element grounding with 90% token reduction
+11,som,Autonomous Browser & Research,0,*None*,Numeric visual element grounding with 90% token reduction
+12,summarize,Autonomous Browser & Research,3,prompt,Extract and summarize active web page content
+13,search,Autonomous Browser & Research,1,query,Live web search grounding with verified citations
+14,web_agent,Autonomous Browser & Research,3,prompt,"Search internet, build inverted index, and correlate results with LLM"
+15,search_index,Autonomous Browser & Research,3,prompt,Build and query in-memory inverted search index over web data
+16,browser_navigate,Autonomous Browser & Research,3,prompt,Direct viewport navigation to specific URL
+17,browser_extract,Autonomous Browser & Research,3,prompt,Extract structured clean text and interactive nodes from DOM
+18,acdso,ACDSO AutoML & Tabular Data,3,prompt,5-objective Pareto causal AutoML on datasets
+19,datascience,ACDSO AutoML & Tabular Data,3,prompt,Full data science workflow and pipeline
+20,dataanalyst,ACDSO AutoML & Tabular Data,3,prompt,Exploratory data analysis & statistical profiling
+21,timeseries,ACDSO AutoML & Tabular Data,3,prompt,Time-series forecasting with Pareto horizon
+22,predict,ACDSO AutoML & Tabular Data,3,prompt,Target variable inference on tabular models
+23,decision,ACDSO AutoML & Tabular Data,3,prompt,Prescriptive decision optimization & counterfactuals
+24,tabular_classification,ACDSO AutoML & Tabular Data,3,prompt,Gradient-boosted decision trees and ensemble classifiers
+25,tabular_regression,ACDSO AutoML & Tabular Data,3,prompt,Continuous target estimation and causal effect regression
+26,feature_engineering,ACDSO AutoML & Tabular Data,3,prompt,"Automated polynomial, categorical, and interaction features"
+27,data_clean,ACDSO AutoML & Tabular Data,3,prompt,"Imputation, outlier removal, and schema validation"
+28,correlation_matrix,ACDSO AutoML & Tabular Data,3,prompt,"Pearson, Spearman, and mutual information correlation"
+29,anomaly_detection,ACDSO AutoML & Tabular Data,3,prompt,Isolation Forest and Local Outlier Factor anomaly scoring
+30,pareto_frontier,ACDSO AutoML & Tabular Data,3,prompt,Multi-objective trade-off surface computation
+31,clustering,ACDSO AutoML & Tabular Data,3,prompt,"K-Means, HDBSCAN, and spectral clustering partitions"
+32,model_interpretability,ACDSO AutoML & Tabular Data,3,prompt,Shapley additive explanations and feature importance
+33,vision,Computer Vision,3,prompt,"Object detection, OCR, and visual Q&A"
+34,image_classification,Computer Vision,3,prompt,Zero-shot vision classification across open models
+35,object_detection,Computer Vision,3,prompt,Visual bounding boxes and multi-target detection
+36,vqa,Computer Vision,3,prompt,Direct Q&A on attached images & visual assets
+37,image_segmentation,Computer Vision,3,prompt,Semantic and instance pixel-level segmentation masks
+38,text_to_image,Computer Vision,3,prompt,High-fidelity diffusion image generation from prompt
+39,image_to_text,Computer Vision,3,prompt,Dense visual captioning and narrative extraction
+40,image_to_image,Computer Vision,3,prompt,"Style transfer, super-resolution, and image refinement"
+41,depth_estimation,Computer Vision,3,prompt,Monocular 3D depth map and surface normal estimation
+42,doc_vqa,Computer Vision,3,prompt,"Visual document understanding on invoices, receipts & forms"
+43,zero_shot_image,Computer Vision,3,prompt,Open-vocabulary image classification without fine-tuning
+44,zero_shot_detect,Computer Vision,3,prompt,Open-vocabulary bounding box object localization
+45,mask_generation,Computer Vision,3,prompt,Segment Anything (SAM) promptable foreground masks
+46,keypoint_detection,Computer Vision,3,prompt,"Human pose, facial landmarks, and skeletal joint tracking"
+47,video_classification,Computer Vision,3,prompt,"Action recognition, temporal scene cuts, and video tags"
+48,text_to_video,Computer Vision,3,prompt,Temporal video sequence generation from text description
+49,unconditional_image,Computer Vision,3,prompt,Unconditional generative synthesis from learned priors
+50,ocr,Computer Vision,3,prompt,Multi-language printed and handwritten optical text reading
+51,face_detection,Computer Vision,3,prompt,"Facial bounding boxes, expression, and demographic cues"
+52,image_enhance,Computer Vision,3,prompt,"Denoising, deblurring, and 4x AI resolution upscaling"
+53,inpainting,Computer Vision,3,prompt,Masked area reconstruction and contextual object removal
+54,image_similarity,Computer Vision,3,prompt,CLIP embedding cosine similarity between images
+55,nsfw_detect,Computer Vision,3,prompt,"Safety filtering, sensitive content, and moderation check"
+56,scene_understanding,Computer Vision,3,prompt,Indoor/outdoor holistic scene topology and spatial parsing
+57,color_palette,Computer Vision,3,prompt,Dominant hexadecimal color palette and visual harmony
+58,asr,Audio & Speech,3,prompt,Automatic speech recognition via Whisper models
+59,tts,Audio & Speech,3,prompt,Text synthesis into natural audible speech
+60,audio,Audio & Speech,3,prompt,Sound event detection & voice activity analysis
+61,vad,Audio & Speech,3,prompt,Real-time speech vs silence endpoint segmentation
+62,audio_to_audio,Audio & Speech,3,prompt,Background noise cancellation and voice isolation
+63,text_to_audio,Audio & Speech,3,prompt,Synthesize custom sound effects and acoustic ambiances
+64,speaker_diarization,Audio & Speech,3,prompt,Who spoke when: multi-speaker segmentation & clustering
+65,speaker_id,Audio & Speech,3,prompt,Voiceprint embedding verification and speaker matching
+66,music_gen,Audio & Speech,3,prompt,Instrumental and polyphonic music generation from prompts
+67,sound_event,Audio & Speech,3,prompt,"Identify siren, glass break, baby cry, and environmental cues"
+68,speech_enhance,Audio & Speech,3,prompt,Spectral restoration and vocal clarity enhancement
+69,source_separation,Audio & Speech,3,prompt,"Stems splitting: vocals, drums, bass, and instruments"
+70,voice_emotion,Audio & Speech,3,prompt,Prosodic speech emotion and affective state recognition
+71,audio_lang_id,Audio & Speech,3,prompt,Identify spoken language across 100+ global dialects
+72,tempo,Audio & Speech,3,prompt,"Rhythm tracking, beat onset, and BPM tempo estimation"
+73,nlp,NLP & Linguistics,3,prompt,"Sentiment, NER, translation, and text classification"
+74,text_generation,NLP & Linguistics,3,prompt,Open-ended causal text completion and synthesis
+75,text2text,NLP & Linguistics,3,prompt,"Seq2Seq transformation, rewriting, and standardization"
+76,translation,NLP & Linguistics,3,prompt,Neural machine translation across 200+ languages
+77,question_answering,NLP & Linguistics,3,prompt,Extractive and generative reading comprehension
+78,table_qa,NLP & Linguistics,3,prompt,Direct natural language querying over tabular structures
+79,zero_shot,NLP & Linguistics,3,prompt,Categorize text into arbitrary candidate label sets
+80,text_classification,NLP & Linguistics,3,prompt,"Fine-tuned intent, category, and sentiment labels"
+81,token_classification,NLP & Linguistics,3,prompt,"Token-level entity, POS tag, and boundary classification"
+82,sentence_similarity,NLP & Linguistics,3,prompt,Bi-encoder semantic similarity scoring and ranking
+83,conversational,NLP & Linguistics,3,prompt,Multi-turn persona-grounded conversational agent
+84,fill_mask,NLP & Linguistics,3,prompt,Predict masked tokens via bidirectional context
+85,multiple_choice,NLP & Linguistics,3,prompt,Select most plausible completion from candidate options
+86,sentiment,NLP & Linguistics,3,prompt,"Positive, negative, neutral, and emotional intensity"
+87,summarize_text,NLP & Linguistics,3,prompt,Abstractive and extractive multi-paragraph summarization
+88,grammar,NLP & Linguistics,3,prompt,"Orthographic, syntactic, and stylistic error correction"
+89,paraphrase,NLP & Linguistics,3,prompt,Alternative phrasing preserving core semantic intent
+90,ner,NLP & Linguistics,3,prompt,"Extract names, locations, dates, and organizations"
+91,keywords,NLP & Linguistics,3,prompt,KeyBERT and TF-IDF keyphrase significance extraction
+92,semantic_search,NLP & Linguistics,6,action,Dense vector retrieval over embedded corpus documents
+93,hallucination_eval,NLP & Linguistics,3,prompt,Cross-reference text claims against source ground truth
+94,prompt_expand,NLP & Linguistics,3,prompt,Enrich sparse prompts with context and constraints
+95,chain_of_thought,NLP & Linguistics,3,prompt,Step-by-step rationalized deductive derivation
+96,toxicity,NLP & Linguistics,3,prompt,"Identify profanity, harassment, hate speech, and threats"
+97,intent,NLP & Linguistics,3,prompt,Identify actionable user objective and routing class
+98,relation_extract,NLP & Linguistics,3,prompt,Extract subject-predicate-object knowledge triples
+99,topic_model,NLP & Linguistics,3,prompt,Unsupervised discovery of semantic themes across docs
+100,simplify,NLP & Linguistics,3,prompt,Convert dense academic jargon into plain English
+101,lang_detect,NLP & Linguistics,3,prompt,Determine ISO language code from raw text snippet
+102,citation,NLP & Linguistics,3,prompt,"Generate BibTeX, APA, IEEE, and Chicago references"
+103,code,Code Intelligence,3,prompt,"Code generation, vulnerability scanning & refactoring"
+104,code_gen,Code Intelligence,3,prompt,Multi-language function and module synthesis
+105,infill,Code Intelligence,3,prompt,Fill-in-the-middle code completion from context
+106,code_review,Code Intelligence,3,prompt,Automated code review for maintainability & bugs
+107,refactor,Code Intelligence,3,prompt,Restructure code without altering functional behavior
+108,test_gen,Code Intelligence,3,prompt,Generate high-coverage unit tests and assertions
+109,graph_index,Code Intelligence,3,prompt,Extract AST relationships & call graphs
+110,rest_rl,System Telemetry & Lifecycle,3,*None*,Sub-8ms Windows Job Object RL repair engine
+111,ast_parse,Code Intelligence,3,prompt,Parse source into concrete syntax trees and tokens
+112,docstring,Code Intelligence,3,prompt,Synthesize Google/Sphinx/Rustdoc documentation comments
+113,type_infer,Code Intelligence,3,prompt,Infer strong static types for dynamic languages
+114,sql,Code Intelligence,3,prompt,Translate natural language queries into optimized SQL
+115,regex,Code Intelligence,3,prompt,Construct and explain complex regular expressions
+116,git_commit,Code Intelligence,3,prompt,Generate Conventional Commit messages from diffs
+117,lint_fix,Code Intelligence,3,prompt,"Auto-repair linting, formatting, and stylistic warnings"
+118,perf_audit,Code Intelligence,3,prompt,Algorithmic complexity Big-O analysis and bottlenecks
+119,deps,Code Intelligence,3,prompt,Detect obsolete or vulnerable third-party dependencies
+120,api_docs,Code Intelligence,3,prompt,Generate OpenAPI / Swagger specifications from code
+121,code_translate,Code Intelligence,3,prompt,"Transpile code between Python, Rust, TS, Go, C++"
+122,dockerfile,Code Intelligence,3,prompt,Generate multi-stage secure container Dockerfiles
+123,security,CyberSecurity & Binary Forensics,3,*None*,"Malware, phishing, PII, and exploit detection"
+124,pe,CyberSecurity & Binary Forensics,3,*None*,Extract PE headers and binary forensics from .exe/.dll
+125,vuln_scan,CyberSecurity & Binary Forensics,3,*None*,"Static analysis for buffer overflows, use-after-free, injection"
+126,malware_analysis,CyberSecurity & Binary Forensics,3,*None*,Heuristic static malware indicators and evasion patterns
+127,mem_forensics,CyberSecurity & Binary Forensics,3,*None*,"Analyze core dumps, heap allocations, and stack frames"
+128,pii_scan,CyberSecurity & Binary Forensics,3,*None*,"Discover SSNs, credit cards, emails, and confidential data"
+129,entropy,CyberSecurity & Binary Forensics,3,*None*,Compute Shannon entropy to detect packed or encrypted sections
+130,strings,CyberSecurity & Binary Forensics,3,*None*,Extract and filter printable ASCII and Unicode strings
+131,exploit,CyberSecurity & Binary Forensics,3,*None*,Assess proof-of-concept exploits and remediation steps
+132,decompile,CyberSecurity & Binary Forensics,3,*None*,Explain disassembled assembly and high-level pseudocode
+133,net_audit,CyberSecurity & Binary Forensics,3,*None*,Inspect PCAP captures and suspicious beaconing traffic
+134,yara,CyberSecurity & Binary Forensics,3,*None*,Synthesize YARA detection rules for indicators of compromise
+135,tls_inspect,CyberSecurity & Binary Forensics,3,*None*,"Verify certificates, cipher suites, and handshake health"
+136,owasp,CyberSecurity & Binary Forensics,3,*None*,Comprehensive audit against OWASP Top 10 vulnerabilities
+137,packer_detect,CyberSecurity & Binary Forensics,3,*None*,"Detect UPX, Themida, VMProtect, and known binary packers"
+138,secret_scan,CyberSecurity & Binary Forensics,3,*None*,"Identify committed API tokens, private keys, and passwords"
+139,medical,Multi-Modal & Domain Sciences,3,prompt,"Clinical notes analysis, biomedical research summarization"
+140,legal,Multi-Modal & Domain Sciences,3,prompt,"Contract clause analysis, indemnification and liability audit"
+141,finance,Multi-Modal & Domain Sciences,3,prompt,"Balance sheet parsing, earnings call sentiment & ratios"
+142,robotics,Multi-Modal & Domain Sciences,3,prompt,"Inverse kinematics, trajectory planning, and actuator dynamics"
+143,rl,Multi-Modal & Domain Sciences,3,prompt,"Markov decision processes, Q-learning, and policy gradients"
+144,graph_ml,Multi-Modal & Domain Sciences,3,prompt,Node classification and link prediction on knowledge graphs
+145,chemistry,Multi-Modal & Domain Sciences,3,prompt,SMILES molecular representation and reaction properties
+146,climate,Multi-Modal & Domain Sciences,3,prompt,Atmospheric sensor modeling and weather trend forecasting
+147,patent,Multi-Modal & Domain Sciences,3,prompt,Cross-reference claims and patent infringement discovery
+148,tab_domain,Multi-Modal & Domain Sciences,3,prompt,Healthcare and financial domain-specific tabular modeling
+149,fusion,Multi-Modal & Domain Sciences,3,prompt,"Cross-modal late fusion combining vision, text, and data"
+150,av_align,Multi-Modal & Domain Sciences,3,prompt,Align audio spectrogram events with visual video frames
+151,physics,Multi-Modal & Domain Sciences,3,prompt,Hamiltonian and classical Newtonian mechanics simulations
+152,bioinformatics,Multi-Modal & Domain Sciences,3,prompt,DNA sequence alignment and protein folding predictions
+153,geospatial,Multi-Modal & Domain Sciences,3,prompt,Geohash coordinate queries and satellite imagery analytics
+154,goal,Autonomous Agents & Reasoning,1,goal,Multi-turn autonomous goal-directed agent loop
+155,plan,Autonomous Agents & Reasoning,1,task,Deconstruct complex tasks into executable steps
+156,grill_me,Autonomous Agents & Reasoning,3,prompt,Adversarial requirements interview & stress-testing
+157,boost,Autonomous Agents & Reasoning,1,prompt,Deep multi-perspective reasoning & rigorous verification
+158,agentic_loop,Autonomous Agents & Reasoning,2,prompt,Recursive auto-chaining for up to 256k tokens
+159,explain,Autonomous Agents & Reasoning,3,prompt,Step-by-step reasoning and deep conceptual explanation
+160,cot,Autonomous Agents & Reasoning,3,prompt,Explicit chain-of-thought derivation with evidence checks
+161,critic,Autonomous Agents & Reasoning,3,prompt,Adversarially evaluate draft solutions for edge case flaws
+162,synthesize,Autonomous Agents & Reasoning,3,prompt,Synthesize multiple divergent viewpoints into one consensus
+163,decompose,Autonomous Agents & Reasoning,3,prompt,Break massive requirements into atomic subtasks
+164,delegate,Autonomous Agents & Reasoning,3,prompt,Dispatch specialized micro-tasks to background subagents
+165,verify,Autonomous Agents & Reasoning,3,prompt,Formal verification of outputs against input constraints
+166,backtrack,Autonomous Agents & Reasoning,3,prompt,Rollback erroneous reasoning branches to previous valid state
+167,reflection,Autonomous Agents & Reasoning,3,prompt,Analyze execution failure traces and synthesize self-corrections
+168,adversarial,Autonomous Agents & Reasoning,3,prompt,Subject assumptions and architecture to worst-case stresses
+169,update,System Telemetry & Lifecycle,3,*None*,"Fast curated update (~6,500 models & dynamic Ollama sizing)"
+170,updatedb,System Telemetry & Lifecycle,3,*None*,Crawl all 2M+ models from Hugging Face Hub
+171,active_model,System Telemetry & Lifecycle,3,*None*,Inspect currently loaded Ollama model & memory
+172,sys_info,System Telemetry & Lifecycle,3,*None*,"Hardware resources, runtime RAM/VRAM, and active models"
+173,fusion_status,System Telemetry & Lifecycle,3,*None*,Multi-modal catalog count and consensus telemetry

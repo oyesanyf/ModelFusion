@@ -1,10 +1,13 @@
 [
   {
-    "description": "Execute the ModelFusion CLI with ANY combination of flags. This is the universal tool \u00e2\u20ac\u201d use it when no specialized tool fits. Supported flags: --file <path>, --folder <path>, --prompt <text>, --task <task_name>, --budget <float>, --chain-of-thought, --gpu, --cpu, --ollama, --openvino, --onnx, --vllm, --model <model_id>, --fusion, --fusion-models <N>, --fusion-mode <multi-model|multi-sample>, --selection-strategy <strategy>, --delegation, --recursion, --context-auto, --context <text>, --verbose, --debug, --language <lang>, --full, --score, --judge, --plan, --enable-innovations, --workflow-optimization, --semantic-analysis, --temporal-tracking, --predictive-mode, --innovation-level <N>, --real-options, --prompt-quality-scoring, --enable-ml, --enable-ml-selection, --ml-learning, --ml-ensemble-method <method>, --ml-confidence-threshold <float>, --ml-fallback <true|false>, --enable-slash-commands",
+    "category": "core",
+    "cmd": "cli.exe ",
+    "description": "Execute ModelFusion CLI with ANY combination of flags",
+    "icon": "🖥️",
     "inputSchema": {
       "properties": {
         "args": {
-          "description": "Array of CLI arguments (e.g., ['--prompt', 'explain recursion', '--ollama', '--gpu'])",
+          "description": "Array of CLI arguments (e.g. ['--prompt', 'explain recursion', '--gpu'])",
           "items": {
             "type": "string"
           },
@@ -16,14 +19,18 @@
       ],
       "type": "object"
     },
+    "label": "Universal CLI Execute",
     "name": "execute"
   },
   {
-    "description": "Fast direct answer for general knowledge questions (non-coding). Calls Ollama directly, bypassing orchestration for ~2-3 second responses. Use for: geography, history, math, science, trivia, definitions, translations, general knowledge.",
+    "category": "core",
+    "cmd": "@agent quick ",
+    "description": "Fast direct answer for general knowledge questions (non-coding) via Ollama in 2-3s",
+    "icon": "⚡",
     "inputSchema": {
       "properties": {
         "model": {
-          "description": "Ollama model (default: qwen2.5:3b). Options: qwen2.5:0.5b, qwen2.5:1.5b, qwen2.5:3b, qwen2.5:7b, llama3.2:3b",
+          "description": "Ollama model (default: qwen2.5:3b)",
           "type": "string"
         },
         "question": {
@@ -36,48 +43,36 @@
       ],
       "type": "object"
     },
+    "label": "Quick Answer",
     "name": "quick_answer"
   },
   {
-    "description": "Run the full ModelFusion orchestration pipeline: task detection \u00e2\u2020\u2019 model selection \u00e2\u2020\u2019 execution. Best for coding questions, complex analysis, and tasks that benefit from intelligent model routing.",
+    "category": "core",
+    "cmd": "@agent orchestrate ",
+    "description": "Full pipeline: task detection → model selection → multi-model deliberation → execution",
+    "icon": "🎼",
     "inputSchema": {
       "properties": {
         "budget": {
-          "description": "Model size limit in billions (1=tiny, 3=balanced, 7=quality)",
+          "description": "Model parameter budget in billions",
           "type": "number"
-        },
-        "chain_of_thought": {
-          "description": "Enable step-by-step reasoning",
-          "type": "boolean"
         },
         "cpu": {
           "type": "boolean"
         },
-        "delegation": {
-          "description": "Multi-agent task routing",
-          "type": "boolean"
-        },
         "fusion": {
-          "description": "Use panel of models for higher quality",
+          "description": "Enable multi-model consensus",
           "type": "boolean"
         },
         "gpu": {
           "type": "boolean"
         },
         "prompt": {
-          "description": "The prompt or task description",
+          "description": "Task prompt or instruction",
           "type": "string"
-        },
-        "recursion": {
-          "description": "Recursive task decomposition",
-          "type": "boolean"
         },
         "selection_strategy": {
-          "description": "Strategy: multi_objective, latency, accuracy, cost, performance",
-          "type": "string"
-        },
-        "task_override": {
-          "description": "Force task type (text-generation, code-analysis, summarization, etc.)",
+          "description": "Selection strategy",
           "type": "string"
         }
       },
@@ -86,28 +81,22 @@
       ],
       "type": "object"
     },
+    "label": "Full Orchestrator",
     "name": "orchestrate"
   },
   {
-    "description": "Analyze, review, or process a specific file using ModelFusion. Supports code review, vulnerability scanning, summarization, and custom analysis.",
+    "category": "code",
+    "cmd": "@agent file ",
+    "description": "Analyze, review, or process a specific file with ModelFusion",
+    "icon": "📄",
     "inputSchema": {
       "properties": {
-        "budget": {
-          "type": "number"
-        },
         "file": {
           "description": "Absolute path to file",
           "type": "string"
         },
-        "full": {
-          "description": "Enable comprehensive analysis",
-          "type": "boolean"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
         "prompt": {
-          "description": "Analysis instructions",
+          "description": "Instructions or questions about file",
           "type": "string"
         }
       },
@@ -117,27 +106,22 @@
       ],
       "type": "object"
     },
+    "label": "Analyze File",
     "name": "analyze_file"
   },
   {
-    "description": "Analyze or review an entire directory/project using ModelFusion. Supports code review, architecture analysis, and project-wide scanning.",
+    "category": "code",
+    "cmd": "@agent folder ",
+    "description": "Analyze, audit, or review an entire directory/project",
+    "icon": "📁",
     "inputSchema": {
       "properties": {
-        "budget": {
-          "type": "number"
-        },
         "folder": {
           "description": "Absolute path to folder",
           "type": "string"
         },
-        "full": {
-          "type": "boolean"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
         "prompt": {
-          "description": "Analysis instructions",
+          "description": "Instructions or review goals",
           "type": "string"
         }
       },
@@ -147,157 +131,2382 @@
       ],
       "type": "object"
     },
+    "label": "Analyze Folder",
     "name": "analyze_folder"
   },
   {
-    "description": "Run specialized NLP tasks: sentiment-analysis, text-classification, summarization, translation, question-answering, ner (named entity recognition), emotion-detection, sarcasm-detection, paraphrase-generation, grammar-correction, language-detection, reading-level-assessment, anonymization, coreference-resolution, fill-mask, feature-extraction, sentence-similarity, zero-shot-classification, stance-detection, bias-detection.",
-    "inputSchema": {
-      "properties": {
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Target language for translation (default: en)",
-          "type": "string"
-        },
-        "task": {
-          "description": "NLP task name (e.g., 'sentiment-analysis', 'translation', 'summarization', 'ner', 'emotion-detection')",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text to process",
-          "type": "string"
-        }
-      },
-      "required": [
-        "task",
-        "text"
-      ],
-      "type": "object"
-    },
-    "name": "nlp_task"
-  },
-  {
-    "description": "Run security-focused NLP analysis: spam-detection, malware-text-detection, phishing-detection, pii-detection (personally identifiable information), hate-speech-detection, cyberbullying-detection, fake-news-detection, hallucination-detection, generation-groundedness, code-vulnerability-detection.",
+    "category": "web",
+    "cmd": "@agent browser ",
+    "description": "Navigate, interact, and automate web workflows",
+    "icon": "🌐",
     "inputSchema": {
       "properties": {
         "file": {
-          "description": "Optional file path to scan",
+          "description": "Optional file path or target dataset",
           "type": "string"
         },
         "gpu": {
-          "type": "boolean"
-        },
-        "task": {
-          "description": "Security task (e.g., 'spam-detection', 'pii-detection', 'phishing-detection', 'code-vulnerability-detection')",
-          "type": "string"
-        },
-        "text": {
-          "description": "Text or code to analyze",
-          "type": "string"
-        }
-      },
-      "required": [
-        "task",
-        "text"
-      ],
-      "type": "object"
-    },
-    "name": "security_analysis"
-  },
-  {
-    "description": "Run code-specific AI tasks: code-vulnerability-detection, code-summary-generation, code-clone-detection, text-generation (for code), causal-language-modeling. Also supports --plan for AI-powered planning and --judge for LLM-as-a-Judge evaluation.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional source file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "judge": {
-          "description": "Enable LLM-as-a-Judge evaluation",
-          "type": "boolean"
-        },
-        "plan": {
-          "description": "Enable AI planning mode",
-          "type": "boolean"
-        },
-        "score": {
-          "description": "Enable response scoring",
-          "type": "boolean"
-        },
-        "task": {
-          "description": "Code task (e.g., 'code-vulnerability-detection', 'code-summary-generation', 'code-clone-detection')",
-          "type": "string"
-        },
-        "text": {
-          "description": "Code or description",
-          "type": "string"
-        }
-      },
-      "required": [
-        "task",
-        "text"
-      ],
-      "type": "object"
-    },
-    "name": "code_task"
-  },
-  {
-    "description": "Run domain-specific NLP: legal-judgment-classification, contract-clause-classification, case-outcome-prediction, financial-ner, financial-sentiment-analysis, legal-ner, biomedical-ner, chemical-reaction-ner, scientific-abstract-summarization, citation-intent-classification, table-question-answering, feature-ranking.",
-    "inputSchema": {
-      "properties": {
-        "gpu": {
-          "type": "boolean"
-        },
-        "task": {
-          "description": "Domain task (e.g., 'financial-sentiment-analysis', 'legal-ner', 'biomedical-ner', 'contract-clause-classification')",
-          "type": "string"
-        },
-        "text": {
-          "description": "Text to analyze",
-          "type": "string"
-        }
-      },
-      "required": [
-        "task",
-        "text"
-      ],
-      "type": "object"
-    },
-    "name": "domain_task"
-  },
-  {
-    "description": "Run image, audio, and video AI tasks: image-classification, object-detection, image-segmentation, visual-question-answering, document-question-answering, zero-shot-image-classification, depth-estimation, image-feature-extraction, image-super-resolution, text-to-image, automatic-speech-recognition, audio-classification, voice-activity-detection, emotion-recognition, video-classification, text-to-speech.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Path to image/audio/video file",
-          "type": "string"
-        },
-        "gpu": {
+          "description": "Enable GPU acceleration",
           "type": "boolean"
         },
         "prompt": {
-          "description": "Question or instruction for the task",
-          "type": "string"
-        },
-        "task": {
-          "description": "Multimodal task (e.g., 'image-classification', 'object-detection', 'automatic-speech-recognition')",
+          "description": "Input text or instructions for Browser Automation",
           "type": "string"
         }
       },
       "required": [
-        "task"
+        "prompt"
       ],
       "type": "object"
     },
-    "name": "multimodal_task"
+    "label": "Browser Automation",
+    "name": "browser"
   },
   {
-    "description": "Semantic search with HyDE (Hypothetical Document Embeddings). Add documents to the index, then search with natural language queries. Supports interactive question refinement and multiple HyDE variants.",
+    "category": "multimodal",
+    "cmd": "@agent video ",
+    "description": "Process video streams, extract keyframes, classify actions & video QA",
+    "icon": "🎬",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Video Analysis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Video Analysis",
+    "name": "video"
+  },
+  {
+    "category": "web",
+    "cmd": "@agent browser deep research on ",
+    "description": "Autonomous multi-step web research & synthesis",
+    "icon": "🔍",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Deep Research",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Deep Research",
+    "name": "browser_deep_research"
+  },
+  {
+    "category": "web",
+    "cmd": "@agent arxiv ",
+    "description": "Direct search of arXiv scientific preprints and research papers",
+    "icon": "📚",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for arXiv Papers",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "arXiv Papers",
+    "name": "arxiv"
+  },
+  {
+    "category": "web",
+    "cmd": "@agent markers ",
+    "description": "Numeric visual element grounding with 90% token reduction",
+    "icon": "🎯",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "label": "Visual Element Markers",
+    "name": "markers"
+  },
+  {
+    "category": "web",
+    "cmd": "@agent markers ",
+    "description": "Numeric visual element grounding with 90% token reduction",
+    "icon": "🎯",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "label": "Visual Element Markers",
+    "name": "som"
+  },
+  {
+    "category": "web",
+    "cmd": "@agent summarize",
+    "description": "Extract and summarize active web page content",
+    "icon": "📑",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Summarize Page",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Summarize Page",
+    "name": "summarize"
+  },
+  {
+    "category": "web",
+    "cmd": "@agent search ",
+    "description": "Live web search grounding with verified citations",
+    "icon": "🔎",
+    "inputSchema": {
+      "properties": {
+        "query": {
+          "description": "Search query",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "label": "Web Search Grounding",
+    "name": "search"
+  },
+  {
+    "category": "web",
+    "cmd": "@agent web-agent ",
+    "description": "Search internet, build inverted index, and correlate results with LLM",
+    "icon": "🌐",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Web Search Agent",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Web Search Agent",
+    "name": "web_agent"
+  },
+  {
+    "category": "web",
+    "cmd": "@agent search-index ",
+    "description": "Build and query in-memory inverted search index over web data",
+    "icon": "📑",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Search Index",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Search Index",
+    "name": "search_index"
+  },
+  {
+    "category": "web",
+    "cmd": "@agent browser navigate ",
+    "description": "Direct viewport navigation to specific URL",
+    "icon": "🧭",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Browser Navigate",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Browser Navigate",
+    "name": "browser_navigate"
+  },
+  {
+    "category": "web",
+    "cmd": "@agent browser extract ",
+    "description": "Extract structured clean text and interactive nodes from DOM",
+    "icon": "📋",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for DOM Extraction",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "DOM Extraction",
+    "name": "browser_extract"
+  },
+  {
+    "category": "tabular",
+    "cmd": "@agent acdso ",
+    "description": "5-objective Pareto causal AutoML on datasets",
+    "icon": "📊",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for ACDSO AutoML",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "ACDSO AutoML",
+    "name": "acdso"
+  },
+  {
+    "category": "tabular",
+    "cmd": "@agent datascience ",
+    "description": "Full data science workflow and pipeline",
+    "icon": "📈",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Data Science",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Data Science",
+    "name": "datascience"
+  },
+  {
+    "category": "tabular",
+    "cmd": "@agent dataanalyst ",
+    "description": "Exploratory data analysis & statistical profiling",
+    "icon": "🔬",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Data Analyst",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Data Analyst",
+    "name": "dataanalyst"
+  },
+  {
+    "category": "tabular",
+    "cmd": "@agent timeseries ",
+    "description": "Time-series forecasting with Pareto horizon",
+    "icon": "⏳",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Time-Series",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Time-Series",
+    "name": "timeseries"
+  },
+  {
+    "category": "tabular",
+    "cmd": "@agent predict ",
+    "description": "Target variable inference on tabular models",
+    "icon": "🎯",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for AutoML Predict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "AutoML Predict",
+    "name": "predict"
+  },
+  {
+    "category": "tabular",
+    "cmd": "@agent decision ",
+    "description": "Prescriptive decision optimization & counterfactuals",
+    "icon": "⚖️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Decision Engine",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Decision Engine",
+    "name": "decision"
+  },
+  {
+    "category": "tabular",
+    "cmd": "@agent tabular-classification ",
+    "description": "Gradient-boosted decision trees and ensemble classifiers",
+    "icon": "🏷️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Tabular Classify",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Tabular Classify",
+    "name": "tabular_classification"
+  },
+  {
+    "category": "tabular",
+    "cmd": "@agent tabular-regression ",
+    "description": "Continuous target estimation and causal effect regression",
+    "icon": "📉",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Tabular Regress",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Tabular Regress",
+    "name": "tabular_regression"
+  },
+  {
+    "category": "tabular",
+    "cmd": "@agent feature-engineering ",
+    "description": "Automated polynomial, categorical, and interaction features",
+    "icon": "⚙️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Feature Engineer",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Feature Engineer",
+    "name": "feature_engineering"
+  },
+  {
+    "category": "tabular",
+    "cmd": "@agent data-clean ",
+    "description": "Imputation, outlier removal, and schema validation",
+    "icon": "🧹",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Dataset Cleaner",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Dataset Cleaner",
+    "name": "data_clean"
+  },
+  {
+    "category": "tabular",
+    "cmd": "@agent correlation ",
+    "description": "Pearson, Spearman, and mutual information correlation",
+    "icon": "🔢",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Correlation Matrix",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Correlation Matrix",
+    "name": "correlation_matrix"
+  },
+  {
+    "category": "tabular",
+    "cmd": "@agent anomaly-detection ",
+    "description": "Isolation Forest and Local Outlier Factor anomaly scoring",
+    "icon": "🚨",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Anomaly Detection",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Anomaly Detection",
+    "name": "anomaly_detection"
+  },
+  {
+    "category": "tabular",
+    "cmd": "@agent pareto ",
+    "description": "Multi-objective trade-off surface computation",
+    "icon": "📐",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Pareto Optimizer",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Pareto Optimizer",
+    "name": "pareto_frontier"
+  },
+  {
+    "category": "tabular",
+    "cmd": "@agent clustering ",
+    "description": "K-Means, HDBSCAN, and spectral clustering partitions",
+    "icon": "🫧",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Data Clustering",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Data Clustering",
+    "name": "clustering"
+  },
+  {
+    "category": "tabular",
+    "cmd": "@agent shap-explain ",
+    "description": "Shapley additive explanations and feature importance",
+    "icon": "💡",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for SHAP Interpretability",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "SHAP Interpretability",
+    "name": "model_interpretability"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent vision ",
+    "description": "Object detection, OCR, and visual Q&A",
+    "icon": "👁️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Vision Analysis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Vision Analysis",
+    "name": "vision"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent image-classification ",
+    "description": "Zero-shot vision classification across open models",
+    "icon": "🏷️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Image Classify",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Image Classify",
+    "name": "image_classification"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent object-detection ",
+    "description": "Visual bounding boxes and multi-target detection",
+    "icon": "📦",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Object Detection",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Object Detection",
+    "name": "object_detection"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent vqa ",
+    "description": "Direct Q&A on attached images & visual assets",
+    "icon": "❓",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Visual QA",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Visual QA",
+    "name": "vqa"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent image-segmentation ",
+    "description": "Semantic and instance pixel-level segmentation masks",
+    "icon": "✂️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Image Segment",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Image Segment",
+    "name": "image_segmentation"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent text-to-image ",
+    "description": "High-fidelity diffusion image generation from prompt",
+    "icon": "🎨",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Text to Image",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Text to Image",
+    "name": "text_to_image"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent image-to-text ",
+    "description": "Dense visual captioning and narrative extraction",
+    "icon": "📝",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Image Captioning",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Image Captioning",
+    "name": "image_to_text"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent image-to-image ",
+    "description": "Style transfer, super-resolution, and image refinement",
+    "icon": "🖼️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Image to Image",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Image to Image",
+    "name": "image_to_image"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent depth-estimation ",
+    "description": "Monocular 3D depth map and surface normal estimation",
+    "icon": "📏",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Depth Estimation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Depth Estimation",
+    "name": "depth_estimation"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent doc-vqa ",
+    "description": "Visual document understanding on invoices, receipts & forms",
+    "icon": "📄",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Document VQA",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Document VQA",
+    "name": "doc_vqa"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent zero-shot-image ",
+    "description": "Open-vocabulary image classification without fine-tuning",
+    "icon": "🎯",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Zero-Shot Image",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Zero-Shot Image",
+    "name": "zero_shot_image"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent zero-shot-detect ",
+    "description": "Open-vocabulary bounding box object localization",
+    "icon": "🔍",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Zero-Shot Detect",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Zero-Shot Detect",
+    "name": "zero_shot_detect"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent mask-generation ",
+    "description": "Segment Anything (SAM) promptable foreground masks",
+    "icon": "🎭",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Mask Generation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Mask Generation",
+    "name": "mask_generation"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent keypoint-detection ",
+    "description": "Human pose, facial landmarks, and skeletal joint tracking",
+    "icon": "📍",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Keypoint Detect",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Keypoint Detect",
+    "name": "keypoint_detection"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent video-classification ",
+    "description": "Action recognition, temporal scene cuts, and video tags",
+    "icon": "🎬",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Video Classify",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Video Classify",
+    "name": "video_classification"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent text-to-video ",
+    "description": "Temporal video sequence generation from text description",
+    "icon": "📹",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Text to Video",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Text to Video",
+    "name": "text_to_video"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent unconditional-image ",
+    "description": "Unconditional generative synthesis from learned priors",
+    "icon": "✨",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Image Synthesis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Image Synthesis",
+    "name": "unconditional_image"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent ocr ",
+    "description": "Multi-language printed and handwritten optical text reading",
+    "icon": "🔤",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for OCR Text Extract",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "OCR Text Extract",
+    "name": "ocr"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent face-detection ",
+    "description": "Facial bounding boxes, expression, and demographic cues",
+    "icon": "👤",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Face Detection",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Face Detection",
+    "name": "face_detection"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent image-enhance ",
+    "description": "Denoising, deblurring, and 4x AI resolution upscaling",
+    "icon": "🌟",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Image Super-Res",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Image Super-Res",
+    "name": "image_enhance"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent inpainting ",
+    "description": "Masked area reconstruction and contextual object removal",
+    "icon": "🖌️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Image Inpainting",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Image Inpainting",
+    "name": "inpainting"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent image-similarity ",
+    "description": "CLIP embedding cosine similarity between images",
+    "icon": "🪞",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Visual Similarity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Visual Similarity",
+    "name": "image_similarity"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent nsfw-detect ",
+    "description": "Safety filtering, sensitive content, and moderation check",
+    "icon": "🛡️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for NSFW Filter",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "NSFW Filter",
+    "name": "nsfw_detect"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent scene-understanding ",
+    "description": "Indoor/outdoor holistic scene topology and spatial parsing",
+    "icon": "🏞️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Scene Parsing",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Scene Parsing",
+    "name": "scene_understanding"
+  },
+  {
+    "category": "vision",
+    "cmd": "@agent color-palette ",
+    "description": "Dominant hexadecimal color palette and visual harmony",
+    "icon": "🎨",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Palette Extraction",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Palette Extraction",
+    "name": "color_palette"
+  },
+  {
+    "category": "audio",
+    "cmd": "@agent asr ",
+    "description": "Automatic speech recognition via Whisper models",
+    "icon": "🎙️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Speech-to-Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Speech-to-Text",
+    "name": "asr"
+  },
+  {
+    "category": "audio",
+    "cmd": "@agent tts ",
+    "description": "Text synthesis into natural audible speech",
+    "icon": "🔊",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Text-to-Speech",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Text-to-Speech",
+    "name": "tts"
+  },
+  {
+    "category": "audio",
+    "cmd": "@agent audio ",
+    "description": "Sound event detection & voice activity analysis",
+    "icon": "🎵",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Audio Classify",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Audio Classify",
+    "name": "audio"
+  },
+  {
+    "category": "audio",
+    "cmd": "@agent vad ",
+    "description": "Real-time speech vs silence endpoint segmentation",
+    "icon": "🗣️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Voice Activity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Voice Activity",
+    "name": "vad"
+  },
+  {
+    "category": "audio",
+    "cmd": "@agent audio-to-audio ",
+    "description": "Background noise cancellation and voice isolation",
+    "icon": "🎚️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Audio Denoise",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Audio Denoise",
+    "name": "audio_to_audio"
+  },
+  {
+    "category": "audio",
+    "cmd": "@agent text-to-audio ",
+    "description": "Synthesize custom sound effects and acoustic ambiances",
+    "icon": "🎶",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Text to Sound",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Text to Sound",
+    "name": "text_to_audio"
+  },
+  {
+    "category": "audio",
+    "cmd": "@agent speaker-diarization ",
+    "description": "Who spoke when: multi-speaker segmentation & clustering",
+    "icon": "👥",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Speaker Diarization",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Speaker Diarization",
+    "name": "speaker_diarization"
+  },
+  {
+    "category": "audio",
+    "cmd": "@agent speaker-id ",
+    "description": "Voiceprint embedding verification and speaker matching",
+    "icon": "🆔",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Speaker ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Speaker ID",
+    "name": "speaker_id"
+  },
+  {
+    "category": "audio",
+    "cmd": "@agent music-gen ",
+    "description": "Instrumental and polyphonic music generation from prompts",
+    "icon": "🎼",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Music Generation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Music Generation",
+    "name": "music_gen"
+  },
+  {
+    "category": "audio",
+    "cmd": "@agent sound-event ",
+    "description": "Identify siren, glass break, baby cry, and environmental cues",
+    "icon": "🔔",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Sound Event Detect",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Sound Event Detect",
+    "name": "sound_event"
+  },
+  {
+    "category": "audio",
+    "cmd": "@agent speech-enhance ",
+    "description": "Spectral restoration and vocal clarity enhancement",
+    "icon": "🎧",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Speech Enhance",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Speech Enhance",
+    "name": "speech_enhance"
+  },
+  {
+    "category": "audio",
+    "cmd": "@agent source-separation ",
+    "description": "Stems splitting: vocals, drums, bass, and instruments",
+    "icon": "✂️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Audio Separation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Audio Separation",
+    "name": "source_separation"
+  },
+  {
+    "category": "audio",
+    "cmd": "@agent voice-emotion ",
+    "description": "Prosodic speech emotion and affective state recognition",
+    "icon": "😊",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Voice Emotion",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Voice Emotion",
+    "name": "voice_emotion"
+  },
+  {
+    "category": "audio",
+    "cmd": "@agent audio-lang-id ",
+    "description": "Identify spoken language across 100+ global dialects",
+    "icon": "🌍",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Spoken Language ID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Spoken Language ID",
+    "name": "audio_lang_id"
+  },
+  {
+    "category": "audio",
+    "cmd": "@agent tempo ",
+    "description": "Rhythm tracking, beat onset, and BPM tempo estimation",
+    "icon": "⏱️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Tempo & BPM",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Tempo & BPM",
+    "name": "tempo"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent nlp ",
+    "description": "Sentiment, NER, translation, and text classification",
+    "icon": "📝",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for NLP Pipeline",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "NLP Pipeline",
+    "name": "nlp"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent text-generation ",
+    "description": "Open-ended causal text completion and synthesis",
+    "icon": "✍️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Text Generation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Text Generation",
+    "name": "text_generation"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent text2text ",
+    "description": "Seq2Seq transformation, rewriting, and standardization",
+    "icon": "🔄",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Text-to-Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Text-to-Text",
+    "name": "text2text"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent translation ",
+    "description": "Neural machine translation across 200+ languages",
+    "icon": "🌐",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Translation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Translation",
+    "name": "translation"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent question-answering ",
+    "description": "Extractive and generative reading comprehension",
+    "icon": "💬",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Question Answering",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Question Answering",
+    "name": "question_answering"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent table-qa ",
+    "description": "Direct natural language querying over tabular structures",
+    "icon": "📊",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Table QA",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Table QA",
+    "name": "table_qa"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent zero-shot ",
+    "description": "Categorize text into arbitrary candidate label sets",
+    "icon": "🎯",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Zero-Shot Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Zero-Shot Text",
+    "name": "zero_shot"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent text-classification ",
+    "description": "Fine-tuned intent, category, and sentiment labels",
+    "icon": "🏷️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Text Classify",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Text Classify",
+    "name": "text_classification"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent token-classification ",
+    "description": "Token-level entity, POS tag, and boundary classification",
+    "icon": "🔠",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Token Classify",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Token Classify",
+    "name": "token_classification"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent sentence-similarity ",
+    "description": "Bi-encoder semantic similarity scoring and ranking",
+    "icon": "🔗",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Sentence Similarity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Sentence Similarity",
+    "name": "sentence_similarity"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent conversational ",
+    "description": "Multi-turn persona-grounded conversational agent",
+    "icon": "🗣️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Chat Assistant",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Chat Assistant",
+    "name": "conversational"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent fill-mask ",
+    "description": "Predict masked tokens via bidirectional context",
+    "icon": "🎭",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Masked LM Fill",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Masked LM Fill",
+    "name": "fill_mask"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent multiple-choice ",
+    "description": "Select most plausible completion from candidate options",
+    "icon": "🔘",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Multiple Choice",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Multiple Choice",
+    "name": "multiple_choice"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent sentiment ",
+    "description": "Positive, negative, neutral, and emotional intensity",
+    "icon": "❤️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Sentiment Analysis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Sentiment Analysis",
+    "name": "sentiment"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent summarize-text ",
+    "description": "Abstractive and extractive multi-paragraph summarization",
+    "icon": "📜",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Text Summarize",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Text Summarize",
+    "name": "summarize_text"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent grammar ",
+    "description": "Orthographic, syntactic, and stylistic error correction",
+    "icon": "✍️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Grammar Check",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Grammar Check",
+    "name": "grammar"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent paraphrase ",
+    "description": "Alternative phrasing preserving core semantic intent",
+    "icon": "🔁",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Paraphraser",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Paraphraser",
+    "name": "paraphrase"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent ner ",
+    "description": "Extract names, locations, dates, and organizations",
+    "icon": "🏷️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Named Entity Rec",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Named Entity Rec",
+    "name": "ner"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent keywords ",
+    "description": "KeyBERT and TF-IDF keyphrase significance extraction",
+    "icon": "🔑",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Keyword Extractor",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Keyword Extractor",
+    "name": "keywords"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent semantic-search ",
+    "description": "Dense vector retrieval over embedded corpus documents",
+    "icon": "🔎",
     "inputSchema": {
       "properties": {
         "action": {
@@ -330,2077 +2539,1671 @@
       ],
       "type": "object"
     },
+    "label": "Semantic Search",
     "name": "semantic_search"
   },
   {
-    "description": "Run data science workflows on CSV/Excel files. Supports: full data analyst workflow, comprehensive data science flow, Jupyter notebook launch, and PDF report export.",
+    "category": "nlp",
+    "cmd": "@agent hallucination-eval ",
+    "description": "Cross-reference text claims against source ground truth",
+    "icon": "🛡️",
     "inputSchema": {
       "properties": {
-        "export_pdf": {
-          "description": "Export results as PDF",
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
           "type": "boolean"
         },
-        "file": {
-          "description": "Path to CSV/Excel file",
-          "type": "string"
-        },
-        "mode": {
-          "description": "'analyst' for data analyst, 'science' for full data science, 'jupyter' for notebook",
-          "type": "string"
-        },
         "prompt": {
-          "description": "Analysis instructions",
+          "description": "Input text or instructions for Hallucination Check",
           "type": "string"
         }
       },
       "required": [
-        "mode"
+        "prompt"
       ],
       "type": "object"
     },
-    "name": "data_science"
+    "label": "Hallucination Check",
+    "name": "hallucination_eval"
   },
   {
-    "description": "Extract PE header information and perform security analysis on Windows executables (.exe, .dll).",
+    "category": "nlp",
+    "cmd": "@agent prompt-expand ",
+    "description": "Enrich sparse prompts with context and constraints",
+    "icon": "🪄",
     "inputSchema": {
       "properties": {
         "file": {
-          "description": "Absolute path to the PE executable",
+          "description": "Optional file path or target dataset",
           "type": "string"
         },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
         "prompt": {
-          "description": "Analysis instructions (default: 'Perform PE analysis')",
+          "description": "Input text or instructions for Prompt Expander",
           "type": "string"
         }
       },
       "required": [
-        "file"
+        "prompt"
       ],
       "type": "object"
     },
-    "name": "pe_header_extraction"
+    "label": "Prompt Expander",
+    "name": "prompt_expand"
   },
   {
-    "description": "Manage AI models: prepare/convert models to OpenVINO IR format, set weight format (fp16/int8/int4), configure SINQ quantization, save/load ML models.",
+    "category": "nlp",
+    "cmd": "@agent chain-of-thought ",
+    "description": "Step-by-step rationalized deductive derivation",
+    "icon": "🧠",
     "inputSchema": {
       "properties": {
-        "action": {
-          "description": "'prepare' to convert model, 'prepare-all' to batch convert, 'sinq' to quantize",
+        "file": {
+          "description": "Optional file path or target dataset",
           "type": "string"
         },
-        "model_id": {
-          "description": "HuggingFace model ID to prepare",
-          "type": "string"
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
         },
-        "sinq_group_size": {
-          "description": "SINQ group size (default: 64)",
-          "type": "integer"
-        },
-        "sinq_nbits": {
-          "description": "SINQ bit-width (default: 4)",
-          "type": "integer"
-        },
-        "weight_format": {
-          "description": "fp16, int8, or int4 (default: int8)",
+        "prompt": {
+          "description": "Input text or instructions for Chain-of-Thought",
           "type": "string"
         }
       },
       "required": [
-        "action"
+        "prompt"
       ],
       "type": "object"
     },
-    "name": "model_management"
+    "label": "Chain-of-Thought",
+    "name": "chain_of_thought"
   },
   {
-    "description": "Generate analysis reports in various formats: PDF, markdown, text, JSON, or Word.",
+    "category": "nlp",
+    "cmd": "@agent toxicity ",
+    "description": "Identify profanity, harassment, hate speech, and threats",
+    "icon": "⚠️",
     "inputSchema": {
       "properties": {
         "file": {
-          "description": "File or folder to analyze for the report",
+          "description": "Optional file path or target dataset",
           "type": "string"
         },
-        "format": {
-          "description": "Report format: pdf, md, text, json, word (default: md)",
-          "type": "string"
-        },
-        "output_path": {
-          "description": "Where to save the report",
-          "type": "string"
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
         },
         "prompt": {
-          "description": "Report content/analysis instructions",
+          "description": "Input text or instructions for Toxicity Detection",
           "type": "string"
         }
       },
       "required": [
-        "prompt",
-        "output_path"
+        "prompt"
       ],
       "type": "object"
     },
-    "name": "reporting"
+    "label": "Toxicity Detection",
+    "name": "toxicity"
   },
   {
-    "description": "Manage the ML-based model selection system: retrain models, clean up old training data, view analytics, configure ensemble methods.",
+    "category": "nlp",
+    "cmd": "@agent intent ",
+    "description": "Identify actionable user objective and routing class",
+    "icon": "🎯",
     "inputSchema": {
       "properties": {
-        "action": {
-          "description": "'retrain' to force retrain, 'cleanup' to clean old data, 'analytics' to view stats",
+        "file": {
+          "description": "Optional file path or target dataset",
           "type": "string"
         },
-        "cleanup_days": {
-          "description": "For cleanup: delete data older than N days",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "action"
-      ],
-      "type": "object"
-    },
-    "name": "ml_management"
-  },
-  {
-    "description": "Get detected system hardware specifications: CPU, RAM, GPU, disk space.",
-    "inputSchema": {
-      "properties": {},
-      "type": "object"
-    },
-    "name": "get_system_info"
-  },
-  {
-    "description": "Get database status and model categorization statistics.",
-    "inputSchema": {
-      "properties": {},
-      "type": "object"
-    },
-    "name": "get_database_stats"
-  },
-  {
-    "description": "List available models and tasks. Filter by: audio, image, text, all.",
-    "inputSchema": {
-      "properties": {
-        "category": {
-          "description": "Category filter (audio, image, text, all)",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "list_tasks"
-  },
-  {
-    "description": "Update the HuggingFace models database with latest models.",
-    "inputSchema": {
-      "properties": {},
-      "type": "object"
-    },
-    "name": "update_database"
-  },
-  {
-    "description": "Restore config and database from backups.",
-    "inputSchema": {
-      "properties": {},
-      "type": "object"
-    },
-    "name": "restore_backup"
-  },
-  {
-    "description": "Clear all cached model data and weights.",
-    "inputSchema": {
-      "properties": {},
-      "type": "object"
-    },
-    "name": "clear_cache"
-  },
-  {
-    "description": "Get model decision-making statistics and selection history.",
-    "inputSchema": {
-      "properties": {},
-      "type": "object"
-    },
-    "name": "get_decision_stats"
-  },
-  {
-    "description": "Get novel AI component statistics and module list.",
-    "inputSchema": {
-      "properties": {},
-      "type": "object"
-    },
-    "name": "get_novel_ai_stats"
-  },
-  {
-    "description": "Get model performance metrics and latency statistics.",
-    "inputSchema": {
-      "properties": {},
-      "type": "object"
-    },
-    "name": "get_performance_stats"
-  },
-  {
-    "description": "Get model cache status, sizes, and database health info.",
-    "inputSchema": {
-      "properties": {},
-      "type": "object"
-    },
-    "name": "get_cache_stats"
-  },
-  {
-    "description": "Get personalized model recommendations based on decision scores.",
-    "inputSchema": {
-      "properties": {},
-      "type": "object"
-    },
-    "name": "get_model_recommendations"
-  },
-  {
-    "description": "Get models ranked for a specific task category.",
-    "inputSchema": {
-      "properties": {
-        "category": {
-          "description": "Task category (e.g., text-generation, summarization, code-vulnerability-detection)",
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Intent Recognition",
           "type": "string"
         }
       },
       "required": [
-        "category"
+        "prompt"
       ],
       "type": "object"
     },
-    "name": "get_model_ranking"
+    "label": "Intent Recognition",
+    "name": "intent"
   },
   {
-    "description": "Get ML model selection and performance analytics.",
-    "inputSchema": {
-      "properties": {},
-      "type": "object"
-    },
-    "name": "get_ml_analytics"
-  },
-  {
-    "description": "Provide feedback on model quality to update bandit rewards for improved future selection.",
-    "inputSchema": {
-      "properties": {
-        "arm": {
-          "description": "Arm ID (0=Single, 1=Fusion)",
-          "type": "integer"
-        },
-        "context": {
-          "description": "Context ID (0=Simple, 1=Complex/Coding)",
-          "type": "integer"
-        },
-        "reward": {
-          "description": "Score: 1.0=good, 0.0=poor",
-          "type": "number"
-        }
-      },
-      "required": [
-        "context",
-        "arm",
-        "reward"
-      ],
-      "type": "object"
-    },
-    "name": "report_bandit_feedback"
-  },
-  {
-    "description": "Execute ModelFusion --text-classification for text classification.",
+    "category": "nlp",
+    "cmd": "@agent relation-extract ",
+    "description": "Extract subject-predicate-object knowledge triples",
+    "icon": "🕸️",
     "inputSchema": {
       "properties": {
         "file": {
-          "description": "Optional file path",
+          "description": "Optional file path or target dataset",
           "type": "string"
         },
         "gpu": {
+          "description": "Enable GPU acceleration",
           "type": "boolean"
         },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
         "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "text_classification"
-  },
-  {
-    "description": "Execute ModelFusion --token-classification for token classification.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "token_classification"
-  },
-  {
-    "description": "Execute ModelFusion --question-answering for question answering.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "question_answering"
-  },
-  {
-    "description": "Execute ModelFusion --text-generation for text generation.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "text_generation"
-  },
-  {
-    "description": "Execute ModelFusion --summarization for summarization.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "summarization"
-  },
-  {
-    "description": "Execute ModelFusion --translation for translation.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "translation"
-  },
-  {
-    "description": "Execute ModelFusion --fill-mask for fill mask.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "fill_mask"
-  },
-  {
-    "description": "Execute ModelFusion --text2text-generation for text2text generation.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "text2text_generation"
-  },
-  {
-    "description": "Execute ModelFusion --language-detection for language detection.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "language_detection"
-  },
-  {
-    "description": "Execute ModelFusion --grammar-correction for grammar correction.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "grammar_correction"
-  },
-  {
-    "description": "Execute ModelFusion --paraphrase-generation for paraphrase generation.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "paraphrase_generation"
-  },
-  {
-    "description": "Execute ModelFusion --causal-language-modeling for causal language modeling.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "causal_language_modeling"
-  },
-  {
-    "description": "Execute ModelFusion --zero-shot-classification for zero shot classification.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "zero_shot_classification"
-  },
-  {
-    "description": "Execute ModelFusion --feature-extraction for feature extraction.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "feature_extraction"
-  },
-  {
-    "description": "Execute ModelFusion --sentence-similarity for sentence similarity.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "sentence_similarity"
-  },
-  {
-    "description": "Execute ModelFusion --anonymization for anonymization.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "anonymization"
-  },
-  {
-    "description": "Execute ModelFusion --coreference-resolution for coreference resolution.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "coreference_resolution"
-  },
-  {
-    "description": "Execute ModelFusion --spam-detection for spam detection.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "spam_detection"
-  },
-  {
-    "description": "Execute ModelFusion --malware-text-detection for malware text detection.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "malware_text_detection"
-  },
-  {
-    "description": "Execute ModelFusion --phishing-detection for phishing detection.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "phishing_detection"
-  },
-  {
-    "description": "Execute ModelFusion --pii-detection for pii detection.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "pii_detection"
-  },
-  {
-    "description": "Execute ModelFusion --hate-speech-detection for hate speech detection.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "hate_speech_detection"
-  },
-  {
-    "description": "Execute ModelFusion --cyberbullying-detection for cyberbullying detection.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "cyberbullying_detection"
-  },
-  {
-    "description": "Execute ModelFusion --fake-news-detection for fake news detection.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "fake_news_detection"
-  },
-  {
-    "description": "Execute ModelFusion --legal-judgment-classification for legal judgment classification.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "legal_judgment_classification"
-  },
-  {
-    "description": "Execute ModelFusion --contract-clause-classification for contract clause classification.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "contract_clause_classification"
-  },
-  {
-    "description": "Execute ModelFusion --case-outcome-prediction for case outcome prediction.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "case_outcome_prediction"
-  },
-  {
-    "description": "Execute ModelFusion --financial-ner for financial ner.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "financial_ner"
-  },
-  {
-    "description": "Execute ModelFusion --legal-ner for legal ner.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "legal_ner"
-  },
-  {
-    "description": "Execute ModelFusion --biomedical-ner for biomedical ner.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "biomedical_ner"
-  },
-  {
-    "description": "Execute ModelFusion --chemical-reaction-ner for chemical reaction ner.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "chemical_reaction_ner"
-  },
-  {
-    "description": "Execute ModelFusion --financial-sentiment-analysis for financial sentiment analysis.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "financial_sentiment_analysis"
-  },
-  {
-    "description": "Execute ModelFusion --scientific-abstract-summarization for scientific abstract summarization.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "scientific_abstract_summarization"
-  },
-  {
-    "description": "Execute ModelFusion --emotion-detection for emotion detection.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "emotion_detection"
-  },
-  {
-    "description": "Execute ModelFusion --sarcasm-detection for sarcasm detection.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "sarcasm_detection"
-  },
-  {
-    "description": "Execute ModelFusion --stance-detection for stance detection.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "stance_detection"
-  },
-  {
-    "description": "Execute ModelFusion --bias-detection for bias detection.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "bias_detection"
-  },
-  {
-    "description": "Execute ModelFusion --hallucination-detection for hallucination detection.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "hallucination_detection"
-  },
-  {
-    "description": "Execute ModelFusion --reading-level-assessment for reading level assessment.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "reading_level_assessment"
-  },
-  {
-    "description": "Execute ModelFusion --generation-groundedness for generation groundedness.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "generation_groundedness"
-  },
-  {
-    "description": "Execute ModelFusion --citation-intent-classification for citation intent classification.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "citation_intent_classification"
-  },
-  {
-    "description": "Execute ModelFusion --code-summary-generation for code summary generation.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "code_summary_generation"
-  },
-  {
-    "description": "Execute ModelFusion --code-clone-detection for code clone detection.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "code_clone_detection"
-  },
-  {
-    "description": "Execute ModelFusion --image-classification for image classification.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "image_classification"
-  },
-  {
-    "description": "Execute ModelFusion --object-detection for object detection.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "object_detection"
-  },
-  {
-    "description": "Execute ModelFusion --image-segmentation for image segmentation.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "image_segmentation"
-  },
-  {
-    "description": "Execute ModelFusion --visual-question-answering for visual question answering.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "visual_question_answering"
-  },
-  {
-    "description": "Execute ModelFusion --document-question-answering for document question answering.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "document_question_answering"
-  },
-  {
-    "description": "Execute ModelFusion --zero-shot-image-classification for zero shot image classification.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "zero_shot_image_classification"
-  },
-  {
-    "description": "Execute ModelFusion --depth-estimation for depth estimation.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "depth_estimation"
-  },
-  {
-    "description": "Execute ModelFusion --image-feature-extraction for image feature extraction.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "image_feature_extraction"
-  },
-  {
-    "description": "Execute ModelFusion --automatic-speech-recognition for automatic speech recognition.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "automatic_speech_recognition"
-  },
-  {
-    "description": "Execute ModelFusion --audio-classification for audio classification.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "audio_classification"
-  },
-  {
-    "description": "Execute ModelFusion --voice-activity-detection for voice activity detection.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "voice_activity_detection"
-  },
-  {
-    "description": "Execute ModelFusion --emotion-recognition for emotion recognition.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "emotion_recognition"
-  },
-  {
-    "description": "Execute ModelFusion --video-classification for video classification.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "video_classification"
-  },
-  {
-    "description": "Execute ModelFusion --text-to-speech for text to speech.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "text_to_speech"
-  },
-  {
-    "description": "Execute ModelFusion --text-to-image for text to image.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "text_to_image"
-  },
-  {
-    "description": "Execute ModelFusion --image-super-resolution for image super resolution.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "image_super_resolution"
-  },
-  {
-    "description": "Execute ModelFusion --table-question-answering for table question answering.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "table_question_answering"
-  },
-  {
-    "description": "Execute ModelFusion --feature-ranking for feature ranking.",
-    "inputSchema": {
-      "properties": {
-        "file": {
-          "description": "Optional file path",
-          "type": "string"
-        },
-        "gpu": {
-          "type": "boolean"
-        },
-        "language": {
-          "description": "Optional language",
-          "type": "string"
-        },
-        "prompt": {
-          "description": "Task instructions",
-          "type": "string"
-        },
-        "text": {
-          "description": "Input text or code",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "feature_ranking"
-  },
-  {
-    "description": "Navigate, automate, and interact with live web pages via Chromium CDP (port 9222).",
-    "inputSchema": {
-      "properties": {
-        "task": {
-          "description": "Natural language browser task",
-          "type": "string"
-        },
-        "url": {
-          "description": "URL to navigate to",
-          "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "browser"
-  },
-  {
-    "description": "Execute autonomous multi-step web research with Set-of-Mark and synthesis.",
-    "inputSchema": {
-      "properties": {
-        "query": {
-          "description": "Research topic or directive",
+          "description": "Input text or instructions for Relation Extraction",
           "type": "string"
         }
       },
       "required": [
-        "query"
+        "prompt"
       ],
       "type": "object"
     },
-    "name": "deep_research"
+    "label": "Relation Extraction",
+    "name": "relation_extract"
   },
   {
-    "description": "Run Set-of-Mark visual element grounding with 90% token reduction.",
-    "inputSchema": {
-      "properties": {},
-      "type": "object"
-    },
-    "name": "som"
-  },
-  {
-    "description": "Summarize the active browser page or document into executive takeaways.",
+    "category": "nlp",
+    "cmd": "@agent topic-model ",
+    "description": "Unsupervised discovery of semantic themes across docs",
+    "icon": "🗂️",
     "inputSchema": {
       "properties": {
-        "text": {
-          "description": "Optional text content to summarize",
+        "file": {
+          "description": "Optional file path or target dataset",
           "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "name": "summarize"
-  },
-  {
-    "description": "Live web search grounding with factual citations.",
-    "inputSchema": {
-      "properties": {
-        "query": {
-          "description": "Search query",
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Topic Modeling",
           "type": "string"
         }
       },
       "required": [
-        "query"
+        "prompt"
       ],
       "type": "object"
     },
-    "name": "search"
+    "label": "Topic Modeling",
+    "name": "topic_model"
   },
   {
-    "description": "Automated Causal Decision Science Optimization (5-objective Pareto AutoML on datasets).",
+    "category": "nlp",
+    "cmd": "@agent simplify ",
+    "description": "Convert dense academic jargon into plain English",
+    "icon": "💡",
     "inputSchema": {
       "properties": {
         "file": {
-          "description": "Path to CSV/Excel/Parquet dataset",
+          "description": "Optional file path or target dataset",
           "type": "string"
         },
-        "target": {
-          "description": "Optional target prediction column",
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Text Simplifier",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Text Simplifier",
+    "name": "simplify"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent lang-detect ",
+    "description": "Determine ISO language code from raw text snippet",
+    "icon": "🔤",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Language Detection",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Language Detection",
+    "name": "lang_detect"
+  },
+  {
+    "category": "nlp",
+    "cmd": "@agent citation ",
+    "description": "Generate BibTeX, APA, IEEE, and Chicago references",
+    "icon": "📖",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Citation Generator",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Citation Generator",
+    "name": "citation"
+  },
+  {
+    "category": "code",
+    "cmd": "@agent code ",
+    "description": "Code generation, vulnerability scanning & refactoring",
+    "icon": "💻",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Code Intelligence",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Code Intelligence",
+    "name": "code"
+  },
+  {
+    "category": "code",
+    "cmd": "@agent code-gen ",
+    "description": "Multi-language function and module synthesis",
+    "icon": "⚡",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Code Generation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Code Generation",
+    "name": "code_gen"
+  },
+  {
+    "category": "code",
+    "cmd": "@agent infill ",
+    "description": "Fill-in-the-middle code completion from context",
+    "icon": "🧩",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Code Infilling",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Code Infilling",
+    "name": "infill"
+  },
+  {
+    "category": "code",
+    "cmd": "@agent code-review ",
+    "description": "Automated code review for maintainability & bugs",
+    "icon": "🧐",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Code Review",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Code Review",
+    "name": "code_review"
+  },
+  {
+    "category": "code",
+    "cmd": "@agent refactor ",
+    "description": "Restructure code without altering functional behavior",
+    "icon": "🔨",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Code Refactoring",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Code Refactoring",
+    "name": "refactor"
+  },
+  {
+    "category": "code",
+    "cmd": "@agent test-gen ",
+    "description": "Generate high-coverage unit tests and assertions",
+    "icon": "🧪",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Unit Test Gen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Unit Test Gen",
+    "name": "test_gen"
+  },
+  {
+    "category": "code",
+    "cmd": "@agent graph-index ",
+    "description": "Extract AST relationships & call graphs",
+    "icon": "🕸️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Code Graph Index",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Code Graph Index",
+    "name": "graph_index"
+  },
+  {
+    "category": "system",
+    "cmd": "@agent rest-rl status",
+    "description": "Sub-8ms Windows Job Object RL repair engine",
+    "icon": "⚡",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for ReST-RL Daemon",
           "type": "string"
         }
       },
       "type": "object"
     },
-    "name": "acdso"
+    "label": "ReST-RL Daemon",
+    "name": "rest_rl"
   },
   {
-    "description": "Execute long-running autonomous goal-directed loop until objective is fully achieved.",
+    "category": "code",
+    "cmd": "@agent ast-parse ",
+    "description": "Parse source into concrete syntax trees and tokens",
+    "icon": "🌲",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for AST Tree Parse",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "AST Tree Parse",
+    "name": "ast_parse"
+  },
+  {
+    "category": "code",
+    "cmd": "@agent docstring ",
+    "description": "Synthesize Google/Sphinx/Rustdoc documentation comments",
+    "icon": "📝",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Docstring Gen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Docstring Gen",
+    "name": "docstring"
+  },
+  {
+    "category": "code",
+    "cmd": "@agent type-infer ",
+    "description": "Infer strong static types for dynamic languages",
+    "icon": "🏷️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Type Inference",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Type Inference",
+    "name": "type_infer"
+  },
+  {
+    "category": "code",
+    "cmd": "@agent sql ",
+    "description": "Translate natural language queries into optimized SQL",
+    "icon": "🗄️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for SQL Generator",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "SQL Generator",
+    "name": "sql"
+  },
+  {
+    "category": "code",
+    "cmd": "@agent regex ",
+    "description": "Construct and explain complex regular expressions",
+    "icon": "🔍",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Regex Builder",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Regex Builder",
+    "name": "regex"
+  },
+  {
+    "category": "code",
+    "cmd": "@agent git-commit ",
+    "description": "Generate Conventional Commit messages from diffs",
+    "icon": "📦",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Git Commit Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Git Commit Message",
+    "name": "git_commit"
+  },
+  {
+    "category": "code",
+    "cmd": "@agent lint-fix ",
+    "description": "Auto-repair linting, formatting, and stylistic warnings",
+    "icon": "🪛",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Automated Lint Fix",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Automated Lint Fix",
+    "name": "lint_fix"
+  },
+  {
+    "category": "code",
+    "cmd": "@agent perf-audit ",
+    "description": "Algorithmic complexity Big-O analysis and bottlenecks",
+    "icon": "⏱️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Performance Profiler",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Performance Profiler",
+    "name": "perf_audit"
+  },
+  {
+    "category": "code",
+    "cmd": "@agent deps ",
+    "description": "Detect obsolete or vulnerable third-party dependencies",
+    "icon": "📦",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Dependency Analysis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Dependency Analysis",
+    "name": "deps"
+  },
+  {
+    "category": "code",
+    "cmd": "@agent api-docs ",
+    "description": "Generate OpenAPI / Swagger specifications from code",
+    "icon": "📚",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for API Doc Generator",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "API Doc Generator",
+    "name": "api_docs"
+  },
+  {
+    "category": "code",
+    "cmd": "@agent code-translate ",
+    "description": "Transpile code between Python, Rust, TS, Go, C++",
+    "icon": "🔀",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Code Translation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Code Translation",
+    "name": "code_translate"
+  },
+  {
+    "category": "code",
+    "cmd": "@agent dockerfile ",
+    "description": "Generate multi-stage secure container Dockerfiles",
+    "icon": "🐳",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Dockerfile Gen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Dockerfile Gen",
+    "name": "dockerfile"
+  },
+  {
+    "category": "pe_binary",
+    "cmd": "@agent security ",
+    "description": "Malware, phishing, PII, and exploit detection",
+    "icon": "🛡️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Security Analysis",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "label": "Security Analysis",
+    "name": "security"
+  },
+  {
+    "category": "pe_binary",
+    "cmd": "@agent pe ",
+    "description": "Extract PE headers and binary forensics from .exe/.dll",
+    "icon": "🔬",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for PE Header Forensics",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "label": "PE Header Forensics",
+    "name": "pe"
+  },
+  {
+    "category": "pe_binary",
+    "cmd": "@agent vuln-scan ",
+    "description": "Static analysis for buffer overflows, use-after-free, injection",
+    "icon": "🪲",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Vulnerability Scan",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "label": "Vulnerability Scan",
+    "name": "vuln_scan"
+  },
+  {
+    "category": "pe_binary",
+    "cmd": "@agent malware-analysis ",
+    "description": "Heuristic static malware indicators and evasion patterns",
+    "icon": "🦠",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Malware Analysis",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "label": "Malware Analysis",
+    "name": "malware_analysis"
+  },
+  {
+    "category": "pe_binary",
+    "cmd": "@agent mem-forensics ",
+    "description": "Analyze core dumps, heap allocations, and stack frames",
+    "icon": "💾",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Memory Forensics",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "label": "Memory Forensics",
+    "name": "mem_forensics"
+  },
+  {
+    "category": "pe_binary",
+    "cmd": "@agent pii-scan ",
+    "description": "Discover SSNs, credit cards, emails, and confidential data",
+    "icon": "🔒",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for PII Scanner",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "label": "PII Scanner",
+    "name": "pii_scan"
+  },
+  {
+    "category": "pe_binary",
+    "cmd": "@agent entropy ",
+    "description": "Compute Shannon entropy to detect packed or encrypted sections",
+    "icon": "📐",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Entropy Scan",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "label": "Entropy Scan",
+    "name": "entropy"
+  },
+  {
+    "category": "pe_binary",
+    "cmd": "@agent strings ",
+    "description": "Extract and filter printable ASCII and Unicode strings",
+    "icon": "🧵",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Strings Extractor",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "label": "Strings Extractor",
+    "name": "strings"
+  },
+  {
+    "category": "pe_binary",
+    "cmd": "@agent exploit ",
+    "description": "Assess proof-of-concept exploits and remediation steps",
+    "icon": "💥",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Exploit Analyzer",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "label": "Exploit Analyzer",
+    "name": "exploit"
+  },
+  {
+    "category": "pe_binary",
+    "cmd": "@agent decompile ",
+    "description": "Explain disassembled assembly and high-level pseudocode",
+    "icon": "🧬",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Decompilation",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "label": "Decompilation",
+    "name": "decompile"
+  },
+  {
+    "category": "pe_binary",
+    "cmd": "@agent net-audit ",
+    "description": "Inspect PCAP captures and suspicious beaconing traffic",
+    "icon": "🌐",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Network Traffic Audit",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "label": "Network Traffic Audit",
+    "name": "net_audit"
+  },
+  {
+    "category": "pe_binary",
+    "cmd": "@agent yara ",
+    "description": "Synthesize YARA detection rules for indicators of compromise",
+    "icon": "📜",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for YARA Rule Gen",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "label": "YARA Rule Gen",
+    "name": "yara"
+  },
+  {
+    "category": "pe_binary",
+    "cmd": "@agent tls-inspect ",
+    "description": "Verify certificates, cipher suites, and handshake health",
+    "icon": "🔐",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for TLS Inspector",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "label": "TLS Inspector",
+    "name": "tls_inspect"
+  },
+  {
+    "category": "pe_binary",
+    "cmd": "@agent owasp ",
+    "description": "Comprehensive audit against OWASP Top 10 vulnerabilities",
+    "icon": "🛡️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for OWASP Audit",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "label": "OWASP Audit",
+    "name": "owasp"
+  },
+  {
+    "category": "pe_binary",
+    "cmd": "@agent packer-detect ",
+    "description": "Detect UPX, Themida, VMProtect, and known binary packers",
+    "icon": "📦",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Packer Detector",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "label": "Packer Detector",
+    "name": "packer_detect"
+  },
+  {
+    "category": "pe_binary",
+    "cmd": "@agent secret-scan ",
+    "description": "Identify committed API tokens, private keys, and passwords",
+    "icon": "🔑",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Secret Leak Scan",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "label": "Secret Leak Scan",
+    "name": "secret_scan"
+  },
+  {
+    "category": "multimodal",
+    "cmd": "@agent medical ",
+    "description": "Clinical notes analysis, biomedical research summarization",
+    "icon": "🏥",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Medical Analysis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Medical Analysis",
+    "name": "medical"
+  },
+  {
+    "category": "multimodal",
+    "cmd": "@agent legal ",
+    "description": "Contract clause analysis, indemnification and liability audit",
+    "icon": "⚖️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Legal Review",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Legal Review",
+    "name": "legal"
+  },
+  {
+    "category": "multimodal",
+    "cmd": "@agent finance ",
+    "description": "Balance sheet parsing, earnings call sentiment & ratios",
+    "icon": "💰",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Financial Analysis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Financial Analysis",
+    "name": "finance"
+  },
+  {
+    "category": "multimodal",
+    "cmd": "@agent robotics ",
+    "description": "Inverse kinematics, trajectory planning, and actuator dynamics",
+    "icon": "🤖",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Robotics Kinematics",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Robotics Kinematics",
+    "name": "robotics"
+  },
+  {
+    "category": "multimodal",
+    "cmd": "@agent rl ",
+    "description": "Markov decision processes, Q-learning, and policy gradients",
+    "icon": "🎮",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Reinforcement Learning",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Reinforcement Learning",
+    "name": "rl"
+  },
+  {
+    "category": "multimodal",
+    "cmd": "@agent graph-ml ",
+    "description": "Node classification and link prediction on knowledge graphs",
+    "icon": "🕸️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Graph ML",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Graph ML",
+    "name": "graph_ml"
+  },
+  {
+    "category": "multimodal",
+    "cmd": "@agent chemistry ",
+    "description": "SMILES molecular representation and reaction properties",
+    "icon": "🧪",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Molecular Chemistry",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Molecular Chemistry",
+    "name": "chemistry"
+  },
+  {
+    "category": "multimodal",
+    "cmd": "@agent climate ",
+    "description": "Atmospheric sensor modeling and weather trend forecasting",
+    "icon": "🌍",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Climate Science",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Climate Science",
+    "name": "climate"
+  },
+  {
+    "category": "multimodal",
+    "cmd": "@agent patent ",
+    "description": "Cross-reference claims and patent infringement discovery",
+    "icon": "📜",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Patent Prior Art",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Patent Prior Art",
+    "name": "patent"
+  },
+  {
+    "category": "multimodal",
+    "cmd": "@agent tab-domain ",
+    "description": "Healthcare and financial domain-specific tabular modeling",
+    "icon": "📑",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Domain Tabular",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Domain Tabular",
+    "name": "tab_domain"
+  },
+  {
+    "category": "multimodal",
+    "cmd": "@agent fusion ",
+    "description": "Cross-modal late fusion combining vision, text, and data",
+    "icon": "🧠",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Multimodal Fusion",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Multimodal Fusion",
+    "name": "fusion"
+  },
+  {
+    "category": "multimodal",
+    "cmd": "@agent av-align ",
+    "description": "Align audio spectrogram events with visual video frames",
+    "icon": "🎬",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Audio-Visual Grounding",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Audio-Visual Grounding",
+    "name": "av_align"
+  },
+  {
+    "category": "multimodal",
+    "cmd": "@agent physics ",
+    "description": "Hamiltonian and classical Newtonian mechanics simulations",
+    "icon": "⚛️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Physics Modeling",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Physics Modeling",
+    "name": "physics"
+  },
+  {
+    "category": "multimodal",
+    "cmd": "@agent bioinformatics ",
+    "description": "DNA sequence alignment and protein folding predictions",
+    "icon": "🧬",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Bioinformatics",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Bioinformatics",
+    "name": "bioinformatics"
+  },
+  {
+    "category": "multimodal",
+    "cmd": "@agent geospatial ",
+    "description": "Geohash coordinate queries and satellite imagery analytics",
+    "icon": "🗺️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for GIS Geospatial",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "GIS Geospatial",
+    "name": "geospatial"
+  },
+  {
+    "category": "agent",
+    "cmd": "@agent goal ",
+    "description": "Multi-turn autonomous goal-directed agent loop",
+    "icon": "🎯",
     "inputSchema": {
       "properties": {
         "goal": {
@@ -2413,10 +4216,14 @@
       ],
       "type": "object"
     },
+    "label": "Autonomous Goal",
     "name": "goal"
   },
   {
-    "description": "Decompose complex task into architectural implementation plan and test criteria.",
+    "category": "agent",
+    "cmd": "@agent plan ",
+    "description": "Deconstruct complex tasks into executable steps",
+    "icon": "📋",
     "inputSchema": {
       "properties": {
         "task": {
@@ -2429,23 +4236,42 @@
       ],
       "type": "object"
     },
+    "label": "Planning Engine",
     "name": "plan"
   },
   {
-    "description": "Conduct adversarial requirements interview to stress-test designs and edge cases.",
+    "category": "agent",
+    "cmd": "@agent grill-me ",
+    "description": "Adversarial requirements interview & stress-testing",
+    "icon": "🔥",
     "inputSchema": {
       "properties": {
-        "topic": {
-          "description": "System or design to stress test",
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Grill Me Mode",
           "type": "string"
         }
       },
+      "required": [
+        "prompt"
+      ],
       "type": "object"
     },
+    "label": "Grill Me Mode",
     "name": "grill_me"
   },
   {
-    "description": "Activate multi-perspective deep reasoning boost and rigorous validation.",
+    "category": "agent",
+    "cmd": "@agent boost ",
+    "description": "Deep multi-perspective reasoning & rigorous verification",
+    "icon": "🚀",
     "inputSchema": {
       "properties": {
         "prompt": {
@@ -2458,10 +4284,14 @@
       ],
       "type": "object"
     },
+    "label": "Reasoning Boost",
     "name": "boost"
   },
   {
-    "description": "Run recursive multi-turn agentic loop chaining for up to 256k tokens.",
+    "category": "agent",
+    "cmd": "@agent agentic-loop ",
+    "description": "Recursive auto-chaining for up to 256k tokens",
+    "icon": "🔄",
     "inputSchema": {
       "properties": {
         "prompt": {
@@ -2478,19 +4308,412 @@
       ],
       "type": "object"
     },
+    "label": "Agentic Loop",
     "name": "agentic_loop"
   },
   {
-    "description": "Manage sub-8ms ReST-RL preemption daemon with Windows Job Objects.",
+    "category": "agent",
+    "cmd": "@agent explain ",
+    "description": "Step-by-step reasoning and deep conceptual explanation",
+    "icon": "💡",
     "inputSchema": {
       "properties": {
-        "action": {
-          "description": "'start', 'status', or 'stop'",
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Explain Concept",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Explain Concept",
+    "name": "explain"
+  },
+  {
+    "category": "agent",
+    "cmd": "@agent cot ",
+    "description": "Explicit chain-of-thought derivation with evidence checks",
+    "icon": "🧠",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Chain-of-Thought",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Chain-of-Thought",
+    "name": "cot"
+  },
+  {
+    "category": "agent",
+    "cmd": "@agent critic ",
+    "description": "Adversarially evaluate draft solutions for edge case flaws",
+    "icon": "🧐",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Self-Critique",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Self-Critique",
+    "name": "critic"
+  },
+  {
+    "category": "agent",
+    "cmd": "@agent synthesize ",
+    "description": "Synthesize multiple divergent viewpoints into one consensus",
+    "icon": "🪢",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Synthesis Engine",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Synthesis Engine",
+    "name": "synthesize"
+  },
+  {
+    "category": "agent",
+    "cmd": "@agent decompose ",
+    "description": "Break massive requirements into atomic subtasks",
+    "icon": "🧩",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Decomposition",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Decomposition",
+    "name": "decompose"
+  },
+  {
+    "category": "agent",
+    "cmd": "@agent delegate ",
+    "description": "Dispatch specialized micro-tasks to background subagents",
+    "icon": "🤝",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Subagent Delegate",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Subagent Delegate",
+    "name": "delegate"
+  },
+  {
+    "category": "agent",
+    "cmd": "@agent verify ",
+    "description": "Formal verification of outputs against input constraints",
+    "icon": "✅",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Step Verification",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Step Verification",
+    "name": "verify"
+  },
+  {
+    "category": "agent",
+    "cmd": "@agent backtrack ",
+    "description": "Rollback erroneous reasoning branches to previous valid state",
+    "icon": "↩️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Backtrack Rollback",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Backtrack Rollback",
+    "name": "backtrack"
+  },
+  {
+    "category": "agent",
+    "cmd": "@agent reflection ",
+    "description": "Analyze execution failure traces and synthesize self-corrections",
+    "icon": "🪞",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Error Reflection",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Error Reflection",
+    "name": "reflection"
+  },
+  {
+    "category": "agent",
+    "cmd": "@agent adversarial ",
+    "description": "Subject assumptions and architecture to worst-case stresses",
+    "icon": "⚔️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Adversarial Test",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "type": "object"
+    },
+    "label": "Adversarial Test",
+    "name": "adversarial"
+  },
+  {
+    "category": "system",
+    "cmd": "@agent update",
+    "description": "Fast curated update (~6,500 models & dynamic Ollama sizing)",
+    "icon": "⚡",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Update Catalog",
           "type": "string"
         }
       },
       "type": "object"
     },
-    "name": "rest_rl"
+    "label": "Update Catalog",
+    "name": "update"
+  },
+  {
+    "category": "system",
+    "cmd": "@agent updatedb",
+    "description": "Crawl all 2M+ models from Hugging Face Hub",
+    "icon": "🚀",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Full Registry Crawler",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "label": "Full Registry Crawler",
+    "name": "updatedb"
+  },
+  {
+    "category": "system",
+    "cmd": "@agent active-model",
+    "description": "Inspect currently loaded Ollama model & memory",
+    "icon": "🤖",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for Active Model",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "label": "Active Model",
+    "name": "active_model"
+  },
+  {
+    "category": "system",
+    "cmd": "@agent sys-info",
+    "description": "Hardware resources, runtime RAM/VRAM, and active models",
+    "icon": "🖥️",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for System Info",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "label": "System Info",
+    "name": "sys_info"
+  },
+  {
+    "category": "system",
+    "cmd": "@agent fusion-status",
+    "description": "Multi-modal catalog count and consensus telemetry",
+    "icon": "🧠",
+    "inputSchema": {
+      "properties": {
+        "file": {
+          "description": "Optional file path or target dataset",
+          "type": "string"
+        },
+        "gpu": {
+          "description": "Enable GPU acceleration",
+          "type": "boolean"
+        },
+        "prompt": {
+          "description": "Input text or instructions for ModelFusion Status",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "label": "ModelFusion Status",
+    "name": "fusion_status"
   }
 ]
