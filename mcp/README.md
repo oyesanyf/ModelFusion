@@ -1,6 +1,6 @@
 # 🔌 ModelFusion Universal MCP Server
 
-The **ModelFusion Model Context Protocol (MCP) Server** is a high-performance, local AI integration bridge that exposes ModelFusion's entire compound intelligence ecosystem—**103 specialized tools**, ACDSO Pareto AutoML, 45+ multi-modal tasks, PE binary forensics, and ReST-RL autonomous reasoning—over standard JSON-RPC 2.0 stdio (`protocolVersion: "2024-11-05"`).
+The **ModelFusion Model Context Protocol (MCP) Server** is a high-performance, local AI integration bridge that exposes ModelFusion's entire compound intelligence ecosystem—**173 specialized tools**, ACDSO Pareto AutoML, 45+ multi-modal tasks, PE binary forensics, and ReST-RL autonomous reasoning—over standard JSON-RPC 2.0 stdio (`protocolVersion: "2024-11-05"`).
 
 Connecting ModelFusion as an MCP server equips any frontier desktop AI environment (**Claude Desktop**, **Cursor**, **Google Antigravity**, **VS Code**, or **Zed**) with local offline capabilities, zero cloud API fees, and direct access to 2M+ open-weight models.
 
@@ -11,18 +11,20 @@ Connecting ModelFusion as an MCP server equips any frontier desktop AI environme
 * **100% Free & Offline-First**: No OpenAI/Anthropic/Gemini cloud credits or API keys required. Runs entirely on local Ollama, OpenVINO, and ONNX runtimes.
 * **Dynamic Hardware Sizing**: Automatically discovers CPU cores, available runtime RAM, and free VRAM to allocate the ideal model tier (`qwen2.5:32b`, `14b`, `7b`, `3b`, `1.5b`).
 * **Universal Multi-Modal Mesh**: Solves 45+ Hugging Face tasks across Vision (detection, OCR, segmentation, depth), Audio (Whisper ASR, TTS, VAD), NLP, Code, and Tabular AutoML.
-* **103 Standardized MCP Tools**: Complete coverage of code review, security audits, PE forensics, Pareto AutoML, and universal CLI execution (`execute`).
+* **173 Standardized MCP Tools**: Complete coverage of code review, security audits, PE forensics, Pareto AutoML, and universal CLI execution (`execute`).
 * **Instant Compatibility**: Drops directly into `claude_desktop_config.json`, `cursor_mcp.json`, and `antigravity_mcp.json`.
 
 ---
 
-## 📁 Folder Structure
+## 📁 Folder Structure & Catalogs
 
 ```text
 mcp/
 ├── README.md                      # This primary MCP manual
 ├── modelfusion_mcp.json           # Canonical MCP manifest and capability specifications
-├── tools_reference.md             # Exhaustive reference for all 103 tools (schemas & examples)
+├── mcp_tools.json                 # Machine-readable JSON export of all 173 MCP tools
+├── mcp_tools.csv                  # Tabular CSV export (Index, Name, Category, ParametersCount, RequiredParameters, Description)
+├── tools_reference.md             # Exhaustive reference for all 173 tools (schemas & examples)
 ├── configs/
 │   ├── claude_desktop_config.json # Claude Desktop configuration snippet
 │   ├── cursor_mcp.json            # Cursor IDE MCP configuration snippet
@@ -36,6 +38,11 @@ mcp/
 └── client/
     └── test_mcp_connection.py     # Automated JSON-RPC test client (verifies handshake & tools)
 ```
+
+### 📊 Machine-Readable Catalogs & Interactive Explorer
+- **Interactive HTML Explorer**: [docs/screens/mcp_tools_explorer.html](../docs/screens/mcp_tools_explorer.html) (Search, filter by category, inspect schemas, and copy JSON-RPC tool calls)
+- **JSON Tool Definitions**: [`mcp_tools.json`](mcp_tools.json) (Formatted JSON-RPC 2.0 schema list for all 173 tools)
+- **CSV Catalog**: [`mcp_tools.csv`](mcp_tools.csv) (Spreadsheet-friendly export with columns: `Index,Name,Category,ParametersCount,RequiredParameters,Description`)
 
 ---
 
@@ -54,12 +61,12 @@ Expected output:
  -> Sending 'initialize' request...
  <- Received initialize response: Server='ModelFusion MCP Server', Version='0.1.0'
  -> Sending 'tools/list' request...
- <- Successfully discovered 103 ModelFusion MCP tools:
-    - execute: Execute the ModelFusion CLI with ANY combination of flags...
-    - quick_answer: Fast direct answer for general knowledge questions...
-    - orchestrate: Run the full ModelFusion orchestration pipeline...
-    - analyze_file: Analyze, review, or process a specific file...
-    ... and 91 more tools.
+ <- Successfully discovered 173 ModelFusion MCP tools:
+    - execute: Execute ModelFusion CLI with ANY combination of flags...
+    - quick_answer: Fast direct answer for general knowledge questions (non-coding)...
+    - orchestrate: Full pipeline: task detection → model selection → multi-model deliberation...
+    - analyze_file: Analyze, review, or process a specific file with ModelFusion...
+    ... and 169 more tools.
 
  -> Calling tool 'get_system_info'...
  <- Successfully received tool response (1 content blocks)
@@ -204,7 +211,7 @@ Add to `settings.json`:
 | **Dense Search** | `semantic_search`, `arxiv`, `search` | In-memory HyDE semantic search, live arXiv scientific paper retrieval, live web grounding. |
 | **Telemetry** | `get_system_info`, `get_database_stats` | Real-time hardware telemetry (RAM, VRAM, GPU cores), SQLite model registry stats. |
 
-👉 *For full parameter schemas, input options, and examples for every tool, see the [Exhaustive Tools Reference Manual](tools_reference.md).*
+👉 *For full parameter schemas, input options, and examples for every tool, see the [Exhaustive 173-Tool Reference Manual](tools_reference.md), launch the [Interactive 173-Tool Explorer](../docs/screens/mcp_tools_explorer.html), or inspect [`mcp_tools.json`](mcp_tools.json) and [`mcp_tools.csv`](mcp_tools.csv).*
 
 ---
 
