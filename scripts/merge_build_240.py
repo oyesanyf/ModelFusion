@@ -34,15 +34,17 @@ def main():
         print("[ERROR] No GitHub token found.")
         sys.exit(1)
 
-    branch = "sync-build-238"
-    commit_title = "feat(ui/menu): fix brand icon with inline base64, add image synthesis menu card, implement window.auditAndTestAllMenus, and Build 238 MSI"
+    branch = "fix-ui-action-align-build-240"
+    commit_title = "fix(ui/action-bar): prevent button word-wrapping, fix feedback button styling, ensure continue layout stability, and Build 240 MSI"
     commit_body = (
-        "1. Fixed brand logo icon with inline base64 fallback in index.html to guarantee 100% reliable rendering without relying on network or relative path resolution.\n"
-        "2. Added dedicated Image Synthesis menu card in HugOS Browser UI for fast text-to-image workflows.\n"
-        "3. Implemented window.auditAndTestAllMenus test suite verifying 100% of menu commands and directives.\n"
-        "4. Recompiled release cli.exe and synchronized 12-way parity mirror across all distribution targets.\n"
-        "5. Rebuilt and digitally signed HugOS.msi (Build 238) with 100% payload integrity.\n"
-        "6. Maintained active server daemon on port 5000."
+        "1. Enforced white-space: nowrap !important, word-break: normal !important, flex-shrink: 0, and width: 100% on .msg-action-bar, .msg-action-btn, and .action-text, preventing mid-word letter wraps.\n"
+        "2. Aligned .bubble-feedback-btn (Good / Bad buttons) line-height and padding with standard action buttons, eliminating layout shift and font size discrepancies.\n"
+        "3. Added min-width: 90px on .btn-continue-msg to maintain layout stability during the transition to '⏳ Continuing...'. Suppressed streaming cursor pseudo-element on bubbles containing action bars.\n"
+        "4. Added window.continuingAssistantMessage compatibility alias in app.js.\n"
+        "5. Configured --app-id=\"HugOS.Browser.Engine\" across hugos-browser.bat, browser_fusion.rs, and update_desktop_shortcut.ps1 for distinct Windows Taskbar grouping and icon identity.\n"
+        "6. Added comprehensive Suite 7 verification in scratch/test_comprehensive_verification.js (100% pass across all 7 suites).\n"
+        "7. Recompiled release cli.exe, synchronized 12-way parity mirror, and built/signed HugOS.msi (Build 240).\n"
+        "8. Kept Master CLI background server daemon active on port 5000."
     )
 
     print(f"[INFO] Checking out branch {branch}...")

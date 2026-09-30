@@ -488,7 +488,7 @@ body {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
-.assistant-bubble.streaming::after {
+.assistant-bubble.streaming:not(:has(.msg-action-bar))::after {
   content: "▋";
   display: inline-block;
   color: var(--accent-color);
@@ -3541,7 +3541,9 @@ body.theme-warm {
   margin-top: 10px;
   padding-top: 4px;
   user-select: none;
+  width: 100%;
   max-width: 100%;
+  box-sizing: border-box;
 }
 
 .msg-action-btn {
@@ -3559,8 +3561,16 @@ body.theme-warm {
   transition: all 0.15s ease;
   user-select: none;
   white-space: nowrap !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+  word-wrap: normal !important;
   flex-shrink: 0;
   box-sizing: border-box;
+}
+
+.msg-action-btn.btn-continue-msg {
+  min-width: 90px;
+  justify-content: center;
 }
 
 .msg-action-btn .action-icon {
@@ -3665,6 +3675,13 @@ body.theme-warm .chatgpt-canvas-card {
   color: var(--text-muted);
   cursor: pointer;
   transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap !important;
+  word-break: normal !important;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .canvas-action-btn:hover {
@@ -4290,6 +4307,10 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
   align-items: center;
   gap: 3px;
   line-height: 1.2;
+  white-space: nowrap !important;
+  word-break: normal !important;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .bubble-action-btn:hover {
@@ -5161,15 +5182,35 @@ body.theme-midnight .agent-autocomplete-dropdown {
   background: transparent;
   border: 1px solid transparent;
   border-radius: 6px;
-  padding: 3px 6px;
-  font-size: 13px;
+  padding: 4px 8px;
+  font-size: 12px;
   cursor: pointer;
   color: var(--text-secondary, #94a3b8);
   transition: all 0.15s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  line-height: 1;
+  gap: 4px;
+  line-height: 1.3;
+  white-space: nowrap !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+  word-wrap: normal !important;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.msg-action-bar .bubble-feedback-btn {
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1.3;
+  gap: 4px;
+  white-space: nowrap !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+  word-wrap: normal !important;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .bubble-feedback-btn:hover {

@@ -620,6 +620,7 @@ pub fn launch_hugos_browser(url: Option<&str>) -> Result<(), String> {
 
         let mut cmd = std::process::Command::new(&chrome_bin);
         cmd.arg(format!("--app={}", start_url))
+           .arg("--app-id=HugOS.Browser.Engine")
            .arg("--remote-debugging-port=9222")
            .arg("--remote-allow-origins=*")
            .arg(format!("--user-data-dir={}", user_data_dir.display()))
