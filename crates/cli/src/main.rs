@@ -11,6 +11,11 @@ pub use browser_fusion::{
 pub mod mcp_catalog;
 pub mod humanizer;
 pub use humanizer::ProseHumanizer;
+pub mod watermark;
+pub use watermark::{
+    detect_watermark_input, DetectionResult, ImageLsbAnalysis, ImageWatermarkScanner,
+    TokenWatermarkDetector, WatermarkReport,
+};
 
 use anyhow::Result;
 use clap::Parser;
@@ -1639,6 +1644,7 @@ DATABASE & MODEL UPDATE COMMANDS:
                         Hub (cursor-paginated in 1,000-model batches, whether junk or not)
   --max-models <N>      Cap the number of models during --updatedb (defaults to unlimited)
   --humanize [TEXT]     Rewrite passage into natural, fluid human prose using anti-AI stylometry (accepts inline text or file path)
+  --watermark [INPUT]   Detect AI watermark or steganographic anomaly (token green-list for text, LSB entropy for images; accepts inline text or file path)
   --translate [TEXT]    Translate natural language text into target language (accepts inline text or file path)
   --to <LANG>           Target language for translation (default: English)
   --db-path <PATH>      Target SQLite database path (e.g. IDE/db/hf_models.db)
@@ -1656,6 +1662,12 @@ EXAMPLES:
   cli.exe --humanize \"Furthermore, this passage requires optimization...\"
   cli.exe --humanize path/to/draft.txt
   cli.exe --file path/to/draft.txt --humanize
+
+  # AI Watermark & Steganography detection (token green-list for text, LSB entropy for images)
+  cli.exe --watermark \"Furthermore, statistical analysis indicates synthetic text generation...\"
+  cli.exe --watermark path/to/document.txt
+  cli.exe --watermark path/to/sample.png
+  cli.exe --file path/to/sample.png --watermark
 
 
   # ReST-RL daemon status and control
@@ -1681,6 +1693,9 @@ struct Args {
 
     #[arg(long, num_args = 0..=1, default_missing_value = "", help = "Rewrite passage into natural, fluid human prose using anti-AI stylometry (accepts inline text or file path)")]
     humanize: Option<String>,
+
+    #[arg(long, num_args = 0..=1, default_missing_value = "", help = "Detect AI watermark or steganographic anomaly (token green-list for text, LSB entropy for images; accepts inline text or file path)")]
+    watermark: Option<String>,
 
     #[arg(long, num_args = 0..=1, default_missing_value = "", help = "Translate natural language text into target language (use with --to <LANG>, accepts inline text or file path)")]
     translate: Option<String>,
@@ -2518,6 +2533,16 @@ where
             }
             return args;
         }
+        if sub_clean == "watermark" && !has_combinator {
+            args.remove(1);
+            args[1] = "--watermark".to_string();
+            if args.len() > 3 {
+                let combined = args[2..].join(" ");
+                args.truncate(2);
+                args.push(combined);
+            }
+            return args;
+        }
         if (sub_clean == "translate" || sub_clean == "translation") && !has_combinator {
             args.remove(1);
             args[1] = "--translate".to_string();
@@ -2646,6 +2671,14 @@ where
                 args.push(combined);
             }
         }
+        "watermark" | "/watermark" | "@agent/watermark" | "@agent:watermark" | "@watermark" => {
+            args[1] = "--watermark".to_string();
+            if args.len() > 3 {
+                let combined = args[2..].join(" ");
+                args.truncate(2);
+                args.push(combined);
+            }
+        }
         "translate" | "/translate" | "@agent/translate" | "@agent:translate" | "@translate" | "translation" | "/translation" => {
             args[1] = "--translate".to_string();
         }
@@ -2671,6 +2704,14 @@ where
     }
 
     if args.len() > 2 && args[1] == "--humanize" {
+        if args.len() > 3 {
+            let combined = args[2..].join(" ");
+            args.truncate(2);
+            args.push(combined);
+        }
+    }
+
+    if args.len() > 2 && args[1] == "--watermark" {
         if args.len() > 3 {
             let combined = args[2..].join(" ");
             args.truncate(2);
@@ -3391,6 +3432,27 @@ async fn run(args: Args) -> Result<()> {
             }
             Err(e) => {
                 eprintln!("Error humanizing text: {}", e);
+            }
+        }
+        return Ok(());
+    }
+
+    if let Some(ref text) = args.watermark {
+        let content_opt = resolve_cli_content(Some(text.as_str()), args.file.as_deref());
+        let input_target = match content_opt {
+            Some(t) if !t.trim().is_empty() => t,
+            _ => {
+                eprintln!("Error: No text or file provided for watermark detection. Usage: cli.exe --watermark \"<text>\" or cli.exe --watermark <path> or cli.exe --file <path> --watermark");
+                return Ok(());
+            }
+        };
+
+        match watermark::detect_watermark_input(input_target.trim()) {
+            Ok(report) => {
+                println!("\n{}", report.to_markdown());
+            }
+            Err(e) => {
+                eprintln!("Error detecting watermark: {}", e);
             }
         }
         return Ok(());
@@ -6090,6 +6152,7 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
         "teamworkpreview" | "teamwork" | "teams" | "team" => Some("teamwork-preview"),
         "learn" | "remember" => Some("learn"),
         "boost" | "booster" => Some("boost"),
+        "watermark" | "detectwatermark" => Some("watermark"),
         "generativeui" | "genui" | "ui" => Some("generative_ui"),
         "exportpdf" => Some("export-pdf"),
         "agent" | "modelfusion" | "hugos" => Some("agent"),
@@ -10666,6 +10729,7 @@ public class ShortcutHelper {
                                         "createfile" | "create-file" | "create_file" | "newfile" | "new-file" | "new_file" | "writefile" | "write-file" => "createfile",
                                         "rest-rl" | "restrl" | "rl" => "rest-rl",
                                         "boost" | "booster" => "boost",
+                                        "watermark" | "detect-watermark" | "detect_watermark" => "watermark",
                                         "vision" | "visionmodel" => "vision",
                                         "multimodal" | "multimodaltask" | "mm" => "multimodal",
                                         "fusion" | "fusionstatus" | "fusion-status" | "fusionpanel" => "fusion-status",
@@ -11884,6 +11948,26 @@ sequenceDiagram
                                               (idx, format!("🚀 **Reasoning Boost (`/boost`)**\n\n{}", result.trim()))
                                           }
                                       },
+                                      "watermark" => {
+                                          let attached = extract_attached_code_context(&prompt_for_cmd);
+                                          let payload = resolve_code_for_command(&args_owned, &prompt_for_cmd);
+                                          let target = if !payload.trim().is_empty() {
+                                              payload
+                                          } else if !attached.is_empty() {
+                                              attached.into_iter().map(|(_, c)| c).collect::<Vec<_>>().join("\n\n")
+                                          } else {
+                                              String::new()
+                                          };
+
+                                          if target.trim().is_empty() {
+                                              (idx, "🔍 **AI Watermark & Steganography Detection (`/watermark`)**\n\nEvaluates text using the Kirchenbauer et al. token green-list statistical test and images via spatial LSB entropy/chi-square analysis.\n\n**Usage**:\n- `/watermark <paste AI text or file path>`\n- `@agent watermark path/to/document.txt`\n- `@agent watermark path/to/image.png`".to_string())
+                                          } else {
+                                              match watermark::detect_watermark_input(target.trim()) {
+                                                  Ok(report) => (idx, report.to_markdown()),
+                                                  Err(e) => (idx, format!("⚠️ **Watermark Detection Error**: {}", e)),
+                                              }
+                                          }
+                                      },
                                       "generative_ui" => {
                                           let ui_req = resolve_code_for_command(&args_owned, &prompt_for_cmd);
                                           if ui_req.trim().is_empty() {
@@ -13070,6 +13154,40 @@ sequenceDiagram
                         }
                     }
                 }
+                "/api/watermark" => {
+                    let text = request_json.get("text").and_then(|v| v.as_str()).unwrap_or("").trim();
+                    let image_path = request_json.get("image_path").and_then(|v| v.as_str()).unwrap_or("").trim();
+                    let input = if !image_path.is_empty() {
+                        image_path
+                    } else if !text.is_empty() {
+                        text
+                    } else {
+                        request_json.get("input").and_then(|v| v.as_str()).unwrap_or("").trim()
+                    };
+
+                    if input.is_empty() {
+                        serde_json::json!({
+                            "status": "error",
+                            "error": "Missing 'text', 'image_path', or 'input' parameter"
+                        }).to_string()
+                    } else {
+                        match watermark::detect_watermark_input(input) {
+                            Ok(report) => {
+                                serde_json::json!({
+                                    "status": "ok",
+                                    "report": report,
+                                    "markdown": report.to_markdown()
+                                }).to_string()
+                            }
+                            Err(e) => {
+                                serde_json::json!({
+                                    "status": "error",
+                                    "error": e
+                                }).to_string()
+                            }
+                        }
+                    }
+                }
                 "/report-bandit-feedback" => {
                     let context = request_json["context"].as_u64().unwrap_or(0) as usize;
                     let arm = request_json["arm"].as_u64().unwrap_or(0) as usize;
@@ -13929,6 +14047,26 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                         format!("Successfully updated bandit feedback for context {}, arm {} to reward {}. New value: {:.4}", context, arm, reward, state.values[context][arm])
                     } else {
                         "Error: Invalid context or arm index".to_string()
+                    }
+                }
+                "detect_watermark" | "watermark" => {
+                    let text = arguments["text"].as_str().unwrap_or("").trim();
+                    let image_path = arguments["image_path"].as_str().unwrap_or("").trim();
+                    let input = if !image_path.is_empty() {
+                        image_path
+                    } else if !text.is_empty() {
+                        text
+                    } else {
+                        arguments["input"].as_str().unwrap_or("").trim()
+                    };
+
+                    if input.is_empty() {
+                        "Error: Please provide either 'text' or 'image_path' parameter for watermark detection.".to_string()
+                    } else {
+                        match watermark::detect_watermark_input(input) {
+                            Ok(report) => report.to_markdown(),
+                            Err(e) => format!("Error detecting watermark: {}", e),
+                        }
                     }
                 }
                                 other => {
@@ -16814,6 +16952,19 @@ public class Pr {
         use super::preprocess_cli_args;
         let res = preprocess_cli_args(["cli", "@agent", "humanize", "Good morning"]);
         assert_eq!(res, vec!["cli".to_string(), "--humanize".to_string(), "Good morning".to_string()]);
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_watermark() {
+        use super::preprocess_cli_args;
+        let res1 = preprocess_cli_args(["cli", "@agent", "watermark", "Sample text to check"]);
+        assert_eq!(res1, vec!["cli".to_string(), "--watermark".to_string(), "Sample text to check".to_string()]);
+
+        let res2 = preprocess_cli_args(["cli", "/watermark", "path/to/image.png"]);
+        assert_eq!(res2, vec!["cli".to_string(), "--watermark".to_string(), "path/to/image.png".to_string()]);
+
+        let res3 = preprocess_cli_args(["cli", "watermark", "path/to/document.txt"]);
+        assert_eq!(res3, vec!["cli".to_string(), "--watermark".to_string(), "path/to/document.txt".to_string()]);
     }
 
     #[test]

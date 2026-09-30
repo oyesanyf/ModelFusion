@@ -130,11 +130,22 @@ def compute_sha256(file_path):
             h.update(chunk)
     return h.hexdigest()
 
-def upload_asset(release_id, file_path, asset_name, token):
-    delete_existing_asset(release_id, asset_name, token)
+def upload_asset(release_id, file_path, asset_name, token, force=False):
     file_size = os.path.getsize(file_path)
     file_sha256 = compute_sha256(file_path)
     size_mb = round(file_size / (1024 * 1024), 2)
+    if not force:
+        rel = api_request(f"{API_URL}/releases/{release_id}", token=token)
+        for asset in rel.get("assets", []):
+            if asset["name"] == asset_name:
+                if asset.get("size") == file_size:
+                    print(f"[OK] Asset {asset_name} already exists on release {release_id} with matching size ({file_size} bytes). Skipping.")
+                    return asset
+                else:
+                    print(f"[INFO] Asset {asset_name} exists but size differs ({asset.get('size')} != {file_size}). Replacing...")
+                    break
+
+    delete_existing_asset(release_id, asset_name, token)
     print(f"[INFO] Uploading {asset_name} ({size_mb} MB, SHA256: {file_sha256}) to release {release_id}...")
 
     upload_url = f"{UPLOADS_URL}/releases/{release_id}/assets?name={asset_name}"
@@ -255,6 +266,7 @@ def main():
             print("\n[ERROR] Remote release assets do not match local artifacts.")
             sys.exit(1)
     
+    force = "--force" in sys.argv
     for tag_name, release_name, make_latest in targets:
         print(f"\n==========================================")
         print(f"Target Release: {tag_name} - {release_name}")
@@ -262,7 +274,7 @@ def main():
         rel = get_or_create_release(tag_name, release_name, token, make_latest=make_latest)
         rel_id = rel["id"]
         for local_f, name in artifacts:
-            upload_asset(rel_id, local_f, name, token)
+            upload_asset(rel_id, local_f, name, token, force=force)
         
     print("\n[SUCCESS] All release assets uploaded and verified successfully on GitHub Releases!")
 

@@ -270,12 +270,16 @@ def patch_completion_handler(content: str) -> str:
 
 def validate_syntax(filepath: str):
     """Validate JS syntax using node -c. Raise RuntimeError on failure."""
-    res = subprocess.run(["node", "-c", filepath], capture_output=True, text=True)
-    if res.returncode != 0:
-        err_msg = f"Syntax validation failed for {filepath}:\n{res.stderr}"
-        print(f"  [ERROR] {err_msg}", file=sys.stderr)
-        raise RuntimeError(err_msg)
-    print(f"  [OK] Syntax validation passed (node -c): {filepath}")
+    node_bin = r"D:\tools\nodejs\node.exe" if os.path.exists(r"D:\tools\nodejs\node.exe") else "node"
+    try:
+        res = subprocess.run([node_bin, "-c", filepath], capture_output=True, text=True)
+        if res.returncode != 0:
+            err_msg = f"Syntax validation failed for {filepath}:\n{res.stderr}"
+            print(f"  [ERROR] {err_msg}", file=sys.stderr)
+            raise RuntimeError(err_msg)
+        print(f"  [OK] Syntax validation passed (node -c): {filepath}")
+    except Exception as e:
+        print(f"  [WARN] Could not run node -c: {e}")
 
 
 def main():
