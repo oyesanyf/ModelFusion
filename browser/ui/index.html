@@ -1750,6 +1750,90 @@
     </div>
   </div>
 
+  <!-- Message & Conversation Share / Export Modal -->
+  <div class="export-modal-overlay hidden" id="modal-share-export">
+    <div class="export-modal-dialog" style="max-width: 560px;">
+      <div class="export-modal-header">
+        <div class="export-modal-title">
+          <span>⬆️</span>
+          <span>Share &amp; Export</span>
+        </div>
+        <button type="button" class="export-modal-close-btn" id="btn-close-share-modal" title="Close (Esc)">✕</button>
+      </div>
+      <div class="export-modal-body">
+        <!-- Scope Toggle: This Response vs Entire Conversation -->
+        <div class="share-scope-toggle" style="display: flex; gap: 8px; margin-bottom: 14px; background: var(--bg-secondary, rgba(0,0,0,0.25)); padding: 4px; border-radius: 8px; border: 1px solid var(--border-color, rgba(255,255,255,0.08));">
+          <button type="button" class="scope-toggle-btn active" id="btn-scope-single" style="flex: 1; padding: 6px 12px; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; background: var(--accent-color, #10b981); color: #fff; transition: all 0.15s ease;">Current Response</button>
+          <button type="button" class="scope-toggle-btn" id="btn-scope-full" style="flex: 1; padding: 6px 12px; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; background: transparent; color: var(--text-muted, #94a3b8); transition: all 0.15s ease;">Entire Conversation</button>
+        </div>
+
+        <!-- Preview Box -->
+        <div class="share-preview-box" id="share-preview-text" style="max-height: 90px; overflow-y: auto; background: var(--bg-surface-secondary, rgba(0,0,0,0.2)); border: 1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius: 8px; padding: 8px 12px; font-size: 11.5px; color: var(--text-muted, #cbd5e1); margin-bottom: 16px; font-family: var(--mono-font, monospace); white-space: pre-wrap; word-break: break-word;"></div>
+
+        <!-- Grid of Action Cards -->
+        <div class="share-options-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <!-- 1. Email -->
+          <button type="button" class="share-action-card" id="btn-action-email">
+            <span class="card-icon">📧</span>
+            <div class="card-text">
+              <div class="card-title">Share via Email</div>
+              <div class="card-desc">Open in default email client with mailto:</div>
+            </div>
+          </button>
+
+          <!-- 2. Export Markdown (.md) -->
+          <button type="button" class="share-action-card" id="btn-action-export-md">
+            <span class="card-icon">📄</span>
+            <div class="card-text">
+              <div class="card-title">Export Markdown (.md)</div>
+              <div class="card-desc">Clean formatted Markdown file</div>
+            </div>
+          </button>
+
+          <!-- 3. Print / Save as PDF -->
+          <button type="button" class="share-action-card" id="btn-action-export-pdf">
+            <span class="card-icon">🖨️</span>
+            <div class="card-text">
+              <div class="card-title">Print / Save as PDF</div>
+              <div class="card-desc">Formatted printable view</div>
+            </div>
+          </button>
+
+          <!-- 4. Export Text (.txt) -->
+          <button type="button" class="share-action-card" id="btn-action-export-txt">
+            <span class="card-icon">📝</span>
+            <div class="card-text">
+              <div class="card-title">Export Plain Text (.txt)</div>
+              <div class="card-desc">Standard plain text file</div>
+            </div>
+          </button>
+
+          <!-- 5. Export Standalone HTML -->
+          <button type="button" class="share-action-card" id="btn-action-export-html">
+            <span class="card-icon">🌐</span>
+            <div class="card-text">
+              <div class="card-title">Export HTML (.html)</div>
+              <div class="card-desc">Standalone styled web page</div>
+            </div>
+          </button>
+
+          <!-- 6. Copy Rich Formatted Text -->
+          <button type="button" class="share-action-card" id="btn-action-copy-rich">
+            <span class="card-icon">📋</span>
+            <div class="card-text">
+              <div class="card-title">Copy Rich Formatted</div>
+              <div class="card-desc">Pasting into Word, Docs, Slack</div>
+            </div>
+          </button>
+        </div>
+      </div>
+      <div class="export-modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <span id="share-modal-toast" style="font-size: 12px; color: var(--accent-color, #10b981); font-weight: 500; display: none;">✓ Copied to clipboard!</span>
+        <button type="button" class="cli-btn-secondary" id="btn-close-share-footer" style="margin-left: auto;">Close</button>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>
