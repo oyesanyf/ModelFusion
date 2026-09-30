@@ -92,7 +92,8 @@ function generateWix(srcDir, outputFile) {
     fs.writeFileSync(buildNumPath, buildNumber.toString(), 'utf-8');
 
     const version = `1.0.${buildNumber}`;
-    const iconPath = path.join(path.dirname(__dirname), 'IDE', 'hugos.ico');
+    const browserIconCandidate = path.join(path.dirname(__dirname), 'IDE', 'hugos_browser.ico');
+    const iconPath = fs.existsSync(browserIconCandidate) ? browserIconCandidate : path.join(path.dirname(__dirname), 'IDE', 'hugos.ico');
 
     const wxsContent = `<?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">

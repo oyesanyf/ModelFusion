@@ -4,6 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HugOS Browser | ModelFusion AI Web Environment</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="alternate icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0f172a">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body class="theme-white">
@@ -12,7 +19,7 @@
     <aside class="chatgpt-sidebar" id="chatgpt-sidebar">
       <div class="sidebar-top">
         <div class="sidebar-brand-box" id="sidebar-brand-home" title="HugOS AI">
-          <span class="chatgpt-logo-icon">🌐</span>
+          <img src="favicon-32x32.png" class="chatgpt-logo-icon" alt="HugOS" style="width: 22px; height: 22px; border-radius: 6px; object-fit: contain;">
           <span class="sidebar-brand-title">HugOS AI</span>
         </div>
         <button type="button" class="sidebar-toggle-btn" id="sidebar-toggle-btn" title="Close sidebar (Ctrl+[)">◫</button>
@@ -34,6 +41,10 @@
         <button type="button" class="sidebar-nav-item" id="sidebar-translation-humanize" title="Translation &amp; Humanize (Anti-AI Stylometry)">
           <span class="nav-item-icon">🌐</span>
           <span class="nav-item-text">Translation &amp; Humanize</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" id="sidebar-pin-desktop" title="Pin HugOS Browser to Desktop with distinct icon">
+          <span class="nav-item-icon">📌</span>
+          <span class="nav-item-text">Pin to Desktop</span>
         </button>
 
         <div class="sidebar-section-divider"></div>
@@ -412,6 +423,11 @@
             <span class="dot status-dot" id="dot-ollama"></span>
             <span class="status-text" id="text-ollama">Local AI Ready</span>
           </div>
+
+          <button type="button" class="pin-desktop-btn" id="btn-pin-desktop" title="Pin HugOS Browser to Desktop with distinct icon">
+            <span class="pin-desktop-icon">📌</span>
+            <span class="pin-desktop-text">Pin to Desktop</span>
+          </button>
 
           <button type="button" class="theme-toggle-btn" id="btn-theme-toggle" title="Toggle Theme (White / Dark / Midnight / Warm / Obsidian)">
             <span class="theme-toggle-icon" id="theme-toggle-icon">☀️</span>

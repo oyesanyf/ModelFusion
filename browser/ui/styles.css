@@ -2072,7 +2072,8 @@ body {
    Full Multi-Theme Color System (White, Dark, Obsidian, Midnight, Warm)
 ------------------------------------------------------------- */
 
-/* 1. Theme Toggle Button in Top Nav */
+/* 1. Theme Toggle & Desktop Pin Button in Top Nav */
+.pin-desktop-btn,
 .theme-toggle-btn {
   display: flex;
   align-items: center;
@@ -2089,6 +2090,7 @@ body {
   white-space: nowrap;
 }
 
+.pin-desktop-btn:hover,
 .theme-toggle-btn:hover {
   background: var(--bg-tertiary);
   color: var(--text-primary);
@@ -2141,6 +2143,8 @@ body.theme-light .status-pill {
   color: #4b5563;
 }
 
+body.theme-white .pin-desktop-btn,
+body.theme-light .pin-desktop-btn,
 body.theme-white .theme-toggle-btn,
 body.theme-light .theme-toggle-btn,
 body.theme-white .settings-nav-btn,
