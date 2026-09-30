@@ -147,6 +147,7 @@ assert(emptyHtml.includes('empty-response-notice'), 'Must render retry notice on
 console.log('  ✓ 2.3 Empty response returns retry notice');
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // SUITE 3: Verify All 40 Index.html Menu Commands
 // ---------------------------------------------------------------------------
 console.log('\n[SUITE 3] Testing coverage of all 40 menu commands in app.js...');
@@ -159,7 +160,7 @@ while ((m = cmdRegex.exec(indexHtml)) !== null) {
   uniqueCmds.add(m[1].trim());
 }
 
-assert.strictEqual(uniqueCmds.size, 40, 'Must have exactly 40 unique menu commands');
+assert.strictEqual(uniqueCmds.size, 40, 'Must have exactly 40 unique menu commands (including newly added Multimodal Image Synthesis)');
 
 // Check that app.js contains explicit pattern matches for all major directives
 const requiredDirectivePatterns = [
@@ -170,11 +171,11 @@ const requiredDirectivePatterns = [
   { name: '@agent datascience / tabular', pattern: /@agent\s+(?:datascience|dataanalyst|timeseries|predict|decision)/i },
   { name: '@agent humanize', pattern: /@agent\s+humanize/i },
   { name: '@agent translate', pattern: /@agent\s+translate\b/i },
-  { name: '@agent translate-humanize', pattern: /@agent\s+translate-humanize/i },
   { name: '@agent style-transfer', pattern: /@agent\s+style-transfer/i },
   { name: '@agent browser / deep research', pattern: /@agent\s+browser\s+deep\s+research\s+on/i },
   { name: '@agent arxiv', pattern: /@agent\s+arxiv/i },
   { name: '@agent vision / image', pattern: /@agent\s+vision/i },
+  { name: '@agent image / flux', pattern: /isImageGenerationDirective|@agent\s+image|\/image/i },
   { name: '@agent audio / asr', pattern: /@agent\s+asr/i },
   { name: '@agent security', pattern: /@agent\s+security/i },
   { name: '@agent pe', pattern: /@agent\s+pe/i },
@@ -216,6 +217,24 @@ for (const a of requiredAssets) {
   assert(s.size > 0, `Empty file: ${a}`);
 }
 console.log(`  ✓ All ${requiredAssets.length} icon and PWA assets verified`);
+
+// ---------------------------------------------------------------------------
+// SUITE 5: Verify Automated Menu Auditor (window.auditAndTestAllMenus) & Categories
+// ---------------------------------------------------------------------------
+console.log('\n[SUITE 5] Testing Automated Menu Auditor & Category Structure...');
+
+assert(appJs.includes('window.auditAndTestAllMenus = async function'), 'window.auditAndTestAllMenus must be exported in app.js');
+
+const expectedCategories = ['web', 'tabular', 'agent', 'writing', 'vision', 'audio', 'code', 'pe_binary', 'utilities'];
+for (const cat of expectedCategories) {
+  assert(indexHtml.includes(`data-cat="${cat}"`), `Category data-cat="${cat}" must exist in index.html`);
+}
+console.log(`  ✓ All ${expectedCategories.length} tool categories verified in HTML structure`);
+
+// Verify that no legacy translate-humanize buttons exist
+assert(!indexHtml.includes('data-cmd="@agent translate-humanize'), 'Must not have @agent translate-humanize command in index.html');
+assert(!indexHtml.includes('tool_translate_humanize'), 'Must not have tool_translate_humanize ID in index.html');
+console.log('  ✓ Verified 100% elimination of legacy translate-humanize');
 
 console.log('\n====================================================');
 console.log('✅ ALL COMPREHENSIVE VERIFICATION SUITES PASSED (100%)');

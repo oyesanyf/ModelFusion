@@ -1757,7 +1757,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (hasDoc && !hasTabular && !hasCode) {
       addAction('@agent summarize', '▶ Run @agent summarize', true);
       addAction('@agent humanize', '✍️ @agent humanize', true);
-      addAction('@agent translate-humanize to Spanish: ', '🗣️ @agent translate-humanize', false);
+      addAction('@agent translate to Spanish: ', '🌐 @agent translate', false);
     }
 
     return actions;
@@ -6117,7 +6117,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
     if (options && options.taskType) {
       const t = String(options.taskType).toLowerCase();
       if (['code', 'math', 'pe_binary', 'security', 'binary', 'decompilation', 'analysis', 'dockerfile', 'ast'].includes(t)) return true;
-      if (['creative', 'prose', 'humanize', 'qa', 'story', 'book', 'essay', 'translation', 'translate', 'style-transfer', 'translate-humanize'].includes(t)) return false;
+      if (['creative', 'prose', 'humanize', 'qa', 'story', 'book', 'essay', 'translation', 'translate', 'style-transfer', 'writing'].includes(t)) return false;
     }
     const text = `${prompt || ''} ${sysPrompt || ''}`.toLowerCase();
     if (/^\s*(@agent\s+(code|code-gen|infill|code-review|refactor|test-gen|graph-index|rest-rl|ast-parse|pe|sec|security|exploit|decompile|yara|dockerfile|code-translate)|\/(code|refactor|test))\b/i.test(prompt)) {
@@ -6256,13 +6256,10 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
 
     if (options && options.panel && options.panel.id === 'humanize') {
       authorDisplayTitle = 'HugOS Humanizer';
-      authorDisplaySub = `(✍️ Anti-AI Stylometry • High Burstiness • ${modelToUse})`;
+      authorDisplaySub = `(✍️ Anti-AI Stylometry • Non-AI Prose • ${modelToUse})`;
     } else if (options && options.panel && options.panel.id === 'translate') {
       authorDisplayTitle = 'HugOS Translator';
-      authorDisplaySub = `(🌐 Multilingual Translation • ${modelToUse})`;
-    } else if (options && options.panel && options.panel.id === 'translate-humanize') {
-      authorDisplayTitle = 'HugOS Native Translator';
-      authorDisplaySub = `(🗣️ Native Humanized Translation • ${modelToUse})`;
+      authorDisplaySub = `(🌐 Multilingual Translation • Auto-Detect • ${modelToUse})`;
     } else if (options && options.panel && options.panel.id === 'style-transfer') {
       authorDisplayTitle = 'HugOS Style Transfer';
       authorDisplaySub = `(🎨 Adaptive Stylometry • ${modelToUse})`;
@@ -6285,7 +6282,6 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
 
     const authorIcon = (options && options.panel && options.panel.id === 'humanize') ? '✍️'
       : (options && options.panel && options.panel.id === 'translate') ? '🌐'
-      : (options && options.panel && options.panel.id === 'translate-humanize') ? '🗣️'
       : (options && options.panel && options.panel.id === 'style-transfer') ? '🎨'
       : (isFusionMode ? '✨' : '🌐');
 
@@ -8049,8 +8045,6 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
         cmd = `@agent humanize ${cmd}`;
       } else if (pendingPromptDirective.type === 'translate') {
         cmd = `@agent translate to ${pendingPromptDirective.lang || 'English'}: ${cmd}`;
-      } else if (pendingPromptDirective.type === 'translate-humanize') {
-        cmd = `@agent translate-humanize to ${pendingPromptDirective.lang || 'English'}: ${cmd}`;
       } else if (pendingPromptDirective.type === 'style-transfer') {
         cmd = `@agent style-transfer to ${pendingPromptDirective.style || 'conversational'}: ${cmd}`;
       }
@@ -8734,11 +8728,10 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
         '**Multi-Turn In-Session Content Memory**:',
         '- Continuous conversational memory: In any session, ask questions about previous messages, attached code files, CSV datasets, or executed tool outputs. Full multi-turn session context and attachments are automatically preserved and recalled.',
         '',
-        '**Anti-AI Stylometry & Natural Human Prose**:',
-        '- `@agent translate to <lang>: <text>` — **Translate language text** into target language with high fidelity',
-        '- `@agent humanize <text>` — **Humanize text** into organic human prose using anti-AI stylometry',
-        '- `@agent translate-humanize to <lang>: <text>` (or `--translate ... --humanize`) — Dual-flag pipeline: translate language text + humanize with native-speaker cadence',
-        '- `@agent style-transfer <style>: <text>` — Adaptive stylometry transformation matching target authorial tone and voice',
+        '**Writing & Editing (Anti-AI Stylometry & Translation)**:',
+        '- `@agent humanize <text/file>` — **Humanize AI Text & Files**: Rewrites text or attached documents into authentic human prose with anti-AI stylometry',
+        '- `@agent translate to <lang>: <text/file>` — **Multilingual Translation**: Auto-detects source language and translates text or attached files',
+        '- `@agent style-transfer to <style>: <text>` — **Style Transfer & Voice Shift**: Adaptive stylometry transformation matching target authorial tone and voice',
         '',
         '**Code, Architecture & Security Forensics**:',
         '- `@agent security <code/file>` — Static code audit, OWASP vulnerabilities, injection flaws, and memory safety review',
@@ -9220,12 +9213,12 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         return;
       }
 
-      termLog(`✍️ [HUMANIZER] Making text into natural language with organic human cadence and anti-AI stylometry...`, 'info');
+      termLog(`✍️ [HUMANIZER] Rewriting text into authentic human prose with anti-AI stylometry...`, 'info');
 
-      const humanizePrompt = `Rewrite the following passage into natural, organic human prose:\n\n${textToHumanize}`;
+      const humanizePrompt = `Rewrite the following text into authentic, organic human prose with anti-AI stylometry (eliminate clichés, vary sentence burstiness, use natural conversational rhythm):\n\n${textToHumanize}`;
       const humanizePanel = {
         id: 'humanize',
-        name: 'Anti-AI Stylometry Humanizer'
+        name: 'HugOS Humanizer (✍️ Anti-AI Stylometry • Non-AI Prose)'
       };
 
       await streamAiChat(humanizePrompt, NATURAL_HUMAN_EDITOR_INSTRUCTION, {
@@ -9243,102 +9236,11 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       return;
     }
 
-    // 4.06 Native Speaker Translation & Humanize Directive (@agent translate-humanize, @agent humanize-translate, /translate-humanize, @trans-human, /trans-human, @agent trans-human)
+    // 4.06 Multilingual Translation Directive (@agent translate, /translate, @translate, @agent translation, @agent trans, /trans, @trans)
     if (
-      /^(@agent\s+translate-humanize|@translate-humanize|\/translate-humanize|@agent\s+trans-human|@trans-human|\/trans-human|@agent\s+transhuman|@transhuman|\/transhuman|@agent\s+humanize-translate|@humanize-translate|\/humanize-translate)(\s*[:\s]|$)/i.test(cmd)
+      /^(@agent\s+translate\b|@translate\b|\/translate\b|@agent\s+translation\b|@translation\b|\/translation\b|@agent\s+trans\b|@trans\b|\/trans\b)/i.test(cmd)
     ) {
-      let rest = cmd.replace(/^(@agent\s+translate-humanize|@translate-humanize|\/translate-humanize|@agent\s+trans-human|@trans-human|\/trans-human|@agent\s+transhuman|@transhuman|\/transhuman|@agent\s+humanize-translate|@humanize-translate|\/humanize-translate)(?:\s*[:]\s*|\s*)/i, '').trim();
-      let targetLang = 'English';
-      let textToTranslate = '';
-
-      // Parse target language: e.g. "to French: hello world", "into Spanish - hello", "to German hello", "French: hello"
-      const toMatch = rest.match(/^(?:to|into)\s+([A-Za-z\s]+?)(?:[:,\-]\s*|\s+|$)(.*)$/is);
-      if (toMatch) {
-        targetLang = toMatch[1].trim() || 'English';
-        textToTranslate = (toMatch[2] || '').trim();
-      } else {
-        const colonMatch = rest.match(/^([A-Za-z]+)\s*[:]\s*(.*)$/is);
-        if (colonMatch && !['http', 'https', 'file'].includes(colonMatch[1].toLowerCase())) {
-          targetLang = colonMatch[1].trim();
-          textToTranslate = (colonMatch[2] || '').trim();
-        } else {
-          textToTranslate = rest;
-        }
-      }
-
-      // Check attachments
-      if (currentAttachments.length > 0) {
-        const attachText = currentAttachments.map(f => (f.name ? `[File: ${f.name}]\n` : '') + (f.content || '')).join('\n\n').trim();
-        if (!textToTranslate) {
-          textToTranslate = attachText;
-        } else {
-          textToTranslate = `${textToTranslate}\n\n${attachText}`;
-        }
-      }
-
-      // Check prior messages if text is empty
-      if (!textToTranslate && activeSession && Array.isArray(activeSession.messages)) {
-        const prevMsg = activeSession.messages.slice(0, -1).reverse().find(m => m.content && !/^(@agent\s+(translate|humanize)|@translate|@humanize|@trans-human|\/translate|\/humanize)/i.test(m.content));
-        if (prevMsg) {
-          textToTranslate = prevMsg.content;
-        }
-      }
-
-      if (!textToTranslate) {
-        if (activeSession && activeSession.messages.length > 0 && activeSession.messages[activeSession.messages.length - 1].content === cmd) {
-          activeSession.messages.pop();
-          saveChatHistory();
-        }
-        if (chatMessages && chatMessages.lastElementChild && chatMessages.lastElementChild.classList.contains('user-bubble')) {
-          chatMessages.lastElementChild.remove();
-        }
-        termLog('🗣️ Please provide or paste the text you would like to translate and humanize.', 'warn');
-        const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
-          ? cliPromptInputPinned
-          : cliPromptInput;
-        if (activeInput) {
-          activeInput.placeholder = `Paste or type text to translate into ${targetLang} and humanize...`;
-          activeInput.value = `@agent translate-humanize to ${targetLang}: `;
-          activeInput.focus();
-          activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
-          activeInput.style.height = 'auto';
-          activeInput.style.height = Math.min(activeInput.scrollHeight, 160) + 'px';
-        }
-        pendingPromptDirective = { type: 'translate-humanize', lang: targetLang };
-        return;
-      }
-
-      termLog(`🗣️ [TRANSLATE-HUMANIZE] Translating to ${targetLang} and applying native-speaker humanizing...`, 'info');
-
-      const transHumanSysPrompt = "You are a bilingual native-speaker editor and translator. Translate the given text into the target language and humanize it so it reads with authentic, native cadence, natural idiomatic expressions, varied sentence structures, and organic human rhythm. Eliminate all stiffness, awkward calques, and literal translation artifacts while preserving the core factual intent. Do not add any introductory explanations, meta-commentary, or translator notes. Return only the polished native text.";
-      const transHumanPrompt = `Translate the following text into natural, idiomatic ${targetLang} as spoken and written by an authentic native speaker:\n\n${textToTranslate}`;
-
-      await streamAiChat(transHumanPrompt, transHumanSysPrompt, {
-        taskType: 'humanize',
-        temperature: 0.8,
-        top_p: 0.95,
-        min_p: 0.05,
-        repeat_penalty: 1.15,
-        presence_penalty: 0.25,
-        frequency_penalty: 0.3,
-        panel: {
-          id: 'translate-humanize',
-          name: `Native Translation & Humanize (${targetLang})`
-        }
-      });
-
-      if (currentAttachments.length > 0) clearAllAttachments();
-      return;
-    }
-
-    // 4.07 Multilingual Translation Directive (@agent translate, /translate, @translate, @agent translation, @agent trans, /trans, @trans)
-    if (
-      (/^(@agent\s+translate\b|@translate\b|\/translate\b|@agent\s+translation\b|@translation\b|\/translation\b|@agent\s+trans\b|@trans\b|\/trans\b)/i.test(cmd)) &&
-      !/^(@agent\s+(?:translate-humanize|trans-human|transhuman)|@(?:translate-humanize|trans-human|transhuman)|\/(?:translate-humanize|trans-human|transhuman))/i.test(cmd)
-    ) {
-      const alsoHumanize = /--humanize\b/i.test(cmd);
       let rest = cmd.replace(/^(@agent\s+translate\b|@agent\s+translation\b|\/translate\b|\/translation\b|@translate\b|@translation\b|@agent\s+trans\b|@trans\b|\/trans\b)(?:\s*[:]\s*|\s*)/i, '').trim();
-      rest = rest.replace(/--humanize\b/gi, '').trim();
       let targetLang = 'English';
       let textToTranslate = '';
 
@@ -9369,7 +9271,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 
       // Check prior messages if text is empty
       if (!textToTranslate && activeSession && Array.isArray(activeSession.messages)) {
-        const prevMsg = activeSession.messages.slice(0, -1).reverse().find(m => m.content && !/^(@agent\s+trans|@trans|\/trans)/i.test(m.content));
+        const prevMsg = activeSession.messages.slice(0, -1).reverse().find(m => m.content && !/^(@agent\s+(translate|humanize)|@translate|@humanize|\/translate|\/humanize)/i.test(m.content));
         if (prevMsg) {
           textToTranslate = prevMsg.content;
         }
@@ -9388,7 +9290,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           ? cliPromptInputPinned
           : cliPromptInput;
         if (activeInput) {
-          activeInput.placeholder = `Paste or type text to translate into ${targetLang}...`;
+          activeInput.placeholder = `Paste or type text or attach a file to translate into ${targetLang}...`;
           activeInput.value = `@agent translate to ${targetLang}: `;
           activeInput.focus();
           activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
@@ -9399,45 +9301,25 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         return;
       }
 
-      if (alsoHumanize) {
-        termLog(`🗣️ [TRANSLATE + HUMANIZE] Translating text to ${targetLang} with native-speaker cadence...`, 'info');
-        const transHumanSysPrompt = "You are a bilingual native-speaker editor and translator. Translate the given text into the target language and humanize it so it reads with authentic, native cadence, natural idiomatic expressions, varied sentence structures, and organic human rhythm. Eliminate all stiffness, awkward calques, and literal translation artifacts while preserving the core factual intent. Do not add any introductory explanations, meta-commentary, or translator notes. Return only the polished native text.";
-        const transHumanPrompt = `Translate the following text into natural, idiomatic ${targetLang} as spoken and written by an authentic native speaker:\n\n${textToTranslate}`;
+      termLog(`🌐 [TRANSLATOR] Auto-detecting source language and translating to ${targetLang}...`, 'info');
+      const translateSysPrompt = `You are HugOS Multilingual Translator. Automatically detect the source language of the provided text or document, and accurately and idiomatically translate it into ${targetLang}. Preserve original nuances, formatting, structure, code blocks, and numbers. Do not include commentary, explanations, or translator notes. Output only the translated text.`;
+      const translatePrompt = `Translate the following content into ${targetLang} (auto-detect source language):\n\n${textToTranslate}`;
 
-        await streamAiChat(transHumanPrompt, transHumanSysPrompt, {
-          taskType: 'humanize',
-          temperature: 0.8,
-          top_p: 0.95,
-          min_p: 0.05,
-          repeat_penalty: 1.15,
-          presence_penalty: 0.25,
-          frequency_penalty: 0.3,
-          panel: {
-            id: 'translate-humanize',
-            name: `Native Translation & Humanize (${targetLang})`
-          }
-        });
-      } else {
-        termLog(`🌐 [TRANSLATE] Translating text to ${targetLang}...`, 'info');
-        const translateSysPrompt = "You are an expert multilingual translator. Translate the given text accurately, idiomatically, and fluently into the target language. Preserve the original meaning, tone, nuances, and formatting. Do not add introductory remarks, explanations, or meta-commentary. Output only the translated text.";
-        const translatePrompt = `Translate the following text into ${targetLang}:\n\n${textToTranslate}`;
-
-        await streamAiChat(translatePrompt, translateSysPrompt, {
-          taskType: 'translation',
-          temperature: 0.3,
-          top_p: 0.9,
-          panel: {
-            id: 'translate',
-            name: `Multilingual Translator (${targetLang})`
-          }
-        });
-      }
+      await streamAiChat(translatePrompt, translateSysPrompt, {
+        taskType: 'translation',
+        temperature: 0.3,
+        top_p: 0.9,
+        panel: {
+          id: 'translate',
+          name: `HugOS Translator (🌐 Multilingual Translation • Auto-Detect • ${targetLang})`
+        }
+      });
 
       if (currentAttachments.length > 0) clearAllAttachments();
       return;
     }
 
-    // 4.08 Writing Style Transfer Directive (@agent style-transfer, /style-transfer, @style, @agent style)
+    // 4.07 Writing Style Transfer Directive (@agent style-transfer, /style-transfer, @style, @agent style)
     if (
       /^(@agent\s+style-transfer|@style-transfer|\/style-transfer|@agent\s+style\b|@style\b|\/style\b)/i.test(cmd)
     ) {
@@ -10207,29 +10089,29 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     });
   }
 
-  const sidebarTranslationHumanize = document.getElementById('sidebar-translation-humanize');
-  if (sidebarTranslationHumanize) {
-    sidebarTranslationHumanize.addEventListener('click', () => {
+  const sidebarWritingEditing = document.getElementById('sidebar-writing-editing') || document.getElementById('sidebar-translation-humanize');
+  if (sidebarWritingEditing) {
+    sidebarWritingEditing.addEventListener('click', () => {
       if (sidebarToolsAccordion && sidebarToolsAccordion.classList.contains('collapsed')) {
         sidebarToolsAccordion.classList.remove('collapsed');
         const chevron = document.getElementById('tools-accordion-chevron');
         if (chevron) chevron.textContent = '▾';
       }
-      const transCatHeader = document.querySelector('.tool-category-header[data-cat="translation"]');
-      if (transCatHeader) {
-        const content = transCatHeader.nextElementSibling;
-        const chevron = transCatHeader.querySelector('.cat-chevron');
+      const writingCatHeader = document.querySelector('.tool-category-header[data-cat="writing"]') || document.querySelector('.tool-category-header[data-cat="translation"]');
+      if (writingCatHeader) {
+        const content = writingCatHeader.nextElementSibling;
+        const chevron = writingCatHeader.querySelector('.cat-chevron');
         if (content && content.classList.contains('collapsed')) {
           content.classList.remove('collapsed');
           if (chevron) chevron.textContent = '▾';
         }
-        transCatHeader.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        writingCatHeader.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
       const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
         ? cliPromptInputPinned
         : cliPromptInput;
       if (activeInput) {
-        activeInput.value = '@agent translate-humanize ';
+        activeInput.value = '@agent humanize ';
         activeInput.focus();
         activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
         activeInput.style.height = 'auto';
@@ -10540,9 +10422,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     { cmd: '@agent tempo ', icon: '⏱️', label: 'Tempo & BPM', desc: 'Rhythm tracking, beat onset, and BPM tempo estimation' },
     { cmd: '@agent nlp ', icon: '📝', label: 'NLP Pipeline', desc: 'Sentiment, NER, translation, and text classification' },
     { cmd: '@agent text-generation ', icon: '✍️', label: 'Text Generation', desc: 'Open-ended causal text completion and synthesis' },
-    { cmd: '@agent text2text ', icon: '🔄', label: 'Text-to-Text', desc: 'Seq2Seq transformation, rewriting, and standardization' },
-    { cmd: '@agent translate ', icon: '🌐', label: 'Multilingual Translation', desc: 'Translate language text into target language accurately and idiomatically' },
-    { cmd: '@agent translate-humanize ', icon: '🗣️', label: 'Native Translation & Humanize', desc: 'Dual-flag pipeline: translate language text + humanize with native-speaker cadence' },
+    { cmd: '@agent translate ', icon: '🌐', label: 'Multilingual Translation', desc: 'Auto-detect source language and translate text or attached files' },
     { cmd: '@agent translation ', icon: '🌐', label: 'Translation', desc: 'Translate language text into target language accurately and idiomatically' },
     { cmd: '@agent question-answering ', icon: '💬', label: 'Question Answering', desc: 'Extractive and generative reading comprehension' },
     { cmd: '@agent table-qa ', icon: '📊', label: 'Table QA', desc: 'Direct natural language querying over tabular structures' },
@@ -10556,8 +10436,8 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     { cmd: '@agent sentiment ', icon: '❤️', label: 'Sentiment Analysis', desc: 'Positive, negative, neutral, and emotional intensity' },
     { cmd: '@agent summarize-text ', icon: '📜', label: 'Text Summarize', desc: 'Abstractive and extractive multi-paragraph summarization' },
     { cmd: '@agent grammar ', icon: '✍️', label: 'Grammar Check', desc: 'Orthographic, syntactic, and stylistic error correction' },
-    { cmd: '@agent humanize ', icon: '✍️', label: 'Humanize Prose', desc: 'Make text into natural language with organic human cadence and anti-AI stylometry' },
-    { cmd: '@agent style-transfer ', icon: '🎨', label: 'Writing Style Transfer', desc: 'Transfer tone and style to conversational, executive, academic, or journalistic' },
+    { cmd: '@agent humanize ', icon: '✍️', label: 'Humanize Prose', desc: 'Rewrites AI text into authentic human prose with anti-AI stylometry' },
+    { cmd: '@agent style-transfer ', icon: '🎨', label: 'Style Transfer & Voice Shift', desc: 'Transform authorial voice and writing style (casual, academic, executive)' },
     { cmd: '@agent paraphrase ', icon: '🔁', label: 'Paraphraser', desc: 'Alternative phrasing preserving core semantic intent' },
     { cmd: '@agent ner ', icon: '🏷️', label: 'Named Entity Rec', desc: 'Extract names, locations, dates, and organizations' },
     { cmd: '@agent keywords ', icon: '🔑', label: 'Keyword Extractor', desc: 'KeyBERT and TF-IDF keyphrase significance extraction' },
@@ -11376,6 +11256,221 @@ If you are asked about real-world facts such as world leaders, heads of state, c
 
   // Initialize Voice Input (Speech-to-Text)
   initVoiceInput();
+
+  /**
+   * Automated Menu Auditor & Click-Test Engine
+   * Discovers all menu categories and tool buttons in the DOM,
+   * validates organization, accessibility, icons, titles, and command syntax,
+   * executes click events, verifies input prompt prepopulation,
+   * and reports comprehensive passing diagnostics.
+   */
+  window.auditAndTestAllMenus = async function(options = {}) {
+    const opts = Object.assign({
+      simulateClick: true,
+      expandAll: true,
+      restoreInput: true,
+      delayMs: 25,
+      showToast: true,
+      verbose: true
+    }, options);
+
+    const startTime = performance.now();
+    const categories = [];
+    const testResults = [];
+    let totalCategories = 0;
+    let totalTools = 0;
+    let passedCount = 0;
+    let failedCount = 0;
+
+    const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+      ? cliPromptInputPinned
+      : cliPromptInput;
+    const originalInputValue = activeInput ? activeInput.value : '';
+
+    const catElements = document.querySelectorAll('.tool-category');
+    totalCategories = catElements.length;
+
+    for (let cIdx = 0; cIdx < catElements.length; cIdx++) {
+      const catEl = catElements[cIdx];
+      const headerEl = catEl.querySelector('.tool-category-header');
+      const contentEl = catEl.querySelector('.tool-category-content');
+      const catId = headerEl ? headerEl.getAttribute('data-cat') : `cat_${cIdx}`;
+      const catIcon = headerEl ? (headerEl.querySelector('.cat-icon') ? headerEl.querySelector('.cat-icon').textContent.trim() : '') : '';
+      const catTitle = headerEl ? (headerEl.querySelector('.cat-title') ? headerEl.querySelector('.cat-title').textContent.trim() : '') : '';
+
+      // Test category expansion / toggle
+      if (opts.expandAll && contentEl && contentEl.classList.contains('collapsed') && headerEl) {
+        headerEl.click();
+      }
+
+      const toolBtns = catEl.querySelectorAll('.tool-item-btn, .tool-command-btn');
+      const categoryData = {
+        id: catId,
+        icon: catIcon,
+        title: catTitle,
+        toolCount: toolBtns.length,
+        tools: []
+      };
+
+      for (let tIdx = 0; tIdx < toolBtns.length; tIdx++) {
+        totalTools++;
+        const btn = toolBtns[tIdx];
+        const toolId = btn.getAttribute('data-tool-id') || `tool_${totalTools}`;
+        const cmd = (btn.getAttribute('data-cmd') || '').trim();
+        const category = btn.getAttribute('data-category') || catId;
+        const icon = btn.querySelector('.tool-icon') ? btn.querySelector('.tool-icon').textContent.trim() : '';
+        const label = btn.querySelector('.tool-label') ? btn.querySelector('.tool-label').textContent.trim() : btn.textContent.trim();
+        const tag = btn.querySelector('.tool-tag') ? btn.querySelector('.tool-tag').textContent.trim() : '';
+        const title = btn.getAttribute('title') || btn.getAttribute('data-original-title') || '';
+
+        const itemResult = {
+          category: catTitle,
+          categoryId: catId,
+          toolId: toolId,
+          icon: icon,
+          label: label,
+          tag: tag,
+          command: cmd,
+          hasValidCmd: Boolean(cmd && (cmd.startsWith('@agent') || cmd.startsWith('/') || cmd.startsWith('@'))),
+          hasLabel: Boolean(label),
+          hasIcon: Boolean(icon),
+          hasCategory: Boolean(category),
+          clickSuccess: false,
+          promptInjected: false,
+          activeClassApplied: false,
+          error: null,
+          latencyMs: 0
+        };
+
+        const tStart = performance.now();
+        try {
+          if (opts.simulateClick) {
+            // Temporarily suppress file picker if this is a file tool so dialog doesn't block automated test
+            const originalFileClick = (typeof filePicker !== 'undefined' && filePicker) ? filePicker.click : null;
+            if (typeof filePicker !== 'undefined' && filePicker) filePicker.click = function() {};
+
+            btn.click();
+
+            if (typeof filePicker !== 'undefined' && filePicker && originalFileClick) filePicker.click = originalFileClick;
+
+            itemResult.clickSuccess = true;
+            itemResult.activeClassApplied = btn.classList.contains('active');
+
+            if (activeInput) {
+              const expectedClean = cmd.trim();
+              const actualClean = activeInput.value.trim();
+              itemResult.promptInjected = actualClean.startsWith(expectedClean) || actualClean === expectedClean;
+            } else {
+              itemResult.promptInjected = true;
+            }
+          } else {
+            itemResult.clickSuccess = true;
+            itemResult.promptInjected = true;
+            itemResult.activeClassApplied = true;
+          }
+
+          if (itemResult.hasValidCmd && itemResult.hasLabel && itemResult.clickSuccess && itemResult.promptInjected) {
+            passedCount++;
+            itemResult.status = 'PASS';
+          } else {
+            failedCount++;
+            itemResult.status = 'FAIL';
+          }
+        } catch (err) {
+          failedCount++;
+          itemResult.status = 'ERROR';
+          itemResult.error = err.message;
+        }
+
+        itemResult.latencyMs = Math.round((performance.now() - tStart) * 100) / 100;
+        testResults.push(itemResult);
+        categoryData.tools.push(itemResult);
+
+        if (opts.delayMs > 0) {
+          await new Promise(r => setTimeout(r, opts.delayMs));
+        }
+      }
+
+      categories.push(categoryData);
+    }
+
+    // Restore original input value
+    if (opts.restoreInput && activeInput) {
+      activeInput.value = originalInputValue;
+      activeInput.style.height = 'auto';
+      if (activeInput.scrollHeight) {
+        activeInput.style.height = Math.min(activeInput.scrollHeight, 160) + 'px';
+      }
+      document.querySelectorAll('.tool-item-btn, .tool-command-btn').forEach(b => b.classList.remove('active'));
+    }
+
+    const durationMs = Math.round(performance.now() - startTime);
+    const passRate = totalTools > 0 ? Math.round((passedCount / totalTools) * 100) : 100;
+
+    const report = {
+      timestamp: new Date().toISOString(),
+      totalCategories: totalCategories,
+      totalTools: totalTools,
+      passed: passedCount,
+      failed: failedCount,
+      passRate: `${passRate}%`,
+      durationMs: durationMs,
+      categories: categories,
+      results: testResults
+    };
+
+    if (opts.verbose) {
+      console.log(`%c[HugOS Menu Audit] Verified ${totalTools} tools across ${totalCategories} categories in ${durationMs}ms — ${passedCount}/${totalTools} PASSED (${passRate}%)`, 'font-weight: bold; color: #10b981; font-size: 13px;');
+      if (console.table) {
+        console.table(testResults.map(r => ({
+          Category: r.category,
+          Label: r.label,
+          Command: r.command,
+          Injected: r.promptInjected ? '✓ Yes' : '✗ No',
+          Status: r.status,
+          Latency: `${r.latencyMs}ms`
+        })));
+      }
+    }
+
+    if (opts.showToast) {
+      const toast = document.createElement('div');
+      toast.className = 'menu-audit-toast';
+      toast.style.cssText = `
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        background: #0f172a;
+        color: #f8fafc;
+        border: 1px solid #10b981;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.5), 0 0 15px rgba(16,185,129,0.3);
+        border-radius: 10px;
+        padding: 12px 18px;
+        font-family: var(--font-family, system-ui, sans-serif);
+        font-size: 12.5px;
+        z-index: 999999;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        transition: all 0.3s ease;
+      `;
+      toast.innerHTML = `
+        <span style="font-size: 18px;">✅</span>
+        <div>
+          <div style="font-weight: 700; color: #10b981;">Menu Audit &amp; Click Test Complete</div>
+          <div style="font-size: 11px; opacity: 0.85;">${passedCount} of ${totalTools} menu tools verified across ${totalCategories} categories in ${durationMs}ms (${passRate}% Pass Rate).</div>
+        </div>
+      `;
+      document.body.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px)';
+        setTimeout(() => toast.remove(), 400);
+      }, 5000);
+    }
+
+    return report;
+  };
 
   // Initialize Chat History from localStorage
   loadChatHistory();
