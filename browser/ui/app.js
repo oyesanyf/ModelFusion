@@ -387,7 +387,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const displayTitle = isFusion ? '✨ ModelFusion AI' : '🌐 HugOS AI';
         const displaySub = isFusion ? '(Adaptive Consensus)' : `(${activeOllamaModel})`;
         bubble.className = 'msg-bubble assistant-bubble';
-        bubble.dataset.rawText = message;
+        bubble.dataset.rawText = unwrapJsonContent(message);
         bubble.dataset.prompt = lastUserPrompt;
         bubble.innerHTML = `
           <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
@@ -3037,48 +3037,124 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
   // JSON Wrapper Unwrapper & Prose Normalizer
-  // Unwraps {"content":"..."}, {"response":"..."}, {"message":{"content":"..."}},
-  // extracts text from fenced JSON, and decodes escaped newlines/characters.
+  // Robust universal extractor for all API envelopes, streaming chunks,
+  // escaped newlines/characters, and fenced JSON responses.
   // ---------------------------------------------------------------------------
   function unwrapJsonContent(text) {
-    if (!text || typeof text !== 'string') return text || '';
-    let str = text.trim();
+    if (!text) return '';
 
-    // 1. Check if enclosed in markdown code fences containing JSON
+    // Handle non-string objects directly (defensive against object leakage)
+    if (typeof text === 'object') {
+      try {
+        const extracted = text.content ?? text.response ?? text.output ?? text.result ?? text.text ?? text.answer ??
+          text.message?.content ?? text.choices?.[0]?.delta?.content ?? text.choices?.[0]?.message?.content ??
+          text.data?.content ?? text.data?.response ?? text.data?.result ?? (typeof text.data === 'string' ? text.data : null);
+        if (typeof extracted === 'string') {
+          return unwrapJsonContent(extracted);
+        }
+        if (Array.isArray(text.content)) {
+          const joined = text.content.map(p => (typeof p === 'string' ? p : p.text || '')).join('');
+          if (joined) return unwrapJsonContent(joined);
+        }
+        return JSON.stringify(text, null, 2);
+      } catch (_) {
+        return String(text);
+      }
+    }
+
+    if (typeof text !== 'string') return String(text);
+    let str = text.trim();
+    if (!str) return '';
+
+    // 1. Strip Server-Sent Events (SSE) 'data: ' prefix if present
+    if (/^data:\s*(\{|\[)/i.test(str)) {
+      str = str.replace(/^data:\s*/i, '').trim();
+    }
+
+    // 2. Check if enclosed in markdown code fences containing JSON
     const fencedMatch = str.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
     if (fencedMatch && (fencedMatch[1].trim().startsWith('{') || fencedMatch[1].trim().startsWith('['))) {
       str = fencedMatch[1].trim();
+    } else {
+      const proseFencedMatch = str.match(/(?:^|\n)```(?:json)?\s*(\{[^]*?\})\s*```\s*$/i);
+      if (proseFencedMatch) {
+        try {
+          const testParse = JSON.parse(proseFencedMatch[1]);
+          if (testParse.content || testParse.response || testParse.output || testParse.result || testParse.text || testParse.message) {
+            str = proseFencedMatch[1].trim();
+          }
+        } catch (_) {}
+      }
     }
 
-    // 2. Try JSON.parse if it looks like a complete JSON object
-    if (str.startsWith('{') && str.endsWith('}')) {
+    // 3. Try JSON.parse if it looks like a complete JSON object or array
+    if ((str.startsWith('{') && str.endsWith('}')) || (str.startsWith('[') && str.endsWith(']'))) {
       try {
         const parsed = JSON.parse(str);
-        const extracted = parsed.content ?? parsed.response ?? parsed.message?.content ?? parsed.message ?? parsed.text ?? parsed.output ?? parsed.result ?? parsed.choices?.[0]?.message?.content;
-        if (typeof extracted === 'string') {
-          return unwrapJsonContent(extracted);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const first = parsed[0];
+          if (typeof first === 'object' && first !== null) {
+            const extracted = first.content ?? first.response ?? first.text ?? first.output ?? first.result ?? first.message?.content;
+            if (typeof extracted === 'string') return unwrapJsonContent(extracted);
+          }
+        } else if (typeof parsed === 'object' && parsed !== null) {
+          const extracted = parsed.content ?? parsed.response ?? parsed.output ?? parsed.result ?? parsed.text ?? parsed.answer ??
+            parsed.solution ?? parsed.plan ?? parsed.reply ?? parsed.message?.content ?? (typeof parsed.message === 'string' ? parsed.message : null) ??
+            parsed.choices?.[0]?.delta?.content ?? parsed.choices?.[0]?.message?.content ??
+            parsed.data?.content ?? parsed.data?.response ?? parsed.data?.output ?? parsed.data?.result ?? (typeof parsed.data === 'string' ? parsed.data : null);
+
+          if (typeof extracted === 'string') {
+            return unwrapJsonContent(extracted);
+          }
+          if (Array.isArray(parsed.content)) {
+            const joined = parsed.content.map(p => (typeof p === 'string' ? p : p.text || '')).join('');
+            if (joined) return unwrapJsonContent(joined);
+          }
         }
       } catch (_) {}
     }
 
-    // 3. Fallback regex unwrap for partial/streaming or malformed JSON
-    const prefixMatch = str.match(/^\s*\{\s*\"(?:content|response|text|output|result|message)\"\s*:\s*(?:\{\s*\"content\"\s*:\s*)?\"/i);
-    if (prefixMatch) {
-      let unescaped = str.slice(prefixMatch[0].length);
-      unescaped = unescaped.replace(/\"?\s*\}?\s*\}?\s*$/, '');
-      unescaped = unescaped
-        .replace(/\\n/g, '\n')
-        .replace(/\\r/g, '\r')
-        .replace(/\\t/g, '\t')
-        .replace(/\\\"/g, '"')
-        .replace(/\\\\/g, '\\')
-        .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
-      return unescaped;
+    // 4. Robust streaming & partial JSON extractor
+    if (str.startsWith('{') || str.startsWith('[{') || /^\s*\{\s*\"/s.test(str)) {
+      const keyPattern = /\"(?:content|response|output|result|text|answer|plan)\"\s*:\s*\"/i;
+      const keyMatch = str.match(keyPattern);
+      if (keyMatch) {
+        const contentStart = keyMatch.index + keyMatch[0].length;
+        let remainder = str.slice(contentStart);
+
+        let closingQuoteIdx = -1;
+        for (let i = 0; i < remainder.length; i++) {
+          if (remainder[i] === '"') {
+            let backslashCount = 0;
+            for (let j = i - 1; j >= 0 && remainder[j] === '\\'; j--) {
+              backslashCount++;
+            }
+            if (backslashCount % 2 === 0) {
+              closingQuoteIdx = i;
+              break;
+            }
+          }
+        }
+
+        let rawVal = closingQuoteIdx !== -1 ? remainder.slice(0, closingQuoteIdx) : remainder;
+        rawVal = rawVal.replace(/\"?\s*\}?\s*\]?\s*\}?\s*$/, '');
+
+        let unescaped = rawVal
+          .replace(/\\n/g, '\n')
+          .replace(/\\r/g, '\r')
+          .replace(/\\t/g, '\t')
+          .replace(/\\\"/g, '"')
+          .replace(/\\\\/g, '\\')
+          .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+
+        return unescaped;
+      }
     }
 
-    // 4. Raw escaped newlines cleanup if text contains literal '\n' but no/few real newlines
-    if (str.includes('\\n') && !str.includes('\n\n')) {
+    // 5. Raw escaped newlines cleanup if text contains literal '\n'
+    if (str.includes('\\n')) {
       str = str.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\\"/g, '"');
     }
 
@@ -3246,13 +3322,21 @@ document.addEventListener('DOMContentLoaded', () => {
     let contentHtml = '';
     if (isLarge) {
       const headingMatch = text.match(/^#+\s+(.+)$/m);
-      const title = headingMatch ? headingMatch[1].trim() : 'Document Canvas';
+      let title = headingMatch ? headingMatch[1].replace(/[*_`#]/g, '').trim() : '';
+      if (!title && userPrompt) {
+        const cleanPrompt = userPrompt.replace(/^(@agent\s+[\w-]+|\/[\w-]+|@[\w-]+)\s*/i, '').trim();
+        if (cleanPrompt) {
+          title = cleanPrompt.length > 50 ? cleanPrompt.slice(0, 50) + '...' : cleanPrompt;
+        }
+      }
+      if (!title) title = 'Document Canvas';
+      const safeTitle = typeof escapeHtml === 'function' ? escapeHtml(title) : title.replace(/</g, '&lt;').replace(/>/g, '&gt;');
       contentHtml = `
         <div class="chatgpt-canvas-card">
           <div class="canvas-card-header">
             <div class="canvas-card-title-box">
               <span>📄</span>
-              <span class="canvas-card-title">${title}</span>
+              <span class="canvas-card-title">${safeTitle}</span>
             </div>
             <div class="canvas-card-actions">
               <button type="button" class="canvas-action-btn" onclick="copyCardContent(this)" title="Copy document">📋 Copy</button>
@@ -4659,7 +4743,8 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
         hasAssistantResponseForLastUser = true;
         const bubble = document.createElement('div');
         bubble.className = 'msg-bubble assistant-bubble';
-        bubble.dataset.rawText = msg.content;
+        const cleanMsgContent = unwrapJsonContent(msg.content);
+        bubble.dataset.rawText = cleanMsgContent;
         bubble.innerHTML = `
           <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
             <div style="display: flex; align-items: center; gap: 4px;">
@@ -4670,13 +4755,13 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
             </div>
           </div>
           <div class="assistant-content-container">
-            ${formatAssistantContent(msg.content)}
+            ${formatAssistantContent(cleanMsgContent)}
           </div>
         `;
         const btnCopy = bubble.querySelector('.btn-copy-response');
         if (btnCopy) btnCopy.addEventListener('click', (e) => {
           e.stopPropagation();
-          navigator.clipboard.writeText(msg.content).then(() => {
+          navigator.clipboard.writeText(cleanMsgContent).then(() => {
             btnCopy.textContent = '✅';
             setTimeout(() => { btnCopy.textContent = '📋'; }, 1500);
           });
@@ -6401,8 +6486,8 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
         if (!streamMode) {
           const data = await res.json();
           if (statusCtrl) { statusCtrl.stop(); statusCtrl = null; }
-          const rawTurn = data.content || data.response || data.output || data.text || data.message?.content || (typeof data === 'string' ? data : '');
-          turnResponse = unwrapJsonContent(typeof rawTurn === 'object' && rawTurn !== null ? (rawTurn.content || rawTurn.text || JSON.stringify(rawTurn)) : rawTurn);
+          const rawTurn = data.content || data.response || data.output || data.result || data.text || data.answer || data.message?.content || data.choices?.[0]?.message?.content || data.choices?.[0]?.delta?.content || data.data?.content || data.data?.result || (typeof data === 'string' ? data : data);
+          turnResponse = unwrapJsonContent(rawTurn);
           doneReason = data.done_reason || '';
           fullResponse += (turn > 0 ? '\n\n' : '') + turnResponse;
           totalEstimatedTokens += Math.max(1, Math.round(turnResponse.length / 4));
@@ -6678,7 +6763,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
                 }
 
                 // 2. Main content / response
-                const chunk = parsed.message?.content || parsed.response || parsed.content || parsed.text || '';
+                const chunk = parsed.message?.content || parsed.response || parsed.content || parsed.output || parsed.result || parsed.text || parsed.answer || parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.message?.content || '';
                 if (chunk) {
                   packetChunk += chunk;
                 }
@@ -6700,7 +6785,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
               if (parsed.message?.thinking) {
                 appendThinkingTokens(parsed.message.thinking);
               }
-              const chunk = parsed.message?.content || parsed.response || parsed.content || parsed.text || '';
+              const chunk = parsed.message?.content || parsed.response || parsed.content || parsed.output || parsed.result || parsed.text || parsed.answer || parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.message?.content || '';
               if (chunk) {
                 processContentChunk(chunk);
               }
@@ -6883,7 +6968,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
             statusCtrl = null;
           }
           const data = await ipcRes.json();
-          const rawIpc = data.content || data.response || data.output || data.text || data.message?.content || (typeof data === 'string' ? data : JSON.stringify(data));
+          const rawIpc = data.content || data.response || data.output || data.result || data.text || data.answer || data.message?.content || data.choices?.[0]?.message?.content || (typeof data === 'string' ? data : data);
           const text = unwrapJsonContent(rawIpc);
           responseLine.innerHTML = renderMarkdown(text);
           if (assistantBubble) {
@@ -7598,6 +7683,8 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
 
       const summaryBubble = document.createElement('div');
       summaryBubble.className = 'msg-bubble assistant-bubble';
+      summaryBubble.dataset.rawText = unwrapJsonContent(summaryMsg);
+      summaryBubble.dataset.prompt = goal;
       summaryBubble.innerHTML = `
         <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: #10a37f; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
           <span>🤖</span> <span>ModelFusion Browser Agent</span>
@@ -8081,6 +8168,76 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
         isGoal: true,
         allowContinuation: true,
         maxTokens: 65536,
+        rawCmd: cmd
+      });
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
+
+    // 0.06 Step-by-Step Action Plan Directive (@agent plan, /plan, @plan)
+    const planDirectiveMatch = cmd.match(/^\s*(@agent\s+plan|\/plan|@plan)(?:\s+|:\s*|$)(.*)$/is);
+    if (planDirectiveMatch) {
+      const cleanTask = (planDirectiveMatch[2] || '').trim();
+      if (!cleanTask) {
+        termLog('Usage: @agent plan <describe task or architecture to plan>', 'warn');
+        return;
+      }
+      termLog(`📐 [PLANNER] Step-by-step action plan directive initiated: "${cleanTask}"`, 'info');
+      const planSysPrompt = 'You are HugOS Master Software Architect and Planning Agent. Deconstruct the user directive into a rigorous, production-grade, step-by-step milestone action plan. For each phase, specify architectural boundaries, interface contracts, error handling strategies, verification tests, and measurable completion criteria. Deliver complete, actionable blueprints.';
+      const planPrompt = attachmentContext ? `${cleanTask}\n\n${attachmentContext}` : cleanTask;
+      await streamAiChat(planPrompt, planSysPrompt, {
+        images: attachedImages,
+        panel: { id: 'reasoning', name: 'Step-by-Step Action Plan' },
+        allowContinuation: true,
+        maxTokens: 32768,
+        rawCmd: cmd
+      });
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
+
+    // 0.07 Interview & Clarify (Grill Me) Directive (@agent grill-me, /grill-me, @grill-me)
+    const grillDirectiveMatch = cmd.match(/^\s*(@agent\s+grill-me|\/grill-me|@grill-me)(?:\s+|:\s*|$)(.*)$/is);
+    if (grillDirectiveMatch) {
+      const cleanSubject = (grillDirectiveMatch[2] || '').trim();
+      if (!cleanSubject) {
+        termLog('Usage: @agent grill-me <describe architecture, idea, or plan to stress-test>', 'warn');
+        return;
+      }
+      termLog(`🔥 [GRILL ME] Adversarial requirements interview initiated: "${cleanSubject}"`, 'info');
+      const grillSysPrompt = 'You are HugOS Adversarial Requirements Engineer and Senior Principal Reviewer. Your role is to "grill" the user about their proposal to eliminate ambiguities, uncover hidden edge cases, challenge fragile architectural assumptions, stress-test security boundaries, and force explicit decisions on trade-offs. Ask sharp, insightful, probing questions divided into numbered categories (Architecture, Failure Modes, Performance/Scale, Security).';
+      const grillPrompt = attachmentContext ? `${cleanSubject}\n\n${attachmentContext}` : cleanSubject;
+      await streamAiChat(grillPrompt, grillSysPrompt, {
+        images: attachedImages,
+        panel: { id: 'reasoning', name: 'Requirements Interview (Grill Me)' },
+        allowContinuation: true,
+        maxTokens: 32768,
+        rawCmd: cmd
+      });
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
+
+    // 0.08 Tabular Intelligence Directives (@agent datascience, @agent dataanalyst, @agent timeseries, @agent predict, @agent decision)
+    const tabularMatch = cmd.match(/^\s*(@agent\s+(?:datascience|dataanalyst|timeseries|predict|decision)|\/(?:datascience|dataanalyst|timeseries|predict|decision))(?:\s+|:\s*|$)(.*)$/is);
+    if (tabularMatch) {
+      const tabCmd = tabularMatch[1].replace(/^[@\/](?:agent\s+)?/i, '').toLowerCase();
+      const tabQuery = (tabularMatch[2] || '').trim();
+      const tabLabels = {
+        datascience: { name: 'Full Data Science Pipeline', icon: '📈', desc: 'data exploration, feature engineering, and predictive modeling' },
+        dataanalyst: { name: 'Data Insights & Statistics', icon: '📊', desc: 'statistical analysis, distributions, correlations, and business insights' },
+        timeseries: { name: 'Time Series Forecasting', icon: '⏱️', desc: 'trend extrapolation, seasonality decomposition, and forecasting' },
+        predict: { name: 'Outcome Prediction & Inference', icon: '🎯', desc: 'probabilistic inference and outcome estimation' },
+        decision: { name: 'Smart Decision Optimizer', icon: '🧠', desc: 'multi-criteria optimization, trade-offs, and Pareto decision boundaries' }
+      };
+      const info = tabLabels[tabCmd] || { name: 'Tabular Analytics', icon: '📊', desc: 'data science and tabular analysis' };
+      termLog(`${info.icon} [${tabCmd.toUpperCase()}] ${info.name} initiated: "${tabQuery || 'Analyze dataset'}"`, 'info');
+      const tabSys = `You are HugOS Expert Data Scientist and Quantitative Analyst specializing in ${info.desc}. Provide rigorous derivations, clean mathematical explanations, Python/Pandas/Scikit-Learn code recipes, and concrete statistical insights.`;
+      const tabPrompt = attachmentContext ? `${tabQuery || info.name}\n\n${attachmentContext}` : (tabQuery || info.name);
+      await streamAiChat(tabPrompt, tabSys, {
+        panel: { id: 'tabular', name: info.name },
+        allowContinuation: true,
+        maxTokens: 32768,
         rawCmd: cmd
       });
       if (currentAttachments.length > 0) clearAllAttachments();
@@ -9041,9 +9198,19 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       if (!queryToRun) {
         queryToRun = 'Please provide deep analytical reasoning and comprehensive exploration.';
       }
+
+      // If user invoked /boost goal <prompt> or @agent boost goal <prompt>
+      const isBoostGoal = /^(@agent\s+goal|\/goal|@goal|goal)\b/i.test(queryToRun);
+      if (isBoostGoal) {
+        queryToRun = queryToRun.replace(/^(@agent\s+goal|\/goal|@goal|goal)\s*/i, '').trim();
+      }
+
       termLog(`[BOOST] 🚀 Deep Thinking Boost activated for: "${queryToRun}"`, 'info');
       const boostPrompt = attachmentContext ? `${queryToRun}\n\n${attachmentContext}` : queryToRun;
-      const boostSysPrompt = 'You are HugOS AI running in Deep Thinking Boost mode. Provide comprehensive, deeply reasoned, highly structured, and rigorous answers. Think methodically, explore multiple perspectives, evaluate trade-offs, and ensure complete thoroughness.';
+      const panelName = isBoostGoal ? 'Deep Reasoning Boost (Goal Runner)' : 'Deep Reasoning Boost';
+      const boostSysPrompt = isBoostGoal
+        ? 'You are HugOS Autonomous Goal Agent running in Deep Thinking Boost mode. Execute complex, multi-stage goals systematically and thoroughly with deep multi-perspective reasoning, robust architecture, and complete working implementation.'
+        : 'You are HugOS AI running in Deep Thinking Boost mode. Provide comprehensive, deeply reasoned, highly structured, and rigorous answers. Think methodically, explore multiple perspectives, evaluate trade-offs, and ensure complete thoroughness.';
 
       if (activeSession && Array.isArray(activeSession.messages) && activeSession.messages.length > 0) {
         const last = activeSession.messages[activeSession.messages.length - 1];
@@ -9055,7 +9222,11 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 
       await streamAiChat(boostPrompt, boostSysPrompt, {
         images: attachedImages,
-        panel: { id: 'reasoning', name: 'Deep Reasoning Boost' }
+        panel: { id: 'reasoning', name: panelName },
+        isGoal: isBoostGoal,
+        allowContinuation: true,
+        maxTokens: 65536,
+        rawCmd: cmd
       });
       if (currentAttachments.length > 0) clearAllAttachments();
       return;
