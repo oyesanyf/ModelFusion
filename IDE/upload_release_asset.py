@@ -13,6 +13,9 @@ import urllib.request
 import urllib.error
 import hashlib
 
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
+
 REPO = "oyesanyf/ModelFusion"
 API_URL = f"https://api.github.com/repos/{REPO}"
 UPLOADS_URL = f"https://uploads.github.com/repos/{REPO}"
@@ -114,6 +117,8 @@ def delete_existing_asset(release_id, asset_name, token):
             print(f"[INFO] Deleting existing asset {asset_name} (ID: {asset['id']}) from release {release_id}...")
             api_request(f"{API_URL}/releases/assets/{asset['id']}", method="DELETE", token=token)
             print(f"[OK] Deleted old asset: {asset_name}")
+            import time
+            time.sleep(2)
 
 def compute_sha256(file_path):
     h = hashlib.sha256()
@@ -132,24 +137,41 @@ def upload_asset(release_id, file_path, asset_name, token):
     size_mb = round(file_size / (1024 * 1024), 2)
     print(f"[INFO] Uploading {asset_name} ({size_mb} MB, SHA256: {file_sha256}) to release {release_id}...")
 
-    # Streaming upload
     upload_url = f"{UPLOADS_URL}/releases/{release_id}/assets?name={asset_name}"
-    req_headers = {
-        "User-Agent": "ModelFusion-Release-Pipeline",
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/octet-stream",
-        "Content-Length": str(file_size),
-    }
 
-    with open(file_path, "rb") as f:
-        req = urllib.request.Request(upload_url, data=f, headers=req_headers, method="POST")
-        with urllib.request.urlopen(req) as resp:
-            res = json.loads(resp.read().decode("utf-8"))
-            uploaded_size = res.get("size")
-            if uploaded_size != file_size:
-                raise RuntimeError(f"[ERROR] Size mismatch for {asset_name}: uploaded {uploaded_size} vs local {file_size}")
-            print(f"[OK] Uploaded {asset_name} ({uploaded_size} bytes): {res.get('browser_download_url')}")
-            return res
+    for attempt in range(1, 4):
+        cmd = [
+            "curl.exe",
+            "-sS",
+            "-X", "POST",
+            "-H", f"Authorization: Bearer {token}",
+            "-H", "User-Agent: ModelFusion-Release-Pipeline",
+            "-H", "Content-Type: application/octet-stream",
+            "--data-binary", f"@{file_path}",
+            upload_url
+        ]
+        p = subprocess.run(cmd, capture_output=True, text=True)
+        if p.returncode == 0:
+            try:
+                res = json.loads(p.stdout)
+                uploaded_size = res.get("size")
+                if uploaded_size == file_size:
+                    print(f"[OK] Uploaded {asset_name} ({uploaded_size} bytes): {res.get('browser_download_url')}")
+                    return res
+                elif "already_exists" in p.stdout:
+                    print(f"[WARN] Asset {asset_name} already exists on remote. Re-deleting and retrying...")
+                    delete_existing_asset(release_id, asset_name, token)
+                    import time
+                    time.sleep(3)
+                else:
+                    print(f"[WARN] Size mismatch (attempt {attempt}): {uploaded_size} != {file_size}. Response: {p.stdout[:200]}")
+            except Exception as parse_err:
+                print(f"[WARN] curl response parsing failed: {parse_err}. Response: {p.stdout[:200]}")
+        else:
+            print(f"[WARN] curl failed with code {p.returncode}: {p.stderr[:200]}")
+        import time
+        time.sleep(2)
+    raise RuntimeError(f"[ERROR] Failed to upload {asset_name} after 3 attempts.")
 
 def main():
     token = get_token()
@@ -169,10 +191,13 @@ def main():
     msi_path = os.path.join(script_dir, "HugOS.msi")
     cli_path = os.path.join(os.path.dirname(script_dir), "target", "release", "cli.exe")
     browser_msi_path = os.path.join(os.path.dirname(script_dir), "browser", "HugOS_Browser.msi")
-    
     if not os.path.isfile(msi_path):
-        print(f"[ERROR] MSI not found at: {msi_path}")
-        sys.exit(1)
+        fallback_msi = os.path.join(script_dir, "HugOS-Setup-x64.msi")
+        if os.path.isfile(fallback_msi):
+            msi_path = fallback_msi
+        else:
+            print(f"[ERROR] MSI not found at: {msi_path} or {fallback_msi}")
+            sys.exit(1)
     if not os.path.isfile(cli_path):
         print(f"[ERROR] CLI not found at: {cli_path}")
         sys.exit(1)
