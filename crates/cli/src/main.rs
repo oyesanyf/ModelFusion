@@ -7123,10 +7123,59 @@ pub async fn execute_createfile(target_filename: &str, remaining_instruction: &s
 /// Small models (1.5B-3B) often echo their instructions or add meta-commentary
 /// like "I don't see any specific instructions..." which should be hidden from users.
 fn clean_model_response(raw: &str) -> String {
+    let mut text_to_clean = raw.trim();
+
+    // Unwrap code fence wrapping JSON if present
+    if (text_to_clean.starts_with("```json") || text_to_clean.starts_with("```")) && text_to_clean.ends_with("```") {
+        let prefix_len = if text_to_clean.starts_with("```json") { 7 } else { 3 };
+        let inner = text_to_clean[prefix_len..text_to_clean.len() - 3].trim();
+        if (inner.starts_with('{') && inner.ends_with('}')) || (inner.starts_with('[') && inner.ends_with(']')) {
+            text_to_clean = inner;
+        }
+    }
+
+    // Try parsing as JSON object to unwrap {"content": "..."} / {"response": "..."}
+    let mut unwrapped_storage = String::new();
+    let mut current_slice = text_to_clean;
+    for _ in 0..3 {
+        let trimmed = current_slice.trim();
+        let candidate = if (trimmed.starts_with("```json") || trimmed.starts_with("```")) && trimmed.ends_with("```") {
+            let prefix_len = if trimmed.starts_with("```json") { 7 } else { 3 };
+            trimmed[prefix_len..trimmed.len() - 3].trim()
+        } else {
+            trimmed
+        };
+
+        if (candidate.starts_with('{') && candidate.ends_with('}')) || (candidate.starts_with('[') && candidate.ends_with(']')) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(candidate) {
+                let extracted = val.get("content")
+                    .or_else(|| val.get("response"))
+                    .or_else(|| val.get("output"))
+                    .or_else(|| val.get("result"))
+                    .or_else(|| val.get("text"))
+                    .or_else(|| val.get("answer"))
+                    .or_else(|| val.get("plan"))
+                    .or_else(|| val.get("solution"))
+                    .or_else(|| val.get("reply"))
+                    .or_else(|| val.get("message").and_then(|m| m.get("content")))
+                    .or_else(|| val.get("choices").and_then(|c| c.as_array()).and_then(|arr| arr.first()).and_then(|first| first.get("message").and_then(|m| m.get("content"))));
+                if let Some(serde_json::Value::String(s)) = extracted {
+                    unwrapped_storage = s.clone();
+                    current_slice = &unwrapped_storage;
+                    continue;
+                }
+            }
+        }
+        break;
+    }
+    if !unwrapped_storage.is_empty() {
+        text_to_clean = &unwrapped_storage;
+    }
+
     // Short responses are typically direct factual answers — don't risk
     // stripping them with the leakage heuristic which is designed for
     // longer, multi-paragraph LLM outputs that sometimes include filler.
-    let trimmed_raw = raw.trim();
+    let trimmed_raw = text_to_clean.trim();
     if trimmed_raw.len() < 200 {
         return trimmed_raw.to_string();
     }
