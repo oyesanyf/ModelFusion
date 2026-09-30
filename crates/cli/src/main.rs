@@ -1657,8 +1657,6 @@ EXAMPLES:
   cli.exe --humanize path/to/draft.txt
   cli.exe --file path/to/draft.txt --humanize
 
-  # Dual-flag pipeline: translate language text + humanize with native-speaker cadence
-  cli.exe --translate path/to/file.txt --to French --humanize
 
   # ReST-RL daemon status and control
   cli.exe --rest-rl status
@@ -2523,12 +2521,6 @@ where
         if (sub_clean == "translate" || sub_clean == "translation") && !has_combinator {
             args.remove(1);
             args[1] = "--translate".to_string();
-        } else if (sub_clean == "translate-humanize" || sub_clean == "trans-human" || sub_clean == "humanize-translate") && !has_combinator {
-            args.remove(1);
-            args[1] = "--translate".to_string();
-            if !args.iter().any(|a| a == "--humanize") {
-                args.push("--humanize".to_string());
-            }
         }
         if (sub_clean == "key" || sub_clean == "keys") && args.len() > 3 && args[3].to_lowercase() == "gemini" {
             let key = if args.len() > 4 { args[4].clone() } else { String::new() };
@@ -2656,12 +2648,6 @@ where
         }
         "translate" | "/translate" | "@agent/translate" | "@agent:translate" | "@translate" | "translation" | "/translation" => {
             args[1] = "--translate".to_string();
-        }
-        "translate-humanize" | "/translate-humanize" | "@agent/translate-humanize" | "@agent:translate-humanize" | "@translate-humanize" | "trans-human" | "/trans-human" | "@trans-human" | "humanize-translate" => {
-            args[1] = "--translate".to_string();
-            if !args.iter().any(|a| a == "--humanize") {
-                args.push("--humanize".to_string());
-            }
         }
         "boost" | "/boost" | "@agent/boost" | "@agent:boost" | "@boost" => {
             args[1] = "--boost".to_string();
@@ -3341,7 +3327,6 @@ async fn run(args: Args) -> Result<()> {
         };
 
         let target_lang = if args.to.trim().is_empty() { "English" } else { args.to.trim() };
-        let is_humanize = args.humanize.is_some();
         let _ = model_selection::memory::ensure_ollama_running();
 
         let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
@@ -3352,22 +3337,10 @@ async fn run(args: Args) -> Result<()> {
             select_ollama_model_from_sys(false, &sys).to_string()
         });
 
-        if is_humanize {
-            println!("🌐 Translating text to {} with native-speaker humanizing (model: {})...", target_lang, model);
-        } else {
-            println!("🌐 Translating text to {} (model: {})...", target_lang, model);
-        }
+        println!("🌐 Translating text to {} (model: {})...", target_lang, model);
 
-        let prompt = if is_humanize {
-            format!("Translate the following text into natural, idiomatic {} as spoken and written by an authentic native speaker. Eliminate awkward translationese:\n\n{}", target_lang, text_to_trans)
-        } else {
-            format!("Translate the following text accurately and idiomatically into {}:\n\n{}", target_lang, text_to_trans)
-        };
-        let sys = if is_humanize {
-            "You are an expert bilingual native translator and humanizer. Output only the natural translated text."
-        } else {
-            "You are an expert multilingual translator. Output only the translated text."
-        };
+        let prompt = format!("Translate the following content into {} (auto-detect source language):\n\n{}", target_lang, text_to_trans);
+        let sys = format!("You are HugOS Multilingual Translator. Automatically detect the source language of the provided text or document, and accurately and idiomatically translate it into {}. Preserve original nuances, formatting, structure, code blocks, and numbers. Do not include commentary, explanations, or translator notes. Output only the translated text.", target_lang);
 
         let client = reqwest::Client::new();
         let req_body = serde_json::json!({
@@ -8009,7 +7982,26 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
             let db_path_val = resolved_db.as_path();
 
             // ── Static Web UI Files Serving (HugOS Browser UI) ──
-            if request_path == "/" || request_path == "/index.html" || request_path == "/styles.css" || request_path == "/app.js" || request_path.starts_with("/ui/") || request_path.starts_with("/browser/ui/") {
+            let is_static_file = request_path == "/"
+                || request_path == "/index.html"
+                || request_path == "/styles.css"
+                || request_path == "/app.js"
+                || request_path.starts_with("/ui/")
+                || request_path.starts_with("/browser/ui/")
+                || (!request_path.starts_with("/api/") && !request_path.starts_with("/events") && (
+                    request_path.ends_with(".html")
+                    || request_path.ends_with(".css")
+                    || request_path.ends_with(".js")
+                    || request_path.ends_with(".png")
+                    || request_path.ends_with(".ico")
+                    || request_path.ends_with(".svg")
+                    || request_path.ends_with(".webmanifest")
+                    || request_path.ends_with(".json")
+                    || request_path.ends_with(".woff")
+                    || request_path.ends_with(".woff2")
+                    || request_path.ends_with(".ttf")
+                ));
+            if is_static_file {
                 if let Some(ui_dir) = find_browser_ui_dir() {
                     let file_name = if request_path == "/" || request_path == "/index.html" {
                         "index.html"
@@ -8039,6 +8031,8 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 "image/png"
                             } else if file_name.ends_with(".ico") {
                                 "image/x-icon"
+                            } else if file_name.ends_with(".webmanifest") {
+                                "application/manifest+json"
                             } else if file_name.ends_with(".json") {
                                 "application/json"
                             } else {
@@ -16816,10 +16810,10 @@ public class Pr {
     }
 
     #[test]
-    fn test_preprocess_cli_args_translate_humanize() {
+    fn test_preprocess_cli_args_humanize() {
         use super::preprocess_cli_args;
-        let res = preprocess_cli_args(["cli", "@agent", "translate-humanize", "to", "French:", "Good morning"]);
-        assert_eq!(res, vec!["cli".to_string(), "--translate".to_string(), "Good morning".to_string(), "--to".to_string(), "French".to_string(), "--humanize".to_string()]);
+        let res = preprocess_cli_args(["cli", "@agent", "humanize", "Good morning"]);
+        assert_eq!(res, vec!["cli".to_string(), "--humanize".to_string(), "Good morning".to_string()]);
     }
 
     #[test]

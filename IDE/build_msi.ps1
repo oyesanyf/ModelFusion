@@ -925,9 +925,25 @@ try {
     }
 } catch {}
 
-# Run wix build with multi-threaded cabinet compression and bind path
-& $wixExe build -b $PSScriptRoot -arch x64 -ct 4 $wxsPath -out $msiPath
-$wixExit = $LASTEXITCODE
+# Start background heartbeat to prevent Windows Installer from auto-stopping during multi-minute cabinet compression
+$heartbeatJob = Start-Job -ScriptBlock {
+    while ($true) {
+        $svc = Get-Service msiserver -ErrorAction SilentlyContinue
+        if ($svc -and $svc.Status -ne 'Running') {
+            Start-Service -Name msiserver -ErrorAction SilentlyContinue
+        }
+        Start-Sleep -Seconds 3
+    }
+}
+
+try {
+    # Run wix build with multi-threaded cabinet compression and bind path
+    & $wixExe build -b $PSScriptRoot -arch x64 -ct 4 $wxsPath -out $msiPath
+    $wixExit = $LASTEXITCODE
+} finally {
+    Stop-Job $heartbeatJob -ErrorAction SilentlyContinue
+    Remove-Job $heartbeatJob -Force -ErrorAction SilentlyContinue
+}
 if ($wixExit -ne 0 -or -not (Test-Path $msiPath)) {
     Write-Host "[ERROR] WiX build failed (Exit code: $wixExit)." -ForegroundColor Red
     Exit 1

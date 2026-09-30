@@ -2,20 +2,20 @@ const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 
-console.log('--- Testing Translation & Humanize Section & @commands ---');
+console.log('--- Testing Writing & Editing Section & Directives (Standalone Translate & Standalone Humanize) ---');
 
 // 1. Verify index.html contains DOM items
 const htmlPath = path.resolve(__dirname, '../browser/ui/index.html');
 const htmlContent = fs.readFileSync(htmlPath, 'utf8');
 
-assert(htmlContent.includes('id="sidebar-translation-humanize"'), 'Missing #sidebar-translation-humanize button in sidebar navigation');
-assert(htmlContent.includes('data-cat="translation"'), 'Missing data-cat="translation" in tool category header');
+assert(htmlContent.includes('id="sidebar-writing-editing"'), 'Missing #sidebar-writing-editing button in sidebar navigation');
+assert(htmlContent.includes('data-cat="writing"'), 'Missing data-cat="writing" in tool category header');
 assert(htmlContent.includes('data-tool-id="tool_humanize"'), 'Missing tool_humanize');
 assert(htmlContent.includes('data-tool-id="tool_translate"'), 'Missing tool_translate');
-assert(htmlContent.includes('data-tool-id="tool_translate_humanize"'), 'Missing tool_translate_humanize');
 assert(htmlContent.includes('data-tool-id="tool_style_transfer"'), 'Missing tool_style_transfer');
+assert(!htmlContent.includes('data-tool-id="tool_translate_humanize"'), 'tool_translate_humanize must be eliminated');
+assert(!htmlContent.includes('@agent translate-humanize'), '@agent translate-humanize must be eliminated from index.html');
 assert(htmlContent.includes('data-cmd="@agent translate to Spanish: "'), 'Missing @agent translate command button');
-assert(htmlContent.includes('data-cmd="@agent translate-humanize to French: "'), 'Missing @agent translate-humanize command button');
 assert(htmlContent.includes('data-cmd="@agent style-transfer to conversational: "'), 'Missing @agent style-transfer command button');
 
 console.log('✓ index.html structure verified successfully');
@@ -27,16 +27,16 @@ const appContent = fs.readFileSync(appPath, 'utf8');
 // Check AGENT_COMMANDS
 assert(appContent.includes("{ cmd: '@agent humanize '"), 'AGENT_COMMANDS missing @agent humanize');
 assert(appContent.includes("{ cmd: '@agent translate '"), 'AGENT_COMMANDS missing @agent translate');
-assert(appContent.includes("{ cmd: '@agent translate-humanize '"), 'AGENT_COMMANDS missing @agent translate-humanize');
+assert(!appContent.includes("{ cmd: '@agent translate-humanize '"), 'AGENT_COMMANDS must not have @agent translate-humanize');
 assert(appContent.includes("{ cmd: '@agent style-transfer '"), 'AGENT_COMMANDS missing @agent style-transfer');
 
 console.log('✓ AGENT_COMMANDS autocomplete catalog verified');
 
-// Check sidebar-translation-humanize handler
-assert(appContent.includes('sidebarTranslationHumanize'), 'Missing sidebarTranslationHumanize event listener');
-assert(appContent.includes("data-cat=\"translation\""), 'Missing accordion expansion for translation category');
+// Check sidebar-writing-editing handler
+assert(appContent.includes('sidebarWritingEditing'), 'Missing sidebarWritingEditing event listener');
+assert(appContent.includes("data-cat=\"writing\""), 'Missing accordion expansion for writing category');
 
-console.log('✓ sidebar-translation-humanize event wiring verified');
+console.log('✓ sidebar-writing-editing event wiring verified');
 
 // Check directive parser patterns
 const testInputs = [
@@ -56,15 +56,6 @@ const testInputs = [
   { cmd: '@trans to Dutch: How are you', expectedType: 'translate', lang: 'Dutch', expectedText: 'How are you' },
   { cmd: '@agent translate to Spanish:', expectedType: 'translate', lang: 'Spanish', expectedText: '' },
   { cmd: '@agent translate to French', expectedType: 'translate', lang: 'French', expectedText: '' },
-  { cmd: '@agent translate-humanize to French: We welcome your feedback', expectedType: 'translate-humanize', lang: 'French', expectedText: 'We welcome your feedback' },
-  { cmd: '/translate-humanize to Japanese: See you tomorrow', expectedType: 'translate-humanize', lang: 'Japanese', expectedText: 'See you tomorrow' },
-  { cmd: '@trans-human to Spanish: What is going on?', expectedType: 'translate-humanize', lang: 'Spanish', expectedText: 'What is going on?' },
-  { cmd: '/trans-human to French: Bonjour le monde', expectedType: 'translate-humanize', lang: 'French', expectedText: 'Bonjour le monde' },
-  { cmd: '@agent trans-human to German: Guten Tag', expectedType: 'translate-humanize', lang: 'German', expectedText: 'Guten Tag' },
-  { cmd: '@transhuman to Italian: Ciao a tutti', expectedType: 'translate-humanize', lang: 'Italian', expectedText: 'Ciao a tutti' },
-  { cmd: '/transhuman to Portuguese: Obrigado', expectedType: 'translate-humanize', lang: 'Portuguese', expectedText: 'Obrigado' },
-  { cmd: '@translate-humanize to French: Bonjour le monde', expectedType: 'translate-humanize', lang: 'French', expectedText: 'Bonjour le monde' },
-  { cmd: '@agent translate-humanize to French:', expectedType: 'translate-humanize', lang: 'French', expectedText: '' },
   { cmd: '@agent style-transfer to executive: We made good money this quarter', expectedType: 'style-transfer', style: 'executive', expectedText: 'We made good money this quarter' },
   { cmd: '/style-transfer to academic: It works nicely', expectedType: 'style-transfer', style: 'academic', expectedText: 'It works nicely' },
   { cmd: '@style-transfer to journalistic: Breaking development unfolds', expectedType: 'style-transfer', style: 'journalistic', expectedText: 'Breaking development unfolds' },
@@ -73,11 +64,7 @@ const testInputs = [
   { cmd: '@agent style-transfer to conversational:', expectedType: 'style-transfer', style: 'conversational', expectedText: '' }
 ];
 
-const transHumanRegex = /^(@agent\s+translate-humanize|@translate-humanize|\/translate-humanize|@agent\s+trans-human|@trans-human|\/trans-human|@agent\s+transhuman|@transhuman|\/transhuman|@agent\s+humanize-translate|@humanize-translate|\/humanize-translate)(\s*[:\s]|$)/i;
-const transHumanReplace = /^(@agent\s+translate-humanize|@translate-humanize|\/translate-humanize|@agent\s+trans-human|@trans-human|\/trans-human|@agent\s+transhuman|@transhuman|\/transhuman|@agent\s+humanize-translate|@humanize-translate|\/humanize-translate)(?:\s*[:]\s*|\s*)/i;
-
 const translateRegex = /^(@agent\s+translate\b|@translate\b|\/translate\b|@agent\s+translation\b|@translation\b|\/translation\b|@agent\s+trans\b|@trans\b|\/trans\b)/i;
-const translateGuard = /^(@agent\s+(?:translate-humanize|trans-human|transhuman)|@(?:translate-humanize|trans-human|transhuman)|\/(?:translate-humanize|trans-human|transhuman))/i;
 const translateReplace = /^(@agent\s+translate\b|@agent\s+translation\b|\/translate\b|\/translation\b|@translate\b|@translation\b|@agent\s+trans\b|@trans\b|\/trans\b)(?:\s*[:]\s*|\s*)/i;
 
 const styleRegex = /^(@agent\s+style-transfer|@style-transfer|\/style-transfer|@agent\s+style\b|@style\b|\/style\b)/i;
@@ -103,32 +90,9 @@ for (const test of testInputs) {
     );
     let text = cmd.replace(/^(@agent\s+humanize|\/humanize|@humanize)(?:\s*[:]\s*|\s*)/i, '').trim();
     assert.strictEqual(text, test.expectedText, `Extracted text mismatch for ${test.cmd}`);
-  } else if (test.expectedType === 'translate-humanize') {
-    assert(
-      transHumanRegex.test(cmd),
-      `Failed to match translate-humanize: ${test.cmd} (normalized: ${cmd})`
-    );
-    let rest = cmd.replace(transHumanReplace, '').trim();
-    let targetLang = 'English';
-    let textToTranslate = '';
-    const toMatch = rest.match(/^(?:to|into)\s+([A-Za-z\s]+?)(?:[:,\-]\s*|\s+|$)(.*)$/is);
-    if (toMatch) {
-      targetLang = toMatch[1].trim() || 'English';
-      textToTranslate = (toMatch[2] || '').trim();
-    } else {
-      const colonMatch = rest.match(/^([A-Za-z]+)\s*[:]\s*(.*)$/is);
-      if (colonMatch && !['http', 'https', 'file'].includes(colonMatch[1].toLowerCase())) {
-        targetLang = colonMatch[1].trim();
-        textToTranslate = (colonMatch[2] || '').trim();
-      } else {
-        textToTranslate = rest;
-      }
-    }
-    assert.strictEqual(targetLang, test.lang, `Extracted lang mismatch for ${test.cmd}`);
-    assert.strictEqual(textToTranslate, test.expectedText, `Extracted text mismatch for ${test.cmd}`);
   } else if (test.expectedType === 'translate') {
     assert(
-      translateRegex.test(cmd) && !translateGuard.test(cmd),
+      translateRegex.test(cmd),
       `Failed to match translate: ${test.cmd} (normalized: ${cmd})`
     );
     let rest = cmd.replace(translateReplace, '').trim();
@@ -187,7 +151,8 @@ assert.strictEqual(pending, null);
 
 // 4. Test document attachment smart action chips
 assert(appContent.includes("addAction('@agent humanize'"), 'Missing smart action chip for humanize on document attachment');
-assert(appContent.includes("addAction('@agent translate-humanize to Spanish: '"), 'Missing smart action chip for translate-humanize on document attachment');
+assert(appContent.includes("addAction('@agent translate to Spanish: '"), 'Missing smart action chip for translate on document attachment');
+assert(!appContent.includes("addAction('@agent translate-humanize"), 'translate-humanize action chip must be eliminated');
 
 console.log(`✓ All ${testInputs.length} test directive patterns passed extraction validation`);
 console.log('✓ Pending directive and document smart action checks passed');
