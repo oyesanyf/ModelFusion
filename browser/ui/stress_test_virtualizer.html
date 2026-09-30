@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LLM Virtualized Chat Log & Pagination Stress Tester</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857',
+            },
+            surface: {
+              800: '#1e293b',
+              850: '#172033',
+              900: '#0f172a',
+              950: '#0a0f1d'
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    /* Custom precision scrollbars */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    .shimmer-text {
+      background: linear-gradient(90deg, #94a3b8 0%, #ffffff 50%, #94a3b8 100%);
+      background-size: 200% 100%;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: shimmer 2.5s infinite;
+    }
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* Code block highlighting aesthetics */
+    pre code {
+      tab-size: 2;
+    }
+  </style>
+</head>
+<body class="bg-surface-950 text-slate-100 font-sans antialiased min-h-screen flex flex-col overflow-hidden select-none">
+
+  <header class="bg-surface-900 border-b border-slate-800 px-4 py-2.5 flex-none shadow-md z-20">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+      <!-- Title & Status -->
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+          <svg class="w-5 h-5 text-slate-950" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path>
+          </svg>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="font-bold text-sm sm:text-base text-slate-100 tracking-tight">UltraLog Virtualizer</h1>
+            <span id="streaming-indicator" class="hidden px-2 py-0.5 text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full animate-pulse">
+              ● Streaming Live
+            </span>
+          </div>
+          <p class="text-xs text-slate-400">High-capacity LLM Chat Output Viewer (Hundreds of Pages Stress Test)</p>
+        </div>
+      </div>
+
+      <!-- Live Benchmarking Telemetry -->
+      <div class="flex items-center gap-2 sm:gap-4 text-xs font-mono bg-surface-950/80 px-3 py-1.5 rounded-lg border border-slate-800 shadow-inner">
+        <div>
+          <span class="text-slate-500 uppercase tracking-wider text-[10px] block">Simulated Pages</span>
+          <span id="metric-pages" class="text-emerald-400 font-semibold text-sm">0 / 0</span>
+        </div>
+        <div class="w-px h-6 bg-slate-800"></div>
+        <div>
+          <span class="text-slate-500 uppercase tracking-wider text-[10px] block">Total Tokens</span>
+          <span id="metric-tokens" class="text-indigo-400 font-semibold text-sm">0</span>
+        </div>
+        <div class="w-px h-6 bg-slate-800"></div>
+        <div>
+          <span class="text-slate-500 uppercase tracking-wider text-[10px] block">Total Messages</span>
+          <span id="metric-messages" class="text-sky-400 font-semibold text-sm">0</span>
+        </div>
+        <div class="w-px h-6 bg-slate-800"></div>
+        <div class="hidden sm:block">
+          <span class="text-slate-500 uppercase tracking-wider text-[10px] block">Active DOM Nodes</span>
+          <span id="metric-dom-nodes" class="text-amber-400 font-semibold text-sm">0</span>
+        </div>
+      </div>
+
+      <!-- Rust backend drawer action -->
+      <div class="flex items-center gap-2">
+        <button id="open-rust-guide-btn" class="px-3 py-1.5 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 text-xs font-medium flex items-center gap-1.5 transition-colors">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
+          <span>Rust SSE Backend</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <section class="bg-surface-900/60 border-b border-slate-800/80 px-4 py-2 flex-none backdrop-blur-sm z-10">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
+      
+      <!-- Generator actions -->
+      <div class="flex items-center gap-2 flex-wrap">
+        <div class="flex rounded-lg overflow-hidden border border-slate-700 bg-surface-850">
+          <button id="btn-seed-100" class="px-3 py-1.5 hover:bg-slate-800 text-slate-300 font-medium transition">
+            +100 Pages
+          </button>
+          <div class="w-px bg-slate-700"></div>
+          <button id="btn-seed-300" class="px-3 py-1.5 hover:bg-slate-800 text-slate-300 font-medium transition">
+            +300 Pages (Heavy)
+          </button>
+          <div class="w-px bg-slate-700"></div>
+          <button id="btn-clear" class="px-3 py-1.5 hover:bg-red-500/20 text-red-400 transition">
+            Clear
+          </button>
+        </div>
+
+        <div class="flex items-center gap-1.5 border border-slate-700 bg-surface-850 px-2 py-1 rounded-lg">
+          <button id="btn-toggle-stream" class="flex items-center gap-1 px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition shadow-sm">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <span id="stream-btn-text">Start Stream</span>
+          </button>
+          <select id="stream-speed" class="bg-surface-900 border border-slate-700 text-slate-300 rounded px-1.5 py-0.5 outline-none">
+            <option value="15">Ultra-fast (15ms)</option>
+            <option value="50" selected>Fast (50ms)</option>
+            <option value="150">Normal (150ms)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Navigation & Filter controls -->
+      <div class="flex items-center gap-3 flex-wrap ml-auto">
+        <!-- Autoscroll Lock -->
+        <button id="btn-autoscroll" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-surface-850 text-slate-300 hover:text-white transition">
+          <div id="autoscroll-dot" class="w-2 h-2 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50"></div>
+          <span>Auto-Scroll: <strong id="autoscroll-status" class="text-emerald-400">ON</strong></span>
+        </button>
+
+        <!-- Jump to page -->
+        <div class="flex items-center gap-1.5 bg-surface-850 px-2.5 py-1 rounded-lg border border-slate-700">
+          <label for="page-jump-input" class="text-slate-400 font-medium">Jump:</label>
+          <input type="number" id="page-jump-input" min="1" max="1" value="1" class="w-14 bg-surface-900 text-center font-mono border border-slate-700 rounded px-1 py-0.5 text-slate-200 outline-none focus:border-emerald-500" />
+          <button id="btn-jump" class="px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-200">Go</button>
+        </div>
+
+        <!-- Filter / Search input -->
+        <div class="relative">
+          <input type="text" id="log-search-input" placeholder="Search logs (e.g. error, token, query)..." class="w-48 sm:w-56 bg-surface-900 border border-slate-700 rounded-lg pl-7 pr-3 py-1 text-slate-200 placeholder-slate-500 outline-none focus:border-indigo-500 transition-all font-mono" />
+          <svg class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+          </svg>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <main class="flex-1 relative overflow-hidden flex flex-col bg-surface-950">
+    <!-- Virtual Scroll Viewport -->
+    <div id="virtual-viewport" class="flex-1 overflow-y-auto overflow-x-hidden relative p-4 sm:p-6" tabindex="0">
+      
+      <!-- Virtual Height Spacer (Pushes scrollbar to exact virtual representation of hundreds of pages) -->
+      <div id="virtual-spacer" class="w-full relative" style="height: 0px;">
+        <!-- Real DOM Items Rendered Inside the Viewport Window -->
+        <div id="virtual-content" class="w-full max-w-5xl mx-auto absolute top-0 left-0 right-0 space-y-4 will-change-transform">
+          <!-- Dynamically populated via virtualizer engine -->
+        </div>
+      </div>
+
+      <!-- Empty State Indicator -->
+      <div id="empty-state" class="hidden h-full flex flex-col items-center justify-center text-center p-6 text-slate-500">
+        <svg class="w-16 h-16 text-slate-700 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+        </svg>
+        <p class="text-base font-semibold text-slate-400">No Chat Logs Loaded</p>
+        <p class="text-xs text-slate-600 max-w-sm mt-1">Click "+100 Pages" or "Start Stream" above to stress-test rendering hundreds of simulated LLM chat pages without frame drops.</p>
+      </div>
+
+    </div>
+
+    <!-- Quick Floating Action: Scroll to Bottom if user scrolls away -->
+    <button id="btn-floating-scroll-bottom" class="hidden absolute bottom-5 right-6 bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2 rounded-full shadow-xl flex items-center gap-2 text-xs font-semibold tracking-wide border border-emerald-400/40 transition-all transform hover:scale-105 z-30">
+      <svg class="w-4 h-4 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path>
+      </svg>
+      <span>Scroll to Latest</span>
+    </button>
+  </main>
+
+  <div id="rust-modal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-surface-900 border border-slate-700 rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-surface-850">
+        <div class="flex items-center gap-2">
+          <span class="w-3 h-3 rounded-full bg-orange-500"></span>
+          <h2 class="text-base font-bold text-slate-100 font-mono">Rust Backend Integration (Axum & SSE)</h2>
+        </div>
+        <button id="close-rust-modal-btn" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-6 overflow-y-auto space-y-4 text-xs font-sans text-slate-300">
+        <p>
+          To stream hundreds of pages from a Rust web server directly into this virtualized frontend without buffering the entire output in memory, use <strong>Server-Sent Events (SSE)</strong> with <strong class="text-emerald-400">Axum</strong> or <strong class="text-indigo-400">Actix-web</strong>.
+        </p>
+
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-mono text-slate-400 text-[11px]">Cargo.toml</span>
+          </div>
+          <pre class="bg-surface-950 p-3 rounded-lg border border-slate-800 font-mono text-slate-300 overflow-x-auto"><code>[dependencies]
+axum = { version = "0.7", features = ["macros"] }
+tokio = { version = "1.0", features = ["full"] }
+tokio-stream = "0.1"
+futures = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"</code></pre>
+        </div>
+
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-mono text-slate-400 text-[11px]">src/main.rs (High-Speed SSE Streamer)</span>
+            <button id="copy-rust-code-btn" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-mono border border-slate-700 transition">Copy Code</button>
+          </div>
+          <pre id="rust-code-block" class="bg-surface-950 p-3 rounded-lg border border-slate-800 font-mono text-slate-300 overflow-x-auto text-[11px] leading-relaxed"><code>use axum::{
+    response::sse::{Event, KeepAlive, Sse},
+    routing::get,
+    Router,
+};
+use futures::stream::Stream;
+use std::{convert::Infallible, time::Duration};
+use tokio_stream::StreamExt;
+
+#[tokio::main]
+async fn main() {
+    let app = Router::new().route("/api/chat/stream", get(chat_stream_handler));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();
+    println!("Chat SSE Stream Server running on http://127.0.0.1:3000");
+    axum::serve(listener, app).await.unwrap();
+}
+
+async fn chat_stream_handler() -> Sse&lt;impl Stream&lt;Item = Result&lt;Event, Infallible&gt;&gt;&gt; {
+    // Generate simulated sequence across hundreds of pages
+    let total_chunks = 5000; // e.g., ~150-200 standard book pages
+    let stream = tokio_stream::iter(0..total_chunks).map(|i| {
+        let chunk_data = serde_json::json!({
+            "id": i,
+            "role": if i % 2 == 0 { "assistant" } else { "user" },
+            "page": (i / 25) + 1,
+            "tokens": 45,
+            "content": format!("Chunk #{}: Evaluated sequence token retention in KV cache.", i)
+        });
+        Ok(Event::default().json_data(chunk_data).unwrap())
+    })
+    .throttle(Duration::from_millis(30)); // Emulate LLM generation rate
+
+    Sse::new(stream).keep_alive(KeepAlive::default())
+}</code></pre>
+        </div>
+
+        <div class="bg-surface-950/70 p-3 rounded-lg border border-slate-800 text-[11px]">
+          <h4 class="font-bold text-slate-200 mb-1">Frontend Connection Snippet:</h4>
+          <p class="text-slate-400 font-mono">
+            const eventSource = new EventSource('/api/chat/stream');<br/>
+            eventSource.onmessage = (event) =&gt; {<br/>
+            &nbsp;&nbsp;const chunk = JSON.parse(event.data);<br/>
+            &nbsp;&nbsp;chatStore.addMessage(chunk.role, chunk.content, chunk.tokens);<br/>
+            };
+          </p>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-6 py-3 border-t border-slate-800 bg-surface-850 flex justify-end">
+        <button id="close-rust-modal-footer" class="px-4 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-100 font-medium text-xs">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      // --- Simulation & Virtualization Constants ---
+      // A typical printed page has approx 450-500 words (~600 tokens or ~5-6 chat exchanges)
+      const MESSAGES_PER_PAGE = 6;
+      const ESTIMATED_ROW_HEIGHT = 160; // Estimated height for virtual calculation
+      const BUFFER_OVERSCAN = 6; // Extra items rendered above and below viewport
+
+      // --- Application State ---
+      const state = {
+        messages: [],         // Full in-memory log list (can reach 100k+ without DOM lag)
+        filteredIndices: [],  // Filtered array of indices for search queries
+        totalTokens: 0,
+        totalPages: 0,
+        isStreaming: false,
+        streamIntervalId: null,
+        autoScrollLocked: true,
+        searchQuery: '',
+        
+        // Virtualizer metrics
+        viewportHeight: 0,
+        scrollTop: 0,
+        renderedRange: { start: 0, end: 0 },
+        heightCache: new Map(), // Caches real rendered DOM heights per item ID
+      };
+
+      // --- DOM Elements ---
+      const elements = {
+        viewport: document.getElementById('virtual-viewport'),
+        spacer: document.getElementById('virtual-spacer'),
+        content: document.getElementById('virtual-content'),
+        emptyState: document.getElementById('empty-state'),
+        streamingIndicator: document.getElementById('streaming-indicator'),
+        
+        // Metrics
+        metricPages: document.getElementById('metric-pages'),
+        metricTokens: document.getElementById('metric-tokens'),
+        metricMessages: document.getElementById('metric-messages'),
+        metricDomNodes: document.getElementById('metric-dom-nodes'),
+        
+        // Controls
+        btnSeed100: document.getElementById('btn-seed-100'),
+        btnSeed300: document.getElementById('btn-seed-300'),
+        btnClear: document.getElementById('btn-clear'),
+        btnToggleStream: document.getElementById('btn-toggle-stream'),
+        streamBtnText: document.getElementById('stream-btn-text'),
+        streamSpeedSelect: document.getElementById('stream-speed'),
+        btnAutoscroll: document.getElementById('btn-autoscroll'),
+        autoscrollDot: document.getElementById('autoscroll-dot'),
+        autoscrollStatus: document.getElementById('autoscroll-status'),
+        btnFloatingScroll: document.getElementById('btn-floating-scroll-bottom'),
+        pageJumpInput: document.getElementById('page-jump-input'),
+        btnJump: document.getElementById('btn-jump'),
+        searchInput: document.getElementById('log-search-input'),
+        
+        // Rust Modal
+        rustModal: document.getElementById('rust-modal'),
+        openRustBtn: document.getElementById('open-rust-guide-btn'),
+        closeRustBtn: document.getElementById('close-rust-modal-btn'),
+        closeRustFooter: document.getElementById('close-rust-modal-footer'),
+        copyRustBtn: document.getElementById('copy-rust-code-btn'),
+        rustCodeBlock: document.getElementById('rust-code-block'),
+      };
+
+      // --- Realistic Synthetic Chat Corpus for Stress Testing ---
+      const sampleQueries = [
+        "Analyze the key-value cache memory scaling for this 128k sequence length.",
+        "Can you benchmark token latency and explain FlashAttention-2 tiling?",
+        "Please provide the Rust implementation of a multi-threaded bounded queue.",
+        "Review the distributed consensus logs for partition node-us-east-4.",
+        "Explain how RoPE (Rotary Position Embeddings) permits context window extrapolation."
+      ];
+
+      const sampleResponses = [
+        `Here is the architectural analysis for the sequence:
+\`\`\`rust
+// Simulating KV-cache allocation
+pub struct CacheConfig {
+    pub num_heads: usize,
+    pub head_dim: usize,
+    pub sequence_len: usize,
+}
+
+impl CacheConfig {
+    pub fn memory_bytes(&self) -> usize {
+        2 * 2 * self.num_heads * self.head_dim * self.sequence_len
+    }
+}
+\`\`\`
+Notice that as the context window scales toward hundreds of pages, grouped-query attention (GQA) reduces KV memory consumption by factor 8x compared to baseline multi-head attention.`,
+        
+        `FlashAttention-2 eliminates the memory bottleneck by avoiding the materialization of the full $N \\times N$ attention matrix on GPU HBM. Instead, it computes softmax normalization incrementally using online softmax tiling across SRAM buffers.
+
+Key benefits observed:
+1. Quadratic memory usage drops to linear in practice.
+2. Kernel I/O overhead reduces from 90% down to under 15%.
+3. Enables inference servers to host 100k+ token sessions comfortably.`,
+        
+        `Benchmarking evaluation record:
+- Total Prompt Processing Speed: **4,120 tokens/sec**
+- Time-to-First-Token (TTFT): **18.4ms**
+- Sustained Generation Rate: **112 tokens/sec**
+- Context Cache Eviction: **0 events (full retention confirmed)**
+
+All assertions passed. Memory footprint is stable within allocated slab boundaries.`
+      ];
+
+      let messageIdCounter = 1;
+
+      function createSyntheticMessage(role, text, explicitPage) {
+        const id = messageIdCounter++;
+        const tokens = Math.max(12, Math.round(text.length / 3.8));
+        const timestamp = new Date(Date.now() - (100000 - id * 200)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const page = explicitPage || Math.floor((id - 1) / MESSAGES_PER_PAGE) + 1;
+
+        return {
+          id,
+          role, // 'user' | 'assistant' | 'system'
+          text,
+          tokens,
+          page,
+          timestamp
+        };
+      }
+
+      function generatePageBatch(pageCount) {
+        const newMessages = [];
+        const startPage = state.totalPages + 1;
+        const endPage = state.totalPages + pageCount;
+
+        for (let p = startPage; p <= endPage; p++) {
+          for (let m = 0; m < MESSAGES_PER_PAGE; m++) {
+            const isUser = (m % 2 === 0);
+            const role = isUser ? 'user' : 'assistant';
+            const textPool = isUser ? sampleQueries : sampleResponses;
+            const text = textPool[(p * MESSAGES_PER_PAGE + m) % textPool.length];
+            newMessages.push(createSyntheticMessage(role, text, p));
+          }
+        }
+
+        return newMessages;
+      }
+
+      function appendMessages(messagesBatch) {
+        messagesBatch.forEach(msg => {
+          state.messages.push(msg);
+          state.totalTokens += msg.tokens;
+        });
+
+        recalculatePages();
+        applyFilter(false);
+
+        if (state.autoScrollLocked) {
+          requestAnimationFrame(() => scrollToBottom());
+        } else {
+          renderVirtualList();
+        }
+        updateMetrics();
+      }
+
+      function recalculatePages() {
+        state.totalPages = state.messages.length > 0
+          ? Math.ceil(state.messages.length / MESSAGES_PER_PAGE)
+          : 0;
+        elements.pageJumpInput.max = Math.max(1, state.totalPages);
+      }
+
+      function applyFilter(resetScroll = true) {
+        const query = elements.searchInput.value.trim().toLowerCase();
+        state.searchQuery = query;
+
+        if (!query) {
+          state.filteredIndices = state.messages.map((_, index) => index);
+        } else {
+          const matched = [];
+          for (let i = 0; i < state.messages.length; i++) {
+            const m = state.messages[i];
+            if (m.text.toLowerCase().includes(query) || 
+                m.role.toLowerCase().includes(query) || 
+                `page ${m.page}`.includes(query)) {
+              matched.push(i);
+            }
+          }
+          state.filteredIndices = matched;
+        }
+
+        if (resetScroll && query) {
+          elements.viewport.scrollTop = 0;
+        }
+
+        renderVirtualList();
+      }
+
+      // Only constructs DOM elements for the exact slice visible in the viewport plus overscan buffer
+      function renderVirtualList() {
+        const totalItems = state.filteredIndices.length;
+
+        if (totalItems === 0) {
+          elements.spacer.style.height = '0px';
+          elements.content.innerHTML = '';
+          elements.emptyState.classList.remove('hidden');
+          updateMetrics();
+          return;
+        } else {
+          elements.emptyState.classList.add('hidden');
+        }
+
+        const viewportHeight = elements.viewport.clientHeight || 600;
+        const scrollTop = elements.viewport.scrollTop;
+        state.scrollTop = scrollTop;
+
+        // Estimate total virtual height using average known height
+        const totalHeight = totalItems * ESTIMATED_ROW_HEIGHT;
+        elements.spacer.style.height = `${totalHeight}px`;
+
+        // Calculate index bounds
+        const startIndex = Math.max(0, Math.floor(scrollTop / ESTIMATED_ROW_HEIGHT) - BUFFER_OVERSCAN);
+        const endIndex = Math.min(totalItems - 1, Math.ceil((scrollTop + viewportHeight) / ESTIMATED_ROW_HEIGHT) + BUFFER_OVERSCAN);
+
+        state.renderedRange = { start: startIndex, end: endIndex };
+
+        // Position virtual content block exactly at virtual start offset
+        const startOffsetY = startIndex * ESTIMATED_ROW_HEIGHT;
+        elements.content.style.transform = `translateY(${startOffsetY}px)`;
+
+        // Build HTML fragment for only visible slice
+        let htmlBuffer = '';
+        for (let i = startIndex; i <= endIndex; i++) {
+          const itemIdx = state.filteredIndices[i];
+          const msg = state.messages[itemIdx];
+          htmlBuffer += renderMessageHTML(msg, i);
+        }
+
+        elements.content.innerHTML = htmlBuffer;
+        updateMetrics();
+      }
+
+      function renderMessageHTML(msg, virtualIndex) {
+        const isAssistant = msg.role === 'assistant';
+        const isUser = msg.role === 'user';
+
+        // Format code blocks or markdown-like styles
+        let formattedText = escapeHtml(msg.text);
+        
+        // Simple code block regex substitution for presentation
+        formattedText = formattedText.replace(/```(rust|json)?([\s\S]*?)```/g, (match, lang, code) => {
+          return `
+            <div class="my-2.5 rounded-lg bg-surface-950 border border-slate-800 overflow-hidden font-mono text-[11px]">
+              <div class="px-3 py-1 bg-surface-900 border-b border-slate-800 text-slate-400 flex items-center justify-between text-[10px]">
+                <span class="uppercase tracking-wider font-semibold text-emerald-400">${lang || 'code'}</span>
+                <span>snippet</span>
+              </div>
+              <pre class="p-3 text-slate-200 overflow-x-auto leading-relaxed"><code>${code.trim()}</code></pre>
+            </div>
+          `;
+        });
+
+        // Bold formatting
+        formattedText = formattedText.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>');
+        // Newlines to breaks
+        formattedText = formattedText.replace(/\n/g, '<br/>');
+
+        return `
+          <div class="flex flex-col ${isUser ? 'items-end' : 'items-start'} group transition-all" data-id="${msg.id}" data-page="${msg.page}">
+            
+            <!-- Metadata line: Page tag, role, timestamp -->
+            <div class="flex items-center gap-2 mb-1 px-1 text-[11px] text-slate-400 font-mono">
+              <span class="px-1.5 py-0.2 rounded bg-surface-850 border border-slate-800 text-slate-400 text-[10px] font-semibold">
+                Page ${msg.page}
+              </span>
+              <span class="font-medium ${isAssistant ? 'text-teal-400' : 'text-sky-400'}">
+                ${isAssistant ? 'Assistant LLM' : 'Evaluator Prompt'}
+              </span>
+              <span>•</span>
+              <span class="text-slate-500">${msg.timestamp}</span>
+              <span>•</span>
+              <span class="text-slate-500">${msg.tokens} tok</span>
+            </div>
+
+            <!-- Chat Bubble Body -->
+            <div class="max-w-[92%] sm:max-w-[85%] rounded-2xl p-4 shadow-sm border text-xs sm:text-sm leading-relaxed ${
+              isUser
+                ? 'bg-slate-800/90 text-slate-100 border-slate-700 rounded-tr-sm'
+                : 'bg-surface-900/95 text-slate-200 border-slate-800/90 rounded-tl-sm'
+            }">
+              <div class="break-words font-sans">${formattedText}</div>
+            </div>
+
+          </div>
+        `;
+      }
+
+      function escapeHtml(unsafe) {
+        return unsafe
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+      function scrollToBottom() {
+        elements.viewport.scrollTop = elements.viewport.scrollHeight;
+      }
+
+      function jumpToPage(targetPage) {
+        if (state.messages.length === 0) return;
+        const page = Math.max(1, Math.min(targetPage, state.totalPages));
+        
+        // Find index of first message on or after target page
+        let targetIndex = state.filteredIndices.findIndex(idx => state.messages[idx].page >= page);
+        if (targetIndex === -1) {
+          targetIndex = state.filteredIndices.length - 1;
+        }
+
+        const targetScrollTop = targetIndex * ESTIMATED_ROW_HEIGHT;
+        elements.viewport.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
+        
+        // Unlock autoscroll so user can inspect target page without snapping back
+        setAutoScroll(false);
+      }
+
+      function setAutoScroll(enabled) {
+        state.autoScrollLocked = enabled;
+        if (enabled) {
+          elements.autoscrollDot.className = 'w-2 h-2 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50';
+          elements.autoscrollStatus.textContent = 'ON';
+          elements.autoscrollStatus.className = 'text-emerald-400';
+          elements.btnFloatingScroll.classList.add('hidden');
+          scrollToBottom();
+        } else {
+          elements.autoscrollDot.className = 'w-2 h-2 rounded-full bg-slate-500';
+          elements.autoscrollStatus.textContent = 'OFF';
+          elements.autoscrollStatus.className = 'text-slate-400';
+        }
+      }
+
+      function updateMetrics() {
+        // Calculate current viewed page based on center of viewport
+        let currentPageView = 1;
+        if (state.filteredIndices.length > 0) {
+          const midItemIdx = Math.min(
+            state.filteredIndices.length - 1,
+            Math.floor((elements.viewport.scrollTop + elements.viewport.clientHeight / 2) / ESTIMATED_ROW_HEIGHT)
+          );
+          const originalIdx = state.filteredIndices[midItemIdx];
+          if (state.messages[originalIdx]) {
+            currentPageView = state.messages[originalIdx].page;
+          }
+        }
+
+        elements.metricPages.textContent = `${currentPageView} / ${state.totalPages}`;
+        elements.metricTokens.textContent = state.totalTokens.toLocaleString();
+        elements.metricMessages.textContent = state.messages.length.toLocaleString();
+
+        // Calculate rendered DOM nodes inside viewport (demonstrates O(1) DOM efficiency)
+        const renderedNodeCount = elements.content.children.length;
+        elements.metricDomNodes.textContent = `${renderedNodeCount} nodes`;
+
+        // Synchronize page jump input
+        if (document.activeElement !== elements.pageJumpInput) {
+          elements.pageJumpInput.value = currentPageView;
+        }
+      }
+
+      let streamChunkCounter = 0;
+      function toggleStreamGenerator() {
+        if (state.isStreaming) {
+          // Stop stream
+          clearInterval(state.streamIntervalId);
+          state.isStreaming = false;
+          elements.streamBtnText.textContent = 'Start Stream';
+          elements.streamingIndicator.classList.add('hidden');
+          elements.btnToggleStream.className = 'flex items-center gap-1 px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition shadow-sm';
+        } else {
+          // Start stream
+          state.isStreaming = true;
+          elements.streamBtnText.textContent = 'Pause Stream';
+          elements.streamingIndicator.classList.remove('hidden');
+          elements.btnToggleStream.className = 'flex items-center gap-1 px-2 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white font-medium transition shadow-sm';
+
+          const intervalMs = parseInt(elements.streamSpeedSelect.value, 10);
+          
+          state.streamIntervalId = setInterval(() => {
+            streamChunkCounter++;
+            const isUser = (streamChunkCounter % 4 === 1);
+            const role = isUser ? 'user' : 'assistant';
+            const textPool = isUser ? sampleQueries : sampleResponses;
+            const text = textPool[streamChunkCounter % textPool.length];
+
+            const msg = createSyntheticMessage(role, `[Stream Chunk #${streamChunkCounter}] ${text}`);
+            appendMessages([msg]);
+          }, intervalMs);
+        }
+      }
+
+      function setupEventListeners() {
+        // Virtual scroll listener throttled with requestAnimationFrame
+        let scrollRaf = null;
+        elements.viewport.addEventListener('scroll', () => {
+          if (!scrollRaf) {
+            scrollRaf = requestAnimationFrame(() => {
+              renderVirtualList();
+              
+              // Detect if user scrolled upwards away from bottom
+              const distanceFromBottom = elements.viewport.scrollHeight - elements.viewport.scrollTop - elements.viewport.clientHeight;
+              if (distanceFromBottom > 150) {
+                if (state.autoScrollLocked) {
+                  setAutoScroll(false);
+                }
+                elements.btnFloatingScroll.classList.remove('hidden');
+              } else {
+                elements.btnFloatingScroll.classList.add('hidden');
+              }
+              
+              scrollRaf = null;
+            });
+          }
+        }, { passive: true });
+
+        // Resize observer to update virtual slice when window resizes
+        window.addEventListener('resize', () => {
+          renderVirtualList();
+        });
+
+        // Seed 100 pages button (approx 600 messages, ~40,000 tokens)
+        elements.btnSeed100.addEventListener('click', () => {
+          const batch = generatePageBatch(100);
+          appendMessages(batch);
+        });
+
+        // Seed 300 pages button (approx 1,800 messages, ~120,000 tokens)
+        elements.btnSeed300.addEventListener('click', () => {
+          const batch = generatePageBatch(300);
+          appendMessages(batch);
+        });
+
+        // Clear all logs
+        elements.btnClear.addEventListener('click', () => {
+          if (state.isStreaming) toggleStreamGenerator();
+          state.messages = [];
+          state.filteredIndices = [];
+          state.totalTokens = 0;
+          state.totalPages = 0;
+          messageIdCounter = 1;
+          streamChunkCounter = 0;
+          recalculatePages();
+          renderVirtualList();
+        });
+
+        // Toggle Streaming
+        elements.btnToggleStream.addEventListener('click', toggleStreamGenerator);
+
+        // Change stream speed mid-stream
+        elements.streamSpeedSelect.addEventListener('change', () => {
+          if (state.isStreaming) {
+            toggleStreamGenerator();
+            toggleStreamGenerator();
+          }
+        });
+
+        // Toggle autoscroll button
+        elements.btnAutoscroll.addEventListener('click', () => {
+          setAutoScroll(!state.autoScrollLocked);
+        });
+
+        // Floating scroll to bottom button
+        elements.btnFloatingScroll.addEventListener('click', () => {
+          setAutoScroll(true);
+        });
+
+        // Jump to page button & Enter key
+        elements.btnJump.addEventListener('click', () => {
+          jumpToPage(parseInt(elements.pageJumpInput.value, 10));
+        });
+        elements.pageJumpInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            jumpToPage(parseInt(elements.pageJumpInput.value, 10));
+          }
+        });
+
+        // Search input with debounce
+        let searchTimeout = null;
+        elements.searchInput.addEventListener('input', () => {
+          clearTimeout(searchTimeout);
+          searchTimeout = setTimeout(() => {
+            applyFilter(true);
+          }, 150);
+        });
+
+        // Rust Modal toggle
+        elements.openRustBtn.addEventListener('click', () => {
+          elements.rustModal.classList.remove('hidden');
+        });
+        elements.closeRustBtn.addEventListener('click', () => {
+          elements.rustModal.classList.add('hidden');
+        });
+        elements.closeRustFooter.addEventListener('click', () => {
+          elements.rustModal.classList.add('hidden');
+        });
+        elements.rustModal.addEventListener('click', (e) => {
+          if (e.target === elements.rustModal) {
+            elements.rustModal.classList.add('hidden');
+          }
+        });
+
+        // Copy Rust snippet
+        elements.copyRustBtn.addEventListener('click', () => {
+          const code = elements.rustCodeBlock.innerText;
+          const textarea = document.createElement('textarea');
+          textarea.value = code;
+          document.body.appendChild(textarea);
+          textarea.select();
+          try {
+            document.execCommand('copy');
+            elements.copyRustBtn.textContent = 'Copied!';
+            elements.copyRustBtn.classList.add('text-emerald-400');
+            setTimeout(() => {
+              elements.copyRustBtn.textContent = 'Copy Code';
+              elements.copyRustBtn.classList.remove('text-emerald-400');
+            }, 2000);
+          } catch (err) {
+            console.error('Failed to copy', err);
+          }
+          document.body.removeChild(textarea);
+        });
+      }
+
+      function init() {
+        setupEventListeners();
+        // Pre-seed with 50 pages to immediately demonstrate smooth virtualized scrolling
+        const initialBatch = generatePageBatch(50);
+        appendMessages(initialBatch);
+        setAutoScroll(true);
+      }
+
+      window.addEventListener('DOMContentLoaded', init);
+    })();
+  </script>
+</body>
+</html>

@@ -885,22 +885,23 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "[OK] WiX source generated at $wxsPath" -ForegroundColor Green
 
+# Kill any lingering wix or wixnative processes from previous runs, as well as HugOS and cli to release locks
+Stop-Process -Name wix, wixnative, HugOS, cli -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:LOCALAPPDATA\Temp\#cab*" -Force -Recurse -ErrorAction SilentlyContinue
+Remove-Item "$env:TEMP\#cab*" -Force -Recurse -ErrorAction SilentlyContinue
+
 # 7. Compile the MSI using WiX Toolset
 Write-Host "[INFO] Compiling MSI using WiX Toolset..." -ForegroundColor Yellow
 $msiPath = Join-Path $PSScriptRoot "HugOS.msi"
 if (Test-Path $msiPath) {
-    Remove-Item -Path $msiPath -Force
+    Remove-Item -Path $msiPath -Force -ErrorAction SilentlyContinue
 }
 
 # Allow file handles to settle before WiX packaging
 [System.GC]::Collect()
 [System.GC]::WaitForPendingFinalizers()
-Start-Sleep -Seconds 6
+Start-Sleep -Seconds 3
 
-# Kill any lingering wix or wixnative processes from previous runs, as well as HugOS and cli to release locks
-Stop-Process -Name wix, wixnative, HugOS, cli -Force -ErrorAction SilentlyContinue
-Remove-Item "$env:LOCALAPPDATA\Temp\#cab*" -Force -Recurse -ErrorAction SilentlyContinue
-Remove-Item "$env:TEMP\#cab*" -Force -Recurse -ErrorAction SilentlyContinue
 Start-Service -Name msiserver -ErrorAction SilentlyContinue
 
 # Resolve WiX toolset binary explicitly
@@ -925,11 +926,10 @@ try {
 } catch {}
 
 # Run wix build with multi-threaded cabinet compression and bind path
-$wixOutput = & $wixExe build -b $PSScriptRoot -arch x64 -ct 4 $wxsPath -out $msiPath 2>&1
+& $wixExe build -b $PSScriptRoot -arch x64 -ct 4 $wxsPath -out $msiPath
 $wixExit = $LASTEXITCODE
 if ($wixExit -ne 0 -or -not (Test-Path $msiPath)) {
     Write-Host "[ERROR] WiX build failed (Exit code: $wixExit)." -ForegroundColor Red
-    $wixOutput | Out-String | Write-Host
     Exit 1
 }
 Write-Host "[OK] MSI built successfully at $msiPath" -ForegroundColor Green
