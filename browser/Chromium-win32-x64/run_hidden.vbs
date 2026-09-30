@@ -1,7 +1,14 @@
 ' run_hidden.vbs - Executes target command with hidden window (0, False)
 Set objShell = CreateObject("WScript.Shell")
+Set fso = CreateObject("Scripting.FileSystemObject")
 Set args = WScript.Arguments
 If args.Count > 0 Then
+    If fso.FileExists(args(0)) Then
+        parentFolder = fso.GetParentFolderName(args(0))
+        If parentFolder <> "" Then
+            objShell.CurrentDirectory = parentFolder
+        End If
+    End If
     strCmd = Chr(34) & args(0) & Chr(34)
     For i = 1 To args.Count - 1
         strCmd = strCmd & " " & Chr(34) & args(i) & Chr(34)

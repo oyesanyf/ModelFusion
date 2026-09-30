@@ -467,7 +467,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const headerModelName = document.getElementById('header-active-model-name');
     if (headerModelName) {
       if (activeOllamaModel === 'modelfusion_auto') {
-        headerModelName.textContent = '✨ ModelFusion Auto';
+        headerModelName.textContent = '🌟 ModelFusion Auto (Sweet Spot Fusion)';
       } else if (activeOllamaModel === 'fast_fusion') {
         headerModelName.textContent = '⚡ Fast Fusion';
       } else if (activeOllamaModel === 'deep_reasoning') {
@@ -995,7 +995,7 @@ document.addEventListener('DOMContentLoaded', () => {
               currentSettings.activeCustomFusion = null;
               currentSettings.activeModel = 'modelfusion_auto';
               if (headerActiveModelName) {
-                headerActiveModelName.textContent = '✨ ModelFusion Auto';
+                headerActiveModelName.textContent = '🌟 ModelFusion Auto (Sweet Spot Fusion)';
               }
             }
           }
@@ -2362,6 +2362,26 @@ document.addEventListener('DOMContentLoaded', () => {
           `🔹 Gate: Zero-Error Certification`
         ],
         task: 'code-generation'
+      };
+    }
+
+    const currentActive = (settings && settings.activeModel) || activeOllamaModel || 'modelfusion_auto';
+    if (!currentActive || currentActive === 'modelfusion_auto') {
+      const sweetSpot = pickBestInstalledOllamaModel(availableOllamaModels) || window.hardwareOptimalModel || 'gemma2:9b';
+      const companion = availableOllamaModels.find(m => m !== sweetSpot && !m.includes('vl') && !m.includes('vision'))
+        || (sweetSpot.includes('9b') ? 'gemma2:2b' : (sweetSpot.includes('7b') ? 'deepseek-r1:1.5b' : 'qwen2.5:7b'));
+      return {
+        name: 'Sweet Spot Multi-Model Adaptive Consensus',
+        primary: sweetSpot,
+        secondary: companion,
+        arbiter: 'Multi-Model Speculative Consensus Gate',
+        specialists: [
+          `🔹 Sweet Spot: ${sweetSpot}`,
+          `🔹 Companion: ${companion}`,
+          `🔹 Consensus: Speculative Verification Gate`
+        ],
+        task: 'sweet-spot-fusion',
+        isFusion: true
       };
     }
 
@@ -4471,7 +4491,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const headerModelName = document.getElementById('header-active-model-name');
         if (headerModelName) {
           if (activeOllamaModel === 'modelfusion_auto') {
-            headerModelName.textContent = '🌟 ModelFusion Auto';
+            headerModelName.textContent = '🌟 ModelFusion Auto (Sweet Spot Fusion)';
           } else if (activeOllamaModel === 'fast_fusion') {
             headerModelName.textContent = '⚡ Fast Fusion';
           } else if (activeOllamaModel === 'deep_reasoning') {
@@ -4933,19 +4953,25 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
     const isFusionMode = modelToUse === 'modelfusion_auto' || modelToUse === 'fast_fusion' || modelToUse === 'deep_reasoning';
     let resolvedOllamaModel = 'qwen2.5:7b';
     const bestInstalled = pickBestInstalledOllamaModel(availableOllamaModels);
+    const sweetSpot = bestInstalled || window.hardwareOptimalModel || 'gemma2:9b';
+    const companion = availableOllamaModels.find(m => m !== sweetSpot && !m.includes('vl') && !m.includes('vision'))
+      || (sweetSpot.includes('9b') ? 'gemma2:2b' : (sweetSpot.includes('7b') ? 'deepseek-r1:1.5b' : 'qwen2.5:7b'));
+
     if (activeOllamaModel && activeOllamaModel !== 'modelfusion_auto' && activeOllamaModel !== 'fast_fusion' && activeOllamaModel !== 'deep_reasoning') {
       resolvedOllamaModel = activeOllamaModel;
     } else if (modelToUse === 'deep_reasoning') {
       resolvedOllamaModel = 'qwen2.5:32b';
     } else if (modelToUse === 'fast_fusion') {
       resolvedOllamaModel = bestInstalled || 'qwen2.5:7b';
+    } else if (modelToUse === 'modelfusion_auto') {
+      resolvedOllamaModel = sweetSpot;
     } else {
       resolvedOllamaModel = bestInstalled || cachedHardwareModel || (activeOllamaModel !== 'modelfusion_auto' ? activeOllamaModel : null) || 'qwen2.5:7b';
     }
 
     // Strict guarantee: NEVER let resolvedOllamaModel be 'modelfusion_auto' or empty
     if (!resolvedOllamaModel || resolvedOllamaModel === 'modelfusion_auto') {
-      resolvedOllamaModel = bestInstalled || cachedHardwareModel || 'qwen2.5:7b';
+      resolvedOllamaModel = sweetSpot || bestInstalled || cachedHardwareModel || 'qwen2.5:7b';
     }
 
     if (hasImages && selectedVisionModel) {
@@ -4970,6 +4996,9 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
     } else if (options && options.panel && options.panel.id === 'reasoning') {
       authorDisplayTitle = 'HugOS AI (Boost)';
       authorDisplaySub = `(🚀 Deep Reasoning Boost • ${modelToUse})`;
+    } else if (modelToUse === 'modelfusion_auto') {
+      authorDisplayTitle = 'ModelFusion Auto';
+      authorDisplaySub = `(Sweet Spot: ${sweetSpot} + ${companion})`;
     } else if (isFusionMode) {
       authorDisplayTitle = 'ModelFusion AI';
       if (modelToUse === 'fast_fusion') {
@@ -8397,7 +8426,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
           } catch (err) {}
           if (headerActiveModelName) {
             if (chosenModel === 'modelfusion_auto') {
-              headerActiveModelName.textContent = '🌟 ModelFusion Auto';
+              headerActiveModelName.textContent = '🌟 ModelFusion Auto (Sweet Spot Fusion)';
             } else if (chosenModel === 'fast_fusion') {
               headerActiveModelName.textContent = '⚡ Fast Fusion';
             } else if (chosenModel === 'deep_reasoning') {
