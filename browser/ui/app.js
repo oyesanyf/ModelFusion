@@ -3310,6 +3310,46 @@ document.addEventListener('DOMContentLoaded', () => {
     return renderMarkdown(text);
   }
 
+  const CONTINUATION_CMD_REGEX = /^\s*(?:@agent\s+|[\/])?(?:boost\s+)?(?:continue|continute|keep\s*going|go\s*on|more|next\s*part)\b/i;
+  const CONTINUATION_STRIP_REGEX = /^\s*(?:@agent\s+|[\/])?(?:boost\s+)?(?:continue|continute|keep\s*going|go\s*on|more|next\s*part)\s*:?\s*/i;
+  window.CONTINUATION_CMD_REGEX = CONTINUATION_CMD_REGEX;
+  window.CONTINUATION_STRIP_REGEX = CONTINUATION_STRIP_REGEX;
+
+  function mergeContinuationText(initialText, continuationText) {
+    if (!initialText) return continuationText || '';
+    if (!continuationText) return initialText || '';
+
+    let cont = continuationText;
+    let init = initialText;
+
+    // Boundary overlap deduplication: check if model repeated any trailing substring (from 120 chars down to 6 chars)
+    const maxOverlap = Math.min(120, init.length, cont.length);
+    for (let len = maxOverlap; len >= 6; len--) {
+      const initSuffix = init.slice(-len);
+      if (cont.startsWith(initSuffix)) {
+        cont = cont.slice(len);
+        break;
+      }
+    }
+
+    if (!cont) return init;
+
+    // If continuation begins with whitespace (newline or space) or initial ends with whitespace,
+    // Ollama streamed the exact natural token boundary. Concatenate directly without extra breaks!
+    if (cont.startsWith('\n') || cont.startsWith(' ') || init.endsWith('\n') || init.endsWith(' ')) {
+      return init + cont;
+    }
+
+    // If initial text ended with sentence-ending punctuation, insert space or paragraph break
+    if (/[.!?:]$/.test(init.trimEnd())) {
+      return init.trimEnd() + '\n\n' + cont.trimStart();
+    }
+
+    // Default seamless continuation: direct concatenation
+    return init + cont;
+  }
+  window.mergeContinuationText = mergeContinuationText;
+
   function formatAssistantContent(text, userPrompt = '') {
     text = unwrapJsonContent(text);
     if (!text || !text.trim()) {
@@ -3554,23 +3594,38 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. Extract clean initial text
     let initialText = bubble.dataset.rawText || '';
     let matchedPrompt = '';
+    let matchedSessionIdx = -1;
 
-    // Match with active session to ensure 100% exact text and prompt parity
+    // Match with active session to ensure 100% exact text, prompt, and index parity
     if (activeSession && Array.isArray(activeSession.messages)) {
       if (initialText) {
-        const idx = activeSession.messages.findLastIndex(m => m.role === 'assistant' && (m.content === initialText || initialText.startsWith(m.content) || m.content.startsWith(initialText)));
-        if (idx >= 0) {
-          initialText = activeSession.messages[idx].content || initialText;
-          if (idx > 0 && activeSession.messages[idx - 1].role === 'user') {
-            matchedPrompt = activeSession.messages[idx - 1].content || '';
+        matchedSessionIdx = activeSession.messages.findLastIndex(m =>
+          m.role === 'assistant' && (
+            m.content === initialText ||
+            initialText.startsWith(m.content) ||
+            m.content.startsWith(initialText) ||
+            (initialText.length > 30 && m.content.includes(initialText.slice(0, 30)))
+          )
+        );
+        if (matchedSessionIdx >= 0) {
+          initialText = activeSession.messages[matchedSessionIdx].content || initialText;
+          const priorUser = activeSession.messages.slice(0, matchedSessionIdx).reverse().find(m =>
+            m.role === 'user' && m.content && !CONTINUATION_CMD_REGEX.test(m.content)
+          );
+          if (priorUser) {
+            matchedPrompt = priorUser.content || '';
           }
         }
-      } else {
-        const lastAssIdx = activeSession.messages.findLastIndex(m => m.role === 'assistant');
-        if (lastAssIdx >= 0) {
-          initialText = activeSession.messages[lastAssIdx].content || '';
-          if (lastAssIdx > 0 && activeSession.messages[lastAssIdx - 1].role === 'user') {
-            matchedPrompt = activeSession.messages[lastAssIdx - 1].content || '';
+      }
+      if (matchedSessionIdx === -1) {
+        matchedSessionIdx = activeSession.messages.findLastIndex(m => m.role === 'assistant');
+        if (matchedSessionIdx >= 0) {
+          if (!initialText) initialText = activeSession.messages[matchedSessionIdx].content || '';
+          const priorUser = activeSession.messages.slice(0, matchedSessionIdx).reverse().find(m =>
+            m.role === 'user' && m.content && !CONTINUATION_CMD_REGEX.test(m.content)
+          );
+          if (priorUser) {
+            matchedPrompt = priorUser.content || '';
           }
         }
       }
@@ -3593,14 +3648,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let originalPrompt = bubble.dataset.prompt || matchedPrompt || '';
     if (!originalPrompt && activeSession && Array.isArray(activeSession.messages)) {
       const prevUser = activeSession.messages.slice().reverse().find(m =>
-        m.role === 'user' && m.content && !/^\s*(@agent\s+)?(boost\s+)?(continue|continute|keep\s*going|go\s*on|more|next\s*part)\b/i.test(m.content)
+        m.role === 'user' && m.content && !CONTINUATION_CMD_REGEX.test(m.content)
       );
       if (prevUser) {
         originalPrompt = prevUser.content;
       }
     }
-    if (!originalPrompt) {
-      originalPrompt = lastUserPrompt || '';
+    if (!originalPrompt && lastUserPrompt && !CONTINUATION_CMD_REGEX.test(lastUserPrompt)) {
+      originalPrompt = lastUserPrompt;
     }
 
     // 2. Find or create isolated continuation section inside the bubble (above action bar)
@@ -3634,18 +3689,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusTextEl = contSection.querySelector('.cont-status-text');
 
     const cleanPrompt = (originalPrompt || '').replace(/^(@agent\s+[\w-]+|\/[\w-]+|@[\w-]+)\s*/i, '').trim();
+    const textSnippet = initialText.length > 400 ? '...' + initialText.slice(-400) : initialText;
     let continuationDirective = '';
     if (options && options.extraInstruction) {
       continuationDirective = cleanPrompt
-        ? `Continue generating the response to the user's prompt: "${cleanPrompt}" seamlessly from where you left off, incorporating these continuation instructions: "${options.extraInstruction}". Strictly maintain the identical topic, format, genre, and tone. Do not switch topics, do not repeat earlier text, and do not include meta-commentary:`
-        : `Continue the preceding response seamlessly from where you left off, incorporating these continuation instructions: "${options.extraInstruction}". Strictly maintain the identical topic, format, genre, and tone. Do not switch topics, do not repeat earlier text, and do not include meta-commentary:`;
+        ? `Continue generating the response to the user's prompt: "${cleanPrompt}" seamlessly from where you left off (preceding text ended with: "${textSnippet}"), incorporating these continuation instructions: "${options.extraInstruction}". Strictly maintain the identical topic, format, genre, and tone. Do not switch topics, do not repeat earlier text, and do not include meta-commentary:`
+        : `Continue the preceding response seamlessly from where you left off (preceding text ended with: "${textSnippet}"), incorporating these continuation instructions: "${options.extraInstruction}". Strictly maintain the identical topic, format, genre, and tone. Do not switch topics, do not repeat earlier text, and do not include meta-commentary:`;
     } else {
       continuationDirective = cleanPrompt
-        ? `Continue generating the response to the user's prompt: "${cleanPrompt}" directly from where you left off. Strictly maintain the exact same topic, genre, poetic or prose style, tone, and formatting. Do NOT switch to an unrelated topic. Do not repeat previous text, and do not add meta-commentary:`
-        : `Continue the response seamlessly directly from where you left off. Strictly maintain the exact same topic, genre, style, tone, and format. Do NOT switch to an unrelated topic. Do not repeat previous text, and do not add meta-commentary:`;
+        ? `Continue generating the response to the user's prompt: "${cleanPrompt}" directly from where you left off (preceding text ended with: "${textSnippet}"). Strictly maintain the exact same topic, genre, poetic or prose style, tone, and formatting. Do NOT switch to an unrelated topic. Do not repeat previous text, and do not add meta-commentary:`
+        : `Continue the response seamlessly directly from where you left off (preceding text ended with: "${textSnippet}"). Strictly maintain the exact same topic, genre, style, tone, and format. Do NOT switch to an unrelated topic. Do not repeat previous text, and do not add meta-commentary:`;
     }
 
     const continuationSysPrompt = `You are an expert assistant continuing an ongoing response. Your task is to continue the generation seamlessly from the exact word or line where it stopped. Strictly preserve the identical subject matter, genre, style, rhythm, and tone of the ongoing generation. Under NO circumstances should you change topic, abandon the previous subject, or switch into unprompted analysis. Do not repeat earlier lines or paragraphs, and do not include conversational preamble or apologies. Continue immediately:`;
+
+    const modelToPreserve = bubble.dataset.model || (activeSession && matchedSessionIdx >= 0 ? activeSession.messages[matchedSessionIdx]?.model : null) || null;
 
     try {
       await streamAiChat(continuationDirective, continuationSysPrompt, {
@@ -3653,6 +3711,9 @@ document.addEventListener('DOMContentLoaded', () => {
         bubbleContent: streamTargetEl,
         initialText: initialText,
         originalPrompt: originalPrompt,
+        extraInstruction: options.extraInstruction || '',
+        targetMsgIndex: matchedSessionIdx,
+        forceModel: modelToPreserve,
         isContinuation: true,
         isBoost: isBoostMode,
         panel: isBoostMode ? { id: 'reasoning', name: 'Deep Reasoning Boost (Continuation)' } : undefined,
@@ -6136,6 +6197,10 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
       resolvedOllamaModel = sweetSpot || bestInstalled || cachedHardwareModel || 'qwen2.5:7b';
     }
 
+    if (options && options.isContinuation && options.forceModel && availableOllamaModels.includes(options.forceModel)) {
+      resolvedOllamaModel = options.forceModel;
+    }
+
     if (hasImages && selectedVisionModel) {
       resolvedOllamaModel = selectedVisionModel;
     }
@@ -6191,6 +6256,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
     if (chatMessages && !assistantBubble) {
       assistantBubble = document.createElement('div');
       assistantBubble.className = 'msg-bubble assistant-bubble streaming';
+      assistantBubble.dataset.model = resolvedOllamaModel;
       assistantBubble.innerHTML = `
         <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
           <span>${authorIcon}</span> <span>${authorDisplayTitle}</span>
@@ -6256,17 +6322,37 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
       if (options && options.isContinuation) {
         // Strict continuation mode: preserve exact prompt, topic, genre, and text context
         conversationMessages.length = 0;
-        conversationMessages.push({ role: 'system', content: effectiveSysPrompt });
 
         const targetInitial = (options.initialText || '').trim();
         const targetPrompt = (options.originalPrompt || '').trim();
+        const extraInstr = (options.extraInstruction || '').trim();
 
-        let includedHistory = false;
+        // 1. Continuation System Prompt: strictly preserves topic, genre, rhythm, and style
+        let contSys = (effectiveSysPrompt && effectiveSysPrompt.trim())
+          ? effectiveSysPrompt
+          : `You are an expert assistant continuing an ongoing response. Your task is to continue the generation seamlessly from the exact word or line where it stopped. Strictly preserve the identical subject matter, genre, style, rhythm, and tone of the ongoing generation. Under NO circumstances should you change topic, abandon the previous subject, or switch into unprompted analysis. Do not repeat earlier lines or paragraphs, and do not include conversational preamble or apologies. Continue immediately:`;
+
+        if (targetPrompt && !contSys.includes(targetPrompt)) {
+          contSys += `\n\n[Context: You are continuing the response to this user request: "${targetPrompt}". Maintain 100% fidelity to this exact topic and style.]`;
+        }
+        if (extraInstr) {
+          contSys += `\n[Continuation instructions: "${extraInstr}". Incorporate seamlessly while maintaining topic and style.]`;
+        }
+        conversationMessages.push({ role: 'system', content: contSys });
+
+        // 2. Multi-turn history up to the target message
+        let targetIdx = (typeof options.targetMsgIndex === 'number' && options.targetMsgIndex >= 0)
+          ? options.targetMsgIndex
+          : -1;
         if (activeSession && Array.isArray(activeSession.messages) && activeSession.messages.length > 0) {
-          let targetIdx = -1;
-          if (targetInitial) {
+          if (targetIdx === -1 && targetInitial) {
             targetIdx = activeSession.messages.findLastIndex(m =>
-              m.role === 'assistant' && (m.content === targetInitial || targetInitial.startsWith(m.content) || m.content.startsWith(targetInitial))
+              m.role === 'assistant' && (
+                m.content === targetInitial ||
+                targetInitial.startsWith(m.content) ||
+                m.content.startsWith(targetInitial) ||
+                (targetInitial.length > 30 && m.content.includes(targetInitial.slice(0, 30)))
+              )
             );
           }
           if (targetIdx === -1) {
@@ -6274,37 +6360,38 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
           }
 
           if (targetIdx >= 0) {
-            includedHistory = true;
             const historySlice = activeSession.messages.slice(0, targetIdx);
-            const windowed = historySlice.slice(-16);
+            const windowed = historySlice.slice(-10);
             for (const m of windowed) {
-              if (m.role === 'user' && m.content) {
+              if (m.role === 'user' && m.content && !CONTINUATION_CMD_REGEX.test(m.content)) {
                 conversationMessages.push({ role: 'user', content: m.content });
               } else if (m.role === 'assistant' && m.content) {
                 conversationMessages.push({ role: 'assistant', content: m.content });
               }
             }
-            conversationMessages.push({ role: 'assistant', content: targetInitial || activeSession.messages[targetIdx].content });
           }
         }
 
-        if (!includedHistory) {
-          if (targetPrompt) {
-            conversationMessages.push({ role: 'user', content: targetPrompt });
-          } else {
-            conversationMessages.push({ role: 'user', content: 'Please continue the preceding response.' });
-          }
-          if (targetInitial) {
-            conversationMessages.push({ role: 'assistant', content: targetInitial });
-          }
+        // 3. Ensure the requesting user prompt is present immediately prior to the assistant turn
+        const lastMsgRole = conversationMessages[conversationMessages.length - 1]?.role;
+        if (lastMsgRole !== 'user') {
+          conversationMessages.push({
+            role: 'user',
+            content: targetPrompt || 'Please continue the preceding response.'
+          });
         }
 
-        // Guarantee message alternation: ensure the last message before messagePayload is role: 'assistant'
-        if (conversationMessages.length >= 2 && conversationMessages[conversationMessages.length - 1].role === 'user') {
-          conversationMessages.push({ role: 'assistant', content: targetInitial || 'Proceeding.' });
-        }
+        // 4. Place the assistant text to be continued as the FINAL message in the array!
+        // In Ollama's native chat engine, ending with role: 'assistant' performs prefix continuation.
+        // It streams ONLY new continued tokens directly from the exact stopping point.
+        const assistantTextToContinue = (activeSession && targetIdx >= 0 && activeSession.messages[targetIdx]?.content)
+          ? activeSession.messages[targetIdx].content
+          : targetInitial;
 
-        conversationMessages.push(messagePayload);
+        conversationMessages.push({
+          role: 'assistant',
+          content: assistantTextToContinue
+        });
       } else {
         // Add multi-turn context from current active session
         if (activeSession && Array.isArray(activeSession.messages)) {
@@ -6490,6 +6577,25 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
                 }
               } catch (retryErr) {
                 console.warn('[WATCHDOG] Retry fetch error:', retryErr);
+              }
+            }
+
+            if (!candidateRes.ok && candidateRes.status === 400 && options && options.isContinuation && activeMessages[activeMessages.length - 1]?.role === 'assistant') {
+              console.warn(`[WATCHDOG] Endpoint ${ep}/api/chat returned HTTP 400 with trailing assistant message. Retrying with trailing user continuation directive...`);
+              const altMessages = [...activeMessages, messagePayload];
+              const retryRes = await fetch(`${ep}/api/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  model: resolvedOllamaModel,
+                  messages: altMessages,
+                  stream: streamMode,
+                  options: currentOllamaOptions
+                }),
+                signal: currentAbortController ? currentAbortController.signal : undefined
+              });
+              if (retryRes.ok) {
+                candidateRes = retryRes;
               }
             }
 
@@ -6987,7 +7093,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
       if (assistantBubble) {
         assistantBubble.classList.remove('streaming');
         const rawFinal = (options && options.isContinuation && options.initialText)
-          ? (options.initialText.trimEnd() + '\n\n' + turnResponse.trim())
+          ? mergeContinuationText(options.initialText, turnResponse)
           : fullResponse;
         const finalMergedText = unwrapJsonContent(rawFinal);
         assistantBubble.dataset.rawText = finalMergedText;
@@ -6995,6 +7101,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
           ? options.originalPrompt
           : userPrompt;
         assistantBubble.dataset.prompt = promptToSave;
+        assistantBubble.dataset.model = resolvedOllamaModel;
 
         if (options && options.isContinuation) {
           if (options.continuationSection) {
@@ -7019,18 +7126,21 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
       }
       if (activeSession && (fullResponse || turnResponse) && (fullResponse.trim() || turnResponse.trim())) {
         const rawContentToPersist = (options && options.isContinuation && options.initialText)
-          ? (options.initialText.trimEnd() + '\n\n' + turnResponse.trim())
+          ? mergeContinuationText(options.initialText, turnResponse)
           : fullResponse;
         const finalContentToPersist = unwrapJsonContent(rawContentToPersist);
         if (options && options.isContinuation) {
-          const existingIdx = activeSession.messages.findLastIndex(m => m.role === 'assistant');
+          const existingIdx = (typeof options.targetMsgIndex === 'number' && options.targetMsgIndex >= 0)
+            ? options.targetMsgIndex
+            : activeSession.messages.findLastIndex(m => m.role === 'assistant');
           if (existingIdx !== -1) {
             activeSession.messages[existingIdx].content = finalContentToPersist;
+            activeSession.messages[existingIdx].model = resolvedOllamaModel;
           } else {
-            activeSession.messages.push({ role: 'assistant', content: finalContentToPersist, model: modelToUse });
+            activeSession.messages.push({ role: 'assistant', content: finalContentToPersist, model: resolvedOllamaModel });
           }
         } else {
-          activeSession.messages.push({ role: 'assistant', content: finalContentToPersist, model: modelToUse });
+          activeSession.messages.push({ role: 'assistant', content: finalContentToPersist, model: resolvedOllamaModel });
         }
         saveChatHistory();
       }
@@ -7087,7 +7197,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
           if (assistantBubble) {
             assistantBubble.classList.remove('streaming');
             const rawMerged = (options && options.isContinuation && options.initialText)
-              ? (options.initialText.trimEnd() + '\n\n' + text.trim())
+              ? mergeContinuationText(options.initialText, text)
               : text;
             const finalMerged = unwrapJsonContent(rawMerged);
             assistantBubble.dataset.rawText = finalMerged;
@@ -7095,6 +7205,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
               ? options.originalPrompt
               : userPrompt;
             assistantBubble.dataset.prompt = promptToSave;
+            assistantBubble.dataset.model = resolvedOllamaModel;
 
             if (options && options.isContinuation) {
               if (options.continuationSection) options.continuationSection.remove();
@@ -7109,18 +7220,21 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
           }
           if (activeSession) {
             const rawFinalTxt = (options && options.isContinuation && options.initialText)
-              ? (options.initialText.trimEnd() + '\n\n' + text.trim())
+              ? mergeContinuationText(options.initialText, text)
               : text;
             const finalTxt = unwrapJsonContent(rawFinalTxt);
             if (options && options.isContinuation) {
-              const existingIdx = activeSession.messages.findLastIndex(m => m.role === 'assistant');
+              const existingIdx = (typeof options.targetMsgIndex === 'number' && options.targetMsgIndex >= 0)
+                ? options.targetMsgIndex
+                : activeSession.messages.findLastIndex(m => m.role === 'assistant');
               if (existingIdx !== -1) {
                 activeSession.messages[existingIdx].content = finalTxt;
+                activeSession.messages[existingIdx].model = resolvedOllamaModel;
               } else {
-                activeSession.messages.push({ role: 'assistant', content: finalTxt, model: modelToUse });
+                activeSession.messages.push({ role: 'assistant', content: finalTxt, model: resolvedOllamaModel });
               }
             } else {
-              activeSession.messages.push({ role: 'assistant', content: finalTxt, model: modelToUse });
+              activeSession.messages.push({ role: 'assistant', content: finalTxt, model: resolvedOllamaModel });
             }
             saveChatHistory();
           }
@@ -7914,8 +8028,11 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
     const lower = cmd.toLowerCase();
     const parsedMulti = parseMultiAgentDirectives(cmd);
 
-    lastUserPrompt = cmd;
-    window.lastUserPrompt = cmd;
+    const isContinuationCmd = CONTINUATION_CMD_REGEX.test(cmd);
+    if (!isContinuationCmd) {
+      lastUserPrompt = cmd;
+      window.lastUserPrompt = cmd;
+    }
 
     // Chat history tracking: ensure active session exists
     if (!currentSessionId) {
@@ -7945,11 +8062,10 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
     }
 
     // Continuation Directives: /continue, @agent continue, /boost continue, /boost continute, /more, etc.
-    const isContinuationCmd = /^\s*(@agent\s+)?(boost\s+)?(continue|continute|keep\s*going|go\s*on|more|next\s*part)\b/i.test(cmd);
     if (isContinuationCmd) {
       const isBoost = /boost\b/i.test(cmd);
       const extraInstructions = cmd
-        .replace(/^(@agent\s+)?(boost\s+)?(continue|continute|keep\s*going|go\s*on|more|next\s*part)\s*:?\s*/i, '')
+        .replace(CONTINUATION_STRIP_REGEX, '')
         .trim();
 
       termLog(`[CONTINUE] ⚡ Continuing prior assistant response${isBoost ? ' with Deep Boost' : ''}...`, 'info');
@@ -7973,16 +8089,20 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
         if (lastAssMsg) {
           termLog('⚡ Resuming continuation of saved session response...', 'info');
           const lastAssIdx = activeSession.messages.indexOf(lastAssMsg);
-          const prevUserMsg = activeSession.messages.slice(0, lastAssIdx).reverse().find(m => m.role === 'user');
+          const prevUserMsg = activeSession.messages.slice(0, lastAssIdx).reverse().find(m => m.role === 'user' && m.content && !CONTINUATION_CMD_REGEX.test(m.content));
           const originalPrompt = prevUserMsg ? prevUserMsg.content : (lastUserPrompt || 'Continue generation');
           const cleanPrompt = originalPrompt.replace(/^(@agent\s+[\w-]+|\/[\w-]+|@[\w-]+)\s*/i, '').trim();
+          const textSnippet = lastAssMsg.content.length > 400 ? '...' + lastAssMsg.content.slice(-400) : lastAssMsg.content;
           const continuationDirective = extraInstructions
-            ? `Continue generating the response to the user's prompt: "${cleanPrompt}" seamlessly from where you left off, incorporating these continuation instructions: "${extraInstructions}". Strictly maintain the identical topic, format, genre, and tone. Do not switch topics, do not repeat earlier text, and do not include meta-commentary:`
-            : `Continue generating the response to the user's prompt: "${cleanPrompt}" directly from where you left off. Strictly maintain the exact same topic, genre, poetic or prose style, tone, and formatting. Do NOT switch to an unrelated topic. Do not repeat previous text, and do not add meta-commentary:`;
+            ? `Continue generating the response to the user's prompt: "${cleanPrompt}" seamlessly from where you left off (preceding text ended with: "${textSnippet}"), incorporating these continuation instructions: "${extraInstructions}". Strictly maintain the identical topic, format, genre, and tone. Do not switch topics, do not repeat earlier text, and do not include meta-commentary:`
+            : `Continue generating the response to the user's prompt: "${cleanPrompt}" directly from where you left off (preceding text ended with: "${textSnippet}"). Strictly maintain the exact same topic, genre, poetic or prose style, tone, and formatting. Do NOT switch to an unrelated topic. Do not repeat previous text, and do not add meta-commentary:`;
           const continuationSysPrompt = `You are an expert assistant continuing an ongoing response. Your task is to continue the generation seamlessly from the exact word or line where it stopped. Strictly preserve the identical subject matter, genre, style, rhythm, and tone of the ongoing generation. Under NO circumstances should you change topic or switch into unprompted analysis. Do not repeat earlier lines or paragraphs, and do not include conversational preamble or apologies. Continue immediately:`;
           await streamAiChat(continuationDirective, continuationSysPrompt, {
             initialText: lastAssMsg.content,
             originalPrompt: originalPrompt,
+            extraInstruction: extraInstructions,
+            targetMsgIndex: lastAssIdx,
+            forceModel: lastAssMsg.model || null,
             isContinuation: true,
             isBoost: isBoost,
             panel: isBoost ? { id: 'reasoning', name: 'Deep Reasoning Boost (Continuation)' } : undefined,
@@ -9356,15 +9476,41 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     // 4.1 Deep Thinking Boost Directive (@agent boost, /boost, @boost)
     if (lower === '@agent boost' || lower.startsWith('@agent boost ') || lower === '/boost' || lower.startsWith('/boost ') || lower === '@boost' || lower.startsWith('@boost ')) {
       const boostQuery = cmd.replace(/^(@agent\s+boost|\/boost|@boost)\s*/i, '').trim();
-      const isContinuationWord = /^(continue|continute|keep\s*going|go\s*on|more|next\s*part)\b/i.test(boostQuery);
+      const isContinuationWord = CONTINUATION_CMD_REGEX.test(boostQuery) || CONTINUATION_CMD_REGEX.test(cmd);
       if (isContinuationWord) {
-        const extraText = boostQuery.replace(/^(continue|continute|keep\s*going|go\s*on|more|next\s*part)\s*:?\s*/i, '').trim();
+        const extraText = boostQuery.replace(CONTINUATION_STRIP_REGEX, '').trim();
         const bubbles = Array.from(document.querySelectorAll('.assistant-bubble, .msg-bubble.assistant-bubble'));
         const lastBubble = bubbles.length > 0 ? bubbles[bubbles.length - 1] : null;
         if (lastBubble) {
           await window.continueAssistantMessage(lastBubble, { isBoost: true, extraInstruction: extraText });
           if (currentAttachments.length > 0) clearAllAttachments();
           return;
+        } else if (activeSession && Array.isArray(activeSession.messages)) {
+          const lastAssMsg = activeSession.messages.findLast(m => m.role === 'assistant');
+          if (lastAssMsg) {
+            const lastAssIdx = activeSession.messages.indexOf(lastAssMsg);
+            const prevUserMsg = activeSession.messages.slice(0, lastAssIdx).reverse().find(m => m.role === 'user' && m.content && !CONTINUATION_CMD_REGEX.test(m.content));
+            const originalPrompt = prevUserMsg ? prevUserMsg.content : (lastUserPrompt || 'Continue generation');
+            const cleanPrompt = originalPrompt.replace(/^(@agent\s+[\w-]+|\/[\w-]+|@[\w-]+)\s*/i, '').trim();
+            const textSnippet = lastAssMsg.content.length > 400 ? '...' + lastAssMsg.content.slice(-400) : lastAssMsg.content;
+            const continuationDirective = extraText
+              ? `Continue generating the response to the user's prompt: "${cleanPrompt}" seamlessly from where you left off (preceding text ended with: "${textSnippet}"), incorporating these continuation instructions: "${extraText}". Strictly maintain the identical topic, format, genre, and tone. Do not switch topics, do not repeat earlier text, and do not include meta-commentary:`
+              : `Continue generating the response to the user's prompt: "${cleanPrompt}" directly from where you left off (preceding text ended with: "${textSnippet}"). Strictly maintain the exact same topic, genre, poetic or prose style, tone, and formatting. Do NOT switch to an unrelated topic. Do not repeat previous text, and do not add meta-commentary:`;
+            const continuationSysPrompt = `You are an expert assistant continuing an ongoing response. Your task is to continue the generation seamlessly from the exact word or line where it stopped. Strictly preserve the identical subject matter, genre, style, rhythm, and tone of the ongoing generation. Under NO circumstances should you change topic or switch into unprompted analysis. Do not repeat earlier lines or paragraphs, and do not include conversational preamble or apologies. Continue immediately:`;
+            await streamAiChat(continuationDirective, continuationSysPrompt, {
+              initialText: lastAssMsg.content,
+              originalPrompt: originalPrompt,
+              extraInstruction: extraText,
+              targetMsgIndex: lastAssIdx,
+              forceModel: lastAssMsg.model || null,
+              isContinuation: true,
+              isBoost: true,
+              panel: { id: 'reasoning', name: 'Deep Reasoning Boost (Continuation)' },
+              maxTokens: 65536
+            });
+            if (currentAttachments.length > 0) clearAllAttachments();
+            return;
+          }
         }
       }
       let queryToRun = boostQuery;
