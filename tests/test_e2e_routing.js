@@ -41,6 +41,7 @@ let chatSessions = [
 
 // Evaluate function in sandbox
 const shouldRouteToWeb = new Function('currentSettings', 'activeOllamaModel', 'chatSessions', 'currentSessionId', `
+  function isImageGenerationDirective() { return { isImage: false, cleanPrompt: '' }; }
   ${shouldRouteToWebSrc}
   return shouldRouteToWeb;
 `)(currentSettings, activeOllamaModel, chatSessions, currentSessionId);
@@ -76,6 +77,20 @@ const testCases = [
   { q: '/boost write me a short book about home', expectWeb: false },
   { q: '@agent boost write me a short book about home', expectWeb: false },
   { q: '@boost explain general relativity', expectWeb: false },
+
+  // 5b. Local system/utility directives (Intercepted and never routed to web)
+  { q: '@agent sys-info', expectWeb: false },
+  { q: '@agent sysinfo', expectWeb: false },
+  { q: '/sys-info', expectWeb: false },
+  { q: '/sysinfo', expectWeb: false },
+  { q: '@agent help', expectWeb: false },
+  { q: '/help', expectWeb: false },
+  { q: '@agent update', expectWeb: false },
+  { q: '/update', expectWeb: false },
+  { q: '@agent benchmark', expectWeb: false },
+  { q: '/benchmark', expectWeb: false },
+  { q: '@agent audit-menus', expectWeb: false },
+  { q: '/audit-menus', expectWeb: false },
 
   // 6. Explicit @commands and directives for search (Route to web)
   { q: '@agent search quantum computing breakthroughs 2026', expectWeb: true },
@@ -115,6 +130,7 @@ const freshChatSessions = [
   }
 ];
 const shouldRouteToWebFresh = new Function('currentSettings', 'activeOllamaModel', 'chatSessions', 'currentSessionId', `
+  function isImageGenerationDirective() { return { isImage: false, cleanPrompt: '' }; }
   ${shouldRouteToWebSrc}
   return shouldRouteToWeb;
 `)(currentSettings, activeOllamaModel, freshChatSessions, freshSessionId);

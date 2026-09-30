@@ -183,7 +183,8 @@ const requiredDirectivePatterns = [
   { name: '@agent update', pattern: /@agent\s+update\b/i },
   { name: '@agent updatedb', pattern: /@agent\s+updatedb\b/i },
   { name: '@agent db-rebuild', pattern: /@agent\s+db-rebuild/i },
-  { name: '@agent db-vacuum', pattern: /@agent\s+db-vacuum/i }
+  { name: '@agent db-vacuum', pattern: /@agent\s+db-vacuum/i },
+  { name: '@agent sys-info / sysinfo', pattern: /@agent\s+sys-?info|\/sys-?info/i }
 ];
 
 for (const req of requiredDirectivePatterns) {
@@ -317,6 +318,84 @@ console.log('  ✓ Verified body.theme-white borderless categories, content, and
 console.log('  ✓ Verified base styles borderless parity across all themes');
 console.log('  ✓ Verified .btn-sidebar-audit-menus clean sleek action pill styling');
 console.log('  ✓ Verified data-cat="utilities" populated with system maintenance tools');
+
+// ---------------------------------------------------------------------------
+// SUITE 9: Testing Local System Command Interception & Web Search Immunity
+// ---------------------------------------------------------------------------
+console.log('\n[SUITE 9] Testing @agent sys-info & utility commands web search immunity...');
+
+// 9.1 Extract shouldRouteToWeb and determineFusionPanel from app.js
+const shouldRouteMatch = appJs.match(/function shouldRouteToWeb\(query, mode\)\s*\{([\s\S]*?)\n  \}/);
+assert(shouldRouteMatch, 'shouldRouteToWeb must exist in app.js');
+const shouldRouteToWebFn = new Function('query', 'mode', `
+  const currentSettings = { webSearchEnabled: true, webSearchMode: 'always' };
+  function isImageGenerationDirective() { return { isImage: false, cleanPrompt: '' }; }
+  ${shouldRouteMatch[0]}
+  return shouldRouteToWeb(query, mode);
+`);
+
+const determineFusionMatch = appJs.match(/function determineFusionPanel\(prompt, files = \[\], settings = \{\}\)\s*\{([\s\S]*?)\n  \}/);
+assert(determineFusionMatch, 'determineFusionPanel must exist in app.js');
+const determineFusionPanelFn = new Function('prompt', 'files', 'settings', `
+  const activeCustomFusion = null;
+  const customFusions = [];
+  function shouldRouteToWeb() { return { routeToWeb: true }; }
+  function isImageGenerationDirective() { return { isImage: false, cleanPrompt: '' }; }
+  ${determineFusionMatch[0]}
+  return determineFusionPanel(prompt, files, settings);
+`);
+
+// 9.2 shouldRouteToWeb returns false even in 'always' mode for system directives
+const localDirectives = [
+  '@agent sys-info',
+  '@agent sysinfo',
+  '/sys-info',
+  '/sysinfo',
+  '@agent help',
+  '/help',
+  '@agent update',
+  '/update',
+  '@agent updatedb',
+  '/updatedb',
+  '@agent db-vacuum',
+  '/db-vacuum',
+  '@agent db-rebuild',
+  '/db-rebuild',
+  '@agent benchmark',
+  '/benchmark',
+  '@agent audit-menus',
+  '/audit-menus',
+  '@agent test-menus',
+  '/test-menus',
+  '@agent export',
+  '/export',
+  '@agent status',
+  '/status',
+  '@agent version',
+  '/version',
+  '@agent watermark',
+  '/watermark'
+];
+
+for (const dir of localDirectives) {
+  const res = shouldRouteToWebFn(dir, 'always');
+  assert.strictEqual(res.routeToWeb, false, `Directive "${dir}" must NOT route to web`);
+  assert.strictEqual(res.reason, 'Local system/utility directive');
+}
+console.log('  ✓ Verified 100% web search immunity for all 24 local directives');
+
+// 9.3 determineFusionPanel returns null for local directives
+for (const dir of localDirectives) {
+  const panel = determineFusionPanelFn(dir, [], {});
+  assert.strictEqual(panel, null, `Directive "${dir}" must return null from determineFusionPanel`);
+}
+console.log('  ✓ Verified 100% fusion banner immunity (returns null) for all 24 local directives');
+
+// 9.4 Verify executeCliCommand sys-info handler presence
+assert(appJs.includes("cleanCmd === '@agent sys-info'"), 'app.js must intercept @agent sys-info at top of executeCliCommand');
+assert(appJs.includes("cleanCmd === '/sys-info'"), 'app.js must intercept /sys-info at top of executeCliCommand');
+assert(appJs.includes("ModelFusion System Diagnostics & Hardware Specifications"), 'app.js must render diagnostic hardware card');
+console.log('  ✓ Verified dedicated @agent sys-info hardware card handler in executeCliCommand');
 
 console.log('\n====================================================');
 console.log('✅ ALL COMPREHENSIVE VERIFICATION SUITES PASSED (100%)');

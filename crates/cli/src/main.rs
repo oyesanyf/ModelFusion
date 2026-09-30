@@ -2515,6 +2515,11 @@ where
                 args[1] = "som".to_string();
                 return args;
             }
+            if (sub_clean == "sys-info" || sub_clean == "sysinfo") && !has_combinator {
+                args.remove(1);
+                args[1] = "--sys-info".to_string();
+                return args;
+            }
             if sub_clean == "arxiv" && !has_combinator {
                 args.remove(1);
                 args[1] = "--arxiv".to_string();
@@ -2619,7 +2624,7 @@ where
         "updatedb" => {
             args[1] = "--updatedb".to_string();
         }
-        "sys-info" | "sysinfo" => {
+        "sys-info" | "sysinfo" | "/sys-info" | "/sysinfo" | "@agent/sys-info" | "@agent/sysinfo" | "@agent:sys-info" | "@agent:sysinfo" | "@sys-info" | "@sysinfo" => {
             args[1] = "--sys-info".to_string();
         }
         "active-models" | "active-model" => {
@@ -8369,8 +8374,8 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 return;
             }
 
-            // ── ModelFusion Catalog & System Status (/api/modelfusion/status, /api/status & /api/models/count) ──
-            if request_path == "/api/modelfusion/status" || request_path == "/api/status" || request_path == "/api/models/count" {
+            // ── ModelFusion Catalog & System Status (/api/modelfusion/status, /api/status, /api/models/count, /api/system/info, /api/sys-info) ──
+            if request_path == "/api/modelfusion/status" || request_path == "/api/status" || request_path == "/api/models/count" || request_path == "/api/system/info" || request_path == "/api/sys-info" {
                 let resolved_db = resolve_db_path(Some(&db_path_str));
                 let total_models = if let Ok(db) = db::HuggingFaceModelDatabase::open(&resolved_db) {
                     if let Ok(conn) = db.connect() {
@@ -8413,6 +8418,16 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         "active_hardware_model": active_hw_model,
                         "calibrated_sweet_spot": sweet_spot,
                         "db_path": resolved_db.to_string_lossy().to_string(),
+                        "cpu_name": sys.cpu_name,
+                        "logical_cores": sys.logical_cores,
+                        "total_ram_gb": (sys.total_ram_gb * 100.0).round() / 100.0,
+                        "free_ram_gb": (sys.free_ram_gb * 100.0).round() / 100.0,
+                        "gpu_name": sys.gpu_name,
+                        "total_vram_mb": sys.total_vram_mb,
+                        "free_vram_mb": sys.free_vram_mb,
+                        "has_gpu": sys.has_gpu,
+                        "free_disk_gb": (sys.free_disk_gb * 100.0).round() / 100.0,
+                        "os_version": std::env::consts::OS,
                         "hardware": {
                             "cpu_name": sys.cpu_name,
                             "logical_cores": sys.logical_cores,
@@ -16926,6 +16941,18 @@ public class Pr {
 
         let res2 = preprocess_cli_args(["cli", "sysinfo"]);
         assert_eq!(res2, vec!["cli".to_string(), "--sys-info".to_string()]);
+
+        let res3 = preprocess_cli_args(["cli", "@agent", "sys-info"]);
+        assert_eq!(res3, vec!["cli".to_string(), "--sys-info".to_string()]);
+
+        let res4 = preprocess_cli_args(["cli", "@agent", "sysinfo"]);
+        assert_eq!(res4, vec!["cli".to_string(), "--sys-info".to_string()]);
+
+        let res5 = preprocess_cli_args(["cli", "/sys-info"]);
+        assert_eq!(res5, vec!["cli".to_string(), "--sys-info".to_string()]);
+
+        let res6 = preprocess_cli_args(["cli", "/sysinfo"]);
+        assert_eq!(res6, vec!["cli".to_string(), "--sys-info".to_string()]);
     }
 
     #[test]
