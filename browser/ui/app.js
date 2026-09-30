@@ -2367,8 +2367,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const currentActive = (settings && settings.activeModel) || activeOllamaModel || 'modelfusion_auto';
     if (!currentActive || currentActive === 'modelfusion_auto') {
-      const sweetSpot = pickBestInstalledOllamaModel(availableOllamaModels) || window.hardwareOptimalModel || 'gemma2:9b';
-      const companion = availableOllamaModels.find(m => m !== sweetSpot && !m.includes('vl') && !m.includes('vision'))
+      const sweetSpot = window.consensusPrimaryModel || pickBestInstalledOllamaModel(availableOllamaModels) || window.hardwareOptimalModel || 'gemma2:9b';
+      const companion = window.consensusCompanionModel || availableOllamaModels.find(m => m !== sweetSpot && !m.includes('vl') && !m.includes('vision'))
         || (sweetSpot.includes('9b') ? 'gemma2:2b' : (sweetSpot.includes('7b') ? 'deepseek-r1:1.5b' : 'qwen2.5:7b'));
       return {
         name: 'Sweet Spot Multi-Model Adaptive Consensus',
@@ -3925,6 +3925,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!data) return;
     if (data.active_hardware_model) cachedHardwareModel = data.active_hardware_model;
     if (data.hardware) cachedHardwareStats = data.hardware;
+    if (data.hardware && typeof data.hardware.free_vram_mb === 'number') {
+      window.hardwareGpuVramMb = data.hardware.free_vram_mb;
+    }
+    if (data.calibrated_sweet_spot) {
+      window.calibratedSweetSpotModel = data.calibrated_sweet_spot;
+      window.hardwareOptimalModel = data.calibrated_sweet_spot;
+    }
+    if (data.consensus && data.consensus.primary) {
+      window.consensusPrimaryModel = data.consensus.primary;
+      window.consensusCompanionModel = data.consensus.companion;
+    }
 
     const count = data.total_models || 6438;
     const hwModel = data.active_hardware_model || activeOllamaModel || 'qwen2.5:7b';
@@ -4953,9 +4964,9 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
     const isFusionMode = modelToUse === 'modelfusion_auto' || modelToUse === 'fast_fusion' || modelToUse === 'deep_reasoning';
     let resolvedOllamaModel = 'qwen2.5:7b';
     const bestInstalled = pickBestInstalledOllamaModel(availableOllamaModels);
-    const sweetSpot = bestInstalled || window.hardwareOptimalModel || 'gemma2:9b';
-    const companion = availableOllamaModels.find(m => m !== sweetSpot && !m.includes('vl') && !m.includes('vision'))
-      || (sweetSpot.includes('9b') ? 'gemma2:2b' : (sweetSpot.includes('7b') ? 'deepseek-r1:1.5b' : 'qwen2.5:7b'));
+    const sweetSpot = (modelToUse === 'modelfusion_auto' && window.consensusPrimaryModel) ? window.consensusPrimaryModel : (bestInstalled || window.hardwareOptimalModel || 'gemma2:9b');
+    const companion = (modelToUse === 'modelfusion_auto' && window.consensusCompanionModel) ? window.consensusCompanionModel : (availableOllamaModels.find(m => m !== sweetSpot && !m.includes('vl') && !m.includes('vision'))
+      || (sweetSpot.includes('9b') ? 'gemma2:2b' : (sweetSpot.includes('7b') ? 'deepseek-r1:1.5b' : 'qwen2.5:7b')));
 
     if (activeOllamaModel && activeOllamaModel !== 'modelfusion_auto' && activeOllamaModel !== 'fast_fusion' && activeOllamaModel !== 'deep_reasoning') {
       resolvedOllamaModel = activeOllamaModel;
