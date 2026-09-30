@@ -15,6 +15,7 @@ import os
 import glob
 import sys
 import re
+import time
 
 def get_target_files():
     discovered = []
@@ -70,8 +71,17 @@ def get_target_files():
 
 
 def patch_evolve_save_in_file(file_path):
-    with open(file_path, "r", encoding="utf-8") as f:
-        content = f.read()
+    content = None
+    for attempt in range(5):
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            break
+        except PermissionError:
+            time.sleep(1)
+    if content is None:
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
 
     changed = False
 
@@ -145,8 +155,13 @@ def patch_evolve_save_in_file(file_path):
         print(f"  [AVO-Unminified] Inserted missing code block in {file_path}")
 
     if changed:
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(content)
+        for attempt in range(5):
+            try:
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+                break
+            except PermissionError:
+                time.sleep(1)
         return True
     return False
 

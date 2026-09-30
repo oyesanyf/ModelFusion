@@ -40,11 +40,11 @@ for dst in destinations:
         shutil.copy2(src, dst)
         match = (get_sha256(dst) == src_hash)
         print(f"[{'MATCH' if match else 'FAIL'}] {dst}")
-    except PermissionError:
+    except (PermissionError, OSError) as e:
         if os.path.exists(dst) and get_sha256(dst) == src_hash:
             print(f"[MATCH (File in use, hash matched)] {dst}")
         else:
-            print(f"[WARN: Locked by running process] {dst}")
+            print(f"[WARN: Locked by running process] {dst} ({e})")
 
 # Mirror browser UI files
 ui_dst = os.path.join(localappdata, r"HugOS Browser\ui")

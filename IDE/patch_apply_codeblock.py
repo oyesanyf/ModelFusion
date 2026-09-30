@@ -367,7 +367,8 @@ def patch_extension_js(file_path):
 
     # Validate syntax with node --check
     try:
-        chk = subprocess.run(["node", "--check", file_path], capture_output=True, text=True)
+        node_bin = r"D:\tools\nodejs\node.exe" if os.path.exists(r"D:\tools\nodejs\node.exe") else "node"
+        chk = subprocess.run([node_bin, "--check", file_path], capture_output=True, text=True)
         if chk.returncode != 0:
             print(f"  [ERROR] Syntax check failed for {file_path}:\n{chk.stderr}")
             return False

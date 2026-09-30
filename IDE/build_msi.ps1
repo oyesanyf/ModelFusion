@@ -25,8 +25,8 @@ Write-Host "--------------------------------------------------------" -Foregroun
 Write-Host "[START] Starting HugOS IDE Signed MSI Packaging Process" -ForegroundColor Green
 Write-Host "--------------------------------------------------------" -ForegroundColor Green
 
-# 0. Terminate any background HugOS or cliide processes to prevent locked file errors
-Stop-Process -Name HugOS, cliide -Force -ErrorAction SilentlyContinue
+# 0. Terminate any background HugOS, cliide, or stale wix processes to prevent locked file errors
+Stop-Process -Name HugOS, cliide, wix, wixnative -Force -ErrorAction SilentlyContinue
 
 # 1. Verify VSCode-win32-x64 directory exists
 if (-not (Test-Path $vsCodePackDir)) {
@@ -851,7 +851,7 @@ Write-Host "[INFO] Signing ModelFusion custom binaries (bin directory only)..." 
 # IMPORTANT: Do NOT sign Electron binaries, native Node modules (.node), or official VS Code DLLs.
 # - Signing official VS Code native modules (.node) with an untrusted self-signed certificate causes
 #   Windows Defender / Smart App Control to flag untrusted code within Microsoft-signed HugOS.exe and block them (e.g. keymapping.node).
-$filesToSign = Get-ChildItem -Path (Join-Path $vsCodePackDir "bin") -Include *.exe, *.dll -File -ErrorAction SilentlyContinue |
+$filesToSign = Get-ChildItem -Path (Join-Path $vsCodePackDir "bin\*") -Include *.exe, *.dll -File -ErrorAction SilentlyContinue |
     Select-Object -ExpandProperty FullName
 
 $count = 0
@@ -925,29 +925,12 @@ try {
     }
 } catch {}
 
-# Start background heartbeat to prevent Windows Installer from auto-stopping during multi-minute cabinet compression
-$heartbeatJob = Start-Job -ScriptBlock {
-    while ($true) {
-        $svc = Get-Service msiserver -ErrorAction SilentlyContinue
-        if ($svc -and $svc.Status -ne 'Running') {
-            Start-Service -Name msiserver -ErrorAction SilentlyContinue
-        }
-        Start-Sleep -Seconds 3
-    }
-}
-
-try {
-    if (-not (Test-Path $msiPath) -or ((Get-Item $msiPath).LastWriteTime -lt (Get-Item $wxsPath).LastWriteTime)) {
-        # Run wix build with multi-threaded cabinet compression and bind path
-        & $wixExe build -b $PSScriptRoot -arch x64 -ct 4 $wxsPath -out $msiPath
-        $wixExit = $LASTEXITCODE
-    } else {
-        Write-Host "[OK] Existing MSI installer is fresh and matches current WiX manifest." -ForegroundColor Green
-        $wixExit = 0
-    }
-} finally {
-    Stop-Job $heartbeatJob -ErrorAction SilentlyContinue
-    Remove-Job $heartbeatJob -Force -ErrorAction SilentlyContinue
+if (-not (Test-Path $msiPath) -or ((Get-Item $msiPath).LastWriteTime -lt (Get-Item $wxsPath).LastWriteTime)) {
+    & $wixExe build -v -b $PSScriptRoot -arch x64 $wxsPath -out $msiPath
+    $wixExit = $LASTEXITCODE
+} else {
+    Write-Host "[OK] Existing MSI installer is fresh and matches current WiX manifest." -ForegroundColor Green
+    $wixExit = 0
 }
 if ($wixExit -ne 0 -or -not (Test-Path $msiPath)) {
     Write-Host "[ERROR] WiX build failed (Exit code: $wixExit)." -ForegroundColor Red
@@ -957,6 +940,9 @@ Write-Host "[OK] MSI built successfully at $msiPath" -ForegroundColor Green
 
 # 8. Sign the final MSI file
 Write-Host "[INFO] Signing final MSI package..." -ForegroundColor Yellow
+[System.GC]::Collect()
+[System.GC]::WaitForPendingFinalizers()
+Start-Sleep -Seconds 5
 $signedMsi = Sign-FileWithCert $msiPath
 
 if ($signedMsi) {

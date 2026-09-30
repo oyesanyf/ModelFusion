@@ -1560,5 +1560,20 @@ pub fn get_master_mcp_tools() -> Vec<serde_json::Value> {
             "description": "Multi-modal catalog count and consensus telemetry",
             "inputSchema": {"type": "object", "properties": {"prompt": {"type": "string", "description": "Input text or instructions for ModelFusion Status"}, "file": {"type": "string", "description": "Optional file path or target dataset"}, "gpu": {"type": "boolean", "description": "Enable GPU acceleration"}}}
         }),
+        serde_json::json!({
+            "name": "detect_watermark",
+            "cmd": "@agent watermark ",
+            "icon": "🔍",
+            "category": "writing",
+            "label": "AI Watermark Detection",
+            "description": "Detect statistical AI green-list token watermarks (Kirchenbauer et al.) in text or spatial LSB steganographic anomalies in images",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Optional inline text or text file path to evaluate for token watermark"},
+                    "image_path": {"type": "string", "description": "Optional absolute path to PNG/JPEG image for LSB entropy scan"}
+                }
+            }
+        }),
     ]
 }
