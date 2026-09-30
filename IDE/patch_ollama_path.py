@@ -188,13 +188,50 @@ def patch_extension_js(ext_js_path, node_path):
     # -------------------------------------------------------------------------
     # 4. Update _selectModelForSystem() to scale based on available/free memory
     # -------------------------------------------------------------------------
-    # Matches the entire method body of _selectModelForSystem
+    # 4. Update _selectModelForSystem() to calibrate sweet spot based on hardware
+    # -------------------------------------------------------------------------
     model_sel_re = re.compile(
-        r'_selectModelForSystem\s*\(\)\s*\{[\s\S]*?this\._outputChannel\.appendLine\([^\)]*\);\s*if\s*\([\s\S]*?return\s*\{\s*model:\s*"qwen2\.5:7b"[\s\S]*?\};?\s*\}',
+        r'_selectModelForSystem\s*\(\)\s*\{[\s\S]*?\n\s*\}\s*(?=\s*(?:/\*\*[\s\S]*?\*/\s*)?_isGpuAvailable\s*\(\))',
+        re.MULTILINE
+    )
+    model_sel_fallback_re = re.compile(
+        r'_selectModelForSystem\s*\(\)\s*\{[\s\S]*?return\s*\{\s*model:\s*"qwen2\.5:7b"\s*\}\s*;?\s*\}',
         re.MULTILINE
     )
 
     new_model_sel = '''_selectModelForSystem() {
+        try {
+          const cliPath = this._findCliBinary();
+          if (cliPath && fs3.existsSync(cliPath)) {
+            const stdout = child_process2.execSync(`"${cliPath}" --sys-info`, { encoding: "utf8", timeout: 3e3, windowsHide: true });
+            const parsed = JSON.parse(stdout);
+            const sweetSpot = parsed && (parsed.calibrated_sweet_spot || parsed.active_hardware_model);
+            if (sweetSpot) {
+              const label = `${sweetSpot} (Hardware Calibrated Sweet Spot: ${parsed.gpu || 'CPU'}, VRAM Free: ${parsed.gpu_vram_free || 0}GB, RAM Free: ${Math.round(parsed.free_ram || 0)}GB)`;
+              this._outputChannel.appendLine(`[OLLAMA] ${label}`);
+              return { model: sweetSpot, label };
+            }
+          }
+        } catch (e) {
+          this._outputChannel.appendLine(`[OLLAMA] CLI sweet spot query fallback: ${e.message}`);
+        }
+        let freeVramMb = 0;
+        try {
+          if (process.platform === "win32") {
+            const smiOut = child_process2.execSync("nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits", { encoding: "utf8", timeout: 2e3, windowsHide: true });
+            const num = parseInt(smiOut.trim(), 10);
+            if (!isNaN(num)) freeVramMb = num;
+          }
+        } catch {}
+        if (freeVramMb >= 22000) {
+          return { model: "qwen2.5:32b", label: `qwen2.5:32b (${freeVramMb}MB VRAM available \u2014 high-end GPU)` };
+        } else if (freeVramMb >= 12000) {
+          return { model: "qwen2.5:14b", label: `qwen2.5:14b (${freeVramMb}MB VRAM available \u2014 mid-high GPU)` };
+        } else if (freeVramMb >= 5000) {
+          return { model: "qwen2.5:7b", label: `qwen2.5:7b (${freeVramMb}MB VRAM available \u2014 100% in-VRAM sweet spot)` };
+        } else if (freeVramMb >= 2000) {
+          return { model: "qwen2.5:3b", label: `qwen2.5:3b (${freeVramMb}MB VRAM available \u2014 compact GPU)` };
+        }
         const os16 = require("os");
         const freeRAM_GB = Math.round(os16.freemem() / (1024 * 1024 * 1024));
         const totalRAM_GB = Math.round(os16.totalmem() / (1024 * 1024 * 1024));
@@ -214,12 +251,16 @@ def patch_extension_js(ext_js_path, node_path):
         }
       }'''
 
-    if "qwen2.5:32b" in content and "freeRAM_GB" in content:
-        print("  [OK] _selectModelForSystem() already scales with runtime available RAM.")
+    if "calibrated_sweet_spot" in content and "qwen2.5:0.5b" in content:
+        print("  [OK] _selectModelForSystem() already calibrates with hardware sweet spot.")
     elif model_sel_re.search(content):
         content = model_sel_re.sub(new_model_sel, content, count=1)
         changed = True
-        print("  [APPLIED] Upgraded _selectModelForSystem() to runtime available memory scaling tiers.")
+        print("  [APPLIED] Upgraded _selectModelForSystem() to hardware sweet spot calibration.")
+    elif model_sel_fallback_re.search(content):
+        content = model_sel_fallback_re.sub(new_model_sel, content, count=1)
+        changed = True
+        print("  [APPLIED] Upgraded stock _selectModelForSystem() to hardware sweet spot calibration.")
     else:
         print("  [WARN] Could not match _selectModelForSystem() pattern.")
 
