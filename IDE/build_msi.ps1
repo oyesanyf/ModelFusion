@@ -925,9 +925,11 @@ try {
 } catch {}
 
 # Run wix build with multi-threaded cabinet compression and bind path
-& $wixExe build -b $PSScriptRoot -arch x64 -ct 4 $wxsPath -out $msiPath
-if ($LASTEXITCODE -ne 0 -or -not (Test-Path $msiPath)) {
-    Write-Host "[ERROR] WiX build failed." -ForegroundColor Red
+$wixOutput = & $wixExe build -b $PSScriptRoot -arch x64 -ct 4 $wxsPath -out $msiPath 2>&1
+$wixExit = $LASTEXITCODE
+if ($wixExit -ne 0 -or -not (Test-Path $msiPath)) {
+    Write-Host "[ERROR] WiX build failed (Exit code: $wixExit)." -ForegroundColor Red
+    $wixOutput | Out-String | Write-Host
     Exit 1
 }
 Write-Host "[OK] MSI built successfully at $msiPath" -ForegroundColor Green

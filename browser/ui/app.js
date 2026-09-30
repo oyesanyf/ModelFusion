@@ -1475,6 +1475,11 @@ document.addEventListener('DOMContentLoaded', () => {
     chip.addEventListener('click', (e) => {
       e.preventDefault();
       const val = chip.getAttribute('data-val');
+      const num = parseInt(val, 10);
+      if (!isNaN(num)) {
+        currentSettings.maxSearchResults = num;
+        localStorage.setItem('hugos_browser_settings', JSON.stringify(currentSettings));
+      }
       if (settingWebSearchMaxResults) {
         settingWebSearchMaxResults.value = val;
         settingWebSearchMaxResults.dispatchEvent(new Event('input', { bubbles: true }));
@@ -1488,10 +1493,17 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   if (settingWebSearchMaxResults && valWebSearchMaxResults) {
-    settingWebSearchMaxResults.addEventListener('input', () => {
+    const handleSliderChange = () => {
+      const num = parseInt(settingWebSearchMaxResults.value, 10);
+      if (!isNaN(num)) {
+        currentSettings.maxSearchResults = num;
+        localStorage.setItem('hugos_browser_settings', JSON.stringify(currentSettings));
+      }
       valWebSearchMaxResults.textContent = settingWebSearchMaxResults.value;
       updateActivePresetChip(settingWebSearchMaxResults.value);
-    });
+    };
+    settingWebSearchMaxResults.addEventListener('input', handleSliderChange);
+    settingWebSearchMaxResults.addEventListener('change', handleSliderChange);
   }
 
   // Settings Sidebar Live Search Filter
@@ -2652,8 +2664,30 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       if (res.ok) {
         const data = await res.json();
-        if (data.results && Array.isArray(data.results) && data.results.length > 0) {
-          return data.results;
+        let results = (data && Array.isArray(data.results)) ? data.results : [];
+        if (results.length < limit) {
+          const needed = limit - results.length;
+          try {
+            const wikiRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*&srlimit=${Math.min(needed, 50)}`);
+            if (wikiRes.ok) {
+              const wikiData = await wikiRes.json();
+              if (wikiData.query && wikiData.query.search) {
+                for (const item of wikiData.query.search) {
+                  const url = `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, '_'))}`;
+                  if (!results.some(r => r.url === url || r.title === item.title)) {
+                    const cleanSnip = (item.snippet || '').replace(/<[^>]+>/g, '').trim();
+                    results.push({ title: item.title, url: url, snippet: cleanSnip });
+                    if (results.length >= limit) break;
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            console.warn('Supplemental wiki search error:', e);
+          }
+        }
+        if (results.length > 0) {
+          return results;
         }
       }
     } catch (e) {
@@ -2661,14 +2695,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 2. Direct DuckDuckGo Lite / Instant Answer Gateway
+    const fallbackResults = [];
     try {
       const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
       const res = await fetch(ddgUrl);
       if (res.ok) {
         const data = await res.json();
-        const results = [];
         if (data.AbstractText) {
-          results.push({
+          fallbackResults.push({
             title: data.Heading || query,
             url: data.AbstractURL || ('https://duckduckgo.com/?q=' + encodeURIComponent(query)),
             snippet: data.AbstractText
@@ -2677,22 +2711,44 @@ document.addEventListener('DOMContentLoaded', () => {
         if (data.RelatedTopics && Array.isArray(data.RelatedTopics)) {
           for (const topic of data.RelatedTopics) {
             if (topic.Text && topic.FirstURL) {
-              results.push({
+              fallbackResults.push({
                 title: topic.Text.split(' - ')[0] || topic.Text.slice(0, 40),
                 url: topic.FirstURL,
                 snippet: topic.Text
               });
-              if (results.length >= limit) break;
+              if (fallbackResults.length >= limit) break;
             }
           }
         }
-        if (results.length > 0) return results;
       }
     } catch (e) {
       console.warn('Direct search gateway unreachable:', e);
     }
 
-    return [];
+    // 3. Fallback: Supplement with Wikipedia Search API up to limit
+    if (fallbackResults.length < limit) {
+      const needed = limit - fallbackResults.length;
+      try {
+        const wikiRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*&srlimit=${Math.min(needed, 50)}`);
+        if (wikiRes.ok) {
+          const wikiData = await wikiRes.json();
+          if (wikiData.query && wikiData.query.search) {
+            for (const item of wikiData.query.search) {
+              const url = `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, '_'))}`;
+              if (!fallbackResults.some(r => r.url === url || r.title === item.title)) {
+                const cleanSnip = (item.snippet || '').replace(/<[^>]+>/g, '').trim();
+                fallbackResults.push({ title: item.title, url: url, snippet: cleanSnip });
+                if (fallbackResults.length >= limit) break;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Direct Wikipedia fallback search error:', e);
+      }
+    }
+
+    return fallbackResults;
   }
 
   async function executeArxivSearch(query, maxResults = 5) {
@@ -3162,6 +3218,10 @@ document.addEventListener('DOMContentLoaded', () => {
           <span class="action-icon">👎</span>
           <span class="action-text">Bad</span>
         </button>
+        <button type="button" class="msg-action-btn btn-continue-msg" onclick="continueAssistantMessage(this)" title="Continue generating response directly from where it stopped">
+          <span class="action-icon">⚡</span>
+          <span class="action-text">Continue</span>
+        </button>
         <button type="button" class="msg-action-btn btn-copy-msg" onclick="copyAssistantMessage(this)" title="Copy message">
           <span class="action-icon">📋</span>
           <span class="action-text">Copy</span>
@@ -3327,6 +3387,87 @@ document.addEventListener('DOMContentLoaded', () => {
     const prompt = bubble?.dataset?.prompt || lastUserPrompt;
     if (prompt && window.executeCliCommand) {
       window.executeCliCommand(prompt);
+    }
+  };
+
+  window.continueAssistantMessage = async function(btn) {
+    const bubble = btn.closest('.assistant-bubble') || btn.closest('.msg-bubble');
+    if (!bubble) return;
+    if (btn.disabled) return;
+
+    btn.disabled = true;
+    const iconSpan = btn.querySelector('.action-icon');
+    const textSpan = btn.querySelector('.action-text');
+    const origIcon = iconSpan ? iconSpan.textContent : '⚡';
+    const origLabel = textSpan ? textSpan.textContent : 'Continue';
+    if (iconSpan) iconSpan.textContent = '⏳';
+    if (textSpan) textSpan.textContent = 'Continuing...';
+
+    bubble.classList.add('streaming');
+
+    // 1. Extract clean initial text and original prompt
+    let initialText = bubble.dataset.rawText || '';
+    if (!initialText) {
+      const textContainer = bubble.querySelector('.assistant-text-content') || bubble.querySelector('.stream-content') || bubble.querySelector('.bubble-content');
+      if (textContainer) {
+        const clone = textContainer.cloneNode(true);
+        clone.querySelectorAll('.msg-action-bar, .research-status-bar, .research-sources-card, .model-thinking-box, .continuation-section').forEach(el => el.remove());
+        initialText = clone.innerText.trim();
+      }
+    }
+    const originalPrompt = bubble.dataset.prompt || 'Continue prior analysis';
+
+    // 2. Find or create isolated continuation section inside the bubble (above action bar)
+    let contSection = bubble.querySelector('.continuation-section');
+    if (!contSection) {
+      contSection = document.createElement('div');
+      contSection.className = 'continuation-section';
+      contSection.style.cssText = 'margin-top: 14px; border-top: 1px dashed var(--border-color, rgba(255,255,255,0.15)); padding-top: 12px;';
+      
+      const actionBar = bubble.querySelector('.msg-action-bar');
+      if (actionBar && actionBar.parentNode) {
+        actionBar.parentNode.insertBefore(contSection, actionBar);
+      } else {
+        const bContent = bubble.querySelector('.bubble-content') || bubble;
+        bContent.appendChild(contSection);
+      }
+    }
+
+    contSection.innerHTML = `
+      <div class="continuation-status-pill" style="display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--accent-color, #10b981); background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 20px; padding: 3px 10px; margin-bottom: 10px; font-weight: 600;">
+        <span class="status-pulse-dot" style="background: var(--accent-color, #10b981); width: 7px; height: 7px; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite;"></span>
+        <span class="cont-status-text">⚡ Continuing response directly where it left off...</span>
+      </div>
+      <div class="continuation-stream-target" style="line-height: 1.6; font-size: 13.5px;"></div>
+    `;
+
+    const streamTargetEl = contSection.querySelector('.continuation-stream-target');
+    const statusTextEl = contSection.querySelector('.cont-status-text');
+
+    const continuationDirective = "Continue directly where you left off. Do not repeat previous text. Expand with deeper analysis, additional facts, and detailed next steps:";
+
+    try {
+      await streamAiChat(continuationDirective, null, {
+        existingBubble: bubble,
+        bubbleContent: streamTargetEl,
+        initialText: initialText,
+        originalPrompt: originalPrompt,
+        isContinuation: true,
+        continuationSection: contSection,
+        continuationStatusEl: statusTextEl,
+        maxTokens: Math.max(8192, currentSettings.maxTokens || 8192)
+      });
+    } catch (e) {
+      termLog(`[CONTINUE] Error continuing response: ${e.message}`, 'error');
+      if (statusTextEl) {
+        statusTextEl.textContent = `⚠️ Error continuing: ${e.message}`;
+        statusTextEl.style.color = 'var(--error-color, #ef4444)';
+      }
+    } finally {
+      btn.disabled = false;
+      bubble.classList.remove('streaming');
+      if (iconSpan) iconSpan.textContent = origIcon;
+      if (textSpan) textSpan.textContent = origLabel;
     }
   };
 
@@ -5309,14 +5450,14 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
       if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
-    if (!statusCtrl && assistantBubble) {
+    if (!statusCtrl && assistantBubble && !(options && options.isContinuation)) {
       statusCtrl = startDynamicStatus(assistantBubble, 'reasoning', userPrompt);
     }
 
     // Status indicator for terminalScreen
     const statusLine = document.createElement('div');
     statusLine.className = 'term-line info';
-    statusLine.textContent = `[${time}] 🤖 Thinking with ${authorDisplayTitle} ${authorDisplaySub}...`;
+    statusLine.textContent = `[${time}] 🤖 ${options && options.isContinuation ? 'Continuing response' : 'Thinking'} with ${authorDisplayTitle} ${authorDisplaySub}...`;
     if (terminalScreen) {
       terminalScreen.appendChild(statusLine);
       if (currentSettings.autoScroll !== false) terminalScreen.scrollTop = terminalScreen.scrollHeight;
@@ -5348,41 +5489,6 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
       let res = null;
       let lastFetchErr = null;
       const isFileOrigin = window.location.protocol === 'file:';
-      const chatEndpoints = [];
-      if (hasImages) {
-        // Prioritize Master CLI IPC (port 5000) first if online: handles watchdog auto-restart, auto-pull, and image stripping
-        if (window.isIpcOnline && ipcUrl) chatEndpoints.push(ipcUrl);
-        chatEndpoints.push(ollamaUrl);
-        if (ipcUrl && !chatEndpoints.includes(ipcUrl)) chatEndpoints.push(ipcUrl);
-      } else if (window.isIpcOnline && ipcUrl) {
-        chatEndpoints.push(ipcUrl);
-        chatEndpoints.push(ollamaUrl);
-      } else {
-        chatEndpoints.push(ollamaUrl);
-        if (window.isIpcOnline && ipcUrl && !chatEndpoints.includes(ipcUrl)) chatEndpoints.push(ipcUrl);
-      }
-
-      const isGoalDirective = Boolean(
-        (options && (options.isGoal || options.allowContinuation || options.agenticLoop)) ||
-        (/^\s*(@agent\s+goal|\/goal|@goal|@agent\s+agentic-loop|\/agentic-loop|@agent\s+loop)\b/i.test(userPrompt)) ||
-        (options && options.rawCmd && /^\s*(@agent\s+goal|\/goal|@goal|@agent\s+agentic-loop|\/agentic-loop|@agent\s+loop)\b/i.test(options.rawCmd))
-      );
-      const isAgenticLoop = isGoalDirective && currentSettings.agenticLoopEnabled !== false;
-      const targetTokens = (options && typeof options.maxTokens === 'number' && options.maxTokens > 0)
-        ? options.maxTokens
-        : (isAgenticLoop ? Math.max(maxTokensToUse, 32768) : maxTokensToUse);
-      const chunkSize = currentSettings.agenticChunkSize || (targetTokens >= 65536 ? 8192 : Math.min(targetTokens, 8192));
-      const maxLoops = isAgenticLoop ? (options && options.maxLoops ? options.maxLoops : Math.min(64, Math.ceil(targetTokens / chunkSize))) : 1;
-      const numCtxToUse = isAgenticLoop ? Math.min(32768, targetTokens) : (options && options.numCtx ? options.numCtx : (currentSettings.contextWindow || 4096));
-
-      let agenticBadge = null;
-      if (isAgenticLoop && maxLoops > 1 && assistantBubble) {
-        agenticBadge = document.createElement('div');
-        agenticBadge.className = 'agentic-loop-badge';
-        agenticBadge.innerHTML = `🔄 Agentic Loop: Turn 1/${maxLoops} • 0 tokens`;
-        assistantBubble.insertBefore(agenticBadge, bubbleContent);
-      }
-
       const conversationMessages = [
         { role: 'system', content: effectiveSysPrompt }
       ];
@@ -5411,10 +5517,48 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
         }
       }
 
+      if (options && options.isContinuation && options.initialText) {
+        const hasInitial = conversationMessages.some(m => m.role === 'assistant' && (m.content === options.initialText || options.initialText.startsWith(m.content)));
+        if (!hasInitial) {
+          conversationMessages.push({ role: 'assistant', content: options.initialText });
+        }
+      }
+
       conversationMessages.push(messagePayload);
 
-      let fullResponse = '';
-      let totalEstimatedTokens = 0;
+      const isGoalDirective = Boolean(
+        (options && (options.isGoal || options.allowContinuation || options.agenticLoop)) ||
+        (/^\s*(@agent\s+goal|\/goal|@goal|@agent\s+agentic-loop|\/agentic-loop|@agent\s+loop)\b/i.test(userPrompt)) ||
+        (options && options.rawCmd && /^\s*(@agent\s+goal|\/goal|@goal|@agent\s+agentic-loop|\/agentic-loop|@agent\s+loop)\b/i.test(options.rawCmd))
+      );
+      const isAgenticLoop = isGoalDirective && currentSettings.agenticLoopEnabled !== false;
+      const targetTokens = (options && typeof options.maxTokens === 'number' && options.maxTokens > 0)
+        ? options.maxTokens
+        : (isAgenticLoop ? Math.max(maxTokensToUse, 32768) : maxTokensToUse);
+      const chunkSize = currentSettings.agenticChunkSize || (targetTokens >= 65536 ? 8192 : Math.min(targetTokens, 8192));
+      const maxLoops = isAgenticLoop ? (options && options.maxLoops ? options.maxLoops : Math.min(64, Math.ceil(targetTokens / chunkSize))) : 1;
+
+      // Accurately compute prompt token estimate across all assembled messages including initialText
+      const totalCharsInPrompt = conversationMessages.reduce((sum, m) => sum + (m.content ? m.content.length : 0), 0);
+      const estimatedPromptTokens = Math.ceil(totalCharsInPrompt / 3.5);
+      const desiredOutputTokens = (options && typeof options.maxTokens === 'number' && options.maxTokens > 0)
+        ? options.maxTokens
+        : (typeof currentSettings.maxTokens === 'number' && currentSettings.maxTokens > 0 ? currentSettings.maxTokens : 8192);
+      const requiredCtx = Math.max(8192, estimatedPromptTokens + desiredOutputTokens);
+      const numCtxToUse = isAgenticLoop 
+        ? Math.min(32768, Math.max(targetTokens, requiredCtx)) 
+        : (options && options.numCtx ? options.numCtx : Math.min(32768, Math.max(currentSettings.contextWindow || 8192, requiredCtx)));
+
+      let agenticBadge = null;
+      if (isAgenticLoop && maxLoops > 1 && assistantBubble) {
+        agenticBadge = document.createElement('div');
+        agenticBadge.className = 'agentic-loop-badge';
+        agenticBadge.innerHTML = `🔄 Agentic Loop: Turn 1/${maxLoops} • 0 tokens`;
+        assistantBubble.insertBefore(agenticBadge, bubbleContent);
+      }
+
+      let fullResponse = (options && options.isContinuation && options.initialText) ? (options.initialText.trimEnd() + '\n\n') : '';
+      let totalEstimatedTokens = fullResponse ? Math.max(1, Math.round(fullResponse.length / 4)) : 0;
 
       for (let turn = 0; turn < maxLoops; turn++) {
         if (isAgenticLoop && agenticBadge) {
@@ -5447,6 +5591,17 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
           stream: streamMode,
           options: currentOllamaOptions
         });
+
+        const chatEndpoints = [];
+        if (hasImages) {
+          if (window.isIpcOnline && ipcUrl) chatEndpoints.push(ipcUrl);
+          chatEndpoints.push(ollamaUrl);
+          if (ipcUrl && !chatEndpoints.includes(ipcUrl)) chatEndpoints.push(ipcUrl);
+        } else {
+          // Native direct streaming from Ollama first for lowest latency and zero overhead
+          chatEndpoints.push(ollamaUrl);
+          if (window.isIpcOnline && ipcUrl && !chatEndpoints.includes(ipcUrl)) chatEndpoints.push(ipcUrl);
+        }
 
         let res = null;
         let lastFetchErr = null;
@@ -5624,6 +5779,9 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
         let doneReason = '';
 
         const getStreamTarget = () => {
+          if (options && options.isContinuation && options.bubbleContent) {
+            return options.bubbleContent;
+          }
           if (assistantBubble) {
             const sc = assistantBubble.querySelector('.stream-content');
             if (sc) return sc;
@@ -5648,7 +5806,11 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
             targetEl.style.display = 'block';
             targetEl.style.alignItems = '';
             targetEl.style.gap = '';
-            targetEl.innerHTML = renderMarkdown(fullResponse);
+            if (options && options.isContinuation) {
+              targetEl.innerHTML = renderMarkdown(turnResponse);
+            } else {
+              targetEl.innerHTML = renderMarkdown(fullResponse);
+            }
           }
         } else {
           const reader = res.body.getReader();
@@ -5769,7 +5931,14 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
                 targetEl.style.display = 'block';
                 targetEl.style.alignItems = '';
                 targetEl.style.gap = '';
-                targetEl.innerHTML = renderMarkdown(fullResponse);
+                if (options && options.isContinuation) {
+                  targetEl.innerHTML = renderMarkdown(turnResponse);
+                  if (options.continuationStatusEl && options.continuationStatusEl.textContent !== '⚡ Streaming continuation output...') {
+                    options.continuationStatusEl.textContent = '⚡ Streaming continuation output...';
+                  }
+                } else {
+                  targetEl.innerHTML = renderMarkdown(fullResponse);
+                }
               }
               if (isAgenticLoop && agenticBadge) {
                 agenticBadge.innerHTML = `🔄 Agentic Loop: Turn ${turn + 1}/${maxLoops} • ~${Math.round(totalEstimatedTokens).toLocaleString()} / ${targetTokens.toLocaleString()} tokens`;
@@ -5789,7 +5958,14 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
                   targetEl.style.display = 'block';
                   targetEl.style.alignItems = '';
                   targetEl.style.gap = '';
-                  targetEl.innerHTML = renderMarkdown(fullResponse);
+                  if (options && options.isContinuation) {
+                    targetEl.innerHTML = renderMarkdown(turnResponse);
+                    if (options.continuationStatusEl && options.continuationStatusEl.textContent !== '⚡ Streaming continuation output...') {
+                      options.continuationStatusEl.textContent = '⚡ Streaming continuation output...';
+                    }
+                  } else {
+                    targetEl.innerHTML = renderMarkdown(fullResponse);
+                  }
                 }
                 if (isAgenticLoop && agenticBadge) {
                   agenticBadge.innerHTML = `🔄 Agentic Loop: Turn ${turn + 1}/${maxLoops} • ~${Math.round(totalEstimatedTokens).toLocaleString()} / ${targetTokens.toLocaleString()} tokens`;
@@ -6002,9 +6178,27 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
       responseLine.innerHTML = renderMarkdown(fullResponse);
       if (assistantBubble) {
         assistantBubble.classList.remove('streaming');
-        assistantBubble.dataset.rawText = fullResponse;
-        assistantBubble.dataset.prompt = userPrompt;
-        if (bubbleContent) {
+        const finalMergedText = (options && options.isContinuation && options.initialText)
+          ? (options.initialText.trimEnd() + '\n\n' + turnResponse.trim())
+          : fullResponse;
+        assistantBubble.dataset.rawText = finalMergedText;
+        const promptToSave = (options && options.isContinuation && options.originalPrompt)
+          ? options.originalPrompt
+          : userPrompt;
+        assistantBubble.dataset.prompt = promptToSave;
+
+        if (options && options.isContinuation) {
+          if (options.continuationSection) {
+            options.continuationSection.remove();
+          }
+          let mainTarget = assistantBubble.querySelector('.stream-content') || assistantBubble.querySelector('.assistant-text-content') || assistantBubble.querySelector('.bubble-content');
+          if (mainTarget) {
+            let parentContainer = assistantBubble.querySelector('.stream-content') || assistantBubble.querySelector('.bubble-content');
+            if (parentContainer) {
+              parentContainer.innerHTML = formatAssistantContent(finalMergedText, promptToSave);
+            }
+          }
+        } else if (bubbleContent) {
           bubbleContent.style.color = '';
           bubbleContent.style.fontStyle = '';
           bubbleContent.style.fontWeight = '';
@@ -6014,8 +6208,20 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
           bubbleContent.innerHTML = formatAssistantContent(fullResponse, userPrompt);
         }
       }
-      if (activeSession && fullResponse && fullResponse.trim()) {
-        activeSession.messages.push({ role: 'assistant', content: fullResponse, model: modelToUse });
+      if (activeSession && (fullResponse || turnResponse) && (fullResponse.trim() || turnResponse.trim())) {
+        const finalContentToPersist = (options && options.isContinuation && options.initialText)
+          ? (options.initialText.trimEnd() + '\n\n' + turnResponse.trim())
+          : fullResponse;
+        if (options && options.isContinuation) {
+          const existingIdx = activeSession.messages.findLastIndex(m => m.role === 'assistant');
+          if (existingIdx !== -1) {
+            activeSession.messages[existingIdx].content = finalContentToPersist;
+          } else {
+            activeSession.messages.push({ role: 'assistant', content: finalContentToPersist, model: modelToUse });
+          }
+        } else {
+          activeSession.messages.push({ role: 'assistant', content: finalContentToPersist, model: modelToUse });
+        }
         saveChatHistory();
       }
       if (currentSettings.autoScroll !== false) {
@@ -6069,14 +6275,37 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
           responseLine.innerHTML = renderMarkdown(text);
           if (assistantBubble) {
             assistantBubble.classList.remove('streaming');
-            assistantBubble.dataset.rawText = text;
-            assistantBubble.dataset.prompt = userPrompt;
-            if (bubbleContent) {
+            const finalMerged = (options && options.isContinuation && options.initialText)
+              ? (options.initialText.trimEnd() + '\n\n' + text.trim())
+              : text;
+            assistantBubble.dataset.rawText = finalMerged;
+            const promptToSave = (options && options.isContinuation && options.originalPrompt)
+              ? options.originalPrompt
+              : userPrompt;
+            assistantBubble.dataset.prompt = promptToSave;
+
+            if (options && options.isContinuation) {
+              if (options.continuationSection) options.continuationSection.remove();
+              let parentContainer = assistantBubble.querySelector('.stream-content') || assistantBubble.querySelector('.bubble-content');
+              if (parentContainer) parentContainer.innerHTML = formatAssistantContent(finalMerged, promptToSave);
+            } else if (bubbleContent) {
               bubbleContent.innerHTML = formatAssistantContent(text, userPrompt);
             }
           }
           if (activeSession) {
-            activeSession.messages.push({ role: 'assistant', content: text, model: modelToUse });
+            const finalTxt = (options && options.isContinuation && options.initialText)
+              ? (options.initialText.trimEnd() + '\n\n' + text.trim())
+              : text;
+            if (options && options.isContinuation) {
+              const existingIdx = activeSession.messages.findLastIndex(m => m.role === 'assistant');
+              if (existingIdx !== -1) {
+                activeSession.messages[existingIdx].content = finalTxt;
+              } else {
+                activeSession.messages.push({ role: 'assistant', content: finalTxt, model: modelToUse });
+              }
+            } else {
+              activeSession.messages.push({ role: 'assistant', content: finalTxt, model: modelToUse });
+            }
             saveChatHistory();
           }
           statusLine.className = 'term-line success';
@@ -6095,11 +6324,19 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
       const fallbackDisplayModel = resolvedOllamaModel && resolvedOllamaModel !== 'modelfusion_auto' ? resolvedOllamaModel : 'qwen2.5:7b';
       statusLine.textContent = `[${time}] Error connecting to local AI engine (${err.message}). Ensure Ollama is running at ${ollamaUrl} with an installed model (e.g. ${fallbackDisplayModel}).`;
       if (assistantBubble) {
-        let switchPrompt = '';
-        if (window.location.protocol === 'file:') {
-          switchPrompt = '<br><a href="http://localhost:5000/index.html" class="hero-chip" style="font-size: 11px; padding: 4px 10px; display: inline-block; margin-top: 6px; text-decoration: none; cursor: pointer;">Switch to http://localhost:5000</a>';
+        assistantBubble.classList.remove('streaming');
+        if (options && options.isContinuation) {
+          if (options.continuationStatusEl) {
+            options.continuationStatusEl.textContent = `⚠️ Error continuing: ${err.message}. Check that Local AI is running.`;
+            options.continuationStatusEl.style.color = 'var(--error-color, #ef4444)';
+          }
+        } else {
+          let switchPrompt = '';
+          if (window.location.protocol === 'file:') {
+            switchPrompt = '<br><a href="http://localhost:5000/index.html" class="hero-chip" style="font-size: 11px; padding: 4px 10px; display: inline-block; margin-top: 6px; text-decoration: none; cursor: pointer;">Switch to http://localhost:5000</a>';
+          }
+          renderErrorCard(assistantBubble, '⚠️ Local AI Engine Unreachable', `Connection Error: ${err.message}. Ensure Ollama is running at ${ollamaUrl} with an installed model (e.g. ${fallbackDisplayModel}). Check that 'ollama serve' is running or restart the application.${switchPrompt}`);
         }
-        renderErrorCard(assistantBubble, '⚠️ Local AI Engine Unreachable', `Connection Error: ${err.message}. Ensure Ollama is running at ${ollamaUrl} with an installed model (e.g. ${fallbackDisplayModel}). Check that 'ollama serve' is running or restart the application.${switchPrompt}`);
       }
       responseLine.remove();
       return null;
@@ -7391,9 +7628,9 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
         '- Continuous conversational memory: In any session, ask questions about previous messages, attached code files, CSV datasets, or executed tool outputs. Full multi-turn session context and attachments are automatically preserved and recalled.',
         '',
         '**Anti-AI Stylometry & Natural Human Prose**:',
-        '- `@agent humanize <text>` — Convert robotic, detectable AI text into organic human prose with high burstiness and varied cadence',
-        '- `@agent translate to <lang>: <text>` — High-fidelity multilingual translation preserving technical terminology and tone',
-        '- `@agent trans-human to <lang>: <text>` — Native humanized translation removing awkward translationese and robotic patterns',
+        '- `@agent translate to <lang>: <text>` — **Translate language text** into target language with high fidelity',
+        '- `@agent humanize <text>` — **Humanize text** into organic human prose using anti-AI stylometry',
+        '- `@agent translate-humanize to <lang>: <text>` (or `--translate ... --humanize`) — Dual-flag pipeline: translate language text + humanize with native-speaker cadence',
         '- `@agent style-transfer <style>: <text>` — Adaptive stylometry transformation matching target authorial tone and voice',
         '',
         '**Code, Architecture & Security Forensics**:',
@@ -7834,9 +8071,14 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     ) {
       let textToHumanize = cmd.replace(/^(@agent\s+humanize|\/humanize|@humanize)(?:\s*[:]\s*|\s*)/i, '').trim();
 
-      // Check if text was in attachments if query was empty
-      if (!textToHumanize && currentAttachments.length > 0) {
-        textToHumanize = currentAttachments.map(f => f.content || '').join('\n\n').trim();
+      // Check attachments
+      if (currentAttachments.length > 0) {
+        const attachText = currentAttachments.map(f => (f.name ? `[File: ${f.name}]\n` : '') + (f.content || '')).join('\n\n').trim();
+        if (!textToHumanize) {
+          textToHumanize = attachText;
+        } else {
+          textToHumanize = `${textToHumanize}\n\n${attachText}`;
+        }
       }
 
       // If still empty, check preceding assistant or user message
@@ -7855,7 +8097,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         if (chatMessages && chatMessages.lastElementChild && chatMessages.lastElementChild.classList.contains('user-bubble')) {
           chatMessages.lastElementChild.remove();
         }
-        termLog('✍️ Please provide or paste the text you would like to humanize.', 'warn');
+        termLog('✍️ Please provide or paste the text or attach a file you would like to humanize.', 'warn');
         const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
           ? cliPromptInputPinned
           : cliPromptInput;
@@ -7871,7 +8113,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         return;
       }
 
-      termLog(`✍️ [HUMANIZER] Rewriting text with high burstiness & natural human stylometry...`, 'info');
+      termLog(`✍️ [HUMANIZER] Making text into natural language with organic human cadence and anti-AI stylometry...`, 'info');
 
       const humanizePrompt = `Rewrite the following passage into natural, organic human prose:\n\n${textToHumanize}`;
       const humanizePanel = {
@@ -7917,9 +8159,14 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         }
       }
 
-      // Check attachments if text is empty
-      if (!textToTranslate && currentAttachments.length > 0) {
-        textToTranslate = currentAttachments.map(f => f.content || '').join('\n\n').trim();
+      // Check attachments
+      if (currentAttachments.length > 0) {
+        const attachText = currentAttachments.map(f => (f.name ? `[File: ${f.name}]\n` : '') + (f.content || '')).join('\n\n').trim();
+        if (!textToTranslate) {
+          textToTranslate = attachText;
+        } else {
+          textToTranslate = `${textToTranslate}\n\n${attachText}`;
+        }
       }
 
       // Check prior messages if text is empty
@@ -7982,7 +8229,9 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       (/^(@agent\s+translate\b|@translate\b|\/translate\b|@agent\s+translation\b|@translation\b|\/translation\b|@agent\s+trans\b|@trans\b|\/trans\b)/i.test(cmd)) &&
       !/^(@agent\s+(?:translate-humanize|trans-human|transhuman)|@(?:translate-humanize|trans-human|transhuman)|\/(?:translate-humanize|trans-human|transhuman))/i.test(cmd)
     ) {
+      const alsoHumanize = /--humanize\b/i.test(cmd);
       let rest = cmd.replace(/^(@agent\s+translate\b|@agent\s+translation\b|\/translate\b|\/translation\b|@translate\b|@translation\b|@agent\s+trans\b|@trans\b|\/trans\b)(?:\s*[:]\s*|\s*)/i, '').trim();
+      rest = rest.replace(/--humanize\b/gi, '').trim();
       let targetLang = 'English';
       let textToTranslate = '';
 
@@ -8001,9 +8250,14 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         }
       }
 
-      // Check attachments if text is empty
-      if (!textToTranslate && currentAttachments.length > 0) {
-        textToTranslate = currentAttachments.map(f => f.content || '').join('\n\n').trim();
+      // Check attachments
+      if (currentAttachments.length > 0) {
+        const attachText = currentAttachments.map(f => (f.name ? `[File: ${f.name}]\n` : '') + (f.content || '')).join('\n\n').trim();
+        if (!textToTranslate) {
+          textToTranslate = attachText;
+        } else {
+          textToTranslate = `${textToTranslate}\n\n${attachText}`;
+        }
       }
 
       // Check prior messages if text is empty
@@ -8022,7 +8276,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         if (chatMessages && chatMessages.lastElementChild && chatMessages.lastElementChild.classList.contains('user-bubble')) {
           chatMessages.lastElementChild.remove();
         }
-        termLog('🌐 Please provide or paste the text you would like to translate.', 'warn');
+        termLog('🌐 Please provide or paste the text or attach a file you would like to translate.', 'warn');
         const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
           ? cliPromptInputPinned
           : cliPromptInput;
@@ -8038,20 +8292,39 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         return;
       }
 
-      termLog(`🌐 [TRANSLATE] Translating text to ${targetLang}...`, 'info');
+      if (alsoHumanize) {
+        termLog(`🗣️ [TRANSLATE + HUMANIZE] Translating text to ${targetLang} with native-speaker cadence...`, 'info');
+        const transHumanSysPrompt = "You are a bilingual native-speaker editor and translator. Translate the given text into the target language and humanize it so it reads with authentic, native cadence, natural idiomatic expressions, varied sentence structures, and organic human rhythm. Eliminate all stiffness, awkward calques, and literal translation artifacts while preserving the core factual intent. Do not add any introductory explanations, meta-commentary, or translator notes. Return only the polished native text.";
+        const transHumanPrompt = `Translate the following text into natural, idiomatic ${targetLang} as spoken and written by an authentic native speaker:\n\n${textToTranslate}`;
 
-      const translateSysPrompt = "You are an expert multilingual translator. Translate the given text accurately, idiomatically, and fluently into the target language. Preserve the original meaning, tone, nuances, and formatting. Do not add introductory remarks, explanations, or meta-commentary. Output only the translated text.";
-      const translatePrompt = `Translate the following text into ${targetLang}:\n\n${textToTranslate}`;
+        await streamAiChat(transHumanPrompt, transHumanSysPrompt, {
+          taskType: 'humanize',
+          temperature: 0.8,
+          top_p: 0.95,
+          min_p: 0.05,
+          repeat_penalty: 1.15,
+          presence_penalty: 0.25,
+          frequency_penalty: 0.3,
+          panel: {
+            id: 'translate-humanize',
+            name: `Native Translation & Humanize (${targetLang})`
+          }
+        });
+      } else {
+        termLog(`🌐 [TRANSLATE] Translating text to ${targetLang}...`, 'info');
+        const translateSysPrompt = "You are an expert multilingual translator. Translate the given text accurately, idiomatically, and fluently into the target language. Preserve the original meaning, tone, nuances, and formatting. Do not add introductory remarks, explanations, or meta-commentary. Output only the translated text.";
+        const translatePrompt = `Translate the following text into ${targetLang}:\n\n${textToTranslate}`;
 
-      await streamAiChat(translatePrompt, translateSysPrompt, {
-        taskType: 'translation',
-        temperature: 0.3,
-        top_p: 0.9,
-        panel: {
-          id: 'translate',
-          name: `Multilingual Translator (${targetLang})`
-        }
-      });
+        await streamAiChat(translatePrompt, translateSysPrompt, {
+          taskType: 'translation',
+          temperature: 0.3,
+          top_p: 0.9,
+          panel: {
+            id: 'translate',
+            name: `Multilingual Translator (${targetLang})`
+          }
+        });
+      }
 
       if (currentAttachments.length > 0) clearAllAttachments();
       return;
@@ -8283,16 +8556,24 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           });
         }
 
-        const searchContext = combinedResults.length > 0
-          ? combinedResults.map((r, idx) => `[${idx + 1}] Title: ${r.title}\nURL: ${r.url}\nSummary: ${r.snippet}`).join('\n\n')
+        const sourceCount = combinedResults.length;
+        const searchContext = sourceCount > 0
+          ? combinedResults.map((r, idx) => `[${idx + 1}] Title: ${r.title}\nURL: ${r.url}\nSummary: ${(r.snippet || '').slice(0, 300)}`).join('\n\n')
           : 'No external research results found.';
 
         const promptWithSearch = `User Query: ${queryToSearch}
 
-Verified Grounding Context:
+Verified Grounding Context (${sourceCount} Verified Sources):
 ${searchContext}
 
-${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions: Provide an engaging, deeply detailed, comprehensive, and well-structured response directly answering the user query. Organize your response with natural, descriptive markdown headings (###). Write in rich, fluid, natural prose (avoid corporate clichés, formulaic transitions, or robotic summaries). Ground your analysis in the verified facts and cite sources inline where relevant.`;
+${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
+${sourceCount > 10
+  ? `- You have been provided with ${sourceCount} verified research sources. A comprehensive query with this many sources requires an expansive, deeply thorough, multi-section research report — NOT a brief 2-3 paragraph summary.
+- Provide an in-depth, publication-quality synthesis exploring key findings, technical nuances, varied perspectives, methodologies, and implications across the sources.
+- Structure your response with natural, descriptive markdown headings (###).
+- Extensively ground your analysis and cite verified sources inline using [1], [2], etc., with markdown links to the sources.
+- Deliver detailed paragraphs explaining the 'why' and 'how', thoroughly examining the evidence.`
+  : `- Provide an engaging, deeply detailed, comprehensive, and well-structured response directly answering the user query. Organize your response with natural, descriptive markdown headings (###). Write in rich, fluid, natural prose (avoid corporate clichés, formulaic transitions, or robotic summaries). Ground your analysis in the verified facts and cite sources inline where relevant.`}`;
 
         const sysPrompt = isArxivOnly
           ? 'You are HugOS Browser AI, an expert academic and scientific research assistant. Correlate arXiv preprints and research papers, synthesize key findings, methodologies, and citations accurately with markdown links.'
@@ -8301,6 +8582,7 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions: Provide an e
         await streamAiChat(promptWithSearch, sysPrompt, {
           images: attachedImages,
           panel,
+          maxTokens: Math.max(8192, currentSettings.maxTokens || 8192),
           existingBubble: assistantBubble,
           bubbleContent: streamContentEl,
           statusCtrl: statusCtrl
@@ -8610,27 +8892,35 @@ Instructions:
         });
 
         // Correlate live search results with LLM knowledge
+        const sourceCount = searchResults.length;
         const searchContext = searchResults.map((r, idx) => {
-          return `[${idx + 1}] Title: ${r.title}\nURL: ${r.url}\nSummary: ${r.snippet}`;
+          return `[${idx + 1}] Title: ${r.title}\nURL: ${r.url}\nSummary: ${(r.snippet || '').slice(0, 300)}`;
         }).join('\n\n');
 
         const promptWithSearch = `User Query: ${cmd}
 
-Verified Grounding Context:
+Verified Grounding Context (${sourceCount} Verified Sources):
 ${searchContext}
 
 ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
-- Use the verified grounding context above to answer accurately and comprehensively.
+${sourceCount > 10
+  ? `- You have been provided with ${sourceCount} verified research sources. A comprehensive query with this many sources requires an expansive, deeply thorough, multi-section research report — NOT a brief 2-3 paragraph summary.
+- Provide an in-depth, publication-quality synthesis exploring key findings, technical nuances, varied perspectives, methodologies, and implications across the sources.
+- Structure your response with natural, descriptive markdown headings (###).
+- Extensively ground your analysis and cite verified sources inline using [1], [2], etc., with markdown links to the sources.
+- Deliver detailed paragraphs explaining the 'why' and 'how', thoroughly examining the evidence.`
+  : `- Use the verified grounding context above to answer accurately and comprehensively.
 - Never invent, fabricate, or hallucinate political leaders, capitals, or dates.
 - State verified real-world facts directly (e.g. current head of state, verified capital city).
 - Cite the sources inline using [1], [2], etc., matching the numbered search results above.
-- Include clickable markdown links to the sources [Title](URL) where relevant.`;
+- Include clickable markdown links to the sources [Title](URL) where relevant.`}`;
 
         const sysPrompt = 'You are HugOS AI, an intelligent assistant with live internet search and arXiv capabilities. Correlate search evidence with internal reasoning, provide factual and up-to-date answers, and cite sources accurately with [1], [2] badges and markdown links. Never invent false names, leaders, or relocated capitals.';
 
         await streamAiChat(promptWithSearch, sysPrompt, {
           images: attachedImages,
           panel,
+          maxTokens: Math.max(8192, currentSettings.maxTokens || 8192),
           existingBubble: assistantBubble,
           bubbleContent: streamContentEl,
           statusCtrl: statusCtrl
@@ -8648,6 +8938,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
         await streamAiChat(promptWithGuardrail, sysPrompt, {
           images: attachedImages,
           panel,
+          maxTokens: Math.max(8192, currentSettings.maxTokens || 8192),
           existingBubble: assistantBubble,
           bubbleContent: streamContentEl,
           statusCtrl: statusCtrl
@@ -9092,9 +9383,9 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     { cmd: '@agent nlp ', icon: '📝', label: 'NLP Pipeline', desc: 'Sentiment, NER, translation, and text classification' },
     { cmd: '@agent text-generation ', icon: '✍️', label: 'Text Generation', desc: 'Open-ended causal text completion and synthesis' },
     { cmd: '@agent text2text ', icon: '🔄', label: 'Text-to-Text', desc: 'Seq2Seq transformation, rewriting, and standardization' },
-    { cmd: '@agent translate ', icon: '🌐', label: 'Multilingual Translation', desc: 'Accurate and idiomatic translation across 200+ languages' },
-    { cmd: '@agent translate-humanize ', icon: '🗣️', label: 'Native Translation & Humanize', desc: 'Translate into target language with native-speaker cadence & authentic flow' },
-    { cmd: '@agent translation ', icon: '🌐', label: 'Translation', desc: 'Neural machine translation across 200+ languages' },
+    { cmd: '@agent translate ', icon: '🌐', label: 'Multilingual Translation', desc: 'Translate language text into target language accurately and idiomatically' },
+    { cmd: '@agent translate-humanize ', icon: '🗣️', label: 'Native Translation & Humanize', desc: 'Dual-flag pipeline: translate language text + humanize with native-speaker cadence' },
+    { cmd: '@agent translation ', icon: '🌐', label: 'Translation', desc: 'Translate language text into target language accurately and idiomatically' },
     { cmd: '@agent question-answering ', icon: '💬', label: 'Question Answering', desc: 'Extractive and generative reading comprehension' },
     { cmd: '@agent table-qa ', icon: '📊', label: 'Table QA', desc: 'Direct natural language querying over tabular structures' },
     { cmd: '@agent zero-shot ', icon: '🎯', label: 'Zero-Shot Text', desc: 'Categorize text into arbitrary candidate label sets' },
@@ -9107,7 +9398,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     { cmd: '@agent sentiment ', icon: '❤️', label: 'Sentiment Analysis', desc: 'Positive, negative, neutral, and emotional intensity' },
     { cmd: '@agent summarize-text ', icon: '📜', label: 'Text Summarize', desc: 'Abstractive and extractive multi-paragraph summarization' },
     { cmd: '@agent grammar ', icon: '✍️', label: 'Grammar Check', desc: 'Orthographic, syntactic, and stylistic error correction' },
-    { cmd: '@agent humanize ', icon: '✍️', label: 'Humanize Prose', desc: 'Anti-AI stylometry rewriting for high burstiness & natural tone' },
+    { cmd: '@agent humanize ', icon: '✍️', label: 'Humanize Prose', desc: 'Make text into natural language with organic human cadence and anti-AI stylometry' },
     { cmd: '@agent style-transfer ', icon: '🎨', label: 'Writing Style Transfer', desc: 'Transfer tone and style to conversational, executive, academic, or journalistic' },
     { cmd: '@agent paraphrase ', icon: '🔁', label: 'Paraphraser', desc: 'Alternative phrasing preserving core semantic intent' },
     { cmd: '@agent ner ', icon: '🏷️', label: 'Named Entity Rec', desc: 'Extract names, locations, dates, and organizations' },

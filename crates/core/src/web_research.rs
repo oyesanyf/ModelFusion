@@ -238,9 +238,80 @@ pub fn clean_html_entities(raw: &str) -> String {
         .join(" ")
 }
 
-/// Executes a live web search against DuckDuckGo (Lite and Instant Answer API).
+#[inline]
+pub fn safe_subslice(s: &str, start: usize, end: usize) -> &str {
+    if start >= s.len() || start >= end {
+        return "";
+    }
+    let mut s_idx = start;
+    while s_idx < s.len() && !s.is_char_boundary(s_idx) {
+        s_idx += 1;
+    }
+    let mut e_idx = end.min(s.len());
+    while e_idx > s_idx && !s.is_char_boundary(e_idx) {
+        e_idx -= 1;
+    }
+    if s_idx <= e_idx && e_idx <= s.len() {
+        &s[s_idx..e_idx]
+    } else {
+        ""
+    }
+}
+
+/// Helper to extract form input name-value pairs from `<form class="next_form" ...>` or `/lite/` form.
+fn extract_next_page_form_inputs(html: &str) -> Option<Vec<(String, String)>> {
+    let form_start = html
+        .find("class=\"next_form\"")
+        .or_else(|| html.find("class='next_form'"))
+        .or_else(|| html.find("action=\"/lite/\""))
+        .or_else(|| html.find("action='/lite/'"))?;
+
+    let form_open = safe_subslice(html, 0, form_start).rfind("<form")?;
+    let form_close = safe_subslice(html, form_start, html.len()).find("</form>").map(|p| form_start + p)?;
+    let form_body = safe_subslice(html, form_open, form_close);
+
+    let mut params = Vec::new();
+    let mut cursor = 0;
+    while let Some(input_idx) = safe_subslice(form_body, cursor, form_body.len()).find("<input") {
+        let abs_idx = cursor + input_idx;
+        let tag_end = safe_subslice(form_body, abs_idx, form_body.len()).find('>').map(|p| abs_idx + p + 1).unwrap_or(form_body.len());
+        let input_tag = safe_subslice(form_body, abs_idx, tag_end);
+
+        let name = extract_html_attr(input_tag, "name");
+        let value = extract_html_attr(input_tag, "value");
+
+        if let (Some(n), Some(v)) = (name, value) {
+            params.push((n, v));
+        }
+        cursor = tag_end;
+        while cursor < form_body.len() && !form_body.is_char_boundary(cursor) {
+            cursor += 1;
+        }
+    }
+
+    if params.is_empty() {
+        None
+    } else {
+        Some(params)
+    }
+}
+
+fn extract_html_attr(tag: &str, attr: &str) -> Option<String> {
+    for quote in ['"', '\''] {
+        let pat = format!("{}={}", attr, quote);
+        if let Some(pos) = tag.find(&pat) {
+            let start = pos + pat.len();
+            if let Some(end) = safe_subslice(tag, start, tag.len()).find(quote) {
+                return Some(safe_subslice(tag, start, start + end).to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Executes a live web search against DuckDuckGo (Lite and Instant Answer API) and Wikipedia.
 pub async fn live_web_search(query: &str, max_results: usize) -> Result<Vec<SearchResult>> {
-    let mut results = Vec::new();
+    let mut results: Vec<SearchResult> = Vec::new();
 
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(6))
@@ -255,82 +326,140 @@ pub async fn live_web_search(query: &str, max_results: usize) -> Result<Vec<Sear
         ),
     );
 
-    // 1. DuckDuckGo Lite endpoint (POST form with clean tabular data)
-    let form_params = [("q", query)];
-    let lite_resp = client
-        .post("https://lite.duckduckgo.com/lite/")
-        .headers(headers.clone())
-        .form(&form_params)
-        .send()
-        .await;
+    // 1. DuckDuckGo Lite endpoint with pagination (up to 5 pages)
+    let mut post_params: Vec<(String, String)> = vec![("q".to_string(), query.to_string())];
+    let mut pages_visited = 0;
 
-    if let Ok(resp) = lite_resp {
-        if resp.status().is_success() {
-            if let Ok(html) = resp.text().await {
-                // Parse result-link anchor tags: <a rel="nofollow" href="..." class='result-link'>...</a>
-                let mut cursor = 0;
-                while let Some(link_start) = html[cursor..].find("class='result-link'") {
-                    let abs_start = cursor + link_start;
-                    // Find preceding <a ... href="
-                    if let Some(href_idx) = html[..abs_start].rfind("href=\"") {
-                        let url_start = href_idx + 6;
-                        if let Some(url_end) = html[url_start..].find('"') {
-                            let raw_url = &html[url_start..url_start + url_end];
-                            // Extract actual URL if redirected via uddg=
-                            let clean_url = if let Some(uddg_pos) = raw_url.find("uddg=") {
-                                let after_uddg = &raw_url[uddg_pos + 5..];
-                                let end_param = after_uddg.find('&').unwrap_or(after_uddg.len());
-                                decode_percent_encoded(&after_uddg[..end_param])
-                            } else {
-                                raw_url.to_string()
-                            };
+    while results.len() < max_results && pages_visited < 5 {
+        pages_visited += 1;
+        let lite_resp = client
+            .post("https://lite.duckduckgo.com/lite/")
+            .headers(headers.clone())
+            .form(&post_params)
+            .send()
+            .await;
 
-                            // Find link text
-                            let tag_close = html[abs_start..].find('>').map(|p| abs_start + p + 1).unwrap_or(abs_start);
-                            let title = if let Some(tag_end) = html[tag_close..].find("</a>") {
-                                clean_html_entities(&html[tag_close..tag_close + tag_end])
-                            } else {
-                                String::new()
-                            };
+        let mut next_params: Option<Vec<(String, String)>> = None;
 
-                            // Search for subsequent result-snippet
-                            let snippet_start = html[abs_start..].find("class='result-snippet'").map(|p| abs_start + p);
-                            let snippet = if let Some(snip_pos) = snippet_start {
-                                if let Some(td_close) = html[snip_pos..].find('>') {
-                                    let snip_content_start = snip_pos + td_close + 1;
-                                    if let Some(td_end) = html[snip_content_start..].find("</td>") {
-                                        clean_html_entities(&html[snip_content_start..snip_content_start + td_end])
+        if let Ok(resp) = lite_resp {
+            if resp.status().is_success() {
+                if let Ok(html) = resp.text().await {
+                    let mut cursor = 0;
+                    let link_pat = "class='result-link'";
+                    while let Some(link_start) = safe_subslice(&html, cursor, html.len()).find(link_pat) {
+                        let abs_start = cursor + link_start;
+                        if let Some(href_idx) = safe_subslice(&html, 0, abs_start).rfind("href=\"") {
+                            let url_start = href_idx + 6;
+                            if let Some(url_end) = safe_subslice(&html, url_start, html.len()).find('"') {
+                                let raw_url = safe_subslice(&html, url_start, url_start + url_end);
+                                let clean_url = if let Some(uddg_pos) = raw_url.find("uddg=") {
+                                    let after_uddg = safe_subslice(raw_url, uddg_pos + 5, raw_url.len());
+                                    let end_param = after_uddg.find('&').unwrap_or(after_uddg.len());
+                                    decode_percent_encoded(safe_subslice(after_uddg, 0, end_param))
+                                } else {
+                                    raw_url.to_string()
+                                };
+
+                                let tag_close = safe_subslice(&html, abs_start, html.len()).find('>').map(|p| abs_start + p + 1).unwrap_or(abs_start);
+                                let title = if let Some(tag_end) = safe_subslice(&html, tag_close, html.len()).find("</a>") {
+                                    clean_html_entities(safe_subslice(&html, tag_close, tag_close + tag_end))
+                                } else {
+                                    String::new()
+                                };
+
+                                let snippet_start = safe_subslice(&html, abs_start, html.len()).find("class='result-snippet'").map(|p| abs_start + p);
+                                let snippet = if let Some(snip_pos) = snippet_start {
+                                    if let Some(td_close) = safe_subslice(&html, snip_pos, html.len()).find('>') {
+                                        let snip_content_start = snip_pos + td_close + 1;
+                                        if let Some(td_end) = safe_subslice(&html, snip_content_start, html.len()).find("</td>") {
+                                            clean_html_entities(safe_subslice(&html, snip_content_start, snip_content_start + td_end))
+                                        } else {
+                                            String::new()
+                                        }
                                     } else {
                                         String::new()
                                     }
                                 } else {
                                     String::new()
+                                };
+
+                                if clean_url.starts_with("http") && !title.is_empty() {
+                                    if !results.iter().any(|r| r.url == clean_url || r.title == title) {
+                                        results.push(SearchResult {
+                                            title,
+                                            url: clean_url,
+                                            snippet,
+                                        });
+                                    }
                                 }
-                            } else {
-                                String::new()
-                            };
 
-                            if clean_url.starts_with("http") && !title.is_empty() {
-                                results.push(SearchResult {
-                                    title,
-                                    url: clean_url,
-                                    snippet,
-                                });
+                                if results.len() >= max_results {
+                                    break;
+                                }
                             }
+                        }
+                        let mut next_cursor = abs_start + link_pat.len();
+                        while next_cursor < html.len() && !html.is_char_boundary(next_cursor) {
+                            next_cursor += 1;
+                        }
+                        cursor = next_cursor;
+                    }
 
-                            if results.len() >= max_results {
-                                break;
+                    if results.len() < max_results {
+                        next_params = extract_next_page_form_inputs(&html);
+                    }
+                }
+            }
+        }
+
+        match next_params {
+            Some(np) if !np.is_empty() => post_params = np,
+            _ => break,
+        }
+    }
+
+    // 2. Wikipedia Search API Supplement if results < max_results
+    if results.len() < max_results {
+        let needed = max_results.saturating_sub(results.len());
+        let wiki_limit = needed.clamp(1, 50);
+        let wiki_url = format!(
+            "https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={}&format=json&origin=*&srlimit={}",
+            encode_query(query),
+            wiki_limit
+        );
+        if let Ok(resp) = client.get(&wiki_url).headers(headers.clone()).send().await {
+            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                if let Some(search_arr) = json.get("query").and_then(|q| q.get("search")).and_then(|s| s.as_array()) {
+                    for item in search_arr {
+                        if let Some(title) = item.get("title").and_then(|t| t.as_str()) {
+                            let clean_title = title.to_string();
+                            let clean_snip = item.get("snippet")
+                                .and_then(|s| s.as_str())
+                                .map(clean_html_entities)
+                                .unwrap_or_default();
+                            let wiki_page_url = format!(
+                                "https://en.wikipedia.org/wiki/{}",
+                                encode_query(&clean_title.replace(' ', "_"))
+                            );
+                            if !results.iter().any(|r| r.url == wiki_page_url || r.title == clean_title) {
+                                results.push(SearchResult {
+                                    title: clean_title,
+                                    url: wiki_page_url,
+                                    snippet: clean_snip,
+                                });
+                                if results.len() >= max_results {
+                                    break;
+                                }
                             }
                         }
                     }
-                    cursor = abs_start + 20;
                 }
             }
         }
     }
 
-    // 2. Fallback: DuckDuckGo Instant Answer API if lite produced nothing
-    if results.is_empty() {
+    // 3. Fallback: DuckDuckGo Instant Answer API if results < max_results
+    if results.len() < max_results {
         let api_url = format!(
             "https://api.duckduckgo.com/?q={}&format=json",
             encode_query(query)
@@ -342,24 +471,28 @@ pub async fn live_web_search(query: &str, max_results: usize) -> Result<Vec<Sear
                 let abstract_url = data["AbstractURL"].as_str().unwrap_or("").to_string();
 
                 if !abstract_text.is_empty() && !abstract_url.is_empty() {
-                    results.push(SearchResult {
-                        title: if heading.is_empty() { query.to_string() } else { heading },
-                        url: abstract_url,
-                        snippet: abstract_text,
-                    });
+                    if !results.iter().any(|r| r.url == abstract_url) {
+                        results.push(SearchResult {
+                            title: if heading.is_empty() { query.to_string() } else { heading },
+                            url: abstract_url,
+                            snippet: abstract_text,
+                        });
+                    }
                 }
 
                 if let Some(topics) = data["RelatedTopics"].as_array() {
                     for t in topics {
                         if let (Some(text), Some(url)) = (t["Text"].as_str(), t["FirstURL"].as_str()) {
                             let title = text.split(" - ").next().unwrap_or(text).chars().take(60).collect::<String>();
-                            results.push(SearchResult {
-                                title,
-                                url: url.to_string(),
-                                snippet: text.to_string(),
-                            });
-                            if results.len() >= max_results {
-                                break;
+                            if !results.iter().any(|r| r.url == url) {
+                                results.push(SearchResult {
+                                    title,
+                                    url: url.to_string(),
+                                    snippet: text.to_string(),
+                                });
+                                if results.len() >= max_results {
+                                    break;
+                                }
                             }
                         }
                     }
@@ -368,6 +501,7 @@ pub async fn live_web_search(query: &str, max_results: usize) -> Result<Vec<Sear
         }
     }
 
+    results.truncate(max_results);
     Ok(results)
 }
 

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="HugOS Browser" Manufacturer="HugOS Team" Version="1.0.57" UpgradeCode="e98c7d08-91cb-4248-bfa5-765c96ddeca6" Scope="perUser">
+  <Package Name="HugOS Browser" Manufacturer="HugOS Team" Version="1.0.58" UpgradeCode="e98c7d08-91cb-4248-bfa5-765c96ddeca6" Scope="perUser">
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." Schedule="afterInstallInitialize" AllowSameVersionUpgrades="yes" />
 
     <MediaTemplate EmbedCab="yes" />
@@ -133,7 +133,10 @@
         <File Id="fil_23" Source="ui\index.html" KeyPath="yes" />
       </Component>
       <Component Id="cmp_24" Guid="*" Directory="dir_11">
-        <File Id="fil_24" Source="ui\styles.css" KeyPath="yes" />
+        <File Id="fil_24" Source="ui\stress_test_virtualizer.html" KeyPath="yes" />
+      </Component>
+      <Component Id="cmp_25" Guid="*" Directory="dir_11">
+        <File Id="fil_25" Source="ui\styles.css" KeyPath="yes" />
       </Component>
     </ComponentGroup>
   </Package>
