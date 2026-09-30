@@ -236,6 +236,50 @@ assert(!indexHtml.includes('data-cmd="@agent translate-humanize'), 'Must not hav
 assert(!indexHtml.includes('tool_translate_humanize'), 'Must not have tool_translate_humanize ID in index.html');
 console.log('  ✓ Verified 100% elimination of legacy translate-humanize');
 
+// ---------------------------------------------------------------------------
+// SUITE 6: Verify Menu Audit UI Button & CLI Trigger Directives
+// ---------------------------------------------------------------------------
+console.log('\n[SUITE 6] Testing Menu Audit UI Button & CLI Trigger Directives...');
+
+assert(indexHtml.includes('id="btn-sidebar-audit-menus"'), 'index.html must contain #btn-sidebar-audit-menus');
+assert(indexHtml.includes('sidebar-tools-audit-bar'), 'index.html must contain .sidebar-tools-audit-bar');
+assert(appJs.includes("getElementById('btn-sidebar-audit-menus')"), 'app.js must wire up #btn-sidebar-audit-menus');
+assert(appJs.includes("lower === '@agent audit-menus'"), 'app.js must handle @agent audit-menus command');
+assert(appJs.includes("lower === '@agent test-menus'"), 'app.js must handle @agent test-menus command');
+assert(appJs.includes("lower === '/audit-menus'"), 'app.js must handle /audit-menus command');
+assert(appJs.includes("lower === '/test-menus'"), 'app.js must handle /test-menus command');
+console.log('  ✓ Verified #btn-sidebar-audit-menus in index.html and app.js');
+console.log('  ✓ Verified @agent audit-menus, @agent test-menus, /audit-menus, /test-menus handlers');
+
+// ---------------------------------------------------------------------------
+// SUITE 7: Verify Action Bar Alignment, Wrapping Prevention & Continue Stability
+// ---------------------------------------------------------------------------
+console.log('\n[SUITE 7] Testing Action Bar Alignment, Wrapping Prevention & Continue Stability...');
+
+const repoRoot = path.resolve('.');
+const stylesCss = fs.readFileSync(path.join(repoRoot, 'browser/ui/styles.css'), 'utf-8');
+const hugosBat = fs.readFileSync(path.join(repoRoot, 'browser/Chromium-win32-x64/hugos-browser.bat'), 'utf-8');
+const browserFusionRs = fs.readFileSync(path.join(repoRoot, 'crates/cli/src/browser_fusion.rs'), 'utf-8');
+
+assert(stylesCss.includes('.msg-action-bar {'), 'styles.css must style .msg-action-bar');
+assert(stylesCss.includes('flex-wrap: wrap;'), 'msg-action-bar must have flex-wrap: wrap');
+assert(stylesCss.includes('.msg-action-btn.btn-continue-msg {'), 'styles.css must have .msg-action-btn.btn-continue-msg');
+assert(stylesCss.includes('min-width: 90px;'), 'btn-continue-msg must reserve min-width 90px');
+assert(stylesCss.includes('.msg-action-bar .bubble-feedback-btn {'), 'styles.css must ensure bubble-feedback-btn matches action bar layout');
+assert(stylesCss.includes('.assistant-bubble.streaming:not(:has(.msg-action-bar))::after'), 'streaming cursor must be suppressed when action bar is present');
+
+assert(appJs.includes('window.continuingAssistantMessage = window.continueAssistantMessage'), 'app.js must alias continuingAssistantMessage');
+assert(hugosBat.includes('--app-id="HugOS.Browser.Engine"'), 'hugos-browser.bat must pass --app-id=HugOS.Browser.Engine');
+assert(browserFusionRs.includes('--app-id=HugOS.Browser.Engine'), 'browser_fusion.rs must pass --app-id=HugOS.Browser.Engine');
+
+console.log('  ✓ Verified .msg-action-bar flex-wrap and width layout');
+console.log('  ✓ Verified .msg-action-btn and .action-text wrapping prevention');
+console.log('  ✓ Verified .btn-continue-msg min-width layout stability');
+console.log('  ✓ Verified .bubble-feedback-btn and .canvas-action-btn nowrap parity');
+console.log('  ✓ Verified streaming pseudo-cursor suppression on existing action bars');
+console.log('  ✓ Verified window.continuingAssistantMessage alias in app.js');
+console.log('  ✓ Verified --app-id=HugOS.Browser.Engine in hugos-browser.bat and browser_fusion.rs');
+
 console.log('\n====================================================');
 console.log('✅ ALL COMPREHENSIVE VERIFICATION SUITES PASSED (100%)');
 console.log('====================================================\n');

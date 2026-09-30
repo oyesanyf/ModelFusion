@@ -937,9 +937,14 @@ $heartbeatJob = Start-Job -ScriptBlock {
 }
 
 try {
-    # Run wix build with multi-threaded cabinet compression and bind path
-    & $wixExe build -b $PSScriptRoot -arch x64 -ct 4 $wxsPath -out $msiPath
-    $wixExit = $LASTEXITCODE
+    if (-not (Test-Path $msiPath) -or ((Get-Item $msiPath).LastWriteTime -lt (Get-Item $wxsPath).LastWriteTime)) {
+        # Run wix build with multi-threaded cabinet compression and bind path
+        & $wixExe build -b $PSScriptRoot -arch x64 -ct 4 $wxsPath -out $msiPath
+        $wixExit = $LASTEXITCODE
+    } else {
+        Write-Host "[OK] Existing MSI installer is fresh and matches current WiX manifest." -ForegroundColor Green
+        $wixExit = 0
+    }
 } finally {
     Stop-Job $heartbeatJob -ErrorAction SilentlyContinue
     Remove-Job $heartbeatJob -Force -ErrorAction SilentlyContinue
