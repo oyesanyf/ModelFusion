@@ -3530,14 +3530,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  window.continueAssistantMessage = async function(btn) {
-    const bubble = btn.closest('.assistant-bubble') || btn.closest('.msg-bubble');
+  window.continueAssistantMessage = async function(target, options = {}) {
+    const bubble = (target && target.classList && (target.classList.contains('assistant-bubble') || target.classList.contains('msg-bubble')))
+      ? target
+      : (target && typeof target.closest === 'function' ? (target.closest('.assistant-bubble') || target.closest('.msg-bubble')) : null);
     if (!bubble) return;
-    if (btn.disabled) return;
 
-    btn.disabled = true;
-    const iconSpan = btn.querySelector('.action-icon');
-    const textSpan = btn.querySelector('.action-text');
+    const btn = bubble.querySelector('.btn-continue-msg') || (target && target.classList && target.classList.contains('btn-continue-msg') ? target : null);
+    if (btn && btn.disabled) return;
+    if (btn) btn.disabled = true;
+
+    const iconSpan = btn ? btn.querySelector('.action-icon') : null;
+    const textSpan = btn ? btn.querySelector('.action-text') : null;
     const origIcon = iconSpan ? iconSpan.textContent : '⚡';
     const origLabel = textSpan ? textSpan.textContent : 'Continue';
     if (iconSpan) iconSpan.textContent = '⏳';
@@ -3545,17 +3549,59 @@ document.addEventListener('DOMContentLoaded', () => {
 
     bubble.classList.add('streaming');
 
-    // 1. Extract clean initial text and original prompt
+    const activeSession = chatSessions.find(s => s.id === currentSessionId);
+
+    // 1. Extract clean initial text
     let initialText = bubble.dataset.rawText || '';
+    let matchedPrompt = '';
+
+    // Match with active session to ensure 100% exact text and prompt parity
+    if (activeSession && Array.isArray(activeSession.messages)) {
+      if (initialText) {
+        const idx = activeSession.messages.findLastIndex(m => m.role === 'assistant' && (m.content === initialText || initialText.startsWith(m.content) || m.content.startsWith(initialText)));
+        if (idx >= 0) {
+          initialText = activeSession.messages[idx].content || initialText;
+          if (idx > 0 && activeSession.messages[idx - 1].role === 'user') {
+            matchedPrompt = activeSession.messages[idx - 1].content || '';
+          }
+        }
+      } else {
+        const lastAssIdx = activeSession.messages.findLastIndex(m => m.role === 'assistant');
+        if (lastAssIdx >= 0) {
+          initialText = activeSession.messages[lastAssIdx].content || '';
+          if (lastAssIdx > 0 && activeSession.messages[lastAssIdx - 1].role === 'user') {
+            matchedPrompt = activeSession.messages[lastAssIdx - 1].content || '';
+          }
+        }
+      }
+    }
+
     if (!initialText) {
-      const textContainer = bubble.querySelector('.assistant-text-content') || bubble.querySelector('.stream-content') || bubble.querySelector('.bubble-content');
+      const textContainer = bubble.querySelector('.canvas-card-body') ||
+                            bubble.querySelector('.assistant-content-container') ||
+                            bubble.querySelector('.assistant-text-content') ||
+                            bubble.querySelector('.stream-content') ||
+                            bubble.querySelector('.bubble-content');
       if (textContainer) {
         const clone = textContainer.cloneNode(true);
-        clone.querySelectorAll('.msg-action-bar, .research-status-bar, .research-sources-card, .model-thinking-box, .continuation-section').forEach(el => el.remove());
+        clone.querySelectorAll('.msg-action-bar, .research-status-bar, .research-sources-card, .model-thinking-box, .continuation-section, .canvas-card-header, .bubble-author').forEach(el => el.remove());
         initialText = clone.innerText.trim();
       }
     }
-    const originalPrompt = bubble.dataset.prompt || 'Continue prior analysis';
+
+    // Resolve true original user prompt
+    let originalPrompt = bubble.dataset.prompt || matchedPrompt || '';
+    if (!originalPrompt && activeSession && Array.isArray(activeSession.messages)) {
+      const prevUser = activeSession.messages.slice().reverse().find(m =>
+        m.role === 'user' && m.content && !/^\s*(@agent\s+)?(boost\s+)?(continue|continute|keep\s*going|go\s*on|more|next\s*part)\b/i.test(m.content)
+      );
+      if (prevUser) {
+        originalPrompt = prevUser.content;
+      }
+    }
+    if (!originalPrompt) {
+      originalPrompt = lastUserPrompt || '';
+    }
 
     // 2. Find or create isolated continuation section inside the bubble (above action bar)
     let contSection = bubble.querySelector('.continuation-section');
@@ -3568,15 +3614,18 @@ document.addEventListener('DOMContentLoaded', () => {
       if (actionBar && actionBar.parentNode) {
         actionBar.parentNode.insertBefore(contSection, actionBar);
       } else {
-        const bContent = bubble.querySelector('.bubble-content') || bubble;
+        const bContent = bubble.querySelector('.assistant-content-container') || bubble.querySelector('.bubble-content') || bubble;
         bContent.appendChild(contSection);
       }
     }
 
+    const isBoostMode = Boolean(options && options.isBoost);
+    const boostLabel = isBoostMode ? '⚡ Continuing response with Deep Boost (65k context)...' : '⚡ Continuing response directly where it left off...';
+
     contSection.innerHTML = `
       <div class="continuation-status-pill" style="display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--accent-color, #10b981); background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 20px; padding: 3px 10px; margin-bottom: 10px; font-weight: 600;">
         <span class="status-pulse-dot" style="background: var(--accent-color, #10b981); width: 7px; height: 7px; border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite;"></span>
-        <span class="cont-status-text">⚡ Continuing response directly where it left off...</span>
+        <span class="cont-status-text">${boostLabel}</span>
       </div>
       <div class="continuation-stream-target" style="line-height: 1.6; font-size: 13.5px;"></div>
     `;
@@ -3584,19 +3633,32 @@ document.addEventListener('DOMContentLoaded', () => {
     const streamTargetEl = contSection.querySelector('.continuation-stream-target');
     const statusTextEl = contSection.querySelector('.cont-status-text');
 
-    const continuationDirective = "Continue directly where you left off. Do not repeat previous text. Expand with deeper analysis, additional facts, and detailed next steps:";
+    const cleanPrompt = (originalPrompt || '').replace(/^(@agent\s+[\w-]+|\/[\w-]+|@[\w-]+)\s*/i, '').trim();
+    let continuationDirective = '';
+    if (options && options.extraInstruction) {
+      continuationDirective = cleanPrompt
+        ? `Continue generating the response to the user's prompt: "${cleanPrompt}" seamlessly from where you left off, incorporating these continuation instructions: "${options.extraInstruction}". Strictly maintain the identical topic, format, genre, and tone. Do not switch topics, do not repeat earlier text, and do not include meta-commentary:`
+        : `Continue the preceding response seamlessly from where you left off, incorporating these continuation instructions: "${options.extraInstruction}". Strictly maintain the identical topic, format, genre, and tone. Do not switch topics, do not repeat earlier text, and do not include meta-commentary:`;
+    } else {
+      continuationDirective = cleanPrompt
+        ? `Continue generating the response to the user's prompt: "${cleanPrompt}" directly from where you left off. Strictly maintain the exact same topic, genre, poetic or prose style, tone, and formatting. Do NOT switch to an unrelated topic. Do not repeat previous text, and do not add meta-commentary:`
+        : `Continue the response seamlessly directly from where you left off. Strictly maintain the exact same topic, genre, style, tone, and format. Do NOT switch to an unrelated topic. Do not repeat previous text, and do not add meta-commentary:`;
+    }
+
+    const continuationSysPrompt = `You are an expert assistant continuing an ongoing response. Your task is to continue the generation seamlessly from the exact word or line where it stopped. Strictly preserve the identical subject matter, genre, style, rhythm, and tone of the ongoing generation. Under NO circumstances should you change topic, abandon the previous subject, or switch into unprompted analysis. Do not repeat earlier lines or paragraphs, and do not include conversational preamble or apologies. Continue immediately:`;
 
     try {
-      const continuationSysPrompt = "You are an expert assistant continuing an ongoing response. Continue smoothly, accurately, and exhaustively from the exact point of interruption without repeating earlier text or adding meta-commentary.";
       await streamAiChat(continuationDirective, continuationSysPrompt, {
         existingBubble: bubble,
         bubbleContent: streamTargetEl,
         initialText: initialText,
         originalPrompt: originalPrompt,
         isContinuation: true,
+        isBoost: isBoostMode,
+        panel: isBoostMode ? { id: 'reasoning', name: 'Deep Reasoning Boost (Continuation)' } : undefined,
         continuationSection: contSection,
         continuationStatusEl: statusTextEl,
-        maxTokens: Math.max(8192, currentSettings.maxTokens || 8192)
+        maxTokens: isBoostMode ? 65536 : Math.max(8192, currentSettings.maxTokens || 8192)
       });
     } catch (e) {
       termLog(`[CONTINUE] Error continuing response: ${e.message}`, 'error');
@@ -3605,7 +3667,7 @@ document.addEventListener('DOMContentLoaded', () => {
         statusTextEl.style.color = 'var(--error-color, #ef4444)';
       }
     } finally {
-      btn.disabled = false;
+      if (btn) btn.disabled = false;
       bubble.classList.remove('streaming');
       if (iconSpan) iconSpan.textContent = origIcon;
       if (textSpan) textSpan.textContent = origLabel;
@@ -4747,6 +4809,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
         bubble.className = 'msg-bubble assistant-bubble';
         const cleanMsgContent = unwrapJsonContent(msg.content);
         bubble.dataset.rawText = cleanMsgContent;
+        bubble.dataset.prompt = lastUserMsg ? lastUserMsg.content : '';
         bubble.innerHTML = `
           <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
             <div style="display: flex; align-items: center; gap: 4px;">
@@ -4757,7 +4820,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
             </div>
           </div>
           <div class="assistant-content-container">
-            ${formatAssistantContent(cleanMsgContent)}
+            ${formatAssistantContent(cleanMsgContent, lastUserMsg ? lastUserMsg.content : '')}
           </div>
         `;
         const btnCopy = bubble.querySelector('.btn-copy-response');
@@ -6008,7 +6071,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
     const presencePenaltyToUse = (options && typeof options.presence_penalty === 'number') ? options.presence_penalty : 0.1;
     const frequencyPenaltyToUse = (options && typeof options.frequency_penalty === 'number') ? options.frequency_penalty : 0.1;
 
-    if (currentSettings.naturalVoice !== false && !isCodeOrMath && typeof effectiveSysPrompt === 'string' && !effectiveSysPrompt.includes('High Burstiness') && !effectiveSysPrompt.includes('expert editor who rewrites')) {
+    if (!(options && options.isContinuation) && currentSettings.naturalVoice !== false && !isCodeOrMath && typeof effectiveSysPrompt === 'string' && !effectiveSysPrompt.includes('High Burstiness') && !effectiveSysPrompt.includes('expert editor who rewrites')) {
       effectiveSysPrompt = `${effectiveSysPrompt}\n\n${NATURAL_HUMAN_PROSE_DIRECTIVE}`;
     }
 
@@ -6142,6 +6205,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
         </div>
       `;
       chatMessages.appendChild(assistantBubble);
+      assistantBubble.dataset.prompt = (options && options.isContinuation && options.originalPrompt) ? options.originalPrompt : userPrompt;
       bubbleContent = assistantBubble.querySelector('.stream-content') || assistantBubble.querySelector('.bubble-content');
       if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
     }
@@ -6189,38 +6253,85 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
         { role: 'system', content: effectiveSysPrompt }
       ];
 
-      // Add multi-turn context from current active session
-      if (activeSession && Array.isArray(activeSession.messages)) {
-        const lastMsg = activeSession.messages[activeSession.messages.length - 1];
-        const isLastMsgCurrentUser = Boolean(lastMsg && lastMsg.role === 'user');
-        const history = isLastMsgCurrentUser ? activeSession.messages.slice(0, -1) : activeSession.messages;
-        const windowedHistory = history.slice(-30);
-        for (const m of windowedHistory) {
-          if (m.role === 'user' && m.content) {
-            let userContent = m.content;
-            if (Array.isArray(m.attachments) && m.attachments.length > 0) {
-              const attachParts = m.attachments.map(att => {
-                const name = att.name || 'file';
-                const body = (att.text || att.content || att.raw || '').slice(0, 4000);
-                return `[Attached File: ${name}]\n${body}`;
-              }).join('\n\n');
-              userContent = `${attachParts}\n\n${userContent}`;
+      if (options && options.isContinuation) {
+        // Strict continuation mode: preserve exact prompt, topic, genre, and text context
+        conversationMessages.length = 0;
+        conversationMessages.push({ role: 'system', content: effectiveSysPrompt });
+
+        const targetInitial = (options.initialText || '').trim();
+        const targetPrompt = (options.originalPrompt || '').trim();
+
+        let includedHistory = false;
+        if (activeSession && Array.isArray(activeSession.messages) && activeSession.messages.length > 0) {
+          let targetIdx = -1;
+          if (targetInitial) {
+            targetIdx = activeSession.messages.findLastIndex(m =>
+              m.role === 'assistant' && (m.content === targetInitial || targetInitial.startsWith(m.content) || m.content.startsWith(targetInitial))
+            );
+          }
+          if (targetIdx === -1) {
+            targetIdx = activeSession.messages.findLastIndex(m => m.role === 'assistant');
+          }
+
+          if (targetIdx >= 0) {
+            includedHistory = true;
+            const historySlice = activeSession.messages.slice(0, targetIdx);
+            const windowed = historySlice.slice(-16);
+            for (const m of windowed) {
+              if (m.role === 'user' && m.content) {
+                conversationMessages.push({ role: 'user', content: m.content });
+              } else if (m.role === 'assistant' && m.content) {
+                conversationMessages.push({ role: 'assistant', content: m.content });
+              }
             }
-            conversationMessages.push({ role: 'user', content: userContent });
-          } else if (m.role === 'assistant' && m.content) {
-            conversationMessages.push({ role: 'assistant', content: m.content });
+            conversationMessages.push({ role: 'assistant', content: targetInitial || activeSession.messages[targetIdx].content });
           }
         }
-      }
 
-      if (options && options.isContinuation && options.initialText) {
-        const hasInitial = conversationMessages.some(m => m.role === 'assistant' && (m.content === options.initialText || options.initialText.startsWith(m.content)));
-        if (!hasInitial) {
-          conversationMessages.push({ role: 'assistant', content: options.initialText });
+        if (!includedHistory) {
+          if (targetPrompt) {
+            conversationMessages.push({ role: 'user', content: targetPrompt });
+          } else {
+            conversationMessages.push({ role: 'user', content: 'Please continue the preceding response.' });
+          }
+          if (targetInitial) {
+            conversationMessages.push({ role: 'assistant', content: targetInitial });
+          }
         }
-      }
 
-      conversationMessages.push(messagePayload);
+        // Guarantee message alternation: ensure the last message before messagePayload is role: 'assistant'
+        if (conversationMessages.length >= 2 && conversationMessages[conversationMessages.length - 1].role === 'user') {
+          conversationMessages.push({ role: 'assistant', content: targetInitial || 'Proceeding.' });
+        }
+
+        conversationMessages.push(messagePayload);
+      } else {
+        // Add multi-turn context from current active session
+        if (activeSession && Array.isArray(activeSession.messages)) {
+          const lastMsg = activeSession.messages[activeSession.messages.length - 1];
+          const isLastMsgCurrentUser = Boolean(lastMsg && lastMsg.role === 'user');
+          const history = isLastMsgCurrentUser ? activeSession.messages.slice(0, -1) : activeSession.messages;
+          const windowedHistory = history.slice(-30);
+          for (const m of windowedHistory) {
+            if (m.role === 'user' && m.content) {
+              let userContent = m.content;
+              if (Array.isArray(m.attachments) && m.attachments.length > 0) {
+                const attachParts = m.attachments.map(att => {
+                  const name = att.name || 'file';
+                  const body = (att.text || att.content || att.raw || '').slice(0, 4000);
+                  return `[Attached File: ${name}]\n${body}`;
+                }).join('\n\n');
+                userContent = `${attachParts}\n\n${userContent}`;
+              }
+              conversationMessages.push({ role: 'user', content: userContent });
+            } else if (m.role === 'assistant' && m.content) {
+              conversationMessages.push({ role: 'assistant', content: m.content });
+            }
+          }
+        }
+
+        conversationMessages.push(messagePayload);
+      }
 
       const isGoalDirective = Boolean(
         (options && (options.isGoal || options.allowContinuation || options.agenticLoop)) ||
@@ -6889,12 +7000,12 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
           if (options.continuationSection) {
             options.continuationSection.remove();
           }
-          let mainTarget = assistantBubble.querySelector('.stream-content') || assistantBubble.querySelector('.assistant-text-content') || assistantBubble.querySelector('.bubble-content');
-          if (mainTarget) {
-            let parentContainer = assistantBubble.querySelector('.stream-content') || assistantBubble.querySelector('.bubble-content');
-            if (parentContainer) {
-              parentContainer.innerHTML = formatAssistantContent(finalMergedText, promptToSave);
-            }
+          let parentContainer = assistantBubble.querySelector('.assistant-content-container') ||
+                                assistantBubble.querySelector('.stream-content') ||
+                                assistantBubble.querySelector('.bubble-content') ||
+                                assistantBubble;
+          if (parentContainer) {
+            parentContainer.innerHTML = formatAssistantContent(finalMergedText, promptToSave);
           }
         } else if (bubbleContent) {
           bubbleContent.style.color = '';
@@ -6987,7 +7098,10 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
 
             if (options && options.isContinuation) {
               if (options.continuationSection) options.continuationSection.remove();
-              let parentContainer = assistantBubble.querySelector('.stream-content') || assistantBubble.querySelector('.bubble-content');
+              let parentContainer = assistantBubble.querySelector('.assistant-content-container') ||
+                                    assistantBubble.querySelector('.stream-content') ||
+                                    assistantBubble.querySelector('.bubble-content') ||
+                                    assistantBubble;
               if (parentContainer) parentContainer.innerHTML = formatAssistantContent(finalMerged, promptToSave);
             } else if (bubbleContent) {
               bubbleContent.innerHTML = formatAssistantContent(finalMerged, userPrompt);
@@ -7827,6 +7941,58 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
     // Export Entire History Directive
     if (lower === '@agent export' || lower === '/export' || lower.startsWith('@agent export ') || lower.startsWith('/export ')) {
       showExportModal();
+      return;
+    }
+
+    // Continuation Directives: /continue, @agent continue, /boost continue, /boost continute, /more, etc.
+    const isContinuationCmd = /^\s*(@agent\s+)?(boost\s+)?(continue|continute|keep\s*going|go\s*on|more|next\s*part)\b/i.test(cmd);
+    if (isContinuationCmd) {
+      const isBoost = /boost\b/i.test(cmd);
+      const extraInstructions = cmd
+        .replace(/^(@agent\s+)?(boost\s+)?(continue|continute|keep\s*going|go\s*on|more|next\s*part)\s*:?\s*/i, '')
+        .trim();
+
+      termLog(`[CONTINUE] ⚡ Continuing prior assistant response${isBoost ? ' with Deep Boost' : ''}...`, 'info');
+      termLog(cmd, 'cmd');
+      if (cliPromptInput) cliPromptInput.value = '';
+      if (cliPromptInputPinned) cliPromptInputPinned.value = '';
+
+      const activeSession = chatSessions.find(s => s.id === currentSessionId);
+      const bubbles = Array.from(document.querySelectorAll('.assistant-bubble, .msg-bubble.assistant-bubble'));
+      const lastBubble = bubbles.length > 0 ? bubbles[bubbles.length - 1] : null;
+
+      if (lastBubble) {
+        await window.continueAssistantMessage(lastBubble, {
+          isBoost: isBoost,
+          extraInstruction: extraInstructions
+        });
+      } else {
+        const lastAssMsg = activeSession && Array.isArray(activeSession.messages)
+          ? activeSession.messages.findLast(m => m.role === 'assistant')
+          : null;
+        if (lastAssMsg) {
+          termLog('⚡ Resuming continuation of saved session response...', 'info');
+          const lastAssIdx = activeSession.messages.indexOf(lastAssMsg);
+          const prevUserMsg = activeSession.messages.slice(0, lastAssIdx).reverse().find(m => m.role === 'user');
+          const originalPrompt = prevUserMsg ? prevUserMsg.content : (lastUserPrompt || 'Continue generation');
+          const cleanPrompt = originalPrompt.replace(/^(@agent\s+[\w-]+|\/[\w-]+|@[\w-]+)\s*/i, '').trim();
+          const continuationDirective = extraInstructions
+            ? `Continue generating the response to the user's prompt: "${cleanPrompt}" seamlessly from where you left off, incorporating these continuation instructions: "${extraInstructions}". Strictly maintain the identical topic, format, genre, and tone. Do not switch topics, do not repeat earlier text, and do not include meta-commentary:`
+            : `Continue generating the response to the user's prompt: "${cleanPrompt}" directly from where you left off. Strictly maintain the exact same topic, genre, poetic or prose style, tone, and formatting. Do NOT switch to an unrelated topic. Do not repeat previous text, and do not add meta-commentary:`;
+          const continuationSysPrompt = `You are an expert assistant continuing an ongoing response. Your task is to continue the generation seamlessly from the exact word or line where it stopped. Strictly preserve the identical subject matter, genre, style, rhythm, and tone of the ongoing generation. Under NO circumstances should you change topic or switch into unprompted analysis. Do not repeat earlier lines or paragraphs, and do not include conversational preamble or apologies. Continue immediately:`;
+          await streamAiChat(continuationDirective, continuationSysPrompt, {
+            initialText: lastAssMsg.content,
+            originalPrompt: originalPrompt,
+            isContinuation: true,
+            isBoost: isBoost,
+            panel: isBoost ? { id: 'reasoning', name: 'Deep Reasoning Boost (Continuation)' } : undefined,
+            maxTokens: isBoost ? 65536 : Math.max(8192, currentSettings.maxTokens || 8192)
+          });
+        } else {
+          termLog('⚠️ No prior assistant message found to continue in this conversation. Please submit a prompt first.', 'warn');
+        }
+      }
+      if (currentAttachments.length > 0) clearAllAttachments();
       return;
     }
 
@@ -9190,6 +9356,17 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     // 4.1 Deep Thinking Boost Directive (@agent boost, /boost, @boost)
     if (lower === '@agent boost' || lower.startsWith('@agent boost ') || lower === '/boost' || lower.startsWith('/boost ') || lower === '@boost' || lower.startsWith('@boost ')) {
       const boostQuery = cmd.replace(/^(@agent\s+boost|\/boost|@boost)\s*/i, '').trim();
+      const isContinuationWord = /^(continue|continute|keep\s*going|go\s*on|more|next\s*part)\b/i.test(boostQuery);
+      if (isContinuationWord) {
+        const extraText = boostQuery.replace(/^(continue|continute|keep\s*going|go\s*on|more|next\s*part)\s*:?\s*/i, '').trim();
+        const bubbles = Array.from(document.querySelectorAll('.assistant-bubble, .msg-bubble.assistant-bubble'));
+        const lastBubble = bubbles.length > 0 ? bubbles[bubbles.length - 1] : null;
+        if (lastBubble) {
+          await window.continueAssistantMessage(lastBubble, { isBoost: true, extraInstruction: extraText });
+          if (currentAttachments.length > 0) clearAllAttachments();
+          return;
+        }
+      }
       let queryToRun = boostQuery;
       if (!queryToRun && activeSession && Array.isArray(activeSession.messages)) {
         const prevUserMsg = activeSession.messages.slice(0, -1).reverse().find(m => m.role === 'user' && m.content);
