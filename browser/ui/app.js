@@ -3036,8 +3036,58 @@ document.addEventListener('DOMContentLoaded', () => {
     setChatRunningState(false);
   }
 
+  // ---------------------------------------------------------------------------
+  // JSON Wrapper Unwrapper & Prose Normalizer
+  // Unwraps {"content":"..."}, {"response":"..."}, {"message":{"content":"..."}},
+  // extracts text from fenced JSON, and decodes escaped newlines/characters.
+  // ---------------------------------------------------------------------------
+  function unwrapJsonContent(text) {
+    if (!text || typeof text !== 'string') return text || '';
+    let str = text.trim();
+
+    // 1. Check if enclosed in markdown code fences containing JSON
+    const fencedMatch = str.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+    if (fencedMatch && (fencedMatch[1].trim().startsWith('{') || fencedMatch[1].trim().startsWith('['))) {
+      str = fencedMatch[1].trim();
+    }
+
+    // 2. Try JSON.parse if it looks like a complete JSON object
+    if (str.startsWith('{') && str.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(str);
+        const extracted = parsed.content ?? parsed.response ?? parsed.message?.content ?? parsed.message ?? parsed.text ?? parsed.output ?? parsed.result ?? parsed.choices?.[0]?.message?.content;
+        if (typeof extracted === 'string') {
+          return unwrapJsonContent(extracted);
+        }
+      } catch (_) {}
+    }
+
+    // 3. Fallback regex unwrap for partial/streaming or malformed JSON
+    const prefixMatch = str.match(/^\s*\{\s*\"(?:content|response|text|output|result|message)\"\s*:\s*(?:\{\s*\"content\"\s*:\s*)?\"/i);
+    if (prefixMatch) {
+      let unescaped = str.slice(prefixMatch[0].length);
+      unescaped = unescaped.replace(/\"?\s*\}?\s*\}?\s*$/, '');
+      unescaped = unescaped
+        .replace(/\\n/g, '\n')
+        .replace(/\\r/g, '\r')
+        .replace(/\\t/g, '\t')
+        .replace(/\\\"/g, '"')
+        .replace(/\\\\/g, '\\')
+        .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+      return unescaped;
+    }
+
+    // 4. Raw escaped newlines cleanup if text contains literal '\n' but no/few real newlines
+    if (str.includes('\\n') && !str.includes('\n\n')) {
+      str = str.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\\"/g, '"');
+    }
+
+    return str;
+  }
+
   function renderMarkdown(text) {
     if (!text) return '';
+    text = unwrapJsonContent(text);
 
     // 1. Extract and preserve fenced code blocks first
     const codeBlocks = [];
@@ -3185,6 +3235,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function formatAssistantContent(text, userPrompt = '') {
+    text = unwrapJsonContent(text);
     if (!text || !text.trim()) {
       return '<div class="empty-response-notice" style="font-size: 13px; color: var(--text-muted); font-style: italic; padding: 6px 0;">No response content generated. Click <button type="button" class="bubble-action-btn btn-run-prompt" style="margin-left: 6px;" onclick="if(window.runPromptFromHistory && window.lastUserPrompt) window.runPromptFromHistory(window.lastUserPrompt)">▶ Retry Prompt</button></div>';
     }
@@ -4331,6 +4382,67 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
 
   const btnActionCopyRich = document.getElementById('btn-action-copy-rich');
   if (btnActionCopyRich) btnActionCopyRich.addEventListener('click', copyRichFormattedText);
+
+  // -----------------------------------------------------------------
+  // PWA Service Worker Registration & Desktop Pinning
+  // -----------------------------------------------------------------
+  let deferredInstallPrompt = null;
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(err => {
+        console.warn('[PWA] Service worker registration warning:', err);
+      });
+    });
+  }
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+  });
+
+  async function handlePinToDesktop() {
+    let success = false;
+    const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+    
+    // 1. If running under ModelFusion IPC server, trigger authoritative Windows shortcut pin
+    try {
+      const pinRes = await fetch(`${ipcUrl}/api/desktop/pin`, { method: 'POST' });
+      if (pinRes.ok) {
+        success = true;
+        termLog('📌 [DESKTOP] HugOS Browser pinned to Desktop with distinct icon.', 'success');
+        showShareToast('✓ HugOS Browser pinned to Desktop with distinct icon!');
+      }
+    } catch (_) {}
+
+    // 2. If Chromium PWA install prompt is ready, offer install
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      const choiceResult = await deferredInstallPrompt.userChoice;
+      if (choiceResult && choiceResult.outcome === 'accepted') {
+        success = true;
+        termLog('📌 [PWA] HugOS Browser installed to desktop app launcher.', 'success');
+      }
+      deferredInstallPrompt = null;
+    }
+
+    if (!success) {
+      // 3. Fallback: Generate and download an Internet Shortcut (.url) with distinct icon configuration
+      try {
+        const urlContent = `[InternetShortcut]\r\nURL=http://localhost:5000/index.html\r\nIconFile=${encodeURI(window.location.origin + '/hugos_browser.ico')}\r\nIconIndex=0\r\n`;
+        downloadFile('HugOS Browser.url', urlContent, 'application/x-mswinurl');
+        termLog('📌 [SHORTCUT] Downloaded desktop shortcut for HugOS Browser.', 'info');
+        showShareToast('✓ Desktop shortcut downloaded!');
+      } catch (err) {
+        termLog(`📌 [SHORTCUT] Shortcut pin notice: ${err.message}`, 'warn');
+      }
+    }
+  }
+
+  const btnPinDesktop = document.getElementById('btn-pin-desktop');
+  if (btnPinDesktop) btnPinDesktop.addEventListener('click', handlePinToDesktop);
+
+  const sidebarPinDesktop = document.getElementById('sidebar-pin-desktop');
+  if (sidebarPinDesktop) sidebarPinDesktop.addEventListener('click', handlePinToDesktop);
 
 
   // -----------------------------------------------------------------
@@ -6289,7 +6401,8 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
         if (!streamMode) {
           const data = await res.json();
           if (statusCtrl) { statusCtrl.stop(); statusCtrl = null; }
-          turnResponse = data.message?.content || data.response || '';
+          const rawTurn = data.content || data.response || data.output || data.text || data.message?.content || (typeof data === 'string' ? data : '');
+          turnResponse = unwrapJsonContent(typeof rawTurn === 'object' && rawTurn !== null ? (rawTurn.content || rawTurn.text || JSON.stringify(rawTurn)) : rawTurn);
           doneReason = data.done_reason || '';
           fullResponse += (turn > 0 ? '\n\n' : '') + turnResponse;
           totalEstimatedTokens += Math.max(1, Math.round(turnResponse.length / 4));
@@ -6565,7 +6678,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
                 }
 
                 // 2. Main content / response
-                const chunk = parsed.message?.content || parsed.response || '';
+                const chunk = parsed.message?.content || parsed.response || parsed.content || parsed.text || '';
                 if (chunk) {
                   packetChunk += chunk;
                 }
@@ -6587,7 +6700,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
               if (parsed.message?.thinking) {
                 appendThinkingTokens(parsed.message.thinking);
               }
-              const chunk = parsed.message?.content || parsed.response || '';
+              const chunk = parsed.message?.content || parsed.response || parsed.content || parsed.text || '';
               if (chunk) {
                 processContentChunk(chunk);
               }
@@ -6675,9 +6788,10 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
       responseLine.innerHTML = renderMarkdown(fullResponse);
       if (assistantBubble) {
         assistantBubble.classList.remove('streaming');
-        const finalMergedText = (options && options.isContinuation && options.initialText)
+        const rawFinal = (options && options.isContinuation && options.initialText)
           ? (options.initialText.trimEnd() + '\n\n' + turnResponse.trim())
           : fullResponse;
+        const finalMergedText = unwrapJsonContent(rawFinal);
         assistantBubble.dataset.rawText = finalMergedText;
         const promptToSave = (options && options.isContinuation && options.originalPrompt)
           ? options.originalPrompt
@@ -6702,13 +6816,14 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
           bubbleContent.style.display = 'block';
           bubbleContent.style.alignItems = '';
           bubbleContent.style.gap = '';
-          bubbleContent.innerHTML = formatAssistantContent(fullResponse, userPrompt);
+          bubbleContent.innerHTML = formatAssistantContent(finalMergedText, userPrompt);
         }
       }
       if (activeSession && (fullResponse || turnResponse) && (fullResponse.trim() || turnResponse.trim())) {
-        const finalContentToPersist = (options && options.isContinuation && options.initialText)
+        const rawContentToPersist = (options && options.isContinuation && options.initialText)
           ? (options.initialText.trimEnd() + '\n\n' + turnResponse.trim())
           : fullResponse;
+        const finalContentToPersist = unwrapJsonContent(rawContentToPersist);
         if (options && options.isContinuation) {
           const existingIdx = activeSession.messages.findLastIndex(m => m.role === 'assistant');
           if (existingIdx !== -1) {
@@ -6768,13 +6883,15 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
             statusCtrl = null;
           }
           const data = await ipcRes.json();
-          const text = data.response || data.output || JSON.stringify(data);
+          const rawIpc = data.content || data.response || data.output || data.text || data.message?.content || (typeof data === 'string' ? data : JSON.stringify(data));
+          const text = unwrapJsonContent(rawIpc);
           responseLine.innerHTML = renderMarkdown(text);
           if (assistantBubble) {
             assistantBubble.classList.remove('streaming');
-            const finalMerged = (options && options.isContinuation && options.initialText)
+            const rawMerged = (options && options.isContinuation && options.initialText)
               ? (options.initialText.trimEnd() + '\n\n' + text.trim())
               : text;
+            const finalMerged = unwrapJsonContent(rawMerged);
             assistantBubble.dataset.rawText = finalMerged;
             const promptToSave = (options && options.isContinuation && options.originalPrompt)
               ? options.originalPrompt
@@ -6786,13 +6903,14 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
               let parentContainer = assistantBubble.querySelector('.stream-content') || assistantBubble.querySelector('.bubble-content');
               if (parentContainer) parentContainer.innerHTML = formatAssistantContent(finalMerged, promptToSave);
             } else if (bubbleContent) {
-              bubbleContent.innerHTML = formatAssistantContent(text, userPrompt);
+              bubbleContent.innerHTML = formatAssistantContent(finalMerged, userPrompt);
             }
           }
           if (activeSession) {
-            const finalTxt = (options && options.isContinuation && options.initialText)
+            const rawFinalTxt = (options && options.isContinuation && options.initialText)
               ? (options.initialText.trimEnd() + '\n\n' + text.trim())
               : text;
+            const finalTxt = unwrapJsonContent(rawFinalTxt);
             if (options && options.isContinuation) {
               const existingIdx = activeSession.messages.findLastIndex(m => m.role === 'assistant');
               if (existingIdx !== -1) {

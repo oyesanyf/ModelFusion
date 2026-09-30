@@ -8613,6 +8613,51 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 return;
             }
 
+            // ── Desktop Shortcut Pinning (/api/desktop/pin or /api/shortcut/pin) ──
+            if request_path == "/api/desktop/pin" || request_path == "/api/shortcut/pin" {
+                #[cfg(target_os = "windows")]
+                {
+                    let script = r#"
+$wscript = New-Object -ComObject WScript.Shell
+$desktop = [System.Environment]::GetFolderPath('Desktop')
+$lnkPath = Join-Path $desktop "HugOS Browser.lnk"
+$localApp = [System.Environment]::GetFolderPath('LocalApplicationData')
+$targetBat = Join-Path $localApp "HugOS Browser\Chromium-win32-x64\hugos-browser.bat"
+$workDir = Join-Path $localApp "HugOS Browser"
+$iconCandidates = @(
+    (Join-Path $localApp "HugOS Browser\ui\hugos_browser.ico"),
+    "D:\harfile\ModelFusion\IDE\hugos_browser.ico",
+    "D:\harfile\ModelFusion\browser\ui\hugos_browser.ico"
+)
+$iconPath = $iconCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+$shortcut = $wscript.CreateShortcut($lnkPath)
+$shortcut.TargetPath = $targetBat
+$shortcut.WorkingDirectory = $workDir
+if ($iconPath) {
+    $shortcut.IconLocation = "$iconPath,0"
+}
+$shortcut.Description = "HugOS Browser - ModelFusion Local AI Web Environment"
+$shortcut.Save()
+"#;
+                    let _ = std::process::Command::new("powershell")
+                        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script])
+                        .output();
+                }
+                let resp_json = serde_json::json!({
+                    "status": "ok",
+                    "message": "Desktop shortcut pinned successfully with distinct icon"
+                });
+                let body_str = serde_json::to_string(&resp_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body_str.len(),
+                    body_str
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
             // ── ReST-RL Daemon Lifecycle & Inspection (/api/restrl/status, /api/restrl/start, /api/restrl/stop) ──
             if request_path == "/api/restrl/status" {
                 let status_res = rpc_call_rest_rl("agent/status", serde_json::json!({})).await;
@@ -12714,7 +12759,8 @@ sequenceDiagram
                         })
                     } else {
                         serde_json::json!({
-                            "content": cleaned_content
+                            "content": cleaned_content,
+                            "response": cleaned_content
                         })
                     };
                     let response_str = response_json.to_string();
@@ -12992,7 +13038,9 @@ sequenceDiagram
             };
 
             let response_json = serde_json::json!({
-                "content": result_content
+                "content": result_content,
+                "response": result_content,
+                "output": result_content
             });
 
             let response_body = serde_json::to_string(&response_json).unwrap();

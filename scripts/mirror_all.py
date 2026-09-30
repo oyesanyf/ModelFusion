@@ -49,20 +49,23 @@ for dst in destinations:
 # Mirror browser UI files
 ui_dst = os.path.join(localappdata, r"HugOS Browser\ui")
 os.makedirs(ui_dst, exist_ok=True)
-for f in ["app.js", "index.html", "styles.css"]:
+for f in ["app.js", "index.html", "styles.css", "favicon.svg", "favicon.ico", "favicon-32x32.png", "favicon-16x16.png", "icon-192.png", "icon-512.png", "hugos_browser.ico", "manifest.webmanifest", "sw.js"]:
         src_ui = os.path.join(os.path.abspath("browser/ui"), f)
         dst_ui = os.path.join(ui_dst, f)
-        try:
-            shutil.copy2(src_ui, dst_ui)
-            print(f"[COPIED UI] {src_ui} -> {dst_ui}")
-        except Exception as e:
-            print(f"[ERROR COPYING UI] {src_ui} -> {dst_ui}: {e}")
+        if os.path.exists(src_ui):
+            try:
+                shutil.copy2(src_ui, dst_ui)
+                print(f"[COPIED UI] {src_ui} -> {dst_ui}")
+            except Exception as e:
+                print(f"[ERROR COPYING UI] {src_ui} -> {dst_ui}: {e}")
 
-# Mirror launcher scripts
+# Mirror launcher scripts & browser icon
 launcher_dst = os.path.join(localappdata, r"HugOS Browser\Chromium-win32-x64")
 if os.path.exists(launcher_dst):
-    for f in ["hugos-browser.bat", "hugos-browser.vbs", "run_hidden.vbs"]:
+    for f in ["hugos-browser.bat", "hugos-browser.vbs", "run_hidden.vbs", "hugos_browser.ico"]:
         src_l = os.path.join(os.path.abspath("browser/Chromium-win32-x64"), f)
+        if not os.path.exists(src_l) and f == "hugos_browser.ico":
+            src_l = os.path.join(os.path.abspath("browser/ui"), f)
         dst_l = os.path.join(launcher_dst, f)
         if os.path.exists(src_l):
             try:
