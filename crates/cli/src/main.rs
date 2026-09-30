@@ -7331,7 +7331,7 @@ pub fn parse_query_and_limit_from_request(raw_uri: &str, request_json: &serde_js
                     }
                     "max_results" | "limit" | "n" => {
                         if let Ok(n) = decoded_val.parse::<usize>() {
-                            max_results = n.clamp(1, 100);
+                            max_results = n.clamp(1, 200);
                         }
                     }
                     _ => {}
@@ -7347,7 +7347,7 @@ pub fn parse_query_and_limit_from_request(raw_uri: &str, request_json: &serde_js
         }
     }
     if let Some(n) = request_json.get("max_results").or_else(|| request_json.get("limit")).and_then(|v| v.as_u64()) {
-        max_results = (n as usize).clamp(1, 100);
+        max_results = (n as usize).clamp(1, 200);
     }
 
     (query.trim().to_string(), max_results)
@@ -16202,8 +16202,8 @@ public class Pr {
         assert_eq!(q2, "deepseek");
         assert_eq!(l2, 50);
 
-        let (_, l2_over) = parse_query_and_limit_from_request("/api/search?query=deepseek&max_results=200", &serde_json::json!({}));
-        assert_eq!(l2_over, 100);
+        let (_, l2_over) = parse_query_and_limit_from_request("/api/search?query=deepseek&max_results=350", &serde_json::json!({}));
+        assert_eq!(l2_over, 200);
 
         // 3. POST JSON fallback
         let (q3, l3) = parse_query_and_limit_from_request("/websearch", &serde_json::json!({
