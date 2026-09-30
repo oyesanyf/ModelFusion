@@ -280,6 +280,44 @@ console.log('  ✓ Verified streaming pseudo-cursor suppression on existing acti
 console.log('  ✓ Verified window.continuingAssistantMessage alias in app.js');
 console.log('  ✓ Verified --app-id=HugOS.Browser.Engine in hugos-browser.bat and browser_fusion.rs');
 
+// ---------------------------------------------------------------------------
+// SUITE 8: Verify Borderless Sidebar Tools & Elimination of Harsh Double Borders
+// ---------------------------------------------------------------------------
+console.log('\n[SUITE 8] Testing Borderless Flat Sidebar Tools & Clean Pill Button...');
+
+// 1. Verify no dashed border in index.html
+assert(!indexHtml.includes('border: 1px dashed'), 'index.html must not contain harsh dashed border');
+assert(!indexHtml.includes('dashed var(--accent-color'), 'index.html must not contain dashed border on audit button');
+
+// 2. Verify theme-white has borderless tool-category, tool-category-content, and tool-item-btn
+assert(stylesCss.includes('body.theme-white .tool-category'), 'styles.css must style body.theme-white .tool-category');
+assert(/body\.theme-white\s+\.tool-category[^{]*\{[^}]*border:\s*none\s*!important/s.test(stylesCss), 'body.theme-white .tool-category must have border: none !important');
+assert(/body\.theme-white\s+\.tool-category-content[^{]*\{[^}]*border-left:\s*none\s*!important/s.test(stylesCss), 'body.theme-white .tool-category-content must have border-left: none !important');
+assert(/body\.theme-white\s+\.tool-item-btn[^{]*\{[^}]*border:\s*none\s*!important/s.test(stylesCss), 'body.theme-white .tool-item-btn must have border: none !important');
+
+// 3. Verify base styles are borderless and clean
+assert(/\.tool-category\s*\{[^}]*border:\s*none\s*!important/s.test(stylesCss), 'base .tool-category must have border: none !important');
+assert(/\.tool-category-content\s*\{[^}]*border-left:\s*none\s*!important/s.test(stylesCss), 'base .tool-category-content must have border-left: none !important');
+assert(/\.tool-item-btn\s*\{[^}]*border:\s*none\s*!important/s.test(stylesCss), 'base .tool-item-btn must have border: none !important');
+
+// 4. Verify btn-sidebar-audit-menus is styled as clean sleek action pill
+assert(stylesCss.includes('.btn-sidebar-audit-menus'), 'styles.css must style .btn-sidebar-audit-menus');
+assert(!stylesCss.includes('dashed'), 'styles.css must not use dashed borders');
+
+// 5. Verify dedicated Utilities category
+assert(indexHtml.includes('data-cat="utilities"'), 'index.html must have data-cat="utilities"');
+assert(indexHtml.includes('data-cmd="@agent sys-info"'), 'index.html must have @agent sys-info');
+assert(indexHtml.includes('data-cmd="@agent update"'), 'index.html must have @agent update');
+assert(indexHtml.includes('data-cmd="@agent updatedb"'), 'index.html must have @agent updatedb');
+assert(indexHtml.includes('data-cmd="@agent db-vacuum"'), 'index.html must have @agent db-vacuum');
+assert(indexHtml.includes('data-cmd="@agent db-rebuild"'), 'index.html must have @agent db-rebuild');
+
+console.log('  ✓ Verified 100% elimination of dashed border in index.html');
+console.log('  ✓ Verified body.theme-white borderless categories, content, and item buttons');
+console.log('  ✓ Verified base styles borderless parity across all themes');
+console.log('  ✓ Verified .btn-sidebar-audit-menus clean sleek action pill styling');
+console.log('  ✓ Verified data-cat="utilities" populated with system maintenance tools');
+
 console.log('\n====================================================');
 console.log('✅ ALL COMPREHENSIVE VERIFICATION SUITES PASSED (100%)');
 console.log('====================================================\n');

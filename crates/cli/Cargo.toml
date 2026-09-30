@@ -28,4 +28,6 @@ tiktoken-rs     = { workspace = true }
 async-trait     = { workspace = true }
 thiserror       = { workspace = true }
 rusqlite        = { workspace = true }
+aho-corasick    = { workspace = true }
+
 

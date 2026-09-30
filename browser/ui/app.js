@@ -6495,6 +6495,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
       }
 
       let fullResponse = (options && options.isContinuation && options.initialText) ? (options.initialText.trimEnd() + '\n\n') : '';
+      let turnResponse = '';
       let totalEstimatedTokens = fullResponse ? Math.max(1, Math.round(fullResponse.length / 4)) : 0;
 
       for (let turn = 0; turn < maxLoops; turn++) {
@@ -6731,7 +6732,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
           throw lastFetchErr || new Error(`Could not connect to Ollama at ${ollamaUrl} or proxy ${ipcUrl}`);
         }
 
-        let turnResponse = '';
+        turnResponse = '';
         let doneReason = '';
 
         const getStreamTarget = () => {
@@ -10073,32 +10074,106 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     });
   }
 
-  // ChatGPT Sidebar Toggle & Expand
+  // ChatGPT Sidebar Toggle & Open
   const chatgptSidebar = document.getElementById('chatgpt-sidebar');
   const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
-  const sidebarExpandBtn = document.getElementById('sidebar-expand-btn');
+  const sidebarOpenBtn = document.getElementById('sidebar-open-btn');
 
   // Ensure left sidebar is always open and visible by default
   if (chatgptSidebar) {
     chatgptSidebar.classList.remove('collapsed');
   }
-  if (sidebarExpandBtn) {
-    sidebarExpandBtn.classList.add('hidden');
+  if (sidebarOpenBtn) {
+    sidebarOpenBtn.classList.add('hidden');
   }
 
   if (sidebarToggleBtn && chatgptSidebar) {
     sidebarToggleBtn.addEventListener('click', () => {
       chatgptSidebar.classList.add('collapsed');
-      if (sidebarExpandBtn) sidebarExpandBtn.classList.remove('hidden');
+      if (sidebarOpenBtn) sidebarOpenBtn.classList.remove('hidden');
     });
   }
 
-  if (sidebarExpandBtn && chatgptSidebar) {
-    sidebarExpandBtn.addEventListener('click', () => {
+  if (sidebarOpenBtn && chatgptSidebar) {
+    sidebarOpenBtn.addEventListener('click', () => {
       chatgptSidebar.classList.remove('collapsed');
-      sidebarExpandBtn.classList.add('hidden');
+      sidebarOpenBtn.classList.add('hidden');
     });
   }
+
+  // ── Sidebar Resizing, Expansion & Persistence ──
+  (function initSidebarResizer() {
+    const sidebar = document.getElementById('chatgpt-sidebar');
+    const resizer = document.getElementById('sidebar-resizer');
+    const expandBtn = document.getElementById('sidebar-expand-btn');
+    if (!sidebar) return;
+
+    const SAVED_KEY = 'hugos_sidebar_width';
+    const MIN_WIDTH = 240;
+    const MAX_WIDTH = 650;
+    const DEFAULT_WIDTH = 320;
+    const EXPANDED_WIDTH = 460;
+
+    // Restore saved width
+    const savedWidth = parseInt(localStorage.getItem(SAVED_KEY), 10);
+    if (savedWidth && savedWidth >= MIN_WIDTH && savedWidth <= MAX_WIDTH) {
+      document.documentElement.style.setProperty('--sidebar-width', `${savedWidth}px`);
+    } else {
+      document.documentElement.style.setProperty('--sidebar-width', `${DEFAULT_WIDTH}px`);
+    }
+
+    if (resizer) {
+      let isDragging = false;
+      let startX = 0;
+      let startWidth = 0;
+
+      resizer.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        startX = e.clientX;
+        startWidth = sidebar.getBoundingClientRect().width;
+        resizer.classList.add('is-dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const deltaX = e.clientX - startX;
+        let newWidth = Math.round(startWidth + deltaX);
+        if (newWidth < MIN_WIDTH) newWidth = MIN_WIDTH;
+        if (newWidth > MAX_WIDTH) newWidth = MAX_WIDTH;
+        document.documentElement.style.setProperty('--sidebar-width', `${newWidth}px`);
+      });
+
+      window.addEventListener('mouseup', () => {
+        if (!isDragging) return;
+        isDragging = false;
+        resizer.classList.remove('is-dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        const finalW = Math.round(sidebar.getBoundingClientRect().width);
+        localStorage.setItem(SAVED_KEY, finalW);
+      });
+
+      // Double-click resizer to toggle wide/standard
+      resizer.addEventListener('dblclick', () => {
+        const currentW = Math.round(sidebar.getBoundingClientRect().width);
+        const targetW = currentW > 380 ? DEFAULT_WIDTH : EXPANDED_WIDTH;
+        document.documentElement.style.setProperty('--sidebar-width', `${targetW}px`);
+        localStorage.setItem(SAVED_KEY, targetW);
+      });
+    }
+
+    if (expandBtn) {
+      expandBtn.addEventListener('click', () => {
+        const currentW = Math.round(sidebar.getBoundingClientRect().width);
+        const targetW = currentW >= 420 ? DEFAULT_WIDTH : EXPANDED_WIDTH;
+        document.documentElement.style.setProperty('--sidebar-width', `${targetW}px`);
+        localStorage.setItem(SAVED_KEY, targetW);
+      });
+    }
+  })();
 
   // Sidebar Navigation Items
   const sidebarNewChat = document.getElementById('sidebar-new-chat');
