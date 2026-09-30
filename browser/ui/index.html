@@ -800,11 +800,11 @@
             <div class="setting-item">
               <div class="setting-info">
                 <label for="setting-websearch-max-results" class="setting-label">Maximum Verified Sources (Web &amp; arXiv)</label>
-                <span class="setting-desc">Number of verified search hits, arXiv research papers, and citations ingested and correlated per query (1 to 50).</span>
+                <span class="setting-desc">Number of verified search hits, arXiv research papers, and citations ingested and correlated per query (1 to 200).</span>
               </div>
               <div class="setting-control-group">
                 <div class="slider-control">
-                  <input type="range" id="setting-websearch-max-results" class="setting-slider" min="1" max="50" step="1" value="10">
+                  <input type="range" id="setting-websearch-max-results" class="setting-slider" min="1" max="200" step="1" value="10">
                   <span class="slider-val" id="val-websearch-max-results">10</span>
                 </div>
                 <div class="sources-preset-chips" style="display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;">
@@ -815,6 +815,9 @@
                   <button type="button" class="preset-chip-btn" data-val="25">25</button>
                   <button type="button" class="preset-chip-btn" data-val="30">30</button>
                   <button type="button" class="preset-chip-btn" data-val="50">50</button>
+                  <button type="button" class="preset-chip-btn" data-val="100">100</button>
+                  <button type="button" class="preset-chip-btn" data-val="150">150</button>
+                  <button type="button" class="preset-chip-btn" data-val="200">200</button>
                 </div>
               </div>
             </div>

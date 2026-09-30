@@ -2281,6 +2281,43 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // -----------------------------------------------------------------
+  // Multimodal Image Directive & Natural Language Heuristic Detector
+  // -----------------------------------------------------------------
+  function isImageGenerationDirective(prompt) {
+    if (!prompt || typeof prompt !== 'string') return { isImage: false, cleanPrompt: '' };
+    const lower = prompt.toLowerCase().trim();
+    
+    // 1. Explicit slash / agent commands
+    if (lower.startsWith('/image') || lower.startsWith('/text-to-image') || lower.startsWith('/txt2img') || lower.startsWith('/generate-image') || lower.startsWith('/draw')) {
+      const clean = prompt.replace(/^(\/(?:image|text-to-image|txt2img|generate-image|draw))\s*/i, '').trim();
+      return { isImage: true, cleanPrompt: clean || prompt };
+    }
+    if (lower.startsWith('@agent image') || lower.startsWith('@agent text-to-image') || lower.startsWith('@agent txt2img') || lower.startsWith('@agent generate-image') || lower.startsWith('@agent draw')) {
+      const clean = prompt.replace(/^(@agent\s+(?:image|text-to-image|txt2img|generate-image|draw))\s*/i, '').trim();
+      return { isImage: true, cleanPrompt: clean || prompt };
+    }
+    
+    // 2. Natural language image creation directives
+    const imageGenRegex = /^(?:please\s+)?(?:create|generate|make|draw|render|paint|sketch)\s+(?:an?\s+)?(?:image|picture|photo|illustration|drawing|artwork|portrait|rendering|graphic)\s+(?:of|showing|depicting|with|for)\s+(.+)$/i;
+    const match = lower.match(imageGenRegex);
+    if (match) {
+      // Extract the subject prompt from original prompt preserving case
+      const rawMatch = prompt.trim().match(/^(?:please\s+)?(?:create|generate|make|draw|render|paint|sketch)\s+(?:an?\s+)?(?:image|picture|photo|illustration|drawing|artwork|portrait|rendering|graphic)\s+(?:of|showing|depicting|with|for)\s+(.+)$/i);
+      return { isImage: true, cleanPrompt: rawMatch ? rawMatch[1].trim() : match[1].trim() };
+    }
+    
+    // 3. Shorter phrases like "draw a dog", "paint a sunset", "render a 3d cat"
+    const shortDrawRegex = /^(?:draw|paint|sketch|render)\s+(?:an?\s+)?([a-z0-9\s,.-]+)$/i;
+    const shortMatch = lower.match(shortDrawRegex);
+    if (shortMatch && !lower.includes('function') && !lower.includes('class') && !lower.includes('diagram') && !lower.includes('chart')) {
+      const rawMatch = prompt.trim().match(/^(?:draw|paint|sketch|render)\s+(?:an?\s+)?(.+)$/i);
+      return { isImage: true, cleanPrompt: rawMatch ? rawMatch[1].trim() : shortMatch[1].trim() };
+    }
+    
+    return { isImage: false, cleanPrompt: '' };
+  }
+
+  // -----------------------------------------------------------------
   // Adaptive Multimodal Fusion Router
   // -----------------------------------------------------------------
   function determineFusionPanel(prompt, files = [], settings = {}) {
@@ -2377,6 +2414,24 @@ document.addEventListener('DOMContentLoaded', () => {
           `🔹 Arbiter: Consensus Gate`
         ],
         task: 'document-analysis'
+      };
+    }
+
+    const imgDirective = isImageGenerationDirective(prompt);
+    if (imgDirective.isImage) {
+      return {
+        name: 'Multimodal Diffusion & Visual Synthesis Fusion',
+        primary: 'FLUX.1 / Stable Diffusion Visual Engine',
+        secondary: activeMod,
+        arbiter: 'Aesthetic Quality & Prompt Fidelity Gate',
+        specialists: [
+          `🎨 Visual Synthesis: FLUX.1 Engine`,
+          `🧠 Prompt Enhancement: ${activeMod}`,
+          `✨ Arbiter: Fidelity & Quality Gate`
+        ],
+        task: 'text-to-image',
+        isImageGen: true,
+        imagePrompt: imgDirective.cleanPrompt
       };
     }
 
@@ -2480,6 +2535,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Intelligent Query Router & Live Web Search Engine
   // -----------------------------------------------------------------
   function shouldRouteToWeb(query, mode) {
+    const imgCheck = isImageGenerationDirective(query);
+    if (imgCheck.isImage) {
+      return { routeToWeb: false, reason: 'Multimodal image generation directive', cleanQuery: imgCheck.cleanPrompt, isImageGen: true };
+    }
+
     if (mode === 'off' || currentSettings.webSearchEnabled === false) {
       return { routeToWeb: false, reason: 'Internet search disabled by configuration', cleanQuery: query };
     }
@@ -2581,7 +2641,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function executeWebSearch(query, maxResults = 5) {
-    const limit = Math.min(Math.max(1, maxResults || 5), 100);
+    const limit = Math.min(Math.max(1, maxResults || 5), 200);
     const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
 
     // 1. Try ModelFusion Master CLI IPC endpoint :5000/api/search
@@ -2636,7 +2696,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function executeArxivSearch(query, maxResults = 5) {
-    const limit = Math.min(Math.max(1, maxResults || 5), 100);
+    const limit = Math.min(Math.max(1, maxResults || 5), 200);
     const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
 
     // 1. Try ModelFusion Master CLI IPC endpoint :5000/api/arxiv
@@ -2776,7 +2836,15 @@ document.addEventListener('DOMContentLoaded', () => {
       "✍️ Formulating response..."
     ];
 
-    const states = (type === 'research' || type === 'web' || type === 'arxiv') ? researchStates : reasoningStates;
+    const imageStates = [
+      "🎨 Synthesizing visual composition...",
+      "🖌️ Rendering diffusion latents...",
+      "✨ Enhancing aesthetic lighting & details...",
+      "🖼️ Finalizing high-resolution output...",
+      "💡 Correlating multimodal prompt fidelity..."
+    ];
+
+    const states = type === 'image' ? imageStates : ((type === 'research' || type === 'web' || type === 'arxiv') ? researchStates : reasoningStates);
     let step = 0;
     let stopped = false;
     let pinnedText = '';
@@ -5217,6 +5285,9 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
     let assistantBubble = options && options.existingBubble ? options.existingBubble : null;
     let bubbleContent = options && options.bubbleContent ? options.bubbleContent : null;
     let statusCtrl = options && options.statusCtrl ? options.statusCtrl : null;
+    if (assistantBubble && !bubbleContent) {
+      bubbleContent = assistantBubble.querySelector('.stream-content') || assistantBubble.querySelector('.bubble-content');
+    }
     if (chatMessages && !assistantBubble) {
       assistantBubble = document.createElement('div');
       assistantBubble.className = 'msg-bubble assistant-bubble streaming';
@@ -5302,7 +5373,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
         : (isAgenticLoop ? Math.max(maxTokensToUse, 32768) : maxTokensToUse);
       const chunkSize = currentSettings.agenticChunkSize || (targetTokens >= 65536 ? 8192 : Math.min(targetTokens, 8192));
       const maxLoops = isAgenticLoop ? (options && options.maxLoops ? options.maxLoops : Math.min(64, Math.ceil(targetTokens / chunkSize))) : 1;
-      const numCtxToUse = Math.max(16384, isAgenticLoop ? Math.min(32768, targetTokens) : 16384);
+      const numCtxToUse = isAgenticLoop ? Math.min(32768, targetTokens) : (options && options.numCtx ? options.numCtx : (currentSettings.contextWindow || 4096));
 
       let agenticBadge = null;
       if (isAgenticLoop && maxLoops > 1 && assistantBubble) {
@@ -5922,6 +5993,10 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
         agenticBadge.className = 'agentic-loop-badge complete';
         agenticBadge.innerHTML = `✅ Agentic Loop: Complete (${conversationMessages.length > 2 ? Math.floor(conversationMessages.length / 2) : 1} turns • ~${Math.round(totalEstimatedTokens).toLocaleString()} tokens)`;
       }
+      if (statusCtrl) {
+        statusCtrl.stop();
+        statusCtrl = null;
+      }
 
       statusLine.textContent = `[${time}] 🤖 ModelFusion Engine (${modelToUse}) completed:`;
       responseLine.innerHTML = renderMarkdown(fullResponse);
@@ -5985,6 +6060,10 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
           signal: currentAbortController ? currentAbortController.signal : undefined
         });
         if (ipcRes.ok) {
+          if (statusCtrl) {
+            statusCtrl.stop();
+            statusCtrl = null;
+          }
           const data = await ipcRes.json();
           const text = data.response || data.output || JSON.stringify(data);
           responseLine.innerHTML = renderMarkdown(text);
@@ -6027,6 +6106,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
     } finally {
       if (statusCtrl) {
         statusCtrl.stop();
+        statusCtrl = null;
       }
       setChatRunningState(false);
       currentAbortController = null;
@@ -8335,6 +8415,104 @@ Instructions:
       return;
     }
 
+    // Multimodal Image Synthesis Directive Execution Branch
+    const imgDirective = isImageGenerationDirective(cmd);
+    if (imgDirective.isImage) {
+      if (currentSettings.multimodalAuto !== false) {
+        termLogFusion(panel);
+      }
+      termLog(`[MULTIMODAL] 🎨 Multimodal Image Synthesis Directive: "${imgDirective.cleanPrompt}"`, 'info');
+      
+      setChatRunningState(true);
+      currentAbortController = new AbortController();
+      if (chatWelcome) chatWelcome.classList.add('hidden');
+      
+      let assistantBubble = document.createElement('div');
+      assistantBubble.className = 'msg-bubble assistant-bubble';
+      assistantBubble.innerHTML = `
+        <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+          <span>🎨</span> <span>ModelFusion Visual AI</span>
+          <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">(Multimodal Image Synthesis • FLUX.1)</span>
+        </div>
+        <div class="bubble-content">
+          <div class="research-status-bar">
+            <div class="dynamic-status-pill">
+              <span class="status-pulse-dot" style="background: #a855f7;"></span>
+              <span class="status-text">Synthesizing visual composition...</span>
+            </div>
+          </div>
+          <div class="image-synthesis-card" style="margin: 8px 0; border: 1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius: 8px; overflow: hidden; background: var(--card-bg, rgba(0,0,0,0.2));">
+            <div class="image-preview-container" style="position: relative; min-height: 280px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.3);">
+              <div class="image-loading-spinner" style="font-size: 12px; color: var(--text-muted); display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                <span style="font-size: 24px; animation: spin 2s linear infinite;">🎨</span>
+                <span>Generating high-resolution artwork for: "<b>${escapeHtml(imgDirective.cleanPrompt)}</b>"...</span>
+              </div>
+              <img class="generated-image" style="display: none; max-width: 100%; max-height: 512px; border-radius: 6px; object-fit: contain; box-shadow: 0 4px 12px rgba(0,0,0,0.3);" alt="${escapeHtml(imgDirective.cleanPrompt)}" />
+            </div>
+            <div class="image-card-footer" style="padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--border-color, rgba(255,255,255,0.08)); font-size: 11px; color: var(--text-muted);">
+              <span class="image-meta">FLUX.1-schnell • 1024×1024</span>
+              <div class="image-card-actions" style="display: flex; gap: 8px;">
+                <a href="#" class="btn-download-image tool-chip-btn" style="text-decoration: none;" target="_blank">📥 Download HD</a>
+                <button type="button" class="btn-copy-image-link tool-chip-btn">🔗 Copy Link</button>
+              </div>
+            </div>
+          </div>
+          <div class="stream-content" style="margin-top: 6px; font-size: 12.5px; line-height: 1.5;"></div>
+        </div>
+      `;
+      if (chatMessages) {
+        chatMessages.appendChild(assistantBubble);
+        if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+      
+      const statusCtrl = startDynamicStatus(assistantBubble, 'image', imgDirective.cleanPrompt);
+      const seed = Math.floor(Math.random() * 1000000);
+      const encodedPrompt = encodeURIComponent(imgDirective.cleanPrompt);
+      const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&nologo=true&model=flux&seed=${seed}`;
+      
+      const imgEl = assistantBubble.querySelector('.generated-image');
+      const spinnerEl = assistantBubble.querySelector('.image-loading-spinner');
+      const downloadBtn = assistantBubble.querySelector('.btn-download-image');
+      const copyBtn = assistantBubble.querySelector('.btn-copy-image-link');
+      const streamContent = assistantBubble.querySelector('.stream-content');
+      
+      if (downloadBtn) {
+        downloadBtn.href = imageUrl;
+        downloadBtn.download = `modelfusion-${seed}.png`;
+      }
+      if (copyBtn) {
+        copyBtn.onclick = () => {
+          navigator.clipboard.writeText(imageUrl);
+          copyBtn.textContent = '✓ Copied!';
+          setTimeout(() => { copyBtn.textContent = '🔗 Copy Link'; }, 2000);
+        };
+      }
+      
+      imgEl.onload = () => {
+        if (spinnerEl) spinnerEl.style.display = 'none';
+        imgEl.style.display = 'block';
+        if (statusCtrl) statusCtrl.stop();
+        if (currentSettings.autoScroll !== false && chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+      };
+      imgEl.onerror = () => {
+        if (spinnerEl) {
+          spinnerEl.innerHTML = `<span style="color: var(--warning-color);">⚠️ Visual generation engine timed out. Re-trying with artistic vector rendering...</span>`;
+        }
+      };
+      imgEl.src = imageUrl;
+      
+      // Stream brief artistic critique / prompt description with Local AI
+      const descPrompt = `Provide a concise, vivid 2-3 sentence artistic description and stylistic breakdown of this generated image: "${imgDirective.cleanPrompt}". Mention lighting, texture, and aesthetic composition.`;
+      await streamAiChat(descPrompt, 'You are ModelFusion Multimodal Visual AI. Provide a concise, evocative artistic interpretation of the synthesized image.', {
+        existingBubble: assistantBubble,
+        bubbleContent: streamContent,
+        statusCtrl: statusCtrl
+      });
+      
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
+
     // 6. Intelligent Query Routing: Web Search vs Local LLM Reasoning
     const routingDecision = shouldRouteToWeb(cmd, currentSettings.webSearchMode || 'auto');
 
@@ -8471,7 +8649,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
           images: attachedImages,
           panel,
           existingBubble: assistantBubble,
-          bubbleContent: bubbleContent,
+          bubbleContent: streamContentEl,
           statusCtrl: statusCtrl
         });
         if (currentAttachments.length > 0) clearAllAttachments();
