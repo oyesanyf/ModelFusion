@@ -2505,48 +2505,55 @@ where
     }
 
     let verb = args[1].to_lowercase();
-    if verb.starts_with('-') {
-        return args;
-    }
-
-    if (verb == "@agent" || verb == "agent") && args.len() > 2 {
-        let sub = args[2].to_lowercase();
-        let sub_clean = sub.trim_start_matches('/');
-        let has_combinator = args.iter().any(|a| a == "&" || a == "+" || a == "and" || a == "," || a.contains(" & ") || a.contains(" + "));
-        if (sub_clean == "markers" || sub_clean == "marker" || sub_clean == "som") && !has_combinator {
-            args.remove(1);
-            args[1] = "som".to_string();
-            return args;
-        }
-        if sub_clean == "arxiv" && !has_combinator {
-            args.remove(1);
-            args[1] = "--arxiv".to_string();
-            return args;
-        }
-        if sub_clean == "humanize" && !has_combinator {
-            args.remove(1);
-            args[1] = "--humanize".to_string();
-            if args.len() > 3 {
-                let combined = args[2..].join(" ");
-                args.truncate(2);
-                args.push(combined);
+    if !verb.starts_with('-') {
+        if (verb == "@agent" || verb == "agent") && args.len() > 2 {
+            let sub = args[2].to_lowercase();
+            let sub_clean = sub.trim_start_matches('/');
+            let has_combinator = args.iter().any(|a| a == "&" || a == "+" || a == "and" || a == "," || a.contains(" & ") || a.contains(" + "));
+            if (sub_clean == "markers" || sub_clean == "marker" || sub_clean == "som") && !has_combinator {
+                args.remove(1);
+                args[1] = "som".to_string();
+                return args;
             }
-            return args;
-        }
-        if sub_clean == "watermark" && !has_combinator {
-            args.remove(1);
-            args[1] = "--watermark".to_string();
-            if args.len() > 3 {
-                let combined = args[2..].join(" ");
-                args.truncate(2);
-                args.push(combined);
+            if sub_clean == "arxiv" && !has_combinator {
+                args.remove(1);
+                args[1] = "--arxiv".to_string();
+                return args;
             }
-            return args;
-        }
-        if (sub_clean == "translate" || sub_clean == "translation") && !has_combinator {
-            args.remove(1);
-            args[1] = "--translate".to_string();
-        }
+            if sub_clean == "humanize" && !has_combinator {
+                args.remove(1);
+                args[1] = "--humanize".to_string();
+                if args.len() > 3 {
+                    let combined = args[2..].join(" ");
+                    args.truncate(2);
+                    args.push(combined);
+                }
+                return args;
+            }
+            if sub_clean == "watermark" && !has_combinator {
+                args.remove(1);
+                args[1] = "--watermark".to_string();
+                if args.len() > 3 {
+                    let combined = args[2..].join(" ");
+                    args.truncate(2);
+                    args.push(combined);
+                }
+                return args;
+            }
+            if (sub_clean == "boost" || sub_clean == "booster") && !has_combinator {
+                args.remove(1);
+                args[1] = "--boost".to_string();
+                if args.len() > 3 {
+                    let combined = args[2..].join(" ");
+                    args.truncate(2);
+                    args.push(combined);
+                }
+                return args;
+            }
+            if (sub_clean == "translate" || sub_clean == "translation") && !has_combinator {
+                args.remove(1);
+                args[1] = "--translate".to_string();
+            }
         if (sub_clean == "key" || sub_clean == "keys") && args.len() > 3 && args[3].to_lowercase() == "gemini" {
             let key = if args.len() > 4 { args[4].clone() } else { String::new() };
             args.remove(1);
@@ -2682,8 +2689,13 @@ where
         "translate" | "/translate" | "@agent/translate" | "@agent:translate" | "@translate" | "translation" | "/translation" => {
             args[1] = "--translate".to_string();
         }
-        "boost" | "/boost" | "@agent/boost" | "@agent:boost" | "@boost" => {
+        "boost" | "/boost" | "@agent/boost" | "@agent:boost" | "@boost" | "booster" => {
             args[1] = "--boost".to_string();
+            if args.len() > 3 {
+                let combined = args[2..].join(" ");
+                args.truncate(2);
+                args.push(combined);
+            }
         }
         "memory" | "/memory" | "@agent/memory" | "@agent:memory" | "@memory" => {
             args[1] = "--memory".to_string();
@@ -2702,6 +2714,7 @@ where
         }
         _ => {}
     }
+    }
 
     if args.len() > 2 && args[1] == "--humanize" {
         if args.len() > 3 {
@@ -2712,6 +2725,14 @@ where
     }
 
     if args.len() > 2 && args[1] == "--watermark" {
+        if args.len() > 3 {
+            let combined = args[2..].join(" ");
+            args.truncate(2);
+            args.push(combined);
+        }
+    }
+
+    if args.len() > 2 && args[1] == "--boost" {
         if args.len() > 3 {
             let combined = args[2..].join(" ");
             args.truncate(2);
@@ -13155,8 +13176,13 @@ sequenceDiagram
                     }
                 }
                 "/api/watermark" => {
-                    let text = request_json.get("text").and_then(|v| v.as_str()).unwrap_or("").trim();
-                    let image_path = request_json.get("image_path").and_then(|v| v.as_str()).unwrap_or("").trim();
+                    let text = request_json.get("text").and_then(|v| v.as_str())
+                        .or_else(|| request_json.get("prompt").and_then(|v| v.as_str()))
+                        .unwrap_or("").trim();
+                    let image_path = request_json.get("image_path").and_then(|v| v.as_str())
+                        .or_else(|| request_json.get("image").and_then(|v| v.as_str()))
+                        .or_else(|| request_json.get("file").and_then(|v| v.as_str()))
+                        .unwrap_or("").trim();
                     let input = if !image_path.is_empty() {
                         image_path
                     } else if !text.is_empty() {
@@ -14049,9 +14075,29 @@ async fn run_mcp_server(db_path: Option<String>) -> Result<()> {
                         "Error: Invalid context or arm index".to_string()
                     }
                 }
+                "boost" | "writing_boost" => {
+                    let prompt = arguments["prompt"].as_str()
+                        .or_else(|| arguments["text"].as_str())
+                        .or_else(|| arguments["query"].as_str())
+                        .unwrap_or("").trim();
+                    if prompt.is_empty() {
+                        "Error: Please provide a prompt or query for reasoning boost.".to_string()
+                    } else {
+                        let mut cmd_args = vec!["--boost".to_string(), prompt.to_string()];
+                        if arguments["ollama"].as_bool().unwrap_or(false) || std::env::var("MODELFUSION_USE_OLLAMA").is_ok() {
+                            cmd_args.push("--ollama".to_string());
+                        }
+                        run_cli_subcommand(&cmd_args, &db_path_resolved).await
+                    }
+                }
                 "detect_watermark" | "watermark" => {
-                    let text = arguments["text"].as_str().unwrap_or("").trim();
-                    let image_path = arguments["image_path"].as_str().unwrap_or("").trim();
+                    let text = arguments["text"].as_str()
+                        .or_else(|| arguments["prompt"].as_str())
+                        .unwrap_or("").trim();
+                    let image_path = arguments["image_path"].as_str()
+                        .or_else(|| arguments["image"].as_str())
+                        .or_else(|| arguments["file"].as_str())
+                        .unwrap_or("").trim();
                     let input = if !image_path.is_empty() {
                         image_path
                     } else if !text.is_empty() {
@@ -16965,6 +17011,25 @@ public class Pr {
 
         let res3 = preprocess_cli_args(["cli", "watermark", "path/to/document.txt"]);
         assert_eq!(res3, vec!["cli".to_string(), "--watermark".to_string(), "path/to/document.txt".to_string()]);
+
+        let res4 = preprocess_cli_args(["cli", "--watermark", "Sample", "text", "to", "check"]);
+        assert_eq!(res4, vec!["cli".to_string(), "--watermark".to_string(), "Sample text to check".to_string()]);
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_boost() {
+        use super::preprocess_cli_args;
+        let res1 = preprocess_cli_args(["cli", "@agent", "boost", "synthesize", "concurrent", "skip", "list"]);
+        assert_eq!(res1, vec!["cli".to_string(), "--boost".to_string(), "synthesize concurrent skip list".to_string()]);
+
+        let res2 = preprocess_cli_args(["cli", "/boost", "we", "are", "going", "to", "use", "sqlite"]);
+        assert_eq!(res2, vec!["cli".to_string(), "--boost".to_string(), "we are going to use sqlite".to_string()]);
+
+        let res3 = preprocess_cli_args(["cli", "boost", "complex", "algorithmic", "optimization"]);
+        assert_eq!(res3, vec!["cli".to_string(), "--boost".to_string(), "complex algorithmic optimization".to_string()]);
+
+        let res4 = preprocess_cli_args(["cli", "--boost", "we", "are", "going", "to", "use", "sqlite"]);
+        assert_eq!(res4, vec!["cli".to_string(), "--boost".to_string(), "we are going to use sqlite".to_string()]);
     }
 
     #[test]
