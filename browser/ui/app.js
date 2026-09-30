@@ -4528,6 +4528,8 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
   const sidebarPinDesktop = document.getElementById('sidebar-pin-desktop');
   if (sidebarPinDesktop) sidebarPinDesktop.addEventListener('click', handlePinToDesktop);
 
+  window.pinBrowserToDesktop = handlePinToDesktop;
+
 
   // -----------------------------------------------------------------
   // Chat History Management (localStorage: hugos_chat_history)
