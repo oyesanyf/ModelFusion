@@ -1,6 +1,19 @@
 // HugOS Browser Portal Application Logic
 // Dedicated ModelFusion AI Web Environment Engine
 
+// Automatic client-side transition: if launched under file:// origin, transition to Master Server HTTP origin if online
+if (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') {
+  fetch('http://127.0.0.1:5000/health', { method: 'GET' })
+    .then((res) => {
+      if (res.ok) {
+        window.location.replace('http://localhost:5000/index.html');
+      }
+    })
+    .catch(() => {
+      // Backend server starting up or offline; probe will transition once online
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   // DOM Elements
   const dashboardView = document.getElementById('dashboard-view');
@@ -210,23 +223,36 @@ document.addEventListener('DOMContentLoaded', () => {
     const names = modelsList.map(m => (typeof m === 'string' ? m : (m.name || m.model || '')).trim()).filter(Boolean);
     if (names.length === 0) return null;
 
+    const vramMb = (window.hardwareGpuVramMb && window.hardwareGpuVramMb > 0) ? window.hardwareGpuVramMb : detectGpuVramMb();
+
+    // STRICT GPU VRAM ENFORCEMENT:
+    // If VRAM < 14GB (e.g. 8GB Quadro RTX 4000), NEVER accept 32B/27B/70B even if hardwareOptimalModel says so!
     if (window.hardwareOptimalModel) {
-      const match = names.find(n => n.toLowerCase() === window.hardwareOptimalModel.toLowerCase() || n.toLowerCase().startsWith(window.hardwareOptimalModel.toLowerCase() + ':'));
-      if (match) return match;
+      const opt = window.hardwareOptimalModel.toLowerCase();
+      const isOversized = opt.includes('32b') || opt.includes('27b') || opt.includes('70b');
+      if (!(vramMb < 14000 && isOversized)) {
+        const match = names.find(n => n.toLowerCase() === opt || n.toLowerCase().startsWith(opt + ':'));
+        if (match) return match;
+      }
     }
 
-    const vramMb = detectGpuVramMb();
     let priorities = [];
 
     if (vramMb >= 22000) {
-      // 24GB+ VRAM (RTX 4090, 3090, A100) -> 32B fits fully in VRAM
+      // 24GB+ VRAM (RTX 4090, 3090, A100) -> 32B / 27B fits fully in VRAM
       priorities = [
         'qwen2.5:32b',
         'deepseek-r1:32b',
+        'gemma2:27b',
         'qwen2.5:14b',
         'deepseek-r1:14b',
+        'gemma2:9b',
         'qwen2.5:7b',
         'deepseek-r1:7b',
+        'gemma:7b',
+        'deepseek-r1:8b',
+        'gemma2:2b',
+        'qwen2.5:3b',
         'deepseek-r1:1.5b'
       ];
     } else if (vramMb >= 12000) {
@@ -234,23 +260,28 @@ document.addEventListener('DOMContentLoaded', () => {
       priorities = [
         'qwen2.5:14b',
         'deepseek-r1:14b',
+        'gemma2:9b',
         'qwen2.5:7b',
         'deepseek-r1:7b',
+        'gemma:7b',
         'deepseek-r1:8b',
-        'qwen2.5:32b',
+        'gemma2:2b',
+        'qwen2.5:3b',
         'deepseek-r1:1.5b'
       ];
     } else {
-      // <= 8GB VRAM (Quadro RTX 4000, RTX 3070, 4060, laptops) -> 7B fits 100% in VRAM for CRAZY FAST inference!
+      // <= 8GB VRAM (Quadro RTX 4000, RTX 3070, 4060, laptops) -> 7B/9B fits 100% in VRAM for CRAZY FAST inference!
+      // NEVER allow 32B/27B/70B here to stop CPU thrashing & 45-second freezes
       priorities = [
+        'gemma2:9b',
         'qwen2.5:7b',
         'deepseek-r1:7b',
+        'gemma:7b',
         'deepseek-r1:8b',
+        'gemma2:2b',
         'qwen2.5:3b',
         'deepseek-r1:1.5b',
-        'qwen2.5:1.5b',
-        'qwen2.5:14b',
-        'qwen2.5:32b'
+        'qwen2.5:1.5b'
       ];
     }
 
@@ -259,11 +290,24 @@ document.addEventListener('DOMContentLoaded', () => {
       if (found) return found;
     }
 
+    // Fallbacks if no exact priority matches
+    if (vramMb < 14000) {
+      // Prioritize smaller models that don't overflow VRAM
+      const smallMatch = names.find(n => {
+        const l = n.toLowerCase();
+        return (l.includes('9b') || l.includes('7b') || l.includes('8b') || l.includes('3b') || l.includes('2b') || l.includes('1.5b')) && !l.includes('32b') && !l.includes('27b') && !l.includes('70b');
+      });
+      if (smallMatch) return smallMatch;
+    }
+
+    const anyGemma = names.find(n => n.toLowerCase().includes('gemma'));
+    if (anyGemma && (vramMb >= 14000 || !anyGemma.toLowerCase().includes('27b'))) return anyGemma;
+
     const anyQwen = names.find(n => n.toLowerCase().includes('qwen'));
-    if (anyQwen) return anyQwen;
+    if (anyQwen && (vramMb >= 14000 || !anyQwen.toLowerCase().includes('32b'))) return anyQwen;
 
     const anyDeepSeek = names.find(n => n.toLowerCase().includes('deepseek'));
-    if (anyDeepSeek) return anyDeepSeek;
+    if (anyDeepSeek && (vramMb >= 14000 || !anyDeepSeek.toLowerCase().includes('32b'))) return anyDeepSeek;
 
     const anyLlama = names.find(n => n.toLowerCase().includes('llama'));
     if (anyLlama) return anyLlama;
@@ -2598,44 +2642,49 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // -----------------------------------------------------------------
-  // Live Grounding Sources Immediate Display Engine
+  // Live Grounding Sources Immediate Display Engine - Sleek Compact Badge
   // -----------------------------------------------------------------
   function renderResearchSourcesCard(container, results) {
     if (!container || !results || results.length === 0) return;
     container.style.display = 'block';
 
-    const sourcesHtml = results.map((r, idx) => {
-      const isArxiv = (r.url && r.url.includes('arxiv.org')) || (r.title && r.title.startsWith('[arXiv]'));
-      const cleanTitle = r.title ? r.title.replace(/^\[arXiv\]\s*/i, '') : 'Untitled Source';
-      const tag = isArxiv ? 'arXiv' : 'Web';
-      const tagClass = isArxiv ? 'source-tag-arxiv' : 'source-tag-web';
-      let domain = tag;
+    const getDomain = (url) => {
       try {
-        if (r.url) domain = new URL(r.url).hostname.replace(/^www\./, '');
-      } catch (_) {}
+        if (!url) return '';
+        return new URL(url).hostname.replace(/^www\./, '');
+      } catch (_) {
+        return '';
+      }
+    };
 
-      const escapedUrl = escapeHtml(r.url || '#');
-      const escapedTitle = escapeHtml(cleanTitle);
-      const snippetText = (r.snippet || '').trim().replace(/\s+/g, ' ');
-      const escapedSnippet = escapeHtml(snippetText.slice(0, 180) + (snippetText.length > 180 ? '...' : ''));
-
-      return `
-        <a href="${escapedUrl}" target="_blank" rel="noopener noreferrer" class="source-chip" title="${escapedSnippet}">
-          <span class="source-tag ${tagClass}">[${tag}]</span>
-          <span class="source-title">${escapedTitle}</span>
-          <span class="source-domain">${escapeHtml(domain)}</span>
-        </a>
-      `;
-    }).join('');
+    const domainSet = new Set();
+    results.forEach(r => {
+      const d = getDomain(r.url);
+      if (d) domainSet.add(d);
+    });
+    const topDomains = Array.from(domainSet).slice(0, 4);
+    const domainSummary = topDomains.length > 0 ? `(${topDomains.join(', ')})` : '';
 
     container.innerHTML = `
-      <div class="research-sources-header">
-        <span class="sources-icon">📚</span>
-        <span>Verified Grounding Sources (${results.length} Found)</span>
-      </div>
-      <div class="research-sources-grid">
-        ${sourcesHtml}
-      </div>
+      <details class="research-sources-compact">
+        <summary class="sources-compact-summary">
+          <span class="sources-icon">🌐</span>
+          <span class="sources-count">${results.length} Verified Sources</span>
+          <span class="sources-preview-domains">${escapeHtml(domainSummary)}</span>
+        </summary>
+        <div class="sources-compact-list">
+          ${results.map(r => {
+            const cleanTitle = r.title ? r.title.replace(/^\[arXiv\]\s*/i, '') : 'Source Link';
+            const domain = getDomain(r.url);
+            const isArxiv = (r.url && r.url.includes('arxiv.org')) || (r.title && r.title.startsWith('[arXiv]'));
+            const snippet = (r.snippet || '').trim().replace(/\s+/g, ' ').slice(0, 160);
+            return `<a href="${escapeHtml(r.url || '#')}" target="_blank" rel="noopener noreferrer" class="source-compact-link" title="${escapeHtml(snippet)}">
+              <span class="source-compact-title">${isArxiv ? '<span class="source-compact-tag">[arXiv]</span> ' : ''}${escapeHtml(cleanTitle)}</span>
+              <span class="source-domain">${escapeHtml(domain)}</span>
+            </a>`;
+          }).join('')}
+        </div>
+      </details>
     `;
   }
 
@@ -3763,6 +3812,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function refreshModelFusionStatus() {
     const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+    if (!window.isIpcOnline) {
+      applyFallbackModelFusionStatus();
+      return;
+    }
     try {
       const res = await fetch(`${ipcUrl}/api/modelfusion/status`, { method: 'GET' });
       if (res.ok) {
@@ -3781,7 +3834,10 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (e) {}
 
-    // Fallback if IPC is not yet responding
+    applyFallbackModelFusionStatus();
+  }
+
+  function applyFallbackModelFusionStatus() {
     updateModelFusionUI({
       total_models: 6438,
       tasks_count: 45,
@@ -4102,8 +4158,16 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       try {
-        const res = await fetch(`http://localhost:${port}/json/version`, { method: 'GET' });
-        if (res.ok) {
+        let res = null;
+        try {
+          res = await fetch(`http://127.0.0.1:5000/api/cdp/version?port=${port}`, { method: 'GET' });
+        } catch (_) {}
+
+        if (!res || !res.ok) {
+          res = await fetch(`http://localhost:${port}/json/version`, { method: 'GET' });
+        }
+
+        if (res && res.ok) {
           if (resultTestCdp) {
             resultTestCdp.className = 'test-result success';
             resultTestCdp.textContent = `✓ CDP Port ${port} Active`;
@@ -4111,7 +4175,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
           if (resultTestCdp) {
             resultTestCdp.className = 'test-result error';
-            resultTestCdp.textContent = `✗ HTTP Error ${res.status}`;
+            resultTestCdp.textContent = `✗ HTTP Error ${res ? res.status : 'offline'}`;
           }
         }
       } catch (err) {
@@ -4373,7 +4437,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const name = (m.name || m.model || (typeof m === 'string' ? m : '')).toLowerCase();
           return name.includes('moondream') || name.includes('llava') || name.includes('vision') || name.includes('-vl') || name.includes('minicpm') || name.includes('bakllava');
         });
-        if (!hasVisionModel) {
+        if (!hasVisionModel && window.isIpcOnline) {
           fetch(`${ipcUrl}/api/models/provision`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -4382,15 +4446,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Query Master CLI for hardware-optimal model sizing
-        try {
-          const mfStatusRes = await fetch(`${ipcUrl}/api/modelfusion/status`).catch(() => null);
-          if (mfStatusRes && mfStatusRes.ok) {
-            const mfData = await mfStatusRes.json();
-            if (mfData && mfData.active_hardware_model) {
-              window.hardwareOptimalModel = mfData.active_hardware_model;
+        if (window.isIpcOnline) {
+          try {
+            const mfStatusRes = await (fetch(`${ipcUrl}/api/status`).catch(() => null) || fetch(`${ipcUrl}/api/modelfusion/status`).catch(() => null));
+            if (mfStatusRes && mfStatusRes.ok) {
+              const mfData = await mfStatusRes.json();
+              if (mfData && (mfData.calibrated_sweet_spot || mfData.active_hardware_model)) {
+                window.hardwareOptimalModel = mfData.calibrated_sweet_spot || mfData.active_hardware_model;
+              }
+              if (mfData && mfData.hardware) {
+                if (mfData.hardware.free_vram_mb) window.hardwareGpuVramMb = mfData.hardware.free_vram_mb;
+                else if (mfData.hardware.total_vram_mb) window.hardwareGpuVramMb = mfData.hardware.total_vram_mb;
+              }
             }
-          }
-        } catch (_) {}
+          } catch (_) {}
+        }
 
         if (!currentSettings.activeModel || currentSettings.activeModel === DEFAULT_SETTINGS.activeModel || currentSettings.activeModel === 'modelfusion_auto') {
           activeOllamaModel = 'modelfusion_auto';
@@ -4406,6 +4476,10 @@ document.addEventListener('DOMContentLoaded', () => {
             headerModelName.textContent = '⚡ Fast Fusion';
           } else if (activeOllamaModel === 'deep_reasoning') {
             headerModelName.textContent = '🧠 Deep Reasoning';
+          } else if (activeOllamaModel === 'gemma2:9b') {
+            headerModelName.textContent = 'Gemma 2 (9B)';
+          } else if (activeOllamaModel === 'gemma2:2b') {
+            headerModelName.textContent = 'Gemma 2 (2B)';
           } else if (activeOllamaModel === 'qwen2.5:7b') {
             headerModelName.textContent = 'HugOS AI';
           } else {
@@ -4419,9 +4493,11 @@ document.addEventListener('DOMContentLoaded', () => {
         // Fresh install: 0 models in Ollama! Trigger hardware model auto-provisioning!
         if (dotOllama) dotOllama.className = 'status-dot starting';
         if (textOllama) textOllama.textContent = '🟡 Provisioning hardware model...';
-        try {
-          fetch(`${ipcUrl}/api/ollama/start`, { method: 'POST' }).catch(() => {});
-        } catch (e) {}
+        if (window.isIpcOnline) {
+          try {
+            fetch(`${ipcUrl}/api/ollama/start`, { method: 'POST' }).catch(() => {});
+          } catch (e) {}
+        }
         // Poll until model appears
         setTimeout(() => probeOllama(false), 3000);
         return false;
@@ -4432,11 +4508,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (autoWake) {
       if (dotOllama) dotOllama.className = 'status-dot starting';
       if (textOllama) textOllama.textContent = '🟡 Auto-waking Local AI Engine...';
-      try {
-        fetch(`${ipcUrl}/api/watchdog/wake`, { method: 'POST' }).catch(() => {
-          fetch(`${ipcUrl}/api/ollama/start`, { method: 'POST' }).catch(() => {});
-        });
-      } catch (e) {}
+      if (window.isIpcOnline) {
+        try {
+          fetch(`${ipcUrl}/api/watchdog/wake`, { method: 'POST' }).catch(() => {
+            fetch(`${ipcUrl}/api/ollama/start`, { method: 'POST' }).catch(() => {});
+          });
+        } catch (e) {}
+      }
       // Poll with progressive retries
       let retryCount = 0;
       const pollTimer = setInterval(async () => {
@@ -4461,6 +4539,11 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const res = await fetch(`${url}/health`, { method: 'GET' });
       if (res.ok) {
+        if (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') {
+          window.location.replace('http://localhost:5000/index.html');
+          return true;
+        }
+        window.isIpcOnline = true;
         dotIpc.className = 'dot status-dot online';
         textIpc.textContent = 'IPC Connected';
         refreshModelFusionStatus();
@@ -4470,6 +4553,11 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         const res2 = await fetch(`${url}/api/health`, { method: 'GET' });
         if (res2.ok) {
+          if (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') {
+            window.location.replace('http://localhost:5000/index.html');
+            return true;
+          }
+          window.isIpcOnline = true;
           dotIpc.className = 'dot status-dot online';
           textIpc.textContent = 'IPC Connected';
           refreshModelFusionStatus();
@@ -4478,6 +4566,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (e2) {}
     }
 
+    window.isIpcOnline = false;
     dotIpc.className = 'dot status-dot online';
     textIpc.textContent = 'Master CLI';
     refreshModelFusionStatus();
@@ -4486,9 +4575,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function probeCdp() {
     const port = currentSettings.cdpPort || 9222;
+
+    // 1. First probe via ModelFusion backend CDP proxy (which has open CORS headers)
     try {
-      const res = await fetch(`http://localhost:${port}/json/version`, { method: 'GET' });
+      const proxyUrl = `http://127.0.0.1:5000/api/cdp/version?port=${port}`;
+      const res = await fetch(proxyUrl, { method: 'GET' });
       if (res.ok) {
+        dotCdp.className = 'dot status-dot online';
+        textCdp.textContent = `CDP :${port} Ready`;
+        return true;
+      }
+    } catch (e) {
+      // Backend CDP proxy offline or failing, fall through to direct probe
+    }
+
+    // 2. Direct probe fallback with mode: 'no-cors'
+    try {
+      const res = await fetch('http://localhost:' + port + '/json/version', { method: 'GET', mode: 'no-cors' });
+      if (res.ok || res.type === 'opaque') {
         dotCdp.className = 'dot status-dot online';
         textCdp.textContent = `CDP :${port} Ready`;
         return true;
@@ -4952,15 +5056,16 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
       const isFileOrigin = window.location.protocol === 'file:';
       const chatEndpoints = [];
       if (hasImages) {
-        // Prioritize Master CLI IPC (port 5000) first: handles watchdog auto-restart, auto-pull, and image stripping
-        if (ipcUrl) chatEndpoints.push(ipcUrl);
+        // Prioritize Master CLI IPC (port 5000) first if online: handles watchdog auto-restart, auto-pull, and image stripping
+        if (window.isIpcOnline && ipcUrl) chatEndpoints.push(ipcUrl);
         chatEndpoints.push(ollamaUrl);
-      } else if (isFileOrigin) {
-        if (ipcUrl) chatEndpoints.push(ipcUrl);
+        if (ipcUrl && !chatEndpoints.includes(ipcUrl)) chatEndpoints.push(ipcUrl);
+      } else if (window.isIpcOnline && ipcUrl) {
+        chatEndpoints.push(ipcUrl);
         chatEndpoints.push(ollamaUrl);
       } else {
         chatEndpoints.push(ollamaUrl);
-        if (ipcUrl && !chatEndpoints.includes(ipcUrl)) chatEndpoints.push(ipcUrl);
+        if (window.isIpcOnline && ipcUrl && !chatEndpoints.includes(ipcUrl)) chatEndpoints.push(ipcUrl);
       }
 
       const isGoalDirective = Boolean(
@@ -7633,19 +7738,23 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       let streamContentEl = null;
       let sourcesCardEl = null;
       let statusCtrl = null;
+      const academicTerms = /\b(paper|papers|arxiv|algorithm|algorithms|cryptography|cryptographic|physics|quantum|biology|biological|mathematics|mathematical|math|proof|proofs|theorem|theorems|neural|compiler|distributed)\b/i;
+      const isAcademicTopic = academicTerms.test(queryToSearch);
+      const shouldQueryArxiv = isArxivOnly || (isDeepResearch && isAcademicTopic);
+
       if (chatMessages) {
         assistantBubble = document.createElement('div');
         assistantBubble.className = 'msg-bubble assistant-bubble streaming';
         assistantBubble.innerHTML = `
           <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
             <span>${isArxivOnly ? '📚' : (isDeepResearch ? '🔬' : '🌐')}</span> <span>ModelFusion AI</span>
-            <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">${isArxivOnly ? '(arXiv Research Papers)' : (isDeepResearch ? '(Deep Research: Web + arXiv)' : '(Web Search Grounding)')}</span>
+            <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">${isArxivOnly ? '(arXiv Research Papers)' : (isDeepResearch ? (shouldQueryArxiv ? '(Deep Research: Web + arXiv)' : '(Deep Research: Web Grounding)') : '(Web Search Grounding)')}</span>
           </div>
           <div class="bubble-content">
             <div class="research-status-bar">
               <div class="dynamic-status-pill">
                 <span class="status-pulse-dot"></span>
-                <span class="status-text">${isArxivOnly ? 'Searching arXiv scientific preprints...' : 'Searching the internet & arXiv...'}</span>
+                <span class="status-text">${isArxivOnly ? 'Searching arXiv scientific preprints...' : (shouldQueryArxiv ? 'Searching the internet & arXiv...' : 'Searching the internet...')}</span>
               </div>
             </div>
             <div class="research-sources-card" style="display: none;"></div>
@@ -7686,17 +7795,17 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         if (isArxivOnly) {
           const arxivResults = await executeArxivSearch(queryToSearch, currentSettings.maxSearchResults || 6);
           updateSourcesImmediately(arxivResults);
-        } else if (isDeepResearch) {
-          // Directive: "anytime deep research is used it must use arXiv"
-          // Query live web search AND arXiv in parallel with immediate spit-out as each arrives
+        } else if (isDeepResearch && shouldQueryArxiv) {
+          // Scientific / academic deep research: query web + arXiv in parallel
           const pWeb = executeWebSearch(queryToSearch, currentSettings.maxSearchResults || 5)
             .then(res => { updateSourcesImmediately(res); return res; });
           const pArxiv = executeArxivSearch(queryToSearch, 5)
             .then(res => { updateSourcesImmediately(res); return res; });
           await Promise.all([pWeb, pArxiv]);
         } else {
-          // Standard web search / web-agent
-          const searchResults = await executeWebSearch(queryToSearch, currentSettings.maxSearchResults || 6);
+          // Standard web search or general deep research (e.g. music, artists, pop stars, history)
+          const limit = isDeepResearch ? Math.max(currentSettings.maxSearchResults || 6, 8) : (currentSettings.maxSearchResults || 6);
+          const searchResults = await executeWebSearch(queryToSearch, limit);
           updateSourcesImmediately(searchResults);
         }
 
@@ -7704,7 +7813,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           statusCtrl.setText('⚡ Synthesizing grounded analysis with Local AI...');
         }
 
-        termLog(`[RESEARCH] Retrieved ${combinedResults.length} verified sources (${isDeepResearch ? 'Web + arXiv' : (isArxivOnly ? 'arXiv' : 'Web')}). Correlating results with LLM...`, 'success');
+        termLog(`[RESEARCH] Retrieved ${combinedResults.length} verified sources (${isDeepResearch ? (shouldQueryArxiv ? 'Web + arXiv' : 'Web') : (isArxivOnly ? 'arXiv' : 'Web')}). Correlating results with LLM...`, 'success');
         if (combinedResults.length > 0) {
           combinedResults.forEach((r, idx) => {
             termLog(`  [${idx + 1}] ${r.title} - ${r.url}`, 'sys');
@@ -7720,17 +7829,11 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 Verified Grounding Context:
 ${searchContext}
 
-${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
-- Provide an accurate, factual, in-depth, and comprehensive academic exploration directly grounded in the verified context above.
-- Structure your response cleanly using markdown headings (###) for major sections: Theoretical Foundations, Historical Timeline & Evolution, Mathematical/Cryptographic Scheme, Real-World Implementations, Security & Threat Model, and Practical Performance Trade-offs.
-- Do NOT output your entire response as a markdown table. Use standard paragraphs, subheadings, and bullet lists for prose. Tables should only be used for compact parameter comparison matrices.
-- Cite sources inline using [1], [2], etc., matching the numbered search results.
-- Include markdown links to the sources [Title](URL) where relevant.
-- Never invent unverified dates, names, or citations.`;
+${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions: Provide an engaging, deeply detailed, comprehensive, and well-structured response directly answering the user query. Organize your response with natural, descriptive markdown headings (###). Write in rich, fluid, natural prose (avoid corporate clichés, formulaic transitions, or robotic summaries). Ground your analysis in the verified facts and cite sources inline where relevant.`;
 
         const sysPrompt = isArxivOnly
           ? 'You are HugOS Browser AI, an expert academic and scientific research assistant. Correlate arXiv preprints and research papers, synthesize key findings, methodologies, and citations accurately with markdown links.'
-          : 'You are HugOS Browser AI, an intelligent assistant with live internet search and arXiv scientific research capabilities. Correlate search evidence with internal reasoning, provide factual and up-to-date answers, and cite sources accurately with [1], [2] badges and markdown links.';
+          : 'You are HugOS Browser AI, an intelligent assistant with live internet search and deep research capabilities. Correlate search evidence with internal reasoning, provide factual and up-to-date answers, and cite sources accurately with [1], [2] badges and markdown links.';
 
         await streamAiChat(promptWithSearch, sysPrompt, {
           images: attachedImages,
@@ -8299,6 +8402,10 @@ If you are asked about real-world facts such as world leaders, heads of state, c
               headerActiveModelName.textContent = '⚡ Fast Fusion';
             } else if (chosenModel === 'deep_reasoning') {
               headerActiveModelName.textContent = '🧠 Deep Reasoning';
+            } else if (chosenModel === 'gemma2:9b') {
+              headerActiveModelName.textContent = 'Gemma 2 (9B)';
+            } else if (chosenModel === 'gemma2:2b') {
+              headerActiveModelName.textContent = 'Gemma 2 (2B)';
             } else if (chosenModel === 'qwen2.5:7b') {
               headerActiveModelName.textContent = 'HugOS AI';
             } else {

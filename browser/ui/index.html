@@ -351,6 +351,14 @@
               </div>
               <div class="model-dropdown-divider" style="height: 1px; background: var(--border-color); margin: 4px 0;"></div>
               <div class="model-opt-header" style="font-size: 10px; text-transform: uppercase; color: var(--text-muted); padding: 4px 10px; font-weight: 600;">Single Model Overrides</div>
+              <div class="model-opt" data-model="gemma2:9b">
+                <span class="opt-name">gemma2:9b</span>
+                <span class="opt-desc">Google Gemma 2 - High Speed Sweet Spot</span>
+              </div>
+              <div class="model-opt" data-model="gemma2:2b">
+                <span class="opt-name">gemma2:2b</span>
+                <span class="opt-desc">Google Gemma 2 - Ultra-Lightweight</span>
+              </div>
               <div class="model-opt" data-model="qwen2.5:7b">
                 <span class="opt-name">qwen2.5:7b</span>
                 <span class="opt-desc">Direct Single Model - High Speed</span>
@@ -905,6 +913,8 @@
                 <div class="setting-input-row">
                   <select id="setting-active-model" class="setting-select">
                     <optgroup label="Local Hardware Models (Ollama - Free / Offline)">
+                      <option value="gemma2:9b">gemma2:9b (Google Gemma 2 - 9B Sweet Spot)</option>
+                      <option value="gemma2:2b">gemma2:2b (Google Gemma 2 - 2B Ultra-Light)</option>
                       <option value="qwen2.5:7b">qwen2.5:7b (Fast Standard Engine)</option>
                       <option value="qwen2.5:32b">qwen2.5:32b (Deep Reasoner 32B)</option>
                       <option value="qwen2.5:14b">qwen2.5:14b (Mid Tier 14B)</option>

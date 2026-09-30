@@ -36,6 +36,17 @@ if exist "%SCRIPT_DIR%..\bin\clibrowser.exe" (
     set "CLI_BIN=%LOCALAPPDATA%\HugOS IDE\bin\cliide.exe"
 ) else if exist "%LOCALAPPDATA%\HugOS IDE\bin\cli.exe" (
     set "CLI_BIN=%LOCALAPPDATA%\HugOS IDE\bin\cli.exe"
+) else if exist "D:\harfile\ModelFusion\target\release\cli.exe" (
+    set "CLI_BIN=D:\harfile\ModelFusion\target\release\cli.exe"
+) else if exist "%SCRIPT_DIR%..\..\target\debug\cli.exe" (
+    set "CLI_BIN=%SCRIPT_DIR%..\..\target\debug\cli.exe"
+) else (
+    where clibrowser >nul 2>&1
+    if not errorlevel 1 for /f "delims=" %%f in ('where clibrowser') do set "CLI_BIN=%%f"
+    if "!CLI_BIN!"=="" (
+        where cli >nul 2>&1
+        if not errorlevel 1 for /f "delims=" %%f in ('where cli') do set "CLI_BIN=%%f"
+    )
 )
 
 REM 0a. Check & Auto-start Ollama Local AI Engine with Open CORS
@@ -62,7 +73,7 @@ if errorlevel 1 (
     echo [INFO] ModelFusion Master Server offline on port 5000. Auto-starting server...
     if not "%CLI_BIN%"=="" (
         wscript.exe //B //nologo "%SCRIPT_DIR%run_hidden.vbs" "%CLI_BIN%" "--server" "--port" "5000"
-        for /L %%i in (1,1,10) do (
+        for /L %%i in (1,1,15) do (
             curl -s -o nul --max-time 1 http://127.0.0.1:5000/health
             if not errorlevel 1 goto :server_ready
             timeout /t 1 /nobreak >nul
@@ -76,16 +87,29 @@ set "START_URL=http://localhost:5000/index.html"
 if not "%~1"=="" (
     set "START_URL=%~1"
 )
-curl -s -o nul --max-time 2 http://127.0.0.1:5000/health
-if errorlevel 1 (
-    if "%START_URL%"=="http://localhost:5000" (
-        set "START_URL=file:///%HOME_FILE_PATH:\=/%"
+if "%CLI_BIN%"=="" (
+    curl -s -o nul --max-time 2 http://127.0.0.1:5000/health
+    if errorlevel 1 (
+        if "%START_URL%"=="http://localhost:5000" (
+            set "START_URL=file:///%HOME_FILE_PATH:\=/%"
+        )
+        if "%START_URL%"=="http://localhost:5000/index.html" (
+            set "START_URL=file:///%HOME_FILE_PATH:\=/%"
+        )
+        if "%START_URL%"=="http://127.0.0.1:5000/index.html" (
+            set "START_URL=file:///%HOME_FILE_PATH:\=/%"
+        )
     )
-    if "%START_URL%"=="http://localhost:5000/index.html" (
-        set "START_URL=file:///%HOME_FILE_PATH:\=/%"
+) else (
+    REM When CLI_BIN is present, ensure START_URL defaults to and remains http://localhost:5000/index.html without file:/// fallback
+    if "!START_URL:~0,7!"=="file://" (
+        set "START_URL=http://localhost:5000/index.html"
     )
-    if "%START_URL%"=="http://127.0.0.1:5000/index.html" (
-        set "START_URL=file:///%HOME_FILE_PATH:\=/%"
+    if "!START_URL!"=="%DEFAULT_HOME%" (
+        set "START_URL=http://localhost:5000/index.html"
+    )
+    if "!START_URL!"=="%HOME_FILE_PATH%" (
+        set "START_URL=http://localhost:5000/index.html"
     )
 )
 
@@ -125,6 +149,6 @@ echo [INFO] Extension Path: "%EXTENSION_PATH%"
 echo [INFO] User Data Dir: "%USER_DATA_DIR%"
 echo [INFO] Startup URL: "%START_URL%"
 
-start "" "%CHROME_BIN%" --remote-debugging-port=9222 --remote-allow-origins=* --allow-file-access-from-files --load-extension="%EXTENSION_PATH%" --user-data-dir="%USER_DATA_DIR%" --disable-backgrounding-occluded-windows --no-first-run --no-default-browser-check --enable-features=SidePanel,SidePanelPinning --homepage="%START_URL%" "%START_URL%"
+start "" "%CHROME_BIN%" --remote-debugging-port=9222 --remote-allow-origins=* --disable-web-security --allow-file-access-from-files --load-extension="%EXTENSION_PATH%" --user-data-dir="%USER_DATA_DIR%" --disable-backgrounding-occluded-windows --no-first-run --no-default-browser-check --enable-features=SidePanel,SidePanelPinning --homepage="%START_URL%" "%START_URL%"
 
 endlocal
