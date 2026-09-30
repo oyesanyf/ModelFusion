@@ -15,4 +15,8 @@ pub use dom_pruner::{DomPruner, DomPrunerOptions, InteractiveElement, PrunedDom}
 pub use table_extractor::{ExtractedTable, TableExtractor};
 pub use tools::{BrowserAction, BrowserActionResult, BrowserTabState, BrowserToolSuite, ElementTarget};
 pub use vision_grounding::{GroundingBox, GroundingResult, VisionGroundingEngine};
+pub use crate::memory::{
+    AssemblyContext, ChatMessage, ContextManager, ConversationSession, MemoryError,
+    MemoryRepository, MessageRole, SqliteMemoryRepository, StoredMessage,
+};
 

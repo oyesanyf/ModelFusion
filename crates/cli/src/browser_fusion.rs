@@ -621,6 +621,7 @@ pub fn launch_hugos_browser(url: Option<&str>) -> Result<(), String> {
         let mut cmd = std::process::Command::new(&chrome_bin);
         cmd.arg("--remote-debugging-port=9222")
            .arg("--remote-allow-origins=*")
+           .arg("--disable-web-security")
            .arg("--allow-file-access-from-files")
            .arg(format!("--user-data-dir={}", user_data_dir.display()))
            .arg("--disable-backgrounding-occluded-windows")

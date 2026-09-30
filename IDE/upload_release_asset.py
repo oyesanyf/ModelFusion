@@ -193,6 +193,7 @@ def main():
     print("==========================================")
         
     targets = [
+        ("v1.0.0-beta.205", f"ModelFusion & HugOS Suite v1.0.0-beta.205 (Build 205 - CLI, IDE, Browser)", False),
         (f"v1.0.0-beta.{build_number}", f"ModelFusion & HugOS Suite v1.0.0-beta.{build_number} (Build {build_number} - CLI, IDE, Browser)", True),
         ("v1.0.0-beta", f"ModelFusion & HugOS Suite v1.0.0-beta (Latest Rolling Release - Build {build_number})", False)
     ]

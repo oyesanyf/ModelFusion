@@ -584,6 +584,8 @@ pub struct AutonomousBrowserAgent {
     pub pending_checkpoint: Option<StepAction>,
     pub ollama_endpoint: String,
     pub model: String,
+    pub session_id: Option<String>,
+    pub memory_repo: Option<std::sync::Arc<dyn crate::memory::MemoryRepository>>,
 }
 
 impl AutonomousBrowserAgent {
@@ -599,7 +601,19 @@ impl AutonomousBrowserAgent {
             pending_checkpoint: None,
             ollama_endpoint,
             model: "qwen2.5:32b".to_string(),
+            session_id: None,
+            memory_repo: None,
         }
+    }
+
+    pub fn with_memory(
+        mut self,
+        repo: std::sync::Arc<dyn crate::memory::MemoryRepository>,
+        session_id: impl Into<String>,
+    ) -> Self {
+        self.memory_repo = Some(repo);
+        self.session_id = Some(session_id.into());
+        self
     }
 
     pub fn set_model(&mut self, model: impl Into<String>) {
@@ -752,15 +766,33 @@ impl AutonomousBrowserAgent {
 
         self.history.push(step_action.clone());
 
+        // Asynchronously persist turns into SQLite memory repository if configured
+        if let (Some(repo), Some(sess)) = (&self.memory_repo, &self.session_id) {
+            if current_step == 1 && self.history.len() == 1 {
+                let _ = repo.append_message(sess, crate::memory::MessageRole::User, &self.goal.instruction).await;
+            }
+            let _ = repo.append_message(
+                sess,
+                crate::memory::MessageRole::Assistant,
+                &format!("Step {}: {:?} (Rationale: {})", step_action.step_number, step_action.action, step_action.rationale),
+            ).await;
+        }
+
         // Check completion
         if let BrowserAction::Complete { ref summary } = step_action.action {
             self.state = AgentState::Completed {
                 summary: summary.clone(),
             };
+            if let (Some(repo), Some(sess)) = (&self.memory_repo, &self.session_id) {
+                let _ = repo.append_message(sess, crate::memory::MessageRole::Assistant, &format!("Goal completed: {}", summary)).await;
+            }
         } else if current_step >= self.goal.max_steps {
             self.state = AgentState::Completed {
                 summary: format!("Reached maximum step limit ({} steps).", self.goal.max_steps),
             };
+            if let (Some(repo), Some(sess)) = (&self.memory_repo, &self.session_id) {
+                let _ = repo.append_message(sess, crate::memory::MessageRole::Assistant, &format!("Reached maximum step limit ({} steps).", self.goal.max_steps)).await;
+            }
         } else {
             self.state = AgentState::Running {
                 current_step: current_step + 1,

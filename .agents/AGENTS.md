@@ -1,5 +1,14 @@
 # Project Rules & User Preferences
 
+## Mandatory Completion Rule: Always Commit, Push & Update Release Artifacts
+Whenever any task, code edit, bug fix, calibration, or enhancement is done:
+1. **Recompile Release Binaries**: `cargo build --release --bin cli`.
+2. **Mirror Parity**: Run `python scripts/mirror_all.py` to keep all 12 binary/asset locations in identical parity.
+3. **Rebuild & Sign MSI**: Run `powershell -ExecutionPolicy Bypass -File .\IDE\build_msi.ps1`.
+4. **Git Commit & Push**: Stage all changes (`git add -A`), commit with descriptive message, and push to `https://github.com/oyesanyf/ModelFusion.git`.
+5. **Update Remote GitHub Releases**: Upload the latest `HugOS.msi` and `cli.exe` to the versioned release tag (e.g. `v1.0.0-beta.219`) and clobber update the rolling release `v1.0.0-beta`.
+6. **Parity Check**: Verify 100% parity between local working directory, git remote `origin/main`, Git LFS, and GitHub release assets.
+
 ## Git Push Guardrails
 - **Restricted Remotes:** NEVER run `git push` inside `IDE/vscode` or target any Microsoft/upstream third-party remote.
 - **Canonical Repository:** ALL code pushes must strictly target `https://github.com/oyesanyf/ModelFusion.git`.

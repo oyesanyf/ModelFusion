@@ -22,4 +22,9 @@ reqwest         = { workspace = true }
 sysinfo         = { workspace = true }
 code_graph      = { path = "../code_graph" }
 mesh            = { path = "../mesh" }
+sqlx            = { workspace = true }
+uuid            = { workspace = true }
+tiktoken-rs     = { workspace = true }
+async-trait     = { workspace = true }
+thiserror       = { workspace = true }
 

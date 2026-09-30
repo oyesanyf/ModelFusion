@@ -8,6 +8,7 @@ pub mod fusion_engine;
 pub mod web_research;
 pub mod browser;
 pub mod rl;
+pub mod memory;
 
 pub use orchestrator::{HuggingFaceOrchestrator, OrchestrationResult};
 pub use providers::{create_provider, LLMProvider, ModelConfig, ProviderResult};
@@ -23,5 +24,9 @@ pub use browser::{
     BrowserToolSuite, CdpClient, DomPruner, DomPrunerOptions, ElementTarget, ExtractedTable,
     GroundingBox, GroundingResult, InteractiveElement, PrunedDom, SafetyClassifier, StepAction,
     TableExtractor, TargetInfo, VisionGroundingEngine,
+};
+pub use memory::{
+    AssemblyContext, ChatMessage, ConversationSession, ContextManager, MemoryError,
+    MemoryRepository, MessageRole, SqliteMemoryRepository, StoredMessage,
 };
 pub use rl::*;
