@@ -1638,19 +1638,31 @@ DATABASE & MODEL UPDATE COMMANDS:
   --updatedb            Full registry crawler: continuously ingests ALL 2M+ models from Hugging Face
                         Hub (cursor-paginated in 1,000-model batches, whether junk or not)
   --max-models <N>      Cap the number of models during --updatedb (defaults to unlimited)
-  --humanize <TEXT>     Rewrite passage into natural, fluid human prose using anti-AI stylometry
+  --humanize [TEXT]     Rewrite passage into natural, fluid human prose using anti-AI stylometry (accepts inline text or file path)
+  --translate [TEXT]    Translate natural language text into target language (accepts inline text or file path)
+  --to <LANG>           Target language for translation (default: English)
   --db-path <PATH>      Target SQLite database path (e.g. IDE/db/hf_models.db)
 
 EXAMPLES:
   # Inspect all active runtime and catalog models
   cli.exe --active-model --db-path \"IDE/db/hf_models.db\"
 
+  # Translate a language text to target language (accepts inline text or file)
+  cli.exe --translate \"Hello world\" --to Spanish
+  cli.exe --translate path/to/document.txt --to German
+  cli.exe --file path/to/document.txt --translate --to Italian
+
+  # Natural human prose rewriting (anti-AI detection, accepts inline text or file)
+  cli.exe --humanize \"Furthermore, this passage requires optimization...\"
+  cli.exe --humanize path/to/draft.txt
+  cli.exe --file path/to/draft.txt --humanize
+
+  # Dual-flag pipeline: translate language text + humanize with native-speaker cadence
+  cli.exe --translate path/to/file.txt --to French --humanize
+
   # ReST-RL daemon status and control
   cli.exe --rest-rl status
   cli.exe --rl start
-
-  # Natural human prose rewriting (anti-AI detection)
-  cli.exe --humanize \"Furthermore, this passage requires optimization...\"
 
   # Fast curated update + Ollama model setup
   cli.exe --update --db-path \"IDE/db/hf_models.db\"
@@ -1669,8 +1681,14 @@ struct Args {
     #[arg(long, help = "Path to file for analysis or processing")]
     file: Option<String>,
 
-    #[arg(long, help = "Rewrite passage into natural, fluid human prose using anti-AI stylometry")]
+    #[arg(long, num_args = 0..=1, default_missing_value = "", help = "Rewrite passage into natural, fluid human prose using anti-AI stylometry (accepts inline text or file path)")]
     humanize: Option<String>,
+
+    #[arg(long, num_args = 0..=1, default_missing_value = "", help = "Translate natural language text into target language (use with --to <LANG>, accepts inline text or file path)")]
+    translate: Option<String>,
+
+    #[arg(long, default_value = "English", help = "Target language for translation (e.g. Spanish, French, German)")]
+    to: String,
 
     #[arg(long, help = "Path to folder for code review or analysis")]
     folder: Option<String>,
@@ -2502,6 +2520,16 @@ where
             }
             return args;
         }
+        if (sub_clean == "translate" || sub_clean == "translation") && !has_combinator {
+            args.remove(1);
+            args[1] = "--translate".to_string();
+        } else if (sub_clean == "translate-humanize" || sub_clean == "trans-human" || sub_clean == "humanize-translate") && !has_combinator {
+            args.remove(1);
+            args[1] = "--translate".to_string();
+            if !args.iter().any(|a| a == "--humanize") {
+                args.push("--humanize".to_string());
+            }
+        }
         if (sub_clean == "key" || sub_clean == "keys") && args.len() > 3 && args[3].to_lowercase() == "gemini" {
             let key = if args.len() > 4 { args[4].clone() } else { String::new() };
             args.remove(1);
@@ -2626,6 +2654,15 @@ where
                 args.push(combined);
             }
         }
+        "translate" | "/translate" | "@agent/translate" | "@agent:translate" | "@translate" | "translation" | "/translation" => {
+            args[1] = "--translate".to_string();
+        }
+        "translate-humanize" | "/translate-humanize" | "@agent/translate-humanize" | "@agent:translate-humanize" | "@translate-humanize" | "trans-human" | "/trans-human" | "@trans-human" | "humanize-translate" => {
+            args[1] = "--translate".to_string();
+            if !args.iter().any(|a| a == "--humanize") {
+                args.push("--humanize".to_string());
+            }
+        }
         "boost" | "/boost" | "@agent/boost" | "@agent:boost" | "@boost" => {
             args[1] = "--boost".to_string();
         }
@@ -2652,6 +2689,45 @@ where
             let combined = args[2..].join(" ");
             args.truncate(2);
             args.push(combined);
+        }
+    }
+
+    if args.len() > 2 && args[1] == "--translate" {
+        let mut has_humanize = args.iter().any(|a| a == "--humanize");
+        if args.len() > 3 && args[2].to_lowercase() == "to" {
+            let lang = args[3].trim_end_matches(':').to_string();
+            args.remove(3);
+            args.remove(2);
+            args.push("--to".to_string());
+            args.push(lang);
+        }
+        let mut text_tokens = Vec::new();
+        let mut flag_tokens = Vec::new();
+        let mut i = 2;
+        while i < args.len() {
+            if args[i] == "--humanize" {
+                has_humanize = true;
+            } else if args[i].starts_with('-') {
+                flag_tokens.push(args[i].clone());
+                if (args[i] == "--to" || args[i] == "-t") && i + 1 < args.len() {
+                    flag_tokens.push(args[i + 1].clone());
+                    i += 1;
+                }
+            } else {
+                text_tokens.push(args[i].clone());
+            }
+            i += 1;
+        }
+        if !text_tokens.is_empty() {
+            let combined = text_tokens.join(" ");
+            args.truncate(2);
+            args.push(combined);
+            args.extend(flag_tokens);
+            if has_humanize {
+                args.push("--humanize".to_string());
+            }
+        } else if has_humanize && !args.iter().any(|a| a == "--humanize") {
+            args.push("--humanize".to_string());
         }
     }
 
@@ -2717,6 +2793,34 @@ pub fn find_hugos_ide_exe() -> Option<std::path::PathBuf> {
         }
     }
 
+    None
+}
+
+/// Resolves input text from either an inline argument (string or file path) or a --file flag.
+pub fn resolve_cli_content(inline_arg: Option<&str>, file_flag: Option<&str>) -> Option<String> {
+    if let Some(val) = inline_arg {
+        let trimmed = val.trim();
+        if !trimmed.is_empty() {
+            let path = std::path::Path::new(trimmed);
+            if path.exists() && path.is_file() {
+                if let Ok(content) = std::fs::read_to_string(path) {
+                    return Some(content);
+                }
+            }
+            return Some(trimmed.to_string());
+        }
+    }
+    if let Some(fpath) = file_flag {
+        let trimmed = fpath.trim();
+        if !trimmed.is_empty() {
+            let path = std::path::Path::new(trimmed);
+            if path.exists() && path.is_file() {
+                if let Ok(content) = std::fs::read_to_string(path) {
+                    return Some(content);
+                }
+            }
+        }
+    }
     None
 }
 
@@ -3052,7 +3156,7 @@ async fn run(args: Args) -> Result<()> {
     }
 
     // Auto-start Ollama and background FFmpeg check
-    if args.prompt.is_some() || args.query.is_some() || args.server || args.mcp || args.browser || args.browser_task.is_some() || args.browser_extract.is_some() || args.ensure_ollama || args.humanize.is_some() {
+    if args.prompt.is_some() || args.query.is_some() || args.server || args.mcp || args.browser || args.browser_task.is_some() || args.browser_extract.is_some() || args.ensure_ollama || args.humanize.is_some() || args.translate.is_some() {
         let _ = model_selection::memory::ensure_ollama_running();
         std::thread::spawn(|| {
             let _ = model_selection::memory::ensure_ffmpeg_available();
@@ -3226,12 +3330,78 @@ async fn run(args: Args) -> Result<()> {
         return Ok(());
     }
 
-    if let Some(ref text) = args.humanize {
-        let input_text = text.trim();
-        if input_text.is_empty() {
-            eprintln!("Error: No text provided to humanize. Usage: cli.exe --humanize \"<text>\" or cli.exe humanize \"<text>\"");
-            return Ok(());
+    if args.translate.is_some() {
+        let content_opt = resolve_cli_content(args.translate.as_deref(), args.file.as_deref());
+        let text_to_trans = match content_opt {
+            Some(t) if !t.trim().is_empty() => t,
+            _ => {
+                eprintln!("Error: No text or file provided for translation. Usage: cli.exe --translate \"<text>\" [--to <LANG>] or cli.exe --translate <path> [--to <LANG>] or cli.exe --file <path> --translate [--to <LANG>]");
+                return Ok(());
+            }
+        };
+
+        let target_lang = if args.to.trim().is_empty() { "English" } else { args.to.trim() };
+        let is_humanize = args.humanize.is_some();
+        let _ = model_selection::memory::ensure_ollama_running();
+
+        let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
+            .or_else(|_| std::env::var("OLLAMA_HOST"))
+            .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+        let model = args.task.clone().or_else(|| args.model.clone()).unwrap_or_else(|| {
+            let sys = query_system_resources();
+            select_ollama_model_from_sys(false, &sys).to_string()
+        });
+
+        if is_humanize {
+            println!("🌐 Translating text to {} with native-speaker humanizing (model: {})...", target_lang, model);
+        } else {
+            println!("🌐 Translating text to {} (model: {})...", target_lang, model);
         }
+
+        let prompt = if is_humanize {
+            format!("Translate the following text into natural, idiomatic {} as spoken and written by an authentic native speaker. Eliminate awkward translationese:\n\n{}", target_lang, text_to_trans)
+        } else {
+            format!("Translate the following text accurately and idiomatically into {}:\n\n{}", target_lang, text_to_trans)
+        };
+        let sys = if is_humanize {
+            "You are an expert bilingual native translator and humanizer. Output only the natural translated text."
+        } else {
+            "You are an expert multilingual translator. Output only the translated text."
+        };
+
+        let client = reqwest::Client::new();
+        let req_body = serde_json::json!({
+            "model": model,
+            "messages": [
+                { "role": "system", "content": sys },
+                { "role": "user", "content": prompt }
+            ],
+            "stream": false
+        });
+
+        match client.post(format!("{}/api/chat", endpoint.trim_end_matches('/'))).json(&req_body).send().await {
+            Ok(resp) => {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    let out = json["message"]["content"].as_str().unwrap_or("");
+                    println!("\n{}\n", out);
+                } else {
+                    eprintln!("Error parsing translation response from Ollama.");
+                }
+            }
+            Err(e) => eprintln!("Translation error: {}", e),
+        }
+        return Ok(());
+    }
+
+    if let Some(ref text) = args.humanize {
+        let content_opt = resolve_cli_content(Some(text.as_str()), args.file.as_deref());
+        let input_text = match content_opt {
+            Some(t) if !t.trim().is_empty() => t,
+            _ => {
+                eprintln!("Error: No text or file provided to humanize. Usage: cli.exe --humanize \"<text>\" or cli.exe --humanize <path> or cli.exe --file <path> --humanize");
+                return Ok(());
+            }
+        };
 
         let _ = model_selection::memory::ensure_ollama_running();
         let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
@@ -3242,7 +3412,7 @@ async fn run(args: Args) -> Result<()> {
 
         println!("✍️ Humanizing text with ProseHumanizer (model: {}, endpoint: {})...", model, endpoint);
         let humanizer = humanizer::ProseHumanizer::new(&endpoint, &model);
-        match humanizer.humanize(input_text).await {
+        match humanizer.humanize(input_text.trim()).await {
             Ok(output) => {
                 println!("\n{}", output);
             }
@@ -16479,6 +16649,42 @@ public class Pr {
         assert_eq!(canonicalize_command("markers"), Some("som"));
         assert_eq!(canonicalize_command("@agent markers"), Some("som"));
         assert_eq!(canonicalize_command("/markers"), Some("som"));
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_translate() {
+        use super::preprocess_cli_args;
+        let res1 = preprocess_cli_args(["cli", "@agent", "translate", "to", "Spanish:", "Hello", "world"]);
+        assert_eq!(res1, vec!["cli".to_string(), "--translate".to_string(), "Hello world".to_string(), "--to".to_string(), "Spanish".to_string()]);
+
+        let res2 = preprocess_cli_args(["cli", "translate", "--to", "German", "Testing text"]);
+        assert_eq!(res2, vec!["cli".to_string(), "--translate".to_string(), "Testing text".to_string(), "--to".to_string(), "German".to_string()]);
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_translate_humanize() {
+        use super::preprocess_cli_args;
+        let res = preprocess_cli_args(["cli", "@agent", "translate-humanize", "to", "French:", "Good morning"]);
+        assert_eq!(res, vec!["cli".to_string(), "--translate".to_string(), "Good morning".to_string(), "--to".to_string(), "French".to_string(), "--humanize".to_string()]);
+    }
+
+    #[test]
+    fn test_resolve_cli_content_inline_and_file() {
+        use super::resolve_cli_content;
+        assert_eq!(resolve_cli_content(Some("plain text"), None), Some("plain text".to_string()));
+        assert_eq!(resolve_cli_content(None, None), None);
+        assert_eq!(resolve_cli_content(Some(""), None), None);
+
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join("hugos_test_content.txt");
+        let _ = std::fs::write(&temp_file, "sample file payload for test");
+        let path_str = temp_file.to_string_lossy().to_string();
+
+        assert_eq!(resolve_cli_content(Some(&path_str), None), Some("sample file payload for test".to_string()));
+        assert_eq!(resolve_cli_content(None, Some(&path_str)), Some("sample file payload for test".to_string()));
+        assert_eq!(resolve_cli_content(Some(""), Some(&path_str)), Some("sample file payload for test".to_string()));
+
+        let _ = std::fs::remove_file(temp_file);
     }
 
     #[test]
