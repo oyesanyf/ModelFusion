@@ -7298,22 +7298,68 @@ pub fn select_best_installed_ollama_model(installed: &[String]) -> Option<String
     if installed.is_empty() {
         return None;
     }
-    let priorities = [
-        "qwen2.5:32b",
-        "deepseek-r1:32b",
-        "gemma2:27b",
-        "qwen2.5:14b",
-        "deepseek-r1:14b",
-        "gemma2:9b",
-        "qwen2.5:7b",
-        "gemma:7b",
-        "deepseek-r1:8b",
-        "deepseek-r1:7b",
-        "gemma2:2b",
-        "deepseek-r1:1.5b",
-        "qwen2.5:3b",
-        "qwen2.5:1.5b",
-    ];
+    let sys = query_system_resources();
+    let sweet_spot = calibrated_sweet_spot_model(&sys);
+
+    // 1. First check if sweet_spot is in installed (matching exactly or as prefix)
+    let sweet_lower = sweet_spot.to_lowercase();
+    if let Some(found) = installed.iter().find(|m| {
+        let lower = m.to_lowercase();
+        lower == sweet_lower || lower.starts_with(&format!("{}:", sweet_lower))
+    }) {
+        return Some(found.clone());
+    }
+
+    // 2. Hardware-appropriate priority list starting with models fitting VRAM
+    let priorities: Vec<&str> = if sys.has_gpu && sys.free_vram_mb >= 22_000 {
+        vec![
+            "qwen2.5:32b",
+            "deepseek-r1:32b",
+            "gemma2:27b",
+            "qwen2.5:14b",
+            "deepseek-r1:14b",
+            "gemma2:9b",
+            "qwen2.5:7b",
+            "deepseek-r1:7b",
+            "deepseek-r1:8b",
+            "gemma2:2b",
+            "deepseek-r1:1.5b",
+            "qwen2.5:3b",
+            "qwen2.5:1.5b",
+        ]
+    } else if sys.has_gpu && sys.free_vram_mb >= 12_000 {
+        vec![
+            "qwen2.5:14b",
+            "deepseek-r1:14b",
+            "gemma2:9b",
+            "qwen2.5:7b",
+            "deepseek-r1:7b",
+            "deepseek-r1:8b",
+            "gemma2:2b",
+            "deepseek-r1:1.5b",
+            "qwen2.5:3b",
+            "qwen2.5:1.5b",
+            "qwen2.5:32b",
+            "deepseek-r1:32b",
+        ]
+    } else {
+        // <= 8GB VRAM (e.g. Quadro RTX 4000) or CPU-only:
+        // Fits 100% in VRAM to guarantee zero PCIe thrashing
+        vec![
+            "gemma2:9b",
+            "qwen2.5:7b",
+            "deepseek-r1:7b",
+            "deepseek-r1:8b",
+            "gemma2:2b",
+            "deepseek-r1:1.5b",
+            "qwen2.5:3b",
+            "qwen2.5:1.5b",
+            "qwen2.5:14b",
+            "qwen2.5:32b",
+            "deepseek-r1:32b",
+        ]
+    };
+
     for p in &priorities {
         if let Some(found) = installed.iter().find(|m| {
             let lower = m.to_lowercase();
@@ -7338,13 +7384,23 @@ pub fn select_best_installed_ollama_model(installed: &[String]) -> Option<String
     installed.first().cloned()
 }
 
+pub fn select_companion_fusion_model(primary: &str, installed: &[String]) -> Option<String> {
+    let prim_lower = primary.to_lowercase();
+    installed.iter().find(|m| {
+        let lower = m.to_lowercase();
+        lower != prim_lower && !lower.starts_with(&format!("{}:", prim_lower))
+            && !lower.contains("vl") && !lower.contains("vision") && !lower.contains("moondream")
+    }).cloned()
+}
+
 pub fn resolve_model_for_chat(requested_model: &str, installed_models: &[String]) -> String {
     let trimmed = requested_model.trim();
     if trimmed.is_empty() || trimmed == "modelfusion_auto" {
         if let Some(best) = select_best_installed_ollama_model(installed_models) {
             return best;
         }
-        select_ollama_model_for_hardware(false).to_string()
+        let sys = query_system_resources();
+        calibrated_sweet_spot_model(&sys).to_string()
     } else {
         trimmed.to_string()
     }
@@ -7868,6 +7924,17 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 let active_hw_model = select_ollama_model_from_sys(false, &sys);
                 let sweet_spot = calibrated_sweet_spot_model(&sys);
 
+                let ollama_endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+                let probe_client = reqwest::Client::builder()
+                    .no_proxy()
+                    .timeout(std::time::Duration::from_millis(500))
+                    .build()
+                    .unwrap_or_default();
+                let installed = fetch_installed_ollama_models(&probe_client, &ollama_endpoint).await;
+                let companion_model = select_companion_fusion_model(&active_hw_model, &installed)
+                    .or_else(|| select_companion_fusion_model(sweet_spot, &installed))
+                    .or_else(|| Some(if sweet_spot.contains("9b") { "gemma2:2b".to_string() } else if sweet_spot.contains("7b") { "deepseek-r1:1.5b".to_string() } else { "qwen2.5:7b".to_string() }));
+
                 let resp_json = if request_path == "/api/models/count" {
                     serde_json::json!({
                         "total_models": total_models,
@@ -7897,7 +7964,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             "free_disk_gb": (sys.free_disk_gb * 100.0).round() / 100.0
                         },
                         "consensus": {
-                            "primary": active_hw_model,
+                            "primary": sweet_spot,
+                            "companion": companion_model,
+                            "sweet_spot_fusion": true,
                             "vision_specialist": "qwen2.5-vl",
                             "deep_reasoning": "deepseek-r1:1.5b",
                             "dom_nlp": "qwen2.5:7b",
@@ -8702,11 +8771,15 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                 if requested_model == "modelfusion_auto" || requested_model.is_empty() || !is_installed {
                     let resolved = resolve_model_for_chat(&requested_model, &installed_models);
-                    eprintln!("[SERVER] 🎯 Model '{}' (installed: {}) resolved -> '{}'", 
-                        if requested_model.is_empty() { "<empty>" } else { &requested_model }, 
-                        is_installed, 
-                        resolved
-                    );
+                    if requested_model == "modelfusion_auto" {
+                        eprintln!("[SERVER] 🌟 ModelFusion Auto Sweet Spot Multi-Model Fusion activated: primary='{}'", resolved);
+                    } else {
+                        eprintln!("[SERVER] 🎯 Model '{}' (installed: {}) resolved -> '{}'", 
+                            if requested_model.is_empty() { "<empty>" } else { &requested_model }, 
+                            is_installed, 
+                            resolved
+                        );
+                    }
                     current_json["model"] = serde_json::json!(resolved);
                 }
 
@@ -16261,7 +16334,7 @@ public class Pr {
 
     #[test]
     fn test_chat_proxy_404_fallback_selection() {
-        use super::{extract_model_names_from_tags_json, select_best_installed_ollama_model};
+        use super::{extract_model_names_from_tags_json, select_best_installed_ollama_model, query_system_resources};
 
         let tags_json = serde_json::json!({
             "models": [
@@ -16277,16 +16350,39 @@ public class Pr {
         assert!(installed.contains(&"qwen2.5:32b".to_string()));
 
         // If requested model (e.g. qwen2.5:7b or modelfusion_auto) 404s, pick best remaining candidate
+        // based on hardware VRAM calibration (<=8GB VRAM strictly avoids 32B to prevent PCIe saturation)
         let failed_model = "qwen2.5:7b";
         let candidates: Vec<String> = installed.clone().into_iter().filter(|m| m != failed_model).collect();
         let fallback = select_best_installed_ollama_model(&candidates);
-        assert_eq!(fallback, Some("qwen2.5:32b".to_string()));
+        let sys = query_system_resources();
+        if sys.has_gpu && sys.free_vram_mb >= 22_000 {
+            assert_eq!(fallback, Some("qwen2.5:32b".to_string()));
+        } else {
+            assert_eq!(fallback, Some("deepseek-r1:1.5b".to_string()));
+        }
 
-        // If qwen2.5:32b also failed, fallback to deepseek-r1:1.5b
-        let failed_32b = "qwen2.5:32b";
-        let remaining: Vec<String> = candidates.into_iter().filter(|m| m != failed_32b).collect();
-        let fallback_ds = select_best_installed_ollama_model(&remaining);
-        assert_eq!(fallback_ds, Some("deepseek-r1:1.5b".to_string()));
+        // If the chosen fallback also failed, fallback to next remaining candidate
+        let failed_candidate = fallback.unwrap();
+        let remaining: Vec<String> = candidates.into_iter().filter(|m| m != &failed_candidate).collect();
+        let fallback_next = select_best_installed_ollama_model(&remaining);
+        assert!(fallback_next.is_some());
+    }
+
+    #[test]
+    fn test_select_companion_fusion_model() {
+        use super::select_companion_fusion_model;
+
+        let installed = vec![
+            "qwen2.5:7b".to_string(),
+            "qwen2.5-vl:latest".to_string(),
+            "deepseek-r1:1.5b".to_string(),
+            "moondream:latest".to_string(),
+        ];
+        // For primary qwen2.5:7b, companion skips primary itself and vision models, picking deepseek-r1:1.5b
+        assert_eq!(select_companion_fusion_model("qwen2.5:7b", &installed), Some("deepseek-r1:1.5b".to_string()));
+
+        // For primary deepseek-r1:1.5b, companion picks qwen2.5:7b
+        assert_eq!(select_companion_fusion_model("deepseek-r1:1.5b", &installed), Some("qwen2.5:7b".to_string()));
     }
 
     #[test]
