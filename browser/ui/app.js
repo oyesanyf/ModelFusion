@@ -1382,6 +1382,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Keyboard Shortcuts: Ctrl+, to open settings, Escape to close modals
   window.addEventListener('keydown', (e) => {
     const exportModal = document.getElementById('modal-export-confirm');
+    const shareModal = document.getElementById('modal-share-export');
     if ((e.ctrlKey || e.metaKey) && e.key === ',') {
       e.preventDefault();
       openSettingsModal();
@@ -1391,6 +1392,14 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (e.key === 'Escape' && exportModal && !exportModal.classList.contains('hidden')) {
       e.preventDefault();
       hideExportModal();
+    } else if (e.key === 'Escape' && shareModal && !shareModal.classList.contains('hidden')) {
+      e.preventDefault();
+      if (typeof window.closeShareModal === 'function') {
+        window.closeShareModal();
+      } else {
+        shareModal.classList.add('hidden');
+        shareModal.style.display = 'none';
+      }
     }
   });
 
@@ -3226,9 +3235,13 @@ document.addEventListener('DOMContentLoaded', () => {
           <span class="action-icon">📋</span>
           <span class="action-text">Copy</span>
         </button>
-        <button type="button" class="msg-action-btn btn-share-msg" onclick="shareAssistantMessage(this)" title="Share message">
+        <button type="button" class="msg-action-btn btn-share-msg" onclick="openShareModal(this, 'share')" title="Share via Email, Apps, or Copy">
           <span class="action-icon">⬆️</span>
           <span class="action-text">Share</span>
+        </button>
+        <button type="button" class="msg-action-btn btn-export-msg" onclick="openShareModal(this, 'export')" title="Export as Markdown, PDF, Plain Text, or HTML">
+          <span class="action-icon">📥</span>
+          <span class="action-text">Export</span>
         </button>
         <button type="button" class="msg-action-btn btn-tts-msg" onclick="toggleTtsReadAloud(this)" title="Read aloud">
           <span class="action-icon">🔊</span>
@@ -3314,17 +3327,9 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   window.shareAssistantMessage = function(btn) {
-    const bubble = btn.closest('.assistant-bubble');
-    if (!bubble) return;
-    const textToCopy = bubble.dataset.rawText || bubble.innerText;
-    navigator.clipboard.writeText(textToCopy).then(() => {
-      const span = btn.querySelector('.action-text');
-      if (span) {
-        const orig = span.textContent;
-        span.textContent = 'Copied!';
-        setTimeout(() => { span.textContent = orig; }, 2000);
-      }
-    });
+    if (typeof window.openShareModal === 'function') {
+      window.openShareModal(btn, 'share');
+    }
   };
 
   let activeTtsUtterance = null;
@@ -3447,7 +3452,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const continuationDirective = "Continue directly where you left off. Do not repeat previous text. Expand with deeper analysis, additional facts, and detailed next steps:";
 
     try {
-      await streamAiChat(continuationDirective, null, {
+      const continuationSysPrompt = "You are an expert assistant continuing an ongoing response. Continue smoothly, accurately, and exhaustively from the exact point of interruption without repeating earlier text or adding meta-commentary.";
+      await streamAiChat(continuationDirective, continuationSysPrompt, {
         existingBubble: bubble,
         bubbleContent: streamTargetEl,
         initialText: initialText,
@@ -3472,16 +3478,8 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   window.toggleMoreMenu = function(btn) {
-    const bubble = btn.closest('.assistant-bubble');
-    const raw = bubble?.dataset?.rawText || '';
-    if (raw) {
-      navigator.clipboard.writeText(raw).then(() => {
-        const icon = btn.querySelector('.action-icon');
-        if (icon) {
-          icon.textContent = '✓';
-          setTimeout(() => { icon.textContent = '⋯'; }, 1500);
-        }
-      });
+    if (typeof window.openShareModal === 'function') {
+      window.openShareModal(btn, 'export');
     }
   };
 
@@ -3841,6 +3839,499 @@ document.addEventListener('DOMContentLoaded', () => {
   window.showExportModal = showExportModal;
   window.hideExportModal = hideExportModal;
   window.exportEntireChatHistory = exportEntireChatHistory;
+
+  // -----------------------------------------------------------------
+  // Universal Share & Export Suite (Email, Markdown, PDF, Plain Text, HTML)
+  // -----------------------------------------------------------------
+  let currentSharePayload = {
+    text: '',
+    prompt: '',
+    model: '',
+    scope: 'single' // 'single' or 'full'
+  };
+
+  function sanitizeShareFilename(name) {
+    if (!name || typeof name !== 'string') return 'modelfusion_export';
+    return name.replace(/[/\\?%*:|"<>#]/g, '_').replace(/\s+/g, '_').trim().slice(0, 50) || 'modelfusion_export';
+  }
+
+  function showShareToast(message) {
+    const toast = document.getElementById('share-modal-toast');
+    if (!toast) return;
+    toast.textContent = message;
+    toast.style.display = 'inline';
+    clearTimeout(toast._hideTimer);
+    toast._hideTimer = setTimeout(() => {
+      toast.style.display = 'none';
+    }, 2800);
+  }
+
+  function downloadBlob(content, filename, mimeType = 'text/plain;charset=utf-8') {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function getEffectiveShareData() {
+    const isFull = currentSharePayload.scope === 'full';
+    const activeSession = chatSessions.find(s => s.id === currentSessionId);
+    let title = (activeSession && activeSession.title) ? activeSession.title : (currentSharePayload.prompt ? currentSharePayload.prompt.slice(0, 45) : 'ModelFusion AI Response');
+    title = title.replace(/\s+/g, ' ').trim();
+
+    if (!isFull) {
+      return {
+        title,
+        prompt: currentSharePayload.prompt || '',
+        text: currentSharePayload.text || '',
+        model: currentSharePayload.model || currentSettings.activeModel || 'qwen2.5:7b',
+        isFull: false
+      };
+    }
+
+    // Full conversation transcript
+    let msgs = (activeSession && Array.isArray(activeSession.messages)) ? activeSession.messages : [];
+    if (msgs.length === 0 && chatMessages) {
+      const bubbles = chatMessages.querySelectorAll('.msg-bubble');
+      bubbles.forEach(b => {
+        const isUser = b.classList.contains('user-bubble');
+        const t = b.querySelector('.bubble-content')?.innerText || b.innerText || '';
+        if (t.trim()) {
+          msgs.push({
+            role: isUser ? 'user' : 'assistant',
+            content: t.trim(),
+            model: b.dataset.model || 'ModelFusion'
+          });
+        }
+      });
+    }
+
+    const transcriptLines = msgs.map((m) => {
+      const roleName = m.role === 'user' ? 'User' : (m.model ? `ModelFusion Assistant (${m.model})` : 'ModelFusion Assistant');
+      return `### ${roleName}\n\n${m.content}\n`;
+    });
+
+    return {
+      title,
+      prompt: activeSession?.title || 'Entire Conversation',
+      text: transcriptLines.join('\n---\n\n') || currentSharePayload.text,
+      model: currentSharePayload.model || currentSettings.activeModel || 'qwen2.5:7b',
+      isFull: true
+    };
+  }
+
+  function updateSharePreview() {
+    const previewEl = document.getElementById('share-preview-text');
+    if (!previewEl) return;
+    const data = getEffectiveShareData();
+    const previewLen = 280;
+    const snippet = data.text ? (data.text.length > previewLen ? data.text.slice(0, previewLen) + '...' : data.text) : '(Empty)';
+    const headerPrefix = data.isFull ? `[ENTIRE CONVERSATION: ${data.title}]\n` : `[PROMPT: ${data.prompt || 'Assistant Output'}]\n`;
+    previewEl.textContent = headerPrefix + snippet;
+  }
+
+  function setShareScope(scope) {
+    currentSharePayload.scope = scope;
+    const btnSingle = document.getElementById('btn-scope-single');
+    const btnFull = document.getElementById('btn-scope-full');
+    if (scope === 'single') {
+      if (btnSingle) {
+        btnSingle.style.background = 'var(--accent-color, #10b981)';
+        btnSingle.style.color = '#fff';
+        btnSingle.classList.add('active');
+      }
+      if (btnFull) {
+        btnFull.style.background = 'transparent';
+        btnFull.style.color = 'var(--text-muted, #94a3b8)';
+        btnFull.classList.remove('active');
+      }
+    } else {
+      if (btnFull) {
+        btnFull.style.background = 'var(--accent-color, #10b981)';
+        btnFull.style.color = '#fff';
+        btnFull.classList.add('active');
+      }
+      if (btnSingle) {
+        btnSingle.style.background = 'transparent';
+        btnSingle.style.color = 'var(--text-muted, #94a3b8)';
+        btnSingle.classList.remove('active');
+      }
+    }
+    updateSharePreview();
+  }
+
+  window.openShareModal = function(btn, mode = 'share') {
+    let rawText = '';
+    let prompt = '';
+    let model = '';
+
+    if (btn) {
+      const bubble = btn.closest('.assistant-bubble') || btn.closest('.msg-bubble');
+      if (bubble) {
+        rawText = bubble.dataset.rawText || '';
+        if (!rawText) {
+          const contentEl = bubble.querySelector('.assistant-text-content') || bubble.querySelector('.bubble-content');
+          rawText = contentEl ? contentEl.innerText : bubble.innerText;
+        }
+        prompt = bubble.dataset.prompt || '';
+        model = bubble.dataset.model || currentSettings.activeModel || 'qwen2.5:7b';
+      }
+    }
+
+    if (!rawText) {
+      const activeSession = chatSessions.find(s => s.id === currentSessionId);
+      if (activeSession && Array.isArray(activeSession.messages) && activeSession.messages.length > 0) {
+        const lastAsst = activeSession.messages.findLast(m => m.role === 'assistant');
+        if (lastAsst) {
+          rawText = lastAsst.content;
+          model = lastAsst.model || '';
+        }
+        const lastUser = activeSession.messages.findLast(m => m.role === 'user');
+        if (lastUser) prompt = lastUser.content;
+      }
+    }
+
+    currentSharePayload = {
+      text: rawText,
+      prompt: prompt || (window.lastUserPrompt || ''),
+      model: model || currentSettings.activeModel || 'qwen2.5:7b',
+      scope: 'single'
+    };
+
+    setShareScope('single');
+    updateSharePreview();
+
+    const modal = document.getElementById('modal-share-export');
+    if (modal) {
+      modal.classList.remove('hidden');
+      modal.style.display = 'flex';
+      modal.style.zIndex = '100000';
+    }
+  };
+
+  window.closeShareModal = function() {
+    const modal = document.getElementById('modal-share-export');
+    if (modal) {
+      modal.classList.add('hidden');
+      modal.style.display = 'none';
+    }
+  };
+
+  function shareViaEmail() {
+    const data = getEffectiveShareData();
+    const subject = encodeURIComponent(`ModelFusion AI: ${data.title}`);
+    
+    // Always copy full markdown text to clipboard so nothing is ever lost to URI length limits
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(data.text).catch(() => {});
+    }
+
+    // Mailto body (truncated to ~1500 chars if huge, referencing clipboard)
+    let bodyText = data.text;
+    if (bodyText.length > 1500) {
+      bodyText = bodyText.slice(0, 1500) + "\n\n... [Full response copied to clipboard! Paste directly into email.]";
+    }
+    const body = encodeURIComponent(bodyText);
+    const mailtoUri = `mailto:?subject=${subject}&body=${body}`;
+
+    showShareToast("✓ Opening email client & copied full text to clipboard!");
+    window.location.href = mailtoUri;
+  }
+
+  function exportAsMarkdown() {
+    const data = getEffectiveShareData();
+    const dateStr = new Date().toISOString();
+    const safeTitle = sanitizeShareFilename(data.title);
+    const mdContent = `---
+title: "${data.title.replace(/"/g, '\\"')}"
+date: "${dateStr}"
+source: "ModelFusion / HugOS"
+model: "${data.model}"
+scope: "${data.isFull ? 'full_conversation' : 'single_response'}"
+---
+
+# ${data.title}
+
+${!data.isFull && data.prompt ? `> **User Prompt:** ${data.prompt}\n\n` : ''}${data.text}
+`;
+    downloadBlob(mdContent, `${safeTitle}.md`, 'text/markdown;charset=utf-8');
+    showShareToast("✓ Markdown file exported!");
+  }
+
+  function exportAsPlainText() {
+    const data = getEffectiveShareData();
+    const safeTitle = sanitizeShareFilename(data.title);
+    const txtContent = `================================================================================
+ModelFusion / HugOS AI Export
+Title: ${data.title}
+Date:  ${new Date().toLocaleString()}
+Model: ${data.model}
+Scope: ${data.isFull ? 'Entire Conversation' : 'Current Response'}
+================================================================================
+
+${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${data.text}
+`;
+    downloadBlob(txtContent, `${safeTitle}.txt`, 'text/plain;charset=utf-8');
+    showShareToast("✓ Plain text file exported!");
+  }
+
+  function exportAsHtml() {
+    const data = getEffectiveShareData();
+    const safeTitle = sanitizeShareFilename(data.title);
+    const renderedBody = typeof renderMarkdown === 'function' ? renderMarkdown(data.text) : `<pre>${data.text}</pre>`;
+    const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${data.title} - ModelFusion AI Export</title>
+<style>
+  :root {
+    --bg-dark: #0f172a;
+    --card-bg: #1e293b;
+    --text-primary: #f8fafc;
+    --text-muted: #94a3b8;
+    --accent: #10a37f;
+    --border: rgba(255, 255, 255, 0.1);
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg-dark);
+    color: var(--text-primary);
+    line-height: 1.65;
+    padding: 32px 16px;
+    margin: 0;
+  }
+  .container {
+    max-width: 860px;
+    margin: 0 auto;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  }
+  .header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 20px;
+    margin-bottom: 24px;
+  }
+  .title {
+    font-size: 24px;
+    font-weight: 700;
+    margin: 0 0 8px 0;
+    color: var(--text-primary);
+  }
+  .meta {
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
+  .badge {
+    display: inline-block;
+    background: rgba(16, 163, 127, 0.15);
+    color: var(--accent);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    margin-right: 8px;
+  }
+  .prompt-box {
+    background: rgba(0,0,0,0.25);
+    border-left: 3px solid var(--accent);
+    padding: 12px 16px;
+    margin-bottom: 24px;
+    border-radius: 0 6px 6px 0;
+    font-size: 14px;
+  }
+  .content {
+    font-size: 15px;
+  }
+  pre {
+    background: #090d16;
+    padding: 14px;
+    border-radius: 8px;
+    overflow-x: auto;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 13px;
+  }
+  hr {
+    border: none;
+    border-top: 1px dashed var(--border);
+    margin: 24px 0;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="title">${data.title}</div>
+    <div class="meta">
+      <span class="badge">ModelFusion</span>
+      <span>Model: ${data.model}</span> &bull;
+      <span>Exported: ${new Date().toLocaleString()}</span>
+    </div>
+  </div>
+  ${!data.isFull && data.prompt ? `<div class="prompt-box"><strong>User:</strong> ${data.prompt}</div>` : ''}
+  <div class="content">
+    ${renderedBody}
+  </div>
+</div>
+</body>
+</html>`;
+    downloadBlob(htmlContent, `${safeTitle}.html`, 'text/html;charset=utf-8');
+    showShareToast("✓ HTML document exported!");
+  }
+
+  function printOrSavePdf() {
+    const data = getEffectiveShareData();
+    const renderedBody = typeof renderMarkdown === 'function' ? renderMarkdown(data.text) : `<pre>${data.text}</pre>`;
+    const printWin = window.open('', '_blank', 'width=900,height=750');
+    if (!printWin) {
+      showShareToast("⚠️ Pop-up blocked. Please allow pop-ups to print.");
+      return;
+    }
+    printWin.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>${data.title} - Printable View</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    line-height: 1.6;
+    color: #111;
+    background: #fff;
+    padding: 24px;
+    margin: 0;
+  }
+  .print-header {
+    border-bottom: 2px solid #222;
+    padding-bottom: 12px;
+    margin-bottom: 20px;
+  }
+  h1 { font-size: 22px; margin: 0 0 6px 0; }
+  .meta { font-size: 12px; color: #555; }
+  .prompt-callout {
+    background: #f4f4f5;
+    border-left: 3px solid #10b981;
+    padding: 8px 12px;
+    margin-bottom: 16px;
+    font-size: 13px;
+  }
+  pre {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    padding: 10px;
+    border-radius: 4px;
+    overflow-x: auto;
+    page-break-inside: avoid;
+  }
+  code { font-family: Consolas, monospace; font-size: 12px; }
+  @media print {
+    body { padding: 0; }
+    @page { margin: 1.5cm; }
+  }
+</style>
+</head>
+<body>
+  <div class="print-header">
+    <h1>${data.title}</h1>
+    <div class="meta">ModelFusion / HugOS Export &bull; Model: ${data.model} &bull; ${new Date().toLocaleString()}</div>
+  </div>
+  ${!data.isFull && data.prompt ? `<div class="prompt-callout"><strong>Prompt:</strong> ${data.prompt}</div>` : ''}
+  <div class="content">${renderedBody}</div>
+</body>
+</html>`);
+    printWin.document.close();
+    printWin.focus();
+    setTimeout(() => {
+      printWin.print();
+    }, 350);
+    showShareToast("✓ Opening print / save to PDF dialog...");
+  }
+
+  function copyRichFormattedText() {
+    const data = getEffectiveShareData();
+    const renderedHtml = typeof renderMarkdown === 'function' ? renderMarkdown(data.text) : data.text;
+    try {
+      if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+        const htmlBlob = new Blob([renderedHtml], { type: 'text/html' });
+        const textBlob = new Blob([data.text], { type: 'text/plain' });
+        navigator.clipboard.write([
+          new ClipboardItem({
+            'text/html': htmlBlob,
+            'text/plain': textBlob
+          })
+        ]).then(() => {
+          showShareToast("✓ Rich formatted text copied to clipboard!");
+        }).catch(() => {
+          navigator.clipboard.writeText(data.text).then(() => {
+            showShareToast("✓ Text copied to clipboard!");
+          });
+        });
+      } else {
+        navigator.clipboard.writeText(data.text).then(() => {
+          showShareToast("✓ Text copied to clipboard!");
+        });
+      }
+    } catch (e) {
+      navigator.clipboard.writeText(data.text).then(() => {
+        showShareToast("✓ Text copied to clipboard!");
+      });
+    }
+  }
+
+  // Wire up Universal Share & Export Modal Event Listeners
+  const btnCloseShareModal = document.getElementById('btn-close-share-modal');
+  if (btnCloseShareModal) btnCloseShareModal.addEventListener('click', closeShareModal);
+
+  const btnCloseShareFooter = document.getElementById('btn-close-share-footer');
+  if (btnCloseShareFooter) btnCloseShareFooter.addEventListener('click', closeShareModal);
+
+  const modalShareOverlay = document.getElementById('modal-share-export');
+  if (modalShareOverlay) {
+    modalShareOverlay.addEventListener('click', (e) => {
+      if (e.target === modalShareOverlay) closeShareModal();
+    });
+  }
+
+  const btnScopeSingle = document.getElementById('btn-scope-single');
+  if (btnScopeSingle) {
+    btnScopeSingle.addEventListener('click', () => setShareScope('single'));
+  }
+
+  const btnScopeFull = document.getElementById('btn-scope-full');
+  if (btnScopeFull) {
+    btnScopeFull.addEventListener('click', () => setShareScope('full'));
+  }
+
+  const btnActionEmail = document.getElementById('btn-action-email');
+  if (btnActionEmail) btnActionEmail.addEventListener('click', shareViaEmail);
+
+  const btnActionExportMd = document.getElementById('btn-action-export-md');
+  if (btnActionExportMd) btnActionExportMd.addEventListener('click', exportAsMarkdown);
+
+  const btnActionExportPdf = document.getElementById('btn-action-export-pdf');
+  if (btnActionExportPdf) btnActionExportPdf.addEventListener('click', printOrSavePdf);
+
+  const btnActionExportTxt = document.getElementById('btn-action-export-txt');
+  if (btnActionExportTxt) btnActionExportTxt.addEventListener('click', exportAsPlainText);
+
+  const btnActionExportHtml = document.getElementById('btn-action-export-html');
+  if (btnActionExportHtml) btnActionExportHtml.addEventListener('click', exportAsHtml);
+
+  const btnActionCopyRich = document.getElementById('btn-action-copy-rich');
+  if (btnActionCopyRich) btnActionCopyRich.addEventListener('click', copyRichFormattedText);
+
 
   // -----------------------------------------------------------------
   // Chat History Management (localStorage: hugos_chat_history)
@@ -5251,7 +5742,9 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
 
   const DEFAULT_HUMAN_SYSTEM_PROMPT = `You are HugOS Browser AI, an insightful, authentic human-voice assistant built into the ModelFusion browser environment. Provide engaging, vivid, helpful answers that read like natural human thought.\n\n${NATURAL_HUMAN_PROSE_DIRECTIVE}`;
 
-  function isCodeOrMathTask(prompt, sysPrompt, options = {}) {
+  function isCodeOrMathTask(prompt = '', sysPrompt = '', options = {}) {
+    prompt = typeof prompt === 'string' ? prompt : '';
+    sysPrompt = typeof sysPrompt === 'string' ? sysPrompt : '';
     if (options && options.taskType) {
       const t = String(options.taskType).toLowerCase();
       if (['code', 'math', 'pe_binary', 'security', 'binary', 'decompilation', 'analysis', 'dockerfile', 'ast'].includes(t)) return true;
@@ -5273,6 +5766,11 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
 
   // Real Streaming AI Chat via local Ollama endpoint with fallback to IPC
   async function streamAiChat(userPrompt, systemPrompt = DEFAULT_HUMAN_SYSTEM_PROMPT, options = {}) {
+    userPrompt = (typeof userPrompt === 'string') ? userPrompt : (userPrompt ? String(userPrompt) : '');
+    let effectiveSysPrompt = (systemPrompt && typeof systemPrompt === 'string' && systemPrompt.trim()) 
+      ? systemPrompt 
+      : DEFAULT_HUMAN_SYSTEM_PROMPT;
+
     if (!currentAbortController || currentAbortController.signal.aborted) {
       currentAbortController = new AbortController();
     }
@@ -5294,7 +5792,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
     const ollamaUrl = (currentSettings.ollamaUrl || 'http://127.0.0.1:11434').trim().replace(/\/+$/, '');
     const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
 
-    const isCodeOrMath = isCodeOrMathTask(userPrompt, systemPrompt, options);
+    const isCodeOrMath = isCodeOrMathTask(userPrompt, effectiveSysPrompt, options);
 
     let tempToUse;
     if (options && typeof options.temperature === 'number') {
@@ -5311,8 +5809,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
     const presencePenaltyToUse = (options && typeof options.presence_penalty === 'number') ? options.presence_penalty : 0.1;
     const frequencyPenaltyToUse = (options && typeof options.frequency_penalty === 'number') ? options.frequency_penalty : 0.1;
 
-    let effectiveSysPrompt = systemPrompt;
-    if (currentSettings.naturalVoice !== false && !isCodeOrMath && !effectiveSysPrompt.includes('High Burstiness') && !effectiveSysPrompt.includes('expert editor who rewrites')) {
+    if (currentSettings.naturalVoice !== false && !isCodeOrMath && typeof effectiveSysPrompt === 'string' && !effectiveSysPrompt.includes('High Burstiness') && !effectiveSysPrompt.includes('expert editor who rewrites')) {
       effectiveSysPrompt = `${effectiveSysPrompt}\n\n${NATURAL_HUMAN_PROSE_DIRECTIVE}`;
     }
 
