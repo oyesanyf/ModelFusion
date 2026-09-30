@@ -12,6 +12,7 @@ import subprocess
 import urllib.request
 import urllib.error
 import hashlib
+import time
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
