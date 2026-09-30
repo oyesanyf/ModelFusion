@@ -259,28 +259,48 @@
               </div>
             </div>
 
-            <!-- 8. System & AI Models -->
+            <!-- 8. Utilities & System -->
             <div class="tool-category">
-              <button type="button" class="tool-category-header" data-cat="system" title="System &amp; AI Models">
-                <span class="cat-icon">🗄️</span>
-                <span class="cat-title">System &amp; AI Models</span>
+              <button type="button" class="tool-category-header" data-cat="utilities" title="Utilities &amp; System Maintenance">
+                <span class="cat-icon">🛠️</span>
+                <span class="cat-title">Utilities &amp; System</span>
                 <span class="cat-chevron">▸</span>
               </button>
               <div class="tool-category-content collapsed">
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_update" data-category="system" data-cmd="@agent update" data-original-title="Update Recommended Models (~6.5k models)" title="Update Recommended Models (~6.5k models)">
-                  <span class="tool-btn-left"><span class="tool-icon">⚡</span><span class="tool-label">Update Recommended Models</span></span>
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_help" data-category="utilities" data-cmd="@agent help" data-original-title="Command Palette &amp; System Guide" title="Command Palette &amp; System Guide">
+                  <span class="tool-btn-left"><span class="tool-icon">💡</span><span class="tool-label">Help &amp; Commands</span></span>
+                  <span class="tool-tag">@help</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_db_rebuild" data-category="utilities" data-cmd="@agent db-rebuild" data-original-title="Rebuild SQLite Model Database" title="Rebuild SQLite Model Database">
+                  <span class="tool-btn-left"><span class="tool-icon">🛠️</span><span class="tool-label">Rebuild SQLite DB</span></span>
+                  <span class="tool-tag">@db-rebuild</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_db_vacuum" data-category="utilities" data-cmd="@agent db-vacuum" data-original-title="Vacuum &amp; Defragment Database" title="Vacuum &amp; Defragment Database">
+                  <span class="tool-btn-left"><span class="tool-icon">🧹</span><span class="tool-label">Vacuum &amp; Optimize</span></span>
+                  <span class="tool-tag">@db-vacuum</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_db_check" data-category="utilities" data-cmd="@agent db-check" data-original-title="Database Health &amp; Integrity Check" title="Database Health &amp; Integrity Check">
+                  <span class="tool-btn-left"><span class="tool-icon">🔍</span><span class="tool-label">Database Integrity</span></span>
+                  <span class="tool-tag">@db-check</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_db_prune" data-category="utilities" data-cmd="@agent db-prune" data-original-title="Prune Old Cache &amp; Temp Files" title="Prune Old Cache &amp; Temp Files">
+                  <span class="tool-btn-left"><span class="tool-icon">🗑️</span><span class="tool-label">Prune Old Cache</span></span>
+                  <span class="tool-tag">@db-prune</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_update" data-category="utilities" data-cmd="@agent update" data-original-title="Update Recommended Models (~6.5k models)" title="Update Recommended Models (~6.5k models)">
+                  <span class="tool-btn-left"><span class="tool-icon">⚡</span><span class="tool-label">Update Models</span></span>
                   <span class="tool-tag">@update</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_updatedb" data-category="system" data-cmd="@agent updatedb" data-original-title="Ingest All 2M+ Models (Continuous Hub Crawler)" title="Ingest All 2M+ Models (Continuous Hub Crawler)">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_updatedb" data-category="utilities" data-cmd="@agent updatedb" data-original-title="Ingest All 2M+ Models (Continuous Hub Crawler)" title="Ingest All 2M+ Models (Continuous Hub Crawler)">
                   <span class="tool-btn-left"><span class="tool-icon">🌐</span><span class="tool-label">Ingest All 2M+ Models</span></span>
                   <span class="tool-tag">@updatedb</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_active_model" data-category="system" data-cmd="@agent active-model" data-original-title="Current Active Model" title="Current Active Model">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_active_model" data-category="utilities" data-cmd="@agent active-model" data-original-title="Current Active Model" title="Current Active Model">
                   <span class="tool-btn-left"><span class="tool-icon">🤖</span><span class="tool-label">Current Active Model</span></span>
                   <span class="tool-tag">@model</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_sys_info" data-category="system" data-cmd="@agent sys-info" data-original-title="My Hardware &amp; Memory" title="My Hardware &amp; Memory">
-                  <span class="tool-btn-left"><span class="tool-icon">💻</span><span class="tool-label">My Hardware &amp; Memory</span></span>
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_sys_info" data-category="utilities" data-cmd="@agent sys-info" data-original-title="My Hardware &amp; Memory" title="My Hardware &amp; Memory">
+                  <span class="tool-btn-left"><span class="tool-icon">💻</span><span class="tool-label">Hardware &amp; Memory</span></span>
                   <span class="tool-tag">@sys-info</span>
                 </button>
               </div>
@@ -779,12 +799,23 @@
 
             <div class="setting-item">
               <div class="setting-info">
-                <label for="setting-websearch-max-results" class="setting-label">Maximum Web Search Results</label>
-                <span class="setting-desc">Number of relevant search hits ingested and correlated per query (1 to 10).</span>
+                <label for="setting-websearch-max-results" class="setting-label">Maximum Verified Sources (Web &amp; arXiv)</label>
+                <span class="setting-desc">Number of verified search hits, arXiv research papers, and citations ingested and correlated per query (1 to 50).</span>
               </div>
-              <div class="setting-control slider-control">
-                <input type="range" id="setting-websearch-max-results" class="setting-slider" min="1" max="10" step="1" value="5">
-                <span class="slider-val" id="val-websearch-max-results">5</span>
+              <div class="setting-control-group">
+                <div class="slider-control">
+                  <input type="range" id="setting-websearch-max-results" class="setting-slider" min="1" max="50" step="1" value="10">
+                  <span class="slider-val" id="val-websearch-max-results">10</span>
+                </div>
+                <div class="sources-preset-chips" style="display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;">
+                  <button type="button" class="preset-chip-btn" data-val="5">5</button>
+                  <button type="button" class="preset-chip-btn" data-val="10">10</button>
+                  <button type="button" class="preset-chip-btn" data-val="15">15</button>
+                  <button type="button" class="preset-chip-btn" data-val="20">20</button>
+                  <button type="button" class="preset-chip-btn" data-val="25">25</button>
+                  <button type="button" class="preset-chip-btn" data-val="30">30</button>
+                  <button type="button" class="preset-chip-btn" data-val="50">50</button>
+                </div>
               </div>
             </div>
 
@@ -1207,6 +1238,16 @@
 
             <div class="setting-item">
               <div class="setting-info">
+                <label class="setting-label">Conversation History Cache</label>
+                <span class="setting-desc">Clear all stored chat conversation sessions from local storage.</span>
+              </div>
+              <div class="setting-control">
+                <button type="button" class="cli-btn-secondary danger-btn" id="btn-clear-all-chats">Clear Conversations</button>
+              </div>
+            </div>
+
+            <div class="setting-item">
+              <div class="setting-info">
                 <label class="setting-label">Multi-Modal SQLite Catalog Database</label>
                 <span class="setting-desc">Authoritative local catalog indexed with 2M+ Hugging Face models across 45 tasks.</span>
               </div>
@@ -1220,6 +1261,21 @@
                   <div class="db-stat-row" style="margin-top: 8px;">
                     <button type="button" class="action-btn" id="btn-open-mf-panel-storage" style="font-size: 12px; padding: 6px 12px;">🧠 View Model Breakdown &amp; Hardware</button>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="setting-item" style="border-top: 1px solid var(--border-color); padding-top: 16px; margin-top: 16px;">
+              <div class="setting-info">
+                <label class="setting-label">Database Maintenance &amp; Diagnostics</label>
+                <span class="setting-desc">One-click database repair: rebuild catalog tables, vacuum fragmentation, execute foreign key health check, and prune stale cache records.</span>
+              </div>
+              <div class="setting-control-group">
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end;">
+                  <button type="button" class="cli-btn-secondary" id="btn-db-rebuild" style="font-size: 11.5px; padding: 6px 10px;">🛠️ Rebuild Database</button>
+                  <button type="button" class="cli-btn-secondary" id="btn-db-vacuum" style="font-size: 11.5px; padding: 6px 10px;">🧹 Vacuum &amp; Optimize</button>
+                  <button type="button" class="cli-btn-secondary" id="btn-db-check" style="font-size: 11.5px; padding: 6px 10px;">🔍 Integrity Check</button>
+                  <button type="button" class="cli-btn-secondary" id="btn-db-prune" style="font-size: 11.5px; padding: 6px 10px;">🗑️ Prune Cache</button>
                 </div>
               </div>
             </div>
@@ -1644,6 +1700,8 @@
         </div>
       </div>
     </div>
+  </div>
+
   <!-- Export Confirmation Modal -->
   <div class="export-modal-overlay hidden" id="modal-export-confirm">
     <div class="export-modal-dialog">

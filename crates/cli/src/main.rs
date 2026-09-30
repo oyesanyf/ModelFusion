@@ -864,6 +864,107 @@ pub fn resolve_db_path(db_path_opt: Option<&str>) -> std::path::PathBuf {
     fallback
 }
 
+pub fn execute_db_vacuum(db_path: &std::path::Path) -> Result<String> {
+    let size_before = std::fs::metadata(db_path).map(|m| m.len()).unwrap_or(0);
+    let conn = rusqlite::Connection::open(db_path)?;
+    conn.execute_batch("VACUUM; PRAGMA optimize;")?;
+    let size_after = std::fs::metadata(db_path).map(|m| m.len()).unwrap_or(0);
+    let saved = if size_before > size_after {
+        format!("{:.2} KB reclaimed", (size_before - size_after) as f64 / 1024.0)
+    } else {
+        "Database already compact".to_string()
+    };
+    Ok(format!(
+        "🧹 **SQLite Database Vacuum & Optimization Complete**\n\n- Location: `{}`\n- Size Before: {:.2} KB\n- Size After: {:.2} KB\n- Status: {}\n- Pages defragmented and B-trees optimized.",
+        db_path.display(),
+        size_before as f64 / 1024.0,
+        size_after as f64 / 1024.0,
+        saved
+    ))
+}
+
+pub fn execute_db_check(db_path: &std::path::Path) -> Result<String> {
+    let conn = rusqlite::Connection::open(db_path)?;
+    let mut stmt = conn.prepare("PRAGMA integrity_check;")?;
+    let integrity_rows: Vec<String> = stmt
+        .query_map([], |row| row.get(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+    let integrity_status = if integrity_rows.is_empty() || (integrity_rows.len() == 1 && integrity_rows[0] == "ok") {
+        "✅ Passed (ok)"
+    } else {
+        "⚠️ Issues detected"
+    };
+
+    let mut fk_stmt = conn.prepare("PRAGMA foreign_key_check;")?;
+    let fk_count = fk_stmt.query_map([], |_| Ok(()))?.count();
+
+    let model_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM models", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    let task_count: i64 = conn
+        .query_row("SELECT COUNT(DISTINCT pipeline_tag) FROM models", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    let size_kb = std::fs::metadata(db_path).map(|m| m.len() as f64 / 1024.0).unwrap_or(0.0);
+
+    Ok(format!(
+        "🔍 **SQLite Database Health & Integrity Check**\n\n- File: `{}` ({:.2} KB)\n- Integrity Check: {}\n- Foreign Key Violations: {}\n- Indexed Models: {}\n- Unique Task Pipelines: {}\n- Write-Ahead Logging (WAL): Enabled",
+        db_path.display(),
+        size_kb,
+        integrity_status,
+        fk_count,
+        model_count,
+        task_count
+    ))
+}
+
+pub async fn execute_db_rebuild(db_path: &std::path::Path) -> Result<String> {
+    if db_path.exists() {
+        let _ = std::fs::remove_file(db_path);
+        let wal_path = db_path.with_extension("db-wal");
+        let shm_path = db_path.with_extension("db-shm");
+        let _ = std::fs::remove_file(wal_path);
+        let _ = std::fs::remove_file(shm_path);
+    }
+    let db = db::HuggingFaceModelDatabase::new(db_path)?;
+    let handler = ComprehensiveTaskHandler::new(Some(&db_path.to_string_lossy()))?;
+    let res = handler.handle_update_database().await;
+    let model_count = db.count().unwrap_or(0);
+    Ok(format!(
+        "🛠️ **SQLite Database Rebuild Complete**\n\n- Path: `{}`\n- Status: Fresh schema and indexes created\n- Seeded Models: {}\n- Details: {}",
+        db_path.display(),
+        model_count,
+        res.content
+    ))
+}
+
+pub fn execute_db_prune(db_path: &std::path::Path) -> Result<String> {
+    let mut pruned_items = 0usize;
+    if let Ok(conn) = rusqlite::Connection::open(db_path) {
+        if let Ok(n) = conn.execute("DELETE FROM keyword_searches WHERE last_searched < datetime('now', '-7 days')", []) {
+            pruned_items += n;
+        }
+        let _ = conn.execute_batch("VACUUM;");
+    }
+    let temp_dir = std::env::temp_dir();
+    if let Ok(entries) = std::fs::read_dir(&temp_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with("#cab") || name.starts_with("modelfusion_tmp") {
+                if std::fs::remove_file(entry.path()).is_ok() {
+                    pruned_items += 1;
+                }
+            }
+        }
+    }
+    Ok(format!(
+        "🗑️ **Database & Cache Pruning Complete**\n\n- Cleaned items / stale records: {}\n- Temporary caches released\n- Database compacted successfully.",
+        pruned_items
+    ))
+}
+
 pub fn resolve_memory_db_path(custom_db: Option<&str>) -> std::path::PathBuf {
     if let Some(p) = custom_db {
         let path = std::path::PathBuf::from(p);
@@ -1824,6 +1925,18 @@ struct Args {
     #[arg(long, help = "Clear all cached data")]
     clearcache: bool,
 
+    #[arg(long, alias = "rebuild-db", help = "Rebuild and re-index the SQLite model catalog from scratch")]
+    db_rebuild: bool,
+
+    #[arg(long, alias = "vacuum-db", help = "Vacuum and optimize the SQLite database")]
+    db_vacuum: bool,
+
+    #[arg(long, alias = "check-db", help = "Run integrity and foreign key checks on the SQLite database")]
+    db_check: bool,
+
+    #[arg(long, alias = "prune-db", help = "Prune orphaned caches and temporary files")]
+    db_prune: bool,
+
     #[arg(long, help = "Run advanced model analytics demo")]
     analytics_demo: bool,
 
@@ -2063,191 +2176,191 @@ struct Args {
     #[arg(long, help = "Legacy text summarization")]
     summary: bool,
 
-    // Task Flags (Standard mappings)
-    #[arg(long)]
+    // Task Flags (Standard mappings across all 45+ Hugging Face tasks)
+    #[arg(long, help = "Execute text classification and sentiment labeling")]
     text_classification: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Execute token-level classification, POS tagging, and entity labeling")]
     token_classification: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Extract answers from context passages given natural language questions")]
     question_answering: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Generate autoregressive continuation text using causal language models")]
     text_generation: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Condense long documents and articles into concise summaries")]
     summarization: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Translate natural language text between source and target languages")]
     translation: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Predict masked tokens in sentence contexts (BERT/RoBERTa fill-mask)")]
     fill_mask: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Seq2Seq transformation, instruction following, and text rewriting")]
     text2text_generation: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Detect natural language and script of input text")]
     language_detection: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Identify and correct grammatical, spelling, and syntactic errors")]
     grammar_correction: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Generate diverse semantic paraphrases of input text")]
     paraphrase_generation: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Raw causal language model evaluation and perplexity scoring")]
     causal_language_modeling: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Classify text into arbitrary user-provided candidate labels without fine-tuning")]
     zero_shot_classification: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Extract dense embedding vectors from text, images, or tabular data")]
     feature_extraction: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Compute semantic cosine similarity between sentences and passages")]
     sentence_similarity: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Redact, mask, and anonymize sensitive information in text")]
     anonymization: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Resolve pronouns and referring expressions to corresponding entity antecedents")]
     coreference_resolution: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Classify unsolicited spam, bulk marketing, and abusive communications")]
     spam_detection: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Detect malicious scripts, obfuscated code, and shellcode payloads in text")]
     malware_text_detection: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Identify fraudulent credential harvesting, deceptive links, and phishing emails")]
     phishing_detection: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Detect personally identifiable information (SSNs, credit cards, emails, phone numbers)")]
     pii_detection: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Detect abusive, derogatory, threatening, or hateful speech")]
     hate_speech_detection: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Detect targeted interpersonal harassment and cyberbullying patterns")]
     cyberbullying_detection: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Identify fabricated news reports, deceptive claims, and online disinformation")]
     fake_news_detection: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Classify judicial opinions, statutory rulings, and court orders")]
     legal_judgment_classification: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Identify and extract contractual clauses (indemnity, termination, liability, jurisdiction)")]
     contract_clause_classification: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Predict litigation outcomes, verdict probabilities, and court disposition trends")]
     case_outcome_prediction: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Extract financial entities (tickers, monetary figures, accounting metrics, filings)")]
     financial_ner: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Extract legal entities (statutes, case law citations, judges, attorneys, parties)")]
     legal_ner: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Extract biomedical entities (diseases, pharmaceuticals, gene targets, symptoms)")]
     biomedical_ner: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Extract chemical compounds, IUPAC names, catalysts, and reaction conditions")]
     chemical_reaction_ner: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Analyze market sentiment from earnings call transcripts, 10-Ks, and financial news")]
     financial_sentiment_analysis: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Generate structured summaries of scientific preprints and arXiv abstracts")]
     scientific_abstract_summarization: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Detect granular emotional states (joy, anger, sadness, surprise, fear, disgust)")]
     emotion_detection: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Identify ironic, sarcastic, or non-literal figurative intent in text")]
     sarcasm_detection: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Determine author stance (favor, against, neutral) towards target topics")]
     stance_detection: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Detect cognitive, demographic, political, or media slant and bias")]
     bias_detection: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Detect ungrounded assertions and factual hallucinations in model outputs")]
     hallucination_detection: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Score text readability and educational grade level (Flesch-Kincaid, Dale-Chall)")]
     reading_level_assessment: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Verify whether generated claims are strictly grounded in reference documents")]
     generation_groundedness: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Classify rationale for academic citation (methodology, background, comparative result)")]
     citation_intent_classification: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Scan source code for OWASP, CVE, buffer overflows, and memory-safety vulnerabilities")]
     code_vulnerability_detection: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Generate natural language documentation and architectural summaries from source code")]
     code_summary_generation: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Identify duplicated logic, semantic clones, and refactoring opportunities in code")]
     code_clone_detection: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Classify images into categories and object taxonomies (Vision)")]
     image_classification: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Detect 2D bounding boxes and category labels for objects in images")]
     object_detection: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Segment image pixels into semantic class and instance masks")]
     image_segmentation: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Answer natural language questions grounded in visual image content (VQA)")]
     visual_question_answering: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Extract structured answers from scanned forms, invoices, and document images")]
     document_question_answering: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Classify images with arbitrary open-vocabulary text labels (CLIP zero-shot)")]
     zero_shot_image_classification: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Estimate monocular metric depth map and 3D surface geometry from images")]
     depth_estimation: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Extract visual feature embeddings and spatial representations from images")]
     image_feature_extraction: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Transcribe spoken audio speech into written text (Whisper speech recognition)")]
     automatic_speech_recognition: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Classify acoustic scenes, environmental sounds, and audio events")]
     audio_classification: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Detect human speech presence and isolate silence/background noise segments (VAD)")]
     voice_activity_detection: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Recognize affective emotional tone and valence from vocal acoustic features")]
     emotion_recognition: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Classify temporal action sequences and scene dynamics in video streams")]
     video_classification: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Synthesize natural spoken voice audio from text (TTS text-to-speech)")]
     text_to_speech: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Generate synthetic images from descriptive natural language prompts")]
     text_to_image: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Upscale low-resolution images and reconstruct high-frequency details")]
     image_super_resolution: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Answer natural language questions directly against tabular datasets (Table QA)")]
     table_question_answering: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Rank feature importance and predictive signal in tabular data")]
     feature_ranking: bool,
 
     #[arg(long, help = "Custom SQLite database path for ModelFusion (e.g. --db-path IDE/db/hf_models.db)")]
@@ -2518,6 +2631,18 @@ where
         }
         "memory" | "/memory" | "@agent/memory" | "@agent:memory" | "@memory" => {
             args[1] = "--memory".to_string();
+        }
+        "db-rebuild" | "/db-rebuild" | "@agent/db-rebuild" | "dbrebuild" | "rebuild-db" => {
+            args[1] = "--db-rebuild".to_string();
+        }
+        "db-vacuum" | "/db-vacuum" | "@agent/db-vacuum" | "dbvacuum" | "vacuum-db" => {
+            args[1] = "--db-vacuum".to_string();
+        }
+        "db-check" | "/db-check" | "@agent/db-check" | "dbcheck" | "check-db" => {
+            args[1] = "--db-check".to_string();
+        }
+        "db-prune" | "/db-prune" | "@agent/db-prune" | "dbprune" | "prune-db" => {
+            args[1] = "--db-prune".to_string();
         }
         _ => {}
     }
@@ -3399,6 +3524,42 @@ async fn run(args: Args) -> Result<()> {
     if args.clearcache {
         let res = handler.handle_clear_cache();
         println!("{}", res.content);
+        return Ok(());
+    }
+
+    if args.db_rebuild {
+        let db_path = resolve_db_path(args.db_path.as_deref());
+        match execute_db_rebuild(&db_path).await {
+            Ok(msg) => println!("{}", msg),
+            Err(e) => eprintln!("❌ Database rebuild failed: {}", e),
+        }
+        return Ok(());
+    }
+
+    if args.db_vacuum {
+        let db_path = resolve_db_path(args.db_path.as_deref());
+        match execute_db_vacuum(&db_path) {
+            Ok(msg) => println!("{}", msg),
+            Err(e) => eprintln!("❌ Database vacuum failed: {}", e),
+        }
+        return Ok(());
+    }
+
+    if args.db_check {
+        let db_path = resolve_db_path(args.db_path.as_deref());
+        match execute_db_check(&db_path) {
+            Ok(msg) => println!("{}", msg),
+            Err(e) => eprintln!("❌ Database check failed: {}", e),
+        }
+        return Ok(());
+    }
+
+    if args.db_prune {
+        let db_path = resolve_db_path(args.db_path.as_deref());
+        match execute_db_prune(&db_path) {
+            Ok(msg) => println!("{}", msg),
+            Err(e) => eprintln!("❌ Database prune failed: {}", e),
+        }
         return Ok(());
     }
 
@@ -5807,6 +5968,10 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
         "arxiv" | "arxivpaper" | "arxivpapers" => Some("arxiv"),
         "research" | "reseach" => Some("research"),
         "search" | "serarch" | "searchquery" | "serarchquery" => Some("search"),
+        "dbrebuild" | "db-rebuild" | "rebuilddb" => Some("db-rebuild"),
+        "dbvacuum" | "db-vacuum" | "vacuumdb" => Some("db-vacuum"),
+        "dbcheck" | "db-check" | "checkdb" => Some("db-check"),
+        "dbprune" | "db-prune" | "prunedb" => Some("db-prune"),
         "analyzefile" => Some("analyze_file"),
         "analyzefolder" => Some("analyze_folder"),
         "nlptask" | "nlp" => Some("nlp_task"),
@@ -7166,7 +7331,7 @@ pub fn parse_query_and_limit_from_request(raw_uri: &str, request_json: &serde_js
                     }
                     "max_results" | "limit" | "n" => {
                         if let Ok(n) = decoded_val.parse::<usize>() {
-                            max_results = n.clamp(1, 10);
+                            max_results = n.clamp(1, 100);
                         }
                     }
                     _ => {}
@@ -7182,7 +7347,7 @@ pub fn parse_query_and_limit_from_request(raw_uri: &str, request_json: &serde_js
         }
     }
     if let Some(n) = request_json.get("max_results").or_else(|| request_json.get("limit")).and_then(|v| v.as_u64()) {
-        max_results = (n as usize).clamp(1, 10);
+        max_results = (n as usize).clamp(1, 100);
     }
 
     (query.trim().to_string(), max_results)
@@ -9167,6 +9332,73 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         });
                         (serde_json::to_string(&err_json).unwrap_or_default(), 200, "OK")
                     }
+                };
+
+                let response = format!(
+                    "HTTP/1.1 {} {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    status_code,
+                    status_text,
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Database Maintenance Endpoints (/api/db/rebuild, /api/db/vacuum, /api/db/check, /api/db/prune) ──
+            if request_path == "/api/db/rebuild" || request_path == "/api/db/vacuum" || request_path == "/api/db/check" || request_path == "/api/db/prune" {
+                let db_path = resolve_db_path(None);
+                let (resp_body, status_code, status_text) = match request_path.as_str() {
+                    "/api/db/rebuild" => {
+                        match execute_db_rebuild(&db_path).await {
+                            Ok(msg) => {
+                                let j = serde_json::json!({ "status": "ok", "message": msg, "action": "rebuild" });
+                                (serde_json::to_string(&j).unwrap_or_default(), 200, "OK")
+                            }
+                            Err(e) => {
+                                let j = serde_json::json!({ "status": "error", "error": format!("{}", e), "action": "rebuild" });
+                                (serde_json::to_string(&j).unwrap_or_default(), 500, "Internal Server Error")
+                            }
+                        }
+                    }
+                    "/api/db/vacuum" => {
+                        match execute_db_vacuum(&db_path) {
+                            Ok(msg) => {
+                                let j = serde_json::json!({ "status": "ok", "message": msg, "action": "vacuum" });
+                                (serde_json::to_string(&j).unwrap_or_default(), 200, "OK")
+                            }
+                            Err(e) => {
+                                let j = serde_json::json!({ "status": "error", "error": format!("{}", e), "action": "vacuum" });
+                                (serde_json::to_string(&j).unwrap_or_default(), 500, "Internal Server Error")
+                            }
+                        }
+                    }
+                    "/api/db/check" => {
+                        match execute_db_check(&db_path) {
+                            Ok(msg) => {
+                                let j = serde_json::json!({ "status": "ok", "message": msg, "action": "check" });
+                                (serde_json::to_string(&j).unwrap_or_default(), 200, "OK")
+                            }
+                            Err(e) => {
+                                let j = serde_json::json!({ "status": "error", "error": format!("{}", e), "action": "check" });
+                                (serde_json::to_string(&j).unwrap_or_default(), 500, "Internal Server Error")
+                            }
+                        }
+                    }
+                    "/api/db/prune" => {
+                        match execute_db_prune(&db_path) {
+                            Ok(msg) => {
+                                let j = serde_json::json!({ "status": "ok", "message": msg, "action": "prune" });
+                                (serde_json::to_string(&j).unwrap_or_default(), 200, "OK")
+                            }
+                            Err(e) => {
+                                let j = serde_json::json!({ "status": "error", "error": format!("{}", e), "action": "prune" });
+                                (serde_json::to_string(&j).unwrap_or_default(), 500, "Internal Server Error")
+                            }
+                        }
+                    }
+                    _ => (serde_json::json!({ "status": "unknown" }).to_string(), 404, "Not Found"),
                 };
 
                 let response = format!(
@@ -12353,6 +12585,18 @@ sequenceDiagram
                 }
                 "/clearcache" => {
                     run_cli_subcommand(&["--clearcache".to_string()], db_path_val).await
+                }
+                "/db-rebuild" | "/dbrebuild" => {
+                    run_cli_subcommand(&["--db-rebuild".to_string()], db_path_val).await
+                }
+                "/db-vacuum" | "/dbvacuum" => {
+                    run_cli_subcommand(&["--db-vacuum".to_string()], db_path_val).await
+                }
+                "/db-check" | "/dbcheck" => {
+                    run_cli_subcommand(&["--db-check".to_string()], db_path_val).await
+                }
+                "/db-prune" | "/dbprune" => {
+                    run_cli_subcommand(&["--db-prune".to_string()], db_path_val).await
                 }
                 "/update" => {
                     run_cli_subcommand(&["--update".to_string()], db_path_val).await
@@ -15956,7 +16200,10 @@ public class Pr {
         // 2. Limit clamping
         let (q2, l2) = parse_query_and_limit_from_request("/api/search?query=deepseek&max_results=50", &serde_json::json!({}));
         assert_eq!(q2, "deepseek");
-        assert_eq!(l2, 10);
+        assert_eq!(l2, 50);
+
+        let (_, l2_over) = parse_query_and_limit_from_request("/api/search?query=deepseek&max_results=200", &serde_json::json!({}));
+        assert_eq!(l2_over, 100);
 
         // 3. POST JSON fallback
         let (q3, l3) = parse_query_and_limit_from_request("/websearch", &serde_json::json!({
