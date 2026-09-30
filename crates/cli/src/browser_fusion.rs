@@ -619,13 +619,13 @@ pub fn launch_hugos_browser(url: Option<&str>) -> Result<(), String> {
         println!("   Startup URL: {}", start_url);
 
         let mut cmd = std::process::Command::new(&chrome_bin);
-        cmd.arg("--remote-debugging-port=9222")
+        cmd.arg(format!("--app={}", start_url))
+           .arg("--remote-debugging-port=9222")
            .arg("--remote-allow-origins=*")
            .arg(format!("--user-data-dir={}", user_data_dir.display()))
            .arg("--disable-backgrounding-occluded-windows")
            .arg("--no-first-run")
-           .arg("--no-default-browser-check")
-           .arg(format!("--homepage={}", start_url));
+           .arg("--no-default-browser-check");
 
         // Extension discovery
         let ext_candidates = [
@@ -645,8 +645,6 @@ pub fn launch_hugos_browser(url: Option<&str>) -> Result<(), String> {
                 }
             }
         }
-
-        cmd.arg(start_url);
 
         #[cfg(windows)]
         {

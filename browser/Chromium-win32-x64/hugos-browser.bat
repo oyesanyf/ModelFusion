@@ -149,6 +149,6 @@ echo [INFO] Extension Path: "%EXTENSION_PATH%"
 echo [INFO] User Data Dir: "%USER_DATA_DIR%"
 echo [INFO] Startup URL: "%START_URL%"
 
-start "" "%CHROME_BIN%" --remote-debugging-port=9222 --remote-allow-origins=* --load-extension="%EXTENSION_PATH%" --user-data-dir="%USER_DATA_DIR%" --disable-backgrounding-occluded-windows --no-first-run --no-default-browser-check --enable-features=SidePanel,SidePanelPinning --homepage="%START_URL%" "%START_URL%"
+start "" "%CHROME_BIN%" --app="%START_URL%" --remote-debugging-port=9222 --remote-allow-origins=* --load-extension="%EXTENSION_PATH%" --user-data-dir="%USER_DATA_DIR%" --disable-backgrounding-occluded-windows --no-first-run --no-default-browser-check --enable-features=SidePanel,SidePanelPinning
 
 endlocal

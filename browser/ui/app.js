@@ -3589,7 +3589,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     bubble.classList.add('streaming');
 
-    const activeSession = chatSessions.find(s => s.id === currentSessionId);
+    const targetSessionId = bubble.dataset.sessionId || currentSessionId;
+    const activeSession = chatSessions.find(s => s.id === targetSessionId) || chatSessions.find(s => s.id === currentSessionId);
 
     // 1. Extract clean initial text
     let initialText = bubble.dataset.rawText || '';
@@ -3598,29 +3599,58 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Match with active session to ensure 100% exact text, prompt, and index parity
     if (activeSession && Array.isArray(activeSession.messages)) {
-      if (initialText) {
-        matchedSessionIdx = activeSession.messages.findLastIndex(m =>
-          m.role === 'assistant' && (
-            m.content === initialText ||
-            initialText.startsWith(m.content) ||
-            m.content.startsWith(initialText) ||
-            (initialText.length > 30 && m.content.includes(initialText.slice(0, 30)))
-          )
-        );
-        if (matchedSessionIdx >= 0) {
-          initialText = activeSession.messages[matchedSessionIdx].content || initialText;
-          const priorUser = activeSession.messages.slice(0, matchedSessionIdx).reverse().find(m =>
-            m.role === 'user' && m.content && !CONTINUATION_CMD_REGEX.test(m.content)
-          );
-          if (priorUser) {
-            matchedPrompt = priorUser.content || '';
+      // First check if bubble has an explicit msgIndex
+      if (typeof bubble.dataset.msgIndex !== 'undefined') {
+        const parsedIdx = parseInt(bubble.dataset.msgIndex, 10);
+        if (!isNaN(parsedIdx) && parsedIdx >= 0 && parsedIdx < activeSession.messages.length) {
+          matchedSessionIdx = parsedIdx;
+          const targetMsg = activeSession.messages[matchedSessionIdx];
+          if (targetMsg) {
+            if (!initialText) initialText = unwrapJsonContent(targetMsg.content) || '';
+            if (targetMsg.prompt) matchedPrompt = targetMsg.prompt;
           }
         }
       }
+
+      if (matchedSessionIdx === -1 && initialText) {
+        const cleanInitial = unwrapJsonContent(initialText).trim();
+        matchedSessionIdx = activeSession.messages.findLastIndex(m => {
+          if (m.role !== 'assistant') return false;
+          const cleanM = unwrapJsonContent(m.content).trim();
+          return cleanM === cleanInitial ||
+                 cleanInitial.startsWith(cleanM) ||
+                 cleanM.startsWith(cleanInitial) ||
+                 (cleanInitial.length > 25 && cleanM.includes(cleanInitial.slice(0, 25)));
+        });
+      }
+
+      // If still not matched, determine by relative DOM position
+      if (matchedSessionIdx === -1) {
+        const allAssistantBubbles = Array.from(chatMessages ? chatMessages.querySelectorAll('.assistant-bubble') : []);
+        const bubbleDomIndex = allAssistantBubbles.indexOf(bubble);
+        const assistantMsgIndices = [];
+        activeSession.messages.forEach((m, idx) => {
+          if (m.role === 'assistant') assistantMsgIndices.push(idx);
+        });
+        if (bubbleDomIndex >= 0 && bubbleDomIndex < assistantMsgIndices.length) {
+          matchedSessionIdx = assistantMsgIndices[bubbleDomIndex];
+        }
+      }
+
+      // Fallback: last assistant message in session
       if (matchedSessionIdx === -1) {
         matchedSessionIdx = activeSession.messages.findLastIndex(m => m.role === 'assistant');
-        if (matchedSessionIdx >= 0) {
-          if (!initialText) initialText = activeSession.messages[matchedSessionIdx].content || '';
+      }
+
+      if (matchedSessionIdx >= 0) {
+        const targetMsg = activeSession.messages[matchedSessionIdx];
+        if (targetMsg) {
+          if (!initialText) initialText = unwrapJsonContent(targetMsg.content) || '';
+          if (!matchedPrompt && targetMsg.prompt) {
+            matchedPrompt = targetMsg.prompt;
+          }
+        }
+        if (!matchedPrompt) {
           const priorUser = activeSession.messages.slice(0, matchedSessionIdx).reverse().find(m =>
             m.role === 'user' && m.content && !CONTINUATION_CMD_REGEX.test(m.content)
           );
@@ -3647,15 +3677,21 @@ document.addEventListener('DOMContentLoaded', () => {
     // Resolve true original user prompt
     let originalPrompt = bubble.dataset.prompt || matchedPrompt || '';
     if (!originalPrompt && activeSession && Array.isArray(activeSession.messages)) {
-      const prevUser = activeSession.messages.slice().reverse().find(m =>
+      const searchEnd = (matchedSessionIdx >= 0) ? matchedSessionIdx : activeSession.messages.length;
+      const prevUser = activeSession.messages.slice(0, searchEnd).reverse().find(m =>
         m.role === 'user' && m.content && !CONTINUATION_CMD_REGEX.test(m.content)
       );
       if (prevUser) {
         originalPrompt = prevUser.content;
       }
     }
+    if (!originalPrompt && activeSession && activeSession.title && activeSession.title !== 'Untitled Chat') {
+      originalPrompt = activeSession.title.replace(/^@agent\s+/i, '').trim();
+    }
     if (!originalPrompt && lastUserPrompt && !CONTINUATION_CMD_REGEX.test(lastUserPrompt)) {
-      originalPrompt = lastUserPrompt;
+      if (activeSession && activeSession.id === currentSessionId) {
+        originalPrompt = lastUserPrompt;
+      }
     }
 
     // 2. Find or create isolated continuation section inside the bubble (above action bar)
@@ -4818,12 +4854,14 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     let lastUserMsg = null;
     let hasAssistantResponseForLastUser = false;
 
-    (session.messages || []).forEach(msg => {
+    (session.messages || []).forEach((msg, idx) => {
       if (msg.role === 'user') {
         lastUserMsg = msg;
         hasAssistantResponseForLastUser = false;
         const bubble = document.createElement('div');
         bubble.className = 'msg-bubble user-bubble';
+        bubble.dataset.sessionId = session.id;
+        bubble.dataset.msgIndex = idx;
         let attHtml = '';
         if (msg.attachments && msg.attachments.length > 0) {
           attHtml = `<div class="bubble-attachments">` + msg.attachments.map(f => {
@@ -4870,7 +4908,11 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
         bubble.className = 'msg-bubble assistant-bubble';
         const cleanMsgContent = unwrapJsonContent(msg.content);
         bubble.dataset.rawText = cleanMsgContent;
-        bubble.dataset.prompt = lastUserMsg ? lastUserMsg.content : '';
+        const resolvedPrompt = msg.prompt || (lastUserMsg ? lastUserMsg.content : '');
+        bubble.dataset.prompt = resolvedPrompt;
+        bubble.dataset.sessionId = session.id;
+        bubble.dataset.msgIndex = idx;
+        if (msg.model) bubble.dataset.model = msg.model;
         bubble.innerHTML = `
           <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
             <div style="display: flex; align-items: center; gap: 4px;">
@@ -4881,7 +4923,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
             </div>
           </div>
           <div class="assistant-content-container">
-            ${formatAssistantContent(cleanMsgContent, lastUserMsg ? lastUserMsg.content : '')}
+            ${formatAssistantContent(cleanMsgContent, resolvedPrompt)}
           </div>
         `;
         const btnCopy = bubble.querySelector('.btn-copy-response');
@@ -4895,6 +4937,10 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
         chatMessages.appendChild(bubble);
       }
     });
+
+    if (lastUserMsg && lastUserMsg.content) {
+      lastUserPrompt = lastUserMsg.content;
+    }
 
     // If the conversation ends with a user prompt that has no assistant reply (e.g. failed, interrupted, or pending)
     if (lastUserMsg && !hasAssistantResponseForLastUser) {
@@ -7136,11 +7182,12 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
           if (existingIdx !== -1) {
             activeSession.messages[existingIdx].content = finalContentToPersist;
             activeSession.messages[existingIdx].model = resolvedOllamaModel;
+            activeSession.messages[existingIdx].prompt = promptToSave;
           } else {
-            activeSession.messages.push({ role: 'assistant', content: finalContentToPersist, model: resolvedOllamaModel });
+            activeSession.messages.push({ role: 'assistant', content: finalContentToPersist, model: resolvedOllamaModel, prompt: promptToSave });
           }
         } else {
-          activeSession.messages.push({ role: 'assistant', content: finalContentToPersist, model: resolvedOllamaModel });
+          activeSession.messages.push({ role: 'assistant', content: finalContentToPersist, model: resolvedOllamaModel, prompt: userPrompt });
         }
         saveChatHistory();
       }
@@ -11176,6 +11223,159 @@ If you are asked about real-world facts such as world leaders, heads of state, c
       chatMessages.scrollTo({ top: chatMessages.scrollHeight, behavior: 'smooth' });
     });
   }
+
+  // -----------------------------------------------------------------
+  // Voice Dictation (Speech-to-Text) Implementation
+  // -----------------------------------------------------------------
+  function showFloatingVoiceToast(message) {
+    let toast = document.getElementById('hugos-floating-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'hugos-floating-toast';
+      toast.style.cssText = 'position: fixed; bottom: 85px; left: 50%; transform: translateX(-50%); background: #1e1e2e; color: #fff; border: 1px solid rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 8px; font-size: 13px; z-index: 10000; box-shadow: 0 4px 16px rgba(0,0,0,0.5); pointer-events: none; transition: opacity 0.25s ease; opacity: 0;';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.style.opacity = '1';
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => {
+      toast.style.opacity = '0';
+    }, 3200);
+  }
+
+  function initVoiceInput() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const btnVoiceHero = document.getElementById('btn-voice-input');
+    const btnVoicePinned = document.getElementById('btn-voice-input-pinned');
+    const voiceBtns = [btnVoiceHero, btnVoicePinned].filter(Boolean);
+
+    if (voiceBtns.length === 0) return;
+
+    if (!SpeechRecognition) {
+      voiceBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          showFloatingVoiceToast('🎙️ Speech recognition is not supported in this browser. Please use Chrome or Edge.');
+        });
+      });
+      return;
+    }
+
+    let recognition = null;
+    let isListening = false;
+    let activeInputTarget = null;
+    let originalPlaceholder = '';
+
+    function getActiveInput() {
+      const convView = document.getElementById('chat-conversation-view');
+      const isConvVisible = convView && !convView.classList.contains('hidden');
+      if (isConvVisible && cliPromptInputPinned) {
+        return cliPromptInputPinned;
+      }
+      return cliPromptInput || cliPromptInputPinned;
+    }
+
+    function stopListening() {
+      if (recognition) {
+        try { recognition.stop(); } catch (e) {}
+      }
+      isListening = false;
+      voiceBtns.forEach(b => b.classList.remove('listening'));
+      if (activeInputTarget && originalPlaceholder) {
+        activeInputTarget.placeholder = originalPlaceholder;
+      }
+      activeInputTarget = null;
+    }
+
+    function startListening(targetInput) {
+      if (isListening) {
+        stopListening();
+        return;
+      }
+
+      try {
+        recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = navigator.language || 'en-US';
+
+        activeInputTarget = targetInput || getActiveInput();
+        if (activeInputTarget) {
+          originalPlaceholder = activeInputTarget.placeholder;
+          activeInputTarget.placeholder = '🎙️ Listening... speak now...';
+          activeInputTarget.focus();
+        }
+
+        const initialVal = activeInputTarget ? activeInputTarget.value : '';
+        let baseText = initialVal ? initialVal.trim() + ' ' : '';
+
+        recognition.onstart = function() {
+          isListening = true;
+          voiceBtns.forEach(b => b.classList.add('listening'));
+          showFloatingVoiceToast('🎙️ Microphone active — listening...');
+        };
+
+        recognition.onresult = function(event) {
+          let interimTranscript = '';
+          let finalTranscript = '';
+
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              finalTranscript += transcript;
+            } else {
+              interimTranscript += transcript;
+            }
+          }
+
+          if (activeInputTarget) {
+            const spoken = (finalTranscript || interimTranscript).trim();
+            if (spoken) {
+              activeInputTarget.value = baseText + spoken;
+              activeInputTarget.style.height = 'auto';
+              activeInputTarget.style.height = Math.min(activeInputTarget.scrollHeight, 160) + 'px';
+            }
+            if (finalTranscript) {
+              baseText = activeInputTarget.value.trim() + ' ';
+            }
+          }
+        };
+
+        recognition.onerror = function(event) {
+          console.warn('[VOICE] Speech recognition error:', event.error);
+          if (event.error !== 'no-speech') {
+            showFloatingVoiceToast(`Voice recognition notice: ${event.error}`);
+          }
+          stopListening();
+        };
+
+        recognition.onend = function() {
+          stopListening();
+        };
+
+        recognition.start();
+      } catch (err) {
+        console.error('[VOICE] Failed to start speech recognition:', err);
+        showFloatingVoiceToast(`Could not start voice dictation: ${err.message}`);
+        stopListening();
+      }
+    }
+
+    voiceBtns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (isListening) {
+          stopListening();
+        } else {
+          const target = btn.id === 'btn-voice-input-pinned' ? cliPromptInputPinned : cliPromptInput;
+          startListening(target);
+        }
+      });
+    });
+  }
+
+  // Initialize Voice Input (Speech-to-Text)
+  initVoiceInput();
 
   // Initialize Chat History from localStorage
   loadChatHistory();
