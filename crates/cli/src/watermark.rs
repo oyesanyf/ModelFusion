@@ -148,12 +148,26 @@ impl ImageWatermarkScanner {
 
     pub fn scan_path<P: AsRef<Path>>(&self, path: P) -> Result<ImageLsbAnalysis, image::ImageError> {
         let img = image::open(path)?;
-        Ok(self.analyze(&img))
+        let analysis = match &img {
+            image::DynamicImage::ImageLuma8(gray) => self.analyze(gray),
+            image::DynamicImage::ImageLuma16(gray) => self.analyze(gray),
+            image::DynamicImage::ImageLumaA8(gray) => self.analyze(gray),
+            image::DynamicImage::ImageLumaA16(gray) => self.analyze(gray),
+            _ => self.analyze(&img),
+        };
+        Ok(analysis)
     }
 
     pub fn scan_bytes(&self, bytes: &[u8]) -> Result<ImageLsbAnalysis, image::ImageError> {
         let img = image::load_from_memory(bytes)?;
-        Ok(self.analyze(&img))
+        let analysis = match &img {
+            image::DynamicImage::ImageLuma8(gray) => self.analyze(gray),
+            image::DynamicImage::ImageLuma16(gray) => self.analyze(gray),
+            image::DynamicImage::ImageLumaA8(gray) => self.analyze(gray),
+            image::DynamicImage::ImageLumaA16(gray) => self.analyze(gray),
+            _ => self.analyze(&img),
+        };
+        Ok(analysis)
     }
 
     pub fn analyze<I: GenericImageView>(&self, img: &I) -> ImageLsbAnalysis
@@ -194,20 +208,36 @@ impl ImageWatermarkScanner {
             (if p0 > 0.0 { p0 * p0.log2() } else { 0.0 }) +
             (if p1 > 0.0 { p1 * p1.log2() } else { 0.0 })
         );
+        let sanitized_entropy = if entropy.abs() < 1e-12 { 0.0 } else { entropy };
 
         // Chi-Square goodness-of-fit against theoretical uniform noise distribution
         let expected = total_samples as f64 / 2.0;
-        let chi_square = ((zero_bits as f64 - expected).powi(2) + (one_bits as f64 - expected).powi(2)) / expected;
+        let chi_square = if expected > 0.0 {
+            ((zero_bits as f64 - expected).powi(2) + (one_bits as f64 - expected).powi(2)) / expected
+        } else {
+            0.0
+        };
 
         // Dense encrypted or pseudorandom watermarks push entropy extremely close to 1.0 (>= 0.999)
-        let is_anomalous = entropy >= self.entropy_threshold;
+        let is_anomalous = sanitized_entropy >= self.entropy_threshold;
 
         ImageLsbAnalysis {
             total_samples,
-            bit_entropy: entropy,
+            bit_entropy: sanitized_entropy,
             chi_square_stat: chi_square,
             is_anomalous,
         }
+    }
+}
+
+/// Safely truncates a Unicode string to a maximum character count without splitting multi-byte UTF-8 boundaries.
+pub fn safe_truncate(s: &str, max_chars: usize) -> String {
+    let char_count = s.chars().count();
+    if char_count > max_chars {
+        let prefix: String = s.chars().take(max_chars.saturating_sub(3)).collect();
+        format!("{}...", prefix)
+    } else {
+        s.to_string()
     }
 }
 
@@ -234,11 +264,7 @@ impl WatermarkReport {
                 } else {
                     "✅ **NO WATERMARK DETECTED** (Consistent with natural human variation)"
                 };
-                let display_target = if target.len() > 60 {
-                    format!("{}...", &target[..57])
-                } else {
-                    target.clone()
-                };
+                let display_target = safe_truncate(target, 60);
                 format!(
                     "### ✍️ Text Watermark Analysis (Token Green-List Detector)\n\n\
                      - **Status**: {}\n\
@@ -291,40 +317,77 @@ pub fn detect_watermark_input(input: &str) -> Result<WatermarkReport, String> {
         return Err("No input provided for watermark detection. Provide inline text, a text file path, or an image file path (.png, .jpg).".to_string());
     }
 
-    let path = Path::new(trimmed);
-    if path.is_file() {
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    // Strip wrapping single or double quotes
+    let unquoted = if (trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2)
+        || (trimmed.starts_with('\'') && trimmed.ends_with('\'') && trimmed.len() >= 2)
+    {
+        &trimmed[1..trimmed.len() - 1]
+    } else {
+        trimmed
+    };
+
+    let path = Path::new(unquoted);
+    let resolved_path = if path.is_file() {
+        Some(path.to_path_buf())
+    } else {
+        let p1 = Path::new("..").join(unquoted);
+        if p1.is_file() {
+            Some(p1)
+        } else {
+            let p2 = Path::new("../..").join(unquoted);
+            if p2.is_file() {
+                Some(p2)
+            } else {
+                None
+            }
+        }
+    };
+
+    if let Some(target_path) = resolved_path {
+        let ext = target_path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
         if matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp" | "bmp" | "gif" | "tiff" | "ico") {
             let scanner = ImageWatermarkScanner::default();
-            match scanner.scan_path(path) {
+            match scanner.scan_path(&target_path) {
                 Ok(res) => Ok(WatermarkReport::Image {
-                    target: trimmed.to_string(),
+                    target: unquoted.to_string(),
                     result: res,
                 }),
-                Err(e) => Err(format!("Failed to analyze image '{}': {}", trimmed, e)),
+                Err(e) => Err(format!("Failed to analyze image '{}': {}", unquoted, e)),
             }
         } else {
             // Read as text file
-            match std::fs::read_to_string(path) {
+            match std::fs::read_to_string(&target_path) {
                 Ok(content) => {
                     let detector = TokenWatermarkDetector::default();
                     match detector.detect_text(&content) {
                         Some(res) => Ok(WatermarkReport::Text {
-                            target: format!("file: {}", trimmed),
+                            target: format!("file: {}", unquoted),
                             result: res,
                         }),
-                        None => Err(format!("File '{}' has insufficient tokens (< 2) for statistical watermark evaluation.", trimmed)),
+                        None => Err(format!("File '{}' has insufficient tokens (< 2) for statistical watermark evaluation.", unquoted)),
                     }
                 }
-                Err(e) => Err(format!("Failed to read file '{}': {}", trimmed, e)),
+                Err(e) => Err(format!("Failed to read file '{}': {}", unquoted, e)),
             }
         }
     } else {
+        // If it looks like a file path rather than inline prose, return an explicit error
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        let is_img_ext = matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp" | "bmp" | "gif" | "tiff" | "ico");
+        let is_doc_ext = matches!(ext.as_str(), "txt" | "md" | "json" | "rs" | "py" | "js" | "ts" | "html" | "css" | "csv" | "log");
+        let has_path_sep = unquoted.contains('/') || unquoted.contains('\\');
+
+        if is_img_ext {
+            return Err(format!("Image file not found: '{}'", unquoted));
+        } else if is_doc_ext || (has_path_sep && !unquoted.contains(' ')) {
+            return Err(format!("File not found: '{}'", unquoted));
+        }
+
         // Treat as inline text
         let detector = TokenWatermarkDetector::default();
-        match detector.detect_text(trimmed) {
+        match detector.detect_text(unquoted) {
             Some(res) => Ok(WatermarkReport::Text {
-                target: if trimmed.len() > 40 { format!("{}...", &trimmed[..37]) } else { trimmed.to_string() },
+                target: safe_truncate(unquoted, 40),
                 result: res,
             }),
             None => Err("Inline text has insufficient tokens (< 2) for statistical watermark evaluation.".to_string()),
@@ -399,5 +462,83 @@ mod tests {
         } else {
             panic!("Expected Text watermark report");
         }
+    }
+
+    #[test]
+    fn test_missing_image_file_returns_error() {
+        let res = detect_watermark_input("nonexistent_render_test.png");
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("Image file not found"));
+
+        let res_jpg = detect_watermark_input("sample_photo.jpeg");
+        assert!(res_jpg.is_err());
+        assert!(res_jpg.unwrap_err().contains("Image file not found"));
+    }
+
+    #[test]
+    fn test_quoted_image_path() {
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join("test_watermark_quoted.png");
+        let img = image::RgbImage::new(16, 16);
+        let _ = img.save(&temp_file);
+
+        let path_str = temp_file.to_string_lossy().to_string();
+        let quoted = format!("\"{}\"", path_str);
+        let res = detect_watermark_input(&quoted);
+        assert!(res.is_ok(), "Quoted path must be cleanly parsed and analyzed");
+        if let Ok(WatermarkReport::Image { target, result }) = res {
+            assert_eq!(target, path_str);
+            assert!(result.total_samples > 0);
+        } else {
+            panic!("Expected Image watermark report for quoted path");
+        }
+        let _ = std::fs::remove_file(temp_file);
+    }
+
+    #[test]
+    fn test_utf8_multibyte_string_truncation() {
+        // Multi-byte Unicode: Emojis and Chinese characters
+        let complex_unicode = "🌟🚀🤖 这是一个非常长的测试文本用于验证水印检测系统在处理多字节UTF-8字符时绝不发生边界恐慌与崩溃 🔍✨";
+        let res = detect_watermark_input(complex_unicode);
+        assert!(res.is_ok());
+        if let Ok(report) = res {
+            let md = report.to_markdown();
+            assert!(!md.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_synthetic_anomalous_lsb_watermark() {
+        use image::{Rgb, RgbImage};
+        let mut img = RgbImage::new(40, 40);
+        // Interleave 0 and 1 LSBs evenly so p0 = 0.5, p1 = 0.5 -> maximal entropy 1.0
+        let mut toggle = false;
+        for pixel in img.pixels_mut() {
+            let b0 = if toggle { 1u8 } else { 0u8 };
+            let b1 = if !toggle { 1u8 } else { 0u8 };
+            let b2 = if toggle { 1u8 } else { 0u8 };
+            *pixel = Rgb([100 | b0, 150 | b1, 200 | b2]);
+            toggle = !toggle;
+        }
+
+        let scanner = ImageWatermarkScanner::new(0.9995);
+        let dyn_img = image::DynamicImage::ImageRgb8(img);
+        let analysis = scanner.analyze(&dyn_img);
+        assert_eq!(analysis.total_samples, 40 * 40 * 3);
+        assert!((analysis.bit_entropy - 1.0).abs() < 0.001);
+        assert!(analysis.is_anomalous, "Interleaved pseudo-random LSB noise must trigger steganography anomaly flag");
+    }
+
+    #[test]
+    fn test_grayscale_image_lsb() {
+        use image::GrayImage;
+        let mut img = GrayImage::new(20, 20);
+        for pixel in img.pixels_mut() {
+            *pixel = image::Luma([128]); // LSB 0
+        }
+        let scanner = ImageWatermarkScanner::new(0.9995);
+        let analysis = scanner.analyze(&img);
+        assert_eq!(analysis.total_samples, 400); // 1 sample per pixel, not 3x duplicated
+        assert_eq!(analysis.bit_entropy, 0.0);
     }
 }

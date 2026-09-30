@@ -1575,5 +1575,23 @@ pub fn get_master_mcp_tools() -> Vec<serde_json::Value> {
                 }
             }
         }),
+        serde_json::json!({
+            "name": "writing_boost",
+            "cmd": "@agent boost ",
+            "icon": "🚀",
+            "category": "writing",
+            "label": "Writing & Reasoning Boost",
+            "description": "High-compute multi-agent / multi-sample reasoning & prose refinement boost (/boost)",
+            "inputSchema": {"type": "object", "properties": {"prompt": {"type": "string", "description": "Complex prose, problem, or query to boost"}}, "required": ["prompt"]}
+        }),
+        serde_json::json!({
+            "name": "humanize",
+            "cmd": "@agent humanize ",
+            "icon": "✍️",
+            "category": "writing",
+            "label": "Humanize AI Prose",
+            "description": "Rewrite passage into natural, fluid human prose using anti-AI stylometry",
+            "inputSchema": {"type": "object", "properties": {"text": {"type": "string", "description": "AI-generated text or file path to humanize"}}, "required": ["text"]}
+        }),
     ]
 }
