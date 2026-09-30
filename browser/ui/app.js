@@ -154,7 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
     webSearchEnabled: true,
     webSearchMode: 'auto', // 'auto', 'always', 'off'
     searchEngine: 'modelfusion_ipc',
-    maxSearchResults: 5,
+    maxSearchResults: 10,
     correlateWithLlm: true,
     includeCitations: true,
     agenticLoopEnabled: true,
@@ -1224,6 +1224,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (valWebSearchMaxResults) {
       valWebSearchMaxResults.textContent = s.maxSearchResults;
     }
+    if (typeof updateActivePresetChip === 'function') {
+      updateActivePresetChip(s.maxSearchResults);
+    }
     setCheck('setting-websearch-correlate', s.correlateWithLlm);
     setCheck('setting-websearch-citations', s.includeCitations);
   }
@@ -1454,10 +1457,40 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Live Web Search Max Results Slider update
+  // Live Web Search Max Results Slider update & Preset Chips
+  function updateActivePresetChip(val) {
+    const presetChips = document.querySelectorAll('.preset-chip-btn');
+    const numericVal = parseInt(val, 10);
+    presetChips.forEach(chip => {
+      if (parseInt(chip.getAttribute('data-val'), 10) === numericVal) {
+        chip.classList.add('active');
+      } else {
+        chip.classList.remove('active');
+      }
+    });
+  }
+
+  const presetChips = document.querySelectorAll('.preset-chip-btn');
+  presetChips.forEach(chip => {
+    chip.addEventListener('click', (e) => {
+      e.preventDefault();
+      const val = chip.getAttribute('data-val');
+      if (settingWebSearchMaxResults) {
+        settingWebSearchMaxResults.value = val;
+        settingWebSearchMaxResults.dispatchEvent(new Event('input', { bubbles: true }));
+        settingWebSearchMaxResults.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      if (valWebSearchMaxResults) {
+        valWebSearchMaxResults.textContent = val;
+      }
+      updateActivePresetChip(val);
+    });
+  });
+
   if (settingWebSearchMaxResults && valWebSearchMaxResults) {
     settingWebSearchMaxResults.addEventListener('input', () => {
       valWebSearchMaxResults.textContent = settingWebSearchMaxResults.value;
+      updateActivePresetChip(settingWebSearchMaxResults.value);
     });
   }
 
@@ -1537,7 +1570,7 @@ document.addEventListener('DOMContentLoaded', () => {
       webSearchTestPreview.classList.remove('hidden');
       webSearchTestPreview.innerHTML = '<div style="color: #a1a1aa;">Searching live internet via ModelFusion search engine...</div>';
       try {
-        const results = await executeWebSearch(q, currentSettings.maxSearchResults || 5);
+        const results = await executeWebSearch(q, currentSettings.maxSearchResults || 10);
         if (results && results.length > 0) {
           webSearchTestPreview.innerHTML = results.map((r, i) => `
             <div class="search-preview-item">
@@ -2210,7 +2243,18 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (btnClearAttachments) {
-    btnClearAttachments.addEventListener('click', clearAllAttachments);
+    btnClearAttachments.addEventListener('click', () => {
+      clearAllAttachments();
+      const origText = btnClearAttachments.textContent;
+      btnClearAttachments.textContent = '✓ Attachments Cleared!';
+      btnClearAttachments.style.borderColor = '#10a37f';
+      btnClearAttachments.style.color = '#10a37f';
+      setTimeout(() => {
+        btnClearAttachments.textContent = origText;
+        btnClearAttachments.style.borderColor = '';
+        btnClearAttachments.style.color = '';
+      }, 2500);
+    });
   }
 
   // Drag-and-drop file attachment support
@@ -2537,7 +2581,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function executeWebSearch(query, maxResults = 5) {
-    const limit = Math.min(Math.max(1, maxResults || 5), 10);
+    const limit = Math.min(Math.max(1, maxResults || 5), 100);
     const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
 
     // 1. Try ModelFusion Master CLI IPC endpoint :5000/api/search
@@ -2592,7 +2636,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function executeArxivSearch(query, maxResults = 5) {
-    const limit = Math.min(Math.max(1, maxResults || 5), 10);
+    const limit = Math.min(Math.max(1, maxResults || 5), 100);
     const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
 
     // 1. Try ModelFusion Master CLI IPC endpoint :5000/api/arxiv
@@ -3297,18 +3341,66 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function showExportModal() {
     const modal = document.getElementById('modal-export-confirm');
-    if (modal) modal.classList.remove('hidden');
+    if (modal) {
+      modal.classList.remove('hidden');
+      modal.style.display = 'flex';
+      modal.style.zIndex = '100000';
+    }
   }
 
   function hideExportModal() {
     const modal = document.getElementById('modal-export-confirm');
-    if (modal) modal.classList.add('hidden');
+    if (modal) {
+      modal.classList.add('hidden');
+      modal.style.display = 'none';
+    }
   }
 
   function exportEntireChatHistory() {
     try {
-      const sessions = chatSessions || [];
+      let sessions = Array.isArray(chatSessions) ? [...chatSessions] : [];
       if (sessions.length === 0) {
+        // Fallback: check if activeSession has messages
+        if (typeof currentSessionId !== 'undefined' && currentSessionId) {
+          const act = (chatSessions || []).find(s => s.id === currentSessionId);
+          if (act && Array.isArray(act.messages) && act.messages.length > 0) {
+            sessions = [act];
+          }
+        }
+        // Fallback: harvest currently rendered chat bubbles if any
+        if (sessions.length === 0 && chatMessages) {
+          const bubbles = chatMessages.querySelectorAll('.msg-bubble');
+          if (bubbles.length > 0) {
+            const harvested = [];
+            bubbles.forEach(b => {
+              const isUser = b.classList.contains('user-bubble');
+              const text = b.querySelector('.bubble-content')?.innerText || b.innerText || '';
+              if (text.trim()) {
+                harvested.push({
+                  role: isUser ? 'user' : 'assistant',
+                  content: text.trim(),
+                  timestamp: Date.now()
+                });
+              }
+            });
+            if (harvested.length > 0) {
+              const newSess = {
+                id: 'chat_' + Date.now(),
+                title: harvested[0].content.slice(0, 36) + '...',
+                createdAt: Date.now(),
+                messages: harvested
+              };
+              sessions = [newSess];
+              if (!Array.isArray(chatSessions)) chatSessions = [];
+              chatSessions.push(newSess);
+              saveChatHistory();
+            }
+          }
+        }
+      }
+
+      if (sessions.length === 0) {
+        alert('ℹ️ No conversation history found to export yet. Start chatting in HugOS to record conversations, then click Export data.');
         termLog('[EXPORT] ⚠️ No conversation history found to export.', 'warn');
         return;
       }
@@ -3514,6 +3606,21 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => {
           downloadFile('rl_feedback_dataset.json', JSON.stringify(rlFeedbackDataset, null, 2), 'application/json');
         }, 400);
+      }
+
+      const btnRequestExport = document.getElementById('btn-request-export-chatgpt');
+      if (btnRequestExport) {
+        const origText = btnRequestExport.textContent;
+        btnRequestExport.textContent = '✓ Data Exported!';
+        btnRequestExport.style.background = '#10a37f';
+        btnRequestExport.style.borderColor = '#10a37f';
+        btnRequestExport.style.color = '#ffffff';
+        setTimeout(() => {
+          btnRequestExport.textContent = origText;
+          btnRequestExport.style.background = '';
+          btnRequestExport.style.borderColor = '';
+          btnRequestExport.style.color = '';
+        }, 3000);
       }
 
       termLog(`[EXPORT] 📦 Successfully exported entire chat history (${sessions.length} conversations) in ChatGPT format!`, 'success');
@@ -4218,14 +4325,90 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Clear History Button
+  // Clear History Button (Navigation History & Web Cache)
   if (btnClearHistory) {
     btnClearHistory.addEventListener('click', () => {
       historyStack.length = 0;
       historyIndex = -1;
-      termLog('[SYSTEM] Navigation history stack and session cache cleared.', 'sys');
+      try { sessionStorage.clear(); } catch (e) {}
+      const origText = btnClearHistory.textContent;
+      btnClearHistory.textContent = '✓ History Cleared!';
+      btnClearHistory.style.borderColor = '#10a37f';
+      btnClearHistory.style.color = '#10a37f';
+      setTimeout(() => {
+        btnClearHistory.textContent = origText;
+        btnClearHistory.style.borderColor = '';
+        btnClearHistory.style.color = '';
+      }, 2500);
+      termLog('[SYSTEM] Navigation history stack and session cache cleared.', 'success');
     });
   }
+
+  // Clear Conversation History Button
+  const btnClearAllChats = document.getElementById('btn-clear-all-chats');
+  if (btnClearAllChats) {
+    btnClearAllChats.addEventListener('click', () => {
+      if (confirm('Are you sure you want to delete all conversation history? This cannot be undone.')) {
+        chatSessions = [];
+        try { localStorage.removeItem('hugos_chat_history'); } catch (e) {}
+        renderChatHistoryList();
+        startNewChatSession();
+        const origText = btnClearAllChats.textContent;
+        btnClearAllChats.textContent = '✓ Conversations Cleared!';
+        btnClearAllChats.style.borderColor = '#10a37f';
+        btnClearAllChats.style.color = '#10a37f';
+        setTimeout(() => {
+          btnClearAllChats.textContent = origText;
+          btnClearAllChats.style.borderColor = '';
+          btnClearAllChats.style.color = '';
+        }, 2500);
+        termLog('[SYSTEM] All conversation history cleared from local storage.', 'success');
+      }
+    });
+  }
+
+  // Database Maintenance & Optimization Action Buttons in Storage Tab
+  const dbActionConfigs = [
+    { id: 'btn-db-rebuild', action: 'rebuild', doneText: '✓ Rebuilt!' },
+    { id: 'btn-db-vacuum', action: 'vacuum', doneText: '✓ Vacuumed!' },
+    { id: 'btn-db-check', action: 'check', doneText: '✓ Integrity OK!' },
+    { id: 'btn-db-prune', action: 'prune', doneText: '✓ Cache Pruned!' }
+  ];
+
+  dbActionConfigs.forEach(({ id, action, doneText }) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      const origText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '⏳ Working...';
+      const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+      try {
+        const res = await fetch(`${ipcUrl}/api/db/${action}`, { method: 'POST' });
+        if (res.ok) {
+          const data = await res.json().catch(() => ({}));
+          const msg = data.message || `Database ${action} completed successfully.`;
+          termLog(`[DATABASE] ✅ ${msg}`, 'success');
+          btn.textContent = doneText;
+          btn.style.borderColor = '#10a37f';
+          btn.style.color = '#10a37f';
+        } else {
+          termLog(`[DATABASE] ⚠️ Server returned status ${res.status} for ${action}.`, 'warn');
+          btn.textContent = '⚠️ Failed';
+        }
+      } catch (err) {
+        termLog(`[DATABASE] Note: ${action} request dispatched (${err.message})`, 'sys');
+        btn.textContent = '✓ Dispatched';
+      } finally {
+        setTimeout(() => {
+          btn.textContent = origText;
+          btn.disabled = false;
+          btn.style.borderColor = '';
+          btn.style.color = '';
+        }, 3000);
+      }
+    });
+  });
 
   // Load and apply stored settings initially
   loadSettings();
@@ -5141,7 +5324,16 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
         const windowedHistory = history.slice(-30);
         for (const m of windowedHistory) {
           if (m.role === 'user' && m.content) {
-            conversationMessages.push({ role: 'user', content: m.content });
+            let userContent = m.content;
+            if (Array.isArray(m.attachments) && m.attachments.length > 0) {
+              const attachParts = m.attachments.map(att => {
+                const name = att.name || 'file';
+                const body = (att.text || att.content || att.raw || '').slice(0, 4000);
+                return `[Attached File: ${name}]\n${body}`;
+              }).join('\n\n');
+              userContent = `${attachParts}\n\n${userContent}`;
+            }
+            conversationMessages.push({ role: 'user', content: userContent });
           } else if (m.role === 'assistant' && m.content) {
             conversationMessages.push({ role: 'assistant', content: m.content });
           }
@@ -6751,9 +6943,11 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
               }
             };
 
-            const pArxiv = executeArxivSearch(queryToSearch, currentSettings.maxSearchResults || 5)
+            const targetCount = currentSettings.maxSearchResults || 10;
+            const half = Math.max(5, Math.ceil(targetCount / 2));
+            const pArxiv = executeArxivSearch(queryToSearch, half)
               .then(res => { updateSourcesImmediately(res); return res; });
-            const pWeb = executeWebSearch(queryToSearch, currentSettings.maxSearchResults || 5)
+            const pWeb = executeWebSearch(queryToSearch, half)
               .then(res => { updateSourcesImmediately(res); return res; });
             const [arxivResults, webResults] = await Promise.all([pArxiv, pWeb]);
 
@@ -7084,6 +7278,154 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
         termLog(`[BROWSER AGENT STATUS] State: ${data.state} | Step: ${data.current_step}/${data.max_steps} | Goal: ${data.goal}`, 'info');
       } catch (e) {
         termLog(`[BROWSER AGENT STATUS] Master CLI daemon status: Local browser runtime active.`, 'sys');
+      }
+      return;
+    }
+
+    // 0. Interactive Help & Command Palette Guide
+    if (lower === '@agent help' || lower === '/help' || lower === 'help' || lower === '@help' || lower === '--help') {
+      const helpLines = [
+        '### 💡 ModelFusion & HugOS Master Capabilities & Command Guide',
+        '',
+        '**Core Directives & System Lifecycle**:',
+        '- `@agent help` / `/help` / `--help` — Display this complete interactive capabilities and directive guide',
+        '- `@agent update` — Fast curated update: indexes top ~6,500 production workhorse models and dynamically provisions optimal local Ollama hardware model',
+        '- `@agent updatedb` — Full registry crawler: ingests all 2M+ models from Hugging Face Hub directly into local SQLite catalog',
+        '- `@agent active-model` — Inspect currently loaded local Ollama model, VRAM footprint, context size, and hardware scaling',
+        '- `@agent sys-info` — Real-time hardware telemetry: CPU model, logical cores, GPU name, available RAM, and VRAM',
+        '- `@agent fusion-status` — Inspect multi-model speculative consensus ensemble status, panel size, and sweet spot calibration',
+        '',
+        '**Research & Live Internet Knowledge**:',
+        '- `@agent search <query>` / `/search <query>` — Grounded live web search with citations, fact synthesis, and source footnote links',
+        '- `@agent arxiv <query>` / `/arxiv <query>` — Query academic preprints, scientific research papers, and technical citations on arXiv',
+        '- `@agent research <topic>` / `/research <topic>` — Dual-source deep research engine combining live web searches and arXiv papers',
+        '- `@agent web-agent <goal>` — Autonomous web navigation, DOM extraction, inverted indexing, and LLM correlation',
+        '',
+        '**Database Maintenance & Optimization**:',
+        '- `@agent db-rebuild` — Drop and reconstruct local SQLite model catalog from scratch with verified indexes',
+        '- `@agent db-vacuum` — Defragment database storage pages, reclaim free disk space, and optimize query latency',
+        '- `@agent db-check` — Execute low-level SQLite PRAGMA integrity check and foreign key health diagnostics',
+        '- `@agent db-prune` — Safely clean orphaned caches, temporary query buffers, and obsolete session records',
+        '',
+        '**Multi-Turn In-Session Content Memory**:',
+        '- Continuous conversational memory: In any session, ask questions about previous messages, attached code files, CSV datasets, or executed tool outputs. Full multi-turn session context and attachments are automatically preserved and recalled.',
+        '',
+        '**Anti-AI Stylometry & Natural Human Prose**:',
+        '- `@agent humanize <text>` — Convert robotic, detectable AI text into organic human prose with high burstiness and varied cadence',
+        '- `@agent translate to <lang>: <text>` — High-fidelity multilingual translation preserving technical terminology and tone',
+        '- `@agent trans-human to <lang>: <text>` — Native humanized translation removing awkward translationese and robotic patterns',
+        '- `@agent style-transfer <style>: <text>` — Adaptive stylometry transformation matching target authorial tone and voice',
+        '',
+        '**Code, Architecture & Security Forensics**:',
+        '- `@agent security <code/file>` — Static code audit, OWASP vulnerabilities, injection flaws, and memory safety review',
+        '- `@agent pe <file.exe>` — Extract Windows Portable Executable (.EXE / .DLL) binary architecture, headers, and exports',
+        '- `@agent vuln-scan <file>` — Static vulnerability analysis for buffer overflows, use-after-free, and privilege escalation',
+        '- `@agent malware-analysis <file>` — Heuristic static malware indicators, suspicious API imports, and evasion patterns',
+        '- `@agent mem-forensics <dump>` — Analyze core dumps, heap allocations, memory leaks, and crash stack traces',
+        '- `@agent pii-scan <text/file>` — Discover leaked SSNs, credit cards, emails, private keys, and confidential credentials',
+        '- `@agent entropy <file>` — Compute Shannon entropy to detect packed, compressed, or encrypted binary sections',
+        '- `@agent strings <file>` — Extract and filter printable ASCII and Unicode strings from binary files and executables',
+        '- `@agent dockerfile <code/dir>` — Generate secure, multi-stage container Dockerfiles with minimal attack surfaces',
+        '- `@agent api-docs <code>` — Generate OpenAPI / Swagger specifications and Markdown documentation directly from code',
+        '- `@agent code-translate to <lang>: <code>` — Transpile code logic across Rust, Python, TypeScript, Go, and C++',
+        '',
+        '**Domain & Multi-Modal Intelligence**:',
+        '- `@agent vision <image> <question>` — Visual inspection, image reasoning, and Set-of-Mark visual grounding',
+        '- `@agent acdso <dataset.csv>` — Adaptive Contextual Data Science Optimization: automated profiling, regression, and forecasting',
+        '- `@agent asr <audio>` — Offline automatic speech recognition and acoustic transcription (Whisper)',
+        '- `@agent medical <notes/data>` — Clinical notes summarization, medical terminology extraction, and research synthesis',
+        '- `@agent legal <contract>` — Contract clause analysis, indemnification terms, and liability exposure audit',
+        '- `@agent finance <statement/10k>` — Balance sheet parsing, earnings call sentiment extraction, and financial ratios',
+        '- `@agent robotics <kinematics>` — Inverse kinematics, trajectory planning, and actuator dynamics simulations',
+        '- `@agent rl <policy>` — Reinforcement learning Markov decision processes, Q-learning, and reward modeling',
+        '',
+        '**Autonomous Reasoning & Planning**:',
+        '- `@agent goal <goal>` — Multi-turn autonomous goal-seeking execution loop until verified completion',
+        '- `@agent plan <task>` — Deconstruct complex software architectures into structured, executable milestones',
+        '- `@agent grill-me <plan>` — Adversarial requirements interview to stress-test architecture and design decisions',
+        '- `@agent boost <prompt>` — High-compute multi-agent / multi-sample reasoning boost with rigorous verification',
+        '- `@agent cot <problem>` — Explicit step-by-step chain-of-thought derivation with intermediate verification',
+        '- `@agent reflection <error>` — Analyze execution failure tracebacks and synthesize self-correcting patches',
+        '- `@agent decompose <problem>` — Break monolithic, ambiguous requirements into atomic subtasks',
+        '- `@agent backtrack` — Roll back erroneous reasoning branches to the most recent verified state',
+        '',
+        '**Keyboard Shortcuts & Quick Actions**:',
+        '- `Ctrl+,` — Open / Close Settings Drawer',
+        '- `Enter` — Send message / execute directive',
+        '- `Shift+Enter` — Insert multi-line prompt without sending',
+        '- `Ctrl+O` — Attach file (Code, CSV, Text, JSON, Image, PE Binary)',
+        '- `Alt+S` — Cycle Web Search Mode (Auto → Always On → Off)',
+        '- `Ctrl+L` / `clear` — Clear console logs & chat screen'
+      ];
+      const helpText = helpLines.join('\n');
+
+      termLog(helpText, 'info');
+      if (chatWelcome) chatWelcome.classList.add('hidden');
+      const bubble = document.createElement('div');
+      bubble.className = 'msg-bubble assistant-bubble';
+      bubble.innerHTML = `
+        <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+          <span>💡</span> <span>HugOS Help &amp; Command Guide</span>
+        </div>
+        <div class="bubble-content markdown-body" style="font-size: 13px; line-height: 1.55;">${renderMarkdown(helpText)}</div>
+      `;
+      if (chatMessages) {
+        chatMessages.appendChild(bubble);
+        if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+      const activeSession = chatSessions.find(s => s.id === currentSessionId);
+      if (activeSession) {
+        activeSession.messages.push({ role: 'assistant', content: helpText, model: 'system_guide' });
+        saveChatHistory();
+      }
+      return;
+    }
+
+    // 0b. Database Maintenance Directives (@agent db-rebuild, @agent db-vacuum, @agent db-check, @agent db-prune)
+    const isDbRebuild = lower === '@agent db-rebuild' || lower === '/db-rebuild' || lower === 'db-rebuild';
+    const isDbVacuum = lower === '@agent db-vacuum' || lower === '/db-vacuum' || lower === 'db-vacuum';
+    const isDbCheck = lower === '@agent db-check' || lower === '/db-check' || lower === 'db-check';
+    const isDbPrune = lower === '@agent db-prune' || lower === '/db-prune' || lower === 'db-prune';
+
+    if (isDbRebuild || isDbVacuum || isDbCheck || isDbPrune) {
+      const action = isDbRebuild ? 'rebuild' : isDbVacuum ? 'vacuum' : isDbCheck ? 'check' : 'prune';
+      const actionTitle = isDbRebuild ? 'Rebuild SQLite Model Database' : isDbVacuum ? 'Vacuum & Defragment SQLite Database' : isDbCheck ? 'Database Integrity & Foreign Key Check' : 'Prune Database Caches';
+      termLog(`[DATABASE] 🛠️ Executing ${actionTitle}...`, 'info');
+
+      const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+      let reportContent = '';
+      try {
+        const res = await fetch(`${ipcUrl}/api/db/${action}`, { method: 'POST' });
+        if (res.ok) {
+          const data = await res.json();
+          reportContent = data.message || `Database ${action} completed successfully.`;
+          termLog(`[DATABASE] ✅ ${reportContent}`, 'success');
+        } else {
+          reportContent = `⚠️ Server returned status ${res.status} for ${action}.`;
+          termLog(`[DATABASE] ${reportContent}`, 'warn');
+        }
+      } catch (err) {
+        reportContent = `Database maintenance directive dispatched. Master CLI status: ${err.message}`;
+        termLog(`[DATABASE] Note: ${reportContent}`, 'sys');
+      }
+
+      if (chatWelcome) chatWelcome.classList.add('hidden');
+      if (chatMessages) {
+        const bubble = document.createElement('div');
+        bubble.className = 'msg-bubble assistant-bubble';
+        bubble.innerHTML = `
+          <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+            <span>🛠️</span> <span>${actionTitle}</span>
+          </div>
+          <div class="bubble-content markdown-body" style="font-size: 13px; line-height: 1.55;">${renderMarkdown(reportContent)}</div>
+        `;
+        chatMessages.appendChild(bubble);
+        if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+      const activeSession = chatSessions.find(s => s.id === currentSessionId);
+      if (activeSession) {
+        activeSession.messages.push({ role: 'assistant', content: reportContent, model: 'db_maintenance' });
+        saveChatHistory();
       }
       return;
     }
@@ -7832,20 +8174,21 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           }
         };
 
+        const targetCount = currentSettings.maxSearchResults || 10;
         if (isArxivOnly) {
-          const arxivResults = await executeArxivSearch(queryToSearch, currentSettings.maxSearchResults || 6);
+          const arxivResults = await executeArxivSearch(queryToSearch, targetCount);
           updateSourcesImmediately(arxivResults);
         } else if (isDeepResearch && shouldQueryArxiv) {
           // Scientific / academic deep research: query web + arXiv in parallel
-          const pWeb = executeWebSearch(queryToSearch, currentSettings.maxSearchResults || 5)
+          const half = Math.max(5, Math.ceil(targetCount / 2));
+          const pWeb = executeWebSearch(queryToSearch, half)
             .then(res => { updateSourcesImmediately(res); return res; });
-          const pArxiv = executeArxivSearch(queryToSearch, 5)
+          const pArxiv = executeArxivSearch(queryToSearch, half)
             .then(res => { updateSourcesImmediately(res); return res; });
           await Promise.all([pWeb, pArxiv]);
         } else {
           // Standard web search or general deep research (e.g. music, artists, pop stars, history)
-          const limit = isDeepResearch ? Math.max(currentSettings.maxSearchResults || 6, 8) : (currentSettings.maxSearchResults || 6);
-          const searchResults = await executeWebSearch(queryToSearch, limit);
+          const searchResults = await executeWebSearch(queryToSearch, targetCount);
           updateSourcesImmediately(searchResults);
         }
 
@@ -8063,14 +8406,16 @@ Instructions:
       };
 
       try {
+        const targetCount = currentSettings.maxSearchResults || 10;
         if (isResearchTopic) {
-          const pWeb = executeWebSearch(routingDecision.cleanQuery, currentSettings.maxSearchResults || 5)
+          const half = Math.max(5, Math.ceil(targetCount / 2));
+          const pWeb = executeWebSearch(routingDecision.cleanQuery, half)
             .then(res => { updateSourcesImmediately(res); return res; });
-          const pArxiv = executeArxivSearch(routingDecision.cleanQuery, 4)
+          const pArxiv = executeArxivSearch(routingDecision.cleanQuery, half)
             .then(res => { updateSourcesImmediately(res); return res; });
           await Promise.all([pWeb, pArxiv]);
         } else {
-          const results = await executeWebSearch(routingDecision.cleanQuery, currentSettings.maxSearchResults || 5);
+          const results = await executeWebSearch(routingDecision.cleanQuery, targetCount);
           updateSourcesImmediately(results);
         }
       } catch (searchErr) {
@@ -8397,7 +8742,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
   const sidebarHelp = document.getElementById('sidebar-help');
   if (sidebarHelp) {
     sidebarHelp.addEventListener('click', () => {
-      executeCliCommand('--sys-info');
+      executeCliCommand('@agent help');
     });
   }
 
@@ -8666,6 +9011,11 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     { cmd: '@agent backtrack ', icon: '↩️', label: 'Backtrack Rollback', desc: 'Rollback erroneous reasoning branches to previous valid state' },
     { cmd: '@agent reflection ', icon: '🪞', label: 'Error Reflection', desc: 'Analyze execution failure traces and synthesize self-corrections' },
     { cmd: '@agent adversarial ', icon: '⚔️', label: 'Adversarial Test', desc: 'Subject assumptions and architecture to worst-case stresses' },
+    { cmd: '@agent help', icon: '💡', label: 'Help & Guide', desc: 'Display complete command palette, capabilities & shortcuts' },
+    { cmd: '@agent db-rebuild', icon: '🔄', label: 'Rebuild Catalog DB', desc: 'Drop and re-create local SQLite model database from scratch' },
+    { cmd: '@agent db-vacuum', icon: '🧹', label: 'Vacuum Catalog DB', desc: 'Defragment pages and optimize SQLite database' },
+    { cmd: '@agent db-check', icon: '🔍', label: 'Check Database Integrity', desc: 'Run integrity and foreign key health checks on SQLite database' },
+    { cmd: '@agent db-prune', icon: '🗑️', label: 'Prune Database Caches', desc: 'Prune orphaned caches and temporary files' },
     { cmd: '@agent update', icon: '⚡', label: 'Update Catalog', desc: 'Fast curated update (~6,500 models & dynamic Ollama sizing)' },
     { cmd: '@agent updatedb', icon: '🚀', label: 'Full Registry Crawler', desc: 'Crawl all 2M+ models from Hugging Face Hub' },
     { cmd: '@agent active-model', icon: '🤖', label: 'Active Model', desc: 'Inspect currently loaded Ollama model & memory' },

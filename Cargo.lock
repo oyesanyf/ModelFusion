@@ -341,6 +341,7 @@ dependencies = [
  "model_selection",
  "modelfusion_core",
  "reqwest",
+ "rusqlite",
  "serde",
  "serde_json",
  "sqlx",

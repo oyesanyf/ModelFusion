@@ -27,4 +27,5 @@ uuid            = { workspace = true }
 tiktoken-rs     = { workspace = true }
 async-trait     = { workspace = true }
 thiserror       = { workspace = true }
+rusqlite        = { workspace = true }
 

@@ -1934,6 +1934,46 @@ body {
   text-align: right;
 }
 
+.sources-preset-chips {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.preset-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  color: var(--text-secondary, #a1a1aa);
+  font-family: var(--mono-font, monospace);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.preset-chip-btn:hover {
+  background: var(--accent-color, #10a37f);
+  color: #ffffff;
+  border-color: var(--accent-color, #10a37f);
+  transform: translateY(-1px);
+}
+
+.preset-chip-btn.active {
+  background: var(--accent-color, #10a37f);
+  color: #ffffff;
+  border-color: var(--accent-color, #10a37f);
+  font-weight: 700;
+}
+
 .setting-toggle-label {
   display: flex;
   align-items: center;
@@ -3769,7 +3809,7 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
   align-items: center;
   gap: 7px;
   width: 100%;
-  padding: 8px 10px;
+  padding: 8px 8px;
   min-height: 34px;
   background: transparent;
   border: none;
@@ -3782,7 +3822,7 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
   letter-spacing: -0.1px;
   cursor: pointer;
   text-align: left;
-  overflow: visible;
+  overflow: hidden;
   transition: background 0.15s ease, color 0.15s ease;
   user-select: none;
   flex-shrink: 0;
@@ -3816,7 +3856,8 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
   line-height: 1.45;
   letter-spacing: -0.1px;
   white-space: nowrap;
-  overflow: visible;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cat-chevron {
@@ -3839,7 +3880,7 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
   box-sizing: border-box;
   padding: 3px 2px 5px 6px;
   gap: 2px;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .tool-category-content.collapsed {
@@ -3866,7 +3907,7 @@ body.theme-midnight .chat-messages .assistant-bubble code.inline-code {
   transition: all 0.15s ease;
   text-align: left;
   user-select: none;
-  overflow: visible;
+  overflow: hidden;
   flex-shrink: 0;
 }
 
