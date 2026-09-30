@@ -162,6 +162,18 @@ def upload_asset(release_id, file_path, asset_name, token, force=False):
             upload_url
         ]
         p = subprocess.run(cmd, capture_output=True, text=True)
+        # Check if asset was immediately uploaded or processed asynchronously
+        for poll_attempt in range(5):
+            time.sleep(2)
+            try:
+                rel_check = api_request(f"{API_URL}/releases/{release_id}", token=token)
+                for a in rel_check.get("assets", []):
+                    if a["name"] == asset_name and a.get("size") == file_size and a.get("state") == "uploaded":
+                        print(f"[OK] Uploaded {asset_name} ({file_size} bytes): {a.get('browser_download_url')}")
+                        return a
+            except Exception as poll_err:
+                pass
+        
         if p.returncode == 0:
             try:
                 res = json.loads(p.stdout)
@@ -172,7 +184,6 @@ def upload_asset(release_id, file_path, asset_name, token, force=False):
                 elif "already_exists" in p.stdout:
                     print(f"[WARN] Asset {asset_name} already exists on remote. Re-deleting and retrying...")
                     delete_existing_asset(release_id, asset_name, token)
-                    import time
                     time.sleep(3)
                 else:
                     print(f"[WARN] Size mismatch (attempt {attempt}): {uploaded_size} != {file_size}. Response: {p.stdout[:200]}")
@@ -180,7 +191,6 @@ def upload_asset(release_id, file_path, asset_name, token, force=False):
                 print(f"[WARN] curl response parsing failed: {parse_err}. Response: {p.stdout[:200]}")
         else:
             print(f"[WARN] curl failed with code {p.returncode}: {p.stderr[:200]}")
-        import time
         time.sleep(2)
     raise RuntimeError(f"[ERROR] Failed to upload {asset_name} after 3 attempts.")
 
