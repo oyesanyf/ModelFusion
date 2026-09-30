@@ -13,6 +13,7 @@ import urllib.request
 import urllib.error
 import hashlib
 import time
+import re
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
@@ -195,11 +196,76 @@ def upload_asset(release_id, file_path, asset_name, token, force=False):
         time.sleep(2)
     raise RuntimeError(f"[ERROR] Failed to upload {asset_name} after 3 attempts.")
 
+def prune_old_versioned_releases(token, keep_latest_count=2):
+    """
+    Retention pruner: Keeps the latest N versioned releases (v1.0.0-beta.{build_number})
+    and deletes all older versioned releases to prevent GitHub storage exhaustion.
+    Rolling release (v1.0.0-beta) and non-versioned releases are never touched.
+    """
+    print(f"\n==========================================")
+    print(f"[PRUNE] Release Retention Pruner (Policy: Keep latest {keep_latest_count} versioned releases)")
+    print(f"==========================================")
+    all_releases = []
+    page = 1
+    while True:
+        url = f"{API_URL}/releases?per_page=100&page={page}"
+        data = api_request(url, token=token)
+        if not data:
+            break
+        all_releases.extend(data)
+        if len(data) < 100:
+            break
+        page += 1
+
+    versioned = []
+    for r in all_releases:
+        tag = r.get("tag_name", "")
+        m = re.match(r"^v1\.0\.0-beta\.(\d+)$", tag)
+        if m:
+            build_num = int(m.group(1))
+            versioned.append((build_num, r))
+
+    # Sort descending by build integer
+    versioned.sort(key=lambda x: x[0], reverse=True)
+    print(f"[PRUNE] Found {len(versioned)} versioned releases.")
+
+    to_keep = versioned[:keep_latest_count]
+    to_delete = versioned[keep_latest_count:]
+
+    print(f"[PRUNE] Retaining {len(to_keep)} latest release(s):")
+    for b_num, r in to_keep:
+        print(f"  [KEEP] Build {b_num}: {r['tag_name']} (ID: {r['id']}, Name: {r.get('name')})")
+
+    if not to_delete:
+        print(f"[PRUNE] [OK] No older releases exceed retention limit. Nothing to prune.")
+        return 0
+
+    print(f"[PRUNE] Pruning {len(to_delete)} older release(s)...")
+    pruned_count = 0
+    for b_num, r in to_delete:
+        rel_id = r["id"]
+        tag = r.get("tag_name")
+        print(f"[PRUNE] Deleting release {tag} (ID: {rel_id})...")
+        try:
+            api_request(f"{API_URL}/releases/{rel_id}", method="DELETE", token=token)
+            print(f"[PRUNE] [OK] Successfully deleted release {tag} (ID: {rel_id})")
+            pruned_count += 1
+            time.sleep(1)
+        except Exception as e:
+            print(f"[PRUNE] [ERROR] Failed to delete release {tag} (ID: {rel_id}): {e}")
+
+    print(f"[PRUNE] Completed. Pruned {pruned_count} old release(s).")
+    return pruned_count
+
 def main():
     token = get_token()
     if not token:
         print("[ERROR] No GitHub token found. Please ensure Git Credential Manager has github.com credentials or set GH_TOKEN.")
         sys.exit(1)
+
+    if "--prune-only" in sys.argv or ("--prune" in sys.argv and "--check" not in sys.argv and "--verify-only" not in sys.argv and len(sys.argv) == 2):
+        prune_old_versioned_releases(token, keep_latest_count=2)
+        sys.exit(0)
         
     script_dir = os.path.dirname(os.path.abspath(__file__))
     build_num_path = os.path.join(script_dir, "build_number.txt")
@@ -287,7 +353,10 @@ def main():
         for local_f, name in artifacts:
             upload_asset(rel_id, local_f, name, token, force=force)
         
-    print("\n[SUCCESS] All release assets uploaded and verified successfully on GitHub Releases!")
+    print("\n[INFO] Running automated release retention pruner...")
+    prune_old_versioned_releases(token, keep_latest_count=2)
+
+    print("\n[SUCCESS] All release assets uploaded, verified, and old releases pruned successfully on GitHub Releases!")
 
 if __name__ == "__main__":
     main()
