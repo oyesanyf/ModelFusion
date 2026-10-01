@@ -5670,6 +5670,162 @@ textarea.generating-locked {
 }
 
 /* ───────────────────────────────────────────────────────────── */
+/* Human-in-the-Loop (HITL) Universal Workspaces: Shopping, Booking & Safety */
+/* ───────────────────────────────────────────────────────────── */
+.hitl-shopping-workspace,
+.hitl-booking-workspace,
+.hitl-directions-workspace,
+.hitl-generic-workspace {
+  background: var(--bg-secondary, #111827);
+  border-radius: 8px;
+  padding: 14px;
+  margin: 12px 0;
+  font-family: var(--font-family, system-ui, sans-serif);
+}
+
+.hitl-shopping-workspace {
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.hitl-booking-workspace {
+  border: 1px solid rgba(139, 92, 246, 0.35);
+}
+
+.hitl-directions-workspace {
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.hitl-generic-workspace {
+  border: 1px solid rgba(234, 179, 8, 0.4);
+}
+
+.product-card,
+.ticket-card,
+.direction-route-card {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+  padding: 10px 12px;
+  transition: all 0.15s ease;
+}
+
+.product-card:hover {
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.ticket-card:hover {
+  border-color: rgba(139, 92, 246, 0.4);
+}
+
+.direction-route-card:hover {
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.product-price-tag {
+  font-weight: 700;
+  color: #10b981;
+  font-size: 14px;
+}
+
+.ticket-price-tag {
+  font-weight: 700;
+  color: #a78bfa;
+  font-size: 14px;
+}
+
+.route-duration-tag {
+  font-weight: 700;
+  color: #38bdf8;
+  font-size: 14px;
+}
+
+.route-distance-tag {
+  font-size: 12px;
+  color: var(--text-secondary, #cbd5e1);
+}
+
+.product-deal-badge,
+.ticket-rec-badge,
+.route-fastest-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 700;
+}
+
+.product-select-btn,
+.ticket-select-btn,
+.route-select-btn,
+.btn-hitl-approve,
+.btn-hitl-abort,
+.btn-hitl-bestdeal,
+.btn-hitl-recommend-ticket,
+.btn-hitl-fastest-route,
+.btn-shopping-confirm,
+.btn-shopping-abort,
+.btn-booking-confirm,
+.btn-booking-abort,
+.btn-directions-confirm,
+.btn-directions-abort,
+.btn-generic-confirm,
+.btn-generic-abort {
+  font-size: 11.5px !important;
+  border-radius: 4px !important;
+  cursor: pointer !important;
+  font-weight: 600 !important;
+  transition: all 0.15s ease !important;
+}
+
+.shopping-safety-gate-bar,
+.booking-safety-gate-bar,
+.directions-safety-gate-bar {
+  margin-top: 14px;
+  padding: 12px;
+  background: rgba(234, 179, 8, 0.08);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  border-radius: 6px;
+}
+
+.btn-shopping-confirm,
+.btn-generic-confirm {
+  background: #10b981 !important;
+  border: none !important;
+  color: #ffffff !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2) !important;
+}
+
+.btn-booking-confirm {
+  background: #8b5cf6 !important;
+  border: none !important;
+  color: #ffffff !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2) !important;
+}
+
+.btn-directions-confirm {
+  background: #0284c7 !important;
+  border: none !important;
+  color: #ffffff !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2) !important;
+}
+
+.btn-shopping-abort,
+.btn-booking-abort,
+.btn-generic-abort,
+.btn-hitl-abort {
+  background: rgba(239, 68, 68, 0.15) !important;
+  border: 1px solid rgba(239, 68, 68, 0.4) !important;
+  color: #f87171 !important;
+}
+
+.btn-shopping-abort:hover,
+.btn-booking-abort:hover,
+.btn-generic-abort:hover,
+.btn-hitl-abort:hover {
+  background: rgba(239, 68, 68, 0.3) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* ───────────────────────────────────────────────────────────── */
 /* Floating @agent Autocomplete Dropdown Menu                    */
 /* ───────────────────────────────────────────────────────────── */
 .agent-autocomplete-dropdown {
