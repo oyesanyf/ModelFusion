@@ -24,6 +24,9 @@ pub use browser::{
     BrowserToolSuite, CdpClient, DomPruner, DomPrunerOptions, ElementTarget, ExtractedTable,
     GroundingBox, GroundingResult, InteractiveElement, PrunedDom, SafetyClassifier, StepAction,
     TableExtractor, TargetInfo, VisionGroundingEngine,
+    ComputerUseAgent, ComputerUseResult, ComputerUseStepRecord, ExecutionResult, MouseButton,
+    OsExecutor, ParsedActionStep, ScreenCapture, ScreenPerceiver, ScrollDirection, UiTarsAction,
+    UiTarsActionParser,
 };
 pub use memory::{
     AssemblyContext, ChatMessage, ConversationSession, ContextManager, MemoryError,

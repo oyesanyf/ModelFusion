@@ -1647,11 +1647,16 @@ DATABASE & MODEL UPDATE COMMANDS:
   --watermark [INPUT]   Detect AI watermark or steganographic anomaly (token green-list for text, LSB entropy for images; accepts inline text or file path)
   --translate [TEXT]    Translate natural language text into target language (accepts inline text or file path)
   --to <LANG>           Target language for translation (default: English)
+  --computer-use [GOAL] Autonomous OS computer use via UI-TARS multimodal action grounding and screen perception (accepts goal string)
   --db-path <PATH>      Target SQLite database path (e.g. IDE/db/hf_models.db)
 
 EXAMPLES:
   # Inspect all active runtime and catalog models
   cli.exe --active-model --db-path \"IDE/db/hf_models.db\"
+
+  # Autonomous OS computer use with UI-TARS multimodal grounding
+  cli.exe --computer-use \"Open Notepad and type hello\"
+  cli.exe --computer-use
 
   # Translate a language text to target language (accepts inline text or file)
   cli.exe --translate \"Hello world\" --to Spanish
@@ -1702,6 +1707,9 @@ struct Args {
 
     #[arg(long, default_value = "English", help = "Target language for translation (e.g. Spanish, French, German)")]
     to: String,
+
+    #[arg(long, num_args = 0..=1, default_missing_value = "", help = "Autonomous OS computer use via UI-TARS multimodal action grounding and screen perception (accepts goal string)")]
+    computer_use: Option<String>,
 
     #[arg(long, help = "Path to folder for code review or analysis")]
     folder: Option<String>,
@@ -2565,6 +2573,16 @@ where
                 args.remove(1);
                 args[1] = "--translate".to_string();
             }
+            if (sub_clean == "computer-use" || sub_clean == "computer_use" || sub_clean == "computeruse" || sub_clean == "ui-tars" || sub_clean == "uitars") && !has_combinator {
+                args.remove(1);
+                args[1] = "--computer-use".to_string();
+                if args.len() > 3 {
+                    let combined = args[2..].join(" ");
+                    args.truncate(2);
+                    args.push(combined);
+                }
+                return args;
+            }
         if (sub_clean == "key" || sub_clean == "keys") && args.len() > 3 && args[3].to_lowercase() == "gemini" {
             let key = if args.len() > 4 { args[4].clone() } else { String::new() };
             args.remove(1);
@@ -2708,6 +2726,14 @@ where
         "translate" | "/translate" | "@agent/translate" | "@agent:translate" | "@translate" | "translation" | "/translation" => {
             args[1] = "--translate".to_string();
         }
+        "computer-use" | "computer_use" | "computeruse" | "/computer-use" | "/computer_use" | "@agent/computer-use" | "@agent:computer-use" | "@computer-use" | "ui-tars" | "uitars" | "/ui-tars" | "@agent/ui-tars" | "@ui-tars" => {
+            args[1] = "--computer-use".to_string();
+            if args.len() > 3 {
+                let combined = args[2..].join(" ");
+                args.truncate(2);
+                args.push(combined);
+            }
+        }
         "boost" | "/boost" | "@agent/boost" | "@agent:boost" | "@boost" | "booster" => {
             args[1] = "--boost".to_string();
             if args.len() > 3 {
@@ -2744,6 +2770,14 @@ where
     }
 
     if args.len() > 2 && args[1] == "--watermark" {
+        if args.len() > 3 {
+            let combined = args[2..].join(" ");
+            args.truncate(2);
+            args.push(combined);
+        }
+    }
+
+    if args.len() > 2 && args[1] == "--computer-use" {
         if args.len() > 3 {
             let combined = args[2..].join(" ");
             args.truncate(2);
@@ -3223,7 +3257,7 @@ async fn run(args: Args) -> Result<()> {
     }
 
     // Auto-start Ollama and background FFmpeg check
-    if args.prompt.is_some() || args.query.is_some() || args.server || args.mcp || args.browser || args.browser_task.is_some() || args.browser_extract.is_some() || args.ensure_ollama || args.humanize.is_some() || args.translate.is_some() {
+    if args.prompt.is_some() || args.query.is_some() || args.server || args.mcp || args.browser || args.browser_task.is_some() || args.browser_extract.is_some() || args.ensure_ollama || args.humanize.is_some() || args.translate.is_some() || args.computer_use.is_some() {
         let _ = model_selection::memory::ensure_ollama_running();
         std::thread::spawn(|| {
             let _ = model_selection::memory::ensure_ffmpeg_available();
@@ -3493,6 +3527,39 @@ async fn run(args: Args) -> Result<()> {
             }
             Err(e) => {
                 eprintln!("Error detecting watermark: {}", e);
+            }
+        }
+        return Ok(());
+    }
+
+    if let Some(ref goal_text) = args.computer_use {
+        let goal = if !goal_text.trim().is_empty() {
+            goal_text.clone()
+        } else if let Some(ref q) = args.query {
+            q.clone()
+        } else if let Some(ref p) = args.prompt {
+            p.clone()
+        } else {
+            "Inspect desktop screen and identify interactive UI elements".to_string()
+        };
+
+        println!("🖥️ Autonomous Computer Use Agent (UI-TARS Grounding)");
+        println!("🎯 Goal: {}", goal);
+        let _ = model_selection::memory::ensure_ollama_running();
+        let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+        let model = args.model.clone().unwrap_or_else(|| "ui-tars".to_string());
+
+        let agent = modelfusion_core::browser::computer_use::ComputerUseAgent::new(endpoint, model, 15, false);
+        match agent.run(&goal).await {
+            Ok(res) => {
+                println!("\n✅ Computer Use Task Completed: {}", res.final_message);
+                println!("📊 Total steps executed: {}", res.steps.len());
+                for s in &res.steps {
+                    println!("   • Step {}: {} -> {}", s.step_index, s.action_type, s.execution_details);
+                }
+            }
+            Err(e) => {
+                eprintln!("❌ Computer Use Error: {}", e);
             }
         }
         return Ok(());
@@ -13243,6 +13310,31 @@ sequenceDiagram
                         }
                     }
                 }
+                "/api/computer-use" => {
+                    let goal = request_json.get("goal").and_then(|v| v.as_str())
+                        .or_else(|| request_json.get("prompt").and_then(|v| v.as_str()))
+                        .unwrap_or("Inspect desktop screen and identify interactive UI elements").trim();
+                    let max_steps = request_json.get("max_steps").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
+                    let dry_run = request_json.get("dry_run").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let model = request_json.get("model").and_then(|v| v.as_str()).unwrap_or("ui-tars").to_string();
+                    let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+
+                    let agent = modelfusion_core::browser::computer_use::ComputerUseAgent::new(endpoint, model, max_steps, dry_run);
+                    match agent.run(goal).await {
+                        Ok(res) => {
+                            serde_json::json!({
+                                "status": "ok",
+                                "result": res
+                            }).to_string()
+                        }
+                        Err(e) => {
+                            serde_json::json!({
+                                "status": "error",
+                                "error": e
+                            }).to_string()
+                        }
+                    }
+                }
                 "/report-bandit-feedback" => {
                     let context = request_json["context"].as_u64().unwrap_or(0) as usize;
                     let arm = request_json["arm"].as_u64().unwrap_or(0) as usize;
@@ -17464,6 +17556,70 @@ public class Pr {
         assert!(res.status().is_success());
         let json: serde_json::Value = res.json().await.unwrap();
         assert_eq!(json["Browser"], "Chrome/120.0");
+    }
+
+    use super::{preprocess_cli_args, Args};
+    use clap::Parser;
+
+    #[test]
+    fn test_preprocess_computer_use() {
+        let raw = vec!["cli.exe".to_string(), "@agent".to_string(), "computer-use".to_string(), "open".to_string(), "notepad".to_string()];
+        let processed = preprocess_cli_args(raw);
+        assert_eq!(processed[0], "cli.exe");
+        assert_eq!(processed[1], "--computer-use");
+        assert_eq!(processed[2], "open notepad");
+
+        let raw2 = vec!["cli.exe".to_string(), "computer-use".to_string(), "click".to_string(), "start".to_string(), "menu".to_string()];
+        let processed2 = preprocess_cli_args(raw2);
+        assert_eq!(processed2[0], "cli.exe");
+        assert_eq!(processed2[1], "--computer-use");
+        assert_eq!(processed2[2], "click start menu");
+    }
+
+    #[test]
+    fn test_preprocess_companion_flags() {
+        // Humanize
+        let raw_h = vec!["cli.exe".to_string(), "@agent".to_string(), "humanize".to_string(), "draft".to_string(), "passage".to_string()];
+        let proc_h = preprocess_cli_args(raw_h);
+        assert_eq!(proc_h[1], "--humanize");
+        assert_eq!(proc_h[2], "draft passage");
+
+        // Watermark
+        let raw_w = vec!["cli.exe".to_string(), "@agent".to_string(), "watermark".to_string(), "image.png".to_string()];
+        let proc_w = preprocess_cli_args(raw_w);
+        assert_eq!(proc_w[1], "--watermark");
+        assert_eq!(proc_w[2], "image.png");
+
+        // Translate
+        let raw_t = vec!["cli.exe".to_string(), "@agent".to_string(), "translate".to_string(), "to".to_string(), "Spanish:".to_string(), "Hello".to_string(), "world".to_string()];
+        let proc_t = preprocess_cli_args(raw_t);
+        assert_eq!(proc_t[1], "--translate");
+        assert!(proc_t.contains(&"--to".to_string()));
+        assert!(proc_t.contains(&"Spanish".to_string()));
+    }
+
+    #[test]
+    fn test_clap_args_computer_use_and_companions() {
+        // Computer Use with goal
+        let args = Args::try_parse_from(["cli.exe", "--computer-use", "Launch browser"]).unwrap();
+        assert_eq!(args.computer_use.as_deref(), Some("Launch browser"));
+
+        // Computer Use without goal (flag only)
+        let args_flag = Args::try_parse_from(["cli.exe", "--computer-use"]).unwrap();
+        assert_eq!(args_flag.computer_use.as_deref(), Some(""));
+
+        // Humanize
+        let args_h = Args::try_parse_from(["cli.exe", "--humanize", "test text"]).unwrap();
+        assert_eq!(args_h.humanize.as_deref(), Some("test text"));
+
+        // Watermark
+        let args_w = Args::try_parse_from(["cli.exe", "--watermark", "check.png"]).unwrap();
+        assert_eq!(args_w.watermark.as_deref(), Some("check.png"));
+
+        // Translate
+        let args_t = Args::try_parse_from(["cli.exe", "--translate", "hello", "--to", "German"]).unwrap();
+        assert_eq!(args_t.translate.as_deref(), Some("hello"));
+        assert_eq!(args_t.to, "German");
     }
 }
 

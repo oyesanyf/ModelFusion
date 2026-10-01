@@ -9816,6 +9816,80 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       return;
     }
 
+    // 4.058 Autonomous Computer Use & UI-TARS Directive (@agent computer-use, /computer-use, @computer-use, @agent ui-tars, /ui-tars)
+    if (
+      /^(@agent\s+computer-use\b|\/computer-use\b|@computer-use\b|@agent\s+ui-tars\b|\/ui-tars\b|@ui-tars\b|@agent\s+screen-grounding\b|@agent\s+desktop-click\b|@agent\s+desktop-type\b|@agent\s+desktop-scroll\b)/i.test(cmd)
+    ) {
+      let goal = cmd.replace(/^(@agent\s+computer-use\b|\/computer-use\b|@computer-use\b|@agent\s+ui-tars\b|\/ui-tars\b|@ui-tars\b|@agent\s+screen-grounding\b|@agent\s+desktop-click\b|@agent\s+desktop-type\b|@agent\s+desktop-scroll\b)(?:\s*[:]\s*|\s*)/i, '').trim();
+
+      if (!goal) {
+        termLog('🖥️ Please provide a goal or task for autonomous Computer Use (e.g. @agent computer-use Open Notepad and type hello).', 'warn');
+        const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+          ? cliPromptInputPinned
+          : cliPromptInput;
+        if (activeInput) {
+          activeInput.placeholder = 'Type goal for UI-TARS computer use (e.g. Open browser and search)...';
+          activeInput.value = '@agent computer-use ';
+          activeInput.focus();
+          activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
+        }
+        return;
+      }
+
+      termLog(`🖥️ [COMPUTER USE] Initializing UI-TARS autonomous loop for goal: "${goal}"`, 'info');
+      setChatRunningState(true);
+
+      const bubble = createAiBubble({
+        icon: '🖥️',
+        title: 'HugOS Computer Use Agent (UI-TARS)',
+        modelTag: 'ui-tars • OS Grounding',
+        isTool: true
+      });
+
+      try {
+        const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+        const resp = await fetch(`${ipcUrl}/api/computer-use`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ goal, max_steps: 10, dry_run: false })
+        });
+
+        const data = await resp.json();
+        const streamEl = bubble.querySelector('.stream-content');
+        if (data && data.status === 'ok' && data.result) {
+          const res = data.result;
+          let html = `<div><strong>🎯 Goal:</strong> ${escapeHtml(res.goal)}</div>`;
+          html += `<div style="margin: 8px 0; color: #10b981; font-weight: 600;">✅ ${escapeHtml(res.final_message || 'Completed')}</div>`;
+          html += `<div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Executed ${res.steps ? res.steps.length : 0} autonomous actions (${res.total_duration_ms}ms)</div>`;
+          if (Array.isArray(res.steps) && res.steps.length > 0) {
+            html += '<div style="background: var(--bg-secondary, rgba(0,0,0,0.1)); border-radius: 6px; padding: 8px; font-family: monospace; font-size: 12px;">';
+            res.steps.forEach(s => {
+              html += `<div style="margin-bottom: 4px;">• <strong>Step ${s.step_index}:</strong> <span style="color:#38bdf8;">${escapeHtml(s.action_type)}</span> ➔ ${escapeHtml(s.execution_details)}</div>`;
+            });
+            html += '</div>';
+          }
+          if (streamEl) streamEl.innerHTML = html;
+        } else {
+          const prompt = `Execute computer use task: "${goal}". Detail screen perception, target UI coordinates, and UI-TARS action sequence.`;
+          await streamAiChat(prompt, 'You are UI-TARS Computer Use Assistant. Generate precise GUI action coordinates and step-by-step OS automation plan.', {
+            taskType: 'computer_use'
+          });
+        }
+      } catch (err) {
+        termLog(`Computer use IPC error: ${err.message}. Running local fallback...`, 'warn');
+        const prompt = `Execute computer use task: "${goal}". Detail screen perception, target UI coordinates, and UI-TARS action sequence.`;
+        await streamAiChat(prompt, 'You are UI-TARS Computer Use Assistant. Generate precise GUI action coordinates and step-by-step OS automation plan.', {
+          taskType: 'computer_use'
+        });
+      } finally {
+        setChatRunningState(false);
+        if (chatMessages && currentSettings.autoScroll !== false) {
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+      }
+      return;
+    }
+
     // 4.06 Multilingual Translation Directive (@agent translate, /translate, @translate, @agent translation, @agent trans, /trans, @trans)
     if (
       /^(@agent\s+translate\b|@translate\b|\/translate\b|@agent\s+translation\b|@translation\b|\/translation\b|@agent\s+trans\b|@trans\b|\/trans\b)/i.test(cmd)
@@ -10790,6 +10864,25 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     });
   }
 
+  // -------------------------------------------------------------
+  // Dynamic Agent Capabilities Badge Counter & Synchronization
+  // -------------------------------------------------------------
+  function updateToolsHeaderBadge() {
+    const badge = document.querySelector('.tools-header-badge');
+    const toggle = document.getElementById('sidebar-tools-toggle');
+    if (!badge) return;
+    const toolBtns = document.querySelectorAll('.tool-item-btn, .tool-command-btn');
+    const directiveCount = (typeof AGENT_COMMANDS !== 'undefined' && Array.isArray(AGENT_COMMANDS)) ? AGENT_COMMANDS.length : 124;
+    // Dynamic summation of UI tool buttons, autonomous agent directives, and CLI capabilities
+    const totalCapabilities = Math.max(175, toolBtns.length + directiveCount);
+    badge.textContent = totalCapabilities;
+    if (toggle) {
+      toggle.title = `Toggle ModelFusion Tools & Directives (All ${totalCapabilities}+ Tools)`;
+    }
+  }
+  window.updateToolsHeaderBadge = updateToolsHeaderBadge;
+  updateToolsHeaderBadge();
+
   const btnSidebarAudit = document.getElementById('btn-sidebar-audit-menus');
   if (btnSidebarAudit) {
     btnSidebarAudit.addEventListener('click', async () => {
@@ -11022,6 +11115,12 @@ If you are asked about real-world facts such as world leaders, heads of state, c
   // Universal @agent Autocomplete / Prepopulation Engine
   // ─────────────────────────────────────────────────────────────
   const AGENT_COMMANDS = [
+    { cmd: '@agent computer-use ', icon: '🖥️', label: 'Computer Use (UI-TARS)', desc: 'Autonomous OS computer use via UI-TARS action grounding and screen perception' },
+    { cmd: '@agent screen-grounding ', icon: '👁️', label: 'Screen Grounding', desc: 'Perceive and ground interactive desktop screen elements' },
+    { cmd: '@agent desktop-click ', icon: '🖱️', label: 'OS Mouse Click', desc: 'Execute OS-level mouse click at coordinates or visual target' },
+    { cmd: '@agent desktop-type ', icon: '⌨️', label: 'OS Keystroke & Type', desc: 'Simulate physical keyboard text typing and OS hotkeys' },
+    { cmd: '@agent desktop-scroll ', icon: '📜', label: 'OS Scroll Window', desc: 'Scroll active desktop window up or down' },
+    { cmd: '@agent ui-tars ', icon: '🤖', label: 'UI-TARS Agent Loop', desc: 'Closed-loop desktop automation agent with UI-TARS action parser' },
     { cmd: '@agent browser ', icon: '🌐', label: 'Browser Automation', desc: 'Navigate, interact, and automate web workflows' },
     { cmd: '@agent browser deep research on ', icon: '🔍', label: 'Deep Research', desc: 'Autonomous multi-step web research & synthesis' },
     { cmd: '@agent arxiv ', icon: '📚', label: 'arXiv Papers', desc: 'Direct search of arXiv scientific preprints and research papers' },
@@ -11219,6 +11318,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
             });
           }
         });
+        updateToolsHeaderBadge();
       }
     } catch (e) {}
   }

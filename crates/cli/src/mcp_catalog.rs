@@ -1593,5 +1593,14 @@ pub fn get_master_mcp_tools() -> Vec<serde_json::Value> {
             "description": "Rewrite passage into natural, fluid human prose using anti-AI stylometry",
             "inputSchema": {"type": "object", "properties": {"text": {"type": "string", "description": "AI-generated text or file path to humanize"}}, "required": ["text"]}
         }),
+        serde_json::json!({
+            "name": "computer_use",
+            "cmd": "@agent computer-use ",
+            "icon": "🖥️",
+            "category": "agent",
+            "label": "OS Computer Use (UI-TARS)",
+            "description": "Autonomous OS computer use via UI-TARS multimodal action grounding and screen perception",
+            "inputSchema": {"type": "object", "properties": {"goal": {"type": "string", "description": "High-level desktop automation task or goal to execute"}}, "required": ["goal"]}
+        }),
     ]
 }
