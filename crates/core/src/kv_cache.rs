@@ -45,6 +45,13 @@ impl KvCache {
     /// The input memory layout must arrange tokens contiguously:
     /// `[token_0_head_0, token_0_head_1, ..., token_1_head_0, ...]`.
     pub fn append(&mut self, new_keys: &[f32], new_values: &[f32], token_count: usize) {
+        if token_count == 0 {
+            return;
+        }
+
+        let elements_per_token = self.num_heads * self.head_dim;
+        let total_copy_len = token_count * elements_per_token;
+
         assert!(
             self.current_len + token_count <= self.max_seq_len,
             "Sequence length exceeded preallocated cache capacity (current: {}, appending: {}, max: {})",
@@ -52,10 +59,20 @@ impl KvCache {
             token_count,
             self.max_seq_len
         );
+        assert!(
+            new_keys.len() >= total_copy_len,
+            "new_keys buffer too short: expected at least {}, got {}",
+            total_copy_len,
+            new_keys.len()
+        );
+        assert!(
+            new_values.len() >= total_copy_len,
+            "new_values buffer too short: expected at least {}, got {}",
+            total_copy_len,
+            new_values.len()
+        );
 
-        let elements_per_token = self.num_heads * self.head_dim;
         let start_index = self.current_len * elements_per_token;
-        let total_copy_len = token_count * elements_per_token;
 
         self.keys[start_index..start_index + total_copy_len]
             .copy_from_slice(&new_keys[..total_copy_len]);
@@ -65,14 +82,33 @@ impl KvCache {
         self.current_len += token_count;
     }
 
-    /// Safe append that returns Result instead of panicking on overflow.
+    /// Safe append that returns Result instead of panicking on overflow or buffer length mismatches.
     pub fn try_append(&mut self, new_keys: &[f32], new_values: &[f32], token_count: usize) -> Result<()> {
+        if token_count == 0 {
+            return Ok(());
+        }
         if self.current_len + token_count > self.max_seq_len {
             bail!(
                 "Sequence length exceeded preallocated capacity: current={}, appending={}, max={}",
                 self.current_len,
                 token_count,
                 self.max_seq_len
+            );
+        }
+        let elements_per_token = self.num_heads * self.head_dim;
+        let total_copy_len = token_count * elements_per_token;
+        if new_keys.len() < total_copy_len {
+            bail!(
+                "new_keys buffer too short: expected at least {}, got {}",
+                total_copy_len,
+                new_keys.len()
+            );
+        }
+        if new_values.len() < total_copy_len {
+            bail!(
+                "new_values buffer too short: expected at least {}, got {}",
+                total_copy_len,
+                new_values.len()
             );
         }
         self.append(new_keys, new_values, token_count);
@@ -131,6 +167,19 @@ impl KvCache {
         let num_heads = self.num_heads;
         let scale = 1.0 / (head_dim as f32).sqrt();
         let elements_per_token = num_heads * head_dim;
+
+        assert!(
+            query.len() >= elements_per_token,
+            "Query buffer too short: expected at least {}, got {}",
+            elements_per_token,
+            query.len()
+        );
+        assert!(
+            output.len() >= elements_per_token,
+            "Output buffer too short: expected at least {}, got {}",
+            elements_per_token,
+            output.len()
+        );
 
         for h in 0..num_heads {
             let q_offset = h * head_dim;
@@ -198,6 +247,19 @@ impl KvCache {
         let num_heads = self.num_heads;
         let scale = 1.0 / (head_dim as f32).sqrt();
         let elements_per_token = num_heads * head_dim;
+
+        assert!(
+            query.len() >= elements_per_token,
+            "Query buffer too short: expected at least {}, got {}",
+            elements_per_token,
+            query.len()
+        );
+        assert!(
+            output.len() >= elements_per_token,
+            "Output buffer too short: expected at least {}, got {}",
+            elements_per_token,
+            output.len()
+        );
 
         for h in 0..num_heads {
             let q_offset = h * head_dim;
@@ -285,7 +347,25 @@ impl RingKvCache {
 
     /// Append tokens with automatic sliding window compaction when full.
     pub fn append(&mut self, new_keys: &[f32], new_values: &[f32], token_count: usize) {
+        if token_count == 0 {
+            return;
+        }
+
         let elements_per_token = self.num_heads * self.head_dim;
+        let total_copy_len = token_count * elements_per_token;
+        assert!(
+            new_keys.len() >= total_copy_len,
+            "new_keys buffer too short: expected at least {}, got {}",
+            total_copy_len,
+            new_keys.len()
+        );
+        assert!(
+            new_values.len() >= total_copy_len,
+            "new_values buffer too short: expected at least {}, got {}",
+            total_copy_len,
+            new_values.len()
+        );
+
         let mut appended = 0;
 
         while appended < token_count {
@@ -296,6 +376,11 @@ impl RingKvCache {
             }
 
             let chunk = (token_count - appended).min(self.max_seq_len - self.current_len);
+            if chunk == 0 {
+                // Prevent infinite loop if capacity cannot be freed
+                break;
+            }
+
             let k_sub = &new_keys[appended * elements_per_token..(appended + chunk) * elements_per_token];
             let v_sub = &new_values[appended * elements_per_token..(appended + chunk) * elements_per_token];
 
@@ -307,19 +392,46 @@ impl RingKvCache {
         self.total_tokens_ingested += token_count;
     }
 
+    /// Safe append for RingKvCache that validates inputs.
+    pub fn try_append(&mut self, new_keys: &[f32], new_values: &[f32], token_count: usize) -> Result<()> {
+        if token_count == 0 {
+            return Ok(());
+        }
+        let elements_per_token = self.num_heads * self.head_dim;
+        let total_copy_len = token_count * elements_per_token;
+        if new_keys.len() < total_copy_len {
+            bail!(
+                "new_keys buffer too short: expected at least {}, got {}",
+                total_copy_len,
+                new_keys.len()
+            );
+        }
+        if new_values.len() < total_copy_len {
+            bail!(
+                "new_values buffer too short: expected at least {}, got {}",
+                total_copy_len,
+                new_values.len()
+            );
+        }
+        self.append(new_keys, new_values, token_count);
+        Ok(())
+    }
+
     /// Slide the non-prefix window left by 1 token in-place to free a slot.
     fn evict_one_token(&mut self) {
-        if self.current_len <= self.prefix_len + 1 {
+        if self.current_len <= self.prefix_len {
             return;
         }
 
         let elements_per_token = self.num_heads * self.head_dim;
         let shift_start = (self.prefix_len + 1) * elements_per_token;
         let shift_dest = self.prefix_len * elements_per_token;
-        let shift_len = (self.current_len - (self.prefix_len + 1)) * elements_per_token;
 
-        self.inner_cache.keys.copy_within(shift_start..shift_start + shift_len, shift_dest);
-        self.inner_cache.values.copy_within(shift_start..shift_start + shift_len, shift_dest);
+        if self.current_len > self.prefix_len + 1 {
+            let shift_len = (self.current_len - (self.prefix_len + 1)) * elements_per_token;
+            self.inner_cache.keys.copy_within(shift_start..shift_start + shift_len, shift_dest);
+            self.inner_cache.values.copy_within(shift_start..shift_start + shift_len, shift_dest);
+        }
 
         self.inner_cache.current_len -= 1;
         self.current_len = self.inner_cache.current_len;
@@ -328,6 +440,11 @@ impl RingKvCache {
     /// Run causal attention step on active window.
     pub fn decode_attention_step(&self, query: &[f32], output: &mut [f32]) {
         self.inner_cache.decode_attention_step(query, output);
+    }
+
+    /// Run causal attention step on active window with zero heap allocations.
+    pub fn decode_attention_step_zero_alloc(&self, query: &[f32], output: &mut [f32], workspace: &mut [f32]) {
+        self.inner_cache.decode_attention_step_zero_alloc(query, output, workspace);
     }
 
     /// Current tokens stored in the window.
@@ -412,9 +529,20 @@ impl KvBlockPool {
         self.free_blocks.len()
     }
 
+    /// Number of blocks currently in use.
+    pub fn allocated_block_count(&self) -> usize {
+        self.blocks.len().saturating_sub(self.free_blocks.len())
+    }
+
     /// Total blocks in pool.
     pub fn total_blocks(&self) -> usize {
         self.blocks.len()
+    }
+
+    /// Total memory used by all pool blocks in bytes.
+    pub fn memory_bytes(&self) -> usize {
+        let elements_per_block = self.block_size * self.num_heads * self.head_dim;
+        self.blocks.len() * elements_per_block * 2 * std::mem::size_of::<f32>()
     }
 }
 
@@ -447,7 +575,26 @@ impl PagedKvCache {
         new_values: &[f32],
         token_count: usize,
     ) -> Result<()> {
+        if token_count == 0 {
+            return Ok(());
+        }
+
         let elements_per_token = self.num_heads * self.head_dim;
+        let total_copy_len = token_count * elements_per_token;
+        if new_keys.len() < total_copy_len {
+            bail!(
+                "new_keys buffer too short: expected at least {}, got {}",
+                total_copy_len,
+                new_keys.len()
+            );
+        }
+        if new_values.len() < total_copy_len {
+            bail!(
+                "new_values buffer too short: expected at least {}, got {}",
+                total_copy_len,
+                new_values.len()
+            );
+        }
 
         for i in 0..token_count {
             let logical_pos = self.current_len;
@@ -490,8 +637,24 @@ impl PagedKvCache {
 
         let head_dim = self.head_dim;
         let num_heads = self.num_heads;
-        let scale = 1.0 / (head_dim as f32).sqrt();
         let elements_per_token = num_heads * head_dim;
+
+        if query.len() < elements_per_token {
+            bail!(
+                "Query buffer too short: expected at least {}, got {}",
+                elements_per_token,
+                query.len()
+            );
+        }
+        if output.len() < elements_per_token {
+            bail!(
+                "Output buffer too short: expected at least {}, got {}",
+                elements_per_token,
+                output.len()
+            );
+        }
+
+        let scale = 1.0 / (head_dim as f32).sqrt();
 
         for h in 0..num_heads {
             let q_offset = h * head_dim;
@@ -538,6 +701,108 @@ impl PagedKvCache {
 
             for t in 0..self.current_len {
                 let weight = attention_scores[t];
+                let block_idx = t / self.block_size;
+                let block_offset = t % self.block_size;
+                let physical_id = self.block_table[block_idx];
+                let block = &pool.blocks[physical_id];
+
+                let v_offset = (block_offset * elements_per_token) + (h * head_dim);
+                let v_slice = &block.values[v_offset..v_offset + head_dim];
+
+                for d in 0..head_dim {
+                    output[out_offset + d] += weight * v_slice[d];
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Single-token causal attention decode step over paged blocks with zero dynamic heap allocations.
+    pub fn decode_attention_step_zero_alloc(
+        &self,
+        pool: &KvBlockPool,
+        query: &[f32],
+        output: &mut [f32],
+        workspace: &mut [f32],
+    ) -> Result<()> {
+        if self.current_len == 0 {
+            bail!("Cannot attend over empty paged cache");
+        }
+
+        let head_dim = self.head_dim;
+        let num_heads = self.num_heads;
+        let elements_per_token = num_heads * head_dim;
+
+        if query.len() < elements_per_token {
+            bail!(
+                "Query buffer too short: expected at least {}, got {}",
+                elements_per_token,
+                query.len()
+            );
+        }
+        if output.len() < elements_per_token {
+            bail!(
+                "Output buffer too short: expected at least {}, got {}",
+                elements_per_token,
+                output.len()
+            );
+        }
+        if workspace.len() < self.current_len {
+            bail!(
+                "Workspace buffer too short: expected at least {}, got {}",
+                self.current_len,
+                workspace.len()
+            );
+        }
+
+        let scale = 1.0 / (head_dim as f32).sqrt();
+
+        for h in 0..num_heads {
+            let q_offset = h * head_dim;
+            let q_slice = &query[q_offset..q_offset + head_dim];
+            let scores = &mut workspace[..self.current_len];
+
+            let mut max_score = f32::NEG_INFINITY;
+            for t in 0..self.current_len {
+                let block_idx = t / self.block_size;
+                let block_offset = t % self.block_size;
+                let physical_id = self.block_table[block_idx];
+                let block = &pool.blocks[physical_id];
+
+                let k_offset = (block_offset * elements_per_token) + (h * head_dim);
+                let k_slice = &block.keys[k_offset..k_offset + head_dim];
+
+                let mut dot_product = 0.0;
+                for d in 0..head_dim {
+                    dot_product += q_slice[d] * k_slice[d];
+                }
+
+                let score = dot_product * scale;
+                if score > max_score {
+                    max_score = score;
+                }
+                scores[t] = score;
+            }
+
+            let mut sum_exp = 0.0;
+            for score in scores.iter_mut() {
+                *score = (*score - max_score).exp();
+                sum_exp += *score;
+            }
+
+            let inv_sum = 1.0 / sum_exp;
+            for score in scores.iter_mut() {
+                *score *= inv_sum;
+            }
+
+            let out_offset = h * head_dim;
+            for d in 0..head_dim {
+                output[out_offset + d] = 0.0;
+            }
+
+            for t in 0..self.current_len {
+                let weight = scores[t];
                 let block_idx = t / self.block_size;
                 let block_offset = t % self.block_size;
                 let physical_id = self.block_table[block_idx];
@@ -606,37 +871,173 @@ impl MultiTabKvManager {
         num_heads: usize,
         head_dim: usize,
     ) -> Result<&mut TabContext> {
-        let needed_bytes = max_seq_len * num_heads * head_dim * 2 * std::mem::size_of::<f32>();
+        // If the tab already exists, touch it and return without evicting anything
+        if self.tabs.contains_key(tab_id) {
+            self.touch_tab(tab_id);
+            return Ok(self.tabs.get_mut(tab_id).unwrap());
+        }
 
-        // Evict LRU tabs if over budget
+        let needed_bytes = max_seq_len * num_heads * head_dim * 2 * std::mem::size_of::<f32>();
+        if needed_bytes > self.max_memory_bytes {
+            bail!(
+                "Requested tab memory ({} bytes) exceeds manager capacity ({} bytes)",
+                needed_bytes,
+                self.max_memory_bytes
+            );
+        }
+
+        // Evict LRU tabs until we have sufficient budget
         while self.total_memory_bytes() + needed_bytes > self.max_memory_bytes && !self.lru_order.is_empty() {
             if let Some(oldest_tab_id) = self.lru_order.first().cloned() {
-                if oldest_tab_id == tab_id {
-                    break;
-                }
                 self.close_tab(&oldest_tab_id);
             }
         }
 
-        if !self.tabs.contains_key(tab_id) {
-            let cache = KvCache::new(max_seq_len, num_heads, head_dim);
-            let ctx = TabContext {
-                tab_id: tab_id.to_string(),
-                title: title.to_string(),
-                url: url.to_string(),
-                created_at: Instant::now(),
-                last_accessed: Instant::now(),
-                cache,
-                ring_cache: None,
-            };
-            self.tabs.insert(tab_id.to_string(), ctx);
-            self.lru_order.push(tab_id.to_string());
-        } else {
-            // Update LRU position
-            self.touch_tab(tab_id);
-        }
+        let cache = KvCache::new(max_seq_len, num_heads, head_dim);
+        let ctx = TabContext {
+            tab_id: tab_id.to_string(),
+            title: title.to_string(),
+            url: url.to_string(),
+            created_at: Instant::now(),
+            last_accessed: Instant::now(),
+            cache,
+            ring_cache: None,
+        };
+        self.tabs.insert(tab_id.to_string(), ctx);
+        self.lru_order.push(tab_id.to_string());
 
         Ok(self.tabs.get_mut(tab_id).unwrap())
+    }
+
+    /// Create or retrieve an existing tab with bounded ring buffer sliding window.
+    pub fn get_or_create_ring_tab(
+        &mut self,
+        tab_id: &str,
+        title: &str,
+        url: &str,
+        max_seq_len: usize,
+        num_heads: usize,
+        head_dim: usize,
+        prefix_len: usize,
+    ) -> Result<&mut TabContext> {
+        if self.tabs.contains_key(tab_id) {
+            self.touch_tab(tab_id);
+            return Ok(self.tabs.get_mut(tab_id).unwrap());
+        }
+
+        let needed_bytes = max_seq_len * num_heads * head_dim * 2 * std::mem::size_of::<f32>();
+        if needed_bytes > self.max_memory_bytes {
+            bail!(
+                "Requested tab memory ({} bytes) exceeds manager capacity ({} bytes)",
+                needed_bytes,
+                self.max_memory_bytes
+            );
+        }
+
+        while self.total_memory_bytes() + needed_bytes > self.max_memory_bytes && !self.lru_order.is_empty() {
+            if let Some(oldest_tab_id) = self.lru_order.first().cloned() {
+                self.close_tab(&oldest_tab_id);
+            }
+        }
+
+        let cache = KvCache::new(max_seq_len, num_heads, head_dim);
+        let ring_cache = Some(RingKvCache::new(max_seq_len, num_heads, head_dim, prefix_len));
+        let ctx = TabContext {
+            tab_id: tab_id.to_string(),
+            title: title.to_string(),
+            url: url.to_string(),
+            created_at: Instant::now(),
+            last_accessed: Instant::now(),
+            cache,
+            ring_cache,
+        };
+        self.tabs.insert(tab_id.to_string(), ctx);
+        self.lru_order.push(tab_id.to_string());
+
+        Ok(self.tabs.get_mut(tab_id).unwrap())
+    }
+
+    /// Retrieve tab context by ID.
+    pub fn get_tab(&self, tab_id: &str) -> Option<&TabContext> {
+        self.tabs.get(tab_id)
+    }
+
+    /// Retrieve mutable tab context by ID and update LRU position.
+    pub fn get_tab_mut(&mut self, tab_id: &str) -> Option<&mut TabContext> {
+        if self.tabs.contains_key(tab_id) {
+            self.touch_tab(tab_id);
+            self.tabs.get_mut(tab_id)
+        } else {
+            None
+        }
+    }
+
+    /// Append tokens to a specific tab cache.
+    pub fn append_to_tab(
+        &mut self,
+        tab_id: &str,
+        keys: &[f32],
+        values: &[f32],
+        token_count: usize,
+    ) -> Result<()> {
+        let tab = self.tabs.get_mut(tab_id).ok_or_else(|| anyhow!("TabNotFound: tab '{}' not found", tab_id))?;
+        if let Some(ref mut ring) = tab.ring_cache {
+            ring.append(keys, values, token_count);
+        } else {
+            tab.cache.append(keys, values, token_count);
+        }
+        tab.last_accessed = Instant::now();
+        self.touch_tab(tab_id);
+        Ok(())
+    }
+
+    /// Execute single token causal attention decode step for a tab.
+    pub fn step_tab_decode(
+        &mut self,
+        tab_id: &str,
+        query: &[f32],
+        output: &mut [f32],
+    ) -> Result<()> {
+        let tab = self.tabs.get_mut(tab_id).ok_or_else(|| anyhow!("TabNotFound: tab '{}' not found", tab_id))?;
+        if let Some(ref ring) = tab.ring_cache {
+            ring.decode_attention_step(query, output);
+        } else {
+            tab.cache.decode_attention_step(query, output);
+        }
+        tab.last_accessed = Instant::now();
+        self.touch_tab(tab_id);
+        Ok(())
+    }
+
+    /// Execute zero-allocation decode step for a tab with user-supplied workspace.
+    pub fn step_tab_decode_zero_alloc(
+        &mut self,
+        tab_id: &str,
+        query: &[f32],
+        output: &mut [f32],
+        workspace: &mut [f32],
+    ) -> Result<()> {
+        let tab = self.tabs.get_mut(tab_id).ok_or_else(|| anyhow!("TabNotFound: tab '{}' not found", tab_id))?;
+        if let Some(ref ring) = tab.ring_cache {
+            ring.decode_attention_step_zero_alloc(query, output, workspace);
+        } else {
+            tab.cache.decode_attention_step_zero_alloc(query, output, workspace);
+        }
+        tab.last_accessed = Instant::now();
+        self.touch_tab(tab_id);
+        Ok(())
+    }
+
+    /// Reset tab cache sequence cursor.
+    pub fn clear_tab(&mut self, tab_id: &str) -> Result<()> {
+        let tab = self.tabs.get_mut(tab_id).ok_or_else(|| anyhow!("TabNotFound: tab '{}' not found", tab_id))?;
+        if let Some(ref mut ring) = tab.ring_cache {
+            ring.clear();
+        }
+        tab.cache.clear();
+        tab.last_accessed = Instant::now();
+        self.touch_tab(tab_id);
+        Ok(())
     }
 
     /// Mark tab as recently accessed.
@@ -720,6 +1121,11 @@ struct AttentionUniforms {
 
 @compute @workgroup_size(64, 1, 1)
 fn main(@builtin(workgroup_id) workgroup_id: vec3<u32>, @builtin(local_invocation_id) local_id: vec3<u32>) {
+    // Guard: only local thread 0 executes the head reduction to prevent memory write race
+    if (local_id.x != 0u) {
+        return;
+    }
+
     let head_idx = workgroup_id.x;
     if (head_idx >= params.num_heads) {
         return;
@@ -834,8 +1240,15 @@ impl WgpuAttentionPipeline {
     ) {
         let head_dim = self.head_dim;
         let num_heads = self.num_heads;
-        let scale = 1.0 / (head_dim as f32).sqrt();
         let elements_per_token = num_heads * head_dim;
+
+        if current_len == 0 {
+            let out_len = elements_per_token.min(output.len());
+            output[..out_len].fill(0.0);
+            return;
+        }
+
+        let scale = 1.0 / (head_dim as f32).sqrt();
 
         let mut score_buf = vec![0.0f32; num_heads * current_len];
 
@@ -1207,5 +1620,149 @@ mod tests {
         assert!(report.decode_throughput_tok_per_sec > 0.0);
         assert!(report.zero_alloc_verified);
         assert!(report.numerical_stability_verified);
+    }
+
+    #[test]
+    fn test_ring_kv_cache_edge_case_minimal_sliding_window() {
+        // Critical edge case: max_seq_len == prefix_len + 1 (dynamic window size 1)
+        // Previously caused an infinite loop in evict_one_token due to `current_len <= prefix_len + 1`
+        let mut ring = RingKvCache::new(3, 1, 1, 2);
+        let prefix_k = vec![1.0f32, 2.0];
+        let prefix_v = vec![1.0f32, 2.0];
+        ring.append(&prefix_k, &prefix_v, 2);
+        assert_eq!(ring.current_len(), 2);
+
+        // Fill to capacity (3 tokens)
+        ring.append(&[3.0f32], &[3.0f32], 1);
+        assert_eq!(ring.current_len(), 3);
+
+        // Appending further tokens must evict the non-prefix slot without hanging
+        for i in 4..=8 {
+            ring.append(&[i as f32], &[i as f32], 1);
+            assert_eq!(ring.current_len(), 3);
+        }
+        assert_eq!(ring.total_tokens_ingested(), 8);
+
+        let query = [1.0f32];
+        let mut output = [0.0f32];
+        ring.decode_attention_step(&query, &mut output);
+        assert!(!output[0].is_nan());
+    }
+
+    #[test]
+    fn test_ring_kv_cache_zero_alloc_parity() {
+        let mut ring = RingKvCache::new(16, 2, 4, 2);
+        let elements = 8;
+        let k = vec![0.2f32; 8 * elements];
+        let v = vec![0.4f32; 8 * elements];
+        ring.append(&k, &v, 8);
+
+        let query = vec![0.1f32; elements];
+        let mut out1 = vec![0.0f32; elements];
+        let mut out2 = vec![0.0f32; elements];
+        let mut workspace = vec![0.0f32; 16];
+
+        ring.decode_attention_step(&query, &mut out1);
+        ring.decode_attention_step_zero_alloc(&query, &mut out2, &mut workspace);
+
+        for i in 0..elements {
+            assert!((out1[i] - out2[i]).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn test_paged_attention_zero_alloc_parity() {
+        let block_size = 4;
+        let num_heads = 2;
+        let head_dim = 4;
+        let mut pool = KvBlockPool::new(5, block_size, num_heads, head_dim);
+        let mut paged = PagedKvCache::new(num_heads, head_dim, block_size);
+
+        let elements = 8;
+        let k = vec![0.15f32; 6 * elements];
+        let v = vec![0.35f32; 6 * elements];
+        paged.append(&mut pool, &k, &v, 6).unwrap();
+
+        let query = vec![0.1f32; elements];
+        let mut out1 = vec![0.0f32; elements];
+        let mut out2 = vec![0.0f32; elements];
+        let mut workspace = vec![0.0f32; 16];
+
+        paged.decode_attention_step(&pool, &query, &mut out1).unwrap();
+        paged.decode_attention_step_zero_alloc(&pool, &query, &mut out2, &mut workspace).unwrap();
+
+        for i in 0..elements {
+            assert!((out1[i] - out2[i]).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn test_multi_tab_kv_manager_no_false_eviction_on_existing_tab() {
+        let max_seq_len = 16;
+        let num_heads = 2;
+        let head_dim = 4;
+        let tab_bytes = max_seq_len * num_heads * head_dim * 2 * std::mem::size_of::<f32>();
+        let max_budget = tab_bytes * 2 + 64; // capacity for exactly 2 tabs
+
+        let mut mgr = MultiTabKvManager::new(max_budget);
+        mgr.get_or_create_tab("tab-1", "Tab One", "https://tab1.com", max_seq_len, num_heads, head_dim).unwrap();
+        mgr.get_or_create_tab("tab-2", "Tab Two", "https://tab2.com", max_seq_len, num_heads, head_dim).unwrap();
+        assert_eq!(mgr.tab_count(), 2);
+
+        // Re-accessing existing tab-2 must NOT falsely evict tab-1
+        mgr.get_or_create_tab("tab-2", "Tab Two", "https://tab2.com", max_seq_len, num_heads, head_dim).unwrap();
+        assert_eq!(mgr.tab_count(), 2);
+        assert!(mgr.get_tab("tab-1").is_some());
+        assert!(mgr.get_tab("tab-2").is_some());
+    }
+
+    #[test]
+    fn test_multi_tab_kv_manager_tab_lifecycle_and_decode() {
+        let max_seq_len = 16;
+        let num_heads = 2;
+        let head_dim = 4;
+        let mut mgr = MultiTabKvManager::new(1024 * 1024);
+
+        mgr.get_or_create_tab("browser-tab-a", "Tab A", "https://site-a.com", max_seq_len, num_heads, head_dim).unwrap();
+
+        let elements = 8;
+        let keys = vec![0.1f32; 2 * elements];
+        let values = vec![0.2f32; 2 * elements];
+        mgr.append_to_tab("browser-tab-a", &keys, &values, 2).unwrap();
+
+        let query = vec![0.05f32; elements];
+        let mut output = vec![0.0f32; elements];
+        mgr.step_tab_decode("browser-tab-a", &query, &mut output).unwrap();
+        assert!(!output[0].is_nan());
+
+        // Decode on nonexistent tab must return TabNotFound error
+        let err = mgr.step_tab_decode("nonexistent-tab", &query, &mut output);
+        assert!(err.is_err());
+        assert!(err.unwrap_err().to_string().contains("TabNotFound"));
+    }
+
+    #[test]
+    fn test_slice_bounds_validation() {
+        let mut cache = KvCache::new(16, 2, 4);
+        let short_keys = vec![0.1f32; 2]; // Needs 2 * 8 = 16 elements
+        let short_values = vec![0.1f32; 16];
+
+        let res = cache.try_append(&short_keys, &short_values, 2);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("new_keys buffer too short"));
+    }
+
+    #[test]
+    fn test_wgpu_reference_zero_current_len() {
+        let pipeline = WgpuAttentionPipeline::new(16, 2, 4);
+        let query = [0.1f32; 8];
+        let keys = [0.1f32; 16];
+        let values = [0.1f32; 16];
+        let mut output = [1.0f32; 8];
+
+        pipeline.execute_reference(&query, &keys, &values, 0, &mut output);
+        for &val in &output {
+            assert_eq!(val, 0.0);
+        }
     }
 }

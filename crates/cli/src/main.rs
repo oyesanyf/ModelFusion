@@ -8571,8 +8571,8 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 return;
             }
 
-            // ── Preallocated KV Cache & WebGPU Attention API (/api/kv-cache/status, /api/kv-cache/benchmark) ──
-            if request_path == "/api/kv-cache/status" || request_path == "/api/kv-cache/benchmark" || request_path == "/api/kv/status" || request_path == "/api/kv/bench" {
+            // ── Preallocated KV Cache & WebGPU Attention API (/api/kv-cache/status, /api/kv-cache/benchmark, /api/kv-cache/tabs) ──
+            if request_path == "/api/kv-cache/status" || request_path == "/api/kv-cache/benchmark" || request_path == "/api/kv/status" || request_path == "/api/kv/bench" || request_path == "/api/kv-cache/tabs" || request_path == "/api/kv/tabs" {
                 let max_seq = request_json.get("max_seq_len").and_then(|v| v.as_u64()).unwrap_or(512) as usize;
                 let heads = request_json.get("num_heads").and_then(|v| v.as_u64()).unwrap_or(4) as usize;
                 let h_dim = request_json.get("head_dim").and_then(|v| v.as_u64()).unwrap_or(16) as usize;
@@ -8583,10 +8583,15 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 let pipeline = modelfusion_core::WgpuAttentionPipeline::new(max_seq, heads, h_dim);
                 let buf_reqs = pipeline.buffer_requirements();
 
+                let mut sample_mgr = modelfusion_core::MultiTabKvManager::new(512 * 1024 * 1024);
+                let _ = sample_mgr.get_or_create_tab("active-tab", "ModelFusion AI Browser", "browser://home", max_seq, heads, h_dim);
+                let tabs_summary = sample_mgr.status_summary();
+
                 let resp_json = serde_json::json!({
                     "status": "ok",
                     "engine": "ModelFusion Deterministic KV-Cache & WebGPU Attention",
                     "benchmark": bench_report,
+                    "multi_tab_manager": tabs_summary,
                     "webgpu_pipeline": {
                         "workgroup_size": pipeline.workgroup_size,
                         "dispatch_dimensions": pipeline.dispatch_dimensions(),
