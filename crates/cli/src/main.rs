@@ -2515,7 +2515,13 @@ where
                 args[1] = "som".to_string();
                 return args;
             }
-            if (sub_clean == "sys-info" || sub_clean == "sysinfo") && !has_combinator {
+            if (sub_clean == "sys-info" || sub_clean == "sysinfo" || sub_clean == "sys_info" || sub_clean == "system-info" || sub_clean == "systeminfo" || sub_clean == "system_info") && !has_combinator {
+                args.remove(1);
+                args[1] = "--sys-info".to_string();
+                return args;
+            }
+            if (sub_clean == "sys" || sub_clean == "system") && args.len() > 3 && (args[3].to_lowercase() == "info" || args[3].to_lowercase() == "information") && !has_combinator {
+                args.remove(1);
                 args.remove(1);
                 args[1] = "--sys-info".to_string();
                 return args;
@@ -2624,8 +2630,16 @@ where
         "updatedb" => {
             args[1] = "--updatedb".to_string();
         }
-        "sys-info" | "sysinfo" | "/sys-info" | "/sysinfo" | "@agent/sys-info" | "@agent/sysinfo" | "@agent:sys-info" | "@agent:sysinfo" | "@sys-info" | "@sysinfo" => {
+        "sys-info" | "sysinfo" | "sys_info" | "system-info" | "systeminfo" | "system_info" |
+        "/sys-info" | "/sysinfo" | "/sys_info" | "/system-info" | "/systeminfo" | "/system_info" |
+        "@agent/sys-info" | "@agent/sysinfo" | "@agent/sys_info" | "@agent/system-info" | "@agent/systeminfo" |
+        "@agent:sys-info" | "@agent:sysinfo" | "@agent:sys_info" | "@agent:system-info" | "@agent:systeminfo" |
+        "@sys-info" | "@sysinfo" | "@sys_info" | "@system-info" | "@systeminfo" => {
             args[1] = "--sys-info".to_string();
+        }
+        "sys" | "system" if args.len() > 2 && (args[2].to_lowercase() == "info" || args[2].to_lowercase() == "information") => {
+            args[1] = "--sys-info".to_string();
+            args.remove(2);
         }
         "active-models" | "active-model" => {
             args[1] = "--active-model".to_string();
@@ -16953,6 +16967,33 @@ public class Pr {
 
         let res6 = preprocess_cli_args(["cli", "/sysinfo"]);
         assert_eq!(res6, vec!["cli".to_string(), "--sys-info".to_string()]);
+
+        let res7 = preprocess_cli_args(["cli", "sys_info"]);
+        assert_eq!(res7, vec!["cli".to_string(), "--sys-info".to_string()]);
+
+        let res8 = preprocess_cli_args(["cli", "system-info"]);
+        assert_eq!(res8, vec!["cli".to_string(), "--sys-info".to_string()]);
+
+        let res9 = preprocess_cli_args(["cli", "systeminfo"]);
+        assert_eq!(res9, vec!["cli".to_string(), "--sys-info".to_string()]);
+
+        let res10 = preprocess_cli_args(["cli", "@agent", "sys_info"]);
+        assert_eq!(res10, vec!["cli".to_string(), "--sys-info".to_string()]);
+
+        let res11 = preprocess_cli_args(["cli", "@agent", "system-info"]);
+        assert_eq!(res11, vec!["cli".to_string(), "--sys-info".to_string()]);
+
+        let res12 = preprocess_cli_args(["cli", "@agent", "sys", "info"]);
+        assert_eq!(res12, vec!["cli".to_string(), "--sys-info".to_string()]);
+
+        let res13 = preprocess_cli_args(["cli", "sys", "info"]);
+        assert_eq!(res13, vec!["cli".to_string(), "--sys-info".to_string()]);
+
+        let res14 = preprocess_cli_args(["cli", "@sys-info"]);
+        assert_eq!(res14, vec!["cli".to_string(), "--sys-info".to_string()]);
+
+        let res15 = preprocess_cli_args(["cli", "@sysinfo"]);
+        assert_eq!(res15, vec!["cli".to_string(), "--sys-info".to_string()]);
     }
 
     #[test]
