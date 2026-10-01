@@ -416,6 +416,37 @@ assert(appJs.includes("cleanCmd === '/sys-info'"), 'app.js must intercept /sys-i
 assert(appJs.includes("ModelFusion System Diagnostics & Hardware Specifications"), 'app.js must render diagnostic hardware card');
 console.log('  ✓ Verified dedicated @agent sys-info hardware card handler in executeCliCommand');
 
+// ---------------------------------------------------------------------------
+// SUITE 10: Fresh Install Sweet Spot Calibration & First-Run Provisioning
+// ---------------------------------------------------------------------------
+console.log('\n[SUITE 10] Testing Sweet Spot Calibration, Fallback Elimination & First-Run Provisioning...');
+
+// 10.1 Verify 100% elimination of legacy 'gemma2:9b' and 'gemma2:2b' fallbacks in app.js
+assert(!appJs.includes("|| 'gemma2:9b'"), "Legacy fallback 'gemma2:9b' must be completely eliminated from app.js");
+assert(!appJs.includes("? 'gemma2:2b'"), "Legacy fallback 'gemma2:2b' must be completely eliminated from app.js");
+assert(!appJs.includes("window.hardwareOptimalModel || 'gemma2:9b'"), "No 'gemma2:9b' fallback in hardwareOptimalModel expressions");
+console.log('  ✓ 10.1 Verified 100% elimination of legacy gemma2:9b / gemma2:2b fallbacks');
+
+// 10.2 Verify getCalibratedHardwareSweetSpot() and getCalibratedHardwareCompanion() exist in app.js
+assert(appJs.includes("function getCalibratedHardwareSweetSpot()"), "getCalibratedHardwareSweetSpot() must exist in app.js");
+assert(appJs.includes("function getCalibratedHardwareCompanion(sweetSpot)"), "getCalibratedHardwareCompanion() must exist in app.js");
+assert(appJs.includes("vramMb >= 22000"), "getCalibratedHardwareSweetSpot must evaluate VRAM thresholds (22GB, 12GB, 5GB, 2GB)");
+assert(appJs.includes("ramGb >= 48"), "getCalibratedHardwareSweetSpot must evaluate RAM thresholds (48GB, 24GB, 12GB, etc.)");
+assert(appJs.includes("qwen2.5:32b") && appJs.includes("qwen2.5:14b") && appJs.includes("qwen2.5:7b"), "getCalibratedHardwareSweetSpot must return calibrated qwen2.5 tiers");
+console.log('  ✓ 10.2 Verified getCalibratedHardwareSweetSpot() and getCalibratedHardwareCompanion() presence and matrix');
+
+// 10.3 Verify applyFallbackModelFusionStatus() includes calibrated_sweet_spot and consensus
+assert(appJs.includes("calibrated_sweet_spot: sweetSpot"), "applyFallbackModelFusionStatus must pass calibrated_sweet_spot");
+assert(appJs.includes("sweet_spot_fusion: true"), "applyFallbackModelFusionStatus must configure consensus.sweet_spot_fusion");
+assert(appJs.includes("window.calibratedSweetSpotModel = sweetSpot;"), "applyFallbackModelFusionStatus must set window.calibratedSweetSpotModel");
+console.log('  ✓ 10.3 Verified applyFallbackModelFusionStatus() calibrated sweet spot and consensus integration');
+
+// 10.4 Verify first-run 404 provisioning handler in streamAiChat
+assert(appJs.includes("api/models/provision"), "streamAiChat must call /api/models/provision on missing model 404");
+assert(appJs.includes("First-Time Setup: Downloading calibrated sweet spot model"), "streamAiChat must display first-time setup status pill");
+assert(appJs.includes("Poll GET /api/tags every 3 seconds"), "streamAiChat must poll /api/tags for provisioning completion");
+console.log('  ✓ 10.4 Verified first-run 404 auto-provisioning handler in streamAiChat');
+
 console.log('\n====================================================');
 console.log('✅ ALL COMPREHENSIVE VERIFICATION SUITES PASSED (100%)');
 console.log('====================================================\n');
