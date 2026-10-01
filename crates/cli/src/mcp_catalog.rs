@@ -85,6 +85,15 @@ pub fn get_master_mcp_tools() -> Vec<serde_json::Value> {
             "inputSchema": {"type": "object", "properties": {"prompt": {"type": "string", "description": "Input text or instructions for arXiv Papers"}, "file": {"type": "string", "description": "Optional file path or target dataset"}, "gpu": {"type": "boolean", "description": "Enable GPU acceleration"}}, "required": ["prompt"]}
         }),
         serde_json::json!({
+            "name": "wiki",
+            "cmd": "@agent wiki ",
+            "icon": "📖",
+            "category": "web",
+            "label": "Wikipedia Knowledge Distillation",
+            "description": "Distill Wikipedia knowledge with deep section retrieval, cross-reference linking, and verified citation grounding",
+            "inputSchema": {"type": "object", "properties": {"prompt": {"type": "string", "description": "Topic or query to distill from Wikipedia"}, "file": {"type": "string", "description": "Optional file path or target context"}, "gpu": {"type": "boolean", "description": "Enable GPU acceleration"}}, "required": ["prompt"]}
+        }),
+        serde_json::json!({
             "name": "markers",
             "cmd": "@agent markers ",
             "icon": "🎯",

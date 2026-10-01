@@ -1893,6 +1893,14 @@ struct Args {
     arxiv: Option<String>,
 
     #[arg(
+        long,
+        alias = "wikiskill",
+        alias = "wikipedia",
+        help = "Distill Wikipedia knowledge or search articles with section outline, cross-references, and verified citations"
+    )]
+    wiki: Option<String>,
+
+    #[arg(
         long = "max-tokens",
         alias = "num-predict",
         help = "Token limit for model response generation (defaults to 256 for grounded synthesis)"
@@ -2615,6 +2623,16 @@ where
                 args[1] = "--arxiv".to_string();
                 return args;
             }
+            if (sub_clean == "wiki" || sub_clean == "wikiskill" || sub_clean == "wikipedia") && !has_combinator {
+                args.remove(1);
+                args[1] = "--wiki".to_string();
+                if args.len() > 3 {
+                    let combined = args[2..].join(" ");
+                    args.truncate(2);
+                    args.push(combined);
+                }
+                return args;
+            }
             if sub_clean == "humanize" && !has_combinator {
                 args.remove(1);
                 args[1] = "--humanize".to_string();
@@ -2687,6 +2705,15 @@ where
         }
         "arxiv" | "/arxiv" | "@agent/arxiv" | "@agent:arxiv" => {
             args[1] = "--arxiv".to_string();
+        }
+        "wiki" | "/wiki" | "@agent/wiki" | "@agent:wiki" | "wikiskill" | "/wikiskill" | "@agent/wikiskill" | "@agent:wikiskill" | "wikipedia" | "/wikipedia" => {
+            args[1] = "--wiki".to_string();
+            if args.len() > 3 {
+                let combined = args[2..].join(" ");
+                args.truncate(2);
+                args.push(combined);
+            }
+            return args;
         }
         "key" | "keys" | "/key" | "/keys" => {
             if args.len() > 2 && args[2].to_lowercase() == "gemini" {
@@ -3512,6 +3539,29 @@ async fn run(args: Args) -> Result<()> {
                 } else {
                     println!();
                 }
+            }
+        }
+        return Ok(());
+    }
+
+    if let Some(ref _q) = args.wiki {
+        let combined_q = match (&args.wiki, &args.query) {
+            (Some(w), Some(pos)) if !pos.is_empty() => format!("{} {}", w, pos),
+            (Some(w), _) => w.clone(),
+            _ => String::new(),
+        };
+        let query = if combined_q.trim().is_empty() {
+            "Artificial intelligence"
+        } else {
+            combined_q.trim()
+        };
+        println!("📖 Distilling Wikipedia knowledge for: \"{}\"...\n", query);
+        match modelfusion_core::distill_wikipedia_knowledge(query, 6).await {
+            Ok(report) => {
+                println!("{}", modelfusion_core::format_wiki_markdown(&report));
+            }
+            Err(e) => {
+                eprintln!("⚠️ WikiSkill distillation error: {}", e);
             }
         }
         return Ok(());
@@ -10245,6 +10295,139 @@ public class ShortcutHelper {
                 return;
             }
 
+            // ── Live WikiSkill & Wikipedia Knowledge Endpoint (/api/wiki, /api/wikiskill) ──
+            if request_path == "/api/wiki" || request_path == "/api/wikiskill" {
+                let (query, max_results) = parse_query_and_limit_from_request(&raw_request_uri, &request_json);
+                if query.is_empty() {
+                    let err_json = serde_json::json!({
+                        "error": "Query parameter 'q', 'query', or 'topic' is required"
+                    });
+                    let err_body = serde_json::to_string(&err_json).unwrap_or_default();
+                    let response = format!(
+                        "HTTP/1.1 400 Bad Request\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        err_body.len(),
+                        err_body
+                    );
+                    let _ = socket.write_all(response.as_bytes()).await;
+                    let _ = socket.flush().await;
+                    return;
+                }
+
+                let action = request_json.get("action")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| {
+                        if raw_request_uri.contains("action=search") {
+                            Some("search")
+                        } else if raw_request_uri.contains("action=sections") {
+                            Some("sections")
+                        } else if raw_request_uri.contains("action=article") {
+                            Some("article")
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or("distill");
+
+                eprintln!("[SERVER] 📖 Live WikiSkill request: action={:?}, query={:?}, max_results={}", action, query, max_results);
+                let (resp_body, status_code, status_text) = match action {
+                    "search" => {
+                        match modelfusion_core::search_wikipedia(&query, max_results).await {
+                            Ok(results) => {
+                                let resp_json = serde_json::json!({
+                                    "query": query,
+                                    "action": "search",
+                                    "count": results.len(),
+                                    "results": results
+                                });
+                                (serde_json::to_string(&resp_json).unwrap_or_default(), 200, "OK")
+                            }
+                            Err(e) => {
+                                let err_json = serde_json::json!({
+                                    "error": format!("Wikipedia search failed: {}", e),
+                                    "query": query,
+                                    "count": 0,
+                                    "results": []
+                                });
+                                (serde_json::to_string(&err_json).unwrap_or_default(), 200, "OK")
+                            }
+                        }
+                    },
+                    "sections" => {
+                        match modelfusion_core::fetch_wikipedia_sections(&query).await {
+                            Ok(sections) => {
+                                let resp_json = serde_json::json!({
+                                    "title": query,
+                                    "action": "sections",
+                                    "count": sections.len(),
+                                    "sections": sections
+                                });
+                                (serde_json::to_string(&resp_json).unwrap_or_default(), 200, "OK")
+                            }
+                            Err(e) => {
+                                let err_json = serde_json::json!({
+                                    "error": format!("Failed to fetch Wikipedia sections: {}", e),
+                                    "title": query,
+                                    "count": 0,
+                                    "sections": []
+                                });
+                                (serde_json::to_string(&err_json).unwrap_or_default(), 200, "OK")
+                            }
+                        }
+                    },
+                    "article" => {
+                        match modelfusion_core::fetch_wikipedia_article(&query).await {
+                            Ok(article) => {
+                                let resp_json = serde_json::json!({
+                                    "title": query,
+                                    "action": "article",
+                                    "article": article
+                                });
+                                (serde_json::to_string(&resp_json).unwrap_or_default(), 200, "OK")
+                            }
+                            Err(e) => {
+                                let err_json = serde_json::json!({
+                                    "error": format!("Failed to fetch Wikipedia article: {}", e),
+                                    "title": query
+                                });
+                                (serde_json::to_string(&err_json).unwrap_or_default(), 200, "OK")
+                            }
+                        }
+                    },
+                    _ => {
+                        match modelfusion_core::distill_wikipedia_knowledge(&query, max_results).await {
+                            Ok(report) => {
+                                let formatted_md = modelfusion_core::format_wiki_markdown(&report);
+                                let resp_json = serde_json::json!({
+                                    "query": query,
+                                    "action": "distill",
+                                    "report": report,
+                                    "markdown": formatted_md
+                                });
+                                (serde_json::to_string(&resp_json).unwrap_or_default(), 200, "OK")
+                            }
+                            Err(e) => {
+                                let err_json = serde_json::json!({
+                                    "error": format!("WikiSkill distillation failed: {}", e),
+                                    "query": query
+                                });
+                                (serde_json::to_string(&err_json).unwrap_or_default(), 200, "OK")
+                            }
+                        }
+                    }
+                };
+
+                let response = format!(
+                    "HTTP/1.1 {} {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    status_code,
+                    status_text,
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
             // ── Database Maintenance Endpoints (/api/db/rebuild, /api/db/vacuum, /api/db/check, /api/db/prune) ──
             if request_path == "/api/db/rebuild" || request_path == "/api/db/vacuum" || request_path == "/api/db/check" || request_path == "/api/db/prune" {
                 let db_path = resolve_db_path(None);
@@ -11217,6 +11400,7 @@ public class ShortcutHelper {
                                         "multimodal-task" => "multimodal_task",
                                         "semantic-search" | "semantic_search" => "semantic_search",
                                         "research" | "reseach" => "research",
+                                        "wiki" | "wikiskill" | "wikipedia" => "wiki",
                                         "search" | "serarch" | "serarch-query" | "serarch_query" | "serarchquery" => "search",
                                         "data-science" | "datascience" | "dataanalyst" | "data-analyst" | "jupyter" => "data_science",
                                         "acdso" | "automl" | "riskautoml" | "risk_automl" => "acdso",
@@ -11399,7 +11583,7 @@ public class ShortcutHelper {
                                         },
                                         "command" => {
                                             let sys = query_system_resources();
-                                            (idx, format!("🤖 **ModelFusion Commands & System Directory**\n\n- **Engine**: Active & Operational (<1ms Fast Interception)\n- **System**: {} ({} Cores), {:.2} GB RAM free\n- **GPU**: {} ({} MB free VRAM)\n\n### Available Slash Commands & CLI Directives:\n- `/active-model` (or `--active-model`) — All models currently in use by the IDE (Ollama runtime, SQLite pipelines, OpenVINO cache)\n- `/research <topic>` (or `--research`) — Autonomous deep web research using open-weight models (Qwen 2.5 / DeepSeek-R1) and DuckDuckGo search\n- `/search <query>` (or `--search`) — Live web search and snippet extraction\n- `/stats` (or `--stats`) — Real-time system resource allocation and database metrics\n- `/sysinfo` (or `--sys-info`) — Detailed hardware specifications, CPU cores, RAM, and disk drives\n- `/tasks` (or `--tasks [category]`) — Multi-modal task capabilities and top database models (audio, vision, nlp, security, legal)\n- `/keys` (or `--keys`) — Local runtime status (100% free open-weight models enabled, paid cloud models disabled)\n- `/comment` — Add inline explanations and docstrings to code\n- `/evolve` — OpenEvolve iterative code optimization\n- `/security` — CyberSecurity audit and vulnerability fixes\n- `/refactor` — Code structure refactoring\n- `/optimize` — Performance optimization\n- `/version` (or `-v`) — Engine and build version\n- `/rl [status|start|stop|enqueue]` (or `/restrl`, `--rest-rl`) — HugOS ReST-RL / GRPO recursive reinforcement learning and idle preemption engine\n- `/update` — Fast curated update (~6,500 models) and local Ollama hardware model provisioning\n- `/updatedb` — Full registry crawler for all 2M+ Hugging Face models", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb))
+                                            (idx, format!("🤖 **ModelFusion Commands & System Directory**\n\n- **Engine**: Active & Operational (<1ms Fast Interception)\n- **System**: {} ({} Cores), {:.2} GB RAM free\n- **GPU**: {} ({} MB free VRAM)\n\n### Available Slash Commands & CLI Directives:\n- /wiki <topic> (or --wiki, @agent wiki) — Wikipedia knowledge distillation, deep section retrieval, and grounded citations\n- `/active-model` (or `--active-model`) — All models currently in use by the IDE (Ollama runtime, SQLite pipelines, OpenVINO cache)\n- `/research <topic>` (or `--research`) — Autonomous deep web research using open-weight models (Qwen 2.5 / DeepSeek-R1) and DuckDuckGo search\n- `/search <query>` (or `--search`) — Live web search and snippet extraction\n- `/stats` (or `--stats`) — Real-time system resource allocation and database metrics\n- `/sysinfo` (or `--sys-info`) — Detailed hardware specifications, CPU cores, RAM, and disk drives\n- `/tasks` (or `--tasks [category]`) — Multi-modal task capabilities and top database models (audio, vision, nlp, security, legal)\n- `/keys` (or `--keys`) — Local runtime status (100% free open-weight models enabled, paid cloud models disabled)\n- `/comment` — Add inline explanations and docstrings to code\n- `/evolve` — OpenEvolve iterative code optimization\n- `/security` — CyberSecurity audit and vulnerability fixes\n- `/refactor` — Code structure refactoring\n- `/optimize` — Performance optimization\n- `/version` (or `-v`) — Engine and build version\n- `/rl [status|start|stop|enqueue]` (or `/restrl`, `--rest-rl`) — HugOS ReST-RL / GRPO recursive reinforcement learning and idle preemption engine\n- `/update` — Fast curated update (~6,500 models) and local Ollama hardware model provisioning\n- `/updatedb` — Full registry crawler for all 2M+ Hugging Face models", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb))
                                         },
                                         "comment" | "doc" => {
                                              let attached = extract_attached_code_context(&prompt_for_cmd);
@@ -11615,6 +11799,20 @@ public class ShortcutHelper {
                                                  }
                                                  Ok(_) => (idx, format!("⚠️ No arXiv papers found for: \"{}\".", query)),
                                                  Err(e) => (idx, format!("⚠️ arXiv search error: {}", e)),
+                                             }
+                                         }
+                                     },
+                                     "wiki" => {
+                                         let query = args_owned.trim();
+                                         if query.is_empty() {
+                                             (idx, "📖 **ModelFusion WikiSkill Knowledge Engine**: Active & Operational (<1ms Fast Interception).\n\nSpecify a topic or query:\n- `@agent wiki <topic>`\n- `/wiki <topic>`\n\n*Example*: `/wiki Transformer (deep learning architecture)`".to_string())
+                                         } else {
+                                             match modelfusion_core::distill_wikipedia_knowledge(query, 6).await {
+                                                 Ok(report) => {
+                                                     let formatted = modelfusion_core::format_wiki_markdown(&report);
+                                                     (idx, formatted)
+                                                 }
+                                                 Err(e) => (idx, format!("⚠️ WikiSkill distillation error: {}", e)),
                                              }
                                          }
                                      },
@@ -17549,6 +17747,34 @@ public class Pr {
 
         let res_sys = preprocess_cli_args(["cli", "--sys-info"]);
         assert_eq!(res_sys, vec!["cli".to_string(), "--sys-info".to_string()]);
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_wiki() {
+        use super::preprocess_cli_args;
+        let res = preprocess_cli_args(["cli", "wiki", "quantum computing"]);
+        assert_eq!(res, vec!["cli".to_string(), "--wiki".to_string(), "quantum computing".to_string()]);
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_agent_wiki() {
+        use super::preprocess_cli_args;
+        let res = preprocess_cli_args(["cli", "@agent", "wiki", "machine learning"]);
+        assert_eq!(res, vec!["cli".to_string(), "--wiki".to_string(), "machine learning".to_string()]);
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_slash_wiki() {
+        use super::preprocess_cli_args;
+        let res = preprocess_cli_args(["cli", "/wiki", "deep learning"]);
+        assert_eq!(res, vec!["cli".to_string(), "--wiki".to_string(), "deep learning".to_string()]);
+    }
+
+    #[test]
+    fn test_preprocess_cli_args_wikiskill() {
+        use super::preprocess_cli_args;
+        let res = preprocess_cli_args(["cli", "@agent", "wikiskill", "reinforcement learning"]);
+        assert_eq!(res, vec!["cli".to_string(), "--wiki".to_string(), "reinforcement learning".to_string()]);
     }
 
     #[test]

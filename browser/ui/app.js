@@ -2685,6 +2685,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (
         lower.startsWith('/search') ||
         lower.startsWith('/research') ||
+        lower.startsWith('/wiki') ||
+        lower.startsWith('/wikiskill') ||
+        lower.startsWith('/wikipedia') ||
+        lower.startsWith('@agent wiki') ||
+        lower.startsWith('@agent wikiskill') ||
+        lower.startsWith('@agent wikipedia') ||
+        lower.startsWith('@wiki') ||
         lower.startsWith('/arxiv') ||
         lower.startsWith('/web') ||
         lower.startsWith('@agent search') ||
@@ -2932,6 +2939,259 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // -----------------------------------------------------------------
+  // Live WikiSkill & Wikipedia Knowledge Distillation Engine
+  // -----------------------------------------------------------------
+  async function searchWikipediaDirect(query, maxResults = 5) {
+    const limit = Math.min(Math.max(1, maxResults || 5), 50);
+    try {
+      const url = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&utf8=1&srlimit=${limit}&origin=*`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.query && Array.isArray(data.query.search)) {
+          return data.query.search.map(s => {
+            const cleanSnippet = (s.snippet || '').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&');
+            const title = s.title || '';
+            const articleUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`;
+            return {
+              title: title,
+              page_id: s.pageid || 0,
+              snippet: cleanSnippet,
+              url: articleUrl,
+              word_count: s.wordcount || 0
+            };
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Direct Wikipedia search API error:', e);
+    }
+    return [];
+  }
+
+  async function fetchWikipediaArticleDirect(title) {
+    if (!title || typeof title !== 'string') return null;
+    const cleanTitle = title.trim();
+    const encoded = encodeURIComponent(cleanTitle);
+
+    let extract = '';
+    let pageId = 0;
+    let crossRefs = [];
+    let citations = [];
+    let categories = [];
+    let sections = [];
+
+    // 1. Fetch lead extract, cross-references, and external links
+    try {
+      const qUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=extracts|info|links|extlinks|categories&exintro=1&explaintext=1&titles=${encoded}&inprop=url&pllimit=40&ellimit=30&cllimit=20&format=json&origin=*`;
+      const res = await fetch(qUrl);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.query && data.query.pages) {
+          for (const pid of Object.keys(data.query.pages)) {
+            const pageData = data.query.pages[pid];
+            pageId = parseInt(pid, 10) || 0;
+            extract = (pageData.extract || '').trim();
+
+            if (Array.isArray(pageData.links)) {
+              crossRefs = pageData.links
+                .map(l => l.title || '')
+                .filter(t => t && !t.startsWith('Wikipedia:') && !t.startsWith('Template:') && !t.startsWith('Help:') && !t.startsWith('Category:'));
+            }
+
+            if (Array.isArray(pageData.extlinks)) {
+              citations = pageData.extlinks.map(el => el['*'] || '').filter(Boolean);
+            }
+
+            if (Array.isArray(pageData.categories)) {
+              categories = pageData.categories.map(c => (c.title || '').replace(/^Category:/, '').trim()).filter(Boolean);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Direct Wikipedia article query error:', e);
+    }
+
+    // 2. Fetch section outline
+    try {
+      const sUrl = `https://en.wikipedia.org/w/api.php?action=parse&page=${encoded}&prop=sections&format=json&origin=*`;
+      const res = await fetch(sUrl);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.parse && Array.isArray(data.parse.sections)) {
+          sections = data.parse.sections.map(s => ({
+            index: String(s.index || ''),
+            line: (s.line || '').replace(/<[^>]+>/g, '').trim(),
+            level: parseInt(s.level, 10) || 2,
+            anchor: s.anchor || ''
+          })).filter(s => s.line);
+        }
+      }
+    } catch (e) {
+      console.warn('Direct Wikipedia section parse error:', e);
+    }
+
+    const articleUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(cleanTitle.replace(/ /g, '_'))}`;
+    return {
+      title: cleanTitle,
+      page_id: pageId,
+      url: articleUrl,
+      extract: extract,
+      sections: sections,
+      cross_references: crossRefs,
+      citations: citations,
+      categories: categories
+    };
+  }
+
+  async function executeWikiDistillation(query, options = {}) {
+    const limit = Math.min(Math.max(1, options.maxResults || 6), 50);
+    const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+
+    // 1. Try ModelFusion Master CLI IPC endpoint :5000/api/wiki
+    try {
+      const res = await fetch(`${ipcUrl}/api/wiki?q=${encodeURIComponent(query)}&action=distill&max_results=${limit}`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.report && data.report.article) {
+          return data.report;
+        }
+      }
+    } catch (e) {
+      console.warn('IPC WikiSkill endpoint unreachable, attempting direct client-side fallback...', e);
+    }
+
+    // 2. Direct client-side Wikipedia fallback distillation
+    try {
+      const searchResults = await searchWikipediaDirect(query, limit);
+      if (!searchResults || searchResults.length === 0) {
+        throw new Error(`No Wikipedia articles found matching "${query}"`);
+      }
+
+      const topHit = searchResults[0];
+      const article = await fetchWikipediaArticleDirect(topHit.title);
+      if (!article) {
+        throw new Error(`Failed to retrieve Wikipedia article content for "${topHit.title}"`);
+      }
+
+      const takeaways = [];
+      if (article.extract) {
+        const sentences = article.extract.split('. ').map(s => s.trim()).filter(Boolean);
+        for (let i = 0; i < Math.min(sentences.length, 3); i++) {
+          takeaways.push(sentences[i].endsWith('.') ? sentences[i] : sentences[i] + '.');
+        }
+      }
+
+      if (Array.isArray(article.sections)) {
+        article.sections.slice(0, 5).forEach(s => {
+          if (!['references', 'see also', 'external links'].includes(s.line.toLowerCase())) {
+            takeaways.push(`Key Section: ${s.line}`);
+          }
+        });
+      }
+
+      const groundedCitations = (article.citations || []).slice(0, 8).map((c, idx) => `[${idx + 1}] ${c}`);
+      const relatedResults = searchResults.slice(1);
+
+      return {
+        topic: query,
+        article: article,
+        related_results: relatedResults,
+        distilled_summary: topHit.snippet || article.extract.slice(0, 300),
+        key_takeaways: takeaways,
+        grounded_citations: groundedCitations
+      };
+    } catch (err) {
+      console.warn('Direct Wikipedia distillation fallback error:', err);
+      throw err;
+    }
+  }
+
+  function renderWikiKnowledgeCard(container, distillation) {
+    if (!container || !distillation || !distillation.article) return;
+    container.style.display = 'block';
+
+    const art = distillation.article;
+    const title = art.title || distillation.topic || 'Wikipedia Article';
+    const url = art.url || `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`;
+    const extract = art.extract || distillation.distilled_summary || '';
+    const sections = (art.sections && Array.isArray(art.sections)) ? art.sections : [];
+    const crossRefs = (art.cross_references && Array.isArray(art.cross_references)) ? art.cross_references : [];
+    const citations = (art.citations && Array.isArray(art.citations)) ? art.citations : [];
+
+    let sectionsHtml = '';
+    if (sections.length > 0) {
+      sectionsHtml = `
+        <div style="margin-top: 8px;">
+          <div style="font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">📑 Key Section Outline (${sections.length} sections)</div>
+          <div class="wiki-sections-list" style="display: flex; flex-wrap: wrap; gap: 4px; max-height: 80px; overflow-y: auto;">
+            ${sections.slice(0, 15).map(s => `
+              <a href="${url}#${encodeURIComponent(s.anchor || s.line)}" target="_blank" rel="noopener noreferrer" style="font-size: 10.5px; background: rgba(56, 189, 248, 0.12); color: #38bdf8; padding: 2px 6px; border-radius: 4px; text-decoration: none; border: 1px solid rgba(56, 189, 248, 0.25);">
+                ${escapeHtml(s.line)}
+              </a>
+            `).join('')}
+            ${sections.length > 15 ? `<span style="font-size: 10px; color: var(--text-muted); padding: 2px 4px;">+${sections.length - 15} more</span>` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    let crossRefsHtml = '';
+    if (crossRefs.length > 0) {
+      crossRefsHtml = `
+        <div style="margin-top: 8px;">
+          <div style="font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">🔗 Encyclopedic Cross-References</div>
+          <div class="wiki-cross-refs" style="display: flex; flex-wrap: wrap; gap: 4px; max-height: 60px; overflow-y: auto;">
+            ${crossRefs.slice(0, 10).map(r => `
+              <a href="https://en.wikipedia.org/wiki/${encodeURIComponent(r.replace(/ /g, '_'))}" target="_blank" rel="noopener noreferrer" style="font-size: 10.5px; background: rgba(16, 185, 129, 0.1); color: #10b981; padding: 2px 6px; border-radius: 4px; text-decoration: none; border: 1px solid rgba(16, 185, 129, 0.25);">
+                ${escapeHtml(r)}
+              </a>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    let citationsHtml = '';
+    if (citations.length > 0) {
+      citationsHtml = `
+        <div style="margin-top: 8px;">
+          <div style="font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">📚 Grounded External Citations (${citations.length})</div>
+          <div class="wiki-citations" style="font-size: 11px; line-height: 1.5; max-height: 60px; overflow-y: auto;">
+            ${citations.slice(0, 5).map((c, i) => `
+              <div><span style="color: #f59e0b; font-weight: 600;">[${i + 1}]</span> <a href="${escapeHtml(c)}" target="_blank" rel="noopener noreferrer" style="color: var(--accent-color, #38bdf8); text-decoration: underline;">${escapeHtml(c.length > 60 ? c.slice(0, 60) + '...' : c)}</a></div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    container.innerHTML = `
+      <div style="background: rgba(15, 23, 42, 0.65); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; padding: 10px 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);">
+        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 6px; margin-bottom: 6px;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span style="font-size: 14px;">📖</span>
+            <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" style="font-weight: 600; font-size: 13px; color: #38bdf8; text-decoration: none;">
+              ${escapeHtml(title)}
+            </a>
+          </div>
+          <span style="font-size: 10.5px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 2px 6px; border-radius: 10px;">
+            Wikipedia
+          </span>
+        </div>
+        ${extract ? `<div class="wiki-extract" style="font-size: 11.5px; line-height: 1.5; color: var(--text-secondary); max-height: 90px; overflow-y: auto;">${escapeHtml(extract)}</div>` : ''}
+        ${sectionsHtml}
+        ${crossRefsHtml}
+        ${citationsHtml}
+      </div>
+    `;
+  }
+
+  // -----------------------------------------------------------------
   // Live Grounding Sources Immediate Display Engine - Sleek Compact Badge
   // -----------------------------------------------------------------
   function renderResearchSourcesCard(container, results) {
@@ -3002,6 +3262,16 @@ document.addEventListener('DOMContentLoaded', () => {
       "✍️ Formulating output..."
     ];
 
+    const wikiStates = [
+      "📖 Searching Wikipedia Knowledge Base...",
+      "📑 Extracting article summary & lead...",
+      "🧬 Retrieving deep section tree & anchors...",
+      "🔗 Resolving encyclopedic cross-references...",
+      "📚 Grounding verified citations & DOIs...",
+      "💡 Distilling core conceptual principles...",
+      "✍️ Formulating publication-ready brief..."
+    ];
+
     const imageStates = [
       "🎨 Synthesizing visual composition...",
       "🖌️ Rendering diffusion latents...",
@@ -3010,7 +3280,7 @@ document.addEventListener('DOMContentLoaded', () => {
       "💡 Correlating multimodal prompt fidelity..."
     ];
 
-    const states = type === 'image' ? imageStates : ((type === 'research' || type === 'web' || type === 'arxiv') ? researchStates : reasoningStates);
+    const states = type === 'wiki' ? wikiStates : (type === 'image' ? imageStates : ((type === 'research' || type === 'web' || type === 'arxiv') ? researchStates : reasoningStates));
     let step = 0;
     let stopped = false;
 
@@ -3145,6 +3415,10 @@ document.addEventListener('DOMContentLoaded', () => {
     return newNode;
   }
   window.safeInsertBefore = safeInsertBefore;
+  window.executeWikiDistillation = executeWikiDistillation;
+  window.searchWikipediaDirect = searchWikipediaDirect;
+  window.fetchWikipediaArticleDirect = fetchWikipediaArticleDirect;
+  window.renderWikiKnowledgeCard = renderWikiKnowledgeCard;
 
   // ---------------------------------------------------------------------------
   // Client-side DOM/JavaScript Exception Classifier
@@ -10661,6 +10935,7 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
         '**Research & Live Internet Knowledge**:',
         '- `@agent search <query>` / `/search <query>` — Grounded live web search with citations, fact synthesis, and source footnote links',
         '- `@agent arxiv <query>` / `/arxiv <query>` — Query academic preprints, scientific research papers, and technical citations on arXiv',
+        '- `@agent wiki <topic>` / `/wiki <topic>` — Distill Wikipedia knowledge with deep section retrieval, cross-reference linking, and grounded citations',
         '- `@agent research <topic>` / `/research <topic>` — Dual-source deep research engine combining live web searches and arXiv papers',
         '- `@agent web-agent <goal>` — Autonomous web navigation, DOM extraction, inverted indexing, and LLM correlation',
         '',
@@ -12348,7 +12623,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     if (doc) {
       try {
         const root = doc.body || doc.documentElement || doc;
-        const cards = root.querySelectorAll ? Array.from(root.querySelectorAll('.ticket, .ticket-tier, .fare-row, .flight-card, .ticket-option, .booking-item, [data-ticket], [class*="ticket"]')) : [];
+        const cards = root.querySelectorAll ? Array.from(root.querySelectorAll('.ticket, .ticket-tier, .fare-row, .flight-card, .flight-option, .fare-option, .ticket-option, .booking-item, [data-ticket], [data-flight], [data-booking], [class*="ticket"], [class*="flight-item"]')) : [];
 
         cards.forEach((el, idx) => {
           const tierEl = el.querySelector ? el.querySelector('.tier-name, .fare-name, .ticket-name, h3, h4, strong') : null;
@@ -12357,7 +12632,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           if (tierEl && priceEl) {
             const tier = tierEl.textContent.trim();
             const rawPrice = priceEl.textContent.trim();
-            const numMatch = rawPrice.match(/([$£€¥])\s*([\d,]+(?:\.\d{2})?)/);
+            const numMatch = rawPrice.match(/([$£€¥]|USD|EUR|GBP)\s*([\d,]+(?:\.\d{2})?)/i);
             if (tier.length > 1 && numMatch) {
               const currency = numMatch[1];
               const numericPrice = parseFloat(numMatch[2].replace(/,/g, ''));
@@ -12430,6 +12705,9 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       tickets[0].isRecommended = true;
       if (typeof window !== 'undefined') {
         window.activeTickets = tickets;
+        if (!window.selectedTicketId) {
+          window.selectedTicketId = tickets[0].id;
+        }
       }
     }
 
@@ -12466,7 +12744,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     `;
 
     tickets.forEach((t, idx) => {
-      const isSelected = (typeof window !== 'undefined' ? window.selectedTicketId === t.id : false);
+      const isSelected = (typeof window !== 'undefined' && window.selectedTicketId ? window.selectedTicketId === t.id : (t.isRecommended || idx === 0));
       const cardBorder = isSelected ? 'border-color: #a78bfa; background: rgba(139, 92, 246, 0.08);' : 'border-color: rgba(255,255,255,0.07);';
 
       html += `
@@ -12652,24 +12930,30 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 
   function resolveNaturalLanguageNavUrl(goal) {
     if (!goal || typeof goal !== 'string') return '';
-    const cleanGoal = goal.replace(/^(?:@agent\s+[\w-]+\s+|please\s+|can\s+you\s+|i\s+want\s+to\s+|help\s+me\s+)/i, '').trim();
+    const cleanGoal = goal.replace(/^(?:@agent\s+[\w-]+(?::|\s+)|\/agent\s+[\w-]+(?::|\s+)|please\s+|can\s+you\s+|i\s+want\s+to\s+|help\s+me\s+)/i, '').trim();
 
     // 1. Map Directions & Navigation Routing
-    if (/(?:directions?|routes?|navigate|navigation|maps?|drive|transit|walk|distance)\b/i.test(cleanGoal)) {
+    if (/(?:directions?|routes?|navigate|navigation|maps?|drive|transit|walk|distance|bicycling|bike)\b/i.test(cleanGoal)) {
+      let travelmode = '';
+      if (/(?:walk|walking|foot|pedestrian)\b/i.test(cleanGoal)) travelmode = '&travelmode=walking';
+      else if (/(?:transit|bus|train|subway|metro)\b/i.test(cleanGoal)) travelmode = '&travelmode=transit';
+      else if (/(?:bike|bicycling|cycling)\b/i.test(cleanGoal)) travelmode = '&travelmode=bicycling';
+      else if (/(?:drive|driving|car)\b/i.test(cleanGoal)) travelmode = '&travelmode=driving';
+
       // Check for: from <origin> to <dest>
       const fromToMatch = cleanGoal.match(/(?:from\s+(.+?)\s+to\s+(.+)|to\s+(.+?)\s+from\s+(.+))/i);
       if (fromToMatch) {
         let origin = '';
         let dest = '';
         if (fromToMatch[1] && fromToMatch[2]) {
-          origin = fromToMatch[1].replace(/^(?:get\s+)?(?:map\s+)?(?:directions?|route|navigation|get|find)\s*/i, '').trim();
+          origin = fromToMatch[1].replace(/^(?:get\s+)?(?:map\s+)?(?:walking\s+|transit\s+|driving\s+|bike\s+)?(?:directions?|route|navigation|get|find)\s*/i, '').trim();
           dest = fromToMatch[2].replace(/[?.!]+$/, '').trim();
         } else if (fromToMatch[3] && fromToMatch[4]) {
           dest = fromToMatch[3].trim();
           origin = fromToMatch[4].replace(/[?.!]+$/, '').trim();
         }
         if (origin && dest) {
-          return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(dest)}`;
+          return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(dest)}${travelmode}`;
         }
       }
 
@@ -12678,7 +12962,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       if (toMatch && toMatch[1]) {
         const dest = toMatch[1].replace(/[?.!]+$/, '').trim();
         if (dest) {
-          return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}`;
+          return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}${travelmode}`;
         }
       }
 
@@ -12694,12 +12978,14 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     }
 
     // 2. Flight & Travel Booking Routing
-    if (/(?:flights?|airline|fly|plane)\b/i.test(cleanGoal) || /(?:ticket|booking|reserve).*from\s+[A-Za-z0-9\s]+to\s+[A-Za-z0-9\s]+/i.test(cleanGoal)) {
-      const fromToFlight = cleanGoal.match(/from\s+([A-Za-z0-9\s]+?)\s+to\s+([A-Za-z0-9\s]+)/i);
-      if (fromToFlight) {
-        const origin = fromToFlight[1].trim();
+    if (/(?:flights?|airline|fly|plane|train|rail)\b/i.test(cleanGoal) || /(?:ticket|booking|reserve).*from\s+[A-Za-z0-9\s]+to\s+[A-Za-z0-9\s]+/i.test(cleanGoal)) {
+      const fromToFlight = cleanGoal.match(/(?:from\s+)?([A-Za-z0-9\s]+?)\s+to\s+([A-Za-z0-9\s]+)/i);
+      if (fromToFlight && (cleanGoal.includes('from') || /(?:flights?|airline|fly|plane|train)\b/i.test(cleanGoal))) {
+        const origin = fromToFlight[1].replace(/^(?:flights?|book\s+(?:a\s+)?(?:flight|ticket)?|fly|ticket)\s*/i, '').trim();
         const dest = fromToFlight[2].replace(/[?.!]+$/, '').trim();
-        return `https://www.google.com/travel/flights?q=flights+from+${encodeURIComponent(origin)}+to+${encodeURIComponent(dest)}`;
+        if (origin && dest) {
+          return `https://www.google.com/travel/flights?q=flights+from+${encodeURIComponent(origin)}+to+${encodeURIComponent(dest)}`;
+        }
       }
       return `https://www.google.com/travel/flights?q=${encodeURIComponent(cleanGoal)}`;
     }
@@ -13351,6 +13637,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     let livePageText = '';
     let livePageElementsCount = 0;
     let detectedExamQuestions = [];
+    let groundedDoc = null;
 
     if (targetNavUrl) {
       termLog(`👁️ [COMPUTER USE] Inspecting and grounding live page DOM: ${targetNavUrl}`, 'info');
@@ -13380,6 +13667,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           try {
             if (browserFrame.contentDocument && browserFrame.contentDocument.body) {
               const doc = browserFrame.contentDocument;
+              groundedDoc = doc;
               livePageTitle = doc.title ? doc.title.trim() : '';
               detectedExamQuestions = extractExamQuestions(doc, (doc.body.innerText || doc.body.textContent || ''));
               doc.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]').forEach(h => {
@@ -13395,6 +13683,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         if (htmlContent) {
           const parser = new DOMParser();
           const doc = parser.parseFromString(htmlContent, 'text/html');
+          groundedDoc = doc;
           livePageTitle = doc.title ? doc.title.trim() : '';
 
           // Ground structured exam / test questions before stripping interactive DOM elements
@@ -13411,7 +13700,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         }
 
         if (detectedExamQuestions.length === 0 && livePageText) {
-          detectedExamQuestions = extractExamQuestions(null, livePageText);
+          detectedExamQuestions = extractExamQuestions(groundedDoc, livePageText);
         }
         if (detectedExamQuestions.length > 0) {
           termLog(`📝 [HITL EXAM] Grounded ${detectedExamQuestions.length} exam/quiz questions on page`, 'success');
@@ -13422,27 +13711,27 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     }
 
     // 2b) Universal Page Archetype Classification & Multi-Modal Entity Extraction
-    const pageArchetype = classifyPageArchetype(null, livePageText, targetNavUrl, goal);
+    const pageArchetype = classifyPageArchetype(groundedDoc, livePageText, targetNavUrl, goal);
     let detectedProducts = [];
     let detectedTickets = [];
     let detectedDirections = null;
 
     if (pageArchetype === 'shopping' || /(?:shop|price|product|buy|cart|order|deal)/i.test(goal)) {
-      detectedProducts = extractProducts(null, livePageText);
+      detectedProducts = extractProducts(groundedDoc, livePageText);
       if (detectedProducts.length > 0) {
         termLog(`🛒 [HITL SHOPPING] Grounded ${detectedProducts.length} products / deals on page`, 'success');
       }
     }
 
     if (pageArchetype === 'booking' || /(?:book|ticket|flight|seat|hotel|reservation)/i.test(goal)) {
-      detectedTickets = extractTickets(null, livePageText);
+      detectedTickets = extractTickets(groundedDoc, livePageText);
       if (detectedTickets.length > 0) {
         termLog(`🎟️ [HITL BOOKING] Grounded ${detectedTickets.length} ticket / travel options on page`, 'success');
       }
     }
 
     if (pageArchetype === 'directions' || /(?:map|maps|direction|directions|route|navigate|distance|drive|transit|walk)/i.test(goal)) {
-      detectedDirections = extractDirections(null, livePageText);
+      detectedDirections = extractDirections(groundedDoc, livePageText);
       if (detectedDirections && detectedDirections.routes && detectedDirections.routes.length > 0) {
         termLog(`🧭 [HITL DIRECTIONS] Grounded ${detectedDirections.routes.length} navigation route(s) on page`, 'success');
       }
@@ -13748,7 +14037,6 @@ The live webpage contains ${detectedDirections.routes.length} navigation route o
               <div class="grounding-cards-container">
                 ${searchCardHtml}
                 ${livePageCardHtml}
-                ${hitlExamCardHtml}
                 ${hitlWorkspaceCardHtml}
                 ${uitarsGroundingHtml}
                 <div class="agent-error-card" style="margin-bottom: 8px; background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.35);">
@@ -14138,6 +14426,137 @@ The live webpage contains ${detectedDirections.routes.length} navigation route o
         rawCmd: cmd,
         intention: chatIntention
       });
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
+
+    // 4.49 WikiSkill & Wikipedia Knowledge Distillation Directive (@agent wiki, /wiki, @agent wikiskill, /wikiskill, @agent wikipedia, /wikipedia)
+    const isWikiCmd = (
+      lower.startsWith('@agent wiki ') || lower === '@agent wiki' ||
+      lower.startsWith('/wiki ') || lower === '/wiki' ||
+      lower.startsWith('@agent wikiskill ') || lower === '@agent wikiskill' ||
+      lower.startsWith('/wikiskill ') || lower === '/wikiskill' ||
+      lower.startsWith('@agent wikipedia ') || lower === '@agent wikipedia' ||
+      lower.startsWith('/wikipedia ') || lower === '/wikipedia' ||
+      /^(?:@agent\s+|@|\/)?(?:wiki|wikiskill|wikipedia)(?:\s*[:\s]|$)/i.test(cmd)
+    );
+
+    if (isWikiCmd) {
+      const cleanWikiQuery = cmd
+        .replace(/^(?:@agent\s+(?:wiki|wikiskill|wikipedia)|\/(?:wiki|wikiskill|wikipedia)|@(?:wiki|wikiskill|wikipedia))\s*:?\s*/i, '')
+        .trim();
+
+      const queryToDistill = cleanWikiQuery || 'Artificial intelligence';
+      termLog(`[WIKISKILL] 📖 Distilling Wikipedia knowledge base for: "${queryToDistill}"...`, 'info');
+
+      setChatRunningState(true);
+      currentAbortController = new AbortController();
+
+      if (chatWelcome) chatWelcome.classList.add('hidden');
+      let assistantBubble = null;
+      let streamContentEl = null;
+      let sourcesCardEl = null;
+      let statusCtrl = null;
+
+      if (chatMessages) {
+        assistantBubble = document.createElement('div');
+        assistantBubble.className = 'msg-bubble assistant-bubble streaming';
+        assistantBubble.innerHTML = `
+          <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: #38bdf8; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+            <span>📖</span> <span>ModelFusion WikiSkill</span>
+            <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">(Wikipedia Knowledge Distillation)</span>
+          </div>
+          <div class="bubble-content">
+            <div class="research-status-bar">
+              <div class="dynamic-status-pill">
+                <span class="status-pulse-dot"></span>
+                <span class="status-text">Searching Wikipedia knowledge base...</span>
+              </div>
+            </div>
+            <div class="wiki-knowledge-card" style="display: none; margin-bottom: 10px;"></div>
+            <details class="model-thinking-box" style="display: none;" open>
+              <summary class="thinking-header">
+                <span class="thinking-icon">🧠</span>
+                <span class="thinking-label">Thinking...</span>
+              </summary>
+              <div class="thinking-content"></div>
+            </details>
+            <div class="stream-content"></div>
+          </div>
+        `;
+        chatMessages.appendChild(assistantBubble);
+        sourcesCardEl = assistantBubble.querySelector('.wiki-knowledge-card');
+        streamContentEl = assistantBubble.querySelector('.stream-content');
+        if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
+        statusCtrl = startDynamicStatus(assistantBubble, 'wiki', queryToDistill);
+      }
+
+      try {
+        const wikiDistillation = await executeWikiDistillation(queryToDistill);
+
+        if (statusCtrl) {
+          statusCtrl.setText('⚡ Synthesizing grounded distillation with Local AI...');
+        }
+
+        if (sourcesCardEl && wikiDistillation && wikiDistillation.article) {
+          renderWikiKnowledgeCard(sourcesCardEl, wikiDistillation);
+          if (currentSettings.autoScroll !== false && chatMessages) {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+          }
+        }
+
+        const art = wikiDistillation.article || {};
+        const title = art.title || queryToDistill;
+        const url = art.url || `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`;
+        const extract = art.extract || wikiDistillation.distilled_summary || '';
+        const sections = art.sections || [];
+        const crossRefs = art.cross_references || [];
+        const citations = art.citations || [];
+
+        termLog(`[WIKISKILL] ✅ Grounded "${title}" (${sections.length} sections, ${crossRefs.length} cross-refs, ${citations.length} citations)`, 'success');
+
+        const sectionContext = sections.slice(0, 10).map(s => `• ${s.line} (#${s.anchor})`).join('\n');
+        const refContext = crossRefs.slice(0, 10).join(', ');
+        const citeContext = citations.slice(0, 6).map((c, i) => `[${i + 1}] ${c}`).join('\n');
+
+        const promptWithWiki = `User Query: ${queryToDistill}
+
+Verified Wikipedia Knowledge Grounding:
+Article: ${title} (${url})
+Summary:
+${extract}
+
+Key Sections:
+${sectionContext || 'Overview'}
+
+Related Encyclopedic Concepts:
+${refContext || 'None specified'}
+
+Verified External Citations:
+${citeContext || 'None specified'}
+
+Instructions:
+- Provide an engaging, deeply detailed, publication-quality synthesis answering the user query.
+- Structure your response with natural, descriptive markdown headings (###).
+- Ground your analysis strictly in verified encyclopedic facts, and cite verified sources inline using [1], [2], etc., with markdown links to Wikipedia and sources.
+- Highlight architectural principles, historical context, core equations or methodologies, and practical applications.`;
+
+        const sysPrompt = 'You are HugOS Browser AI, an expert research scholar and encyclopedic knowledge distillation engine. Correlate Wikipedia articles, section hierarchies, cross-references, and citations into publication-quality structured syntheses with verified citation links.';
+
+        await streamAiChat(promptWithWiki, sysPrompt, {
+          images: attachedImages,
+          panel: { id: 'wiki', name: 'Wikipedia Knowledge Distillation' },
+          maxTokens: Math.max(8192, currentSettings.maxTokens || 8192),
+          existingBubble: assistantBubble,
+          bubbleContent: streamContentEl,
+          statusCtrl: statusCtrl
+        });
+      } catch (err) {
+        if (statusCtrl) statusCtrl.stop();
+        termLog(`WikiSkill execution failure: ${err.message}`, 'error');
+        renderErrorCard(assistantBubble, '⚠️ Wikipedia Distillation Failed', `Could not distill Wikipedia knowledge for "${queryToDistill}": ${err.message}. Please check your connection and retry.`);
+      }
+
       if (currentAttachments.length > 0) clearAllAttachments();
       return;
     }
@@ -14955,6 +15374,8 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     { cmd: '@agent browser ', icon: '🌐', label: 'Browser Automation', desc: 'Navigate, interact, and automate web workflows' },
     { cmd: '@agent browser deep research on ', icon: '🔍', label: 'Deep Research', desc: 'Autonomous multi-step web research & synthesis' },
     { cmd: '@agent arxiv ', icon: '📚', label: 'arXiv Papers', desc: 'Direct search of arXiv scientific preprints and research papers' },
+    { cmd: '@agent wiki ', icon: '📖', label: 'Wikipedia Knowledge Distillation', desc: 'Distill Wikipedia knowledge with deep section retrieval, cross-reference linking, and verified citation grounding' },
+    { cmd: '@agent wikiskill ', icon: '📖', label: 'WikiSkill Evolution', desc: 'Compile agent task experience into persistent wiki knowledge for skill evolution' },
     { cmd: '@agent markers ', icon: '🎯', label: 'Visual Element Markers', desc: 'Numeric visual element grounding with 90% token reduction' },
     { cmd: '@agent som ', icon: '🎯', label: 'Visual Element Markers (SoM)', desc: 'Numeric visual element grounding with 90% token reduction' },
     { cmd: '@agent summarize', icon: '📑', label: 'Summarize Page', desc: 'Extract and summarize active web page content' },
