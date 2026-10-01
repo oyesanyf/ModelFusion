@@ -13487,6 +13487,440 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     }
   }
 
+  // -----------------------------------------------------------------
+  // 4.057g Persistent Author Style Memory & Formatting
+  // -----------------------------------------------------------------
+  const DEFAULT_AUTHOR_STYLE_PROFILE = {
+    tone: 'engaging, authentic, vivid',
+    targetSentenceLength: '12-25 words, varied burstiness',
+    bannedBuzzwords: [
+      'delve', 'tapestry', 'testament', 'beacon', 'unleash', 'crucial',
+      'pivotal', 'moreover', 'furthermore', 'interconnected', 'revolutionize',
+      'multifaceted', 'paramount', 'dynamic landscape'
+    ],
+    pacing: 'sensory grounding, show-don\'t-tell',
+    groundingEnabled: true
+  };
+
+  function getAuthorStyleProfile() {
+    try {
+      const raw = (typeof localStorage !== 'undefined' && localStorage.getItem) ? localStorage.getItem('modelfusion_author_style_profile') : null;
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return { ...DEFAULT_AUTHOR_STYLE_PROFILE, ...parsed };
+      }
+    } catch (e) {
+      console.warn('Error reading author style profile:', e);
+    }
+    return { ...DEFAULT_AUTHOR_STYLE_PROFILE };
+  }
+
+  function saveAuthorStyleProfile(profile) {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage.setItem) {
+        localStorage.setItem('modelfusion_author_style_profile', JSON.stringify(profile));
+      }
+    } catch (e) {
+      console.warn('Error saving author style profile:', e);
+    }
+    return profile;
+  }
+
+  function resetAuthorStyleProfile() {
+    const fresh = { ...DEFAULT_AUTHOR_STYLE_PROFILE };
+    saveAuthorStyleProfile(fresh);
+    return fresh;
+  }
+
+  function updateAuthorStyleProperty(key, value) {
+    const prof = getAuthorStyleProfile();
+    prof[key] = value;
+    saveAuthorStyleProfile(prof);
+    return prof;
+  }
+
+  function formatAuthorStylePrompt(profile = getAuthorStyleProfile()) {
+    const banned = Array.isArray(profile.bannedBuzzwords) ? profile.bannedBuzzwords.join(', ') : '';
+    return `AUTHOR STYLE & VOICE DIRECTIVE:
+1. Tone: ${profile.tone || 'engaging, authentic'}
+2. Sentence Cadence: ${profile.targetSentenceLength || 'varied rhythm'}. Strictly vary sentence lengths to produce natural human cadence and burstiness. Mix short, impactful 4-to-8-word sentences with longer, flowing descriptive clauses.
+3. Strictly Banned AI Buzzwords: Never use any of the following cliché AI filler words: ${banned}. If any of these words appear in draft thinking, immediately replace them with concrete, grounded vocabulary.
+4. Narrative Pacing: ${profile.pacing || 'sensory grounding'}. Favor concrete physical details, dialogue, and authentic sensory observations over generic conceptual summaries.`;
+  }
+
+  // -----------------------------------------------------------------
+  // 4.057h Writing Outline & Pacing Workspace (HITL)
+  // -----------------------------------------------------------------
+  function detectLongFormWritingRequest(prompt = '', options = {}) {
+    if (options && (options.outlineApproved || options.skipHitlOutline)) return { isLongFormWriting: false };
+    const text = (typeof prompt === 'string') ? prompt.trim() : '';
+    if (!text) return { isLongFormWriting: false };
+
+    // Check intention parsed properties if available
+    const int = (options && options.intention) ? options.intention : parseRegexIntention(text, options);
+
+    const isExplicitMultiPage = int.targetPages >= 3;
+    const isExplicitMultiChapter = int.targetChapters >= 2;
+    const isBookOrNovelPrompt = /\b(?:write\s+(?:a\s+|me\s+a\s+)?(?:book|novel|long[- ]form\s+essay|dissertation|complete\s+guide|memoir|biography)|multi[- ]chapter\s+story|epic\s+novel)\b/i.test(text);
+    const hasLongFormKeywords = (int.targetPages >= 2 || int.targetWords >= 1500 || int.isLongForm) && /\b(?:chapter|novel|book|essay|story|biography|memoir|chronicle)\b/i.test(text);
+
+    const isLongForm = isExplicitMultiPage || isExplicitMultiChapter || isBookOrNovelPrompt || hasLongFormKeywords;
+    if (!isLongForm) return { isLongFormWriting: false };
+
+    const estimatedPages = int.targetPages > 0 ? int.targetPages : (int.targetChapters > 0 ? Math.ceil(int.targetChapters * 1.5) : (int.targetWords > 0 ? Math.ceil(int.targetWords / 500) : 3));
+    const estimatedChapters = int.targetChapters > 0 ? int.targetChapters : Math.max(3, estimatedPages);
+    const isFiction = !/\b(?:research|history|biography|academic|technical|scientific|non[- ]fiction|guide|tutorial|analysis|essay\s+on)\b/i.test(text);
+
+    let topic = text.replace(/^(?:write\s+(?:a\s+|me\s+a\s+)?(?:book|novel|long[- ]form\s+essay|story|essay|guide)?\s*(?:about|on|titled|called)?\s*)/i, '').trim();
+    if (topic.length > 60) {
+      topic = topic.slice(0, 57) + '...';
+    }
+
+    return {
+      isLongFormWriting: true,
+      estimatedPages,
+      estimatedChapters,
+      targetWords: int.targetWords > 0 ? int.targetWords : (estimatedPages * 500),
+      topic: topic || 'Untitled Work',
+      isFiction
+    };
+  }
+
+  function extractWritingOutline(prompt = '', docText = '', options = {}) {
+    const det = detectLongFormWritingRequest(prompt, options);
+    const numChapters = det.estimatedChapters || 3;
+    const wordsPerChapter = Math.round((det.targetWords || 1500) / numChapters);
+    const styleProf = getAuthorStyleProfile();
+
+    const title = det.topic && det.topic !== 'Untitled Work'
+      ? (det.topic.charAt(0).toUpperCase() + det.topic.slice(1))
+      : (det.isFiction ? 'Echoes of the Horizon' : 'Comprehensive Exploration & Critical Analysis');
+
+    const defaultChapterThemes = det.isFiction ? [
+      { stem: 'Inciting Incident & World Genesis', plot: 'Establish protagonist baseline, sensory environment, and initial disruptive tension.' },
+      { stem: 'Rising Conflict & Hidden Stakes', plot: 'Escalation of internal doubts, unexpected obstacles, and shifting loyalties.' },
+      { stem: 'The Pivot & Deep Discovery', plot: 'Critical revelation altering perception of the core dilemma.' },
+      { stem: 'Climax & Confrontation', plot: 'Decisive confrontation testing conviction and ultimate stakes.' },
+      { stem: 'Resolution & Resonant Aftermath', plot: 'Meaningful denouement, transformed equilibrium, and reflective closure.' }
+    ] : [
+      { stem: 'Foundations & Historical Context', plot: 'Core problem formulation, evolutionary origins, and fundamental principles.' },
+      { stem: 'Architectural Analysis & Mechanics', plot: 'Technical decomposition, operational characteristics, and empirical behaviors.' },
+      { stem: 'Case Studies & Practical Dynamics', plot: 'Real-world deployments, failure modes, and observed anomalies.' },
+      { stem: 'Comparative Synthesis & Trade-offs', plot: 'Critical evaluation of alternative paradigms and edge cases.' },
+      { stem: 'Future Trajectories & Conclusions', plot: 'Open research horizons, systemic implications, and synthesis of findings.' }
+    ];
+
+    const chapters = [];
+    for (let i = 0; i < numChapters; i++) {
+      const theme = defaultChapterThemes[i % defaultChapterThemes.length];
+      chapters.push({
+        number: i + 1,
+        title: `Chapter ${i + 1}: ${theme.stem}`,
+        targetWords: wordsPerChapter,
+        pacing: (i === 0) ? 'Hook & Immersive Pacing' : (i === numChapters - 1 ? 'Climactic & Reflective' : 'Sustained Momentum'),
+        plotBreakdown: theme.plot
+      });
+    }
+
+    return {
+      title,
+      prompt,
+      totalEstimatedWords: numChapters * wordsPerChapter,
+      targetPages: det.estimatedPages || 3,
+      chapters,
+      styleProfile: styleProf,
+      isFiction: det.isFiction,
+      grounding: options.grounding || null
+    };
+  }
+
+  let activeOutline = null;
+
+  function buildHitlOutlineWorkspaceHtml(outlinePlan) {
+    if (!outlinePlan || !Array.isArray(outlinePlan.chapters)) return '';
+    activeOutline = outlinePlan;
+    window.activeOutline = outlinePlan;
+
+    const chaptersHtml = outlinePlan.chapters.map((ch, idx) => `
+      <div class="outline-chapter-card" style="margin-bottom: 8px;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div class="outline-stem-title">
+            <span>📑</span>
+            <span id="outline-ch-title-${idx}">${escapeHtml(ch.title)}</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="outline-tier-badge">~${ch.targetWords} words</span>
+            <button type="button" class="btn-outline-edit-chapter" onclick="window.editOutlineChapter(${idx})" style="font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer;">
+              ✏️ Edit Stem
+            </button>
+          </div>
+        </div>
+        <div class="outline-stem-meta">Pacing: <em>${escapeHtml(ch.pacing)}</em></div>
+        <div class="outline-stem-plot" id="outline-ch-plot-${idx}">${escapeHtml(ch.plotBreakdown)}</div>
+      </div>
+    `).join('');
+
+    const groundingBadge = outlinePlan.grounding ? `
+      <span style="font-size: 11px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 2px 8px; border-radius: 4px;">
+        💡 Wiki Grounded: ${escapeHtml(outlinePlan.grounding.topic || 'Factual Reference')}
+      </span>
+    ` : '';
+
+    return `
+      <div class="hitl-outline-workspace">
+        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px; margin-bottom: 10px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 20px;">🖋️</span>
+            <div>
+              <div style="font-weight: 700; color: #fbbf24; font-size: 14px;">Writing Outline &amp; Pacing Workspace (HITL)</div>
+              <div style="font-size: 11px; color: var(--text-muted, #94a3b8);">Human-in-the-Loop review: Confirm chapter stems, pacing, and word allocations before writing starts</div>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            ${groundingBadge}
+            <span style="font-size: 11px; background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.35); padding: 2px 8px; border-radius: 4px;">
+              Tone: ${escapeHtml(outlinePlan.styleProfile ? outlinePlan.styleProfile.tone : 'Authentic')}
+            </span>
+          </div>
+        </div>
+
+        <div style="background: rgba(0,0,0,0.2); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; font-size: 12px;">
+          <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">
+            📖 Proposed Work: <em>"${escapeHtml(outlinePlan.title)}"</em>
+          </div>
+          <div style="font-size: 11px; color: var(--text-secondary); display: flex; gap: 16px;">
+            <span>📊 Total Target: <strong>~${outlinePlan.totalEstimatedWords} words</strong> (${outlinePlan.targetPages} Pages)</span>
+            <span>📑 Chapters: <strong>${outlinePlan.chapters.length}</strong></span>
+            <span>🛡️ AI Clichés: <strong>0 Banned Buzzwords</strong></span>
+          </div>
+        </div>
+
+        <div class="outline-chapters-container" style="max-height: 280px; overflow-y: auto; padding-right: 4px;">
+          ${chaptersHtml}
+        </div>
+
+        <div id="outline-hitl-safety-gate" class="outline-safety-gate-bar" style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+          <div style="font-size: 11px; color: #eab308; display: flex; align-items: center; gap: 6px;">
+            <span>⏳</span>
+            <span>Human approval required to commence chapter-by-chapter generation</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button type="button" class="btn-outline-abort btn-hitl-abort" onclick="window.abortOutlineAction()">
+              🛑 Abort
+            </button>
+            <button type="button" class="btn-outline-customize btn-hitl-customize" onclick="window.customizeOutlineAction()">
+              ✏️ Customize Outline
+            </button>
+            <button type="button" class="btn-outline-confirm btn-hitl-approve" onclick="window.confirmOutlineAction()">
+              ✅ Approve Outline &amp; Begin Writing
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function confirmOutlineAction() {
+    const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('outline-hitl-safety-gate') : null;
+    if (gate) {
+      gate.innerHTML = `
+        <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; border-radius: 6px; padding: 10px 14px; color: #10b981; width: 100%; display: flex; align-items: center; gap: 8px;">
+          <span>✅</span>
+          <strong>Outline Approved! Launching deep agentic generation loop...</strong>
+        </div>
+      `;
+    }
+    if (typeof termLog === 'function') {
+      termLog('[OUTLINE HITL] ✅ Outline approved by human user. Launching narrative generation...', 'success');
+    }
+    if (window.activeOutline && window.activeOutline.prompt) {
+      setTimeout(() => {
+        executeCliCommand(window.activeOutline.prompt, { outlineApproved: true, outlinePlan: window.activeOutline });
+      }, 250);
+    }
+  }
+
+  function abortOutlineAction() {
+    const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('outline-hitl-safety-gate') : null;
+    if (gate) {
+      gate.innerHTML = `
+        <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 10px 14px; color: #f87171; width: 100%;">
+          <strong>🛑 Outline Generation Cancelled by User.</strong>
+        </div>
+      `;
+    }
+    if (typeof termLog === 'function') {
+      termLog('[OUTLINE HITL] 🛑 Writing outline aborted by user.', 'warn');
+    }
+  }
+
+  function editOutlineChapter(idx) {
+    if (!window.activeOutline || !window.activeOutline.chapters || !window.activeOutline.chapters[idx]) return;
+    const ch = window.activeOutline.chapters[idx];
+    const newTitle = (typeof window !== 'undefined' && window.prompt) ? window.prompt(`Edit Title for Chapter ${ch.number}:`, ch.title) : null;
+    if (newTitle && newTitle.trim()) {
+      ch.title = newTitle.trim();
+      const titleEl = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById(`outline-ch-title-${idx}`) : null;
+      if (titleEl) titleEl.textContent = ch.title;
+    }
+    const newPlot = (typeof window !== 'undefined' && window.prompt) ? window.prompt(`Edit Narrative Plot for Chapter ${ch.number}:`, ch.plotBreakdown) : null;
+    if (newPlot && newPlot.trim()) {
+      ch.plotBreakdown = newPlot.trim();
+      const plotEl = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById(`outline-ch-plot-${idx}`) : null;
+      if (plotEl) plotEl.textContent = ch.plotBreakdown;
+    }
+    if (typeof termLog === 'function') {
+      termLog(`[OUTLINE HITL] ✏️ Chapter ${ch.number} updated.`, 'info');
+    }
+  }
+
+  function customizeOutlineAction() {
+    if (!window.activeOutline) return;
+    const addCh = (typeof window !== 'undefined' && window.confirm) ? window.confirm('Add an additional chapter to the outline?') : false;
+    if (addCh) {
+      const nextNum = window.activeOutline.chapters.length + 1;
+      window.activeOutline.chapters.push({
+        number: nextNum,
+        title: `Chapter ${nextNum}: Climax & Resolution`,
+        targetWords: 600,
+        pacing: 'Dynamic & Reflective',
+        plotBreakdown: 'Critical final turning point, resolving secondary threads and solidifying transformation.'
+      });
+      window.activeOutline.totalEstimatedWords += 600;
+      window.activeOutline.targetPages += 1;
+      const workspaceContainer = (typeof document !== 'undefined' && document.querySelector) ? document.querySelector('.hitl-outline-workspace') : null;
+      if (workspaceContainer && workspaceContainer.parentElement) {
+        workspaceContainer.outerHTML = buildHitlOutlineWorkspaceHtml(window.activeOutline);
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------
+  // 4.057i Terminal Shell & File Safety Gate (HITL)
+  // -----------------------------------------------------------------
+  function detectPotentiallyDestructiveCommand(cmd = '') {
+    if (typeof cmd !== 'string') return { isDestructive: false };
+    const clean = cmd.trim();
+    if (!clean) return { isDestructive: false };
+
+    const destructivePatterns = [
+      { regex: /\brm\s+-(?:r[fv]|f[rv]|[rv]f)\b/i, reason: 'Recursive, forced directory/file deletion (rm -rf)' },
+      { regex: /\brmdir\s+\/[sq]\b/i, reason: 'Recursive Windows directory tree removal (rmdir /s)' },
+      { regex: /\bdel\s+(?:\/[sqf]|\*|\/f)\b/i, reason: 'Unrestricted or forced Windows file deletion (del /f)' },
+      { regex: /\bRemove-Item\b.*-(?:Recurse|Force)\b/i, reason: 'Recursive forced PowerShell item deletion' },
+      { regex: /\bformat\s+[a-z]:/i, reason: 'Disk volume formatting' },
+      { regex: /\b(?:mkfs|fdisk|parted|diskpart)\b/i, reason: 'Disk partition table modification or formatting' },
+      { regex: /\bDROP\s+(?:DATABASE|TABLE|SCHEMA)\b/i, reason: 'Irreversible database drop statement' },
+      { regex: /\bTRUNCATE\s+TABLE\b/i, reason: 'Unrecoverable table truncation' },
+      { regex: /\bgit\s+reset\s+--hard\b/i, reason: 'Destructive git hard reset discarding uncommitted working changes' },
+      { regex: /\bgit\s+clean\s+-(?:[xfd]{2,})\b/i, reason: 'Permanent deletion of untracked files and directories' },
+      { regex: /\bchmod\s+-R\s+(?:777|000)\b/i, reason: 'Global recursive permission modification' },
+      { regex: /\b(?:kill\s+-9|Stop-Process\b.*-Force)\b/i, reason: 'Forced process termination' }
+    ];
+
+    for (const dp of destructivePatterns) {
+      if (dp.regex.test(clean)) {
+        return {
+          isDestructive: true,
+          riskLevel: 'CRITICAL',
+          reason: dp.reason,
+          command: clean
+        };
+      }
+    }
+
+    return { isDestructive: false };
+  }
+
+  let activeShellAction = null;
+
+  function buildHitlShellWorkspaceHtml(command, reason = '', diffOrDetails = '') {
+    activeShellAction = { command, reason, diffOrDetails };
+    window.activeShellAction = activeShellAction;
+
+    return `
+      <div class="hitl-shell-workspace">
+        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px; margin-bottom: 10px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 20px;">🛡️</span>
+            <div>
+              <div style="font-weight: 700; color: #ef4444; font-size: 14px;">Terminal Shell &amp; File Safety Gate (HITL)</div>
+              <div style="font-size: 11px; color: var(--text-muted, #94a3b8);">Potentially destructive system command or batch modification intercepted</div>
+            </div>
+          </div>
+          <span class="shell-risk-badge">⚠️ RISK: CRITICAL</span>
+        </div>
+
+        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">
+          <strong>Target Command / Operation:</strong>
+        </div>
+        <div class="shell-command-box"><code>${escapeHtml(command)}</code></div>
+
+        ${reason ? `
+          <div style="font-size: 11.5px; color: #fca5a5; margin-bottom: 6px;">
+            <strong>Safety Concern:</strong> ${escapeHtml(reason)}
+          </div>
+        ` : ''}
+
+        ${diffOrDetails ? `
+          <div class="shell-diff-box">
+            <div style="font-size: 10.5px; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase;">Operation Details / Impact Analysis:</div>
+            <code>${escapeHtml(diffOrDetails)}</code>
+          </div>
+        ` : ''}
+
+        <div id="shell-hitl-safety-gate" class="shell-safety-gate-bar" style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+          <div style="font-size: 11px; color: #f87171; display: flex; align-items: center; gap: 6px;">
+            <span>✋</span>
+            <span>Human authorization required prior to OS execution</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button type="button" class="btn-shell-abort btn-hitl-abort" onclick="window.abortShellAction()">
+              🛑 Block &amp; Cancel
+            </button>
+            <button type="button" class="btn-shell-confirm btn-hitl-approve" onclick="window.confirmShellAction()">
+              ⚠️ Authorize &amp; Execute
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function confirmShellAction() {
+    const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('shell-hitl-safety-gate') : null;
+    if (gate) {
+      gate.innerHTML = `
+        <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; border-radius: 6px; padding: 10px 14px; color: #10b981; width: 100%; display: flex; align-items: center; gap: 8px;">
+          <span>✅</span>
+          <strong>Command Authorized by User. Proceeding with OS execution...</strong>
+        </div>
+      `;
+    }
+    if (typeof termLog === 'function') {
+      termLog('[SHELL HITL] ⚠️ Destructive command authorized by human user.', 'warn');
+    }
+    if (window.activeShellAction && window.activeShellAction.command) {
+      setTimeout(() => {
+        executeCliCommand(window.activeShellAction.command, { shellApproved: true });
+      }, 250);
+    }
+  }
+
+  function abortShellAction() {
+    const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('shell-hitl-safety-gate') : null;
+    if (gate) {
+      gate.innerHTML = `
+        <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 10px 14px; color: #f87171; width: 100%;">
+          <strong>🛑 Command Execution Blocked by User. System state preserved.</strong>
+        </div>
+      `;
+    }
+    if (typeof termLog === 'function') {
+      termLog('[SHELL HITL] 🛑 Destructive command blocked by user.', 'success');
+    }
+  }
+
   window.classifyPageArchetype = classifyPageArchetype;
   window.resolveNaturalLanguageNavUrl = resolveNaturalLanguageNavUrl;
   window.extractProducts = extractProducts;
@@ -13515,6 +13949,23 @@ Analyze the temporal progression across the sampled video keyframes, describing 
   window.buildHitlGenericActionWorkspaceHtml = buildHitlGenericActionWorkspaceHtml;
   window.confirmGenericAction = confirmGenericAction;
   window.abortGenericAction = abortGenericAction;
+
+  window.getAuthorStyleProfile = getAuthorStyleProfile;
+  window.saveAuthorStyleProfile = saveAuthorStyleProfile;
+  window.resetAuthorStyleProfile = resetAuthorStyleProfile;
+  window.updateAuthorStyleProperty = updateAuthorStyleProperty;
+  window.formatAuthorStylePrompt = formatAuthorStylePrompt;
+  window.detectLongFormWritingRequest = detectLongFormWritingRequest;
+  window.extractWritingOutline = extractWritingOutline;
+  window.buildHitlOutlineWorkspaceHtml = buildHitlOutlineWorkspaceHtml;
+  window.confirmOutlineAction = confirmOutlineAction;
+  window.abortOutlineAction = abortOutlineAction;
+  window.editOutlineChapter = editOutlineChapter;
+  window.customizeOutlineAction = customizeOutlineAction;
+  window.detectPotentiallyDestructiveCommand = detectPotentiallyDestructiveCommand;
+  window.buildHitlShellWorkspaceHtml = buildHitlShellWorkspaceHtml;
+  window.confirmShellAction = confirmShellAction;
+  window.abortShellAction = abortShellAction;
 
   // 4.058 Autonomous Computer Use & UI-TARS Directive (@agent computer-use, /computer-use, @computer-use, @agent ui-tars, /ui-tars)
   if (
