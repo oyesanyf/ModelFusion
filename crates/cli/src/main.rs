@@ -1699,6 +1699,12 @@ struct Args {
     #[arg(long, num_args = 0..=1, default_missing_value = "", help = "Rewrite passage into natural, fluid human prose using anti-AI stylometry (accepts inline text or file path)")]
     humanize: Option<String>,
 
+    #[arg(long, help = "Direct inline text input for humanize, watermark, or LLM directives")]
+    text: Option<String>,
+
+    #[arg(long, help = "Hugging Face API token for remote router inference")]
+    hf_token: Option<String>,
+
     #[arg(long, num_args = 0..=1, default_missing_value = "", help = "Detect AI watermark or steganographic anomaly (token green-list for text, LSB entropy for images; accepts inline text or file path)")]
     watermark: Option<String>,
 
@@ -3489,6 +3495,7 @@ async fn run(args: Args) -> Result<()> {
 
     if let Some(ref text) = args.humanize {
         let content_opt = resolve_cli_content(Some(text.as_str()), args.file.as_deref())
+            .or_else(|| args.text.clone())
             .or_else(|| args.query.clone())
             .or_else(|| args.prompt.clone());
         let input_text = match content_opt {
@@ -3499,15 +3506,26 @@ async fn run(args: Args) -> Result<()> {
             }
         };
 
-        let _ = model_selection::memory::ensure_ollama_running();
-        let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
-        let model = args.model.clone().unwrap_or_else(|| {
-            let sys = query_system_resources();
-            select_ollama_model_from_sys(false, &sys).to_string()
-        });
+        let hf_token_opt = args.hf_token.clone()
+            .or_else(|| std::env::var("HF_TOKEN").ok())
+            .or_else(|| std::env::var("HUGGINGFACE_TOKEN").ok());
+
+        let (endpoint, model) = if let Some(ref _token) = hf_token_opt {
+            let m = args.model.clone().unwrap_or_else(|| "meta-llama/Meta-Llama-3-8B-Instruct".to_string());
+            ("https://router.huggingface.co/v1/chat/completions".to_string(), m)
+        } else {
+            let _ = model_selection::memory::ensure_ollama_running();
+            let ep = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+            let m = args.model.clone().unwrap_or_else(|| {
+                let sys = query_system_resources();
+                select_ollama_model_from_sys(false, &sys).to_string()
+            });
+            (ep, m)
+        };
 
         println!("✍️ Humanizing text with ProseHumanizer (model: {}, endpoint: {})...", model, endpoint);
-        let humanizer = humanizer::ProseHumanizer::new(&endpoint, &model);
+        let humanizer = humanizer::ProseHumanizer::new(&endpoint, &model)
+            .with_hf_token(hf_token_opt);
         match humanizer.humanize(input_text.trim()).await {
             Ok(output) => {
                 println!("\n{}", output);
@@ -13239,36 +13257,57 @@ sequenceDiagram
                     let text = request_json.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
                     let model_opt = request_json.get("model").and_then(|v| v.as_str());
                     let endpoint_opt = request_json.get("endpoint").and_then(|v| v.as_str());
+                    let hf_token_opt = request_json.get("hf_token").and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .or_else(|| std::env::var("HF_TOKEN").ok())
+                        .or_else(|| std::env::var("HUGGINGFACE_TOKEN").ok());
 
-                    let resolved_model = if let Some(m) = model_opt {
-                        if !m.is_empty() && m != "modelfusion_auto" {
-                            m.to_string()
+                    let (endpoint, resolved_model) = if let Some(ref _token) = hf_token_opt {
+                        let m = if let Some(m) = model_opt {
+                            if !m.is_empty() && m != "modelfusion_auto" { m.to_string() } else { "meta-llama/Meta-Llama-3-8B-Instruct".to_string() }
+                        } else { "meta-llama/Meta-Llama-3-8B-Instruct".to_string() };
+                        let ep = if let Some(ep) = endpoint_opt {
+                            if !ep.is_empty() { ep.to_string() } else { "https://router.huggingface.co/v1/chat/completions".to_string() }
+                        } else { "https://router.huggingface.co/v1/chat/completions".to_string() };
+                        (ep, m)
+                    } else {
+                        let m = if let Some(m) = model_opt {
+                            if !m.is_empty() && m != "modelfusion_auto" {
+                                m.to_string()
+                            } else {
+                                let sys = query_system_resources();
+                                select_ollama_model_from_sys(false, &sys).to_string()
+                            }
                         } else {
                             let sys = query_system_resources();
                             select_ollama_model_from_sys(false, &sys).to_string()
-                        }
-                    } else {
-                        let sys = query_system_resources();
-                        select_ollama_model_from_sys(false, &sys).to_string()
-                    };
+                        };
 
-                    let endpoint = if let Some(ep) = endpoint_opt {
-                        if !ep.is_empty() {
-                            format!("{}/v1/chat/completions", ep.trim_end_matches('/'))
+                        let ep = if let Some(ep) = endpoint_opt {
+                            if !ep.is_empty() {
+                                format!("{}/v1/chat/completions", ep.trim_end_matches('/'))
+                            } else {
+                                "http://127.0.0.1:11434/v1/chat/completions".to_string()
+                            }
                         } else {
-                            "http://127.0.0.1:11434/v1/chat/completions".to_string()
-                        }
-                    } else {
-                        let base = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
-                        format!("{}/v1/chat/completions", base.trim_end_matches('/'))
+                            let base = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+                            format!("{}/v1/chat/completions", base.trim_end_matches('/'))
+                        };
+                        (ep, m)
                     };
 
-                    let humanizer = humanizer::ProseHumanizer::new(&endpoint, &resolved_model);
+                    let humanizer = humanizer::ProseHumanizer::new(&endpoint, &resolved_model)
+                        .with_hf_token(hf_token_opt);
                     match humanizer.humanize(&text).await {
                         Ok(humanized) => {
+                            let profile = humanizer::analyze_stylometry(&humanized);
+                            let detector_score = humanizer::compute_detector_resistance(&humanized, &profile);
                             serde_json::json!({
                                 "status": "ok",
                                 "humanized": humanized,
+                                "detector_score": (detector_score * 100.0).round() / 100.0,
+                                "burstiness_score": (profile.burstiness_score * 100.0).round() / 100.0,
+                                "cliches_count": profile.cliche_count,
                                 "model": resolved_model
                             }).to_string()
                         }
