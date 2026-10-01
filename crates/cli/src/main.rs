@@ -1693,7 +1693,7 @@ struct Args {
     // ---------------------------------------------------------
     // Global Flags
     // ---------------------------------------------------------
-    #[arg(long, help = "Path to file for analysis or processing")]
+    #[arg(short = 'f', long, help = "Path to file for analysis or processing")]
     file: Option<String>,
 
     #[arg(long, num_args = 0..=1, default_missing_value = "", help = "Rewrite passage into natural, fluid human prose using anti-AI stylometry (accepts inline text or file path)")]
@@ -3581,15 +3581,35 @@ async fn run(args: Args) -> Result<()> {
         return Ok(());
     }
 
-    if let Some(ref text) = args.humanize {
-        let content_opt = resolve_cli_content(Some(text.as_str()), args.file.as_deref())
+    let is_humanize_invocation = args.humanize.is_some()
+        || (args.text.is_some()
+            && args.prompt.is_none()
+            && args.query.is_none()
+            && args.watermark.is_none()
+            && args.translate.is_none()
+            && !args.server
+            && !args.mcp
+            && !args.browser)
+        || (args.file.is_some()
+            && args.prompt.is_none()
+            && args.query.is_none()
+            && args.watermark.is_none()
+            && args.translate.is_none()
+            && !args.server
+            && !args.mcp
+            && !args.browser
+            && (args.hf_token.is_some() || std::env::var("HF_TOKEN").is_ok()));
+
+    if is_humanize_invocation {
+        let raw_h = args.humanize.as_deref();
+        let content_opt = resolve_cli_content(raw_h, args.file.as_deref())
             .or_else(|| args.text.clone())
             .or_else(|| args.query.clone())
             .or_else(|| args.prompt.clone());
         let input_text = match content_opt {
             Some(t) if !t.trim().is_empty() => t,
             _ => {
-                eprintln!("Error: No text or file provided to humanize. Usage: cli.exe --humanize \"<text>\" or cli.exe --humanize <path> or cli.exe --file <path> --humanize");
+                eprintln!("Error: Please provide either a text string via --text or a file via --file");
                 return Ok(());
             }
         };
