@@ -18,10 +18,15 @@ struct Message {
 struct ChatCompletionRequest {
     model: String,
     messages: Vec<Message>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
     temperature: f32,
-    top_p: f32,
-    presence_penalty: f32,
-    frequency_penalty: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    top_p: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    presence_penalty: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    frequency_penalty: Option<f32>,
 }
 
 #[derive(Serialize, Debug)]
@@ -1078,14 +1083,24 @@ impl ProseHumanizer {
         let request_payload = ChatCompletionRequest {
             model: self.model.clone(),
             messages: messages.clone(),
+            max_tokens: Some(1024),
             temperature: 0.95,
-            top_p: 0.92,
-            presence_penalty: 0.60,
-            frequency_penalty: 0.65,
+            top_p: Some(0.92),
+            presence_penalty: Some(0.60),
+            frequency_penalty: Some(0.65),
         };
 
         // 1. If an HF token is configured or model looks like a HF repo, query Hugging Face Router API
         if let Some(ref token) = self.hf_token {
+            let hf_payload = ChatCompletionRequest {
+                model: self.model.clone(),
+                messages: messages.clone(),
+                max_tokens: Some(1024),
+                temperature: 0.7,
+                top_p: None,
+                presence_penalty: None,
+                frequency_penalty: None,
+            };
             let hf_urls = [
                 &self.endpoint,
                 "https://router.huggingface.co/v1/chat/completions",
@@ -1096,7 +1111,8 @@ impl ProseHumanizer {
                     .client
                     .post(url)
                     .header("Authorization", format!("Bearer {}", token))
-                    .json(&request_payload)
+                    .header("Content-Type", "application/json")
+                    .json(&hf_payload)
                     .send()
                     .await;
 
@@ -1190,10 +1206,11 @@ impl ProseHumanizer {
                     let local_payload = ChatCompletionRequest {
                         model: "qwen2.5:7b".to_string(),
                         messages: messages.clone(),
+                        max_tokens: Some(1024),
                         temperature: 0.95,
-                        top_p: 0.92,
-                        presence_penalty: 0.60,
-                        frequency_penalty: 0.65,
+                        top_p: Some(0.92),
+                        presence_penalty: Some(0.60),
+                        frequency_penalty: Some(0.65),
                     };
                     if let Ok(resp) = self.client.post(fallback_url).json(&local_payload).send().await {
                         if resp.status().is_success() {
