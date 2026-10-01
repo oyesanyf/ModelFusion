@@ -56,10 +56,12 @@
             <span class="tools-header-chevron" id="tools-accordion-chevron">▸</span>
           </button>
           <div class="sidebar-tools-body" id="sidebar-tools-body">
-            <div class="sidebar-tools-audit-bar">
-              <button type="button" class="btn-sidebar-audit-menus" id="btn-sidebar-audit-menus" title="Run automated click-test and verification across all menus">
-                <span>🧪</span>
-                <span>Audit &amp; Test All Menus</span>
+            <div class="sidebar-tools-audit-bar" style="display: flex; gap: 4px; margin-bottom: 6px; padding: 0 2px;">
+              <button type="button" class="btn-sidebar-audit-menus" id="btn-sidebar-audit-menus" title="Run automated click-test across sidebar menus" style="flex: 1;">
+                <span>🧪</span> <span>Menus</span>
+              </button>
+              <button type="button" class="btn-sidebar-audit-menus" id="btn-sidebar-audit-all" title="Run comprehensive end-to-end audit across all links, buttons, prompts &amp; resource logic" style="flex: 1.4; background: rgba(59, 130, 246, 0.12); color: #3b82f6; border-color: rgba(59, 130, 246, 0.4);">
+                <span>⚡</span> <span>Audit All</span>
               </button>
             </div>
             <!-- 1. Web Research & Automation -->
@@ -130,7 +132,7 @@
 
             <!-- 2. Data & Spreadsheets (CSV/Excel) -->
             <div class="tool-category">
-              <button type="button" class="tool-category-header" data-cat="tabular" title="Data &amp; Spreadsheets (CSV/Excel)">
+              <button type="button" class="tool-category-header" data-cat="tabular" data-alt-cat="data_science" title="Data &amp; Spreadsheets (CSV/Excel)">
                 <span class="cat-icon">📊</span>
                 <span class="cat-title">Data &amp; Spreadsheets (CSV/Excel)</span>
                 <span class="cat-chevron">▸</span>
@@ -165,7 +167,7 @@
 
             <!-- 3. Planning & Deep Thinking -->
             <div class="tool-category">
-              <button type="button" class="tool-category-header" data-cat="agent" title="Planning &amp; Deep Thinking Directives">
+              <button type="button" class="tool-category-header" data-cat="agent" data-alt-cat="reasoning" title="Planning &amp; Deep Thinking Directives">
                 <span class="cat-icon">🧠</span>
                 <span class="cat-title">Planning &amp; Deep Thinking</span>
                 <span class="cat-chevron">▸</span>
@@ -227,7 +229,7 @@
 
             <!-- 4. Images & Vision -->
             <div class="tool-category">
-              <button type="button" class="tool-category-header" data-cat="vision" title="Images &amp; Vision Tools">
+              <button type="button" class="tool-category-header" data-cat="vision" data-alt-cat="multimodal" title="Images &amp; Vision Tools">
                 <span class="cat-icon">👁️</span>
                 <span class="cat-title">Images &amp; Vision</span>
                 <span class="cat-chevron">▸</span>
