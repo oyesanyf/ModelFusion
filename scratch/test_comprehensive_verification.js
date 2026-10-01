@@ -447,6 +447,43 @@ assert(appJs.includes("First-Time Setup: Downloading calibrated sweet spot model
 assert(appJs.includes("Poll GET /api/tags every 3 seconds"), "streamAiChat must poll /api/tags for provisioning completion");
 console.log('  ✓ 10.4 Verified first-run 404 auto-provisioning handler in streamAiChat');
 
+// ---------------------------------------------------------------------------
+// SUITE 11: Agent Capabilities 175+ Expansion & TDZ-Free Badge Synchronization
+// ---------------------------------------------------------------------------
+console.log('\n[SUITE 11] Testing Agent Capabilities 175+ Expansion & Dynamic Badge Sync...');
+
+const indexHtmlContent = fs.readFileSync('browser/ui/index.html', 'utf8');
+const stylesCssContent = fs.readFileSync('browser/ui/styles.css', 'utf8');
+
+// 11.1 Verify elimination of legacy 161 across all UI files
+assert(!indexHtmlContent.includes('>161<'), 'Legacy 161 badge count must be eliminated from index.html');
+assert(!indexHtmlContent.includes('All 161+ Tools'), 'Legacy 161+ tool title must be eliminated from index.html');
+assert(!appJs.includes('All 161+ Tools'), 'Legacy 161+ tool title must be eliminated from app.js');
+assert(!stylesCssContent.includes('All 161+ Tools'), 'Legacy 161+ tool title must be eliminated from styles.css');
+console.log('  ✓ 11.1 Verified 100% elimination of legacy 161 across index.html, app.js, and styles.css');
+
+// 11.2 Verify initial HTML badge count is at least 175
+assert(indexHtmlContent.includes('<span class="tools-header-badge">175</span>'), 'index.html must display 175 badge');
+assert(indexHtmlContent.includes('All 175+ Tools'), 'index.html toggle must state All 175+ Tools');
+console.log('  ✓ 11.2 Verified initial HTML badge displays 175');
+
+// 11.3 Verify updateToolsHeaderBadge and TDZ-free AGENT_COMMANDS declaration
+const posAgentCommands = appJs.indexOf('const AGENT_COMMANDS = [');
+const posUpdateBadge = appJs.indexOf('function updateToolsHeaderBadge()');
+assert(posAgentCommands !== -1, 'AGENT_COMMANDS must be defined in app.js');
+assert(posUpdateBadge !== -1, 'updateToolsHeaderBadge must be defined in app.js');
+assert(posAgentCommands < posUpdateBadge, 'AGENT_COMMANDS must be declared BEFORE updateToolsHeaderBadge to prevent TDZ crash');
+assert(appJs.includes('Math.max(175,'), 'updateToolsHeaderBadge must calculate Math.max(175, ...)');
+assert(appJs.includes('dynamicMcpToolsCount'), 'updateToolsHeaderBadge must incorporate dynamicMcpToolsCount');
+console.log('  ✓ 11.3 Verified updateToolsHeaderBadge formula and TDZ-free lexical order');
+
+// 11.4 Verify Computer Use & companions in UI and CLI
+assert(indexHtml.includes('data-cat="computer_use"'), 'Computer Use category must exist in index.html');
+assert(indexHtml.includes('@agent computer-use'), 'Computer Use tool button must exist in index.html');
+assert(appJs.includes('@agent computer-use '), 'Computer Use must be registered in AGENT_COMMANDS');
+assert(appJs.includes('/api/computer-use'), 'app.js must route computer-use to /api/computer-use');
+console.log('  ✓ 11.4 Verified Computer Use UI-TARS integration across UI and API endpoints');
+
 console.log('\n====================================================');
 console.log('✅ ALL COMPREHENSIVE VERIFICATION SUITES PASSED (100%)');
 console.log('====================================================\n');
