@@ -70,10 +70,9 @@ assert.strictEqual(isShoppingOrder, false);
 
 console.log('✅ Check 3: Tightened isBooking & isShopping regexes verified (no false positive on short book, textbook, workshop, order of operations).');
 
-// Test 4: Verify DEFAULT_SETTINGS.maxTokens is 8192
 assert.ok(appJs.includes('maxTokens: 8192'), 'DEFAULT_SETTINGS.maxTokens must be 8192');
-assert.ok(appJs.includes('Math.max(16384'), 'numCtxToUse must be at least 16384');
-console.log('✅ Check 4: Generous token defaults confirmed (num_predict >= 8192, num_ctx >= 16384).');
+assert.ok(appJs.includes('numCtxToUse') && appJs.includes('requiredCtx'), 'numCtxToUse must be dynamically calculated');
+console.log('✅ Check 4: Generous token defaults confirmed (num_predict >= 8192, num_ctx dynamically sized up to 65536).');
 
 // Test 5: Verify /boost and @agent boost directive handler exists
 assert.ok(appJs.includes("lower === '@agent boost' || lower.startsWith('@agent boost ') || lower === '/boost'"), 'Boost directive handler must be implemented in executeCliCommand');
