@@ -7851,6 +7851,101 @@ pub fn parse_query_and_limit_from_request(raw_uri: &str, request_json: &serde_js
     (query.trim().to_string(), max_results)
 }
 
+/// Simple HTML entity escaper.
+pub fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#x27;")
+}
+
+/// Normalizes a target URL to ensure proper scheme and formatting.
+pub fn normalize_proxy_url(url: &str) -> String {
+    let trimmed = url.trim().trim_matches('"').trim_matches('\'');
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        trimmed.to_string()
+    } else {
+        format!("https://{}", trimmed)
+    }
+}
+
+/// Extracts target URL for /api/proxy or /api/browser/proxy from request URI or JSON body.
+pub fn extract_proxy_target_url(raw_uri: &str, request_json: &serde_json::Value) -> Option<String> {
+    // 1. First check JSON payload
+    if let Some(u) = request_json.get("url").or_else(|| request_json.get("target")).and_then(|v| v.as_str()) {
+        let trimmed = u.trim();
+        if !trimmed.is_empty() {
+            return Some(normalize_proxy_url(trimmed));
+        }
+    }
+
+    // 2. Check query string in raw_uri
+    if let Some((_, qs)) = raw_uri.split_once('?') {
+        if let Some(rest) = qs.strip_prefix("url=") {
+            let decoded = url_decode_simple(rest);
+            let trimmed = decoded.trim();
+            if !trimmed.is_empty() {
+                return Some(normalize_proxy_url(trimmed));
+            }
+        } else if let Some(pos) = qs.find("&url=") {
+            let rest = &qs[pos + 5..];
+            let decoded = url_decode_simple(rest);
+            let trimmed = decoded.trim();
+            if !trimmed.is_empty() {
+                return Some(normalize_proxy_url(trimmed));
+            }
+        } else {
+            for pair in qs.split('&') {
+                if let Some((k, v)) = pair.split_once('=') {
+                    if k == "url" || k == "target" {
+                        let decoded = url_decode_simple(v);
+                        let trimmed = decoded.trim();
+                        if !trimmed.is_empty() {
+                            return Some(normalize_proxy_url(trimmed));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Sanitizes HTML to strip meta CSP, X-Frame-Options, frame-busting scripts, and inject <base href="...">
+pub fn sanitize_html_for_iframe_proxy(html: &str, target_url: &str) -> String {
+    let mut modified = html.to_string();
+
+    // 1. Remove meta tags with Content-Security-Policy or X-Frame-Options
+    if let Ok(re_csp) = regex::Regex::new(r#"(?i)<meta[^>]+(?:http-equiv|name)\s*=\s*['"]?(?:content-security-policy|x-frame-options)['"]?[^>]*>"#) {
+        modified = re_csp.replace_all(&modified, "<!-- stripped csp/x-frame-options for webview -->").to_string();
+    }
+
+    // 2. Neutralize aggressive top-level frame-busting JavaScript like:
+    // window.top.location = ... or if (top != self) top.location = ...
+    if let Ok(re_busting) = regex::Regex::new(r#"(?i)\b(?:window\.)?(?:top|parent)\.location\s*="#) {
+        modified = re_busting.replace_all(&modified, "// stripped frame-busting: location=").to_string();
+    }
+
+    // 3. Inject <base href="..."> if not already present, ensuring relative links resolve against the target host
+    if !modified.to_lowercase().contains("<base ") && !modified.to_lowercase().contains("<base>") {
+        let base_tag = format!(r#"<base href="{}" target="_blank">"#, target_url);
+        if let Some(head_pos) = modified.to_lowercase().find("<head") {
+            if let Some(gt_pos) = modified[head_pos..].find('>') {
+                let insert_at = head_pos + gt_pos + 1;
+                modified.insert_str(insert_at, &format!("\n{}", base_tag));
+            } else {
+                modified = format!("{}\n{}", base_tag, modified);
+            }
+        } else {
+            modified = format!("{}\n{}", base_tag, modified);
+        }
+    }
+
+    modified
+}
+
 /// Locates the `browser/ui` directory containing the HugOS Browser web assets.
 fn find_browser_ui_dir() -> Option<std::path::PathBuf> {
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
@@ -8354,6 +8449,90 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             let _ = socket.flush().await;
                             return;
                         }
+                    }
+                }
+            }
+
+            // ── Universal Web Proxy Endpoint (/api/proxy & /api/browser/proxy) ──
+            // Strips X-Frame-Options and Content-Security-Policy headers and sets Access-Control-Allow-Origin: *
+            // so any external website (Google, GitHub, Wikipedia, etc.) renders seamlessly inside the embedded webview iframe!
+            if request_path == "/api/proxy" || request_path == "/api/browser/proxy" {
+                let target_url_opt = extract_proxy_target_url(&raw_request_uri, &request_json);
+                let target_url = match target_url_opt {
+                    Some(u) if !u.is_empty() => u,
+                    _ => {
+                        let err_json = serde_json::json!({
+                            "error": "Missing 'url' query parameter or JSON property",
+                            "usage": "/api/proxy?url=https://www.google.com"
+                        });
+                        let err_body = serde_json::to_string(&err_json).unwrap_or_default();
+                        let resp = format!(
+                            "HTTP/1.1 400 Bad Request\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                            err_body.len(),
+                            err_body
+                        );
+                        let _ = socket.write_all(resp.as_bytes()).await;
+                        let _ = socket.flush().await;
+                        return;
+                    }
+                };
+
+                let client = reqwest::Client::builder()
+                    .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+                    .timeout(std::time::Duration::from_secs(15))
+                    .redirect(reqwest::redirect::Policy::limited(10))
+                    .build()
+                    .unwrap_or_default();
+
+                match client.get(&target_url).send().await {
+                    Ok(res) => {
+                        let status = res.status();
+                        let content_type = res
+                            .headers()
+                            .get("content-type")
+                            .and_then(|v| v.to_str().ok())
+                            .unwrap_or("text/html; charset=utf-8")
+                            .to_string();
+
+                        let raw_bytes = res.bytes().await.unwrap_or_default().to_vec();
+
+                        let final_bytes = if content_type.to_lowercase().contains("text/html") {
+                            let html_str = String::from_utf8_lossy(&raw_bytes);
+                            let sanitized = sanitize_html_for_iframe_proxy(&html_str, &target_url);
+                            sanitized.into_bytes()
+                        } else {
+                            raw_bytes
+                        };
+
+                        // Strip X-Frame-Options & Content-Security-Policy by omitting them from response headers!
+                        let response_headers = format!(
+                            "HTTP/1.1 {} {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n",
+                            status.as_u16(),
+                            status.canonical_reason().unwrap_or("OK"),
+                            content_type,
+                            final_bytes.len()
+                        );
+
+                        let _ = socket.write_all(response_headers.as_bytes()).await;
+                        let _ = socket.write_all(&final_bytes).await;
+                        let _ = socket.flush().await;
+                        return;
+                    }
+                    Err(e) => {
+                        let err_html = format!(
+                            r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Proxy Connection Notice</title><style>body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }} .card {{ background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 28px; max-width: 520px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }} h3 {{ margin: 0 0 12px 0; color: #f59e0b; font-size: 18px; }} p {{ font-size: 13px; line-height: 1.5; color: #94a3b8; margin-bottom: 16px; }} .btn {{ display: inline-block; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 600; cursor: pointer; border: none; background: #38bdf8; color: #0f172a; }}</style></head><body><div class="card"><h3>🌐 Unable to Proxy External URL</h3><p>ModelFusion Proxy could not reach <code>{}</code>: {}</p><div><a class="btn" href="{}" target="_blank">Open Directly in External Window</a></div></div></body></html>"#,
+                            html_escape(&target_url),
+                            html_escape(&e.to_string()),
+                            html_escape(&target_url)
+                        );
+                        let response = format!(
+                            "HTTP/1.1 502 Bad Gateway\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                            err_html.len(),
+                            err_html
+                        );
+                        let _ = socket.write_all(response.as_bytes()).await;
+                        let _ = socket.flush().await;
+                        return;
                     }
                 }
             }
@@ -17870,6 +18049,56 @@ public class Pr {
         // Test benchmark execution helper
         let res = super::handle_kv_benchmark(64, 2, 8, 10);
         assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_proxy_url_extraction_and_normalization() {
+        use super::{extract_proxy_target_url, normalize_proxy_url};
+
+        // 1. Normalization
+        assert_eq!(normalize_proxy_url("google.com"), "https://google.com");
+        assert_eq!(normalize_proxy_url("http://127.0.0.1:8080"), "http://127.0.0.1:8080");
+        assert_eq!(normalize_proxy_url("https://www.google.com/search?q=gemini"), "https://www.google.com/search?q=gemini");
+
+        // 2. Extraction from query string ?url=
+        let url1 = extract_proxy_target_url("/api/proxy?url=https%3A%2F%2Fwww.google.com", &serde_json::json!({}));
+        assert_eq!(url1, Some("https://www.google.com".to_string()));
+
+        // 3. Extraction from query string with query parameters in the target
+        let url2 = extract_proxy_target_url("/api/proxy?url=https%3A%2F%2Fwww.google.com%2Fsearch%3Fq%3Dgemini%2B4.0", &serde_json::json!({}));
+        assert_eq!(url2, Some("https://www.google.com/search?q=gemini+4.0".to_string()));
+
+        // 4. Extraction from unencoded target
+        let url3 = extract_proxy_target_url("/api/browser/proxy?url=https://en.wikipedia.org/wiki/Rust", &serde_json::json!({}));
+        assert_eq!(url3, Some("https://en.wikipedia.org/wiki/Rust".to_string()));
+
+        // 5. Extraction from JSON payload
+        let url4 = extract_proxy_target_url("/api/proxy", &serde_json::json!({ "url": "github.com/rust-lang/rust" }));
+        assert_eq!(url4, Some("https://github.com/rust-lang/rust".to_string()));
+
+        // 6. Missing url
+        let url5 = extract_proxy_target_url("/api/proxy", &serde_json::json!({}));
+        assert_eq!(url5, None);
+    }
+
+    #[test]
+    fn test_sanitize_html_for_iframe_proxy() {
+        use super::sanitize_html_for_iframe_proxy;
+
+        let sample_html = r#"<!DOCTYPE html><html><head><meta http-equiv="Content-Security-Policy" content="frame-ancestors 'none';"><meta http-equiv="X-Frame-Options" content="DENY"><title>Target Site</title></head><body><script>if (top.location != self.location) top.location = self.location;</script><h1>Hello World</h1></body></html>"#;
+        let sanitized = sanitize_html_for_iframe_proxy(sample_html, "https://www.google.com");
+
+        // 1. Meta CSP & X-Frame-Options stripped
+        assert!(!sanitized.contains("frame-ancestors 'none'"));
+        assert!(!sanitized.contains("X-Frame-Options"));
+        assert!(sanitized.contains("stripped csp/x-frame-options for webview"));
+
+        // 2. Base tag injected
+        assert!(sanitized.contains(r#"<base href="https://www.google.com" target="_blank">"#));
+
+        // 3. Frame-busting stripped
+        assert!(!sanitized.contains("top.location ="));
+        assert!(sanitized.contains("// stripped frame-busting: location="));
     }
 }
 

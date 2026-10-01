@@ -474,6 +474,7 @@ dependencies = [
  "mesh",
  "model_selection",
  "modelfusion_core",
+ "regex",
  "reqwest",
  "rusqlite",
  "serde",

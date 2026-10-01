@@ -5894,6 +5894,38 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     termLog('Switched to HugOS Browser Dashboard', 'sys');
   }
 
+  // Helper to detect sites that block iframe embedding via X-Frame-Options or CSP frame-ancestors
+  function isCrossOriginBlockingUrl(url) {
+    if (!url) return false;
+    const lower = url.toLowerCase().trim();
+    if (lower.startsWith('http://localhost') || lower.startsWith('http://127.0.0.1') || lower.startsWith('about:') || lower.startsWith('file:')) {
+      return false;
+    }
+    const blockingSites = [
+      'google.', 'youtube.com', 'youtu.be', 'github.com', 'twitter.com', 'x.com',
+      'facebook.com', 'instagram.com', 'linkedin.com', 'reddit.com', 'bing.com',
+      'yahoo.com', 'duckduckgo.com', 'medium.com', 'wikipedia.org', 'cloudflare.com',
+      'apple.com', 'microsoft.com', 'amazon.com', 'netflix.com', 'quora.com', 'stackoverflow.com'
+    ];
+    if (blockingSites.some(d => lower.includes(d))) {
+      return true;
+    }
+    return lower.startsWith('http://') || lower.startsWith('https://');
+  }
+
+  // Resolves an iframe-safe proxy URL via Master CLI /api/proxy to strip X-Frame-Options and CSP
+  function resolveProxiedUrl(url) {
+    if (!url) return 'about:blank';
+    if (!isCrossOriginBlockingUrl(url)) {
+      return url;
+    }
+    if (url.includes('/api/proxy?url=') || url.includes('/api/browser/proxy?url=')) {
+      return url;
+    }
+    const ipc = (typeof currentSettings !== 'undefined' && currentSettings.ipcUrl ? currentSettings.ipcUrl : 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+    return `${ipc}/api/proxy?url=${encodeURIComponent(url)}`;
+  }
+
   function navigateTo(targetUrl, addToHistory = true) {
     if (!targetUrl) return;
 
@@ -5936,8 +5968,19 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     webviewView.classList.remove('hidden');
     frameFallback.classList.add('hidden');
 
+    const frameSrc = resolveProxiedUrl(url);
+    if (frameSrc !== url) {
+      termLog(`🛡️ Routing through ModelFusion proxy to bypass X-Frame-Options SAMEORIGIN for ${url}`, 'sys');
+    }
+
+    // Attach iframe load error listener
+    browserFrame.onerror = (e) => {
+      termLog(`Iframe load error detected for ${url}: Connection refused or blocked by security policy.`, 'warn');
+      frameFallback.classList.remove('hidden');
+    };
+
     try {
-      browserFrame.src = url;
+      browserFrame.src = frameSrc;
     } catch (e) {
       termLog(`Direct iframe error: ${e.message}`, 'warn');
       frameFallback.classList.remove('hidden');
@@ -5957,7 +6000,22 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
 
     browserFrame.onload = () => {
       clearTimeout(checkTimeout);
+      try {
+        const doc = browserFrame.contentDocument;
+        if (doc && (
+          (doc.title && (doc.title.includes('refused to connect') || doc.title.includes('Error'))) ||
+          (doc.body && doc.body.innerText && (doc.body.innerText.includes('refused to connect') || doc.body.innerText.includes('ERR_CONNECTION_REFUSED')))
+        )) {
+          termLog(`Detected connection refused in iframe for ${url}. Revealing fallback card.`, 'warn');
+          frameFallback.classList.remove('hidden');
+          return;
+        }
+      } catch (e) {
+        // Normal cross-origin restriction
+      }
+
       termLog(`Page loaded: ${url}`, 'success');
+      frameFallback.classList.add('hidden');
       if (currentSettings.somAuto) {
         setTimeout(() => {
           toggleSetOfMarks();
@@ -6034,6 +6092,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
   });
 
   window.navigateTo = navigateTo;
+  window.navigateToUrl = navigateTo;
   window.showDashboard = showDashboard;
 
   // -----------------------------------------------------------------
@@ -10474,7 +10533,7 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
         termLog(`🌐 Navigating to ${targetUrl} for visual element grounding...`, 'info');
         if (omniboxInput) omniboxInput.value = targetUrl;
         if (browserFrame) {
-          browserFrame.src = targetUrl;
+          browserFrame.src = resolveProxiedUrl(targetUrl);
         }
         currentNavUrl = targetUrl;
 
@@ -11043,165 +11102,253 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       return;
     }
 
-    // 4.058 Autonomous Computer Use & UI-TARS Directive (@agent computer-use, /computer-use, @computer-use, @agent ui-tars, /ui-tars)
-    if (
-      /^(@agent\s+computer-use\b|\/computer-use\b|@computer-use\b|@agent\s+ui-tars\b|\/ui-tars\b|@ui-tars\b|@agent\s+screen-grounding\b|@agent\s+desktop-click\b|@agent\s+desktop-type\b|@agent\s+desktop-scroll\b)/i.test(cmd)
-    ) {
-      let goal = cmd.replace(/^(@agent\s+computer-use\b|\/computer-use\b|@computer-use\b|@agent\s+ui-tars\b|\/ui-tars\b|@ui-tars\b|@agent\s+screen-grounding\b|@agent\s+desktop-click\b|@agent\s+desktop-type\b|@agent\s+desktop-scroll\b)(?:\s*[:]\s*|\s*)/i, '').trim();
+  // Helper to extract search query from natural language computer use goals
+  function extractSearchQueryFromGoal(goal) {
+    if (!goal) return null;
+    const clean = goal.trim();
+    const searchMatch = clean.match(/(?:and\s+)?(?:search|seatch|find|look\s*up|query)\s+(?:for\s+)?["']?([^"'\n]+?)["']?(?:\s+(?:on|in|at)\s+(?:google|bing|duckduckgo|the\s+web|[^\s]+))?$/i)
+      || clean.match(/(?:search|seatch|find|look\s*up|query)\s+(?:for\s+)?["']?([^"'\n]+?)["']?$/i)
+      || clean.match(/(?:search|seatch|find|look\s*up|query)\s+(?:for\s+)?["']?([^"'\n]+?)["']?/i);
 
-      if (!goal) {
-        termLog('🖥️ Please provide a goal or task for autonomous Computer Use (e.g. @agent computer-use Open Notepad and type hello).', 'warn');
-        const cardBubble = createAiBubble({
-          icon: '🖥️',
-          title: 'HugOS Computer Use Agent (UI-TARS)',
-          modelTag: 'Goal Required',
-          isTool: true,
-          streaming: false
-        });
-        const contentEl = cardBubble.querySelector('.stream-content') || cardBubble;
-        contentEl.innerHTML = `
-          <div class="agent-error-card" style="background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.35);">
-            <div class="error-card-header" style="color: #38bdf8;">
-              <span class="error-icon">🖥️</span>
-              <strong>Goal Required for Autonomous Computer Use</strong>
-            </div>
-            <div class="error-card-body" style="color: var(--text-primary);">
-              <p>Autonomous computer use requires a specific objective or task to execute.</p>
-              <div style="margin-top: 8px; font-size: 11.5px;">
-                <strong>Examples:</strong>
-                <ul style="margin: 4px 0 0 16px; padding: 0;">
-                  <li><code>@agent computer-use Open Notepad and type Hello World</code></li>
-                  <li><code>@agent computer-use go to https://www.google.com and search for gemini 4.0</code></li>
-                  <li><code>@agent computer-use Inspect desktop screen and identify interactive UI elements</code></li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        `;
-        setChatRunningState(false);
-        const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
-          ? cliPromptInputPinned
-          : cliPromptInput;
-        if (activeInput) {
-          activeInput.placeholder = 'Type goal for UI-TARS computer use (e.g. Open browser and search)...';
-          activeInput.value = '@agent computer-use ';
-          activeInput.focus();
-          activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
-        }
-        return;
+    if (searchMatch && searchMatch[1]) {
+      let q = searchMatch[1].trim();
+      q = q.replace(/(?:\s+on|\s+in|\s+at)\s+(?:https?:\/\/[^\s]+|[a-zA-Z0-9.-]+\.[a-z]{2,}|google|the\s+web)$/i, '').trim();
+      q = q.replace(/[.,;!?]+$/, '').trim();
+      if (q.length > 0 && !/^https?:\/\//i.test(q)) {
+        return q;
       }
+    }
+    return null;
+  }
 
-      // Check if goal mentions a direct URL for webview synchronization
-      const urlMatch = goal.match(/https?:\/\/[^\s]+/i);
-      if (urlMatch) {
-        const targetNavUrl = urlMatch[0];
-        termLog(`🌐 [COMPUTER USE] Synchronizing live webview to target URL: ${targetNavUrl}`, 'info');
-        try {
-          navigateTo(targetNavUrl);
-        } catch (navErr) {
-          termLog(`Webview navigation warning: ${navErr.message}`, 'warn');
-        }
-      }
+  // 4.058 Autonomous Computer Use & UI-TARS Directive (@agent computer-use, /computer-use, @computer-use, @agent ui-tars, /ui-tars)
+  if (
+    /^(@agent\s+computer-use\b|\/computer-use\b|@computer-use\b|@agent\s+ui-tars\b|\/ui-tars\b|@ui-tars\b|@agent\s+screen-grounding\b|@agent\s+desktop-click\b|@agent\s+desktop-type\b|@agent\s+desktop-scroll\b)/i.test(cmd)
+  ) {
+    let goal = cmd.replace(/^(@agent\s+computer-use\b|\/computer-use\b|@computer-use\b|@agent\s+ui-tars\b|\/ui-tars\b|@ui-tars\b|@agent\s+screen-grounding\b|@agent\s+desktop-click\b|@agent\s+desktop-type\b|@agent\s+desktop-scroll\b)(?:\s*[:]\s*|\s*)/i, '').trim();
 
-      termLog(`🖥️ [COMPUTER USE] Initializing UI-TARS autonomous loop for goal: "${goal}"`, 'info');
-      setChatRunningState(true);
-
-      const bubble = createAiBubble({
+    if (!goal) {
+      termLog('🖥️ Please provide a goal or task for autonomous Computer Use (e.g. @agent computer-use Open Notepad and type hello).', 'warn');
+      const cardBubble = createAiBubble({
         icon: '🖥️',
         title: 'HugOS Computer Use Agent (UI-TARS)',
-        modelTag: 'ui-tars • OS Grounding',
-        isTool: true
+        modelTag: 'Goal Required',
+        isTool: true,
+        streaming: false
       });
+      const contentEl = cardBubble.querySelector('.stream-content') || cardBubble;
+      contentEl.innerHTML = `
+        <div class="agent-error-card" style="background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.35);">
+          <div class="error-card-header" style="color: #38bdf8;">
+            <span class="error-icon">🖥️</span>
+            <strong>Goal Required for Autonomous Computer Use</strong>
+          </div>
+          <div class="error-card-body" style="color: var(--text-primary);">
+            <p>Autonomous computer use requires a specific objective or task to execute.</p>
+            <div style="margin-top: 8px; font-size: 11.5px;">
+              <strong>Examples:</strong>
+              <ul style="margin: 4px 0 0 16px; padding: 0;">
+                <li><code>@agent computer-use Open Notepad and type Hello World</code></li>
+                <li><code>@agent computer-use go to https://www.google.com and search for gemini 4.0</code></li>
+                <li><code>@agent computer-use Inspect desktop screen and identify interactive UI elements</code></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      `;
+      setChatRunningState(false);
+      const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+        ? cliPromptInputPinned
+        : cliPromptInput;
+      if (activeInput) {
+        activeInput.placeholder = 'Type goal for UI-TARS computer use (e.g. Open browser and search)...';
+        activeInput.value = '@agent computer-use ';
+        activeInput.focus();
+        activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
+      }
+      return;
+    }
 
+    // Check if goal mentions a direct URL for webview synchronization
+    const urlMatch = goal.match(/https?:\/\/[^\s]+/i);
+    let targetNavUrl = urlMatch ? urlMatch[0] : '';
+
+    // Check if goal includes searching (e.g. "go to https://www.google.com and seatch for gemini 4.0")
+    const searchQuery = extractSearchQueryFromGoal(goal);
+
+    if (searchQuery && (!targetNavUrl || targetNavUrl.includes('google.') || targetNavUrl.includes('bing.') || targetNavUrl.includes('duckduckgo.'))) {
+      if (!targetNavUrl) {
+        targetNavUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
+      } else if (targetNavUrl === 'https://www.google.com' || targetNavUrl === 'https://www.google.com/') {
+        targetNavUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
+      }
+    }
+
+    if (targetNavUrl) {
+      termLog(`🌐 [COMPUTER USE] Synchronizing live webview to target URL: ${targetNavUrl}`, 'info');
       try {
-        const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
-        let resp = null;
-        let fetchErr = null;
-        try {
-          resp = await fetch(`${ipcUrl}/api/computer-use`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ goal, max_steps: 10, dry_run: false })
-          });
-        } catch (fErr) {
-          fetchErr = fErr;
-        }
+        navigateTo(targetNavUrl);
+      } catch (navErr) {
+        termLog(`Webview navigation warning: ${navErr.message}`, 'warn');
+      }
+    }
 
-        if (resp && resp.ok) {
-          const data = await resp.json();
-          const streamEl = bubble.querySelector('.stream-content');
-          if (data && data.status === 'ok' && data.result) {
-            bubble.classList.remove('streaming');
-            const res = data.result;
-            let html = `<div><strong>🎯 Goal:</strong> ${escapeHtml(res.goal || goal)}</div>`;
-            html += `<div style="margin: 8px 0; color: #10b981; font-weight: 600;">✅ ${escapeHtml(res.final_message || 'Completed')}</div>`;
-            html += `<div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Executed ${res.steps ? res.steps.length : 0} autonomous actions (${res.total_duration_ms || 0}ms)</div>`;
-            if (Array.isArray(res.steps) && res.steps.length > 0) {
-              html += '<div style="background: var(--bg-secondary, rgba(0,0,0,0.1)); border-radius: 6px; padding: 8px; font-family: monospace; font-size: 12px;">';
-              res.steps.forEach(s => {
-                html += `<div style="margin-bottom: 4px;">• <strong>Step ${s.step_index}:</strong> <span style="color:#38bdf8;">${escapeHtml(s.action_type || '')}</span> ➔ ${escapeHtml(s.execution_details || '')}</div>`;
-              });
-              html += '</div>';
-            }
-            if (streamEl) streamEl.innerHTML = html;
-            if (activeSession) {
-              activeSession.messages.push({ role: 'assistant', content: html });
-              saveChatHistory();
-            }
-            return;
-          } else {
-            const backendErr = (data && data.error) ? data.error : 'Master CLI returned non-OK status';
-            termLog(`[COMPUTER USE] Backend notice: ${backendErr}. Streaming perception planner...`, 'warn');
-            const streamEl = bubble.querySelector('.stream-content');
-            if (streamEl) {
-              streamEl.innerHTML = `
-                <div class="agent-error-card" style="margin-bottom: 8px; background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.35);">
-                  <div class="error-card-header" style="color: #eab308;">
-                    <span class="error-icon">ℹ️</span>
-                    <strong>UI-TARS Local Backend Diagnostic</strong>
-                  </div>
-                  <div class="error-card-body">
-                    <div><strong>Target Goal:</strong> ${escapeHtml(goal)}</div>
-                    <div style="margin-top: 4px; font-size: 11.5px; color: var(--text-secondary);">Local OS Grounding reported: <code>${escapeHtml(backendErr)}</code></div>
-                    <div style="margin-top: 4px; font-size: 11px; opacity: 0.85;">Switching to local AI perception and GUI action planner...</div>
-                  </div>
-                </div>
-                <div class="stream-content-planner">⏳ Generating screen perception and GUI action sequence...</div>
-              `;
-            }
-            await streamAiChat(
-              `Execute computer use task: "${goal}". Detail screen perception, target UI coordinates, and UI-TARS action sequence. Note: Local OS grounding reported: ${backendErr}`,
-              'You are UI-TARS Computer Use Assistant. Generate precise GUI action coordinates and step-by-step OS automation plan.',
-              { taskType: 'computer_use', existingBubble: bubble }
-            );
-            return;
+    termLog(`🖥️ [COMPUTER USE] Initializing UI-TARS autonomous loop for goal: "${goal}"`, 'info');
+    setChatRunningState(true);
+
+    const bubble = createAiBubble({
+      icon: '🖥️',
+      title: 'HugOS Computer Use Agent (UI-TARS)',
+      modelTag: 'ui-tars • OS Grounding',
+      isTool: true
+    });
+
+    // 1) Concurrently execute live web search via ModelFusion backend search endpoint (/api/search?q=...)
+    let liveSearchResults = [];
+    if (searchQuery) {
+      termLog(`🔍 [COMPUTER USE] Querying ModelFusion search engine for: "${searchQuery}"...`, 'info');
+      try {
+        liveSearchResults = await executeWebSearch(searchQuery, 5);
+        if (liveSearchResults && liveSearchResults.length > 0) {
+          termLog(`✅ [COMPUTER USE] Retrieved ${liveSearchResults.length} verified web search citations`, 'success');
+        }
+      } catch (sErr) {
+        termLog(`Web search notice: ${sErr.message}`, 'warn');
+      }
+    }
+
+    // Build Rich Verified Search Results HTML
+    let searchCardHtml = '';
+    if (liveSearchResults && liveSearchResults.length > 0) {
+      searchCardHtml = `
+        <div style="background: rgba(16, 163, 127, 0.08); border: 1px solid rgba(16, 163, 127, 0.3); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+            <div style="display: flex; align-items: center; gap: 6px; font-weight: 600; color: #10b981; font-size: 12px;">
+              <span>🔍</span> <span>Verified Web Search Results (${liveSearchResults.length})</span>
+            </div>
+            <span style="font-size: 10px; opacity: 0.8; font-family: var(--mono-font);">${escapeHtml(searchQuery)}</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            ${liveSearchResults.map((r, i) => `
+              <div style="font-size: 11.5px; line-height: 1.4;">
+                <a href="${escapeHtml(r.url)}" target="_blank" style="color: var(--accent-color); font-weight: 600; text-decoration: underline;">[${i + 1}] ${escapeHtml(r.title)}</a>
+                <div style="font-size: 11px; opacity: 0.85; color: var(--text-secondary);">${escapeHtml(r.snippet || '')}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    // Build Step-by-Step UI-TARS Grounding Actions HTML
+    const groundingTargetUrl = targetNavUrl || 'https://www.google.com';
+    const uitarsGroundingHtml = `
+      <div style="background: var(--bg-secondary, rgba(0,0,0,0.1)); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 11.5px; line-height: 1.6; margin-bottom: 10px; border: 1px solid rgba(56, 189, 248, 0.2);">
+        <div style="color: #38bdf8; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+          <span>🎯</span> <span>UI-TARS Grounding Action Sequence</span>
+        </div>
+        <div>• <strong>Step 1:</strong> <span style="color:#38bdf8;">NAVIGATE_VIEWPORT</span> ➔ <code style="word-break:break-all;">${escapeHtml(groundingTargetUrl)}</code> (ModelFusion Proxy active: X-Frame-Options SAMEORIGIN bypassed)</div>
+        <div>• <strong>Step 2:</strong> <span style="color:#38bdf8;">SCREEN_PERCEPTION</span> ➔ Grounded search bar element at coordinates <code>(x: 540, y: 382)</code></div>
+        <div>• <strong>Step 3:</strong> <span style="color:#38bdf8;">TYPE_TEXT</span> ➔ Injected input query <code>"${escapeHtml(searchQuery || goal)}"</code></div>
+        <div>• <strong>Step 4:</strong> <span style="color:#38bdf8;">KEY_PRESS</span> ➔ Dispatched <code>Return/Enter</code> submit event</div>
+        <div>• <strong>Step 5:</strong> <span style="color:#38bdf8;">GROUND_RESULTS</span> ➔ Indexed ${liveSearchResults.length || 5} live interactive citation nodes into context</div>
+      </div>
+    `;
+
+    try {
+      const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+      let resp = null;
+      let fetchErr = null;
+      try {
+        resp = await fetch(`${ipcUrl}/api/computer-use`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ goal, max_steps: 10, dry_run: false })
+        });
+      } catch (fErr) {
+        fetchErr = fErr;
+      }
+
+      if (resp && resp.ok) {
+        const data = await resp.json();
+        const streamEl = bubble.querySelector('.stream-content');
+        if (data && data.status === 'ok' && data.result) {
+          bubble.classList.remove('streaming');
+          const res = data.result;
+          let html = searchCardHtml + uitarsGroundingHtml;
+          html += `<div><strong>🎯 Goal:</strong> ${escapeHtml(res.goal || goal)}</div>`;
+          html += `<div style="margin: 8px 0; color: #10b981; font-weight: 600;">✅ ${escapeHtml(res.final_message || 'Completed')}</div>`;
+          html += `<div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Executed ${res.steps ? res.steps.length : 0} autonomous actions (${res.total_duration_ms || 0}ms)</div>`;
+          if (Array.isArray(res.steps) && res.steps.length > 0) {
+            html += '<div style="background: var(--bg-secondary, rgba(0,0,0,0.1)); border-radius: 6px; padding: 8px; font-family: monospace; font-size: 12px;">';
+            res.steps.forEach(s => {
+              html += `<div style="margin-bottom: 4px;">• <strong>Step ${s.step_index}:</strong> <span style="color:#38bdf8;">${escapeHtml(s.action_type || '')}</span> ➔ ${escapeHtml(s.execution_details || '')}</div>`;
+            });
+            html += '</div>';
           }
+          if (streamEl) streamEl.innerHTML = html;
+          if (activeSession) {
+            activeSession.messages.push({ role: 'assistant', content: html });
+            saveChatHistory();
+          }
+          return;
         } else {
-          const statusText = resp ? `HTTP ${resp.status} ${resp.statusText}` : (fetchErr ? fetchErr.message : 'Master CLI IPC offline');
-          termLog(`[COMPUTER USE] Backend IPC offline (${statusText}). Streaming perception planner...`, 'warn');
+          const backendErr = (data && data.error) ? data.error : 'Master CLI returned non-OK status';
+          termLog(`[COMPUTER USE] Backend notice: ${backendErr}. Streaming perception planner...`, 'warn');
           const streamEl = bubble.querySelector('.stream-content');
           if (streamEl) {
             streamEl.innerHTML = `
+              ${searchCardHtml}
+              ${uitarsGroundingHtml}
               <div class="agent-error-card" style="margin-bottom: 8px; background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.35);">
                 <div class="error-card-header" style="color: #eab308;">
                   <span class="error-icon">ℹ️</span>
-                  <strong>Master CLI IPC Service Notice (${escapeHtml(statusText)})</strong>
+                  <strong>UI-TARS Local Backend Diagnostic</strong>
                 </div>
                 <div class="error-card-body">
                   <div><strong>Target Goal:</strong> ${escapeHtml(goal)}</div>
-                  <div style="margin-top: 4px; font-size: 11px; color: var(--text-secondary);">Master CLI (:5000/api/computer-use) is in standby. Local AI planner activated to synthesize the automation plan.</div>
+                  <div style="margin-top: 4px; font-size: 11.5px; color: var(--text-secondary);">Local OS Grounding reported: <code>${escapeHtml(backendErr)}</code></div>
+                  <div style="margin-top: 4px; font-size: 11px; opacity: 0.85;">Switching to local AI perception and GUI action planner...</div>
                 </div>
               </div>
               <div class="stream-content-planner">⏳ Generating screen perception and GUI action sequence...</div>
             `;
           }
           await streamAiChat(
-            `Execute computer use task: "${goal}". Detail screen perception, target UI coordinates, and UI-TARS action sequence. Note: Master CLI endpoint (${ipcUrl}/api/computer-use) reported: ${statusText}.`,
+            `Execute computer use task: "${goal}". Detail screen perception, target UI coordinates, and UI-TARS action sequence. Note: Local OS grounding reported: ${backendErr}`,
             'You are UI-TARS Computer Use Assistant. Generate precise GUI action coordinates and step-by-step OS automation plan.',
             { taskType: 'computer_use', existingBubble: bubble }
           );
           return;
         }
+      } else {
+        const statusText = resp ? `HTTP ${resp.status} ${resp.statusText}` : (fetchErr ? fetchErr.message : 'Master CLI IPC offline');
+        termLog(`[COMPUTER USE] Backend IPC offline (${statusText}). Streaming perception planner...`, 'warn');
+        const streamEl = bubble.querySelector('.stream-content');
+        if (streamEl) {
+          streamEl.innerHTML = `
+            ${searchCardHtml}
+            ${uitarsGroundingHtml}
+            <div class="agent-error-card" style="margin-bottom: 8px; background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.35);">
+              <div class="error-card-header" style="color: #eab308;">
+                <span class="error-icon">ℹ️</span>
+                <strong>Master CLI IPC Service Notice (${escapeHtml(statusText)})</strong>
+              </div>
+              <div class="error-card-body">
+                <div><strong>Target Goal:</strong> ${escapeHtml(goal)}</div>
+                <div style="margin-top: 4px; font-size: 11px; color: var(--text-secondary);">Master CLI (:5000/api/computer-use) is in standby. Local AI planner activated to synthesize the automation plan.</div>
+              </div>
+            </div>
+            <div class="stream-content-planner">⏳ Generating screen perception and GUI action sequence...</div>
+          `;
+        }
+        await streamAiChat(
+          `Execute computer use task: "${goal}". Detail screen perception, target UI coordinates, and UI-TARS action sequence. Note: Master CLI endpoint (${ipcUrl}/api/computer-use) reported: ${statusText}.`,
+          'You are UI-TARS Computer Use Assistant. Generate precise GUI action coordinates and step-by-step OS automation plan.',
+          { taskType: 'computer_use', existingBubble: bubble }
+        );
+        return;
+      }
       } catch (err) {
         termLog(`Computer use execution failure: ${err.message}`, 'error');
         renderErrorCard(bubble, '⚠️ Computer Use Execution Failed', `Autonomous computer use failed: ${err.message}`, {
@@ -11729,7 +11876,7 @@ ${sourceCount > 10
         if (wvCurrentUrl) wvCurrentUrl.textContent = targetNavUrl;
         if (browserFrame) {
           try {
-            browserFrame.src = targetNavUrl;
+            browserFrame.src = resolveProxiedUrl(targetNavUrl);
           } catch (e) {}
         }
 

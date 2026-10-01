@@ -30,5 +30,6 @@ thiserror       = { workspace = true }
 rusqlite        = { workspace = true }
 aho-corasick    = { workspace = true }
 image           = { workspace = true }
+regex           = { workspace = true }
 
 
