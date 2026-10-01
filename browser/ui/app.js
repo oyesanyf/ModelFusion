@@ -3099,6 +3099,85 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  // ---------------------------------------------------------------------------
+  // Bulletproof Safe DOM Insertion & Node Parenting Helper
+  // Strictly prevents NotFoundError: Failed to execute 'insertBefore' on 'Node':
+  // The node before which the new node is to be inserted is not a child of this node.
+  // ---------------------------------------------------------------------------
+  function safeInsertBefore(parent, newNode, refNode) {
+    if (!newNode) return null;
+    try {
+      // 1. Direct parent-child relationship: standard native insertBefore
+      if (refNode && parent && refNode.parentNode === parent) {
+        return parent.insertBefore(newNode, refNode);
+      }
+      // 2. refNode exists and has a parentNode: insert before refNode in its actual parent
+      if (refNode && refNode.parentNode) {
+        if (typeof refNode.insertAdjacentElement === 'function') {
+          refNode.insertAdjacentElement('beforebegin', newNode);
+          return newNode;
+        }
+        if (typeof refNode.parentNode.insertBefore === 'function') {
+          return refNode.parentNode.insertBefore(newNode, refNode);
+        }
+      }
+      // 3. Fallback: append to parent container if valid
+      if (parent && typeof parent.appendChild === 'function') {
+        return parent.appendChild(newNode);
+      }
+    } catch (e) {
+      console.warn('[safeInsertBefore recovery]', e);
+      try {
+        if (parent && typeof parent.appendChild === 'function') {
+          return parent.appendChild(newNode);
+        }
+      } catch (_) {}
+    }
+    return newNode;
+  }
+  window.safeInsertBefore = safeInsertBefore;
+
+  // ---------------------------------------------------------------------------
+  // Client-side DOM/JavaScript Exception Classifier
+  // Distinguishes local browser runtime/DOM errors from real Ollama/network failures.
+  // ---------------------------------------------------------------------------
+  function isClientDomOrJsError(err) {
+    if (!err) return false;
+    // DOMException instances
+    if (typeof DOMException !== 'undefined' && err instanceof DOMException) return true;
+    if (err.name === 'NotFoundError' || err.name === 'HierarchyRequestError' || err.name === 'InvalidCharacterError' || err.name === 'NotSupportedError') {
+      return true;
+    }
+    // JS runtime engine exceptions (excluding network TypeError)
+    if (err instanceof ReferenceError || err instanceof SyntaxError || err instanceof RangeError || err instanceof EvalError) {
+      return true;
+    }
+    // Message heuristics for DOM and runtime JavaScript execution faults
+    const msg = String(err.message || '');
+    if (
+      msg.includes('insertBefore') ||
+      msg.includes('removeChild') ||
+      msg.includes('appendChild') ||
+      msg.includes('replaceChild') ||
+      msg.includes('not a child of this node') ||
+      msg.includes('is not a function') ||
+      msg.includes('Cannot read property') ||
+      msg.includes('Cannot read properties of') ||
+      msg.includes('Cannot set property') ||
+      msg.includes('Cannot set properties of') ||
+      msg.includes('undefined is not an object') ||
+      msg.includes('null is not an object')
+    ) {
+      return true;
+    }
+    // TypeError that is NOT a network failure (fetch throws TypeError with 'Failed to fetch', 'Load failed', 'NetworkError', etc.)
+    if (err instanceof TypeError && !/failed to fetch|load failed|network\s*error|networkrequestfailed/i.test(msg)) {
+      return true;
+    }
+    return false;
+  }
+  window.isClientDomOrJsError = isClientDomOrJsError;
+
   function renderErrorCard(bubbleElement, errorTitle, errorMsg) {
     if (!bubbleElement) return;
     bubbleElement.classList.remove('streaming');
@@ -3847,10 +3926,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const actionBar = bubble.querySelector('.msg-action-bar');
         if (actionBar && actionBar.parentNode) {
-          actionBar.parentNode.insertBefore(contSection, actionBar);
+          safeInsertBefore(actionBar.parentNode, contSection, actionBar);
         } else {
           const bContent = bubble.querySelector('.assistant-content-container') || bubble.querySelector('.bubble-content') || bubble;
-          bContent.appendChild(contSection);
+          safeInsertBefore(bContent, contSection, null);
         }
       }
 
@@ -7266,7 +7345,11 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
         agenticBadge = document.createElement('div');
         agenticBadge.className = 'agentic-loop-badge';
         agenticBadge.innerHTML = `🔄 Agentic Loop: Turn 1/${maxLoops} • 0 tokens`;
-        assistantBubble.insertBefore(agenticBadge, bubbleContent);
+        const contentContainer = assistantBubble.querySelector('.bubble-content') || assistantBubble;
+        const targetRef = (bubbleContent && bubbleContent.parentNode === contentContainer)
+          ? bubbleContent
+          : (contentContainer.querySelector('.stream-content') || null);
+        safeInsertBefore(contentContainer, agenticBadge, targetRef);
       }
 
       let fullResponse = (options && options.isContinuation && options.initialText) ? (options.initialText.trimEnd() + '\n\n') : '';
@@ -7674,11 +7757,11 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
                 const sourcesCard = assistantBubble.querySelector('.research-sources-card');
                 const parentContainer = assistantBubble.querySelector('.bubble-content') || assistantBubble;
                 if (streamTarget) {
-                  parentContainer.insertBefore(thinkingBox, streamTarget);
+                  safeInsertBefore(parentContainer, thinkingBox, streamTarget);
                 } else if (sourcesCard && sourcesCard.nextSibling) {
-                  parentContainer.insertBefore(thinkingBox, sourcesCard.nextSibling);
+                  safeInsertBefore(parentContainer, thinkingBox, sourcesCard.nextSibling);
                 } else {
-                  parentContainer.appendChild(thinkingBox);
+                  safeInsertBefore(parentContainer, thinkingBox, null);
                 }
               }
               if (thinkingBox) {
@@ -8107,6 +8190,21 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
         }
         if (bubbleContent && (!bubbleContent.textContent || bubbleContent.textContent === 'Thinking...')) {
           bubbleContent.innerHTML = '<em>⏹ Generation stopped by user.</em>';
+        }
+        responseLine.remove();
+        return null;
+      }
+
+      // Distinguish client-side DOM/JavaScript exceptions from network/Ollama unreachable errors
+      if (isClientDomOrJsError(err)) {
+        console.error('[CLIENT UI ERROR]', err);
+        statusLine.className = 'term-line error';
+        statusLine.textContent = `[${time}] UI DOM/JS Exception: ${err.message}`;
+        termLog(`[CLIENT ERROR] ⚠️ DOM/UI Exception: ${err.message}${err.stack ? `\n${err.stack}` : ''}`, 'error');
+        if (assistantBubble) {
+          assistantBubble.classList.remove('streaming');
+          const errorDetails = `Client-side DOM/JavaScript Exception: ${err.message}${err.stack ? `\n\nStack:\n${err.stack}` : ''}`;
+          renderErrorCard(assistantBubble, '⚠️ Interface Client Error', errorDetails);
         }
         responseLine.remove();
         return null;
@@ -10592,9 +10690,9 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         badgeContainer.innerHTML = badgeHtml;
         const actionBar = streamEl.querySelector('.msg-action-bar');
         if (actionBar && actionBar.parentNode) {
-          actionBar.parentNode.insertBefore(badgeContainer, actionBar);
+          safeInsertBefore(actionBar.parentNode, badgeContainer, actionBar);
         } else {
-          streamEl.appendChild(badgeContainer);
+          safeInsertBefore(streamEl, badgeContainer, null);
         }
       }
       if (activeSession) {
