@@ -38,4 +38,16 @@ assert.ok(appJs.includes('continuationDirectiveTurn'), 'streamAiChat must includ
 assert.ok(appJs.includes('humanizer-verification-badge-container'), 'Badge must use separate humanizer-verification-badge-container');
 console.log('✓ Test 3 Passed: app.js contains all required architecture fixes');
 
+// 5. Verify agentic loop activation for multi-page requests
+assert.ok(appJs.includes('isMultiPageOrLongTarget'), 'isMultiPageOrLongTarget must be declared');
+assert.ok(appJs.includes('intention.targetPages > 1'), 'Multi-page targets must be covered in isMultiPageOrLongTarget');
+assert.ok(appJs.includes('cleanTurnResponse = turnResponse.replace(trailingWordCountRegex'), 'Agentic loop must strip trailing word count between turns');
+assert.ok(appJs.includes('mergeContinuationText(options.initialText, fullResponse)'), 'Continuation must merge fullResponse rather than single turnResponse');
+console.log('✓ Test 4 Passed: Agentic loop multi-page target activation & clean turn-chaining verified');
+
+// 6. Verify boost continuation and session history continuation hardening
+assert.ok(appJs.includes('(promptIntention && promptIntention.isBoost)'), 'continueAssistantMessage must check promptIntention.isBoost');
+assert.ok(appJs.includes('(originalPrompt && /^(?:@agent\\s+|@|\\/)?boost\\b/i.test(originalPrompt))'), 'continueAssistantMessage must check originalPrompt for boost');
+console.log('✓ Test 5 Passed: Boost continuation mode detection verified');
+
 console.log('\nAll tests passed successfully!');
