@@ -1705,10 +1705,10 @@ struct Args {
     #[arg(long, num_args = 0..=1, default_missing_value = "", help = "Translate natural language text into target language (use with --to <LANG>, accepts inline text or file path)")]
     translate: Option<String>,
 
-    #[arg(long, default_value = "English", help = "Target language for translation (e.g. Spanish, French, German)")]
+    #[arg(long, short = 't', default_value = "English", help = "Target language for translation (e.g. Spanish, French, German)")]
     to: String,
 
-    #[arg(long, num_args = 0..=1, default_missing_value = "", help = "Autonomous OS computer use via UI-TARS multimodal action grounding and screen perception (accepts goal string)")]
+    #[arg(long, visible_alias = "computer_use", visible_alias = "ui-tars", num_args = 0..=1, default_missing_value = "", help = "Autonomous OS computer use via UI-TARS multimodal action grounding and screen perception (accepts goal string)")]
     computer_use: Option<String>,
 
     #[arg(long, help = "Path to folder for code review or analysis")]
@@ -2726,7 +2726,7 @@ where
         "translate" | "/translate" | "@agent/translate" | "@agent:translate" | "@translate" | "translation" | "/translation" => {
             args[1] = "--translate".to_string();
         }
-        "computer-use" | "computer_use" | "computeruse" | "/computer-use" | "/computer_use" | "@agent/computer-use" | "@agent:computer-use" | "@computer-use" | "ui-tars" | "uitars" | "/ui-tars" | "@agent/ui-tars" | "@ui-tars" => {
+        "computer-use" | "computer_use" | "computeruse" | "--computer-use" | "--computer_use" | "--ui-tars" | "/computer-use" | "/computer_use" | "@agent/computer-use" | "@agent:computer-use" | "@computer-use" | "ui-tars" | "uitars" | "/ui-tars" | "@agent/ui-tars" | "@ui-tars" => {
             args[1] = "--computer-use".to_string();
             if args.len() > 3 {
                 let combined = args[2..].join(" ");
@@ -2775,6 +2775,10 @@ where
             args.truncate(2);
             args.push(combined);
         }
+    }
+
+    if args.len() > 1 && (args[1] == "--computer_use" || args[1] == "--ui-tars") {
+        args[1] = "--computer-use".to_string();
     }
 
     if args.len() > 2 && args[1] == "--computer-use" {
@@ -3432,7 +3436,9 @@ async fn run(args: Args) -> Result<()> {
     }
 
     if args.translate.is_some() {
-        let content_opt = resolve_cli_content(args.translate.as_deref(), args.file.as_deref());
+        let content_opt = resolve_cli_content(args.translate.as_deref(), args.file.as_deref())
+            .or_else(|| args.query.clone())
+            .or_else(|| args.prompt.clone());
         let text_to_trans = match content_opt {
             Some(t) if !t.trim().is_empty() => t,
             _ => {
@@ -3482,7 +3488,9 @@ async fn run(args: Args) -> Result<()> {
     }
 
     if let Some(ref text) = args.humanize {
-        let content_opt = resolve_cli_content(Some(text.as_str()), args.file.as_deref());
+        let content_opt = resolve_cli_content(Some(text.as_str()), args.file.as_deref())
+            .or_else(|| args.query.clone())
+            .or_else(|| args.prompt.clone());
         let input_text = match content_opt {
             Some(t) if !t.trim().is_empty() => t,
             _ => {
@@ -3512,7 +3520,9 @@ async fn run(args: Args) -> Result<()> {
     }
 
     if let Some(ref text) = args.watermark {
-        let content_opt = resolve_cli_content(Some(text.as_str()), args.file.as_deref());
+        let content_opt = resolve_cli_content(Some(text.as_str()), args.file.as_deref())
+            .or_else(|| args.query.clone())
+            .or_else(|| args.prompt.clone());
         let input_target = match content_opt {
             Some(t) if !t.trim().is_empty() => t,
             _ => {
@@ -17620,6 +17630,23 @@ public class Pr {
         let args_t = Args::try_parse_from(["cli.exe", "--translate", "hello", "--to", "German"]).unwrap();
         assert_eq!(args_t.translate.as_deref(), Some("hello"));
         assert_eq!(args_t.to, "German");
+
+        // Translate with -t short flag
+        let args_t_short = Args::try_parse_from(["cli.exe", "--translate", "bonjour", "-t", "French"]).unwrap();
+        assert_eq!(args_t_short.translate.as_deref(), Some("bonjour"));
+        assert_eq!(args_t_short.to, "French");
+
+        // Computer Use visible aliases (--computer_use and --ui-tars)
+        let args_cu_alias = Args::try_parse_from(["cli.exe", "--computer_use", "open editor"]).unwrap();
+        assert_eq!(args_cu_alias.computer_use.as_deref(), Some("open editor"));
+
+        let args_uitars_alias = Args::try_parse_from(["cli.exe", "--ui-tars", "click target"]).unwrap();
+        assert_eq!(args_uitars_alias.computer_use.as_deref(), Some("click target"));
+
+        // Preprocess with alias flags
+        let proc_alias = preprocess_cli_args(vec!["cli.exe".to_string(), "--computer_use".to_string(), "open".to_string(), "terminal".to_string()]);
+        assert_eq!(proc_alias[1], "--computer-use");
+        assert_eq!(proc_alias[2], "open terminal");
     }
 }
 
