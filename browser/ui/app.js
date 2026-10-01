@@ -2345,7 +2345,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // -----------------------------------------------------------------
   function determineFusionPanel(prompt, files = [], settings = {}) {
     const clean = (prompt || '').trim().toLowerCase();
-    if (clean === '@agent sys-info' || clean === '@agent sysinfo' || clean === '/sys-info' || clean === '/sysinfo' ||
+    const isSysInfoDir = /^(?:@agent\s+|@|\/|--)?(?:sys[-_ ]?info(?:rmation)?|system[-_ ]?info(?:rmation)?|info)(?:\b|$)/i.test(clean) ||
+                         /^(?:sys[-_ ]?info|system[-_ ]?info|systeminfo|sysinfo|system_info|sys_info)$/i.test(clean);
+    if (isSysInfoDir ||
+        clean === '@agent sys-info' || clean === '@agent sysinfo' || clean === '/sys-info' || clean === '/sysinfo' ||
         clean.startsWith('@agent sys-info') || clean.startsWith('@agent sysinfo') || clean.startsWith('/sys-info') || clean.startsWith('/sysinfo') ||
         clean.startsWith('@agent help') || clean.startsWith('/help') ||
         clean.startsWith('@agent update') || clean.startsWith('/update') ||
@@ -2577,7 +2580,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // -----------------------------------------------------------------
   function shouldRouteToWeb(query, mode) {
     const clean = (query || '').trim().toLowerCase();
-    if (clean === '@agent sys-info' || clean === '@agent sysinfo' || clean === '/sys-info' || clean === '/sysinfo' ||
+    const isSysInfoDir = /^(?:@agent\s+|@|\/|--)?(?:sys[-_ ]?info(?:rmation)?|system[-_ ]?info(?:rmation)?|info)(?:\b|$)/i.test(clean) ||
+                         /^(?:sys[-_ ]?info|system[-_ ]?info|systeminfo|sysinfo|system_info|sys_info)$/i.test(clean);
+    if (isSysInfoDir ||
+        clean === '@agent sys-info' || clean === '@agent sysinfo' || clean === '/sys-info' || clean === '/sysinfo' ||
         clean.startsWith('@agent sys-info') || clean.startsWith('@agent sysinfo') || clean.startsWith('/sys-info') || clean.startsWith('/sysinfo') ||
         clean.startsWith('@agent help') || clean.startsWith('/help') ||
         clean.startsWith('@agent update') || clean.startsWith('/update') ||
@@ -5580,6 +5586,12 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     if (!targetUrl) return;
 
     let url = targetUrl.trim();
+    // Intercept @ directives, slash commands, or local system directives entered in omnibox
+    if (url.startsWith('@') || url.startsWith('/') || /^(?:sys[-_ ]?info|system[-_ ]?info|systeminfo|sysinfo|help|update|updatedb|benchmark|status|version)\b/i.test(url)) {
+      executeCliCommand(url);
+      return;
+    }
+
     if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('file://')) {
       if (url.startsWith('localhost') || url.startsWith('127.0.0.1')) {
         url = 'http://' + url;
@@ -8141,7 +8153,10 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
     // Dedicated @agent sys-info / @agent sysinfo / /sys-info / /sysinfo Interceptor
     // Intercepted at the VERY TOP of query handling BEFORE any web search, fusion banner, or LLM generation can ever be evaluated
     const cleanCmd = lower.trim();
+    const isSysInfoCmd = /^(?:@agent\s+|@|\/|--)?(?:sys[-_ ]?info(?:rmation)?|system[-_ ]?info(?:rmation)?|info)(?:\b|$)/i.test(cleanCmd) ||
+                         /^(?:sys[-_ ]?info|system[-_ ]?info|systeminfo|sysinfo|system_info|sys_info)$/i.test(cleanCmd);
     if (
+      isSysInfoCmd ||
       cleanCmd === '@agent sys-info' || cleanCmd === '@agent sysinfo' ||
       cleanCmd === '/sys-info' || cleanCmd === '/sysinfo' ||
       cleanCmd === '@sys-info' || cleanCmd === '@sysinfo' ||
@@ -8192,15 +8207,22 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
 
       // Measure local server latency
       let pingMs = 0;
+      let serverReachable = false;
       try {
         const p0 = performance.now();
-        await fetch(`${ipcUrl}/health`);
-        pingMs = Math.round(performance.now() - p0);
+        const hRes = await fetch(`${ipcUrl}/health`);
+        if (hRes.ok) {
+          pingMs = Math.round(performance.now() - p0);
+          serverReachable = true;
+        }
       } catch (_) {
         try {
           const p0 = performance.now();
-          await fetch('/health');
-          pingMs = Math.round(performance.now() - p0);
+          const hRes2 = await fetch('/health');
+          if (hRes2.ok) {
+            pingMs = Math.round(performance.now() - p0);
+            serverReachable = true;
+          }
         } catch (_) {}
       }
 
@@ -8234,20 +8256,23 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
       }
 
       const hw = (sysData && sysData.hardware) || sysData || {};
+      const parseNum = (v, def) => (typeof v === 'number' && !isNaN(v)) ? v : (!isNaN(parseFloat(v)) ? parseFloat(v) : def);
       const cpuName = hw.cpu_name || sysData?.cpu_name || 'Host CPU';
-      const logicalCores = hw.logical_cores || sysData?.logical_cores || 8;
-      const totalRam = typeof hw.total_ram_gb === 'number' ? hw.total_ram_gb.toFixed(2) : (sysData?.total_ram_gb ? sysData.total_ram_gb.toFixed(2) : '16.00');
-      const freeRam = typeof hw.free_ram_gb === 'number' ? hw.free_ram_gb.toFixed(2) : (sysData?.free_ram_gb ? sysData.free_ram_gb.toFixed(2) : '8.00');
+      const logicalCores = parseNum(hw.logical_cores || sysData?.logical_cores, 8);
+      const totalRam = parseNum(hw.total_ram_gb || sysData?.total_ram_gb, 16).toFixed(2);
+      const freeRam = parseNum(hw.free_ram_gb || sysData?.free_ram_gb, 8).toFixed(2);
       const gpuName = hw.gpu_name || sysData?.gpu_name || 'DirectX/Vulkan Accelerator';
-      const totalVram = hw.total_vram_mb || sysData?.total_vram_mb || 0;
-      const freeVram = hw.free_vram_mb || sysData?.free_vram_mb || 0;
-      const freeDisk = typeof hw.free_disk_gb === 'number' ? hw.free_disk_gb.toFixed(2) : (sysData?.free_disk_gb ? sysData.free_disk_gb.toFixed(2) : '0');
+      const totalVram = parseNum(hw.total_vram_mb || sysData?.total_vram_mb, 0);
+      const freeVram = parseNum(hw.free_vram_mb || sysData?.free_vram_mb, 0);
+      const freeDisk = parseNum(hw.free_disk_gb || sysData?.free_disk_gb, 0).toFixed(2);
       const activeModel = sysData?.active_hardware_model || activeOllamaModel || 'qwen2.5:7b';
       const sweetSpot = sysData?.calibrated_sweet_spot || 'qwen2.5:7b';
       const totalModels = sysData?.total_models ? sysData.total_models.toLocaleString() : '1,271,167+';
       const isOllamaRunning = ollamaData?.running || false;
       const ollamaEndpoint = ollamaData?.endpoint || 'http://127.0.0.1:11434';
       const osVersion = 'Windows x64 (NT Dual-Stack IPv4/IPv6)';
+      const latencyDisplay = serverReachable ? `${pingMs}ms IPC roundtrip` : '🟡 Standby / Offline (Local Fallback)';
+      const ipcTier = serverReachable ? '⚡ Sub-Millisecond' : '🟡 Offline';
 
       const installedOllamaModels = (ollamaData && Array.isArray(ollamaData.models)) ? ollamaData.models.map(m => m.name || m.model).filter(Boolean) : [];
       const modelListSnippet = installedOllamaModels.length > 0 
@@ -8269,14 +8294,14 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
       sysCardMd += `- **Ollama Connection**: ${isOllamaRunning ? '🟢 Connected & Responding' : '🟡 Offline / Standby'} (\`${ollamaEndpoint}\`)\n`;
       sysCardMd += `- **Active Local Models**: ${modelListSnippet} (Sweet Spot: \`${sweetSpot}\`)\n`;
       sysCardMd += `- **SQLite Catalog Count**: ${totalModels} models across 45 tasks (\`IDE/db/hf_models.db\`)\n`;
-      sysCardMd += `- **Master CLI Server Latency**: ${pingMs}ms IPC roundtrip\n\n`;
+      sysCardMd += `- **Master CLI Server Latency**: ${latencyDisplay}\n\n`;
       sysCardMd += `| Subsystem | Metric | Status | Execution Tier |\n`;
       sysCardMd += `| :--- | :--- | :---: | :---: |\n`;
       sysCardMd += `| **Runtime Free RAM** | ${freeRam} GB available | ✅ High Headroom | Tier 1 (Large Context) |\n`;
       sysCardMd += `| **GPU Acceleration** | ${gpuName} | ✅ Active | Hardware Tensor Acceleration |\n`;
       sysCardMd += `| **Local AI Engine** | Ollama Daemon | ${isOllamaRunning ? '🟢 Active' : '🟡 Standby'} | 100% Free / Zero Cloud Fees |\n`;
       sysCardMd += `| **Hugging Face Catalog** | 45 Multi-Modal Tasks | 🚀 Synced | SQLite FTS5 Indexed |\n`;
-      sysCardMd += `| **IPC Protocol Dispatch** | HTTP :5000 / Native CLI | ⚡ Sub-Millisecond | Fast Interception Direct Dispatch |\n\n`;
+      sysCardMd += `| **IPC Protocol Dispatch** | HTTP :5000 / Native CLI | ${ipcTier} | Fast Interception Direct Dispatch |\n\n`;
       sysCardMd += `> **System Operational Rating**: Hardware resources certified for zero-cloud multimodal execution, local code synthesis, offline speech/audio transcription, and live local embedding inference.`;
 
       const streamContentEl = bubble.querySelector('.stream-content');

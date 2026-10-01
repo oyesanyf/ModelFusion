@@ -351,6 +351,25 @@ const localDirectives = [
   '@agent sysinfo',
   '/sys-info',
   '/sysinfo',
+  '@sys-info',
+  '@sysinfo',
+  'sys-info',
+  'sysinfo',
+  '@agent sys_info',
+  '/sys_info',
+  'sys_info',
+  '@agent sys info',
+  '/sys info',
+  'sys info',
+  '@agent system-info',
+  '/system-info',
+  'system-info',
+  '@agent systeminfo',
+  '/systeminfo',
+  'systeminfo',
+  '@agent system info',
+  '/system info',
+  'system info',
   '@agent help',
   '/help',
   '@agent update',
@@ -382,14 +401,14 @@ for (const dir of localDirectives) {
   assert.strictEqual(res.routeToWeb, false, `Directive "${dir}" must NOT route to web`);
   assert.strictEqual(res.reason, 'Local system/utility directive');
 }
-console.log('  ✓ Verified 100% web search immunity for all 24 local directives');
+console.log(`  ✓ Verified 100% web search immunity for all ${localDirectives.length} local directives`);
 
 // 9.3 determineFusionPanel returns null for local directives
 for (const dir of localDirectives) {
   const panel = determineFusionPanelFn(dir, [], {});
   assert.strictEqual(panel, null, `Directive "${dir}" must return null from determineFusionPanel`);
 }
-console.log('  ✓ Verified 100% fusion banner immunity (returns null) for all 24 local directives');
+console.log(`  ✓ Verified 100% fusion banner immunity (returns null) for all ${localDirectives.length} local directives`);
 
 // 9.4 Verify executeCliCommand sys-info handler presence
 assert(appJs.includes("cleanCmd === '@agent sys-info'"), 'app.js must intercept @agent sys-info at top of executeCliCommand');
