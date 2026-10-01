@@ -13786,11 +13786,32 @@ sequenceDiagram
                 }
             };
 
-            let response_json = serde_json::json!({
-                "content": result_content,
-                "response": result_content,
-                "output": result_content
-            });
+            let response_json = if let Ok(mut parsed) = serde_json::from_str::<serde_json::Value>(&result_content) {
+                if let Some(obj) = parsed.as_object_mut() {
+                    if !obj.contains_key("content") {
+                        obj.insert("content".to_string(), serde_json::Value::String(result_content.clone()));
+                    }
+                    if !obj.contains_key("response") {
+                        obj.insert("response".to_string(), serde_json::Value::String(result_content.clone()));
+                    }
+                    if !obj.contains_key("output") {
+                        obj.insert("output".to_string(), serde_json::Value::String(result_content.clone()));
+                    }
+                    parsed
+                } else {
+                    serde_json::json!({
+                        "content": result_content,
+                        "response": result_content,
+                        "output": result_content
+                    })
+                }
+            } else {
+                serde_json::json!({
+                    "content": result_content,
+                    "response": result_content,
+                    "output": result_content
+                })
+            };
 
             let response_body = serde_json::to_string(&response_json).unwrap();
             let response = format!(
