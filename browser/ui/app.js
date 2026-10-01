@@ -9734,9 +9734,8 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
     const attachedImages = currentAttachments.filter(f => f.type === 'image' && f.base64).map(f => f.base64);
     const panel = determineFusionPanel(cmd, currentAttachments, currentSettings);
 
-    try {
-      // 0. Multi-Agent Chaining & Composed Directives
-      if (parsedMulti.isMultiAgent) {
+    // 0. Multi-Agent Chaining & Composed Directives
+    if (parsedMulti.isMultiAgent) {
         termLog(`[MULTI-AGENT] 🔄 Multi-agent fusion directive: [${parsedMulti.agents.map(a => '@agent ' + a).join(' & ')}] with query: "${parsedMulti.query}"`, 'info');
 
         const hasArxiv = parsedMulti.agents.includes('arxiv');
@@ -10003,6 +10002,15 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
       const cleanGoal = (goalDirectiveMatch[2] || '').trim();
       if (!cleanGoal) {
         termLog('Usage: @agent goal <describe multi-step goal or mission>', 'warn');
+        const bubble = createAiBubble({ icon: '🎯', title: 'HugOS Goal Agent', modelTag: 'Goal Required', isTool: true, streaming: false });
+        renderErrorCard(bubble, '⚠️ Missing Goal Directive Target', 'Autonomous goal execution requires a description of the goal or mission.', {
+          attempted: cmd,
+          reason: 'No goal or task description provided.',
+          recoverySteps: [
+            'Example: @agent goal Build a responsive landing page with Tailwind CSS',
+            'Example: @agent goal Analyze quarterly financial trends and identify cost drivers'
+          ]
+        });
         return;
       }
       termLog(`🎯 [GOAL RUNNER] Multi-turn autonomous goal directive initiated: "${cleanGoal}"`, 'info');
@@ -10026,6 +10034,15 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
       const cleanTask = (planDirectiveMatch[2] || '').trim();
       if (!cleanTask) {
         termLog('Usage: @agent plan <describe task or architecture to plan>', 'warn');
+        const bubble = createAiBubble({ icon: '📐', title: 'HugOS Planning Agent', modelTag: 'Task Required', isTool: true, streaming: false });
+        renderErrorCard(bubble, '⚠️ Missing Plan Directive Target', 'Architecture planning requires a description of the system or task to plan.', {
+          attempted: cmd,
+          reason: 'No task description provided for milestone action plan.',
+          recoverySteps: [
+            'Example: @agent plan Deconstruct distributed caching layer for high concurrency',
+            'Example: @agent plan Implement end-to-end user authentication with JWT and refresh tokens'
+          ]
+        });
         return;
       }
       termLog(`📐 [PLANNER] Step-by-step action plan directive initiated: "${cleanTask}"`, 'info');
@@ -10048,6 +10065,15 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
       const cleanSubject = (grillDirectiveMatch[2] || '').trim();
       if (!cleanSubject) {
         termLog('Usage: @agent grill-me <describe architecture, idea, or plan to stress-test>', 'warn');
+        const bubble = createAiBubble({ icon: '🔥', title: 'HugOS Socratic Stress-Tester', modelTag: 'Subject Required', isTool: true, streaming: false });
+        renderErrorCard(bubble, '⚠️ Missing Grill-Me Subject', 'Stress-testing and critical interview requires an idea, architecture, or plan to challenge.', {
+          attempted: cmd,
+          reason: 'No subject provided for adversarial interview.',
+          recoverySteps: [
+            'Example: @agent grill-me Microservices architecture for an e-commerce platform',
+            'Example: @agent grill-me Using SQLite for high-write telemetry logging'
+          ]
+        });
         return;
       }
       termLog(`🔥 [GRILL ME] Adversarial requirements interview initiated: "${cleanSubject}"`, 'info');
@@ -10207,13 +10233,52 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
     }
     if (lower === '/browser status' || lower === '@agent browser status') {
       const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+      const bubble = createAiBubble({
+        icon: '🌐',
+        title: 'HugOS Browser Agent Status',
+        modelTag: 'Daemon Status',
+        isTool: true,
+        streaming: false
+      });
       try {
         const res = await fetch(`${ipcUrl}/api/browser/agent/status`);
-        const data = await res.json();
-        termLog(`[BROWSER AGENT STATUS] State: ${data.state} | Step: ${data.current_step}/${data.max_steps} | Goal: ${data.goal}`, 'info');
+        if (res.ok) {
+          const data = await res.json();
+          const contentEl = bubble.querySelector('.stream-content') || bubble;
+          contentEl.innerHTML = `
+            <div style="background: var(--bg-secondary, rgba(255,255,255,0.03)); border: 1px solid var(--border-color, #333); border-radius: 8px; padding: 12px;">
+              <div style="font-weight: 600; color: #10a37f; margin-bottom: 6px;">🟢 Browser Agent Daemon Active</div>
+              <div style="font-size: 12px; line-height: 1.6;">
+                <div><strong>State:</strong> <code>${escapeHtml(data.state || 'Idle')}</code></div>
+                <div><strong>Progress:</strong> Step ${data.current_step || 0} / ${data.max_steps || 5}</div>
+                <div><strong>Goal:</strong> ${escapeHtml(data.goal || 'None')}</div>
+                <div><strong>Active Viewport:</strong> <code>${escapeHtml(currentNavUrl || 'about:blank')}</code></div>
+              </div>
+            </div>
+          `;
+          termLog(`[BROWSER AGENT STATUS] State: ${data.state} | Step: ${data.current_step}/${data.max_steps} | Goal: ${data.goal}`, 'info');
+        } else {
+          renderErrorCard(bubble, '⚠️ Browser Agent Daemon Notice', `Master CLI responded with HTTP ${res.status}. Local browser viewport is active at ${currentNavUrl || 'dashboard'}.`, {
+            attempted: cmd,
+            reason: `Backend daemon returned status ${res.status}.`,
+            recoverySteps: ['Verify Master CLI is running', 'Use @agent browser to launch a new browser task']
+          });
+        }
       } catch (e) {
+        const contentEl = bubble.querySelector('.stream-content') || bubble;
+        contentEl.innerHTML = `
+          <div style="background: var(--bg-secondary, rgba(255,255,255,0.03)); border: 1px solid var(--border-color, #333); border-radius: 8px; padding: 12px;">
+            <div style="font-weight: 600; color: #38bdf8; margin-bottom: 6px;">🌐 Local Browser Viewport Runtime Active</div>
+            <div style="font-size: 12px; line-height: 1.6;">
+              <div><strong>Viewport URL:</strong> <code>${escapeHtml(currentNavUrl || 'http://localhost:5000')}</code></div>
+              <div><strong>Master CLI Daemon:</strong> Standby / Local In-Memory Fallback</div>
+              <div><strong>CDP Status:</strong> Port ${currentSettings.cdpPort || 9222}</div>
+            </div>
+          </div>
+        `;
         termLog(`[BROWSER AGENT STATUS] Master CLI daemon status: Local browser runtime active.`, 'sys');
       }
+      setChatRunningState(false);
       return;
     }
 
@@ -10709,13 +10774,6 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       }
 
       if (!textToHumanize) {
-        if (activeSession && activeSession.messages.length > 0 && activeSession.messages[activeSession.messages.length - 1].content === cmd) {
-          activeSession.messages.pop();
-          saveChatHistory();
-        }
-        if (chatMessages && chatMessages.lastElementChild && chatMessages.lastElementChild.classList.contains('user-bubble')) {
-          chatMessages.lastElementChild.remove();
-        }
         termLog('✍️ Please provide or paste the text or attach a file you would like to humanize.', 'warn');
         const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
           ? cliPromptInputPinned
@@ -10729,6 +10787,32 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           activeInput.style.height = Math.min(activeInput.scrollHeight, 160) + 'px';
         }
         pendingPromptDirective = { type: 'humanize' };
+
+        const bubble = createAiBubble({
+          icon: '✍️',
+          title: 'HugOS Humanizer Engine',
+          modelTag: 'Input Required',
+          isTool: true,
+          streaming: false
+        });
+        renderErrorCard(bubble, '⚠️ Missing Text to Humanize', 'The humanize directive requires text, an attached file, or a preceding message to rewrite.', {
+          attempted: cmd,
+          reason: 'No input text or file attachment provided for humanization.',
+          recoverySteps: [
+            'Provide text directly: @agent humanize <your text here>',
+            'Attach a text or markdown file using the attachment button 📎',
+            'Run @agent humanize right after an AI response to humanize the previous answer'
+          ]
+        });
+        if (activeSession) {
+          activeSession.messages.push({
+            role: 'assistant',
+            content: '⚠️ **Missing Text to Humanize**: Please provide text to humanize, e.g. `@agent humanize <text>` or attach a document.',
+            isError: true
+          });
+          saveChatHistory();
+        }
+        setChatRunningState(false);
         return;
       }
 
@@ -10865,13 +10949,6 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       }
 
       if (!inputTarget) {
-        if (activeSession && activeSession.messages.length > 0 && activeSession.messages[activeSession.messages.length - 1].content === cmd) {
-          activeSession.messages.pop();
-          saveChatHistory();
-        }
-        if (chatMessages && chatMessages.lastElementChild && chatMessages.lastElementChild.classList.contains('user-bubble')) {
-          chatMessages.lastElementChild.remove();
-        }
         termLog('🔍 Please provide text, paste prose, or attach a document/image to detect watermark.', 'warn');
         const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
           ? cliPromptInputPinned
@@ -10885,6 +10962,32 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           activeInput.style.height = Math.min(activeInput.scrollHeight, 160) + 'px';
         }
         pendingPromptDirective = { type: 'watermark' };
+
+        const bubble = createAiBubble({
+          icon: '🔍',
+          title: 'AI Watermark Scanner',
+          modelTag: 'Input Required',
+          isTool: true,
+          streaming: false
+        });
+        renderErrorCard(bubble, '⚠️ Missing Watermark Inspection Target', 'Watermark detection requires text, a document, or an image file to scan.', {
+          attempted: cmd,
+          reason: 'No text or file path provided for watermark analysis.',
+          recoverySteps: [
+            'Scan text: @agent watermark <pasted prose>',
+            'Scan file or image: @agent watermark <path/to/file.png>',
+            'Attach a file or screenshot using the attachment button 📎'
+          ]
+        });
+        if (activeSession) {
+          activeSession.messages.push({
+            role: 'assistant',
+            content: '⚠️ **Missing Watermark Target**: Please provide text or attach a file to scan for AI watermarks.',
+            isError: true
+          });
+          saveChatHistory();
+        }
+        setChatRunningState(false);
         return;
       }
 
@@ -10948,6 +11051,34 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 
       if (!goal) {
         termLog('🖥️ Please provide a goal or task for autonomous Computer Use (e.g. @agent computer-use Open Notepad and type hello).', 'warn');
+        const cardBubble = createAiBubble({
+          icon: '🖥️',
+          title: 'HugOS Computer Use Agent (UI-TARS)',
+          modelTag: 'Goal Required',
+          isTool: true,
+          streaming: false
+        });
+        const contentEl = cardBubble.querySelector('.stream-content') || cardBubble;
+        contentEl.innerHTML = `
+          <div class="agent-error-card" style="background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.35);">
+            <div class="error-card-header" style="color: #38bdf8;">
+              <span class="error-icon">🖥️</span>
+              <strong>Goal Required for Autonomous Computer Use</strong>
+            </div>
+            <div class="error-card-body" style="color: var(--text-primary);">
+              <p>Autonomous computer use requires a specific objective or task to execute.</p>
+              <div style="margin-top: 8px; font-size: 11.5px;">
+                <strong>Examples:</strong>
+                <ul style="margin: 4px 0 0 16px; padding: 0;">
+                  <li><code>@agent computer-use Open Notepad and type Hello World</code></li>
+                  <li><code>@agent computer-use go to https://www.google.com and search for gemini 4.0</code></li>
+                  <li><code>@agent computer-use Inspect desktop screen and identify interactive UI elements</code></li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        `;
+        setChatRunningState(false);
         const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
           ? cliPromptInputPinned
           : cliPromptInput;
@@ -10958,6 +11089,18 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
         }
         return;
+      }
+
+      // Check if goal mentions a direct URL for webview synchronization
+      const urlMatch = goal.match(/https?:\/\/[^\s]+/i);
+      if (urlMatch) {
+        const targetNavUrl = urlMatch[0];
+        termLog(`🌐 [COMPUTER USE] Synchronizing live webview to target URL: ${targetNavUrl}`, 'info');
+        try {
+          navigateTo(targetNavUrl);
+        } catch (navErr) {
+          termLog(`Webview navigation warning: ${navErr.message}`, 'warn');
+        }
       }
 
       termLog(`🖥️ [COMPUTER USE] Initializing UI-TARS autonomous loop for goal: "${goal}"`, 'info');
@@ -10972,38 +11115,104 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 
       try {
         const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
-        const resp = await fetch(`${ipcUrl}/api/computer-use`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ goal, max_steps: 10, dry_run: false })
-        });
-
-        const data = await resp.json();
-        const streamEl = bubble.querySelector('.stream-content');
-        if (data && data.status === 'ok' && data.result) {
-          const res = data.result;
-          let html = `<div><strong>🎯 Goal:</strong> ${escapeHtml(res.goal)}</div>`;
-          html += `<div style="margin: 8px 0; color: #10b981; font-weight: 600;">✅ ${escapeHtml(res.final_message || 'Completed')}</div>`;
-          html += `<div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Executed ${res.steps ? res.steps.length : 0} autonomous actions (${res.total_duration_ms}ms)</div>`;
-          if (Array.isArray(res.steps) && res.steps.length > 0) {
-            html += '<div style="background: var(--bg-secondary, rgba(0,0,0,0.1)); border-radius: 6px; padding: 8px; font-family: monospace; font-size: 12px;">';
-            res.steps.forEach(s => {
-              html += `<div style="margin-bottom: 4px;">• <strong>Step ${s.step_index}:</strong> <span style="color:#38bdf8;">${escapeHtml(s.action_type)}</span> ➔ ${escapeHtml(s.execution_details)}</div>`;
-            });
-            html += '</div>';
-          }
-          if (streamEl) streamEl.innerHTML = html;
-        } else {
-          const prompt = `Execute computer use task: "${goal}". Detail screen perception, target UI coordinates, and UI-TARS action sequence.`;
-          await streamAiChat(prompt, 'You are UI-TARS Computer Use Assistant. Generate precise GUI action coordinates and step-by-step OS automation plan.', {
-            taskType: 'computer_use'
+        let resp = null;
+        let fetchErr = null;
+        try {
+          resp = await fetch(`${ipcUrl}/api/computer-use`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ goal, max_steps: 10, dry_run: false })
           });
+        } catch (fErr) {
+          fetchErr = fErr;
+        }
+
+        if (resp && resp.ok) {
+          const data = await resp.json();
+          const streamEl = bubble.querySelector('.stream-content');
+          if (data && data.status === 'ok' && data.result) {
+            bubble.classList.remove('streaming');
+            const res = data.result;
+            let html = `<div><strong>🎯 Goal:</strong> ${escapeHtml(res.goal || goal)}</div>`;
+            html += `<div style="margin: 8px 0; color: #10b981; font-weight: 600;">✅ ${escapeHtml(res.final_message || 'Completed')}</div>`;
+            html += `<div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Executed ${res.steps ? res.steps.length : 0} autonomous actions (${res.total_duration_ms || 0}ms)</div>`;
+            if (Array.isArray(res.steps) && res.steps.length > 0) {
+              html += '<div style="background: var(--bg-secondary, rgba(0,0,0,0.1)); border-radius: 6px; padding: 8px; font-family: monospace; font-size: 12px;">';
+              res.steps.forEach(s => {
+                html += `<div style="margin-bottom: 4px;">• <strong>Step ${s.step_index}:</strong> <span style="color:#38bdf8;">${escapeHtml(s.action_type || '')}</span> ➔ ${escapeHtml(s.execution_details || '')}</div>`;
+              });
+              html += '</div>';
+            }
+            if (streamEl) streamEl.innerHTML = html;
+            if (activeSession) {
+              activeSession.messages.push({ role: 'assistant', content: html });
+              saveChatHistory();
+            }
+            return;
+          } else {
+            const backendErr = (data && data.error) ? data.error : 'Master CLI returned non-OK status';
+            termLog(`[COMPUTER USE] Backend notice: ${backendErr}. Streaming perception planner...`, 'warn');
+            const streamEl = bubble.querySelector('.stream-content');
+            if (streamEl) {
+              streamEl.innerHTML = `
+                <div class="agent-error-card" style="margin-bottom: 8px; background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.35);">
+                  <div class="error-card-header" style="color: #eab308;">
+                    <span class="error-icon">ℹ️</span>
+                    <strong>UI-TARS Local Backend Diagnostic</strong>
+                  </div>
+                  <div class="error-card-body">
+                    <div><strong>Target Goal:</strong> ${escapeHtml(goal)}</div>
+                    <div style="margin-top: 4px; font-size: 11.5px; color: var(--text-secondary);">Local OS Grounding reported: <code>${escapeHtml(backendErr)}</code></div>
+                    <div style="margin-top: 4px; font-size: 11px; opacity: 0.85;">Switching to local AI perception and GUI action planner...</div>
+                  </div>
+                </div>
+                <div class="stream-content-planner">⏳ Generating screen perception and GUI action sequence...</div>
+              `;
+            }
+            await streamAiChat(
+              `Execute computer use task: "${goal}". Detail screen perception, target UI coordinates, and UI-TARS action sequence. Note: Local OS grounding reported: ${backendErr}`,
+              'You are UI-TARS Computer Use Assistant. Generate precise GUI action coordinates and step-by-step OS automation plan.',
+              { taskType: 'computer_use', existingBubble: bubble }
+            );
+            return;
+          }
+        } else {
+          const statusText = resp ? `HTTP ${resp.status} ${resp.statusText}` : (fetchErr ? fetchErr.message : 'Master CLI IPC offline');
+          termLog(`[COMPUTER USE] Backend IPC offline (${statusText}). Streaming perception planner...`, 'warn');
+          const streamEl = bubble.querySelector('.stream-content');
+          if (streamEl) {
+            streamEl.innerHTML = `
+              <div class="agent-error-card" style="margin-bottom: 8px; background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.35);">
+                <div class="error-card-header" style="color: #eab308;">
+                  <span class="error-icon">ℹ️</span>
+                  <strong>Master CLI IPC Service Notice (${escapeHtml(statusText)})</strong>
+                </div>
+                <div class="error-card-body">
+                  <div><strong>Target Goal:</strong> ${escapeHtml(goal)}</div>
+                  <div style="margin-top: 4px; font-size: 11px; color: var(--text-secondary);">Master CLI (:5000/api/computer-use) is in standby. Local AI planner activated to synthesize the automation plan.</div>
+                </div>
+              </div>
+              <div class="stream-content-planner">⏳ Generating screen perception and GUI action sequence...</div>
+            `;
+          }
+          await streamAiChat(
+            `Execute computer use task: "${goal}". Detail screen perception, target UI coordinates, and UI-TARS action sequence. Note: Master CLI endpoint (${ipcUrl}/api/computer-use) reported: ${statusText}.`,
+            'You are UI-TARS Computer Use Assistant. Generate precise GUI action coordinates and step-by-step OS automation plan.',
+            { taskType: 'computer_use', existingBubble: bubble }
+          );
+          return;
         }
       } catch (err) {
-        termLog(`Computer use IPC error: ${err.message}. Running local fallback...`, 'warn');
-        const prompt = `Execute computer use task: "${goal}". Detail screen perception, target UI coordinates, and UI-TARS action sequence.`;
-        await streamAiChat(prompt, 'You are UI-TARS Computer Use Assistant. Generate precise GUI action coordinates and step-by-step OS automation plan.', {
-          taskType: 'computer_use'
+        termLog(`Computer use execution failure: ${err.message}`, 'error');
+        renderErrorCard(bubble, '⚠️ Computer Use Execution Failed', `Autonomous computer use failed: ${err.message}`, {
+          attempted: `@agent computer-use ${goal}`,
+          reason: err.message,
+          recoverySteps: [
+            'Ensure ModelFusion Master CLI / IPC daemon is running on port 5000',
+            'Verify Ollama or UI-TARS model is installed and accessible',
+            'Check system permissions for screen capture and accessibility',
+            'Click Retry below to attempt execution again'
+          ]
         });
       } finally {
         setChatRunningState(false);
@@ -11056,13 +11265,6 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       }
 
       if (!textToTranslate) {
-        if (activeSession && activeSession.messages.length > 0 && activeSession.messages[activeSession.messages.length - 1].content === cmd) {
-          activeSession.messages.pop();
-          saveChatHistory();
-        }
-        if (chatMessages && chatMessages.lastElementChild && chatMessages.lastElementChild.classList.contains('user-bubble')) {
-          chatMessages.lastElementChild.remove();
-        }
         termLog('🌐 Please provide or paste the text or attach a file you would like to translate.', 'warn');
         const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
           ? cliPromptInputPinned
@@ -11076,6 +11278,32 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           activeInput.style.height = Math.min(activeInput.scrollHeight, 160) + 'px';
         }
         pendingPromptDirective = { type: 'translate', lang: targetLang };
+
+        const bubble = createAiBubble({
+          icon: '🌐',
+          title: 'HugOS Translator',
+          modelTag: 'Input Required',
+          isTool: true,
+          streaming: false
+        });
+        renderErrorCard(bubble, '⚠️ Missing Translation Content', `Please provide text to translate into ${targetLang}.`, {
+          attempted: cmd,
+          reason: 'No content or file was specified for translation.',
+          recoverySteps: [
+            `Translate text: @agent translate to ${targetLang}: <your text>`,
+            'Attach a document or code file with 📎 to translate entire files',
+            'Translate prior response: enter "@agent translate to French:" after an AI reply'
+          ]
+        });
+        if (activeSession) {
+          activeSession.messages.push({
+            role: 'assistant',
+            content: `⚠️ **Missing Translation Content**: Please provide text to translate into ${targetLang}.`,
+            isError: true
+          });
+          saveChatHistory();
+        }
+        setChatRunningState(false);
         return;
       }
 
@@ -11134,13 +11362,6 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       }
 
       if (!textToStyle) {
-        if (activeSession && activeSession.messages.length > 0 && activeSession.messages[activeSession.messages.length - 1].content === cmd) {
-          activeSession.messages.pop();
-          saveChatHistory();
-        }
-        if (chatMessages && chatMessages.lastElementChild && chatMessages.lastElementChild.classList.contains('user-bubble')) {
-          chatMessages.lastElementChild.remove();
-        }
         termLog('🎨 Please provide or paste the text you would like to transfer style for.', 'warn');
         const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
           ? cliPromptInputPinned
@@ -11154,6 +11375,32 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           activeInput.style.height = Math.min(activeInput.scrollHeight, 160) + 'px';
         }
         pendingPromptDirective = { type: 'style-transfer', style: targetStyle };
+
+        const bubble = createAiBubble({
+          icon: '🎨',
+          title: 'HugOS Style Transfer',
+          modelTag: 'Input Required',
+          isTool: true,
+          streaming: false
+        });
+        renderErrorCard(bubble, '⚠️ Missing Style Transfer Text', `Please provide the text you would like to rewrite in ${targetStyle} style.`, {
+          attempted: cmd,
+          reason: 'No content was provided to transform.',
+          recoverySteps: [
+            `Syntax: @agent style-transfer to ${targetStyle}: <text>`,
+            'Examples: @agent style-transfer to academic: <text>',
+            '@agent style-transfer to executive: <text>'
+          ]
+        });
+        if (activeSession) {
+          activeSession.messages.push({
+            role: 'assistant',
+            content: `⚠️ **Missing Style Transfer Text**: Please provide text to rewrite in ${targetStyle} style.`,
+            isError: true
+          });
+          saveChatHistory();
+        }
+        setChatRunningState(false);
         return;
       }
 
@@ -11790,6 +12037,48 @@ If you are asked about real-world facts such as world leaders, heads of state, c
       }
       termLog(`[ROUTER] 🧠 Route: Local LLM Internal Reasoning (${routingDecision.reason})`, 'sys');
     }
+    // 6.9 Unrecognized Agent Directive Interceptor
+    // If the user explicitly typed an @agent directive or slash command and it wasn't matched above,
+    // do NOT silently fall back or let it fail without clear feedback.
+    const isExplicitDirective = /^(?:@agent\s+|@|\/agent\s+|\/)[a-zA-Z0-9_\-]+(?:\b|$)/i.test(cmd);
+    if (isExplicitDirective && !cmd.toLowerCase().startsWith('@agent browser deep research on')) {
+      const matchDir = cmd.match(/^(?:@agent\s+|@|\/agent\s+|\/)([a-zA-Z0-9_\-]+)/i);
+      const directiveName = matchDir ? matchDir[1] : cmd;
+      const commonWords = ['what', 'why', 'how', 'who', 'when', 'where', 'which', 'can', 'could', 'would', 'is', 'are', 'tell', 'explain', 'show', 'write', 'create', 'hello', 'hi', 'hey'];
+      if (!commonWords.includes(directiveName.toLowerCase())) {
+        termLog(`[DIRECTIVE ERROR] ⚠️ Unrecognized directive: "${cmd}"`, 'warn');
+        const bubble = createAiBubble({
+          icon: '⚠️',
+          title: 'HugOS Directive Engine',
+          modelTag: 'Unrecognized Directive',
+          isTool: true,
+          streaming: false
+        });
+        const suggestions = AGENT_COMMANDS
+          .filter(c => c.cmd.toLowerCase().includes(directiveName.toLowerCase()) || directiveName.toLowerCase().includes(c.cmd.replace(/^@agent\s+/i, '').trim()))
+          .slice(0, 4)
+          .map(c => c.cmd.trim());
+
+        renderErrorCard(bubble, '⚠️ Directive Execution Failed: Unrecognized Directive', `The agent directive "${escapeHtml(directiveName)}" is not recognized by ModelFusion / HugOS.`, {
+          attempted: cmd,
+          reason: `Directive "${escapeHtml(directiveName)}" is not a registered agent capability.`,
+          recoverySteps: [
+            suggestions.length > 0 ? `Did you mean: ${suggestions.map(s => '<code>' + escapeHtml(s) + '</code>').join(', ')}?` : 'Check syntax with @agent help',
+            'Run @agent help to view all 45+ multi-modal tasks and directives',
+            'To ask a general question without invoking an agent directive, omit the "@agent" prefix'
+          ]
+        });
+        if (activeSession) {
+          activeSession.messages.push({
+            role: 'assistant',
+            content: `⚠️ **Directive Execution Failed: Unrecognized Directive**\n\nThe agent directive \`${directiveName}\` is not recognized. Run \`@agent help\` to see all available tools.`,
+            isError: true
+          });
+          saveChatHistory();
+        }
+        return;
+      }
+    }
 
     // 7. Default Local LLM Reasoning (with attached files and multimodal fusion)
     const promptToSend = attachmentContext ? `${cmd}\n\n${attachmentContext}` : cmd;
@@ -11807,15 +12096,33 @@ If you are asked about real-world facts such as world leaders, heads of state, c
         termLog(`[COMMAND ERROR] ⚠️ Execution failed: ${err.message}${err.stack ? `\n${err.stack}` : ''}`, 'error');
       }
       setChatRunningState(false);
-      if (chatMessages) {
-        const lastBubble = chatMessages.lastElementChild;
-        if (lastBubble && (lastBubble.classList.contains('assistant-bubble') || lastBubble.classList.contains('streaming'))) {
-          const errTitle = isClientErr ? '⚠️ Interface Client Error' : '⚠️ Execution Error';
-          const errBody = isClientErr
-            ? `Client-side DOM/JavaScript Exception: ${err.message}${err.stack ? `\n\nStack:\n${err.stack}` : ''}`
-            : `Command execution failed: ${err.message}`;
-          renderErrorCard(lastBubble, errTitle, errBody);
-        }
+      let lastBubble = chatMessages ? chatMessages.lastElementChild : null;
+      if (!lastBubble || !lastBubble.classList.contains('assistant-bubble')) {
+        lastBubble = createAiBubble({
+          icon: '⚠️',
+          title: 'System Execution Error',
+          modelTag: 'Command Fault',
+          isTool: true,
+          streaming: false
+        });
+      }
+      const errTitle = isClientErr ? '⚠️ Interface Client Error' : '⚠️ Directive Execution Failed';
+      const errBody = isClientErr
+        ? `Client-side DOM/JavaScript Exception: ${err.message}${err.stack ? `\n\nStack:\n${err.stack}` : ''}`
+        : `Command execution failed: ${err.message}`;
+      renderErrorCard(lastBubble, errTitle, errBody);
+      if (activeSession) {
+        activeSession.messages.push({
+          role: 'assistant',
+          content: `⚠️ **${errTitle}**\n\n${errBody}\n- **Attempted**: \`${cmd}\`\n- **Reason**: ${err.message}`,
+          isError: true
+        });
+        saveChatHistory();
+      }
+    } finally {
+      setChatRunningState(false);
+      if (chatMessages && currentSettings.autoScroll !== false) {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
       }
     }
   }
