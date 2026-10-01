@@ -925,12 +925,30 @@ try {
     }
 } catch {}
 
-if (-not (Test-Path $msiPath) -or ((Get-Item $msiPath).LastWriteTime -lt (Get-Item $wxsPath).LastWriteTime)) {
-    & $wixExe build -v -b $PSScriptRoot -arch x64 $wxsPath -out $msiPath
-    $wixExit = $LASTEXITCODE
-} else {
-    Write-Host "[OK] Existing MSI installer is fresh and matches current WiX manifest." -ForegroundColor Green
-    $wixExit = 0
+# Start background heartbeat to prevent Windows Installer (msiserver) from auto-stopping during multi-minute cabinet compression
+$heartbeatJob = Start-Job -ScriptBlock {
+    while ($true) {
+        Start-Sleep -Seconds 10
+        try {
+            $svc = Get-Service msiserver -ErrorAction SilentlyContinue
+            if ($svc -and $svc.Status -ne 'Running') {
+                Start-Service -Name msiserver -ErrorAction SilentlyContinue
+            }
+        } catch {}
+    }
+}
+
+try {
+    if (-not (Test-Path $msiPath) -or ((Get-Item $msiPath).LastWriteTime -lt (Get-Item $wxsPath).LastWriteTime)) {
+        & $wixExe build -v -b $PSScriptRoot -arch x64 $wxsPath -out $msiPath
+        $wixExit = $LASTEXITCODE
+    } else {
+        Write-Host "[OK] Existing MSI installer is fresh and matches current WiX manifest." -ForegroundColor Green
+        $wixExit = 0
+    }
+} finally {
+    Stop-Job $heartbeatJob -ErrorAction SilentlyContinue
+    Remove-Job $heartbeatJob -Force -ErrorAction SilentlyContinue
 }
 if ($wixExit -ne 0 -or -not (Test-Path $msiPath)) {
     Write-Host "[ERROR] WiX build failed (Exit code: $wixExit)." -ForegroundColor Red
