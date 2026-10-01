@@ -1872,6 +1872,7 @@ dependencies = [
  "chrono",
  "db",
  "futures",
+ "image",
  "log",
  "model_selection",
  "monitoring",

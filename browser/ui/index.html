@@ -49,10 +49,10 @@
 
         <!-- Collapsible Tools & Directives Accordion (Default Collapsed for Distinct Demarcation) -->
         <div class="sidebar-tools-accordion collapsed" id="sidebar-tools-accordion">
-          <button type="button" class="sidebar-tools-header" id="sidebar-tools-toggle" title="Toggle ModelFusion Tools &amp; Directives (All 161+ Tools)">
+          <button type="button" class="sidebar-tools-header" id="sidebar-tools-toggle" title="Toggle ModelFusion Tools &amp; Directives (All 175+ Tools)">
             <span class="tools-header-icon">🛠️</span>
             <span class="tools-header-title">Agent Capabilities</span>
-            <span class="tools-header-badge">161</span>
+            <span class="tools-header-badge">175</span>
             <span class="tools-header-chevron" id="tools-accordion-chevron">▸</span>
           </button>
           <div class="sidebar-tools-body" id="sidebar-tools-body">
@@ -89,6 +89,41 @@
                 <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_summarize" data-category="web" data-cmd="@agent summarize" data-original-title="Summarize Active Page Content" title="Summarize Active Page Content">
                   <span class="tool-btn-left"><span class="tool-icon">📑</span><span class="tool-label">Summarize Active Page</span></span>
                   <span class="tool-tag">@summarize</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Computer Use & OS Automation (UI-TARS) -->
+            <div class="tool-category">
+              <button type="button" class="tool-category-header" data-cat="computer_use" title="Computer Use &amp; Desktop Automation (UI-TARS Multimodal Grounding)">
+                <span class="cat-icon">🖥️</span>
+                <span class="cat-title">Computer Use &amp; OS Automation</span>
+                <span class="cat-chevron">▸</span>
+              </button>
+              <div class="tool-category-content collapsed">
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_computer_use" data-category="computer_use" data-cmd="@agent computer-use " data-original-title="Autonomous OS Computer Use (UI-TARS)" title="Autonomous OS Computer Use (UI-TARS)">
+                  <span class="tool-btn-left"><span class="tool-icon">🖥️</span><span class="tool-label">Autonomous Computer Use</span></span>
+                  <span class="tool-tag">@computer-use</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_screen_grounding" data-category="computer_use" data-cmd="@agent screen-grounding " data-original-title="Perceive &amp; Ground Screen Elements" title="Perceive &amp; Ground Screen Elements">
+                  <span class="tool-btn-left"><span class="tool-icon">👁️</span><span class="tool-label">Screen Perception &amp; Grounding</span></span>
+                  <span class="tool-tag">@screen</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_desktop_click" data-category="computer_use" data-cmd="@agent desktop-click " data-original-title="Execute OS Mouse Click" title="Execute OS Mouse Click">
+                  <span class="tool-btn-left"><span class="tool-icon">🖱️</span><span class="tool-label">OS Mouse Click</span></span>
+                  <span class="tool-tag">@click</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_desktop_type" data-category="computer_use" data-cmd="@agent desktop-type " data-original-title="Type Text or OS Keystroke" title="Type Text or OS Keystroke">
+                  <span class="tool-btn-left"><span class="tool-icon">⌨️</span><span class="tool-label">OS Type &amp; Hotkey</span></span>
+                  <span class="tool-tag">@type</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_desktop_scroll" data-category="computer_use" data-cmd="@agent desktop-scroll " data-original-title="Scroll Active Window" title="Scroll Active Window">
+                  <span class="tool-btn-left"><span class="tool-icon">📜</span><span class="tool-label">OS Window Scroll</span></span>
+                  <span class="tool-tag">@scroll</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_ui_tars" data-category="computer_use" data-cmd="@agent ui-tars " data-original-title="UI-TARS Action Grounding &amp; Execution" title="UI-TARS Action Grounding &amp; Execution">
+                  <span class="tool-btn-left"><span class="tool-icon">🤖</span><span class="tool-label">UI-TARS Agent Loop</span></span>
+                  <span class="tool-tag">@ui-tars</span>
                 </button>
               </div>
             </div>
