@@ -8241,16 +8241,17 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
 
       statusLine.textContent = `[${time}] 🤖 ModelFusion Engine (${modelToUse}) completed:`;
       responseLine.innerHTML = renderMarkdown(fullResponse);
+      const rawFinal = (options && options.isContinuation && options.initialText)
+        ? mergeContinuationText(options.initialText, fullResponse)
+        : fullResponse;
+      const finalMergedText = unwrapJsonContent(rawFinal);
+      const promptToSave = (options && options.isContinuation && options.originalPrompt)
+        ? options.originalPrompt
+        : userPrompt;
+
       if (assistantBubble) {
         assistantBubble.classList.remove('streaming');
-        const rawFinal = (options && options.isContinuation && options.initialText)
-          ? mergeContinuationText(options.initialText, fullResponse)
-          : fullResponse;
-        const finalMergedText = unwrapJsonContent(rawFinal);
         assistantBubble.dataset.rawText = finalMergedText;
-        const promptToSave = (options && options.isContinuation && options.originalPrompt)
-          ? options.originalPrompt
-          : userPrompt;
         assistantBubble.dataset.prompt = promptToSave;
         assistantBubble.dataset.model = resolvedOllamaModel;
 
@@ -8370,16 +8371,17 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
           const rawIpc = data.content || data.response || data.output || data.result || data.text || data.answer || data.message?.content || data.choices?.[0]?.message?.content || (typeof data === 'string' ? data : data);
           const text = unwrapJsonContent(rawIpc);
           responseLine.innerHTML = renderMarkdown(text);
+          const rawMerged = (options && options.isContinuation && options.initialText)
+            ? mergeContinuationText(options.initialText, text)
+            : text;
+          const finalMerged = unwrapJsonContent(rawMerged);
+          const promptToSave = (options && options.isContinuation && options.originalPrompt)
+            ? options.originalPrompt
+            : userPrompt;
+
           if (assistantBubble) {
             assistantBubble.classList.remove('streaming');
-            const rawMerged = (options && options.isContinuation && options.initialText)
-              ? mergeContinuationText(options.initialText, text)
-              : text;
-            const finalMerged = unwrapJsonContent(rawMerged);
             assistantBubble.dataset.rawText = finalMerged;
-            const promptToSave = (options && options.isContinuation && options.originalPrompt)
-              ? options.originalPrompt
-              : userPrompt;
             assistantBubble.dataset.prompt = promptToSave;
             assistantBubble.dataset.model = resolvedOllamaModel;
 
@@ -10919,7 +10921,18 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         });
         clearTimeout(timeoutId);
         if (resp.ok) {
-          const json = await resp.json();
+          let json = await resp.json();
+          if (json && typeof json === 'object' && !json.status) {
+            const raw = json.content || json.response || json.output;
+            if (typeof raw === 'string' && raw.trim().startsWith('{')) {
+              try {
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === 'object') {
+                  json = { ...json, ...parsed };
+                }
+              } catch (_) {}
+            }
+          }
           if (json && json.status === 'ok' && json.humanized) {
             backendData = json;
           }
@@ -11076,7 +11089,18 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ input: inputTarget })
         });
-        const data = await resp.json();
+        let data = await resp.json();
+        if (data && typeof data === 'object' && !data.markdown && !data.report) {
+          const raw = data.content || data.response || data.output;
+          if (typeof raw === 'string' && raw.trim().startsWith('{')) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (parsed && typeof parsed === 'object') {
+                data = { ...data, ...parsed };
+              }
+            } catch (_) {}
+          }
+        }
         const streamEl = bubble.querySelector('.stream-content');
         if (data && data.markdown) {
           if (streamEl) streamEl.innerHTML = formatAssistantContent(data.markdown, cmd);
@@ -11270,7 +11294,18 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       }
 
       if (resp && resp.ok) {
-        const data = await resp.json();
+        let data = await resp.json();
+        if (data && typeof data === 'object' && !data.status) {
+          const raw = data.content || data.response || data.output || data.result;
+          if (typeof raw === 'string' && raw.trim().startsWith('{')) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (parsed && typeof parsed === 'object') {
+                data = { ...data, ...parsed };
+              }
+            } catch (_) {}
+          }
+        }
         const streamEl = bubble.querySelector('.stream-content');
         if (data && data.status === 'ok' && data.result) {
           bubble.classList.remove('streaming');

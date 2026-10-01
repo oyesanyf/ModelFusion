@@ -85,9 +85,110 @@ async function testLiveProxy() {
   });
 }
 
-testLiveProxy().then(() => {
-  console.log('\n🌟 ALL COMPUTER USE & UNIVERSAL PROXY TESTS PASSED! 🌟\n');
-}).catch(err => {
-  console.error('\n❌ Test 5 Failed:', err.message);
-  process.exit(1);
-});
+// --- Test 6: Verify promptToSave scoping in streamAiChat ---
+function testPromptToSaveScoping() {
+  const streamAiChatIdx = appJs.indexOf('async function streamAiChat(');
+  assert.ok(streamAiChatIdx !== -1, 'streamAiChat function must exist');
+  const streamAiChatBody = appJs.slice(streamAiChatIdx, streamAiChatIdx + 100000);
+
+  // In streaming block, promptToSave must appear BEFORE if (assistantBubble)
+  const streamingBlockIdx = streamAiChatBody.indexOf('const rawFinal =');
+  assert.ok(streamingBlockIdx !== -1, 'rawFinal must be defined in streaming block');
+  const streamingBubbleIdx = streamAiChatBody.indexOf('if (assistantBubble) {', streamingBlockIdx);
+  const streamingPromptIdx = streamAiChatBody.indexOf('const promptToSave =', streamingBlockIdx);
+  assert.ok(streamingPromptIdx < streamingBubbleIdx, 'promptToSave must be declared before if (assistantBubble) in streaming block');
+
+  // In IPC fallback block, promptToSave must appear BEFORE if (assistantBubble)
+  const ipcBlockIdx = streamAiChatBody.indexOf('const rawMerged =');
+  assert.ok(ipcBlockIdx !== -1, 'rawMerged must be defined in IPC block');
+  const ipcBubbleIdx = streamAiChatBody.indexOf('if (assistantBubble) {', ipcBlockIdx);
+  const ipcPromptIdx = streamAiChatBody.indexOf('const promptToSave =', ipcBlockIdx);
+  assert.ok(ipcPromptIdx < ipcBubbleIdx, 'promptToSave must be declared before if (assistantBubble) in IPC fallback block');
+
+  console.log('✅ Test 6 Passed: promptToSave is declared in outer scope in both streaming and IPC blocks.');
+}
+
+// --- Test 7: Verify envelope unwrapping for computer-use and humanize ---
+function testEnvelopeUnwrapping() {
+  const envelope = {
+    content: JSON.stringify({ status: 'ok', result: { completed: true, goal: 'test goal' } })
+  };
+
+  let data = envelope;
+  if (data && typeof data === 'object' && !data.status) {
+    const raw = data.content || data.response || data.output || data.result;
+    if (typeof raw === 'string' && raw.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          data = { ...data, ...parsed };
+        }
+      } catch (_) {}
+    }
+  }
+
+  assert.strictEqual(data.status, 'ok', 'Unwrapped envelope must have status: ok');
+  assert.strictEqual(data.result.completed, true, 'Unwrapped envelope must preserve result.completed');
+  assert.strictEqual(data.result.goal, 'test goal', 'Unwrapped envelope must preserve result.goal');
+  console.log('✅ Test 7 Passed: JSON envelope unwrapping extracts inner status and result correctly.');
+}
+
+// --- Test 8: Live /api/computer-use test against port 5000 ---
+async function testLiveComputerUse() {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify({
+      goal: 'go to http://127.0.0.1:3030/#dashboard abd list all the issues',
+      max_steps: 5,
+      dry_run: true
+    });
+
+    const req = http.request('http://127.0.0.1:5000/api/computer-use', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    }, (res) => {
+      assert.strictEqual(res.statusCode, 200, 'POST /api/computer-use must return 200 OK');
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        let json = JSON.parse(body);
+        if (json && typeof json === 'object' && !json.status) {
+          const raw = json.content || json.response || json.output;
+          if (typeof raw === 'string' && raw.trim().startsWith('{')) {
+            try {
+              const p = JSON.parse(raw);
+              if (p && typeof p === 'object') json = { ...json, ...p };
+            } catch (_) {}
+          }
+        }
+
+        assert.strictEqual(json.status, 'ok', 'Response status must be ok');
+        assert.ok(json.result, 'Response must contain result object');
+        assert.ok(json.result.steps.length > 0, 'Result must contain executed steps');
+        console.log(`✅ Test 8 Passed: Live /api/computer-use returned valid result with ${json.result.steps.length} steps.`);
+        resolve();
+      });
+    }).on('error', (err) => {
+      reject(new Error(`Failed to connect to /api/computer-use on port 5000: ${err.message}`));
+    });
+
+    req.write(payload);
+    req.end();
+  });
+}
+
+testLiveProxy()
+  .then(() => {
+    testPromptToSaveScoping();
+    testEnvelopeUnwrapping();
+    return testLiveComputerUse();
+  })
+  .then(() => {
+    console.log('\n🌟 ALL 8 COMPUTER USE & UNIVERSAL PROXY TESTS PASSED! 🌟\n');
+  })
+  .catch(err => {
+    console.error('\n❌ Test Suite Failed:', err.message);
+    process.exit(1);
+  });
