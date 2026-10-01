@@ -3111,8 +3111,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (refNode && parent && refNode.parentNode === parent) {
         return parent.insertBefore(newNode, refNode);
       }
-      // 2. refNode exists and has a parentNode: insert before refNode in its actual parent
-      if (refNode && refNode.parentNode) {
+      // 2. refNode exists and is a descendant of parent (or parent is null/unspecified and refNode has a parent)
+      if (refNode && refNode.parentNode && (!parent || (typeof parent.contains === 'function' ? parent.contains(refNode) : (refNode.parentNode === parent)))) {
         if (typeof refNode.insertAdjacentElement === 'function') {
           refNode.insertAdjacentElement('beforebegin', newNode);
           return newNode;
@@ -3178,14 +3178,78 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   window.isClientDomOrJsError = isClientDomOrJsError;
 
-  function renderErrorCard(bubbleElement, errorTitle, errorMsg) {
-    if (!bubbleElement) return;
+  // Universal Assistant Bubble Creator
+  function createAiBubble(options = {}) {
+    const icon = options.icon || '🤖';
+    const title = options.title || 'HugOS Assistant';
+    const modelTag = options.modelTag ? `• ${options.modelTag}` : '';
+    const bubble = document.createElement('div');
+    bubble.className = 'msg-bubble assistant-bubble';
+    if (options.isTool) bubble.classList.add('tool-bubble');
+    if (options.streaming !== false) bubble.classList.add('streaming');
+    bubble.innerHTML = `
+      <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+        <span>${icon}</span> <span>${escapeHtml(title)}</span>
+        ${modelTag ? `<span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">${escapeHtml(modelTag)}</span>` : ''}
+      </div>
+      <div class="bubble-content">
+        <div class="stream-content">⏳ Initializing...</div>
+      </div>
+    `;
+    if (chatMessages) {
+      chatMessages.appendChild(bubble);
+      if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    return bubble;
+  }
+  window.createAiBubble = createAiBubble;
+
+  function renderErrorCard(bubbleElement, errorTitle, errorMsg, details = {}) {
+    if (!bubbleElement) {
+      if (chatMessages) {
+        bubbleElement = document.createElement('div');
+        bubbleElement.className = 'msg-bubble assistant-bubble';
+        bubbleElement.innerHTML = `
+          <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: #ef4444; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+            <span>⚠️</span> <span>System Error</span>
+          </div>
+          <div class="bubble-content"></div>
+        `;
+        chatMessages.appendChild(bubbleElement);
+      } else {
+        return;
+      }
+    }
     bubbleElement.classList.remove('streaming');
     const contentEl = bubbleElement.querySelector('.bubble-content') || bubbleElement;
     contentEl.style.color = '';
     contentEl.style.fontStyle = '';
     const safeTitle = escapeHtml(errorTitle || '⚠️ Error Occurred');
-    const safeMsg = escapeHtml(errorMsg || 'An unexpected error occurred during execution. Please check that local AI services are running.');
+    const safeMsg = escapeHtml(errorMsg || 'An unexpected error occurred during execution.');
+
+    let extraHtml = '';
+    if (details.attempted) {
+      extraHtml += `<div style="margin-top: 6px; font-size: 11.5px;"><strong>Attempted:</strong> <code style="background: rgba(0,0,0,0.25); padding: 2px 6px; border-radius: 4px; font-family: var(--mono-font); word-break: break-all;">${escapeHtml(details.attempted)}</code></div>`;
+    }
+    if (details.reason) {
+      extraHtml += `<div style="margin-top: 5px; font-size: 11.5px; color: #fca5a5;"><strong>Reason:</strong> ${escapeHtml(details.reason)}</div>`;
+    }
+    const recoverySteps = Array.isArray(details.recoverySteps) && details.recoverySteps.length > 0
+      ? details.recoverySteps
+      : [
+          'Retry the command using the button below',
+          'Run @agent sys-info to verify local hardware and engine connectivity',
+          'Check that ModelFusion Master CLI (:5000) and Ollama (:11434) are running'
+        ];
+
+    extraHtml += `<div style="margin-top: 8px; font-size: 11px; opacity: 0.95;"><strong>Actionable Recovery Steps:</strong><ul style="margin: 4px 0 0 16px; padding: 0;">`;
+    recoverySteps.forEach(step => {
+      extraHtml += `<li>${escapeHtml(step)}</li>`;
+    });
+    extraHtml += `</ul></div>`;
+
+    const retryPrompt = (details.attempted || window.lastUserPrompt || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
     contentEl.innerHTML = `
       <div class="agent-error-card">
         <div class="error-card-header">
@@ -3193,18 +3257,23 @@ document.addEventListener('DOMContentLoaded', () => {
           <strong>${safeTitle}</strong>
         </div>
         <div class="error-card-body">
-          ${safeMsg}
+          <div>${safeMsg}</div>
+          ${extraHtml}
         </div>
-        <div class="error-card-actions">
-          <button type="button" class="error-retry-btn" onclick="if(window.wakeAndRetry){window.wakeAndRetry(window.lastUserPrompt);}else if(window.executeCliCommand && window.lastUserPrompt){window.executeCliCommand(window.lastUserPrompt);}">
-            🔄 Wake Engine &amp; Retry
-          </button>
+        <div class="error-card-actions" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+          ${retryPrompt ? `<button type="button" class="error-retry-btn" onclick="if(window.wakeAndRetry){window.wakeAndRetry('${retryPrompt}');}else if(window.executeCliCommand){window.executeCliCommand('${retryPrompt}');}">🔄 Retry Command</button>` : ''}
+          <button type="button" class="error-retry-btn" style="background: rgba(255,255,255,0.1); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.2);" onclick="if(window.executeCliCommand){window.executeCliCommand('@agent sys-info');}">💻 Check System Info</button>
+          <button type="button" class="error-retry-btn" style="background: rgba(255,255,255,0.1); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.2);" onclick="if(window.executeCliCommand){window.executeCliCommand('@agent help');}">❓ Help &amp; Syntax</button>
         </div>
       </div>
     `;
     termLog(`[ERROR] ${safeTitle}: ${errorMsg}`, 'error');
     setChatRunningState(false);
+    if (chatMessages && currentSettings.autoScroll !== false) {
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
   }
+  window.renderErrorCard = renderErrorCard;
 
   // ---------------------------------------------------------------------------
   // ---------------------------------------------------------------------------
@@ -7340,16 +7409,19 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
             ? Math.min(maxCtxCap, Math.max(targetTokens, requiredCtx)) 
             : Math.min(maxCtxCap, Math.max(currentSettings.contextWindow || 8192, requiredCtx)));
 
-      let agenticBadge = null;
+      let agenticBadge = assistantBubble ? assistantBubble.querySelector('.agentic-loop-badge') : null;
       if (isAgenticLoop && maxLoops > 1 && assistantBubble) {
-        agenticBadge = document.createElement('div');
+        if (!agenticBadge) {
+          agenticBadge = document.createElement('div');
+          agenticBadge.className = 'agentic-loop-badge';
+          const contentContainer = assistantBubble.querySelector('.bubble-content') || assistantBubble;
+          const targetRef = (bubbleContent && bubbleContent.parentNode === contentContainer)
+            ? bubbleContent
+            : (contentContainer.querySelector('.stream-content') || null);
+          safeInsertBefore(contentContainer, agenticBadge, targetRef);
+        }
         agenticBadge.className = 'agentic-loop-badge';
         agenticBadge.innerHTML = `🔄 Agentic Loop: Turn 1/${maxLoops} • 0 tokens`;
-        const contentContainer = assistantBubble.querySelector('.bubble-content') || assistantBubble;
-        const targetRef = (bubbleContent && bubbleContent.parentNode === contentContainer)
-          ? bubbleContent
-          : (contentContainer.querySelector('.stream-content') || null);
-        safeInsertBefore(contentContainer, agenticBadge, targetRef);
       }
 
       let fullResponse = (options && options.isContinuation && options.initialText) ? (options.initialText.trimEnd() + '\n\n') : '';
@@ -8944,6 +9016,27 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
 
       if (approvalResult !== 'approved' || currentAgentAborted) {
         termLog('[BROWSER AGENT] Mission halted before irreversible action.', 'warn');
+        if (cardEl) {
+          const badge = cardEl.querySelector(`#agent-badge-${agentId}`);
+          if (badge) {
+            badge.textContent = 'ABORTED';
+            badge.className = 'browser-agent-badge stopped';
+            badge.style.background = '#eab308';
+          }
+          const timeline = cardEl.querySelector(`#agent-timeline-${agentId}`);
+          if (timeline) {
+            const abortDiv = document.createElement('div');
+            abortDiv.className = 'agent-step-item';
+            abortDiv.innerHTML = `
+              <span style="font-size: 13px;">⏹</span>
+              <div>
+                <strong style="color: #eab308;">Mission Halted</strong>
+                <div style="font-size: 11px; opacity: 0.8; margin-top: 2px;">Execution stopped by operator at safety gate.</div>
+              </div>
+            `;
+            timeline.appendChild(abortDiv);
+          }
+        }
         return;
       }
 
@@ -8985,8 +9078,48 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
 
     } catch (err) {
       termLog(`[BROWSER AGENT ERROR] ${err.message}`, 'error');
+      if (cardEl) {
+        const badge = cardEl.querySelector(`#agent-badge-${agentId}`);
+        if (badge) {
+          badge.textContent = 'FAILED';
+          badge.className = 'browser-agent-badge stopped';
+          badge.style.background = '#ef4444';
+        }
+        const timeline = cardEl.querySelector(`#agent-timeline-${agentId}`);
+        if (timeline) {
+          const errDiv = document.createElement('div');
+          errDiv.className = 'agent-step-item';
+          errDiv.innerHTML = `
+            <span style="font-size: 13px;">⚠️</span>
+            <div>
+              <strong style="color: #ef4444;">Mission Failed: ${escapeHtml(err.message)}</strong>
+              <div style="font-size: 11px; opacity: 0.8; margin-top: 2px;">Autonomous browser agent encountered an unexpected error.</div>
+            </div>
+          `;
+          timeline.appendChild(errDiv);
+        }
+      }
+      const errBubble = createAiBubble({
+        icon: '⚠️',
+        title: 'Browser Agent Error',
+        modelTag: 'Execution Failure',
+        isTool: true,
+        streaming: false
+      });
+      renderErrorCard(errBubble, '⚠️ Autonomous Browser Mission Failed', `Browser automation encountered an error: ${err.message}`, {
+        attempted: `@agent browser ${goal}`,
+        reason: err.message,
+        recoverySteps: [
+          'Verify target website is accessible and network connection is active',
+          'Check Chromium CDP session (port 9222)',
+          'Use "Take Over in Live Webview" or open the URL directly'
+        ]
+      });
     } finally {
       setChatRunningState(false);
+      if (chatMessages && currentSettings.autoScroll !== false) {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
     }
   }
 
@@ -9053,7 +9186,8 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
     let cmd = (rawCmd || '').trim();
     if (!cmd) return;
 
-    // Resolve any pending prompt directive if user just entered raw unadorned text
+    try {
+      // Resolve any pending prompt directive if user just entered raw unadorned text
     if (pendingPromptDirective && !cmd.startsWith('@') && !cmd.startsWith('/')) {
       if (pendingPromptDirective.type === 'humanize') {
         cmd = `@agent humanize ${cmd}`;
@@ -11665,8 +11799,24 @@ If you are asked about real-world facts such as world leaders, heads of state, c
       clearAllAttachments();
     }
     } catch (err) {
-      termLog(`[COMMAND ERROR] ⚠️ Execution failed: ${err.message}`, 'error');
+      const isClientErr = isClientDomOrJsError(err);
+      if (isClientErr) {
+        console.error('[CLIENT UI ERROR in executeCliCommand]', err);
+        termLog(`[CLIENT ERROR] ⚠️ DOM/UI Exception in command execution: ${err.message}${err.stack ? `\n${err.stack}` : ''}`, 'error');
+      } else {
+        termLog(`[COMMAND ERROR] ⚠️ Execution failed: ${err.message}${err.stack ? `\n${err.stack}` : ''}`, 'error');
+      }
       setChatRunningState(false);
+      if (chatMessages) {
+        const lastBubble = chatMessages.lastElementChild;
+        if (lastBubble && (lastBubble.classList.contains('assistant-bubble') || lastBubble.classList.contains('streaming'))) {
+          const errTitle = isClientErr ? '⚠️ Interface Client Error' : '⚠️ Execution Error';
+          const errBody = isClientErr
+            ? `Client-side DOM/JavaScript Exception: ${err.message}${err.stack ? `\n\nStack:\n${err.stack}` : ''}`
+            : `Command execution failed: ${err.message}`;
+          renderErrorCard(lastBubble, errTitle, errBody);
+        }
+      }
     }
   }
 
