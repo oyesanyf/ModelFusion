@@ -67,6 +67,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const chatWelcome = document.getElementById('chat-welcome');
   const footerActiveModel = document.getElementById('footer-active-model');
   const cliPromptInput = document.getElementById('cli-prompt-input');
+  const cliPromptInputPinned = document.getElementById('cli-prompt-input-pinned');
+  const chatConversationView = document.getElementById('chat-conversation-view');
+  const chatHeroSection = document.getElementById('chat-hero-section');
   const btnRunCli = document.getElementById('btn-run-cli');
   const terminalScreen = document.getElementById('terminal-screen');
   const btnClearConsole = document.getElementById('btn-clear-console');
@@ -415,7 +418,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const btnEdit = bubble.querySelector('.btn-edit-prompt');
         if (btnEdit) btnEdit.addEventListener('click', (e) => {
           e.stopPropagation();
-          if (window.editPromptFromHistory) window.editPromptFromHistory(message);
+          if (window.editUserBubbleInline) {
+            window.editUserBubbleInline(bubble, message);
+          } else if (window.editPromptFromHistory) {
+            window.editPromptFromHistory(message);
+          }
         });
         const btnCopy = bubble.querySelector('.btn-copy-prompt');
         if (btnCopy) btnCopy.addEventListener('click', (e) => {
@@ -5083,11 +5090,187 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
   };
 
   window.editPromptFromHistory = function(promptText) {
-    if (!cliPromptInput) return;
-    cliPromptInput.value = promptText;
-    cliPromptInput.style.height = 'auto';
-    cliPromptInput.style.height = Math.min(cliPromptInput.scrollHeight, 160) + 'px';
-    cliPromptInput.focus();
+    if (!promptText) return;
+
+    // Resolve inputs
+    const pinnedInput = document.getElementById('cli-prompt-input-pinned') || cliPromptInputPinned;
+    const heroInput = document.getElementById('cli-prompt-input') || cliPromptInput;
+    const convView = document.getElementById('chat-conversation-view') || chatConversationView;
+    const isConvVisible = convView && !convView.classList.contains('hidden');
+
+    // Populate BOTH inputs so whichever becomes visible has the text ready
+    if (heroInput) {
+      heroInput.value = promptText;
+      heroInput.style.height = 'auto';
+      heroInput.style.height = Math.min(heroInput.scrollHeight, 160) + 'px';
+    }
+    if (pinnedInput) {
+      pinnedInput.value = promptText;
+      pinnedInput.style.height = 'auto';
+      pinnedInput.style.height = Math.min(pinnedInput.scrollHeight, 160) + 'px';
+    }
+
+    // Determine the active visible input
+    const activeInput = (isConvVisible && pinnedInput) ? pinnedInput : (heroInput || pinnedInput);
+    if (activeInput) {
+      activeInput.focus();
+      try {
+        activeInput.setSelectionRange(activeInput.value.length, activeInput.value.length);
+      } catch (_) {}
+
+      // Scroll active input capsule into view smoothly
+      const capsule = activeInput.closest('.floating-input-capsule') || activeInput;
+      if (capsule && typeof capsule.scrollIntoView === 'function') {
+        capsule.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+
+      // Visual pulse indicator on the input capsule so the user sees it is active and ready to edit
+      if (capsule) {
+        capsule.classList.remove('input-focus-pulse');
+        void capsule.offsetWidth; // trigger reflow
+        capsule.classList.add('input-focus-pulse');
+        setTimeout(() => capsule.classList.remove('input-focus-pulse'), 1200);
+      }
+    }
+  };
+
+  window.editUserBubbleInline = function(bubble, promptText) {
+    if (!bubble) return;
+
+    // Populate input bar as well for convenience
+    window.editPromptFromHistory(promptText);
+
+    // If an inline edit box is already open in this bubble, focus it
+    const existingEditor = bubble.querySelector('.user-inline-edit-box');
+    if (existingEditor) {
+      const ta = existingEditor.querySelector('textarea');
+      if (ta) {
+        ta.focus();
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+      }
+      return;
+    }
+
+    const userTextEl = bubble.querySelector('.user-text');
+    if (!userTextEl) return;
+
+    userTextEl.style.display = 'none';
+
+    const editBox = document.createElement('div');
+    editBox.className = 'user-inline-edit-box';
+
+    const textarea = document.createElement('textarea');
+    textarea.className = 'user-inline-edit-textarea';
+    textarea.value = promptText || userTextEl.textContent.trim();
+    textarea.rows = 2;
+
+    const autoResize = () => {
+      textarea.style.height = 'auto';
+      textarea.style.height = Math.min(textarea.scrollHeight, 240) + 'px';
+    };
+    textarea.addEventListener('input', autoResize);
+
+    const btnRow = document.createElement('div');
+    btnRow.style.display = 'flex';
+    btnRow.style.justifyContent = 'flex-end';
+    btnRow.style.gap = '8px';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.padding = '5px 12px';
+    cancelBtn.style.borderRadius = '6px';
+    cancelBtn.style.border = '1px solid var(--border-color, rgba(255, 255, 255, 0.15))';
+    cancelBtn.style.background = 'transparent';
+    cancelBtn.style.color = 'var(--text-secondary, #94a3b8)';
+    cancelBtn.style.cursor = 'pointer';
+    cancelBtn.style.fontSize = '12px';
+    cancelBtn.style.fontWeight = '500';
+
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.innerHTML = '▶ Save &amp; Run';
+    saveBtn.style.padding = '5px 14px';
+    saveBtn.style.borderRadius = '6px';
+    saveBtn.style.border = 'none';
+    saveBtn.style.background = 'var(--accent-color, #38bdf8)';
+    saveBtn.style.color = '#000000';
+    saveBtn.style.cursor = 'pointer';
+    saveBtn.style.fontSize = '12px';
+    saveBtn.style.fontWeight = '600';
+
+    const closeEditor = () => {
+      editBox.remove();
+      userTextEl.style.display = '';
+    };
+
+    cancelBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeEditor();
+    });
+
+    const submitEdit = () => {
+      const newPrompt = textarea.value.trim();
+      if (!newPrompt) return;
+      closeEditor();
+
+      // Update text in bubble
+      userTextEl.innerHTML = (typeof formatCitationsAndMarkdown === 'function')
+        ? formatCitationsAndMarkdown(newPrompt)
+        : renderMarkdown(newPrompt);
+
+      // Remove any pending prompt cards or following assistant responses to re-run from this point
+      const pendingCard = document.querySelector('.pending-prompt-card');
+      if (pendingCard) pendingCard.remove();
+
+      let nextSibling = bubble.nextElementSibling;
+      while (nextSibling) {
+        const toRemove = nextSibling;
+        nextSibling = nextSibling.nextElementSibling;
+        toRemove.remove();
+      }
+
+      // Update session history
+      const sess = chatSessions.find(s => s.id === currentSessionId);
+      if (sess && Array.isArray(sess.messages)) {
+        const msgIdx = parseInt(bubble.dataset.msgIndex, 10);
+        if (!isNaN(msgIdx) && msgIdx >= 0 && msgIdx < sess.messages.length) {
+          sess.messages[msgIdx].content = newPrompt;
+          sess.messages = sess.messages.slice(0, msgIdx + 1);
+          saveChatHistory();
+        }
+      }
+
+      // Execute prompt
+      executeCliCommand(newPrompt);
+    };
+
+    saveBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      submitEdit();
+    });
+
+    textarea.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        submitEdit();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        closeEditor();
+      }
+    });
+
+    btnRow.appendChild(cancelBtn);
+    btnRow.appendChild(saveBtn);
+    editBox.appendChild(textarea);
+    editBox.appendChild(btnRow);
+
+    userTextEl.parentNode.insertBefore(editBox, userTextEl.nextSibling);
+    setTimeout(() => {
+      autoResize();
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    }, 10);
   };
 
   function renderChatHistoryList() {
@@ -5237,7 +5420,11 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
         const btnEdit = bubble.querySelector('.btn-edit-prompt');
         if (btnEdit) btnEdit.addEventListener('click', (e) => {
           e.stopPropagation();
-          window.editPromptFromHistory(msg.content);
+          if (window.editUserBubbleInline) {
+            window.editUserBubbleInline(bubble, msg.content);
+          } else if (window.editPromptFromHistory) {
+            window.editPromptFromHistory(msg.content);
+          }
         });
         const btnCopy = bubble.querySelector('.btn-copy-prompt');
         if (btnCopy) btnCopy.addEventListener('click', (e) => {
@@ -5326,7 +5513,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
       chatMessages.appendChild(pendingCard);
 
       // Also populate prompt into the input bar automatically
-      if (cliPromptInput) {
+      if (cliPromptInput || cliPromptInputPinned) {
         window.editPromptFromHistory(lastUserMsg.content);
       }
     }
@@ -5926,7 +6113,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     return `${ipc}/api/proxy?url=${encodeURIComponent(url)}`;
   }
 
-  function navigateTo(targetUrl, addToHistory = true) {
+  function navigateTo(targetUrl, addToHistory = true, switchView = true) {
     if (!targetUrl) return;
 
     let url = targetUrl.trim();
@@ -5963,10 +6150,12 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
 
     termLog(`Navigating to: ${url}`, 'info');
 
-    // Switch to webview
-    dashboardView.classList.add('hidden');
-    webviewView.classList.remove('hidden');
-    frameFallback.classList.add('hidden');
+    if (switchView) {
+      // Switch to webview
+      dashboardView.classList.add('hidden');
+      webviewView.classList.remove('hidden');
+      frameFallback.classList.add('hidden');
+    }
 
     const frameSrc = resolveProxiedUrl(url);
     if (frameSrc !== url) {
@@ -7249,7 +7438,7 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
     let bubbleContent = options && options.bubbleContent ? options.bubbleContent : null;
     let statusCtrl = options && options.statusCtrl ? options.statusCtrl : null;
     if (assistantBubble && !bubbleContent) {
-      bubbleContent = assistantBubble.querySelector('.stream-content') || assistantBubble.querySelector('.bubble-content');
+      bubbleContent = assistantBubble.querySelector('.stream-content-planner') || assistantBubble.querySelector('.stream-content') || assistantBubble.querySelector('.bubble-content');
     }
     if (chatMessages && !assistantBubble) {
       assistantBubble = document.createElement('div');
@@ -7817,7 +8006,12 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
           if (options && options.isContinuation && options.bubbleContent) {
             return options.bubbleContent;
           }
+          if (options && options.streamContentTarget) {
+            return options.streamContentTarget;
+          }
           if (assistantBubble) {
+            const planner = assistantBubble.querySelector('.stream-content-planner');
+            if (planner) return planner;
             const sc = assistantBubble.querySelector('.stream-content');
             if (sc) return sc;
           }
@@ -11208,10 +11402,26 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       }
     }
 
+    // Auto-detect localhost / IP if specified without scheme (e.g. "go to 127.0.0.1:3030/ and tell me...")
+    if (!targetNavUrl) {
+      const hostMatch = goal.match(/(?:localhost|127\.0\.0\.1)(?::\d+)?(?:\/[^\s]*)?/i);
+      if (hostMatch) {
+        targetNavUrl = 'http://' + hostMatch[0];
+      }
+    }
+
+    // If goal does not have an explicit URL but user is asking about the page/screen ("on the page", "what do you see", "vuls"),
+    // ground to the active webview URL if one is open and loaded
+    if (!targetNavUrl && typeof currentNavUrl === 'string' && currentNavUrl && currentNavUrl !== 'about:blank') {
+      if (/(?:page|screen|website|site|vuls?|vulnerabilit|dashboard|threat|issue|view|dom)\b/i.test(goal)) {
+        targetNavUrl = currentNavUrl;
+      }
+    }
+
     if (targetNavUrl) {
-      termLog(`🌐 [COMPUTER USE] Synchronizing live webview to target URL: ${targetNavUrl}`, 'info');
+      termLog(`🌐 [COMPUTER USE] Synchronizing live webview to target URL (preserving conversation on page): ${targetNavUrl}`, 'info');
       try {
-        navigateTo(targetNavUrl);
+        navigateTo(targetNavUrl, true, false); // false = stay on same page in chat view
       } catch (navErr) {
         termLog(`Webview navigation warning: ${navErr.message}`, 'warn');
       }
@@ -11264,6 +11474,141 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       `;
     }
 
+    // 2) Live Screen & Web Page DOM Perception Grounding
+    let livePageTitle = '';
+    let livePageHeadings = [];
+    let livePageText = '';
+    let livePageElementsCount = 0;
+
+    if (targetNavUrl) {
+      termLog(`👁️ [COMPUTER USE] Inspecting and grounding live page DOM: ${targetNavUrl}`, 'info');
+      try {
+        let htmlContent = '';
+        // Direct fetch (fastest for localhost / 127.0.0.1 / CORS enabled)
+        try {
+          const directResp = await fetch(targetNavUrl, { mode: 'cors' });
+          if (directResp.ok) {
+            htmlContent = await directResp.text();
+          }
+        } catch (_) {}
+
+        // Fallback to Master CLI proxy endpoint to bypass CORS / same-origin restrictions
+        if (!htmlContent) {
+          const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+          try {
+            const proxyResp = await fetch(`${ipcUrl}/api/proxy?url=${encodeURIComponent(targetNavUrl)}`);
+            if (proxyResp.ok) {
+              htmlContent = await proxyResp.text();
+            }
+          } catch (_) {}
+        }
+
+        // Fallback to browserFrame.contentDocument if accessible
+        if (!htmlContent && typeof browserFrame !== 'undefined' && browserFrame) {
+          try {
+            if (browserFrame.contentDocument && browserFrame.contentDocument.body) {
+              const doc = browserFrame.contentDocument;
+              livePageTitle = doc.title ? doc.title.trim() : '';
+              doc.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]').forEach(h => {
+                const t = (h.textContent || '').trim();
+                if (t && !livePageHeadings.includes(t)) livePageHeadings.push(t);
+              });
+              livePageText = (doc.body.innerText || doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+              livePageElementsCount = doc.querySelectorAll('button, a, input, select, textarea, [data-action], [role="button"], form, table').length;
+            }
+          } catch (_) {}
+        }
+
+        if (htmlContent) {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(htmlContent, 'text/html');
+          livePageTitle = doc.title ? doc.title.trim() : '';
+          doc.querySelectorAll('script, style, noscript, svg, link, meta, iframe').forEach(el => el.remove());
+          doc.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]').forEach(h => {
+            const t = (h.textContent || '').trim();
+            if (t && !livePageHeadings.includes(t)) livePageHeadings.push(t);
+          });
+          livePageElementsCount = doc.querySelectorAll('button, a, input, select, textarea, [data-action], [role="button"], form, table, [data-view]').length;
+          livePageText = (doc.body ? (doc.body.innerText || doc.body.textContent || '') : '').replace(/\s+/g, ' ').trim();
+          termLog(`✅ [COMPUTER USE] Live DOM Grounded: "${livePageTitle || targetNavUrl}" (${livePageText.length.toLocaleString()} chars DOM text, ${livePageElementsCount} interactive elements, ${livePageHeadings.length} headings)`, 'success');
+        }
+      } catch (domErr) {
+        termLog(`[COMPUTER USE] DOM perception inspection notice: ${domErr.message}`, 'warn');
+      }
+    }
+
+    // Extract explicit security matches from page text
+    const securityMatches = [];
+    if (livePageText) {
+      const secRegex = /(?:AML\.[A-Z0-9]+|CVE-\d{4}-\d+|MITRE\s+ATLAS[^\n<,;]{0,60}|Sigma-Voter[^\n<,;]{0,40}|Yara-X-Voter[^\n<,;]{0,40}|SecureBERT[^\n<,;]{0,40}|Threat\s+Intelligence[^\n<,;]{0,40})/gi;
+      let sm;
+      while ((sm = secRegex.exec(livePageText)) !== null) {
+        const clean = sm[0].replace(/\s+/g, ' ').trim();
+        if (clean && !securityMatches.includes(clean)) securityMatches.push(clean);
+        if (securityMatches.length >= 8) break;
+      }
+    }
+
+    let securityCardHtml = '';
+    if (securityMatches.length > 0) {
+      securityCardHtml = `
+        <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; padding: 8px 10px; margin-top: 8px;">
+          <div style="color: #f87171; font-weight: 600; font-size: 11.5px; margin-bottom: 5px; display: flex; align-items: center; gap: 4px;">
+            <span>🛡️</span> <span>Grounded Page Vulnerabilities & Security Signals (${securityMatches.length}):</span>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+            ${securityMatches.map(m => `<span style="background: rgba(239, 68, 68, 0.15); color: #fca5a5; font-size: 10.5px; padding: 2px 6px; border-radius: 4px; font-family: var(--mono-font);">⚠️ ${escapeHtml(m)}</span>`).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    // Build Live Page Perception Card HTML with Inline Webview Preview (rendered directly on the same page!)
+    let livePageCardHtml = '';
+    if (livePageText || livePageTitle || targetNavUrl) {
+      const proxiedPreviewUrl = resolveProxiedUrl(targetNavUrl);
+      const inlinePreviewHtml = targetNavUrl ? `
+        <div class="inline-webview-card" style="margin: 8px 0; border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px; overflow: hidden; background: #0b0f19;">
+          <div style="background: rgba(56, 189, 248, 0.1); padding: 4px 8px; display: flex; align-items: center; justify-content: space-between; font-size: 11px; border-bottom: 1px solid rgba(56, 189, 248, 0.15);">
+            <span style="color: #38bdf8; font-weight: 500;">🖥️ Live Web Page View (Active Viewport on Same Page)</span>
+            <div style="display: flex; gap: 6px; align-items: center;">
+              <button type="button" class="wv-btn-mini" onclick="if(window.navigateTo) window.navigateTo('${escapeHtml(targetNavUrl)}', false, true)" style="background: rgba(56, 189, 248, 0.2); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; font-size: 10px; padding: 2px 6px; border-radius: 4px; cursor: pointer;" title="Open in Full Webview Panel">⤢ Full View</button>
+              <a href="${escapeHtml(targetNavUrl)}" target="_blank" style="color: var(--accent-color); font-size: 10px; text-decoration: underline;">↗ New Tab</a>
+            </div>
+          </div>
+          <div style="height: 220px; position: relative;">
+            <iframe src="${escapeHtml(proxiedPreviewUrl)}" style="width: 100%; height: 100%; border: none; background: #fff;" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+          </div>
+        </div>
+      ` : '';
+
+      livePageCardHtml = `
+        <div style="background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+            <div style="display: flex; align-items: center; gap: 6px; font-weight: 600; color: #38bdf8; font-size: 12px;">
+              <span>🌐</span> <span>Live Web Page Perception & Grounding</span>
+            </div>
+            <span style="font-size: 10px; background: rgba(56, 189, 248, 0.2); color: #38bdf8; padding: 2px 6px; border-radius: 4px; font-weight: 500;">
+              ${livePageElementsCount || 1} Interactive Nodes Grounded
+            </span>
+          </div>
+          <div style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">
+            ${escapeHtml(livePageTitle || targetNavUrl)}
+          </div>
+          <div style="font-size: 11px; color: var(--text-muted); font-family: var(--mono-font); word-break: break-all; margin-bottom: 6px;">
+            <a href="${escapeHtml(targetNavUrl)}" target="_blank" style="color: var(--accent-color); text-decoration: underline;">${escapeHtml(targetNavUrl)}</a>
+          </div>
+          ${inlinePreviewHtml}
+          ${securityCardHtml}
+          ${livePageHeadings.length > 0 ? `
+            <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;">
+              ${livePageHeadings.slice(0, 8).map(h => `<span style="font-size: 10.5px; background: var(--bg-secondary); border: 1px solid rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 3px;">📌 ${escapeHtml(h)}</span>`).join('')}
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
     // Build Step-by-Step UI-TARS Grounding Actions HTML
     const groundingTargetUrl = targetNavUrl || 'https://www.google.com';
     const uitarsGroundingHtml = `
@@ -11272,12 +11617,27 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           <span>🎯</span> <span>UI-TARS Grounding Action Sequence</span>
         </div>
         <div>• <strong>Step 1:</strong> <span style="color:#38bdf8;">NAVIGATE_VIEWPORT</span> ➔ <code style="word-break:break-all;">${escapeHtml(groundingTargetUrl)}</code> (ModelFusion Proxy active: X-Frame-Options SAMEORIGIN bypassed)</div>
-        <div>• <strong>Step 2:</strong> <span style="color:#38bdf8;">SCREEN_PERCEPTION</span> ➔ Grounded search bar element at coordinates <code>(x: 540, y: 382)</code></div>
-        <div>• <strong>Step 3:</strong> <span style="color:#38bdf8;">TYPE_TEXT</span> ➔ Injected input query <code>"${escapeHtml(searchQuery || goal)}"</code></div>
-        <div>• <strong>Step 4:</strong> <span style="color:#38bdf8;">KEY_PRESS</span> ➔ Dispatched <code>Return/Enter</code> submit event</div>
-        <div>• <strong>Step 5:</strong> <span style="color:#38bdf8;">GROUND_RESULTS</span> ➔ Indexed ${liveSearchResults.length || 5} live interactive citation nodes into context</div>
+        <div>• <strong>Step 2:</strong> <span style="color:#38bdf8;">SCREEN_PERCEPTION</span> ➔ Grounded DOM tree (${livePageElementsCount || 1} interactive elements, ${livePageText.length ? livePageText.length.toLocaleString() + ' chars text' : 'active viewport'})</div>
+        <div>• <strong>Step 3:</strong> <span style="color:#38bdf8;">ANALYZE_VIEWPORT</span> ➔ Synthesizing live UI state & page content into autonomous reasoning context</div>
+        ${searchQuery ? `<div>• <strong>Step 4:</strong> <span style="color:#38bdf8;">SEARCH_QUERY</span> ➔ Dispatched live search: <code>"${escapeHtml(searchQuery)}"</code></div>` : ''}
+        <div>• <strong>Step ${searchQuery ? 5 : 4}:</strong> <span style="color:#38bdf8;">GROUND_RESPONSE</span> ➔ Formulating factual findings directly from grounded live page content on this page</div>
       </div>
     `;
+
+    // Prepare Grounded AI Perception Prompt Context
+    let livePerceptionContext = '';
+    if (livePageText || livePageTitle) {
+      const truncatedDomText = livePageText.length > 9000 ? livePageText.slice(0, 9000) + '... [truncated for context window]' : livePageText;
+      livePerceptionContext = `\n\n=== LIVE WEBPAGE INSPECTION (Grounded from: ${targetNavUrl}) ===\nPage Title: ${livePageTitle}\nURL: ${targetNavUrl}\nHeadings Detected: ${livePageHeadings.join(' | ')}\nInteractive UI Elements Grounded: ${livePageElementsCount}\n${securityMatches.length > 0 ? `Explicit Security Detections on Page: ${securityMatches.join(', ')}\n` : ''}\nActual Live Page Content:\n${truncatedDomText}\n=========================================================\n`;
+    }
+
+    const systemPrompt = `You are the HugOS UI-TARS Computer Use & Screen Perception Agent.
+${livePageText ? `You have directly inspected and grounded the live webpage currently open in the HugOS webview (${targetNavUrl}).
+CRITICAL INSTRUCTION: Base your entire response on the actual live webpage content grounded below.
+Directly list, explain, and summarize the specific findings, vulnerabilities, threats, metrics, and interactive elements present on the page.
+Do NOT give generic instructions, do NOT tell the user to use curl or external command lines, and do NOT speculate. Answer factually based on what is actually on this page.` : 'You are UI-TARS Computer Use Assistant. Generate precise GUI action coordinates and step-by-step OS automation plan.'}`;
+
+    const userAiPrompt = `Execute computer use task: "${goal}".${livePerceptionContext ? `\n${livePerceptionContext}\n\nTask: Based on the live page inspection above, directly report the findings requested in the goal: "${goal}".` : ''}`;
 
     try {
       const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
@@ -11287,7 +11647,14 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         resp = await fetch(`${ipcUrl}/api/computer-use`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ goal, max_steps: 10, dry_run: false })
+          body: JSON.stringify({
+            goal,
+            max_steps: 10,
+            dry_run: false,
+            url: targetNavUrl,
+            page_title: livePageTitle,
+            page_content: livePageText ? livePageText.slice(0, 10000) : ''
+          })
         });
       } catch (fErr) {
         fetchErr = fErr;
@@ -11310,7 +11677,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         if (data && data.status === 'ok' && data.result) {
           bubble.classList.remove('streaming');
           const res = data.result;
-          let html = searchCardHtml + uitarsGroundingHtml;
+          let html = searchCardHtml + livePageCardHtml + uitarsGroundingHtml;
           html += `<div><strong>🎯 Goal:</strong> ${escapeHtml(res.goal || goal)}</div>`;
           html += `<div style="margin: 8px 0; color: #10b981; font-weight: 600;">✅ ${escapeHtml(res.final_message || 'Completed')}</div>`;
           html += `<div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Executed ${res.steps ? res.steps.length : 0} autonomous actions (${res.total_duration_ms || 0}ms)</div>`;
@@ -11333,26 +11700,33 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           const streamEl = bubble.querySelector('.stream-content');
           if (streamEl) {
             streamEl.innerHTML = `
-              ${searchCardHtml}
-              ${uitarsGroundingHtml}
-              <div class="agent-error-card" style="margin-bottom: 8px; background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.35);">
-                <div class="error-card-header" style="color: #eab308;">
-                  <span class="error-icon">ℹ️</span>
-                  <strong>UI-TARS Local Backend Diagnostic</strong>
-                </div>
-                <div class="error-card-body">
-                  <div><strong>Target Goal:</strong> ${escapeHtml(goal)}</div>
-                  <div style="margin-top: 4px; font-size: 11.5px; color: var(--text-secondary);">Local OS Grounding reported: <code>${escapeHtml(backendErr)}</code></div>
-                  <div style="margin-top: 4px; font-size: 11px; opacity: 0.85;">Switching to local AI perception and GUI action planner...</div>
+              <div class="grounding-cards-container">
+                ${searchCardHtml}
+                ${livePageCardHtml}
+                ${uitarsGroundingHtml}
+                <div class="agent-error-card" style="margin-bottom: 8px; background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.35);">
+                  <div class="error-card-header" style="color: #eab308;">
+                    <span class="error-icon">ℹ️</span>
+                    <strong>UI-TARS Local Backend Diagnostic</strong>
+                  </div>
+                  <div class="error-card-body">
+                    <div><strong>Target Goal:</strong> ${escapeHtml(goal)}</div>
+                    <div style="margin-top: 4px; font-size: 11.5px; color: var(--text-secondary);">Local OS Grounding reported: <code>${escapeHtml(backendErr)}</code></div>
+                    <div style="margin-top: 4px; font-size: 11px; opacity: 0.85;">Reporting findings directly on this page...</div>
+                  </div>
                 </div>
               </div>
-              <div class="stream-content-planner">⏳ Generating screen perception and GUI action sequence...</div>
+              <div class="stream-content-planner" style="margin-top: 10px; line-height: 1.6;">⏳ Generating screen perception and GUI action sequence...</div>
             `;
           }
           await streamAiChat(
-            `Execute computer use task: "${goal}". Detail screen perception, target UI coordinates, and UI-TARS action sequence. Note: Local OS grounding reported: ${backendErr}`,
-            'You are UI-TARS Computer Use Assistant. Generate precise GUI action coordinates and step-by-step OS automation plan.',
-            { taskType: 'computer_use', existingBubble: bubble }
+            userAiPrompt,
+            systemPrompt,
+            {
+              taskType: 'computer_use',
+              existingBubble: bubble,
+              streamContentTarget: streamEl ? streamEl.querySelector('.stream-content-planner') : null
+            }
           );
           return;
         }
@@ -11362,25 +11736,32 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         const streamEl = bubble.querySelector('.stream-content');
         if (streamEl) {
           streamEl.innerHTML = `
-            ${searchCardHtml}
-            ${uitarsGroundingHtml}
-            <div class="agent-error-card" style="margin-bottom: 8px; background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.35);">
-              <div class="error-card-header" style="color: #eab308;">
-                <span class="error-icon">ℹ️</span>
-                <strong>Master CLI IPC Service Notice (${escapeHtml(statusText)})</strong>
-              </div>
-              <div class="error-card-body">
-                <div><strong>Target Goal:</strong> ${escapeHtml(goal)}</div>
-                <div style="margin-top: 4px; font-size: 11px; color: var(--text-secondary);">Master CLI (:5000/api/computer-use) is in standby. Local AI planner activated to synthesize the automation plan.</div>
+            <div class="grounding-cards-container">
+              ${searchCardHtml}
+              ${livePageCardHtml}
+              ${uitarsGroundingHtml}
+              <div class="agent-error-card" style="margin-bottom: 8px; background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.35);">
+                <div class="error-card-header" style="color: #eab308;">
+                  <span class="error-icon">ℹ️</span>
+                  <strong>Master CLI IPC Service Notice (${escapeHtml(statusText)})</strong>
+                </div>
+                <div class="error-card-body">
+                  <div><strong>Target Goal:</strong> ${escapeHtml(goal)}</div>
+                  <div style="margin-top: 4px; font-size: 11px; color: var(--text-secondary);">Master CLI (:5000/api/computer-use) is in standby. Local AI planner activated to synthesize findings directly on this page.</div>
+                </div>
               </div>
             </div>
-            <div class="stream-content-planner">⏳ Generating screen perception and GUI action sequence...</div>
+            <div class="stream-content-planner" style="margin-top: 10px; line-height: 1.6;">⏳ Generating screen perception and GUI action sequence...</div>
           `;
         }
         await streamAiChat(
-          `Execute computer use task: "${goal}". Detail screen perception, target UI coordinates, and UI-TARS action sequence. Note: Master CLI endpoint (${ipcUrl}/api/computer-use) reported: ${statusText}.`,
-          'You are UI-TARS Computer Use Assistant. Generate precise GUI action coordinates and step-by-step OS automation plan.',
-          { taskType: 'computer_use', existingBubble: bubble }
+          userAiPrompt,
+          systemPrompt,
+          {
+            taskType: 'computer_use',
+            existingBubble: bubble,
+            streamContentTarget: streamEl ? streamEl.querySelector('.stream-content-planner') : null
+          }
         );
         return;
       }
@@ -12433,8 +12814,6 @@ If you are asked about real-world facts such as world leaders, heads of state, c
 
   // Sidebar Navigation Items
   const sidebarNewChat = document.getElementById('sidebar-new-chat');
-  const chatHeroSection = document.getElementById('chat-hero-section');
-  const chatConversationView = document.getElementById('chat-conversation-view');
 
   function startNewChat() {
     startNewChatSession();
@@ -13177,7 +13556,6 @@ If you are asked about real-world facts such as world leaders, heads of state, c
   }
 
   // Pinned Bottom Textarea & Send Button
-  const cliPromptInputPinned = document.getElementById('cli-prompt-input-pinned');
   const btnSendPromptPinned = document.getElementById('btn-send-prompt-pinned');
 
   if (cliPromptInputPinned) {
