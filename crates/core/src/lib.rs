@@ -9,6 +9,7 @@ pub mod web_research;
 pub mod browser;
 pub mod rl;
 pub mod memory;
+pub mod kv_cache;
 
 pub use orchestrator::{HuggingFaceOrchestrator, OrchestrationResult};
 pub use providers::{create_provider, LLMProvider, ModelConfig, ProviderResult};
@@ -33,3 +34,7 @@ pub use memory::{
     MemoryRepository, MessageRole, SqliteMemoryRepository, StoredMessage,
 };
 pub use rl::*;
+pub use kv_cache::{
+    run_kv_benchmark, KvBenchmarkReport, KvBlock, KvBlockPool, KvCache, MultiTabKvManager,
+    PagedKvCache, RingKvCache, TabContext, WgpuAttentionPipeline, WGSL_ATTENTION_SHADER,
+};
