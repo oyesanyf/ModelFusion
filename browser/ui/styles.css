@@ -5675,7 +5675,9 @@ textarea.generating-locked {
 .hitl-shopping-workspace,
 .hitl-booking-workspace,
 .hitl-directions-workspace,
-.hitl-generic-workspace {
+.hitl-generic-workspace,
+.hitl-outline-workspace,
+.hitl-shell-workspace {
   background: var(--bg-secondary, #111827);
   border-radius: 8px;
   padding: 14px;
@@ -5699,9 +5701,20 @@ textarea.generating-locked {
   border: 1px solid rgba(234, 179, 8, 0.4);
 }
 
+.hitl-outline-workspace {
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+.hitl-shell-workspace {
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  box-shadow: 0 4px 20px rgba(239, 68, 68, 0.1);
+}
+
 .product-card,
 .ticket-card,
-.direction-route-card {
+.direction-route-card,
+.outline-chapter-card {
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 6px;
@@ -5719,6 +5732,75 @@ textarea.generating-locked {
 
 .direction-route-card:hover {
   border-color: rgba(56, 189, 248, 0.4);
+}
+
+.outline-chapter-card:hover {
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.04);
+}
+
+.outline-stem-title {
+  font-weight: 700;
+  color: #fbbf24;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.outline-stem-meta {
+  font-size: 11px;
+  color: var(--text-muted, #94a3b8);
+  margin-top: 3px;
+}
+
+.outline-stem-plot {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-secondary, #cbd5e1);
+  margin-top: 6px;
+}
+
+.shell-command-box {
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  color: #fca5a5;
+  margin: 10px 0;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.shell-diff-box {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: var(--font-mono, monospace);
+  font-size: 11.5px;
+  margin: 8px 0;
+  max-height: 180px;
+  overflow-y: auto;
+  color: var(--text-secondary, #cbd5e1);
+}
+
+.shell-risk-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
 }
 
 .product-price-tag {
@@ -5746,11 +5828,18 @@ textarea.generating-locked {
 
 .product-deal-badge,
 .ticket-rec-badge,
-.route-fastest-badge {
+.route-fastest-badge,
+.outline-tier-badge {
   font-size: 10px;
   padding: 1px 5px;
   border-radius: 3px;
   font-weight: 700;
+}
+
+.outline-tier-badge {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
 }
 
 .product-select-btn,
@@ -5768,7 +5857,13 @@ textarea.generating-locked {
 .btn-directions-confirm,
 .btn-directions-abort,
 .btn-generic-confirm,
-.btn-generic-abort {
+.btn-generic-abort,
+.btn-outline-confirm,
+.btn-outline-abort,
+.btn-outline-customize,
+.btn-outline-edit-chapter,
+.btn-shell-confirm,
+.btn-shell-abort {
   font-size: 11.5px !important;
   border-radius: 4px !important;
   cursor: pointer !important;
@@ -5778,7 +5873,9 @@ textarea.generating-locked {
 
 .shopping-safety-gate-bar,
 .booking-safety-gate-bar,
-.directions-safety-gate-bar {
+.directions-safety-gate-bar,
+.outline-safety-gate-bar,
+.shell-safety-gate-bar {
   margin-top: 14px;
   padding: 12px;
   background: rgba(234, 179, 8, 0.08);
@@ -5786,8 +5883,14 @@ textarea.generating-locked {
   border-radius: 6px;
 }
 
+.shell-safety-gate-bar {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
 .btn-shopping-confirm,
-.btn-generic-confirm {
+.btn-generic-confirm,
+.btn-outline-confirm {
   background: #10b981 !important;
   border: none !important;
   color: #ffffff !important;
@@ -5808,9 +5911,30 @@ textarea.generating-locked {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2) !important;
 }
 
+.btn-shell-confirm {
+  background: #ef4444 !important;
+  border: none !important;
+  color: #ffffff !important;
+  box-shadow: 0 1px 3px rgba(239, 68, 68, 0.3) !important;
+}
+
+.btn-outline-customize,
+.btn-outline-edit-chapter {
+  background: rgba(245, 158, 11, 0.18) !important;
+  border: 1px solid rgba(245, 158, 11, 0.45) !important;
+  color: #fbbf24 !important;
+}
+
+.btn-outline-customize:hover,
+.btn-outline-edit-chapter:hover {
+  background: rgba(245, 158, 11, 0.3) !important;
+}
+
 .btn-shopping-abort,
 .btn-booking-abort,
 .btn-generic-abort,
+.btn-outline-abort,
+.btn-shell-abort,
 .btn-hitl-abort {
   background: rgba(239, 68, 68, 0.15) !important;
   border: 1px solid rgba(239, 68, 68, 0.4) !important;
@@ -5820,6 +5944,8 @@ textarea.generating-locked {
 .btn-shopping-abort:hover,
 .btn-booking-abort:hover,
 .btn-generic-abort:hover,
+.btn-outline-abort:hover,
+.btn-shell-abort:hover,
 .btn-hitl-abort:hover {
   background: rgba(239, 68, 68, 0.3) !important;
   transform: translateY(-1px) !important;

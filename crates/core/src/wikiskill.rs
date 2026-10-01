@@ -6,7 +6,7 @@ use reqwest;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-/// Strips HTML tags (e.g. `<span class="searchmatch">...</span>`, `<p>`, `<b>`) and unescapes basic HTML entities.
+/// Strips HTML tags (e.g. `<span class="searchmatch">...</span>`, `<p>`, `<b>`) and unescapes HTML entities.
 pub fn strip_html_tags(input: &str) -> String {
     let mut output = String::with_capacity(input.len());
     let mut in_tag = false;
@@ -21,16 +21,27 @@ pub fn strip_html_tags(input: &str) -> String {
         }
     }
 
-    // Unescape common HTML entities
+    // Unescape common & extended HTML entities
     output
         .replace("&quot;", "\"")
         .replace("&apos;", "'")
         .replace("&#039;", "'")
+        .replace("&#39;", "'")
         .replace("&amp;", "&")
         .replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&nbsp;", " ")
         .replace("&#160;", " ")
+        .replace("&mdash;", "—")
+        .replace("&#8212;", "—")
+        .replace("&ndash;", "–")
+        .replace("&#8211;", "–")
+        .replace("&hellip;", "…")
+        .replace("&#8230;", "…")
+        .replace("&lsquo;", "‘")
+        .replace("&rsquo;", "’")
+        .replace("&ldquo;", "“")
+        .replace("&rdquo;", "”")
 }
 
 /// A search hit returned from Wikipedia search API.
@@ -183,7 +194,11 @@ pub fn parse_wikipedia_query_links_and_extlinks(json_str: &str) -> (Vec<String>,
     let mut categories = Vec::new();
 
     if let Some(pages) = v.get("query").and_then(|q| q.get("pages")).and_then(|p| p.as_object()) {
-        for (_page_id, page_data) in pages {
+        for (page_id_str, page_data) in pages {
+            if page_data.get("missing").is_some() || page_id_str == "-1" {
+                continue;
+            }
+
             // Extract internal cross-reference links
             if let Some(links) = page_data.get("links").and_then(|l| l.as_array()) {
                 for l in links {
@@ -193,6 +208,9 @@ pub fn parse_wikipedia_query_links_and_extlinks(json_str: &str) -> (Vec<String>,
                             && !title.starts_with("Template:")
                             && !title.starts_with("Help:")
                             && !title.starts_with("Category:")
+                            && !title.starts_with("Portal:")
+                            && !title.starts_with("Draft:")
+                            && !title.starts_with("File:")
                             && !cross_refs.contains(&title.to_string())
                         {
                             cross_refs.push(title.to_string());
@@ -240,6 +258,9 @@ pub fn parse_wikipedia_extract_json(json_str: &str) -> (String, u64, String) {
     if let Some(pages) = v.get("query").and_then(|q| q.get("pages")).and_then(|p| p.as_object()) {
         for (page_id_str, page_data) in pages {
             let pid = page_id_str.parse::<u64>().unwrap_or(0);
+            if page_data.get("missing").is_some() || pid == 0 {
+                continue;
+            }
             let title = page_data.get("title").and_then(|t| t.as_str()).unwrap_or("").to_string();
             let extract = page_data.get("extract").and_then(|e| e.as_str()).unwrap_or("").trim().to_string();
             return (extract, pid, title);
@@ -247,6 +268,62 @@ pub fn parse_wikipedia_extract_json(json_str: &str) -> (String, u64, String) {
     }
 
     (String::new(), 0, String::new())
+}
+
+/// Extracts coherent, clean factual takeaway sentences from plain text extracts,
+/// handling multi-line paragraph transitions without gluing lines together.
+pub fn extract_factual_takeaways(extract: &str, limit: usize) -> Vec<String> {
+    if extract.trim().is_empty() {
+        return Vec::new();
+    }
+
+    let mut sentences = Vec::new();
+    // Split into paragraphs first to cleanly isolate newlines
+    for paragraph in extract.split('\n') {
+        let p = paragraph.trim();
+        if p.is_empty() {
+            continue;
+        }
+
+        // Split paragraph on sentence boundaries: period, exclamation, or question mark followed by space or end
+        let mut cur = String::new();
+        let chars: Vec<char> = p.chars().collect();
+        let len = chars.len();
+
+        let mut i = 0;
+        while i < len {
+            let ch = chars[i];
+            cur.push(ch);
+
+            if (ch == '.' || ch == '!' || ch == '?')
+                && (i + 1 == len || chars[i + 1].is_whitespace())
+            {
+                let trimmed = cur.trim();
+                let is_abbrev = trimmed.ends_with("e.g.")
+                    || trimmed.ends_with("i.e.")
+                    || trimmed.ends_with("vs.")
+                    || trimmed.ends_with("U.S.")
+                    || trimmed.ends_with("etc.");
+
+                if !is_abbrev && trimmed.len() > 15 {
+                    sentences.push(trimmed.to_string());
+                    cur.clear();
+                }
+            }
+            i += 1;
+        }
+
+        let rem = cur.trim();
+        if rem.len() > 15 {
+            let mut s = rem.to_string();
+            if !s.ends_with('.') && !s.ends_with('!') && !s.ends_with('?') {
+                s.push('.');
+            }
+            sentences.push(s);
+        }
+    }
+
+    sentences.into_iter().take(limit).collect()
 }
 
 /// Searches Wikipedia for the specified query string, returning ranked search hits.
@@ -277,7 +354,7 @@ pub async fn search_wikipedia(query: &str, limit: usize) -> Result<Vec<WikiSearc
     parse_wikipedia_search_json(&body)
 }
 
-/// Fetches section outlines for a Wikipedia article.
+/// Fetches section outlines for a Wikipedia article, following redirects automatically.
 pub async fn fetch_wikipedia_sections(title: &str) -> Result<Vec<WikiSection>> {
     let clean_title = title.trim();
     if clean_title.is_empty() {
@@ -286,7 +363,7 @@ pub async fn fetch_wikipedia_sections(title: &str) -> Result<Vec<WikiSection>> {
 
     let encoded_title = encode_uri_component(clean_title);
     let url = format!(
-        "https://en.wikipedia.org/w/api.php?action=parse&page={}&prop=sections&format=json",
+        "https://en.wikipedia.org/w/api.php?action=parse&page={}&prop=sections&redirects=1&format=json",
         encoded_title
     );
 
@@ -304,7 +381,8 @@ pub async fn fetch_wikipedia_sections(title: &str) -> Result<Vec<WikiSection>> {
     parse_wikipedia_sections_json(&body)
 }
 
-/// Fetches a complete Wikipedia article detail: extract, section tree, cross-references, and external citations.
+/// Fetches a complete Wikipedia article detail: extract, section tree, cross-references, and external citations,
+/// following redirects to the canonical title automatically.
 pub async fn fetch_wikipedia_article(title: &str) -> Result<WikiArticleDetail> {
     let clean_title = title.trim();
     if clean_title.is_empty() {
@@ -317,9 +395,9 @@ pub async fn fetch_wikipedia_article(title: &str) -> Result<WikiArticleDetail> {
         .user_agent("ModelFusion-WikiSkill/1.0 (https://github.com/oyesanyf/ModelFusion)")
         .build()?;
 
-    // 1. Fetch extract, internal links, external citations, and categories
+    // 1. Fetch extract, internal links, external citations, and categories (with redirects=1)
     let query_url = format!(
-        "https://en.wikipedia.org/w/api.php?action=query&prop=extracts|info|links|extlinks|categories&exintro=1&explaintext=1&titles={}&inprop=url&pllimit=40&ellimit=30&cllimit=20&format=json",
+        "https://en.wikipedia.org/w/api.php?action=query&prop=extracts|info|links|extlinks|categories&exintro=1&explaintext=1&redirects=1&titles={}&inprop=url&pllimit=40&ellimit=30&cllimit=20&format=json",
         encoded_title
     );
 
@@ -351,47 +429,42 @@ pub async fn fetch_wikipedia_article(title: &str) -> Result<WikiArticleDetail> {
 }
 
 /// Distills Wikipedia knowledge for a topic: queries search, resolves authoritative page,
-/// extracts section tree, cross-references, and citations, and generates key takeaways.
-pub async fn distill_wikipedia_knowledge(topic: &str, max_sections: usize) -> Result<WikiDistillationReport> {
+/// extracts section tree, cross-references, and citations, and generates clean key takeaways.
+pub async fn distill_wikipedia_knowledge(topic: &str, _max_sections: usize) -> Result<WikiDistillationReport> {
     let clean_topic = topic.trim();
     if clean_topic.is_empty() {
         return Err(anyhow!("Topic query cannot be empty"));
     }
 
-    // 1. Search Wikipedia
-    let search_results = search_wikipedia(clean_topic, 6).await?;
-    if search_results.is_empty() {
-        return Err(anyhow!("No Wikipedia articles found matching topic '{}'", clean_topic));
-    }
+    // 1. Search Wikipedia, with direct article fetch fallback if search yields 0 hits or rate-limits
+    let search_results = match search_wikipedia(clean_topic, 6).await {
+        Ok(results) if !results.is_empty() => results,
+        _ => {
+            // Fallback: try fetching the topic directly as an exact article title
+            match fetch_wikipedia_article(clean_topic).await {
+                Ok(direct_art) => {
+                    let top_result = WikiSearchResult {
+                        title: direct_art.title.clone(),
+                        page_id: direct_art.page_id,
+                        snippet: direct_art.extract.chars().take(200).collect(),
+                        url: direct_art.url.clone(),
+                        word_count: direct_art.extract.split_whitespace().count(),
+                    };
+                    vec![top_result]
+                }
+                Err(_) => {
+                    return Err(anyhow!("No Wikipedia articles found matching topic '{}'", clean_topic));
+                }
+            }
+        }
+    };
 
     // 2. Select authoritative top article
     let top_hit = search_results[0].clone();
     let article = fetch_wikipedia_article(&top_hit.title).await?;
 
-    // 3. Generate key takeaways from lead extract and sections
-    let mut takeaways = Vec::new();
-    if !article.extract.is_empty() {
-        let sentences: Vec<&str> = article.extract
-            .split(". ")
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .collect();
-        for sentence in sentences.into_iter().take(3) {
-            let mut formatted = sentence.to_string();
-            if !formatted.ends_with('.') {
-                formatted.push('.');
-            }
-            takeaways.push(formatted);
-        }
-    }
-
-    // Add key section headers to takeaways
-    let section_limit = max_sections.max(3);
-    for s in article.sections.iter().take(section_limit) {
-        if !s.line.is_empty() && !s.line.eq_ignore_ascii_case("references") && !s.line.eq_ignore_ascii_case("see also") && !s.line.eq_ignore_ascii_case("external links") {
-            takeaways.push(format!("Key Section: {}", s.line));
-        }
-    }
+    // 3. Generate key takeaways strictly from lead extract sentences
+    let takeaways = extract_factual_takeaways(&article.extract, 4);
 
     // 4. Grounded citations
     let mut grounded_citations = Vec::new();
@@ -607,5 +680,41 @@ mod tests {
         assert!(md.contains("Deep Section Retrieval"));
         assert!(md.contains("- **History** (`#History`)"));
         assert!(md.contains("[1] https://arxiv.org/abs/1706.03762"));
+    }
+
+    #[test]
+    fn test_extract_factual_takeaways_multiline() {
+        let extract = "Rust is a systems programming language.\nIt emphasizes memory safety and performance.\n\nConcurrency without data races is guaranteed.";
+        let takeaways = extract_factual_takeaways(extract, 4);
+        assert_eq!(takeaways.len(), 3);
+        assert_eq!(takeaways[0], "Rust is a systems programming language.");
+        assert_eq!(takeaways[1], "It emphasizes memory safety and performance.");
+        assert_eq!(takeaways[2], "Concurrency without data races is guaranteed.");
+    }
+
+    #[test]
+    fn test_strip_html_tags_extended_entities() {
+        let input = "&ldquo;Deep Learning&rdquo; &mdash; a subset of A.I. &ndash; uses &lsquo;neural networks&rsquo; &hellip;";
+        let expected = "“Deep Learning” — a subset of A.I. – uses ‘neural networks’ …";
+        assert_eq!(strip_html_tags(input), expected);
+    }
+
+    #[test]
+    fn test_parse_wikipedia_extract_json_ignores_missing_page() {
+        let mock_missing = r#"{
+            "query": {
+                "pages": {
+                    "-1": {
+                        "ns": 0,
+                        "title": "NonexistentTopicXYZ",
+                        "missing": ""
+                    }
+                }
+            }
+        }"#;
+        let (extract, pid, title) = parse_wikipedia_extract_json(mock_missing);
+        assert_eq!(extract, "");
+        assert_eq!(pid, 0);
+        assert_eq!(title, "");
     }
 }

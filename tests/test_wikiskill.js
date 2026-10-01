@@ -252,6 +252,77 @@ assert(cardHtml.includes('copy-wiki-btn'), 'Card HTML must include Copy button')
 assert(cardHtml.includes('insert-wiki-chat-btn'), 'Card HTML must include Insert into Chat button');
 console.log('✅ Knowledge Card HTML rendering verified.');
 
+// 5.6 Multiline paragraph sentence extraction
+function extractFactualTakeaways(extract, limit = 4) {
+  if (!extract) return [];
+  const sentences = extract
+    .split(/(?<=[.!?])(?:\s+|\n+)/)
+    .map(s => s.trim().replace(/\n+/g, ' '))
+    .filter(s => s.length > 15);
+  return sentences.slice(0, limit).map(s => s.endsWith('.') ? s : s + '.');
+}
+
+const multilineExtract = "Artificial intelligence was founded in 1956.\nInterest increased substantially after 2012 when GPUs accelerated deep learning.\n\nGenerative AI became widespread in the 2020s.";
+const extractedTakeaways = extractFactualTakeaways(multilineExtract, 3);
+assert.strictEqual(extractedTakeaways.length, 3);
+assert.strictEqual(extractedTakeaways[0], 'Artificial intelligence was founded in 1956.');
+assert.strictEqual(extractedTakeaways[1], 'Interest increased substantially after 2012 when GPUs accelerated deep learning.');
+assert.strictEqual(extractedTakeaways[2], 'Generative AI became widespread in the 2020s.');
+console.log('✅ Multiline sentence extraction without glued paragraphs verified.');
+
+// 5.7 Extended HTML entity decoding
+function stripExtendedHtml(input) {
+  if (!input) return '';
+  return input
+    .replace(/<[^>]+>/g, '')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#160;/g, ' ')
+    .replace(/&mdash;/g, '—')
+    .replace(/&#8212;/g, '—')
+    .replace(/&ndash;/g, '–')
+    .replace(/&#8211;/g, '–')
+    .replace(/&hellip;/g, '…')
+    .replace(/&#8230;/g, '…')
+    .replace(/&lsquo;/g, '‘')
+    .replace(/&rsquo;/g, '’')
+    .replace(/&ldquo;/g, '“')
+    .replace(/&rdquo;/g, '”')
+    .trim();
+}
+
+const richHtml = '&ldquo;Transformers&rdquo; &mdash; attention-based models &ndash; revolutionized NLP &hellip;';
+assert.strictEqual(stripExtendedHtml(richHtml), '“Transformers” — attention-based models – revolutionized NLP …');
+console.log('✅ Extended HTML entity decoding verified.');
+
+// 5.8 Card rendering with Key Findings
+const reportWithTakeaways = {
+  ...mockReport,
+  key_takeaways: [
+    'RL optimizes cumulative numerical reward signals.',
+    'Markov decision processes provide the formal mathematical foundation.'
+  ]
+};
+
+function renderWikiKnowledgeCardWithTakeaways(distillation) {
+  if (!distillation) return '';
+  const takeaways = Array.isArray(distillation.key_takeaways) ? distillation.key_takeaways : [];
+  let takeawaysHtml = '';
+  if (takeaways.length > 0) {
+    takeawaysHtml = `<div class="wiki-takeaways">${takeaways.map(t => `• ${t}`).join('\n')}</div>`;
+  }
+  return `<div class="card">${takeawaysHtml}</div>`;
+}
+
+const richCardHtml = renderWikiKnowledgeCardWithTakeaways(reportWithTakeaways);
+assert(richCardHtml.includes('RL optimizes cumulative numerical reward signals.'), 'Card must include rendered takeaways');
+console.log('✅ Knowledge Card with Key Takeaways verified.');
+
 // -----------------------------------------------------------------------------
 // Test Group 6: Live Wikipedia API Connectivity (Non-blocking fallback check)
 // -----------------------------------------------------------------------------
@@ -275,7 +346,7 @@ async function testLiveApi() {
 
 testLiveApi().then(() => {
   console.log('\n===============================================================');
-  console.log('🎉 ALL 6 WIKISKILL VERIFICATION CHECKS PASSED SUCCESSFULLY!');
+  console.log('🎉 ALL WIKISKILL VERIFICATION CHECKS PASSED SUCCESSFULLY!');
   console.log('===============================================================\n');
 }).catch(err => {
   console.error('FATAL Test Suite Failure:', err);

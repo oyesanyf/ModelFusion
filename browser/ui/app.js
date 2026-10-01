@@ -2983,20 +2983,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 1. Fetch lead extract, cross-references, and external links
     try {
-      const qUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=extracts|info|links|extlinks|categories&exintro=1&explaintext=1&titles=${encoded}&inprop=url&pllimit=40&ellimit=30&cllimit=20&format=json&origin=*`;
+      const qUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=extracts|info|links|extlinks|categories&exintro=1&explaintext=1&redirects=1&titles=${encoded}&inprop=url&pllimit=40&ellimit=30&cllimit=20&format=json&origin=*`;
       const res = await fetch(qUrl);
       if (res.ok) {
         const data = await res.json();
         if (data.query && data.query.pages) {
           for (const pid of Object.keys(data.query.pages)) {
             const pageData = data.query.pages[pid];
+            if (pageData.missing !== undefined || pid === '-1') continue;
             pageId = parseInt(pid, 10) || 0;
             extract = (pageData.extract || '').trim();
 
             if (Array.isArray(pageData.links)) {
               crossRefs = pageData.links
                 .map(l => l.title || '')
-                .filter(t => t && !t.startsWith('Wikipedia:') && !t.startsWith('Template:') && !t.startsWith('Help:') && !t.startsWith('Category:'));
+                .filter(t => t && !t.startsWith('Wikipedia:') && !t.startsWith('Template:') && !t.startsWith('Help:') && !t.startsWith('Category:') && !t.startsWith('Portal:') && !t.startsWith('Draft:'));
             }
 
             if (Array.isArray(pageData.extlinks)) {
@@ -3015,7 +3016,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 2. Fetch section outline
     try {
-      const sUrl = `https://en.wikipedia.org/w/api.php?action=parse&page=${encoded}&prop=sections&format=json&origin=*`;
+      const sUrl = `https://en.wikipedia.org/w/api.php?action=parse&page=${encoded}&prop=sections&redirects=1&format=json&origin=*`;
       const res = await fetch(sUrl);
       if (res.ok) {
         const data = await res.json();
@@ -3067,9 +3068,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 2. Direct client-side Wikipedia fallback distillation
     try {
-      const searchResults = await searchWikipediaDirect(query, limit);
+      let searchResults = await searchWikipediaDirect(query, limit);
       if (!searchResults || searchResults.length === 0) {
-        throw new Error(`No Wikipedia articles found matching "${query}"`);
+        // Fallback: direct article attempt
+        const directArt = await fetchWikipediaArticleDirect(query);
+        if (directArt && directArt.extract) {
+          searchResults = [{
+            title: directArt.title,
+            page_id: directArt.page_id,
+            snippet: directArt.extract.slice(0, 200),
+            url: directArt.url,
+            word_count: directArt.extract.split(/\s+/).length
+          }];
+        } else {
+          throw new Error(`No Wikipedia articles found matching "${query}"`);
+        }
       }
 
       const topHit = searchResults[0];
@@ -3080,18 +3093,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const takeaways = [];
       if (article.extract) {
-        const sentences = article.extract.split('. ').map(s => s.trim()).filter(Boolean);
+        const sentences = article.extract
+          .split(/(?<=[.!?])(?:\s+|\n+)/)
+          .map(s => s.trim().replace(/\n+/g, ' '))
+          .filter(s => s.length > 15);
         for (let i = 0; i < Math.min(sentences.length, 3); i++) {
           takeaways.push(sentences[i].endsWith('.') ? sentences[i] : sentences[i] + '.');
         }
-      }
-
-      if (Array.isArray(article.sections)) {
-        article.sections.slice(0, 5).forEach(s => {
-          if (!['references', 'see also', 'external links'].includes(s.line.toLowerCase())) {
-            takeaways.push(`Key Section: ${s.line}`);
-          }
-        });
       }
 
       const groundedCitations = (article.citations || []).slice(0, 8).map((c, idx) => `[${idx + 1}] ${c}`);
@@ -3119,9 +3127,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const title = art.title || distillation.topic || 'Wikipedia Article';
     const url = art.url || `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, '_'))}`;
     const extract = art.extract || distillation.distilled_summary || '';
+    const takeaways = Array.isArray(distillation.key_takeaways) ? distillation.key_takeaways : [];
     const sections = (art.sections && Array.isArray(art.sections)) ? art.sections : [];
     const crossRefs = (art.cross_references && Array.isArray(art.cross_references)) ? art.cross_references : [];
     const citations = (art.citations && Array.isArray(art.citations)) ? art.citations : [];
+
+    let takeawaysHtml = '';
+    if (takeaways.length > 0) {
+      takeawaysHtml = `
+        <div style="margin-top: 8px;">
+          <div style="font-size: 11px; font-weight: 600; color: #38bdf8; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">💡 Key Findings &amp; Insights</div>
+          <ul style="list-style: none; padding: 0; margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--text-secondary);">
+            ${takeaways.map(t => `<li style="margin-bottom: 3px;">• ${escapeHtml(t)}</li>`).join('')}
+          </ul>
+        </div>
+      `;
+    }
 
     let sectionsHtml = '';
     if (sections.length > 0) {
@@ -3184,6 +3205,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </span>
         </div>
         ${extract ? `<div class="wiki-extract" style="font-size: 11.5px; line-height: 1.5; color: var(--text-secondary); max-height: 90px; overflow-y: auto;">${escapeHtml(extract)}</div>` : ''}
+        ${takeawaysHtml}
         ${sectionsHtml}
         ${crossRefsHtml}
         ${citationsHtml}
