@@ -7860,14 +7860,55 @@ pub fn html_escape(s: &str) -> String {
         .replace('\'', "&#x27;")
 }
 
-/// Normalizes a target URL to ensure proper scheme and formatting.
-pub fn normalize_proxy_url(url: &str) -> String {
-    let trimmed = url.trim().trim_matches('"').trim_matches('\'');
-    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
-        trimmed.to_string()
-    } else {
-        format!("https://{}", trimmed)
+/// Sanitizes and deduplicates URLs, handling repeated/concatenated URLs
+/// (e.g. "https://www.tests.com/practice/Certified-Financial-Planner-Practice-Examhttps://www.tests.com/practice/Certified-Financial-Planner-Practice-Exam")
+pub fn sanitize_and_deduplicate_url(raw: &str) -> String {
+    let mut s = raw.trim().trim_matches('"').trim_matches('\'').trim_matches('<').trim_matches('>').trim().to_string();
+    while s.ends_with('.') || s.ends_with(',') || s.ends_with(';') || s.ends_with(')') || s.ends_with('>') || s.ends_with(']') {
+        s.pop();
     }
+    s = s.trim().to_string();
+
+    // 1. Detect multiple "http://" or "https://" schemes concatenated together
+    // e.g. "https://example.com/testhttps://example.com/test"
+    let lower = s.to_lowercase();
+    let second_scheme_pos = lower[1..].find("http://").or_else(|| lower[1..].find("https://"));
+    if let Some(pos) = second_scheme_pos {
+        let actual_pos = pos + 1;
+        s = s[..actual_pos].trim().to_string();
+    }
+
+    // 2. Detect exact repetition of the entire string without duplicate scheme (e.g. len is even and half1 == half2)
+    let len = s.len();
+    if len > 8 && len % 2 == 0 {
+        let half = len / 2;
+        if s[..half] == s[half..] {
+            s = s[..half].to_string();
+        }
+    }
+
+    // 3. Fix duplicated protocol prefixes
+    if s.starts_with("https://https://") {
+        s = s.replacen("https://https://", "https://", 1);
+    } else if s.starts_with("http://http://") {
+        s = s.replacen("http://http://", "http://", 1);
+    } else if s.starts_with("https://http://") {
+        s = s.replacen("https://http://", "https://", 1);
+    }
+
+    // 4. Ensure proper scheme
+    if s.starts_with("http://") || s.starts_with("https://") {
+        s
+    } else if s.starts_with("localhost") || s.starts_with("127.0.0.1") {
+        format!("http://{}", s)
+    } else {
+        format!("https://{}", s)
+    }
+}
+
+/// Normalizes a target URL to ensure proper scheme and formatting with full deduplication.
+pub fn normalize_proxy_url(url: &str) -> String {
+    sanitize_and_deduplicate_url(url)
 }
 
 /// Extracts target URL for /api/proxy or /api/browser/proxy from request URI or JSON body.
@@ -18100,6 +18141,38 @@ public class Pr {
         // 6. Missing url
         let url5 = extract_proxy_target_url("/api/proxy", &serde_json::json!({}));
         assert_eq!(url5, None);
+    }
+
+    #[test]
+    fn test_sanitize_and_deduplicate_url() {
+        use super::{normalize_proxy_url, sanitize_and_deduplicate_url};
+
+        // User example: duplicated CFP practice exam URL
+        let duplicated_cfp = "https://www.tests.com/practice/Certified-Financial-Planner-Practice-Examhttps://www.tests.com/practice/Certified-Financial-Planner-Practice-Exam";
+        assert_eq!(
+            sanitize_and_deduplicate_url(duplicated_cfp),
+            "https://www.tests.com/practice/Certified-Financial-Planner-Practice-Exam"
+        );
+        assert_eq!(
+            normalize_proxy_url(duplicated_cfp),
+            "https://www.tests.com/practice/Certified-Financial-Planner-Practice-Exam"
+        );
+
+        // Duplicated URL without scheme in second part
+        let repeated_half = "https://example.com/testhttps://example.com/test";
+        assert_eq!(sanitize_and_deduplicate_url(repeated_half), "https://example.com/test");
+
+        // Glued different URLs
+        let glued = "https://first.com/pagehttps://second.com/page";
+        assert_eq!(sanitize_and_deduplicate_url(glued), "https://first.com/page");
+
+        // Trailing punctuation from natural language sentences
+        let trailing_dot = "https://example.com/exam.";
+        assert_eq!(sanitize_and_deduplicate_url(trailing_dot), "https://example.com/exam");
+
+        // Duplicated protocol prefix
+        let double_scheme = "https://https://example.com/test";
+        assert_eq!(sanitize_and_deduplicate_url(double_scheme), "https://example.com/test");
     }
 
     #[test]

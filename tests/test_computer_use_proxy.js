@@ -27,6 +27,9 @@ assert.strictEqual(isCrossOriginBlockingUrl('https://github.com/oyesanyf/ModelFu
 assert.strictEqual(isCrossOriginBlockingUrl('https://en.wikipedia.org/wiki/Rust'), true, 'Wikipedia must be marked as blocking / proxied');
 console.log('✅ Test 2 Passed: isCrossOriginBlockingUrl correctly identifies cross-origin iframe blocking sites.');
 
+const sanitizeMatch = appJs.match(/function sanitizeAndDeduplicateUrl\([\s\S]*?\n  \}/);
+if (sanitizeMatch) eval(sanitizeMatch[0]);
+
 // --- Test 3: Evaluate resolveProxiedUrl logic ---
 const resolveProxiedMatch = appJs.match(/function resolveProxiedUrl\([\s\S]*?\n  \}/);
 assert.ok(resolveProxiedMatch, 'resolveProxiedUrl implementation found');
