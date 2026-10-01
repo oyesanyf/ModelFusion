@@ -1200,6 +1200,145 @@ pub fn generate_fusion_status_report() -> String {
     )
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct AuthorStyleProfile {
+    pub tone: String,
+    pub target_sentence_length: String,
+    pub banned_buzzwords: Vec<String>,
+    pub pacing: String,
+    pub grounding_enabled: bool,
+}
+
+impl Default for AuthorStyleProfile {
+    fn default() -> Self {
+        Self {
+            tone: "engaging, authentic, vivid".to_string(),
+            target_sentence_length: "12-25 words, varied burstiness".to_string(),
+            banned_buzzwords: vec![
+                "delve".to_string(),
+                "tapestry".to_string(),
+                "testament".to_string(),
+                "beacon".to_string(),
+                "unleash".to_string(),
+                "crucial".to_string(),
+                "pivotal".to_string(),
+                "moreover".to_string(),
+                "furthermore".to_string(),
+                "interconnected".to_string(),
+                "revolutionize".to_string(),
+                "multifaceted".to_string(),
+                "paramount".to_string(),
+                "dynamic landscape".to_string(),
+            ],
+            pacing: "sensory grounding, show-don't-tell".to_string(),
+            grounding_enabled: true,
+        }
+    }
+}
+
+pub fn resolve_author_style_path() -> std::path::PathBuf {
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        let p = std::path::PathBuf::from(local_app_data).join("ModelFusion").join("author_style.json");
+        if let Some(parent) = p.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        return p;
+    }
+    std::path::PathBuf::from(".modelfusion_author_style.json")
+}
+
+pub fn load_author_style_profile() -> AuthorStyleProfile {
+    let p = resolve_author_style_path();
+    if p.is_file() {
+        if let Ok(data) = std::fs::read_to_string(&p) {
+            if let Ok(prof) = serde_json::from_str::<AuthorStyleProfile>(&data) {
+                return prof;
+            }
+        }
+    }
+    AuthorStyleProfile::default()
+}
+
+pub fn save_author_style_profile(profile: &AuthorStyleProfile) -> bool {
+    let p = resolve_author_style_path();
+    if let Ok(json) = serde_json::to_string_pretty(profile) {
+        if std::fs::write(&p, json).is_ok() {
+            return true;
+        }
+    }
+    false
+}
+
+pub fn handle_author_style_cli(input: &str) -> String {
+    let clean = input.trim();
+    let mut profile = load_author_style_profile();
+
+    if clean.is_empty() || clean.eq_ignore_ascii_case("status") || clean.eq_ignore_ascii_case("inspect") || clean.eq_ignore_ascii_case("show") || clean.eq_ignore_ascii_case("view") {
+        format!(
+            "🖋️ **ModelFusion Persistent Author Style Profile**\n\n\
+            - **Active Tone**: `{}`\n\
+            - **Sentence Cadence / Length**: `{}`\n\
+            - **Narrative Pacing**: `{}`\n\
+            - **Wiki Factual Grounding**: `{}`\n\
+            - **Banned AI Buzzwords** ({}):\n  {}\n\n\
+            ### 🛠️ Configuration Commands:\n\
+            - `cli.exe --style \"set tone: <tone>\"` (or `/style set tone: <tone>`)\n\
+            - `cli.exe --style \"ban: <word1>, <word2>\"` (or `/style ban: <word1>, <word2>`)\n\
+            - `cli.exe --style \"unban: <word>\"` (or `/style unban: <word>`)\n\
+            - `cli.exe --style \"length: <cadence>\"` (or `/style length: <cadence>`)\n\
+            - `cli.exe --style reset` (or `/style reset`)",
+            profile.tone,
+            profile.target_sentence_length,
+            profile.pacing,
+            if profile.grounding_enabled { "Enabled" } else { "Disabled" },
+            profile.banned_buzzwords.len(),
+            profile.banned_buzzwords.iter().map(|w| format!("`{}`", w)).collect::<Vec<_>>().join(", ")
+        )
+    } else if clean.eq_ignore_ascii_case("reset") {
+        let default_prof = AuthorStyleProfile::default();
+        save_author_style_profile(&default_prof);
+        format!(
+            "🔄 **Author Style Profile Reset to Defaults**\n\n\
+            - **Tone**: `{}`\n\
+            - **Cadence**: `{}`\n\
+            - **Banned Words**: {} AI clichés banned.",
+            default_prof.tone, default_prof.target_sentence_length, default_prof.banned_buzzwords.len()
+        )
+    } else if let Some(tone_val) = clean.strip_prefix("tone:").or_else(|| clean.strip_prefix("set tone:")) {
+        profile.tone = tone_val.trim().to_string();
+        save_author_style_profile(&profile);
+        format!("✅ **Author Tone Updated**: `{}`", profile.tone)
+    } else if let Some(len_val) = clean.strip_prefix("length:").or_else(|| clean.strip_prefix("sentence:")).or_else(|| clean.strip_prefix("set length:")) {
+        profile.target_sentence_length = len_val.trim().to_string();
+        save_author_style_profile(&profile);
+        format!("✅ **Sentence Length Cadence Updated**: `{}`", profile.target_sentence_length)
+    } else if let Some(ban_val) = clean.strip_prefix("ban:").or_else(|| clean.strip_prefix("banned:")) {
+        let new_words: Vec<String> = ban_val
+            .split(&[',', ';', ' '][..])
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| !s.is_empty())
+            .collect();
+        for w in &new_words {
+            if !profile.banned_buzzwords.iter().any(|bw| bw.eq_ignore_ascii_case(w)) {
+                profile.banned_buzzwords.push(w.clone());
+            }
+        }
+        save_author_style_profile(&profile);
+        format!(
+            "🛡️ **Banned Buzzwords Updated**\n\nAdded: {}\nTotal banned AI clichés: **{}**",
+            new_words.iter().map(|w| format!("`{}`", w)).collect::<Vec<_>>().join(", "),
+            profile.banned_buzzwords.len()
+        )
+    } else if let Some(unban_val) = clean.strip_prefix("unban:") {
+        let target = unban_val.trim().to_lowercase();
+        profile.banned_buzzwords.retain(|w| !w.eq_ignore_ascii_case(&target));
+        save_author_style_profile(&profile);
+        format!("✅ **Unbanned Word**: `{}` (Remaining: {})", target, profile.banned_buzzwords.len())
+    } else {
+        format!("⚠️ **Unrecognized style directive**: `{}`. Type `/style` to view active profile.", clean)
+    }
+}
+
 async fn rpc_call_rest_rl(method: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::net::TcpStream;
@@ -1899,6 +2038,16 @@ struct Args {
         help = "Distill Wikipedia knowledge or search articles with section outline, cross-references, and verified citations"
     )]
     wiki: Option<String>,
+
+    #[arg(
+        long,
+        alias = "style-profile",
+        alias = "author-style",
+        num_args = 0..=1,
+        default_missing_value = "",
+        help = "Inspect or configure persistent author style preferences (tone, sentence length, banned buzzwords)"
+    )]
+    style: Option<String>,
 
     #[arg(
         long = "max-tokens",
@@ -2633,6 +2782,16 @@ where
                 }
                 return args;
             }
+            if (sub_clean == "style" || sub_clean == "style-profile" || sub_clean == "author-style") && !has_combinator {
+                args.remove(1);
+                args[1] = "--style".to_string();
+                if args.len() > 3 {
+                    let combined = args[2..].join(" ");
+                    args.truncate(2);
+                    args.push(combined);
+                }
+                return args;
+            }
             if sub_clean == "humanize" && !has_combinator {
                 args.remove(1);
                 args[1] = "--humanize".to_string();
@@ -2708,6 +2867,15 @@ where
         }
         "wiki" | "/wiki" | "@agent/wiki" | "@agent:wiki" | "wikiskill" | "/wikiskill" | "@agent/wikiskill" | "@agent:wikiskill" | "wikipedia" | "/wikipedia" => {
             args[1] = "--wiki".to_string();
+            if args.len() > 3 {
+                let combined = args[2..].join(" ");
+                args.truncate(2);
+                args.push(combined);
+            }
+            return args;
+        }
+        "style" | "/style" | "@agent/style" | "@agent:style" | "@style" | "style-profile" | "/style-profile" | "author-style" | "/author-style" => {
+            args[1] = "--style".to_string();
             if args.len() > 3 {
                 let combined = args[2..].join(" ");
                 args.truncate(2);
@@ -3541,6 +3709,16 @@ async fn run(args: Args) -> Result<()> {
                 }
             }
         }
+        return Ok(());
+    }
+
+    if let Some(ref style_arg) = args.style {
+        let combined_style = match (&args.style, &args.query) {
+            (Some(s), Some(pos)) if !pos.is_empty() => format!("{} {}", s, pos),
+            (Some(s), _) => s.clone(),
+            _ => String::new(),
+        };
+        println!("{}", handle_author_style_cli(&combined_style));
         return Ok(());
     }
 
@@ -6493,6 +6671,8 @@ pub fn canonicalize_command(raw: &str) -> Option<&'static str> {
         "graphindex" => Some("graph-index"),
         "pe" | "peheader" | "peheaderextraction" => Some("pe-header-extraction"),
         "arxiv" | "arxivpaper" | "arxivpapers" => Some("arxiv"),
+        "wiki" | "wikiskill" | "wikipedia" => Some("wiki"),
+        "style" | "styleprofile" | "authorstyle" => Some("style"),
         "research" | "reseach" => Some("research"),
         "search" | "serarch" | "searchquery" | "serarchquery" => Some("search"),
         "dbrebuild" | "db-rebuild" | "rebuilddb" => Some("db-rebuild"),
@@ -11429,6 +11609,7 @@ public class ShortcutHelper {
                                         "semantic-search" | "semantic_search" => "semantic_search",
                                         "research" | "reseach" => "research",
                                         "wiki" | "wikiskill" | "wikipedia" => "wiki",
+                                        "style" | "style-profile" | "author-style" => "style",
                                         "search" | "serarch" | "serarch-query" | "serarch_query" | "serarchquery" => "search",
                                         "data-science" | "datascience" | "dataanalyst" | "data-analyst" | "jupyter" => "data_science",
                                         "acdso" | "automl" | "riskautoml" | "risk_automl" => "acdso",
@@ -11611,7 +11792,7 @@ public class ShortcutHelper {
                                         },
                                         "command" => {
                                             let sys = query_system_resources();
-                                            (idx, format!("🤖 **ModelFusion Commands & System Directory**\n\n- **Engine**: Active & Operational (<1ms Fast Interception)\n- **System**: {} ({} Cores), {:.2} GB RAM free\n- **GPU**: {} ({} MB free VRAM)\n\n### Available Slash Commands & CLI Directives:\n- /wiki <topic> (or --wiki, @agent wiki) — Wikipedia knowledge distillation, deep section retrieval, and grounded citations\n- `/active-model` (or `--active-model`) — All models currently in use by the IDE (Ollama runtime, SQLite pipelines, OpenVINO cache)\n- `/research <topic>` (or `--research`) — Autonomous deep web research using open-weight models (Qwen 2.5 / DeepSeek-R1) and DuckDuckGo search\n- `/search <query>` (or `--search`) — Live web search and snippet extraction\n- `/stats` (or `--stats`) — Real-time system resource allocation and database metrics\n- `/sysinfo` (or `--sys-info`) — Detailed hardware specifications, CPU cores, RAM, and disk drives\n- `/tasks` (or `--tasks [category]`) — Multi-modal task capabilities and top database models (audio, vision, nlp, security, legal)\n- `/keys` (or `--keys`) — Local runtime status (100% free open-weight models enabled, paid cloud models disabled)\n- `/comment` — Add inline explanations and docstrings to code\n- `/evolve` — OpenEvolve iterative code optimization\n- `/security` — CyberSecurity audit and vulnerability fixes\n- `/refactor` — Code structure refactoring\n- `/optimize` — Performance optimization\n- `/version` (or `-v`) — Engine and build version\n- `/rl [status|start|stop|enqueue]` (or `/restrl`, `--rest-rl`) — HugOS ReST-RL / GRPO recursive reinforcement learning and idle preemption engine\n- `/update` — Fast curated update (~6,500 models) and local Ollama hardware model provisioning\n- `/updatedb` — Full registry crawler for all 2M+ Hugging Face models", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb))
+                                            (idx, format!("🤖 **ModelFusion Commands & System Directory**\n\n- **Engine**: Active & Operational (<1ms Fast Interception)\n- **System**: {} ({} Cores), {:.2} GB RAM free\n- **GPU**: {} ({} MB free VRAM)\n\n### Available Slash Commands & CLI Directives:\n- /wiki <topic> (or --wiki, @agent wiki) — Wikipedia knowledge distillation, deep section retrieval, and grounded citations\n- `/style [status|set tone:...|ban:...|unban:...|length:...|reset]` (or `--style`, `@agent style`) — Inspect or configure persistent author style preferences (tone, cadence, banned buzzwords)\n- `/active-model` (or `--active-model`) — All models currently in use by the IDE (Ollama runtime, SQLite pipelines, OpenVINO cache)\n- `/research <topic>` (or `--research`) — Autonomous deep web research using open-weight models (Qwen 2.5 / DeepSeek-R1) and DuckDuckGo search\n- `/search <query>` (or `--search`) — Live web search and snippet extraction\n- `/stats` (or `--stats`) — Real-time system resource allocation and database metrics\n- `/sysinfo` (or `--sys-info`) — Detailed hardware specifications, CPU cores, RAM, and disk drives\n- `/tasks` (or `--tasks [category]`) — Multi-modal task capabilities and top database models (audio, vision, nlp, security, legal)\n- `/keys` (or `--keys`) — Local runtime status (100% free open-weight models enabled, paid cloud models disabled)\n- `/comment` — Add inline explanations and docstrings to code\n- `/evolve` — OpenEvolve iterative code optimization\n- `/security` — CyberSecurity audit and vulnerability fixes\n- `/refactor` — Code structure refactoring\n- `/optimize` — Performance optimization\n- `/version` (or `-v`) — Engine and build version\n- `/rl [status|start|stop|enqueue]` (or `/restrl`, `--rest-rl`) — HugOS ReST-RL / GRPO recursive reinforcement learning and idle preemption engine\n- `/update` — Fast curated update (~6,500 models) and local Ollama hardware model provisioning\n- `/updatedb` — Full registry crawler for all 2M+ Hugging Face models", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name, sys.free_vram_mb))
                                         },
                                         "comment" | "doc" => {
                                              let attached = extract_attached_code_context(&prompt_for_cmd);
@@ -11853,6 +12034,10 @@ public class ShortcutHelper {
                                                  Err(e) => (idx, format!("⚠️ WikiSkill distillation error: {}", e)),
                                              }
                                          }
+                                     },
+                                     "style" => {
+                                         let resp = handle_author_style_cli(&args_owned);
+                                         (idx, resp)
                                      },
                                      "search" => {
                                          let query = args_owned.trim();
