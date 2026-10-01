@@ -315,6 +315,40 @@ document.addEventListener('DOMContentLoaded', () => {
     return names[0];
   }
 
+  function getCalibratedHardwareSweetSpot() {
+    if (window.consensusPrimaryModel) return window.consensusPrimaryModel;
+    if (window.calibratedSweetSpotModel) return window.calibratedSweetSpotModel;
+    if (window.hardwareOptimalModel) return window.hardwareOptimalModel;
+    const bestInstalled = pickBestInstalledOllamaModel(availableOllamaModels);
+    if (bestInstalled) return bestInstalled;
+
+    // Dynamic client-side evaluation matching Rust Master CLI matrix
+    const vramMb = (window.hardwareGpuVramMb && window.hardwareGpuVramMb > 0) ? window.hardwareGpuVramMb : detectGpuVramMb();
+    const ramGb = (window.hardwareRamGb && window.hardwareRamGb > 0) ? window.hardwareRamGb : (navigator.deviceMemory || 16);
+
+    if (vramMb >= 22000) return 'qwen2.5:32b';
+    if (vramMb >= 12000) return 'qwen2.5:14b';
+    if (vramMb >= 5000) return 'qwen2.5:7b';
+    if (vramMb >= 2000) return 'qwen2.5:3b';
+
+    if (ramGb >= 48) return 'qwen2.5:32b';
+    if (ramGb >= 24) return 'qwen2.5:14b';
+    if (ramGb >= 12) return 'qwen2.5:7b';
+    if (ramGb >= 6) return 'qwen2.5:3b';
+    if (ramGb >= 3) return 'qwen2.5:1.5b';
+    return 'qwen2.5:0.5b';
+  }
+
+  function getCalibratedHardwareCompanion(sweetSpot) {
+    if (window.consensusCompanionModel) return window.consensusCompanionModel;
+    const installedComp = (availableOllamaModels || []).find(m => m !== sweetSpot && !m.includes('vl') && !m.includes('vision'));
+    if (installedComp) return installedComp;
+
+    if (sweetSpot && (sweetSpot.includes('32b') || sweetSpot.includes('14b'))) return 'deepseek-r1:7b';
+    if (sweetSpot && (sweetSpot.includes('7b') || sweetSpot.includes('3b'))) return 'deepseek-r1:1.5b';
+    return 'qwen2.5:0.5b';
+  }
+
 
   // -----------------------------------------------------------------
   // 1. Modern LLM Browser Message & Bubble Helper
@@ -2510,9 +2544,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const currentActive = (settings && settings.activeModel) || activeOllamaModel || 'modelfusion_auto';
     if (!currentActive || currentActive === 'modelfusion_auto') {
-      const sweetSpot = window.consensusPrimaryModel || pickBestInstalledOllamaModel(availableOllamaModels) || window.hardwareOptimalModel || 'gemma2:9b';
-      const companion = window.consensusCompanionModel || availableOllamaModels.find(m => m !== sweetSpot && !m.includes('vl') && !m.includes('vision'))
-        || (sweetSpot.includes('9b') ? 'gemma2:2b' : (sweetSpot.includes('7b') ? 'deepseek-r1:1.5b' : 'qwen2.5:7b'));
+      const sweetSpot = getCalibratedHardwareSweetSpot();
+      const companion = getCalibratedHardwareCompanion(sweetSpot);
       return {
         name: 'Sweet Spot Multi-Model Adaptive Consensus',
         primary: sweetSpot,
@@ -2938,11 +2971,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const reasoningStates = [
       "🧠 Thinking...",
+      "🔍 Searching...",
+      "📑 Collecting facts & knowledge...",
       "⚖️ Deliberating approach...",
-      "📚 Collecting facts & knowledge...",
-      "🧩 Analyzing logical constraints...",
-      "💡 Exploring optimal solution...",
-      "✍️ Formulating response..."
+      "💡 Synthesizing response...",
+      "✍️ Formulating output..."
     ];
 
     const imageStates = [
@@ -2956,7 +2989,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const states = type === 'image' ? imageStates : ((type === 'research' || type === 'web' || type === 'arxiv') ? researchStates : reasoningStates);
     let step = 0;
     let stopped = false;
-    let pinnedText = '';
 
     const ensurePill = () => {
       if (!bubbleElement) return null;
@@ -2972,7 +3004,7 @@ document.addEventListener('DOMContentLoaded', () => {
       pill.className = 'dynamic-status-pill';
       pill.innerHTML = `
         <span class="status-pulse-dot"></span>
-        <span class="status-text">${escapeHtml(pinnedText || states[0])}</span>
+        <span class="status-text">${escapeHtml(states[0])}</span>
       `;
       targetContainer.prepend(pill);
       return pill;
@@ -2980,7 +3012,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const renderState = () => {
       if (stopped || !bubbleElement) return;
-      if (pinnedText) return; // Retain explicit status override
       const text = states[step % states.length];
       const pill = ensurePill();
       if (pill) {
@@ -3012,11 +3043,12 @@ document.addEventListener('DOMContentLoaded', () => {
       hide: stopController,
       setText: (newText) => {
         if (stopped || !bubbleElement) return;
-        pinnedText = newText || '';
-        const pill = ensurePill();
-        if (pill && newText) {
-          const textEl = pill.querySelector('.status-text');
-          if (textEl) textEl.textContent = newText;
+        if (newText) {
+          const pill = ensurePill();
+          if (pill) {
+            const textEl = pill.querySelector('.status-text');
+            if (textEl) textEl.textContent = newText;
+          }
         }
       },
       setError: (msg, details = '') => {
@@ -5079,16 +5111,27 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
   }
 
   function applyFallbackModelFusionStatus() {
+    const sweetSpot = getCalibratedHardwareSweetSpot();
+    const companion = getCalibratedHardwareCompanion(sweetSpot);
+    window.calibratedSweetSpotModel = sweetSpot;
+    window.hardwareOptimalModel = sweetSpot;
+
     updateModelFusionUI({
       total_models: 6438,
       tasks_count: 45,
-      active_hardware_model: activeOllamaModel || 'qwen2.5:7b',
+      active_hardware_model: activeOllamaModel || sweetSpot || 'qwen2.5:7b',
+      calibrated_sweet_spot: sweetSpot,
+      consensus: {
+        primary: sweetSpot,
+        companion: companion,
+        sweet_spot_fusion: true
+      },
       hardware: {
         cpu_name: 'Multi-Core Host CPU',
         free_ram_gb: 16.0,
         total_ram_gb: 32.0,
         gpu_name: 'DirectX / Vulkan GPU',
-        free_vram_mb: 8192,
+        free_vram_mb: (window.hardwareGpuVramMb && window.hardwareGpuVramMb > 0) ? window.hardwareGpuVramMb : detectGpuVramMb(),
         has_gpu: true
       }
     });
@@ -6273,9 +6316,8 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
     const isFusionMode = modelToUse === 'modelfusion_auto' || modelToUse === 'fast_fusion' || modelToUse === 'deep_reasoning';
     let resolvedOllamaModel = 'qwen2.5:7b';
     const bestInstalled = pickBestInstalledOllamaModel(availableOllamaModels);
-    const sweetSpot = (modelToUse === 'modelfusion_auto' && window.consensusPrimaryModel) ? window.consensusPrimaryModel : (bestInstalled || window.hardwareOptimalModel || 'gemma2:9b');
-    const companion = (modelToUse === 'modelfusion_auto' && window.consensusCompanionModel) ? window.consensusCompanionModel : (availableOllamaModels.find(m => m !== sweetSpot && !m.includes('vl') && !m.includes('vision'))
-      || (sweetSpot.includes('9b') ? 'gemma2:2b' : (sweetSpot.includes('7b') ? 'deepseek-r1:1.5b' : 'qwen2.5:7b')));
+    const sweetSpot = getCalibratedHardwareSweetSpot();
+    const companion = getCalibratedHardwareCompanion(sweetSpot);
 
     if (activeOllamaModel && activeOllamaModel !== 'modelfusion_auto' && activeOllamaModel !== 'fast_fusion' && activeOllamaModel !== 'deep_reasoning') {
       resolvedOllamaModel = activeOllamaModel;
@@ -6609,68 +6651,157 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
 
             // Auto-healing fallback: 404 (not found) or 500, 502, 503 (server error / crashed runner)
             if (!candidateRes.ok && (candidateRes.status === 404 || candidateRes.status >= 500)) {
-              console.warn(`[WATCHDOG] ⚠️ Endpoint ${ep}/api/chat returned HTTP ${candidateRes.status} for model ${resolvedOllamaModel}. Auto-waking & auto-healing Local AI Engine...`);
-              if (bubbleContent) {
-                bubbleContent.innerHTML = `
-                  <div class="dynamic-status-pill">
-                    <span class="status-pulse-dot" style="background: #f59e0b;"></span>
-                    <span class="status-text">🔄 Local AI Engine auto-waking & recovering (HTTP ${candidateRes.status}). Retrying...</span>
-                  </div>
-                `;
-              }
-              if (textOllama) textOllama.textContent = '🟡 Recovering Local AI...';
-              if (dotOllama) dotOllama.className = 'status-dot starting';
+              const isMissingModel = candidateRes.status === 404 && (
+                !availableOllamaModels ||
+                availableOllamaModels.length === 0 ||
+                !availableOllamaModels.some(m => {
+                  const lm = (typeof m === 'string' ? m : (m.name || m.model || '')).toLowerCase().trim();
+                  const target = resolvedOllamaModel.toLowerCase().trim();
+                  return lm === target || lm.startsWith(target + ':') || target.startsWith(lm + ':');
+                })
+              );
 
-              // 1. Trigger Watchdog wake / recovery on Master CLI
-              try {
-                await fetch(`${ipcUrl}/api/watchdog/wake`, { method: 'POST', signal: currentAbortController ? currentAbortController.signal : undefined }).catch(() => {
-                  return fetch(`${ipcUrl}/api/ollama/start`, { method: 'POST' });
-                });
-              } catch (_) {}
-
-              // 2. Query available models and pick best alternative if current failed
-              try {
-                let tagsRes = await fetch(`${ep}/api/tags`).catch(() => null);
-                if (!tagsRes || !tagsRes.ok) {
-                  tagsRes = await fetch(`${ollamaUrl}/api/tags`).catch(() => null);
-                }
-                if (tagsRes && tagsRes.ok) {
-                  const tagsData = await tagsRes.json();
-                  const modelsList = (tagsData.models || []).map(m => typeof m === 'string' ? m : (m.name || m.model || '')).filter(Boolean);
-                  if (modelsList.length > 0) {
-                    availableOllamaModels = modelsList;
-                    const altCandidate = pickBestInstalledOllamaModel(modelsList.filter(m => m !== resolvedOllamaModel)) || pickBestInstalledOllamaModel(modelsList);
-                    if (altCandidate && altCandidate !== resolvedOllamaModel) {
-                      resolvedOllamaModel = altCandidate;
-                      console.log(`[WATCHDOG] 🔄 Switched to healthy fallback model '${resolvedOllamaModel}'`);
-                    }
-                  }
-                }
-              } catch (tagErr) {
-                console.warn('[WATCHDOG] Error refreshing tags on recovery:', tagErr);
-              }
-
-              // 3. Wait 1.2s and retry fetch
-              await new Promise(r => setTimeout(r, 1200));
-              try {
-                const retryRes = await fetch(`${ep}/api/chat`, {
+              if (isMissingModel) {
+                console.log(`[FIRST-RUN PROVISIONING] Model '${resolvedOllamaModel}' not present locally. Triggering auto-provisioning pipeline...`);
+                // Trigger background provisioning
+                fetch(`${ipcUrl}/api/models/provision`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    model: resolvedOllamaModel,
-                    messages: activeMessages,
-                    stream: streamMode,
-                    options: currentOllamaOptions
-                  }),
-                  signal: currentAbortController ? currentAbortController.signal : undefined
-                });
-                if (retryRes.ok) {
-                  candidateRes = retryRes;
-                  if (dotOllama) dotOllama.className = 'status-dot online';
-                  if (textOllama) textOllama.textContent = 'Local AI Ready';
+                  body: JSON.stringify({ model: resolvedOllamaModel })
+                }).catch(() => {});
+
+                if (bubbleContent) {
+                  bubbleContent.innerHTML = `
+                    <div class="dynamic-status-pill">
+                      <span class="status-pulse-dot" style="background: #3b82f6;"></span>
+                      <span class="status-text">📥 First-Time Setup: Downloading calibrated sweet spot model (${resolvedOllamaModel})... Local AI will stream your response automatically once installation completes.</span>
+                    </div>
+                  `;
                 }
-              } catch (retryErr) {
-                console.warn('[WATCHDOG] Retry fetch error:', retryErr);
+                if (textOllama) textOllama.textContent = `📥 Downloading ${resolvedOllamaModel}...`;
+                if (dotOllama) dotOllama.className = 'status-dot starting';
+
+                // Poll GET /api/tags every 3 seconds for up to 300 seconds
+                const pollStart = Date.now();
+                let provisioned = false;
+                while (Date.now() - pollStart < 300000) {
+                  if (currentAbortController && currentAbortController.signal && currentAbortController.signal.aborted) break;
+                  await new Promise(r => setTimeout(r, 3000));
+                  try {
+                    let tagsRes = await fetch(`${ep}/api/tags`).catch(() => null);
+                    if (!tagsRes || !tagsRes.ok) {
+                      tagsRes = await fetch(`${ollamaUrl}/api/tags`).catch(() => null);
+                    }
+                    if (tagsRes && tagsRes.ok) {
+                      const tagsData = await tagsRes.json();
+                      const modelsList = (tagsData.models || []).map(m => typeof m === 'string' ? m : (m.name || m.model || '')).filter(Boolean);
+                      if (modelsList.length > 0) {
+                        availableOllamaModels = modelsList;
+                        const found = modelsList.some(m => {
+                          const lm = m.toLowerCase().trim();
+                          const target = resolvedOllamaModel.toLowerCase().trim();
+                          return lm === target || lm.startsWith(target + ':') || target.startsWith(lm + ':');
+                        });
+                        if (found) {
+                          provisioned = true;
+                          break;
+                        }
+                      }
+                    }
+                  } catch (pollErr) {
+                    console.warn('[FIRST-RUN PROVISIONING] Tag polling error:', pollErr);
+                  }
+                }
+
+                if (provisioned) {
+                  console.log(`[FIRST-RUN PROVISIONING] Model '${resolvedOllamaModel}' successfully provisioned. Retrying stream...`);
+                  try {
+                    const retryRes = await fetch(`${ep}/api/chat`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        model: resolvedOllamaModel,
+                        messages: activeMessages,
+                        stream: streamMode,
+                        options: currentOllamaOptions
+                      }),
+                      signal: currentAbortController ? currentAbortController.signal : undefined
+                    });
+                    if (retryRes.ok) {
+                      candidateRes = retryRes;
+                      if (dotOllama) dotOllama.className = 'status-dot online';
+                      if (textOllama) textOllama.textContent = 'Local AI Ready';
+                    }
+                  } catch (retryErr) {
+                    console.warn('[FIRST-RUN PROVISIONING] Retry fetch failed:', retryErr);
+                  }
+                }
+              }
+
+              if (!candidateRes.ok) {
+                console.warn(`[WATCHDOG] ⚠️ Endpoint ${ep}/api/chat returned HTTP ${candidateRes.status} for model ${resolvedOllamaModel}. Auto-waking & auto-healing Local AI Engine...`);
+                if (bubbleContent) {
+                  bubbleContent.innerHTML = `
+                    <div class="dynamic-status-pill">
+                      <span class="status-pulse-dot" style="background: #f59e0b;"></span>
+                      <span class="status-text">🔄 Local AI Engine auto-waking & recovering (HTTP ${candidateRes.status}). Retrying...</span>
+                    </div>
+                  `;
+                }
+                if (textOllama) textOllama.textContent = '🟡 Recovering Local AI...';
+                if (dotOllama) dotOllama.className = 'status-dot starting';
+
+                // 1. Trigger Watchdog wake / recovery on Master CLI
+                try {
+                  await fetch(`${ipcUrl}/api/watchdog/wake`, { method: 'POST', signal: currentAbortController ? currentAbortController.signal : undefined }).catch(() => {
+                    return fetch(`${ipcUrl}/api/ollama/start`, { method: 'POST' });
+                  });
+                } catch (_) {}
+
+                // 2. Query available models and pick best alternative if current failed
+                try {
+                  let tagsRes = await fetch(`${ep}/api/tags`).catch(() => null);
+                  if (!tagsRes || !tagsRes.ok) {
+                    tagsRes = await fetch(`${ollamaUrl}/api/tags`).catch(() => null);
+                  }
+                  if (tagsRes && tagsRes.ok) {
+                    const tagsData = await tagsRes.json();
+                    const modelsList = (tagsData.models || []).map(m => typeof m === 'string' ? m : (m.name || m.model || '')).filter(Boolean);
+                    if (modelsList.length > 0) {
+                      availableOllamaModels = modelsList;
+                      const altCandidate = pickBestInstalledOllamaModel(modelsList.filter(m => m !== resolvedOllamaModel)) || pickBestInstalledOllamaModel(modelsList);
+                      if (altCandidate && altCandidate !== resolvedOllamaModel) {
+                        resolvedOllamaModel = altCandidate;
+                        console.log(`[WATCHDOG] 🔄 Switched to healthy fallback model '${resolvedOllamaModel}'`);
+                      }
+                    }
+                  }
+                } catch (tagErr) {
+                  console.warn('[WATCHDOG] Error refreshing tags on recovery:', tagErr);
+                }
+
+                // 3. Wait 1.2s and retry fetch
+                await new Promise(r => setTimeout(r, 1200));
+                try {
+                  const retryRes = await fetch(`${ep}/api/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      model: resolvedOllamaModel,
+                      messages: activeMessages,
+                      stream: streamMode,
+                      options: currentOllamaOptions
+                    }),
+                    signal: currentAbortController ? currentAbortController.signal : undefined
+                  });
+                  if (retryRes.ok) {
+                    candidateRes = retryRes;
+                    if (dotOllama) dotOllama.className = 'status-dot online';
+                    if (textOllama) textOllama.textContent = 'Local AI Ready';
+                  }
+                } catch (retryErr) {
+                  console.warn('[WATCHDOG] Retry fetch error:', retryErr);
+                }
               }
             }
 
@@ -6909,7 +7040,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
               if (thinkingLabel) {
                 thinkingLabel.textContent = `✓ Deliberated for ${totalSec}s`;
               }
-              if (statusCtrl) {
+              if (statusCtrl && (turnResponse.trim().length > 0 || fullResponse.trim().length > 0)) {
                 statusCtrl.stop();
                 statusCtrl = null;
               }
@@ -6997,7 +7128,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
                   const beforeContent = text.slice(0, thinkOpenIdx);
                   if (beforeContent) {
                     if (isThinking) finishThinking();
-                    if (statusCtrl) { statusCtrl.stop(); statusCtrl = null; }
+                    if (statusCtrl && beforeContent.trim().length > 0) { statusCtrl.stop(); statusCtrl = null; }
                     turnResponse += beforeContent;
                     fullResponse += beforeContent;
                     totalEstimatedTokens += Math.max(1, Math.round(beforeContent.length / 4));
@@ -7015,7 +7146,7 @@ Write in a natural, authentic, human voice. Strictly adhere to these human stylo
                   }
                   if (text) {
                     if (isThinking) finishThinking();
-                    if (statusCtrl) { statusCtrl.stop(); statusCtrl = null; }
+                    if (statusCtrl && text.trim().length > 0) { statusCtrl.stop(); statusCtrl = null; }
                     turnResponse += text;
                     fullResponse += text;
                     totalEstimatedTokens += Math.max(1, Math.round(text.length / 4));

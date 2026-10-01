@@ -535,13 +535,15 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 10px;
-  background: rgba(16, 163, 127, 0.08);
-  border: 1px solid rgba(16, 163, 127, 0.25);
+  padding: 5px 12px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
   border-radius: 16px;
   color: var(--accent-color);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
+  line-height: 1.4;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
   transition: all 0.3s ease;
 }
 
@@ -2141,6 +2143,21 @@ body.theme-light .status-pill {
   background: #f9fafb;
   border: 1px solid #e5e7eb;
   color: #4b5563;
+}
+
+body.theme-white .dynamic-status-pill,
+body.theme-light .dynamic-status-pill {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #047857;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+body.theme-white .status-pulse-dot,
+body.theme-light .status-pulse-dot {
+  background: #059669;
+  box-shadow: 0 0 6px rgba(5, 150, 105, 0.6);
 }
 
 body.theme-white .pin-desktop-btn,
