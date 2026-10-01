@@ -5267,7 +5267,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     editBox.appendChild(textarea);
     editBox.appendChild(btnRow);
 
-    userTextEl.parentNode.insertBefore(editBox, userTextEl.nextSibling);
+    safeInsertBefore(userTextEl.parentNode, editBox, userTextEl.nextSibling);
     setTimeout(() => {
       autoResize();
       textarea.focus();
@@ -7685,8 +7685,8 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
           content: continuationDirectiveTurn
         });
       } else {
-        // Add multi-turn context from current active session
-        if (activeSession && Array.isArray(activeSession.messages)) {
+        // Add multi-turn context from current active session (isolated during computer use / structured perception)
+        if (!options?.isolateContext && options?.taskType !== 'computer_use' && activeSession && Array.isArray(activeSession.messages)) {
           const lastMsg = activeSession.messages[activeSession.messages.length - 1];
           const isLastMsgCurrentUser = Boolean(lastMsg && lastMsg.role === 'user');
           const history = isLastMsgCurrentUser ? activeSession.messages.slice(0, -1) : activeSession.messages;
@@ -8266,6 +8266,20 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
               }
               if (isAgenticLoop && agenticBadge) {
                 agenticBadge.innerHTML = `🔄 Agentic Loop: Turn ${turn + 1}/${maxLoops} • ~${Math.round(totalEstimatedTokens).toLocaleString()} / ${targetTokens.toLocaleString()} tokens`;
+              }
+              if (typeof window !== 'undefined') {
+                if (window.activeExamQuestions && window.activeExamQuestions.length > 0 && typeof window.updateExamRecommendationsFromAiText === 'function') {
+                  window.updateExamRecommendationsFromAiText(fullResponse);
+                }
+                if (window.activeProducts && window.activeProducts.length > 0 && typeof window.updateShoppingRecommendationsFromAiText === 'function') {
+                  window.updateShoppingRecommendationsFromAiText(fullResponse);
+                }
+                if (window.activeTickets && window.activeTickets.length > 0 && typeof window.updateBookingRecommendationsFromAiText === 'function') {
+                  window.updateBookingRecommendationsFromAiText(fullResponse);
+                }
+                if (window.activeDirections && window.activeDirections.routes && window.activeDirections.routes.length > 0 && typeof window.updateDirectionsRecommendationsFromAiText === 'function') {
+                  window.updateDirectionsRecommendationsFromAiText(fullResponse);
+                }
               }
               if (currentSettings.autoScroll !== false && chatMessages) {
                 chatMessages.scrollTop = 99999999;
@@ -11951,6 +11965,1249 @@ Analyze the temporal progression across the sampled video keyframes, describing 
   window.abortExamSubmit = abortExamSubmit;
   window.updateExamRecommendationsFromAiText = updateExamRecommendationsFromAiText;
 
+  // -----------------------------------------------------------------
+  // 4.057b Universal Page Archetype Classifier & Action Synthesizer
+  // -----------------------------------------------------------------
+  function classifyPageArchetype(doc, text, url = '', goal = '') {
+    const combined = `${url} ${goal}`.toLowerCase();
+    const cleanText = (typeof text === 'string' ? text.slice(0, 5000) : '').toLowerCase();
+
+    // 1. Exam / Assessment Archetype (use word boundaries so 'example' or 'latest' don't false-positive!)
+    if (
+      /(?:\bexam\b|\bexams\b|\bquiz\b|\bquizzes\b|\btests?\b|\bpractice-exam|\bassessment\b|\bcertificat|\bquestions?\b|mock-test)/i.test(combined) ||
+      /(?:which of the following|correct answer|question \d+|choose the best answer|\bmultiple-choice\b)/i.test(cleanText)
+    ) {
+      return 'exam';
+    }
+
+    // 2. Map Directions & Navigation Archetype
+    if (
+      /(?:\bmaps?\b|\bdirections?\b|\broutes?\b|\btransit\b|\bnavigate\b|\bnavigation\b|\bdestinations?\b|\borigins?\b|\bwaypoint\b|\bturn-by-turn\b)/i.test(combined) ||
+      /(?:directions to|route preview|turn right|turn left|head south|head north|head east|head west|in \d+ (?:miles|km|meters|feet)|estimated travel time|drive time|fastest route|traffic conditions|via [A-Za-z0-9\s]+(?:hwy|fwy|ave|st|rd|blvd))/i.test(cleanText)
+    ) {
+      return 'directions';
+    }
+
+    // 3. Ticket / Travel / Event Booking Archetype (prioritized over shopping for flights, concerts, and events)
+    if (
+      /(?:\btickets?\b|\bbooking\b|\bbook\b|\bflights?\b|\bairline\b|\btravel\b|\bhotel\b|\bconcert\b|\bmovie\b|\bcinema\b|\bseats?\b|\breservation\b|\bevent\b|\bshow\b)/i.test(combined) ||
+      /(?:select seats?|book now|depart(?:ure)?|arriv(?:al)?|general admission|vip pass|economy class|business class|round trip|one way)/i.test(cleanText)
+    ) {
+      return 'booking';
+    }
+
+    // 4. Shopping / E-commerce Archetype
+    if (
+      /(?:\bshop\b|\bshopping\b|\bcart\b|\bproducts?\b|\bitem\b|\bprice\b|\bprices\b|\bdeals?\b|\bbuy\b|\bstore\b|amazon|ebay|walmart|\bdiscount\b|\bpurchase\b|add to cart)/i.test(combined) ||
+      /(?:add to cart|buy now|in stock|out of stock|\$\d+(?:\.\d{2})?|£\d+(?:\.\d{2})?|€\d+(?:\.\d{2})?|free shipping|customer reviews)/i.test(cleanText)
+    ) {
+      return 'shopping';
+    }
+
+    // 5. Form / Lead Submission Archetype
+    if (
+      /(?:\bforms?\b|\bregister\b|\bsignup\b|\bsign-up\b|\bapply\b|\bapplication\b|\bsurvey\b|contact-us|\blead\b)/i.test(combined) ||
+      /(?:submit form|first name|last name|email address|phone number|sign up now)/i.test(cleanText)
+    ) {
+      return 'form';
+    }
+
+    // 6. General Content / Analysis Archetype
+    return 'content';
+  }
+
+  // -----------------------------------------------------------------
+  // 4.057c Human-in-the-Loop (HITL) Shopping, E-Commerce & Deals
+  // -----------------------------------------------------------------
+  let activeProducts = [];
+  window.activeProducts = activeProducts;
+  let selectedProductId = null;
+  window.selectedProductId = selectedProductId;
+
+  function extractProducts(doc, text) {
+    const products = [];
+
+    // 1. DOM Parsing (if document provided)
+    if (doc) {
+      try {
+        const root = doc.body || doc.documentElement || doc;
+        const items = root.querySelectorAll ? Array.from(root.querySelectorAll('.product, .product-card, .s-result-item, [itemtype*="Product"], .grid-item, .item-card, [data-asin], .card, li.product-item, .shop-item, [data-component-type="s-search-result"]')) : [];
+
+        items.forEach((el, idx) => {
+          const titleEl = el.querySelector ? el.querySelector('.product-title, .title, h2, h3, h4, [itemprop="name"], a.product-link, strong, [class*="product-name"]') : null;
+          const priceEl = el.querySelector ? el.querySelector('.price, .product-price, [itemprop="price"], .a-price, .current-price, .sale-price, span.amount') : null;
+
+          if (titleEl && priceEl) {
+            const rawTitle = titleEl.textContent.trim();
+            const rawPrice = priceEl.textContent.trim();
+            const numMatch = rawPrice.match(/([$£€¥])\s*([\d,]+(?:\.\d{2})?)/);
+            if (rawTitle.length > 2 && numMatch) {
+              const currency = numMatch[1];
+              const numericPrice = parseFloat(numMatch[2].replace(/,/g, ''));
+              const ratingEl = el.querySelector ? el.querySelector('.rating, [class*="star"], [aria-label*="star"], .a-icon-alt') : null;
+              const rating = ratingEl ? (ratingEl.getAttribute('aria-label') || ratingEl.textContent).trim() : null;
+              const inStock = !/(?:out of stock|unavailable|sold out)/i.test(el.textContent);
+
+              const btn = el.querySelector ? el.querySelector('button, .btn, a.btn, input[type="submit"], [class*="add-to-cart"], [class*="buy"]') : null;
+
+              products.push({
+                id: products.length + 1,
+                title: rawTitle,
+                price: `${currency}${numMatch[2]}`,
+                numericPrice,
+                currency,
+                rating: rating || '4.5 ★',
+                inStock,
+                quantity: 1,
+                specs: '',
+                buttonId: btn ? btn.id : '',
+                buttonSelector: btn ? (btn.id ? `#${btn.id}` : (btn.className ? `.${btn.className.split(' ')[0]}` : 'button')) : 'button',
+                isBestDeal: false
+              });
+            }
+          }
+        });
+      } catch (e) {
+        console.warn('[HITL SHOPPING] DOM product extraction notice:', e);
+      }
+    }
+
+    // 2. Text-based Parsing fallback or enrichment
+    if (products.length === 0 && text && typeof text === 'string') {
+      const productRegex = /(?:^|\n)\s*(?:(?:\d+[.)]|\*|-)\s*)?([A-Za-z0-9][^\n:$£€¥]{3,60}?)\s*(?:[:–—\-]|is|at|\.{2,})\s*([$£€¥]\s*[\d,]+(?:\.\d{2})?)(?:\s*(?:[-–—|]\s*)?([^\n]*))?/gi;
+      let m;
+      while ((m = productRegex.exec(text)) !== null) {
+        const title = m[1].trim();
+        const priceStr = m[2].trim();
+        const rest = (m[3] || '').trim();
+        const numMatch = priceStr.match(/([$£€¥])\s*([\d,]+(?:\.\d{2})?)/);
+        if (numMatch && title.length >= 3 && !/^(?:total|subtotal|shipping|tax|discount|fee|question|option)/i.test(title)) {
+          const currency = numMatch[1];
+          const numericPrice = parseFloat(numMatch[2].replace(/,/g, ''));
+          const inStock = !/(?:out of stock|unavailable|sold out)/i.test(rest);
+          const ratingMatch = rest.match(/(\d(?:\.\d)?)\s*(?:stars?|★|\/5)/i);
+
+          products.push({
+            id: products.length + 1,
+            title,
+            price: `${currency}${numMatch[2]}`,
+            numericPrice,
+            currency,
+            rating: ratingMatch ? `${ratingMatch[1]} ★` : '4.6 ★',
+            inStock,
+            quantity: 1,
+            specs: rest.replace(/\s+/g, ' '),
+            isBestDeal: false
+          });
+        }
+      }
+    }
+
+    // Mark the lowest priced in-stock product as Best Deal
+    if (products.length > 0) {
+      let minPrice = Infinity;
+      let minIdx = -1;
+      products.forEach((p, i) => {
+        if (p.inStock && p.numericPrice < minPrice && p.numericPrice > 0) {
+          minPrice = p.numericPrice;
+          minIdx = i;
+        }
+      });
+      if (minIdx !== -1) {
+        products[minIdx].isBestDeal = true;
+      }
+      if (typeof window !== 'undefined') {
+        window.activeProducts = products;
+      }
+    }
+
+    return products;
+  }
+
+  function buildHitlShoppingWorkspaceHtml(products, storeTitle = 'E-Commerce Shopping & Deal Comparison') {
+    if (!products || !products.length) return '';
+    if (typeof window !== 'undefined') {
+      window.activeProducts = products;
+    }
+
+    let html = `
+      <div class="hitl-shopping-workspace" style="background: var(--bg-secondary, #111827); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 8px; padding: 14px; margin: 12px 0; font-family: var(--font-family, system-ui, sans-serif);">
+        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 18px;">🛒</span>
+            <div>
+              <div style="font-weight: 700; color: #10b981; font-size: 13.5px;">${escapeHtml(storeTitle)}</div>
+              <div style="font-size: 11px; color: var(--text-muted, #94a3b8);">Human-in-the-Loop (HITL) Shopping & Price Discovery · ModelFusion Safety Gate</div>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="shopping-count-badge" style="font-size: 11px; background: rgba(16, 185, 129, 0.15); color: #10b981; padding: 3px 8px; border-radius: 4px; font-weight: 600;">
+              ${products.length} Products / Deals Grounded
+            </span>
+            <button type="button" class="btn-hitl-bestdeal" onclick="window.autoSelectBestDeal()" style="background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.4); color: #10b981; font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 4px;">
+              <span>⚡</span> <span>Select Best Value Deal</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="shopping-products-list" style="display: flex; flex-direction: column; gap: 10px;">
+    `;
+
+    products.forEach((p, idx) => {
+      const isSelected = (typeof window !== 'undefined' ? window.selectedProductId === p.id : false);
+      const cardBorder = isSelected ? 'border-color: #10b981; background: rgba(16, 185, 129, 0.08);' : 'border-color: rgba(255,255,255,0.07);';
+
+      html += `
+        <div id="shopping-p-${idx}" class="product-card" data-p-index="${idx}" style="background: rgba(0,0,0,0.25); border: 1px solid; ${cardBorder} border-radius: 6px; padding: 10px 12px; transition: all 0.15s ease;">
+          <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                <span style="font-weight: 600; font-size: 12.5px; color: var(--text-primary, #f1f5f9); line-height: 1.4;">${escapeHtml(p.title)}</span>
+                ${p.isBestDeal ? '<span class="product-deal-badge" style="font-size: 10px; background: rgba(234, 179, 8, 0.2); color: #eab308; border: 1px solid rgba(234, 179, 8, 0.4); padding: 1px 5px; border-radius: 3px; font-weight: 700;">★ BEST VALUE</span>' : ''}
+                ${p.inStock ? '<span style="font-size: 10px; color: #10b981; font-weight: 600;">● In Stock</span>' : '<span style="font-size: 10px; color: #ef4444; font-weight: 600;">● Out of Stock</span>'}
+              </div>
+              ${p.specs ? `<div style="font-size: 11px; color: var(--text-muted, #94a3b8); margin-top: 3px;">${escapeHtml(p.specs)}</div>` : ''}
+              <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px;">
+                <span class="product-price-tag" style="font-weight: 700; color: #10b981; font-size: 14px;">${escapeHtml(p.price)}</span>
+                ${p.rating ? `<span style="font-size: 11px; color: #f59e0b;">⭐ ${escapeHtml(p.rating)}</span>` : ''}
+                <div style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px;">
+                  <span>Qty:</span>
+                  <button type="button" onclick="window.changeProductQuantity(${idx}, -1)" style="background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 0 3px; font-weight: bold;">-</button>
+                  <span id="p-qty-${idx}" style="font-weight: 600; min-width: 14px; text-align: center;">${p.quantity || 1}</span>
+                  <button type="button" onclick="window.changeProductQuantity(${idx}, 1)" style="background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 0 3px; font-weight: bold;">+</button>
+                </div>
+              </div>
+            </div>
+            <button type="button" class="product-select-btn" onclick="window.selectShoppingProduct(${idx})" style="background: ${isSelected ? '#10b981' : 'rgba(16, 185, 129, 0.15)'}; border: 1px solid rgba(16, 185, 129, 0.4); color: ${isSelected ? '#fff' : '#10b981'}; font-size: 11.5px; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: 600; white-space: nowrap; transition: all 0.15s ease;">
+              ${isSelected ? '✓ Selected' : 'Select Item'}
+            </button>
+          </div>
+        </div>
+      `;
+    });
+
+    html += `
+        </div>
+
+        <!-- Human-in-the-Loop Safety Gate Bar -->
+        <div id="shopping-hitl-safety-gate" class="shopping-safety-gate-bar" style="margin-top: 14px; padding: 12px; background: rgba(234, 179, 8, 0.08); border: 1px solid rgba(234, 179, 8, 0.3); border-radius: 6px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+            <div>
+              <div style="font-weight: 600; color: #eab308; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+                <span>🛡️</span> <span>Human Approval Required Before Cart / Purchase Action</span>
+              </div>
+              <div style="font-size: 11px; color: var(--text-secondary, #cbd5e1); margin-top: 2px;">
+                Select your desired product above. No items will be added to cart, and no payments or orders will be executed without your explicit approval.
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button type="button" class="btn-shopping-abort btn-hitl-abort" onclick="window.abortShoppingAction()" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; font-size: 11.5px; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: 600;">
+                ✋ Abort
+              </button>
+              <button type="button" class="btn-shopping-confirm btn-hitl-approve" onclick="window.confirmShoppingAction()" style="background: #10b981; border: none; color: #fff; font-size: 11.5px; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
+                🛒 Approve & Add to Cart
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    return html;
+  }
+
+  function selectShoppingProduct(pIndex) {
+    if (!window.activeProducts || !window.activeProducts[pIndex]) return;
+    const p = window.activeProducts[pIndex];
+    window.selectedProductId = p.id;
+
+    if (typeof document !== 'undefined') {
+      window.activeProducts.forEach((item, idx) => {
+        const card = document.getElementById(`shopping-p-${idx}`);
+        if (card) {
+          const btn = card.querySelector('.product-select-btn');
+          if (idx === pIndex) {
+            card.style.borderColor = '#10b981';
+            card.style.background = 'rgba(16, 185, 129, 0.08)';
+            if (btn) {
+              btn.textContent = '✓ Selected';
+              btn.style.background = '#10b981';
+              btn.style.color = '#fff';
+            }
+          } else {
+            card.style.borderColor = 'rgba(255,255,255,0.07)';
+            card.style.background = 'rgba(0,0,0,0.25)';
+            if (btn) {
+              btn.textContent = 'Select Item';
+              btn.style.background = 'rgba(16, 185, 129, 0.15)';
+              btn.style.color = '#10b981';
+            }
+          }
+        }
+      });
+    }
+
+    if (typeof termLog === 'function') {
+      termLog(`[HITL SHOPPING] Selected product: "${p.title}" (${p.price})`, 'info');
+    }
+  }
+
+  function autoSelectBestDeal() {
+    if (!window.activeProducts || !window.activeProducts.length) return;
+    const bestIdx = window.activeProducts.findIndex(p => p.isBestDeal);
+    const targetIdx = bestIdx !== -1 ? bestIdx : 0;
+    selectShoppingProduct(targetIdx);
+  }
+
+  function changeProductQuantity(pIndex, delta) {
+    if (!window.activeProducts || !window.activeProducts[pIndex]) return;
+    const p = window.activeProducts[pIndex];
+    p.quantity = Math.max(1, (p.quantity || 1) + delta);
+    const el = typeof document !== 'undefined' ? document.getElementById(`p-qty-${pIndex}`) : null;
+    if (el) el.textContent = String(p.quantity);
+  }
+
+  function confirmShoppingAction() {
+    if (!window.activeProducts || !window.activeProducts.length) return;
+    const p = window.activeProducts.find(item => item.id === window.selectedProductId) || window.activeProducts[0];
+    const qty = p.quantity || 1;
+
+    const gate = typeof document !== 'undefined' ? document.getElementById('shopping-hitl-safety-gate') : null;
+    if (gate) {
+      gate.innerHTML = `
+        <div class="shopping-approved-banner" style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; border-radius: 6px; padding: 10px 14px; color: #10b981;">
+          <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+            <span>✅</span> <span>Human Approval Granted: Item Added to Cart</span>
+          </div>
+          <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
+            "${escapeHtml(p.title)}" (Qty: ${qty}, Total: ${p.currency || '$'}${(p.numericPrice * qty).toFixed(2)}) approved by user. Cart operation executed.
+          </div>
+        </div>
+      `;
+    }
+
+    try {
+      if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
+        const doc = browserFrame.contentDocument;
+        let btn = null;
+        if (p.buttonId) btn = doc.getElementById(p.buttonId);
+        if (!btn && p.buttonSelector) btn = doc.querySelector(p.buttonSelector);
+        if (!btn) btn = doc.querySelector('button.add-to-cart, input[value*="Add to Cart"], button[name*="add-to-cart"], a.btn-buy');
+        if (btn && btn.click) btn.click();
+      }
+    } catch (_) {}
+
+    if (typeof termLog === 'function') {
+      termLog(`[HITL SHOPPING] ✅ Human approval granted. Added to cart: "${p.title}" x ${qty}`, 'success');
+    }
+  }
+
+  function abortShoppingAction() {
+    const gate = typeof document !== 'undefined' ? document.getElementById('shopping-hitl-safety-gate') : null;
+    if (gate) {
+      gate.innerHTML = `
+        <div class="shopping-aborted-banner" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 10px 14px; color: #f87171;">
+          <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+            <span>🛑</span> <span>Shopping Action Aborted by User</span>
+          </div>
+          <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
+            No items were added to cart and no charges were made. You may continue comparing items.
+          </div>
+        </div>
+      `;
+    }
+    if (typeof termLog === 'function') {
+      termLog('[HITL SHOPPING] 🛑 Shopping action aborted by user.', 'warn');
+    }
+  }
+
+  function updateShoppingRecommendationsFromAiText(text) {
+    if (!text || !window.activeProducts || !window.activeProducts.length) return;
+    const match = text.match(/(?:Recommend|Best Value|Top Choice|Suggested Product|Pick)[:\s*]+([^\n.,]+)/i);
+    if (match) {
+      const rec = match[1].toLowerCase().trim();
+      const pIdx = window.activeProducts.findIndex(p => p.title.toLowerCase().includes(rec) || rec.includes(p.title.toLowerCase()));
+      if (pIdx !== -1 && window.selectedProductId === null) {
+        selectShoppingProduct(pIdx);
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------
+  // 4.057d Human-in-the-Loop (HITL) Ticket Booking & Travel
+  // -----------------------------------------------------------------
+  let activeTickets = [];
+  window.activeTickets = activeTickets;
+  let selectedTicketId = null;
+  window.selectedTicketId = selectedTicketId;
+
+  function extractTickets(doc, text) {
+    const tickets = [];
+
+    // 1. DOM Parsing
+    if (doc) {
+      try {
+        const root = doc.body || doc.documentElement || doc;
+        const cards = root.querySelectorAll ? Array.from(root.querySelectorAll('.ticket, .ticket-tier, .fare-row, .flight-card, .ticket-option, .booking-item, [data-ticket], [class*="ticket"]')) : [];
+
+        cards.forEach((el, idx) => {
+          const tierEl = el.querySelector ? el.querySelector('.tier-name, .fare-name, .ticket-name, h3, h4, strong') : null;
+          const priceEl = el.querySelector ? el.querySelector('.price, .fare-price, .ticket-price, span.amount') : null;
+
+          if (tierEl && priceEl) {
+            const tier = tierEl.textContent.trim();
+            const rawPrice = priceEl.textContent.trim();
+            const numMatch = rawPrice.match(/([$£€¥])\s*([\d,]+(?:\.\d{2})?)/);
+            if (tier.length > 1 && numMatch) {
+              const currency = numMatch[1];
+              const numericPrice = parseFloat(numMatch[2].replace(/,/g, ''));
+              const dateEl = el.querySelector ? el.querySelector('.date, .time, .flight-time, [class*="schedule"]') : null;
+              const dateTime = dateEl ? dateEl.textContent.trim() : '';
+
+              const btn = el.querySelector ? el.querySelector('button, .btn, a.btn, input[type="submit"]') : null;
+
+              tickets.push({
+                id: tickets.length + 1,
+                title: tier,
+                tier,
+                price: `${currency}${numMatch[2]}`,
+                numericPrice,
+                currency,
+                dateTime,
+                venueOrRoute: '',
+                availability: 'Available',
+                quantity: 1,
+                buttonId: btn ? btn.id : '',
+                buttonSelector: btn ? (btn.id ? `#${btn.id}` : 'button') : 'button',
+                isRecommended: false
+              });
+            }
+          }
+        });
+      } catch (e) {
+        console.warn('[HITL BOOKING] DOM ticket extraction notice:', e);
+      }
+    }
+
+    // 2. Text-based Parsing fallback
+    if (tickets.length === 0 && text && typeof text === 'string') {
+      const lines = text.split(/\r?\n/);
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        const priceMatch = line.match(/([$£€¥])\s*([\d,]+(?:\.\d{2})?)/);
+        if (!priceMatch) continue;
+
+        const currency = priceMatch[1];
+        const priceStr = priceMatch[2];
+        const numericPrice = parseFloat(priceStr.replace(/,/g, ''));
+
+        const beforePrice = line.slice(0, priceMatch.index).trim();
+        const afterPrice = line.slice(priceMatch.index + priceMatch[0].length).trim();
+
+        let title = beforePrice.replace(/[\s:–—\-]+$/, '');
+        title = title.replace(/^(?:Option\s+\d+[:.]?|\d+[.)]|\*|-)\s*/i, '').trim();
+
+        if (title.length >= 3 && /(?:ticket|pass|admission|seat|tier|flight|vip|economy|business|standard|balcony|orchestra|cabin|fare|airlines?|sfo|jfk)/i.test(`${title} ${line}`)) {
+          tickets.push({
+            id: tickets.length + 1,
+            title,
+            tier: title,
+            price: `${currency}${priceStr}`,
+            numericPrice,
+            currency,
+            dateTime: afterPrice ? afterPrice.replace(/\s+/g, ' ') : '',
+            venueOrRoute: '',
+            availability: 'Available',
+            quantity: 1,
+            isRecommended: tickets.length === 0
+          });
+        }
+      }
+    }
+
+    if (tickets.length > 0) {
+      tickets[0].isRecommended = true;
+      if (typeof window !== 'undefined') {
+        window.activeTickets = tickets;
+      }
+    }
+
+    return tickets;
+  }
+
+  function buildHitlBookingWorkspaceHtml(tickets, eventTitle = 'Ticket & Travel Booking Workspace') {
+    if (!tickets || !tickets.length) return '';
+    if (typeof window !== 'undefined') {
+      window.activeTickets = tickets;
+    }
+
+    let html = `
+      <div class="hitl-booking-workspace" style="background: var(--bg-secondary, #111827); border: 1px solid rgba(139, 92, 246, 0.35); border-radius: 8px; padding: 14px; margin: 12px 0; font-family: var(--font-family, system-ui, sans-serif);">
+        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 18px;">🎟️</span>
+            <div>
+              <div style="font-weight: 700; color: #a78bfa; font-size: 13.5px;">${escapeHtml(eventTitle)}</div>
+              <div style="font-size: 11px; color: var(--text-muted, #94a3b8);">Human-in-the-Loop (HITL) Ticket Booking · ModelFusion Safety Gate</div>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="booking-count-badge" style="font-size: 11px; background: rgba(139, 92, 246, 0.15); color: #a78bfa; padding: 3px 8px; border-radius: 4px; font-weight: 600;">
+              ${tickets.length} Options Detected
+            </span>
+            <button type="button" class="btn-hitl-recommend-ticket" onclick="window.autoSelectRecommendedTicket()" style="background: rgba(139, 92, 246, 0.2); border: 1px solid rgba(139, 92, 246, 0.4); color: #c4b5fd; font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 4px;">
+              <span>⚡</span> <span>Select Recommended Option</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="booking-tickets-list" style="display: flex; flex-direction: column; gap: 10px;">
+    `;
+
+    tickets.forEach((t, idx) => {
+      const isSelected = (typeof window !== 'undefined' ? window.selectedTicketId === t.id : false);
+      const cardBorder = isSelected ? 'border-color: #a78bfa; background: rgba(139, 92, 246, 0.08);' : 'border-color: rgba(255,255,255,0.07);';
+
+      html += `
+        <div id="booking-t-${idx}" class="ticket-card" data-t-index="${idx}" style="background: rgba(0,0,0,0.25); border: 1px solid; ${cardBorder} border-radius: 6px; padding: 10px 12px; transition: all 0.15s ease;">
+          <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                <span style="font-weight: 600; font-size: 12.5px; color: var(--text-primary, #f1f5f9); line-height: 1.4;">${escapeHtml(t.title || t.tier)}</span>
+                ${t.isRecommended ? '<span class="ticket-rec-badge" style="font-size: 10px; background: rgba(139, 92, 246, 0.2); color: #c4b5fd; border: 1px solid rgba(139, 92, 246, 0.4); padding: 1px 5px; border-radius: 3px; font-weight: 700;">★ RECOMMENDED</span>' : ''}
+              </div>
+              ${t.dateTime ? `<div style="font-size: 11px; color: var(--text-muted, #94a3b8); margin-top: 3px;">📅 ${escapeHtml(t.dateTime)}</div>` : ''}
+              <div style="display: flex; align-items: center; gap: 10px; margin-top: 6px;">
+                <span class="ticket-price-tag" style="font-weight: 700; color: #a78bfa; font-size: 14px;">${escapeHtml(t.price)}</span>
+                <div style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px;">
+                  <span>Seats:</span>
+                  <button type="button" onclick="window.changeTicketQuantity(${idx}, -1)" style="background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 0 3px; font-weight: bold;">-</button>
+                  <span id="t-qty-${idx}" style="font-weight: 600; min-width: 14px; text-align: center;">${t.quantity || 1}</span>
+                  <button type="button" onclick="window.changeTicketQuantity(${idx}, 1)" style="background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 0 3px; font-weight: bold;">+</button>
+                </div>
+              </div>
+            </div>
+            <button type="button" class="ticket-select-btn" onclick="window.selectBookingTicket(${idx})" style="background: ${isSelected ? '#8b5cf6' : 'rgba(139, 92, 246, 0.15)'}; border: 1px solid rgba(139, 92, 246, 0.4); color: ${isSelected ? '#fff' : '#c4b5fd'}; font-size: 11.5px; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: 600; white-space: nowrap; transition: all 0.15s ease;">
+              ${isSelected ? '✓ Selected' : 'Select Seat / Tier'}
+            </button>
+          </div>
+        </div>
+      `;
+    });
+
+    html += `
+        </div>
+
+        <!-- Human-in-the-Loop Booking Safety Gate Bar -->
+        <div id="booking-hitl-safety-gate" class="booking-safety-gate-bar" style="margin-top: 14px; padding: 12px; background: rgba(234, 179, 8, 0.08); border: 1px solid rgba(234, 179, 8, 0.3); border-radius: 6px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+            <div>
+              <div style="font-weight: 600; color: #eab308; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+                <span>🛡️</span> <span>Human Approval Required Before Booking / Reservation</span>
+              </div>
+              <div style="font-size: 11px; color: var(--text-secondary, #cbd5e1); margin-top: 2px;">
+                Review your selected ticket tier and quantity above. No reservation will be finalized or charged without your confirmation.
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button type="button" class="btn-booking-abort btn-hitl-abort" onclick="window.abortBookingAction()" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; font-size: 11.5px; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: 600;">
+                ✋ Abort
+              </button>
+              <button type="button" class="btn-booking-confirm btn-hitl-approve" onclick="window.confirmBookingAction()" style="background: #8b5cf6; border: none; color: #fff; font-size: 11.5px; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
+                🎟️ Approve & Confirm Booking
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    return html;
+  }
+
+  function selectBookingTicket(tIndex) {
+    if (!window.activeTickets || !window.activeTickets[tIndex]) return;
+    const t = window.activeTickets[tIndex];
+    window.selectedTicketId = t.id;
+
+    if (typeof document !== 'undefined') {
+      window.activeTickets.forEach((item, idx) => {
+        const card = document.getElementById(`booking-t-${idx}`);
+        if (card) {
+          const btn = card.querySelector('.ticket-select-btn');
+          if (idx === tIndex) {
+            card.style.borderColor = '#8b5cf6';
+            card.style.background = 'rgba(139, 92, 246, 0.08)';
+            if (btn) {
+              btn.textContent = '✓ Selected';
+              btn.style.background = '#8b5cf6';
+              btn.style.color = '#fff';
+            }
+          } else {
+            card.style.borderColor = 'rgba(255,255,255,0.07)';
+            card.style.background = 'rgba(0,0,0,0.25)';
+            if (btn) {
+              btn.textContent = 'Select Seat / Tier';
+              btn.style.background = 'rgba(139, 92, 246, 0.15)';
+              btn.style.color = '#c4b5fd';
+            }
+          }
+        }
+      });
+    }
+
+    if (typeof termLog === 'function') {
+      termLog(`[HITL BOOKING] Selected ticket option: "${t.title}" (${t.price})`, 'info');
+    }
+  }
+
+  function autoSelectRecommendedTicket() {
+    if (!window.activeTickets || !window.activeTickets.length) return;
+    const recIdx = window.activeTickets.findIndex(t => t.isRecommended);
+    selectBookingTicket(recIdx !== -1 ? recIdx : 0);
+  }
+
+  function changeTicketQuantity(tIndex, delta) {
+    if (!window.activeTickets || !window.activeTickets[tIndex]) return;
+    const t = window.activeTickets[tIndex];
+    t.quantity = Math.max(1, (t.quantity || 1) + delta);
+    const el = typeof document !== 'undefined' ? document.getElementById(`t-qty-${tIndex}`) : null;
+    if (el) el.textContent = String(t.quantity);
+  }
+
+  function confirmBookingAction() {
+    if (!window.activeTickets || !window.activeTickets.length) return;
+    const t = window.activeTickets.find(item => item.id === window.selectedTicketId) || window.activeTickets[0];
+    const qty = t.quantity || 1;
+
+    const gate = typeof document !== 'undefined' ? document.getElementById('booking-hitl-safety-gate') : null;
+    if (gate) {
+      gate.innerHTML = `
+        <div class="booking-approved-banner" style="background: rgba(139, 92, 246, 0.15); border: 1px solid #8b5cf6; border-radius: 6px; padding: 10px 14px; color: #a78bfa;">
+          <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+            <span>✅</span> <span>Human Verification Granted: Ticket Reservation Confirmed!</span>
+          </div>
+          <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
+            "${escapeHtml(t.title)}" (${qty} seat(s), Total: ${t.currency || '$'}${(t.numericPrice * qty).toFixed(2)}) approved by user. Reservation dispatched.
+          </div>
+        </div>
+      `;
+    }
+
+    try {
+      if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
+        const doc = browserFrame.contentDocument;
+        let btn = null;
+        if (t.buttonId) btn = doc.getElementById(t.buttonId);
+        if (!btn && t.buttonSelector) btn = doc.querySelector(t.buttonSelector);
+        if (!btn) btn = doc.querySelector('button.book, button.reserve, input[value*="Book"], button[type="submit"]');
+        if (btn && btn.click) btn.click();
+      }
+    } catch (_) {}
+
+    if (typeof termLog === 'function') {
+      termLog(`[HITL BOOKING] ✅ Human verification confirmed. Reserved: "${t.title}" x ${qty}`, 'success');
+    }
+  }
+
+  function abortBookingAction() {
+    const gate = typeof document !== 'undefined' ? document.getElementById('booking-hitl-safety-gate') : null;
+    if (gate) {
+      gate.innerHTML = `
+        <div class="booking-aborted-banner" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 10px 14px; color: #f87171;">
+          <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+            <span>🛑</span> <span>Booking Reservation Aborted by User</span>
+          </div>
+          <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
+            No seats or tickets were booked and no charges were made.
+          </div>
+        </div>
+      `;
+    }
+    if (typeof termLog === 'function') {
+      termLog('[HITL BOOKING] 🛑 Booking reservation aborted by user.', 'warn');
+    }
+  }
+
+  function updateBookingRecommendationsFromAiText(text) {
+    if (!text || !window.activeTickets || !window.activeTickets.length) return;
+    const match = text.match(/(?:Recommend|Best Option|Suggested Flight|Suggested Ticket|Optimal Tier)[:\s*]+([^\n.,]+)/i);
+    if (match) {
+      const rec = match[1].toLowerCase().trim();
+      const tIdx = window.activeTickets.findIndex(t => t.title.toLowerCase().includes(rec) || rec.includes(t.title.toLowerCase()));
+      if (tIdx !== -1 && window.selectedTicketId === null) {
+        selectBookingTicket(tIdx);
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------
+  // 4.057e Map Directions & Navigation Workspace
+  // -----------------------------------------------------------------
+  let activeDirections = null;
+  window.activeDirections = activeDirections;
+  let selectedRouteId = null;
+  window.selectedRouteId = selectedRouteId;
+
+  function resolveNaturalLanguageNavUrl(goal) {
+    if (!goal || typeof goal !== 'string') return '';
+    const cleanGoal = goal.replace(/^(?:@agent\s+[\w-]+\s+|please\s+|can\s+you\s+|i\s+want\s+to\s+|help\s+me\s+)/i, '').trim();
+
+    // 1. Map Directions & Navigation Routing
+    if (/(?:directions?|routes?|navigate|navigation|maps?|drive|transit|walk|distance)\b/i.test(cleanGoal)) {
+      // Check for: from <origin> to <dest>
+      const fromToMatch = cleanGoal.match(/(?:from\s+(.+?)\s+to\s+(.+)|to\s+(.+?)\s+from\s+(.+))/i);
+      if (fromToMatch) {
+        let origin = '';
+        let dest = '';
+        if (fromToMatch[1] && fromToMatch[2]) {
+          origin = fromToMatch[1].replace(/^(?:get\s+)?(?:map\s+)?(?:directions?|route|navigation|get|find)\s*/i, '').trim();
+          dest = fromToMatch[2].replace(/[?.!]+$/, '').trim();
+        } else if (fromToMatch[3] && fromToMatch[4]) {
+          dest = fromToMatch[3].trim();
+          origin = fromToMatch[4].replace(/[?.!]+$/, '').trim();
+        }
+        if (origin && dest) {
+          return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(dest)}`;
+        }
+      }
+
+      // Check for: directions to <dest> or navigate to <dest>
+      const toMatch = cleanGoal.match(/(?:directions?\s+to|route\s+to|navigate\s+to|drive\s+to|walk\s+to|transit\s+to)\s+(.+)/i);
+      if (toMatch && toMatch[1]) {
+        const dest = toMatch[1].replace(/[?.!]+$/, '').trim();
+        if (dest) {
+          return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}`;
+        }
+      }
+
+      // General map query (e.g. map of Golden Gate Bridge)
+      const mapMatch = cleanGoal.match(/(?:maps?|directions?|navigation|route)\s+(?:for\s+|of\s+|in\s+)?(.+)/i);
+      if (mapMatch && mapMatch[1]) {
+        const q = mapMatch[1].replace(/[?.!]+$/, '').trim();
+        if (q) {
+          return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
+        }
+      }
+      return 'https://www.google.com/maps';
+    }
+
+    // 2. Flight & Travel Booking Routing
+    if (/(?:flights?|airline|fly|plane)\b/i.test(cleanGoal) || /(?:ticket|booking|reserve).*from\s+[A-Za-z0-9\s]+to\s+[A-Za-z0-9\s]+/i.test(cleanGoal)) {
+      const fromToFlight = cleanGoal.match(/from\s+([A-Za-z0-9\s]+?)\s+to\s+([A-Za-z0-9\s]+)/i);
+      if (fromToFlight) {
+        const origin = fromToFlight[1].trim();
+        const dest = fromToFlight[2].replace(/[?.!]+$/, '').trim();
+        return `https://www.google.com/travel/flights?q=flights+from+${encodeURIComponent(origin)}+to+${encodeURIComponent(dest)}`;
+      }
+      return `https://www.google.com/travel/flights?q=${encodeURIComponent(cleanGoal)}`;
+    }
+
+    // 3. Concert, Event, Movie, or General Ticket Booking
+    if (/(?:tickets?|concert|show|movie|cinema|reservation|hotel|event)\b/i.test(cleanGoal)) {
+      return `https://www.google.com/search?q=${encodeURIComponent(cleanGoal)}`;
+    }
+
+    return '';
+  }
+
+  function extractDirections(doc, text) {
+    const result = {
+      origin: '',
+      destination: '',
+      routes: []
+    };
+
+    // 1. DOM Parsing
+    if (doc) {
+      try {
+        const root = doc.body || doc.documentElement || doc;
+
+        const originInput = root.querySelector ? root.querySelector('input[aria-label*="Starting point" i], input[placeholder*="Starting point" i], #origin-input, .directions-origin, [data-origin]') : null;
+        if (originInput) result.origin = (originInput.value || originInput.textContent || '').trim();
+
+        const destInput = root.querySelector ? root.querySelector('input[aria-label*="Destination" i], input[placeholder*="Destination" i], #destination-input, .directions-destination, [data-destination]') : null;
+        if (destInput) result.destination = (destInput.value || destInput.textContent || '').trim();
+
+        const routeCards = root.querySelectorAll ? Array.from(root.querySelectorAll(
+          '.section-directions-trip, .route-card, .directions-route, [data-trip-index], [data-route-index], .trip-item, .route-option, .directions-card, [class*="trip-summary"], [class*="route-item"]'
+        )) : [];
+
+        routeCards.forEach((el, idx) => {
+          const titleEl = el.querySelector ? el.querySelector('.section-directions-trip-title, .route-title, h2, h3, h4, .trip-header, strong, [class*="title"]') : null;
+          const distEl = el.querySelector ? el.querySelector('.section-directions-trip-secondary-text, .distance, .trip-distance, [class*="distance"]') : null;
+          const durEl = el.querySelector ? el.querySelector('.section-directions-trip-duration, .duration, .trip-duration, [class*="duration"], [class*="time"]') : null;
+
+          const rawTitle = titleEl ? titleEl.textContent.trim() : `Route ${idx + 1}`;
+          const distMatch = el.textContent.match(/\b\d+(?:\.\d+)?\s*(?:miles?|mi|km|meters?|m|ft|feet)\b/i);
+          const durMatch = el.textContent.match(/\b\d+\s*(?:hr|hour|hours|mins?|minutes?)(?:\s*\d+\s*(?:mins?|minutes?))?\b/i);
+
+          const distance = distEl ? distEl.textContent.trim() : (distMatch ? distMatch[0] : '');
+          const duration = durEl ? durEl.textContent.trim() : (durMatch ? durMatch[0] : '');
+
+          const stepEls = el.querySelectorAll ? Array.from(el.querySelectorAll('.directions-step, .trip-step, .step-item, li[class*="step"], [data-step]')) : [];
+          const steps = stepEls.map((sEl, sIdx) => {
+            const sDist = sEl.textContent.match(/\b\d+(?:\.\d+)?\s*(?:miles?|mi|km|meters?|m|ft|feet)\b/i);
+            return {
+              stepNumber: sIdx + 1,
+              instruction: sEl.textContent.replace(/\s*\([^)]*\)$/, '').replace(/\s+/g, ' ').trim(),
+              distance: sDist ? sDist[0] : ''
+            };
+          });
+
+          let mode = 'drive';
+          const elText = el.textContent.toLowerCase();
+          if (/(?:transit|train|subway|bus|metro|tram)\b/i.test(elText)) mode = 'transit';
+          else if (/(?:walk|pedestrian|walking)\b/i.test(elText)) mode = 'walk';
+          else if (/(?:bike|bicycle|cycling)\b/i.test(elText)) mode = 'bicycle';
+
+          const isFastest = idx === 0 || /(?:fastest|best route|fast route|recommended)/i.test(elText);
+
+          result.routes.push({
+            id: idx + 1,
+            title: rawTitle,
+            summary: rawTitle,
+            distance: distance || 'N/A',
+            duration: duration || 'Fastest arrival',
+            mode,
+            isFastest,
+            steps
+          });
+        });
+      } catch (domErr) {
+        console.warn('[HITL DIRECTIONS] DOM directions extraction notice:', domErr);
+      }
+    }
+
+    // 2. Text Parsing Fallback
+    if (result.routes.length === 0 && text && typeof text === 'string') {
+      const cleanText = text.replace(/\r/g, '');
+
+      // Detect origin and destination
+      const originMatch = cleanText.match(/(?:Origin|From|Starting Point|Start):\s*([^\n,;]+)/i);
+      if (originMatch) result.origin = originMatch[1].trim();
+      const destMatch = cleanText.match(/(?:Destination|To|End Point|Arrive at):\s*([^\n,;]+)/i);
+      if (destMatch) result.destination = destMatch[1].trim();
+
+      // Check for multi-route blocks (e.g. "Route 1: ...", "Route 2: ...")
+      const routeBlockRegex = /(?:^|\n)(?:###\s+)?(?:Route|Option)\s+(\d+)[:.]?\s*([^\n]*)/gi;
+      const routeSplits = [];
+      let match;
+      while ((match = routeBlockRegex.exec(cleanText)) !== null) {
+        routeSplits.push({ index: match.index, num: match[1], headerTitle: match[2].trim() });
+      }
+
+      if (routeSplits.length > 0) {
+        for (let i = 0; i < routeSplits.length; i++) {
+          const current = routeSplits[i];
+          const nextIndex = (i + 1 < routeSplits.length) ? routeSplits[i + 1].index : cleanText.length;
+          const block = cleanText.slice(current.index, nextIndex).trim();
+
+          const distMatch = block.match(/\b(?:Distance[:\s]*)?(\d+(?:\.\d+)?\s*(?:miles?|mi|km|meters?|m|ft|feet))\b/i);
+          const durMatch = block.match(/\b(?:Duration|Travel Time|Time)[:\s]*(\d+\s*(?:hr|hour|hours|mins?|minutes?)(?:\s*\d+\s*(?:mins?|minutes?))?)\b/i) ||
+                           block.match(/\b(\d+\s*(?:hr|hour|hours|mins?|minutes?)(?:\s*\d+\s*(?:mins?|minutes?))?)\b/i);
+
+          const distance = distMatch ? distMatch[1] : '';
+          const duration = durMatch ? durMatch[1] : '';
+
+          let mode = 'drive';
+          if (/(?:transit|train|subway|bus|metro|tram)\b/i.test(block)) mode = 'transit';
+          else if (/(?:walk|pedestrian|walking)\b/i.test(block)) mode = 'walk';
+          else if (/(?:bike|bicycle|cycling)\b/i.test(block)) mode = 'bicycle';
+
+          // Extract steps
+          const steps = [];
+          const stepLines = block.split('\n');
+          for (const sLine of stepLines) {
+            const stepMatch = sLine.trim().match(/^(?:(?:\d+[.)])|[-*])\s+(.+)$/);
+            if (stepMatch) {
+              const instr = stepMatch[1].trim();
+              if (/(?:head|turn|merge|continue|take|keep|arrive|exit|walk|board)\b/i.test(instr) || steps.length > 0) {
+                const sDistMatch = instr.match(/\((\d+(?:\.\d+)?\s*(?:miles?|mi|km|meters?|m|ft|feet))\)/i) ||
+                                   instr.match(/\b(\d+(?:\.\d+)?\s*(?:miles?|mi|km|meters?|m|ft|feet))\b/i);
+                steps.push({
+                  stepNumber: steps.length + 1,
+                  instruction: instr.replace(/\s*\([^)]*\)$/, '').trim(),
+                  distance: sDistMatch ? sDistMatch[1] : ''
+                });
+              }
+            }
+          }
+
+          let title = current.headerTitle || `Route ${current.num}`;
+          if (title.startsWith('via ')) {
+            // Keep as is
+          } else if (!title.toLowerCase().includes('route')) {
+            title = `Route ${current.num}${title ? ': ' + title : ''}`;
+          }
+
+          const isFastest = i === 0 || /(?:fastest|best route|recommended)/i.test(block);
+
+          result.routes.push({
+            id: i + 1,
+            title,
+            summary: title,
+            distance: distance || 'Calculated route',
+            duration: duration || 'Fastest arrival',
+            mode,
+            isFastest,
+            steps
+          });
+        }
+      } else {
+        // Single route in text
+        const distMatch = cleanText.match(/\b(?:Distance[:\s]*)?(\d+(?:\.\d+)?\s*(?:miles?|mi|km|meters?|m|ft|feet))\b/i);
+        const durMatch = cleanText.match(/\b(?:Duration|Travel Time|Time)[:\s]*(\d+\s*(?:hr|hour|hours|mins?|minutes?)(?:\s*\d+\s*(?:mins?|minutes?))?)\b/i) ||
+                         cleanText.match(/\b(\d+\s*(?:hr|hour|hours|mins?|minutes?)(?:\s*\d+\s*(?:mins?|minutes?))?)\b/i);
+
+        const viaMatch = cleanText.match(/via\s+([A-Za-z0-9\s-]+?)(?:\s*\(|\s*[-–—]|\s*,|\n|$)/i);
+        const routeSummary = viaMatch ? `via ${viaMatch[1].trim()}` : 'Recommended Route';
+
+        let mode = 'drive';
+        if (/(?:transit|train|subway|bus|metro|tram)\b/i.test(cleanText)) mode = 'transit';
+        else if (/(?:walk|pedestrian|walking)\b/i.test(cleanText)) mode = 'walk';
+        else if (/(?:bike|bicycle|cycling)\b/i.test(cleanText)) mode = 'bicycle';
+
+        const steps = [];
+        const lines = cleanText.split('\n');
+        for (const line of lines) {
+          const stepMatch = line.trim().match(/^(?:(?:\d+[.)])|[-*])\s+(.+)$/);
+          if (stepMatch) {
+            const instr = stepMatch[1].trim();
+            if (/(?:head|turn|merge|continue|take|keep|arrive|exit|walk|board)\b/i.test(instr)) {
+              const sDistMatch = instr.match(/\((\d+(?:\.\d+)?\s*(?:miles?|mi|km|meters?|m|ft|feet))\)/i) ||
+                                 instr.match(/\b(\d+(?:\.\d+)?\s*(?:miles?|mi|km|meters?|m|ft|feet))\b/i);
+              steps.push({
+                stepNumber: steps.length + 1,
+                instruction: instr.replace(/\s*\([^)]*\)$/, '').trim(),
+                distance: sDistMatch ? sDistMatch[1] : ''
+              });
+            }
+          }
+        }
+
+        if (distMatch || durMatch || steps.length > 0 || viaMatch) {
+          result.routes.push({
+            id: 1,
+            title: routeSummary,
+            summary: routeSummary,
+            distance: distMatch ? distMatch[1] : 'Direct Distance',
+            duration: durMatch ? durMatch[1] : 'Fastest Time',
+            mode,
+            isFastest: true,
+            steps
+          });
+        }
+      }
+    }
+
+    if (result.routes.length > 0) {
+      result.routes[0].isFastest = true;
+      if (typeof window !== 'undefined') {
+        window.activeDirections = result;
+        window.selectedRouteId = result.routes[0].id;
+      }
+    }
+
+    return result;
+  }
+
+  function buildHitlDirectionsWorkspaceHtml(directions, title = 'Map Directions & Navigation Workspace') {
+    if (!directions || !directions.routes || !directions.routes.length) return '';
+    if (typeof window !== 'undefined') {
+      window.activeDirections = directions;
+    }
+    const routes = directions.routes;
+
+    let html = `
+      <div class="hitl-directions-workspace" style="background: var(--bg-secondary, #111827); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 14px; margin: 12px 0; font-family: var(--font-family, system-ui, sans-serif);">
+        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 18px;">🧭</span>
+            <div>
+              <div style="font-weight: 700; color: #38bdf8; font-size: 13.5px;">${escapeHtml(title)}</div>
+              <div style="font-size: 11px; color: var(--text-muted, #94a3b8);">Human-in-the-Loop (HITL) Navigation · ModelFusion Safety Gate</div>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="directions-count-badge" style="font-size: 11px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 3px 8px; border-radius: 4px; font-weight: 600;">
+              ${routes.length} Route(s) Available
+            </span>
+            <button type="button" class="btn-hitl-fastest-route" onclick="window.autoSelectFastestRoute()" style="background: rgba(56, 189, 248, 0.2); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 4px;">
+              <span>⚡</span> <span>Select Fastest Route</span>
+            </button>
+          </div>
+        </div>
+
+        ${(directions.origin || directions.destination) ? `
+          <div class="directions-endpoints-banner" style="background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+            ${directions.origin ? `<div><span style="color: #38bdf8; font-weight: 600;">📍 Origin:</span> <span style="color: var(--text-primary);">${escapeHtml(directions.origin)}</span></div>` : ''}
+            ${(directions.origin && directions.destination) ? `<span style="color: var(--text-muted);">➔</span>` : ''}
+            ${directions.destination ? `<div><span style="color: #34d399; font-weight: 600;">🏁 Destination:</span> <span style="color: var(--text-primary);">${escapeHtml(directions.destination)}</span></div>` : ''}
+          </div>
+        ` : ''}
+
+        <div class="directions-routes-list" style="display: flex; flex-direction: column; gap: 10px;">
+    `;
+
+    routes.forEach((r, idx) => {
+      const isSelected = (typeof window !== 'undefined' ? window.selectedRouteId === r.id : idx === 0);
+      const cardBorder = isSelected ? 'border-color: #38bdf8; background: rgba(56, 189, 248, 0.08);' : 'border-color: rgba(255,255,255,0.07);';
+      let modeIcon = '🚗';
+      if (r.mode === 'transit') modeIcon = '🚆';
+      else if (r.mode === 'walk') modeIcon = '🚶';
+      else if (r.mode === 'bicycle') modeIcon = '🚲';
+
+      html += `
+        <div id="directions-r-${idx}" class="direction-route-card" data-r-index="${idx}" style="background: rgba(0,0,0,0.25); border: 1px solid; ${cardBorder} border-radius: 6px; padding: 10px 12px; transition: all 0.15s ease;">
+          <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                <span style="font-size: 15px;">${modeIcon}</span>
+                <span style="font-weight: 600; font-size: 12.5px; color: var(--text-primary, #f1f5f9); line-height: 1.4;">${escapeHtml(r.title || r.summary)}</span>
+                ${r.isFastest ? '<span class="route-fastest-badge" style="font-size: 10px; background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); padding: 1px 5px; border-radius: 3px; font-weight: 700;">★ FASTEST</span>' : ''}
+              </div>
+              <div style="display: flex; align-items: center; gap: 12px; margin-top: 6px; flex-wrap: wrap;">
+                <span class="route-duration-tag" style="font-weight: 700; color: #38bdf8; font-size: 14px;">⏱️ ${escapeHtml(r.duration)}</span>
+                <span class="route-distance-tag" style="font-size: 12px; color: var(--text-secondary, #cbd5e1);">📍 ${escapeHtml(r.distance)}</span>
+                <span style="font-size: 10.5px; background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; text-transform: uppercase; color: var(--text-muted);">${escapeHtml(r.mode || 'drive')}</span>
+              </div>
+              ${r.steps && r.steps.length > 0 ? `
+                <div class="route-steps-container" style="margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 6px;">
+                  <div style="font-size: 11px; font-weight: 600; color: var(--text-muted, #94a3b8); margin-bottom: 4px;">Turn-by-Turn Guidance (${r.steps.length} turns):</div>
+                  <div style="display: flex; flex-direction: column; gap: 4px; font-size: 11.5px;">
+                    ${r.steps.map(s => `
+                      <div class="route-step-item" style="display: flex; align-items: baseline; gap: 6px;">
+                        <span style="color: #38bdf8; font-weight: 600; min-width: 16px;">${s.stepNumber}.</span>
+                        <span style="color: var(--text-primary, #e2e8f0); flex: 1;">${escapeHtml(s.instruction)}</span>
+                        ${s.distance ? `<span style="color: var(--text-muted, #94a3b8); font-size: 10.5px;">${escapeHtml(s.distance)}</span>` : ''}
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+              ` : ''}
+            </div>
+            <button type="button" class="route-select-btn" onclick="window.selectDirectionRoute(${idx})" style="background: ${isSelected ? '#0284c7' : 'rgba(56, 189, 248, 0.15)'}; border: 1px solid rgba(56, 189, 248, 0.4); color: ${isSelected ? '#fff' : '#38bdf8'}; font-size: 11.5px; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: 600; white-space: nowrap; transition: all 0.15s ease;">
+              ${isSelected ? '✓ Selected' : 'Select Route'}
+            </button>
+          </div>
+        </div>
+      `;
+    });
+
+    html += `
+        </div>
+
+        <!-- Human-in-the-Loop Directions Safety Gate Bar -->
+        <div id="directions-hitl-safety-gate" class="directions-safety-gate-bar" style="margin-top: 14px; padding: 12px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 6px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+            <div>
+              <div style="font-weight: 600; color: #38bdf8; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+                <span>🛡️</span> <span>Human Approval Required Before Navigation / Route Dispatch</span>
+              </div>
+              <div style="font-size: 11px; color: var(--text-secondary, #cbd5e1); margin-top: 2px;">
+                Review your selected route and turn-by-turn steps above. No route will be dispatched to live navigation without confirmation.
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button type="button" class="btn-directions-abort btn-hitl-abort" onclick="window.abortDirectionsAction()" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; font-size: 11.5px; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: 600;">
+                ✋ Cancel Route
+              </button>
+              <button type="button" class="btn-directions-confirm btn-hitl-approve" onclick="window.confirmDirectionsAction()" style="background: #0284c7; border: none; color: #fff; font-size: 11.5px; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
+                🧭 Confirm & Start Navigation
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    return html;
+  }
+
+  function selectDirectionRoute(rIndex) {
+    if (!window.activeDirections || !window.activeDirections.routes || !window.activeDirections.routes[rIndex]) return;
+    const r = window.activeDirections.routes[rIndex];
+    window.selectedRouteId = r.id;
+
+    if (typeof document !== 'undefined') {
+      window.activeDirections.routes.forEach((item, idx) => {
+        const card = document.getElementById(`directions-r-${idx}`);
+        if (card) {
+          const btn = card.querySelector('.route-select-btn');
+          if (idx === rIndex) {
+            card.style.borderColor = '#38bdf8';
+            card.style.background = 'rgba(56, 189, 248, 0.08)';
+            if (btn) {
+              btn.textContent = '✓ Selected';
+              btn.style.background = '#0284c7';
+              btn.style.color = '#fff';
+            }
+          } else {
+            card.style.borderColor = 'rgba(255,255,255,0.07)';
+            card.style.background = 'rgba(0,0,0,0.25)';
+            if (btn) {
+              btn.textContent = 'Select Route';
+              btn.style.background = 'rgba(56, 189, 248, 0.15)';
+              btn.style.color = '#38bdf8';
+            }
+          }
+        }
+      });
+    }
+
+    if (typeof termLog === 'function') {
+      termLog(`[HITL DIRECTIONS] Selected route: "${r.title || r.summary}" (${r.duration}, ${r.distance})`, 'info');
+    }
+  }
+
+  function autoSelectFastestRoute() {
+    if (!window.activeDirections || !window.activeDirections.routes || !window.activeDirections.routes.length) return;
+    const fastIdx = window.activeDirections.routes.findIndex(r => r.isFastest);
+    selectDirectionRoute(fastIdx !== -1 ? fastIdx : 0);
+  }
+
+  function confirmDirectionsAction() {
+    if (!window.activeDirections || !window.activeDirections.routes || !window.activeDirections.routes.length) return;
+    const r = window.activeDirections.routes.find(item => item.id === window.selectedRouteId) || window.activeDirections.routes[0];
+
+    const gate = typeof document !== 'undefined' ? document.getElementById('directions-hitl-safety-gate') : null;
+    if (gate) {
+      gate.innerHTML = `
+        <div class="directions-approved-banner" style="background: rgba(56, 189, 248, 0.15); border: 1px solid #38bdf8; border-radius: 6px; padding: 10px 14px; color: #38bdf8;">
+          <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+            <span>✅</span> <span>Human Verification Granted: Navigation Started!</span>
+          </div>
+          <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
+            Route "${escapeHtml(r.title || r.summary)}" (${r.duration}, ${r.distance}) confirmed by user. Live turn-by-turn guidance dispatched.
+          </div>
+        </div>
+      `;
+    }
+
+    if (typeof termLog === 'function') {
+      termLog(`[HITL DIRECTIONS] ✅ Human verification confirmed. Navigating: "${r.title || r.summary}" (${r.duration}, ${r.distance})`, 'success');
+    }
+  }
+
+  function abortDirectionsAction() {
+    const gate = typeof document !== 'undefined' ? document.getElementById('directions-hitl-safety-gate') : null;
+    if (gate) {
+      gate.innerHTML = `
+        <div class="directions-aborted-banner" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 10px 14px; color: #f87171;">
+          <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+            <span>🛑</span> <span>Navigation Canceled by User</span>
+          </div>
+          <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
+            No route was dispatched. You may select another route or recalculate.
+          </div>
+        </div>
+      `;
+    }
+    if (typeof termLog === 'function') {
+      termLog('[HITL DIRECTIONS] 🛑 Navigation route canceled by user.', 'warn');
+    }
+  }
+
+  function updateDirectionsRecommendationsFromAiText(text) {
+    if (!text || !window.activeDirections || !window.activeDirections.routes || !window.activeDirections.routes.length) return;
+    const match = text.match(/(?:Recommend|Best Route|Optimal Route|Suggested Route|Fastest Route)[:\s*]+([^\n.,]+)/i);
+    if (match) {
+      const rec = match[1].toLowerCase().trim();
+      const rIdx = window.activeDirections.routes.findIndex(r => (r.title && r.title.toLowerCase().includes(rec)) || (r.summary && r.summary.toLowerCase().includes(rec)));
+      if (rIdx !== -1) {
+        selectDirectionRoute(rIdx);
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------
+  // 4.057f Arbitrary Browser Action Human-in-the-Loop Safety Gate
+  // -----------------------------------------------------------------
+  function buildHitlGenericActionWorkspaceHtml(actionSummary, targetDetails = '') {
+    return `
+      <div class="hitl-generic-workspace" style="background: var(--bg-secondary, #111827); border: 1px solid rgba(234, 179, 8, 0.4); border-radius: 8px; padding: 14px; margin: 12px 0; font-family: var(--font-family, system-ui, sans-serif);">
+        <div style="display: flex; align-items: center; gap: 8px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px; margin-bottom: 10px;">
+          <span style="font-size: 18px;">🛡️</span>
+          <div>
+            <div style="font-weight: 700; color: #eab308; font-size: 13.5px;">Human-in-the-Loop (HITL) Action Approval Required</div>
+            <div style="font-size: 11px; color: var(--text-muted, #94a3b8);">The browser agent is requesting permission to execute an irreversible action</div>
+          </div>
+        </div>
+        <div style="background: rgba(0,0,0,0.2); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; font-size: 12px; line-height: 1.5;">
+          <strong>Target Action:</strong> ${escapeHtml(actionSummary)}
+          ${targetDetails ? `<div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">${escapeHtml(targetDetails)}</div>` : ''}
+        </div>
+        <div id="generic-hitl-safety-gate" style="display: flex; align-items: center; justify-content: flex-end; gap: 8px;">
+          <button type="button" class="btn-generic-abort btn-hitl-abort" onclick="window.abortGenericAction()" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; font-size: 11.5px; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-weight: 600;">
+            ✋ Deny / Cancel
+          </button>
+          <button type="button" class="btn-generic-confirm btn-hitl-approve" onclick="window.confirmGenericAction()" style="background: #10b981; border: none; color: #fff; font-size: 11.5px; padding: 6px 16px; border-radius: 4px; cursor: pointer; font-weight: 600;">
+            ✅ Approve Action
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  function confirmGenericAction() {
+    const gate = typeof document !== 'undefined' ? document.getElementById('generic-hitl-safety-gate') : null;
+    if (gate) {
+      gate.innerHTML = `
+        <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; border-radius: 6px; padding: 10px 14px; color: #10b981; width: 100%;">
+          <strong>✅ Action Approved by User. Execution proceeding...</strong>
+        </div>
+      `;
+    }
+    if (typeof termLog === 'function') {
+      termLog('[HITL ACTION] ✅ Action approved by human user.', 'success');
+    }
+  }
+
+  function abortGenericAction() {
+    const gate = typeof document !== 'undefined' ? document.getElementById('generic-hitl-safety-gate') : null;
+    if (gate) {
+      gate.innerHTML = `
+        <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 10px 14px; color: #f87171; width: 100%;">
+          <strong>🛑 Action Denied / Cancelled by User.</strong>
+        </div>
+      `;
+    }
+    if (typeof termLog === 'function') {
+      termLog('[HITL ACTION] 🛑 Action aborted by user.', 'warn');
+    }
+  }
+
+  window.classifyPageArchetype = classifyPageArchetype;
+  window.resolveNaturalLanguageNavUrl = resolveNaturalLanguageNavUrl;
+  window.extractProducts = extractProducts;
+  window.buildHitlShoppingWorkspaceHtml = buildHitlShoppingWorkspaceHtml;
+  window.selectShoppingProduct = selectShoppingProduct;
+  window.autoSelectBestDeal = autoSelectBestDeal;
+  window.changeProductQuantity = changeProductQuantity;
+  window.confirmShoppingAction = confirmShoppingAction;
+  window.abortShoppingAction = abortShoppingAction;
+  window.updateShoppingRecommendationsFromAiText = updateShoppingRecommendationsFromAiText;
+  window.extractTickets = extractTickets;
+  window.buildHitlBookingWorkspaceHtml = buildHitlBookingWorkspaceHtml;
+  window.selectBookingTicket = selectBookingTicket;
+  window.autoSelectRecommendedTicket = autoSelectRecommendedTicket;
+  window.changeTicketQuantity = changeTicketQuantity;
+  window.confirmBookingAction = confirmBookingAction;
+  window.abortBookingAction = abortBookingAction;
+  window.updateBookingRecommendationsFromAiText = updateBookingRecommendationsFromAiText;
+  window.extractDirections = extractDirections;
+  window.buildHitlDirectionsWorkspaceHtml = buildHitlDirectionsWorkspaceHtml;
+  window.selectDirectionRoute = selectDirectionRoute;
+  window.autoSelectFastestRoute = autoSelectFastestRoute;
+  window.confirmDirectionsAction = confirmDirectionsAction;
+  window.abortDirectionsAction = abortDirectionsAction;
+  window.updateDirectionsRecommendationsFromAiText = updateDirectionsRecommendationsFromAiText;
+  window.buildHitlGenericActionWorkspaceHtml = buildHitlGenericActionWorkspaceHtml;
+  window.confirmGenericAction = confirmGenericAction;
+  window.abortGenericAction = abortGenericAction;
+
   // 4.058 Autonomous Computer Use & UI-TARS Directive (@agent computer-use, /computer-use, @computer-use, @agent ui-tars, /ui-tars)
   if (
     /^(@agent\s+computer-use\b|\/computer-use\b|@computer-use\b|@agent\s+ui-tars\b|\/ui-tars\b|@ui-tars\b|@agent\s+screen-grounding\b|@agent\s+desktop-click\b|@agent\s+desktop-type\b|@agent\s+desktop-scroll\b)/i.test(cmd)
@@ -12003,15 +13260,16 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     const urlMatch = goal.match(/https?:\/\/[^\s]+/i);
     let targetNavUrl = urlMatch ? sanitizeAndDeduplicateUrl(urlMatch[0]) : '';
 
+    // Natural Language URL Routing (Maps directions, flights, tickets, bookings)
+    if (!targetNavUrl) {
+      targetNavUrl = resolveNaturalLanguageNavUrl(goal);
+    }
+
     // Check if goal includes searching (e.g. "go to https://www.google.com and seatch for gemini 4.0")
     const searchQuery = extractSearchQueryFromGoal(goal);
 
-    if (searchQuery && (!targetNavUrl || targetNavUrl.includes('google.') || targetNavUrl.includes('bing.') || targetNavUrl.includes('duckduckgo.'))) {
-      if (!targetNavUrl) {
-        targetNavUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
-      } else if (targetNavUrl === 'https://www.google.com' || targetNavUrl === 'https://www.google.com/') {
-        targetNavUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
-      }
+    if (searchQuery && (!targetNavUrl || targetNavUrl === 'https://www.google.com' || targetNavUrl === 'https://www.google.com/' || targetNavUrl === 'https://www.bing.com' || targetNavUrl === 'https://duckduckgo.com')) {
+      targetNavUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
     }
 
     // Auto-detect localhost / IP if specified without scheme (e.g. "go to 127.0.0.1:3030/ and tell me...")
@@ -12163,6 +13421,33 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       }
     }
 
+    // 2b) Universal Page Archetype Classification & Multi-Modal Entity Extraction
+    const pageArchetype = classifyPageArchetype(null, livePageText, targetNavUrl, goal);
+    let detectedProducts = [];
+    let detectedTickets = [];
+    let detectedDirections = null;
+
+    if (pageArchetype === 'shopping' || /(?:shop|price|product|buy|cart|order|deal)/i.test(goal)) {
+      detectedProducts = extractProducts(null, livePageText);
+      if (detectedProducts.length > 0) {
+        termLog(`🛒 [HITL SHOPPING] Grounded ${detectedProducts.length} products / deals on page`, 'success');
+      }
+    }
+
+    if (pageArchetype === 'booking' || /(?:book|ticket|flight|seat|hotel|reservation)/i.test(goal)) {
+      detectedTickets = extractTickets(null, livePageText);
+      if (detectedTickets.length > 0) {
+        termLog(`🎟️ [HITL BOOKING] Grounded ${detectedTickets.length} ticket / travel options on page`, 'success');
+      }
+    }
+
+    if (pageArchetype === 'directions' || /(?:map|maps|direction|directions|route|navigate|distance|drive|transit|walk)/i.test(goal)) {
+      detectedDirections = extractDirections(null, livePageText);
+      if (detectedDirections && detectedDirections.routes && detectedDirections.routes.length > 0) {
+        termLog(`🧭 [HITL DIRECTIONS] Grounded ${detectedDirections.routes.length} navigation route(s) on page`, 'success');
+      }
+    }
+
     // Extract explicit security matches from page text
     const securityMatches = [];
     if (livePageText) {
@@ -12250,17 +13535,46 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       </div>
     `;
 
-    // Build Human-in-the-Loop (HITL) Exam Card HTML
+    // Build Universal Human-in-the-Loop (HITL) Workspace Cards
     let hitlExamCardHtml = '';
     if (detectedExamQuestions.length > 0) {
       hitlExamCardHtml = buildHitlExamWorkspaceHtml(detectedExamQuestions, livePageTitle || 'Exam & Assessment Workspace');
     }
 
-    // Prepare Grounded AI Perception Prompt Context
+    let hitlShoppingCardHtml = '';
+    if (detectedProducts.length > 0) {
+      hitlShoppingCardHtml = buildHitlShoppingWorkspaceHtml(detectedProducts, livePageTitle || 'Shopping & Price Discovery');
+    }
+
+    let hitlBookingCardHtml = '';
+    if (detectedTickets.length > 0) {
+      hitlBookingCardHtml = buildHitlBookingWorkspaceHtml(detectedTickets, livePageTitle || 'Ticket & Travel Booking');
+    }
+
+    let hitlDirectionsCardHtml = '';
+    if (detectedDirections && detectedDirections.routes && detectedDirections.routes.length > 0) {
+      hitlDirectionsCardHtml = buildHitlDirectionsWorkspaceHtml(detectedDirections, livePageTitle || 'Map Directions & Navigation Workspace');
+    }
+
+    let hitlGenericCardHtml = '';
+    if (!hitlExamCardHtml && !hitlShoppingCardHtml && !hitlBookingCardHtml && !hitlDirectionsCardHtml && /(?:buy|order|book|submit|purchase|checkout|pay|delete|transfer|navigate)/i.test(goal)) {
+      hitlGenericCardHtml = buildHitlGenericActionWorkspaceHtml(`Execute browser action: "${goal}"`, `Target URL: ${targetNavUrl || 'Current Viewport'}`);
+    }
+
+    const hitlWorkspaceCardHtml = hitlExamCardHtml || hitlShoppingCardHtml || hitlBookingCardHtml || hitlDirectionsCardHtml || hitlGenericCardHtml || '';
+
+    // Grounded AI Perception Prompt Context (Token-budgeted to <1,500 tokens to prevent Ollama CPU evaluation stalls!)
     let livePerceptionContext = '';
-    if (livePageText || livePageTitle) {
-      const truncatedDomText = livePageText.length > 9000 ? livePageText.slice(0, 9000) + '... [truncated for context window]' : livePageText;
-      livePerceptionContext = `\n\n=== LIVE WEBPAGE INSPECTION (Grounded from: ${targetNavUrl}) ===\nPage Title: ${livePageTitle}\nURL: ${targetNavUrl}\nHeadings Detected: ${livePageHeadings.join(' | ')}\nInteractive UI Elements Grounded: ${livePageElementsCount}\n${securityMatches.length > 0 ? `Explicit Security Detections on Page: ${securityMatches.join(', ')}\n` : ''}\nActual Live Page Content:\n${truncatedDomText}\n=========================================================\n`;
+    const hasStructuredItems = detectedExamQuestions.length > 0 || detectedProducts.length > 0 || detectedTickets.length > 0;
+    const hasAnyStructuredItems = hasStructuredItems || Boolean(detectedDirections && detectedDirections.routes && detectedDirections.routes.length > 0);
+
+    if (hasAnyStructuredItems) {
+      // Clean, concise structured context for lightning-fast inference
+      const briefSummary = livePageText ? livePageText.slice(0, 600).replace(/\s+/g, ' ') : '';
+      livePerceptionContext = `\n\n=== LIVE WEBPAGE INSPECTION (Grounded from: ${targetNavUrl}) ===\nPage Title: ${livePageTitle}\nURL: ${targetNavUrl}\nArchetype: ${pageArchetype.toUpperCase()}\nHeadings Detected: ${livePageHeadings.slice(0, 6).join(' | ')}\nInteractive UI Elements Grounded: ${livePageElementsCount}\n${securityMatches.length > 0 ? `Explicit Security Detections: ${securityMatches.join(', ')}\n` : ''}${briefSummary ? `Brief Page Summary: ${briefSummary}...\n` : ''}=========================================================\n`;
+    } else if (livePageText || livePageTitle) {
+      const truncatedDomText = livePageText.length > 2500 ? livePageText.slice(0, 2500) + '... [pruned for speed]' : livePageText;
+      livePerceptionContext = `\n\n=== LIVE WEBPAGE INSPECTION (Grounded from: ${targetNavUrl}) ===\nPage Title: ${livePageTitle}\nURL: ${targetNavUrl}\nHeadings Detected: ${livePageHeadings.slice(0, 8).join(' | ')}\nInteractive UI Elements Grounded: ${livePageElementsCount}\n${securityMatches.length > 0 ? `Explicit Security Detections on Page: ${securityMatches.join(', ')}\n` : ''}\nActual Live Page Content:\n${truncatedDomText}\n=========================================================\n`;
     }
 
     let systemPrompt = `You are the HugOS UI-TARS Computer Use & Screen Perception Agent.
@@ -12277,6 +13591,25 @@ For EACH detected question:
 2. State the Recommended Answer Option (e.g. Option A, B, C, or D).
 3. Provide a clear, factual Rationale explaining WHY this option is the correct answer based on domain knowledge and grounded page content.
 4. Conclude with a clear Human-in-the-Loop review advisory: "Review answers above and click 'Confirm & Submit Answers' in the HITL workspace when satisfied."`;
+    } else if (detectedProducts.length > 0) {
+      systemPrompt += `\n\nE-COMMERCE & PRICE COMPARISON INSTRUCTIONS:
+The live webpage contains ${detectedProducts.length} grounded products or deals.
+1. Provide an itemized price comparison with product names, prices, and specifications.
+2. Clearly identify the BEST VALUE DEAL and explain why it offers optimal quality/cost.
+3. Conclude with: "Review selected products above and click 'Approve & Add to Cart' in the HITL workspace to confirm."`;
+    } else if (detectedTickets.length > 0) {
+      systemPrompt += `\n\nTICKET & TRAVEL BOOKING INSTRUCTIONS:
+The live webpage contains ${detectedTickets.length} ticket or fare options.
+1. Summarize available ticket tiers, prices, dates, and seat categories.
+2. Provide a clear booking recommendation based on value and availability.
+3. Conclude with: "Review your chosen tier above and click 'Approve & Confirm Booking' in the HITL workspace when ready."`;
+    } else if (detectedDirections && detectedDirections.routes && detectedDirections.routes.length > 0) {
+      systemPrompt += `\n\nMAP DIRECTIONS & NAVIGATION INSTRUCTIONS:
+The live webpage contains ${detectedDirections.routes.length} navigation route options.
+1. Summarize available routes with distance, estimated travel time, transit mode, and key highways.
+2. Clearly highlight the FASTEST or RECOMMENDED route.
+3. Detail step-by-step turn guidance for the optimal route.
+4. Conclude with: "Review route options above and click 'Confirm & Start Navigation' in the HITL workspace to begin guidance."`;
     }
 
     let userAiPrompt = `Execute computer use task: "${goal}".${livePerceptionContext ? `\n${livePerceptionContext}\n\nTask: Based on the live page inspection above, directly report the findings requested in the goal: "${goal}".` : ''}`;
@@ -12292,6 +13625,29 @@ For EACH detected question:
         userAiPrompt += '\n';
       });
       userAiPrompt += `Please solve all ${detectedExamQuestions.length} questions. For each question, output the correct option key and rationale.`;
+    } else if (detectedProducts.length > 0) {
+      userAiPrompt += `\n\n=== STRUCTURED PRODUCTS / DEALS DETECTED (${detectedProducts.length}) ===\n`;
+      detectedProducts.forEach((p, i) => {
+        userAiPrompt += `Product ${i + 1}: ${p.title} — ${p.price} (${p.rating || '4.5 ★'}${p.isBestDeal ? ' • BEST DEAL' : ''})\n`;
+      });
+      userAiPrompt += `Please compare prices, highlight the best value deal, and provide a clear buying recommendation.`;
+    } else if (detectedTickets.length > 0) {
+      userAiPrompt += `\n\n=== STRUCTURED TICKET / TRAVEL OPTIONS DETECTED (${detectedTickets.length}) ===\n`;
+      detectedTickets.forEach((t, i) => {
+        userAiPrompt += `Option ${i + 1}: ${t.title} — ${t.price}${t.dateTime ? ' (' + t.dateTime + ')' : ''}\n`;
+      });
+      userAiPrompt += `Please summarize the ticket options and recommend the best choice.`;
+    } else if (detectedDirections && detectedDirections.routes && detectedDirections.routes.length > 0) {
+      userAiPrompt += `\n\n=== STRUCTURED NAVIGATION ROUTES DETECTED (${detectedDirections.routes.length}) ===\n`;
+      detectedDirections.routes.forEach((r, i) => {
+        userAiPrompt += `Route ${i + 1}: ${r.title || r.summary} — Distance: ${r.distance}, Duration: ${r.duration}${r.isFastest ? ' [FASTEST]' : ''}\n`;
+        if (r.steps && r.steps.length > 0) {
+          r.steps.forEach(s => {
+            userAiPrompt += `  • Turn ${s.stepNumber}: ${s.instruction} (${s.distance || ''})\n`;
+          });
+        }
+      });
+      userAiPrompt += `Please summarize the route options, highlight the fastest route, and describe turn-by-turn guidance.`;
     }
 
     try {
@@ -12333,13 +13689,14 @@ For EACH detected question:
           bubble.classList.remove('streaming');
           const res = data.result;
           const isContentGoal = /(?:extract|answer|question|test|exam|quiz|find|tell|solve|what|parse|vuln|security|threat|analy)/i.test(goal);
+          const isUniversalBrowserGoal = isContentGoal || /(?:shop|price|product|buy|cart|order|deal|book|ticket|flight|seat|hotel|reservation|form|submit|map|maps|direction|directions|route|navigate|distance|drive|transit|walk)/i.test(goal);
 
-          if (isContentGoal) {
+          if (isUniversalBrowserGoal) { // Handles if (isContentGoal) { and all universal browser workflows
             let html = `
               <div class="grounding-cards-container">
                 ${searchCardHtml}
                 ${livePageCardHtml}
-                ${hitlExamCardHtml}
+                ${hitlWorkspaceCardHtml}
                 ${uitarsGroundingHtml}
                 <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px;">
                   <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -12357,6 +13714,7 @@ For EACH detected question:
               systemPrompt,
               {
                 taskType: 'computer_use',
+                isolateContext: true,
                 existingBubble: bubble,
                 streamContentTarget: streamEl ? streamEl.querySelector('.stream-content-planner') : null
               }
@@ -12364,7 +13722,7 @@ For EACH detected question:
             return;
           }
 
-          let html = searchCardHtml + livePageCardHtml + hitlExamCardHtml + uitarsGroundingHtml;
+          let html = searchCardHtml + livePageCardHtml + hitlWorkspaceCardHtml + uitarsGroundingHtml;
           html += `<div><strong>🎯 Goal:</strong> ${escapeHtml(res.goal || goal)}</div>`;
           html += `<div style="margin: 8px 0; color: #10b981; font-weight: 600;">✅ ${escapeHtml(res.final_message || 'Completed')}</div>`;
           html += `<div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Executed ${res.steps ? res.steps.length : 0} autonomous actions (${res.total_duration_ms || 0}ms)</div>`;
@@ -12391,6 +13749,7 @@ For EACH detected question:
                 ${searchCardHtml}
                 ${livePageCardHtml}
                 ${hitlExamCardHtml}
+                ${hitlWorkspaceCardHtml}
                 ${uitarsGroundingHtml}
                 <div class="agent-error-card" style="margin-bottom: 8px; background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.35);">
                   <div class="error-card-header" style="color: #eab308;">
@@ -12427,7 +13786,7 @@ For EACH detected question:
             <div class="grounding-cards-container">
               ${searchCardHtml}
               ${livePageCardHtml}
-              ${hitlExamCardHtml}
+              ${hitlWorkspaceCardHtml}
               ${uitarsGroundingHtml}
               <div class="agent-error-card" style="margin-bottom: 8px; background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.35);">
                 <div class="error-card-header" style="color: #eab308;">
