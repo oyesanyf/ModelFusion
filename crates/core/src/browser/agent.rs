@@ -145,6 +145,16 @@ impl SafetyClassifier {
         "confirm booking",
         "book now",
         "password",
+        "submit exam",
+        "finish test",
+        "submit test",
+        "finish exam",
+        "complete exam",
+        "complete test",
+        "submit answers",
+        "submit order",
+        "submit payment",
+        "submit final",
     ];
 
     /// Checks if a text segment contains any safety-sensitive keyword.
@@ -1071,6 +1081,44 @@ mod tests {
             }
             _ => panic!("Expected HumanApprovalRequired action"),
         }
+    }
+
+    #[test]
+    fn test_safety_classifier_detects_exam_submit_and_order_protection() {
+        let mut exam_step = StepAction {
+            step_number: 5,
+            action: BrowserAction::Click {
+                target: ElementTarget::ByText("Submit Exam".to_string()),
+            },
+            rationale: "Finish CFP practice test and submit exam for scoring".to_string(),
+            confidence: 0.99,
+            is_safety_checkpoint: false,
+            timestamp: 0,
+        };
+
+        let triggered = SafetyClassifier::evaluate_action(&mut exam_step, "https://www.tests.com/practice/exam", true);
+        assert!(triggered, "Submit Exam must trigger safety checkpoint");
+        assert!(exam_step.is_safety_checkpoint);
+        match exam_step.action {
+            BrowserAction::HumanApprovalRequired { ref reason, ref suggested_action } => {
+                assert!(reason.to_lowercase().contains("submit exam"));
+                assert!(suggested_action.is_some());
+            }
+            _ => panic!("Expected HumanApprovalRequired action for Submit Exam"),
+        }
+
+        let mut finish_step = StepAction {
+            step_number: 6,
+            action: BrowserAction::Click {
+                target: ElementTarget::BySelector("#finish-test-btn".to_string()),
+            },
+            rationale: "Click finish test button".to_string(),
+            confidence: 0.95,
+            is_safety_checkpoint: false,
+            timestamp: 0,
+        };
+        let triggered2 = SafetyClassifier::evaluate_action(&mut finish_step, "https://example.com/quiz", true);
+        assert!(triggered2, "Finish Test must trigger safety checkpoint");
     }
 
     #[test]

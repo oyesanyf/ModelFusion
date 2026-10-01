@@ -32,6 +32,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const navReload = document.getElementById('nav-reload');
   const navHome = document.getElementById('nav-home');
   const brandHome = document.getElementById('brand-home');
+  const breadcrumbTrail = document.getElementById('breadcrumb-trail');
+  const btnFloatingReturnChat = document.getElementById('btn-floating-return-chat');
 
   // Top action buttons
   const btnSom = document.getElementById('btn-som');
@@ -6079,7 +6081,51 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     currentNavUrl = '';
     wvCurrentUrl.textContent = 'about:blank';
     termLog('Switched to HugOS Browser Dashboard', 'sys');
+    updateNavigationUiState();
   }
+
+  // Helper to sanitize and deduplicate concatenated/repeated URLs
+  // (e.g. "https://www.tests.com/practice/Certified-Financial-Planner-Practice-Examhttps://www.tests.com/practice/Certified-Financial-Planner-Practice-Exam")
+  function sanitizeAndDeduplicateUrl(raw) {
+    if (!raw || typeof raw !== 'string') return '';
+    let s = raw.trim().replace(/^["'<(\[]+|[">)\]]+$/g, '').trim();
+    while (/[.,;)>\]]$/.test(s) && !/\.[a-zA-Z]{2,4}$/.test(s)) {
+      s = s.slice(0, -1).trim();
+    }
+
+    // 1. Fix duplicated protocol prefixes (e.g. "https://https://", "http://https://")
+    s = s.replace(/^(?:https?:\/\/)+/i, (m) => (m.toLowerCase().startsWith('http://') && !m.toLowerCase().includes('https://')) ? 'http://' : 'https://');
+
+    // 2. Detect multiple http:// or https:// schemes concatenated together (e.g. url1 + url2)
+    const lower = s.toLowerCase();
+    const secondSchemeIndex = Math.min(
+      lower.indexOf('http://', 1) !== -1 ? lower.indexOf('http://', 1) : Infinity,
+      lower.indexOf('https://', 1) !== -1 ? lower.indexOf('https://', 1) : Infinity
+    );
+    if (secondSchemeIndex !== Infinity) {
+      s = s.slice(0, secondSchemeIndex).trim();
+    }
+
+    // 3. Detect exact repetition of the entire string without duplicate scheme (len is even and half1 == half2)
+    if (s.length > 8 && s.length % 2 === 0) {
+      const half = s.length / 2;
+      if (s.slice(0, half) === s.slice(half)) {
+        s = s.slice(0, half);
+      }
+    }
+
+    // 4. Ensure proper scheme
+    if (!/^https?:\/\//i.test(s)) {
+      if (/^(?:localhost|127\.0\.0\.1)(?::\d+)?(?:\/.*)?$/i.test(s)) {
+        s = 'http://' + s;
+      } else if (/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/.*)?$/.test(s)) {
+        s = 'https://' + s;
+      }
+    }
+
+    return s;
+  }
+  window.sanitizeAndDeduplicateUrl = sanitizeAndDeduplicateUrl;
 
   // Helper to detect sites that block iframe embedding via X-Frame-Options or CSP frame-ancestors
   function isCrossOriginBlockingUrl(url) {
@@ -6101,8 +6147,9 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
   }
 
   // Resolves an iframe-safe proxy URL via Master CLI /api/proxy to strip X-Frame-Options and CSP
-  function resolveProxiedUrl(url) {
-    if (!url) return 'about:blank';
+  function resolveProxiedUrl(rawUrl) {
+    if (!rawUrl) return 'about:blank';
+    const url = sanitizeAndDeduplicateUrl(rawUrl);
     if (!isCrossOriginBlockingUrl(url)) {
       return url;
     }
@@ -6116,12 +6163,14 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
   function navigateTo(targetUrl, addToHistory = true, switchView = true) {
     if (!targetUrl) return;
 
-    let url = targetUrl.trim();
+    let url = (targetUrl || '').trim();
     // Intercept @ directives, slash commands, or local system directives entered in omnibox
     if (url.startsWith('@') || url.startsWith('/') || /^(?:sys[-_ ]?info|system[-_ ]?info|systeminfo|sysinfo|help|update|updatedb|benchmark|status|version)\b/i.test(url)) {
       executeCliCommand(url);
       return;
     }
+
+    url = sanitizeAndDeduplicateUrl(url);
 
     if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('file://')) {
       if (url.startsWith('localhost') || url.startsWith('127.0.0.1')) {
@@ -6156,6 +6205,8 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
       webviewView.classList.remove('hidden');
       frameFallback.classList.add('hidden');
     }
+
+    updateNavigationUiState();
 
     const frameSrc = resolveProxiedUrl(url);
     if (frameSrc !== url) {
@@ -6236,6 +6287,42 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     omniboxInput.focus();
   });
 
+  function updateNavigationUiState() {
+    const isWebviewActive = (typeof webviewView !== 'undefined' && webviewView && !webviewView.classList.contains('hidden'));
+
+    if (navBack) {
+      navBack.disabled = (historyIndex <= 0 && !isWebviewActive);
+    }
+    if (navForward) {
+      navForward.disabled = (historyIndex >= historyStack.length - 1);
+    }
+    if (navHome) {
+      navHome.classList.toggle('active', !isWebviewActive);
+    }
+
+    const trail = breadcrumbTrail || (typeof document !== 'undefined' ? document.getElementById('breadcrumb-trail') : null);
+    if (trail) {
+      if (isWebviewActive && currentNavUrl) {
+        let domain = currentNavUrl;
+        try {
+          const parsed = new URL(currentNavUrl);
+          domain = parsed.hostname || currentNavUrl;
+        } catch (e) {
+          domain = currentNavUrl.replace(/^https?:\/\//i, '').split('/')[0];
+        }
+        trail.innerHTML = `
+          <button type="button" class="breadcrumb-back-btn" onclick="showDashboard()" title="Return to AI Chat & Dashboard">⬅ Back to Chat</button>
+          <span class="breadcrumb-sep">›</span>
+          <span class="breadcrumb-active-site" title="${currentNavUrl.replace(/"/g, '&quot;')}">🌐 ${domain}</span>
+        `;
+      } else {
+        trail.innerHTML = `
+          <span class="breadcrumb-item active" id="breadcrumb-view-label" onclick="showDashboard()" title="Active View: AI Chat & Dashboard">🏠 AI Chat & Dashboard</span>
+        `;
+      }
+    }
+  }
+
   // History buttons
   navBack.addEventListener('click', () => {
     if (historyIndex > 0) {
@@ -6244,6 +6331,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     } else {
       showDashboard();
     }
+    updateNavigationUiState();
   });
 
   navForward.addEventListener('click', () => {
@@ -6251,6 +6339,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
       historyIndex++;
       navigateTo(historyStack[historyIndex], false);
     }
+    updateNavigationUiState();
   });
 
   navReload.addEventListener('click', () => {
@@ -6259,6 +6348,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     } else {
       checkAllEngines();
     }
+    updateNavigationUiState();
   });
 
   navHome.addEventListener('click', () => {
@@ -6271,6 +6361,9 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
   brandHome.addEventListener('click', showDashboard);
   btnWvHome.addEventListener('click', showDashboard);
   btnFallbackHome.addEventListener('click', showDashboard);
+  if (btnFloatingReturnChat) {
+    btnFloatingReturnChat.addEventListener('click', showDashboard);
+  }
 
   btnWvNewTab.addEventListener('click', () => {
     if (currentNavUrl) window.open(currentNavUrl, '_blank');
@@ -6283,6 +6376,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
   window.navigateTo = navigateTo;
   window.navigateToUrl = navigateTo;
   window.showDashboard = showDashboard;
+  window.updateNavigationUiState = updateNavigationUiState;
 
   // -----------------------------------------------------------------
   // 3. Engine Health Probing & Dynamic Hardware Sizing
@@ -11339,6 +11433,524 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     return null;
   }
 
+  // -----------------------------------------------------------------
+  // 4.057 Human-in-the-Loop (HITL) Exam & Assessment Architecture
+  // -----------------------------------------------------------------
+  let activeExamQuestions = [];
+  window.activeExamQuestions = activeExamQuestions;
+
+  function extractExamQuestions(doc, text) {
+    const questions = [];
+    const alphabet = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+    // 1. DOM Parsing (if document or container is provided)
+    if (doc) {
+      try {
+        const root = (doc.body || doc.documentElement || doc);
+        // Strategy A: Radio button groups
+        const radioInputs = Array.from(root.querySelectorAll('input[type="radio"]'));
+        if (radioInputs.length >= 2) {
+          const groups = {};
+          radioInputs.forEach(r => {
+            const name = r.name || 'default_exam_group';
+            if (!groups[name]) groups[name] = [];
+            groups[name].push(r);
+          });
+
+          for (const [groupName, inputs] of Object.entries(groups)) {
+            if (inputs.length < 2) continue;
+
+            let questionText = '';
+            const firstInput = inputs[0];
+            const container = (firstInput.closest && firstInput.closest('fieldset, .question, .quiz-question, .exam-question, .test-question, .form-group, .card, li, div')) || firstInput.parentElement;
+
+            if (container) {
+              const headingEl = container.querySelector ? container.querySelector('legend, .question-title, .question-text, .prompt, h2, h3, h4, h5, [class*="stem"], [class*="title"]') : null;
+              if (headingEl) {
+                questionText = headingEl.textContent.trim();
+              } else if (container.cloneNode) {
+                try {
+                  const clone = container.cloneNode(true);
+                  if (clone.querySelectorAll) {
+                    clone.querySelectorAll('input, label, button, select, script, style, .options, .choices').forEach(e => e.remove());
+                  }
+                  const cloneText = (clone.textContent || '').trim();
+                  if (cloneText) {
+                    questionText = cloneText.split('\n')[0].trim();
+                  }
+                } catch (_) {}
+              }
+            }
+
+            if (!questionText) {
+              questionText = `Question ${questions.length + 1}`;
+            }
+            const cleanStem = questionText.replace(/^\s*(?:Question\s*\d+[:.]?|\d+[.)]\s*)/i, '').trim() || questionText;
+
+            const options = {};
+            const optionsList = [];
+            let detectedSelected = null;
+
+            inputs.forEach((input, idx) => {
+              let optKey = alphabet[idx] || String(idx + 1);
+              let labelText = '';
+
+              if (input.id && root.querySelector) {
+                try {
+                  const safeId = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(input.id) : input.id;
+                  const lbl = root.querySelector(`label[for="${safeId}"]`);
+                  if (lbl) labelText = lbl.textContent.trim();
+                } catch (_) {}
+              }
+              if (!labelText && input.closest) {
+                const parentLbl = input.closest('label');
+                if (parentLbl) {
+                  try {
+                    const clone = parentLbl.cloneNode(true);
+                    if (clone.querySelectorAll) clone.querySelectorAll('input').forEach(e => e.remove());
+                    labelText = clone.textContent.trim();
+                  } catch (_) {
+                    labelText = parentLbl.textContent.trim();
+                  }
+                }
+              }
+              if (!labelText && input.nextElementSibling && (input.nextElementSibling.tagName === 'LABEL' || input.nextElementSibling.tagName === 'SPAN')) {
+                labelText = input.nextElementSibling.textContent.trim();
+              }
+              if (!labelText && input.nextSibling && input.nextSibling.nodeType === 3) {
+                labelText = input.nextSibling.textContent.trim();
+              }
+              if (!labelText && input.value && input.value !== 'on' && input.value.length > 0) {
+                labelText = input.value.trim();
+              }
+
+              const keyMatch = labelText.match(/^\s*(?:([A-F])[.)]|\(([A-F])\)|\[([A-F])\])\s*(.*)/i);
+              if (keyMatch) {
+                optKey = (keyMatch[1] || keyMatch[2] || keyMatch[3]).toUpperCase();
+                labelText = keyMatch[4].trim();
+              }
+
+              if (input.checked) {
+                detectedSelected = optKey;
+              }
+
+              const finalOptText = labelText || `Option ${optKey}`;
+              options[optKey] = finalOptText;
+              optionsList.push({
+                key: optKey,
+                text: finalOptText,
+                value: input.value || optKey,
+                id: input.id || '',
+                name: input.name || groupName
+              });
+            });
+
+            if (optionsList.length >= 2) {
+              questions.push({
+                id: questions.length + 1,
+                questionNumber: questions.length + 1,
+                questionText: cleanStem,
+                options,
+                optionsList,
+                selectedOption: detectedSelected,
+                recommendedOption: null,
+                rationale: '',
+                groupName
+              });
+            }
+          }
+        }
+
+        // Strategy B: Structured containers without radio inputs (e.g. lists, cards)
+        if (questions.length === 0 && root.querySelectorAll) {
+          const qCards = root.querySelectorAll('.question, .quiz-question, .exam-question, .test-question, [data-question], fieldset');
+          qCards.forEach((card, cIdx) => {
+            const heading = card.querySelector ? card.querySelector('.question-title, .question-text, legend, h2, h3, h4, h5, .stem') : null;
+            const stem = heading ? heading.textContent.trim() : '';
+            const optItems = card.querySelectorAll ? card.querySelectorAll('.option, .choice, li, [class*="answer"]') : [];
+            if (optItems.length >= 2 && stem) {
+              const options = {};
+              const optionsList = [];
+              optItems.forEach((optEl, idx) => {
+                const raw = optEl.textContent.trim();
+                const keyMatch = raw.match(/^\s*(?:([A-F])[.)]|\(([A-F])\)|\[([A-F])\])\s*(.*)/i);
+                const optKey = keyMatch ? (keyMatch[1] || keyMatch[2] || keyMatch[3]).toUpperCase() : alphabet[idx] || String(idx + 1);
+                const optText = keyMatch ? keyMatch[4].trim() : raw;
+                options[optKey] = optText;
+                optionsList.push({ key: optKey, text: optText });
+              });
+              questions.push({
+                id: cIdx + 1,
+                questionNumber: cIdx + 1,
+                questionText: stem.replace(/^\s*(?:Question\s*\d+[:.]?|\d+[.)]\s*)/i, '').trim(),
+                options,
+                optionsList,
+                selectedOption: null,
+                recommendedOption: null,
+                rationale: ''
+              });
+            }
+          });
+        }
+      } catch (domErr) {
+        console.warn('[HITL EXAM] DOM parsing error:', domErr);
+      }
+    }
+
+    // 2. Text-based Parsing (if no DOM questions found, or as fallback)
+    if (questions.length === 0 && text && typeof text === 'string') {
+      const questionRegex = /(?:^|\n)\s*(?:(?:Question\s*(\d+)[:.]?|(\d+)[.)]|Q(\d+)[:.]))\s*([\s\S]+?)(?=(?:\n\s*(?:Question\s*\d+[:.]?|\d+[.)]|Q\d+[:.]))|$)/gi;
+      let match;
+      while ((match = questionRegex.exec(text)) !== null) {
+        const qNum = parseInt(match[1] || match[2] || match[3] || (questions.length + 1), 10);
+        const block = match[4].trim();
+
+        // Extract options inside this block
+        const optRegex = /(?:^|\n)\s*(?:([A-D])[.)]|\(([A-D])\)|\[([A-D])\])\s*([^\n]+)/gi;
+        const options = {};
+        const optionsList = [];
+        let optMatch;
+        let lastOptIdx = -1;
+
+        while ((optMatch = optRegex.exec(block)) !== null) {
+          if (lastOptIdx === -1) lastOptIdx = optMatch.index;
+          const k = (optMatch[1] || optMatch[2] || optMatch[3]).toUpperCase();
+          const txt = optMatch[4].trim();
+          options[k] = txt;
+          optionsList.push({ key: k, text: txt });
+        }
+
+        if (optionsList.length >= 2) {
+          const stem = lastOptIdx !== -1 ? block.slice(0, lastOptIdx).trim() : block.split('\n')[0].trim();
+          let recommendedOption = null;
+          let rationale = '';
+          const ansMatch = block.match(/(?:Correct\s+Answer|Answer|Correct|Recommended)[:\s*]+([A-D])\b/i);
+          if (ansMatch) {
+            recommendedOption = ansMatch[1].toUpperCase();
+          }
+          const ratMatch = block.match(/(?:Rationale|Explanation)[:\s*]+([^\n]+)/i);
+          if (ratMatch) {
+            rationale = ratMatch[1].trim();
+          }
+
+          questions.push({
+            id: questions.length + 1,
+            questionNumber: qNum || questions.length + 1,
+            questionText: stem.replace(/\s+/g, ' '),
+            options,
+            optionsList,
+            selectedOption: null,
+            recommendedOption,
+            rationale
+          });
+        }
+      }
+    }
+
+    if (questions.length > 0 && typeof window !== 'undefined') {
+      window.activeExamQuestions = questions;
+    }
+    return questions;
+  }
+
+  function buildHitlExamWorkspaceHtml(questions, examTitle = 'Autonomous Exam & Assessment Workspace') {
+    if (!questions || !questions.length) return '';
+    if (typeof window !== 'undefined') {
+      window.activeExamQuestions = questions;
+    }
+
+    let html = `
+      <div class="hitl-exam-workspace" style="background: var(--bg-secondary, #111827); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 14px; margin: 12px 0; font-family: var(--font-family, system-ui, sans-serif);">
+        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 18px;">📝</span>
+            <div>
+              <div style="font-weight: 700; color: #38bdf8; font-size: 13.5px;">${escapeHtml(examTitle)}</div>
+              <div style="font-size: 11px; color: var(--text-muted, #94a3b8);">Human-in-the-Loop (HITL) Exam Solver · ModelFusion Safety Gate</div>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="exam-progress-badge" style="font-size: 11px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 3px 8px; border-radius: 4px; font-weight: 600;">
+              ${questions.length} Questions Detected
+            </span>
+            <button type="button" class="btn-hitl-autosolve" onclick="window.autoSolveAllExamQuestions()" style="background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.4); color: #10b981; font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 4px;">
+              <span>⚡</span> <span>Auto-Solve All (AI Recommended)</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="exam-questions-list" style="display: flex; flex-direction: column; gap: 12px;">
+    `;
+
+    questions.forEach((q, idx) => {
+      html += `
+        <div id="exam-q-${idx}" class="exam-question-card" data-q-index="${idx}" style="background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 10px 12px;">
+          <div style="font-weight: 600; font-size: 12.5px; color: var(--text-primary, #f1f5f9); margin-bottom: 8px; line-height: 1.4;">
+            <span style="color: #38bdf8;">Question ${q.questionNumber || idx + 1}:</span> ${escapeHtml(q.questionText)}
+          </div>
+          <div class="exam-options-grid" style="display: flex; flex-direction: column; gap: 6px;">
+      `;
+
+      const opts = q.optionsList && q.optionsList.length ? q.optionsList : Object.entries(q.options || {}).map(([k, v]) => ({ key: k, text: v }));
+      opts.forEach(opt => {
+        const isSelected = q.selectedOption === opt.key;
+        const isRecommended = q.recommendedOption === opt.key;
+        const optStyle = isSelected
+          ? 'background: rgba(16, 185, 129, 0.22); border: 1px solid #10b981; color: #fff;'
+          : (isRecommended
+            ? 'background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.4); color: var(--text-primary);'
+            : 'background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); color: var(--text-secondary);');
+
+        html += `
+          <button type="button" class="exam-opt-btn" data-q="${idx}" data-opt="${escapeHtml(opt.key)}" onclick="window.selectExamOption(${idx}, '${escapeHtml(opt.key)}')" style="${optStyle} text-align: left; padding: 6px 10px; border-radius: 4px; font-size: 11.5px; cursor: pointer; display: flex; align-items: flex-start; gap: 8px; transition: all 0.15s ease;">
+            <span style="font-weight: 700; color: ${isSelected ? '#10b981' : (isRecommended ? '#38bdf8' : 'var(--text-muted)')}; min-width: 18px;">${escapeHtml(opt.key)}.</span>
+            <span style="flex: 1; line-height: 1.35;">${escapeHtml(opt.text)}</span>
+            ${isRecommended ? '<span class="exam-rec-tag" style="font-size: 10px; background: rgba(56, 189, 248, 0.25); color: #38bdf8; padding: 1px 5px; border-radius: 3px; font-weight: 600;">AI Rec</span>' : ''}
+            ${isSelected ? '<span class="exam-selected-tag" style="font-size: 10px; color: #10b981; font-weight: 700;">✓ Selected</span>' : ''}
+          </button>
+        `;
+      });
+
+      if (q.rationale) {
+        html += `
+          <div class="exam-rationale" style="margin-top: 6px; font-size: 11px; color: #94a3b8; font-style: italic; background: rgba(255,255,255,0.02); padding: 4px 8px; border-radius: 4px;">
+            💡 <strong>Rationale:</strong> ${escapeHtml(q.rationale)}
+          </div>
+        `;
+      }
+
+      html += `
+          </div>
+        </div>
+      `;
+    });
+
+    html += `
+        </div>
+
+        <!-- Human-in-the-Loop Safety Gate & Final Submission Bar -->
+        <div id="exam-hitl-safety-gate" class="exam-safety-gate-bar" style="margin-top: 14px; padding: 12px; background: rgba(234, 179, 8, 0.08); border: 1px solid rgba(234, 179, 8, 0.3); border-radius: 6px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+            <div>
+              <div style="font-weight: 600; color: #eab308; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+                <span>🛡️</span> <span>Human-in-the-Loop Safety Gate Active</span>
+              </div>
+              <div style="font-size: 11px; color: var(--text-secondary, #cbd5e1); margin-top: 2px;">
+                Verify selections above. No exam answers will be submitted without your explicit confirmation.
+              </div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button type="button" class="btn-exam-abort" onclick="window.abortExamSubmit()" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; font-size: 11.5px; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: 600;">
+                ✋ Abort
+              </button>
+              <button type="button" class="btn-exam-confirm" onclick="window.confirmExamSubmit()" style="background: #10b981; border: none; color: #fff; font-size: 11.5px; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
+                ✅ Confirm & Submit Answers
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    return html;
+  }
+
+  function selectExamOption(qIndex, optionKey) {
+    if (!window.activeExamQuestions || !window.activeExamQuestions[qIndex]) return;
+    const q = window.activeExamQuestions[qIndex];
+    q.selectedOption = optionKey;
+
+    const qCard = (typeof document !== 'undefined' && document.getElementById)
+      ? (document.getElementById(`exam-q-${qIndex}`) || (document.querySelector && document.querySelector(`.exam-question-card[data-q-index="${qIndex}"]`)))
+      : null;
+    if (qCard) {
+      const btns = qCard.querySelectorAll ? qCard.querySelectorAll('.exam-opt-btn') : [];
+      btns.forEach(btn => {
+        const opt = btn.getAttribute ? btn.getAttribute('data-opt') : null;
+        const isRec = q.recommendedOption === opt;
+        if (opt === optionKey) {
+          if (btn.style) {
+            btn.style.background = 'rgba(16, 185, 129, 0.22)';
+            btn.style.borderColor = '#10b981';
+            btn.style.color = '#ffffff';
+          }
+          if (btn.classList && btn.classList.add) btn.classList.add('selected');
+          if (btn.querySelector && !btn.querySelector('.exam-selected-tag') && typeof document !== 'undefined' && document.createElement) {
+            const tag = document.createElement('span');
+            tag.className = 'exam-selected-tag';
+            tag.style.cssText = 'font-size: 10px; color: #10b981; font-weight: 700;';
+            tag.textContent = '✓ Selected';
+            btn.appendChild(tag);
+          }
+        } else {
+          if (btn.style) {
+            btn.style.background = isRec ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255,255,255,0.03)';
+            btn.style.borderColor = isRec ? 'rgba(56, 189, 248, 0.4)' : 'rgba(255,255,255,0.08)';
+            btn.style.color = isRec ? 'var(--text-primary)' : 'var(--text-secondary)';
+          }
+          if (btn.classList && btn.classList.remove) btn.classList.remove('selected');
+          const tag = btn.querySelector ? btn.querySelector('.exam-selected-tag') : null;
+          if (tag && tag.remove) tag.remove();
+        }
+      });
+    }
+
+    // Sync to live webview DOM radio button if available
+    try {
+      if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
+        const doc = browserFrame.contentDocument;
+        let radio = null;
+        if (q.optionsList) {
+          const optObj = q.optionsList.find(o => o.key === optionKey);
+          if (optObj && optObj.id) {
+            radio = doc.getElementById(optObj.id);
+          }
+          if (!radio && optObj && optObj.name && optObj.value) {
+            const safeName = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(optObj.name) : optObj.name;
+            const safeVal = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(optObj.value) : optObj.value;
+            radio = doc.querySelector(`input[type="radio"][name="${safeName}"][value="${safeVal}"]`);
+          }
+        }
+        if (!radio && q.groupName) {
+          const safeGrp = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(q.groupName) : q.groupName;
+          const radios = Array.from(doc.querySelectorAll(`input[type="radio"][name="${safeGrp}"]`));
+          const optIdx = ['A', 'B', 'C', 'D', 'E', 'F'].indexOf(optionKey);
+          if (optIdx >= 0 && radios[optIdx]) {
+            radio = radios[optIdx];
+          }
+        }
+        if (radio) {
+          radio.checked = true;
+          if (radio.dispatchEvent) {
+            radio.dispatchEvent(new Event('change', { bubbles: true }));
+            radio.dispatchEvent(new Event('click', { bubbles: true }));
+          }
+        }
+      }
+    } catch (_) {}
+
+    if (typeof termLog === 'function') {
+      termLog(`[HITL EXAM] Question ${q.questionNumber || qIndex + 1} option selected: [${optionKey}]`, 'info');
+    }
+  }
+
+  function autoSolveAllExamQuestions() {
+    if (!window.activeExamQuestions || !window.activeExamQuestions.length) return;
+    window.activeExamQuestions.forEach((q, idx) => {
+      const choice = q.recommendedOption || 'A';
+      selectExamOption(idx, choice);
+    });
+    const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('exam-hitl-safety-gate') : null;
+    if (gate) {
+      const oldNotice = gate.querySelector ? gate.querySelector('.exam-auto-solved-notice') : null;
+      if (!oldNotice && typeof document !== 'undefined' && document.createElement) {
+        const notice = document.createElement('div');
+        notice.className = 'exam-auto-solved-notice';
+        notice.style.cssText = 'color: #10b981; font-size: 11px; font-weight: 600; margin-top: 4px;';
+        notice.textContent = '⚡ All questions auto-selected with AI recommendations. Ready for human verification.';
+        if (gate.firstElementChild) gate.firstElementChild.appendChild(notice);
+      }
+    }
+    if (typeof termLog === 'function') {
+      termLog(`[HITL EXAM] Auto-solved all ${window.activeExamQuestions.length} questions. Awaiting human confirmation to submit.`, 'success');
+    }
+  }
+
+  function confirmExamSubmit() {
+    if (!window.activeExamQuestions || !window.activeExamQuestions.length) return;
+    const answeredCount = window.activeExamQuestions.filter(q => q.selectedOption).length;
+    const total = window.activeExamQuestions.length;
+
+    const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('exam-hitl-safety-gate') : null;
+    if (gate) {
+      gate.innerHTML = `
+        <div class="exam-submitted-banner" style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; border-radius: 6px; padding: 10px 14px; color: #10b981;">
+          <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+            <span>✅</span> <span>Human Verification Granted: Exam Submitted Successfully!</span>
+          </div>
+          <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
+            ${answeredCount} of ${total} answers confirmed by user. Live web form submission triggered.
+          </div>
+        </div>
+      `;
+    }
+
+    try {
+      if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
+        const doc = browserFrame.contentDocument;
+        const submitBtn = doc.querySelector('button[type="submit"], input[type="submit"], button.submit, button#submit, form button:last-of-type');
+        if (submitBtn && submitBtn.click) {
+          submitBtn.click();
+        } else {
+          const form = doc.querySelector('form');
+          if (form && form.submit) form.submit();
+        }
+      }
+    } catch (_) {}
+
+    if (typeof termLog === 'function') {
+      termLog(`[HITL EXAM] ✅ Human-in-the-Loop approval confirmed. Exam answers submitted (${answeredCount}/${total}).`, 'success');
+    }
+  }
+
+  function abortExamSubmit() {
+    const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('exam-hitl-safety-gate') : null;
+    if (gate) {
+      gate.innerHTML = `
+        <div class="exam-aborted-banner" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 10px 14px; color: #f87171;">
+          <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+            <span>🛑</span> <span>Exam Submission Aborted by User</span>
+          </div>
+          <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
+            No answers were submitted to the live webpage. You may continue reviewing or editing selections.
+          </div>
+        </div>
+      `;
+    }
+
+    if (typeof termLog === 'function') {
+      termLog('[HITL EXAM] 🛑 Submission aborted by user. Answers kept in workspace for review.', 'warn');
+    }
+  }
+
+  function updateExamRecommendationsFromAiText(text) {
+    if (!text || !window.activeExamQuestions || !window.activeExamQuestions.length) return;
+    const lines = text.split('\n');
+    lines.forEach(line => {
+      const match = line.match(/(?:Question\s*(\d+)[:.]?|(\d+)[.)]|Q(\d+)[:.]).*?(?:(?:Recommended|Answer|Option|Choice)[:\s*]+([A-D])\b|[:\s*]+\*?\*?([A-D])\*?\*?\b)/i);
+      if (match) {
+        const qNum = parseInt(match[1] || match[2] || match[3], 10);
+        const opt = (match[4] || match[5] || '').toUpperCase();
+        const qIdx = qNum - 1;
+        if (opt && qIdx >= 0 && qIdx < window.activeExamQuestions.length) {
+          const q = window.activeExamQuestions[qIdx];
+          if (q && q.recommendedOption !== opt) {
+            q.recommendedOption = opt;
+            const card = (typeof document !== 'undefined' && document.getElementById) ? (document.getElementById(`exam-q-${qIdx}`) || (document.querySelector && document.querySelector(`.exam-question-card[data-q-index="${qIdx}"]`))) : null;
+            if (card) {
+              const btn = card.querySelector ? card.querySelector(`.exam-opt-btn[data-opt="${opt}"]`) : null;
+              if (btn && btn.querySelector && !btn.querySelector('.exam-rec-tag') && typeof document !== 'undefined' && document.createElement) {
+                const recTag = document.createElement('span');
+                recTag.className = 'exam-rec-tag';
+                recTag.style.cssText = 'font-size: 10px; background: rgba(56, 189, 248, 0.25); color: #38bdf8; padding: 1px 5px; border-radius: 3px; font-weight: 600;';
+                recTag.textContent = 'AI Rec';
+                btn.appendChild(recTag);
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  window.extractExamQuestions = extractExamQuestions;
+  window.buildHitlExamWorkspaceHtml = buildHitlExamWorkspaceHtml;
+  window.selectExamOption = selectExamOption;
+  window.autoSolveAllExamQuestions = autoSolveAllExamQuestions;
+  window.confirmExamSubmit = confirmExamSubmit;
+  window.abortExamSubmit = abortExamSubmit;
+  window.updateExamRecommendationsFromAiText = updateExamRecommendationsFromAiText;
+
   // 4.058 Autonomous Computer Use & UI-TARS Directive (@agent computer-use, /computer-use, @computer-use, @agent ui-tars, /ui-tars)
   if (
     /^(@agent\s+computer-use\b|\/computer-use\b|@computer-use\b|@agent\s+ui-tars\b|\/ui-tars\b|@ui-tars\b|@agent\s+screen-grounding\b|@agent\s+desktop-click\b|@agent\s+desktop-type\b|@agent\s+desktop-scroll\b)/i.test(cmd)
@@ -11389,7 +12001,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 
     // Check if goal mentions a direct URL for webview synchronization
     const urlMatch = goal.match(/https?:\/\/[^\s]+/i);
-    let targetNavUrl = urlMatch ? urlMatch[0] : '';
+    let targetNavUrl = urlMatch ? sanitizeAndDeduplicateUrl(urlMatch[0]) : '';
 
     // Check if goal includes searching (e.g. "go to https://www.google.com and seatch for gemini 4.0")
     const searchQuery = extractSearchQueryFromGoal(goal);
@@ -11406,19 +12018,20 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     if (!targetNavUrl) {
       const hostMatch = goal.match(/(?:localhost|127\.0\.0\.1)(?::\d+)?(?:\/[^\s]*)?/i);
       if (hostMatch) {
-        targetNavUrl = 'http://' + hostMatch[0];
+        targetNavUrl = sanitizeAndDeduplicateUrl('http://' + hostMatch[0]);
       }
     }
 
     // If goal does not have an explicit URL but user is asking about the page/screen ("on the page", "what do you see", "vuls"),
     // ground to the active webview URL if one is open and loaded
     if (!targetNavUrl && typeof currentNavUrl === 'string' && currentNavUrl && currentNavUrl !== 'about:blank') {
-      if (/(?:page|screen|website|site|vuls?|vulnerabilit|dashboard|threat|issue|view|dom)\b/i.test(goal)) {
-        targetNavUrl = currentNavUrl;
+      if (/(?:page|screen|website|site|vuls?|vulnerabilit|dashboard|threat|issue|view|dom|exam|quiz|test|question)\b/i.test(goal)) {
+        targetNavUrl = sanitizeAndDeduplicateUrl(currentNavUrl);
       }
     }
 
     if (targetNavUrl) {
+      targetNavUrl = sanitizeAndDeduplicateUrl(targetNavUrl);
       termLog(`🌐 [COMPUTER USE] Synchronizing live webview to target URL (preserving conversation on page): ${targetNavUrl}`, 'info');
       try {
         navigateTo(targetNavUrl, true, false); // false = stay on same page in chat view
@@ -11479,6 +12092,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     let livePageHeadings = [];
     let livePageText = '';
     let livePageElementsCount = 0;
+    let detectedExamQuestions = [];
 
     if (targetNavUrl) {
       termLog(`👁️ [COMPUTER USE] Inspecting and grounding live page DOM: ${targetNavUrl}`, 'info');
@@ -11509,6 +12123,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
             if (browserFrame.contentDocument && browserFrame.contentDocument.body) {
               const doc = browserFrame.contentDocument;
               livePageTitle = doc.title ? doc.title.trim() : '';
+              detectedExamQuestions = extractExamQuestions(doc, (doc.body.innerText || doc.body.textContent || ''));
               doc.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]').forEach(h => {
                 const t = (h.textContent || '').trim();
                 if (t && !livePageHeadings.includes(t)) livePageHeadings.push(t);
@@ -11523,6 +12138,10 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           const parser = new DOMParser();
           const doc = parser.parseFromString(htmlContent, 'text/html');
           livePageTitle = doc.title ? doc.title.trim() : '';
+
+          // Ground structured exam / test questions before stripping interactive DOM elements
+          detectedExamQuestions = extractExamQuestions(doc, htmlContent);
+
           doc.querySelectorAll('script, style, noscript, svg, link, meta, iframe').forEach(el => el.remove());
           doc.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]').forEach(h => {
             const t = (h.textContent || '').trim();
@@ -11531,6 +12150,13 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           livePageElementsCount = doc.querySelectorAll('button, a, input, select, textarea, [data-action], [role="button"], form, table, [data-view]').length;
           livePageText = (doc.body ? (doc.body.innerText || doc.body.textContent || '') : '').replace(/\s+/g, ' ').trim();
           termLog(`✅ [COMPUTER USE] Live DOM Grounded: "${livePageTitle || targetNavUrl}" (${livePageText.length.toLocaleString()} chars DOM text, ${livePageElementsCount} interactive elements, ${livePageHeadings.length} headings)`, 'success');
+        }
+
+        if (detectedExamQuestions.length === 0 && livePageText) {
+          detectedExamQuestions = extractExamQuestions(null, livePageText);
+        }
+        if (detectedExamQuestions.length > 0) {
+          termLog(`📝 [HITL EXAM] Grounded ${detectedExamQuestions.length} exam/quiz questions on page`, 'success');
         }
       } catch (domErr) {
         termLog(`[COMPUTER USE] DOM perception inspection notice: ${domErr.message}`, 'warn');
@@ -11624,6 +12250,12 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       </div>
     `;
 
+    // Build Human-in-the-Loop (HITL) Exam Card HTML
+    let hitlExamCardHtml = '';
+    if (detectedExamQuestions.length > 0) {
+      hitlExamCardHtml = buildHitlExamWorkspaceHtml(detectedExamQuestions, livePageTitle || 'Exam & Assessment Workspace');
+    }
+
     // Prepare Grounded AI Perception Prompt Context
     let livePerceptionContext = '';
     if (livePageText || livePageTitle) {
@@ -11631,13 +12263,36 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       livePerceptionContext = `\n\n=== LIVE WEBPAGE INSPECTION (Grounded from: ${targetNavUrl}) ===\nPage Title: ${livePageTitle}\nURL: ${targetNavUrl}\nHeadings Detected: ${livePageHeadings.join(' | ')}\nInteractive UI Elements Grounded: ${livePageElementsCount}\n${securityMatches.length > 0 ? `Explicit Security Detections on Page: ${securityMatches.join(', ')}\n` : ''}\nActual Live Page Content:\n${truncatedDomText}\n=========================================================\n`;
     }
 
-    const systemPrompt = `You are the HugOS UI-TARS Computer Use & Screen Perception Agent.
+    let systemPrompt = `You are the HugOS UI-TARS Computer Use & Screen Perception Agent.
 ${livePageText ? `You have directly inspected and grounded the live webpage currently open in the HugOS webview (${targetNavUrl}).
 CRITICAL INSTRUCTION: Base your entire response on the actual live webpage content grounded below.
 Directly list, explain, and summarize the specific findings, vulnerabilities, threats, metrics, and interactive elements present on the page.
 Do NOT give generic instructions, do NOT tell the user to use curl or external command lines, and do NOT speculate. Answer factually based on what is actually on this page.` : 'You are UI-TARS Computer Use Assistant. Generate precise GUI action coordinates and step-by-step OS automation plan.'}`;
 
-    const userAiPrompt = `Execute computer use task: "${goal}".${livePerceptionContext ? `\n${livePerceptionContext}\n\nTask: Based on the live page inspection above, directly report the findings requested in the goal: "${goal}".` : ''}`;
+    if (detectedExamQuestions.length > 0) {
+      systemPrompt += `\n\nEXAM SOLVER & HUMAN-IN-THE-LOOP (HITL) INSTRUCTIONS:
+The live webpage contains ${detectedExamQuestions.length} structured multiple-choice exam/test questions.
+For EACH detected question:
+1. Clearly state the Question Number and Question Stem.
+2. State the Recommended Answer Option (e.g. Option A, B, C, or D).
+3. Provide a clear, factual Rationale explaining WHY this option is the correct answer based on domain knowledge and grounded page content.
+4. Conclude with a clear Human-in-the-Loop review advisory: "Review answers above and click 'Confirm & Submit Answers' in the HITL workspace when satisfied."`;
+    }
+
+    let userAiPrompt = `Execute computer use task: "${goal}".${livePerceptionContext ? `\n${livePerceptionContext}\n\nTask: Based on the live page inspection above, directly report the findings requested in the goal: "${goal}".` : ''}`;
+
+    if (detectedExamQuestions.length > 0) {
+      userAiPrompt += `\n\n=== STRUCTURED EXAM QUESTIONS DETECTED (${detectedExamQuestions.length}) ===\n`;
+      detectedExamQuestions.forEach(q => {
+        userAiPrompt += `Question ${q.questionNumber}: ${q.questionText}\n`;
+        const opts = q.optionsList && q.optionsList.length ? q.optionsList : Object.entries(q.options || {}).map(([k, v]) => ({ key: k, text: v }));
+        opts.forEach(o => {
+          userAiPrompt += `  [${o.key}] ${o.text}\n`;
+        });
+        userAiPrompt += '\n';
+      });
+      userAiPrompt += `Please solve all ${detectedExamQuestions.length} questions. For each question, output the correct option key and rationale.`;
+    }
 
     try {
       const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
@@ -11677,7 +12332,39 @@ Do NOT give generic instructions, do NOT tell the user to use curl or external c
         if (data && data.status === 'ok' && data.result) {
           bubble.classList.remove('streaming');
           const res = data.result;
-          let html = searchCardHtml + livePageCardHtml + uitarsGroundingHtml;
+          const isContentGoal = /(?:extract|answer|question|test|exam|quiz|find|tell|solve|what|parse|vuln|security|threat|analy)/i.test(goal);
+
+          if (isContentGoal) {
+            let html = `
+              <div class="grounding-cards-container">
+                ${searchCardHtml}
+                ${livePageCardHtml}
+                ${hitlExamCardHtml}
+                ${uitarsGroundingHtml}
+                <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px;">
+                  <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <strong style="color: #10b981;">🎯 Goal: ${escapeHtml(res.goal || goal)}</strong>
+                    <span style="font-size: 11px; color: #10b981;">✅ ${escapeHtml(res.final_message || 'Completed')}</span>
+                  </div>
+                  <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 4px;">Executed ${res.steps ? res.steps.length : 0} autonomous actions (${res.total_duration_ms || 0}ms)</div>
+                </div>
+              </div>
+              <div class="stream-content-planner" style="margin-top: 10px; line-height: 1.6;">⏳ Generating answers and rationale from grounded page content...</div>
+            `;
+            if (streamEl) streamEl.innerHTML = html;
+            await streamAiChat(
+              userAiPrompt,
+              systemPrompt,
+              {
+                taskType: 'computer_use',
+                existingBubble: bubble,
+                streamContentTarget: streamEl ? streamEl.querySelector('.stream-content-planner') : null
+              }
+            );
+            return;
+          }
+
+          let html = searchCardHtml + livePageCardHtml + hitlExamCardHtml + uitarsGroundingHtml;
           html += `<div><strong>🎯 Goal:</strong> ${escapeHtml(res.goal || goal)}</div>`;
           html += `<div style="margin: 8px 0; color: #10b981; font-weight: 600;">✅ ${escapeHtml(res.final_message || 'Completed')}</div>`;
           html += `<div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Executed ${res.steps ? res.steps.length : 0} autonomous actions (${res.total_duration_ms || 0}ms)</div>`;
@@ -11703,6 +12390,7 @@ Do NOT give generic instructions, do NOT tell the user to use curl or external c
               <div class="grounding-cards-container">
                 ${searchCardHtml}
                 ${livePageCardHtml}
+                ${hitlExamCardHtml}
                 ${uitarsGroundingHtml}
                 <div class="agent-error-card" style="margin-bottom: 8px; background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.35);">
                   <div class="error-card-header" style="color: #eab308;">
@@ -11739,6 +12427,7 @@ Do NOT give generic instructions, do NOT tell the user to use curl or external c
             <div class="grounding-cards-container">
               ${searchCardHtml}
               ${livePageCardHtml}
+              ${hitlExamCardHtml}
               ${uitarsGroundingHtml}
               <div class="agent-error-card" style="margin-bottom: 8px; background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.35);">
                 <div class="error-card-header" style="color: #eab308;">
@@ -14841,4 +15530,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
 
   // Initialize Tool Menu relevance and directives state
   updateToolMenuRelevance();
+
+  // Initialize Header Navigation UI and Breadcrumb state
+  updateNavigationUiState();
 });

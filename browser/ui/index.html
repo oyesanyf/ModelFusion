@@ -472,11 +472,38 @@
           </div>
         </div>
 
-        <!-- Sleek Omnibox in Header for Browsing & Live Search -->
-        <div class="chatgpt-header-omnibox">
-          <span class="header-omnibox-icon">🌐</span>
-          <input type="text" id="omnibox-input" placeholder="Search web or enter URL (e.g. en.wikipedia.org)..." autocomplete="off" spellcheck="false">
-          <button type="button" class="header-omnibox-go" id="omnibox-go" title="Navigate (Enter)">➔</button>
+        <!-- Navigation Controls & Omnibox Bar -->
+        <div class="chatgpt-header-nav-group">
+          <!-- Standard Browser Navigation Controls -->
+          <div class="header-nav-controls" id="header-nav-controls">
+            <button type="button" class="header-nav-btn" id="nav-back" title="Back in history (Alt+Left)" disabled>
+              <span class="nav-btn-icon">⬅</span>
+            </button>
+            <button type="button" class="header-nav-btn" id="nav-forward" title="Forward in history (Alt+Right)" disabled>
+              <span class="nav-btn-icon">➡</span>
+            </button>
+            <button type="button" class="header-nav-btn" id="nav-reload" title="Reload active page or view (Ctrl+R)">
+              <span class="nav-btn-icon">🔄</span>
+            </button>
+            <button type="button" class="header-nav-btn nav-btn-home active" id="nav-home" title="Return to AI Chat &amp; Dashboard (Home)" onclick="showDashboard()">
+              <span class="nav-btn-icon">🏠</span>
+              <span class="nav-btn-label">Chat</span>
+            </button>
+          </div>
+
+          <!-- Navigation Breadcrumb Bar & View Mode Indicator -->
+          <div class="header-breadcrumb-bar" id="header-breadcrumb-bar">
+            <div class="breadcrumb-trail" id="breadcrumb-trail">
+              <span class="breadcrumb-item active" id="breadcrumb-view-label" onclick="showDashboard()" title="Active View: AI Chat &amp; Dashboard">🏠 AI Chat &amp; Dashboard</span>
+            </div>
+          </div>
+
+          <!-- Sleek Omnibox in Header for Browsing & Live Search -->
+          <div class="chatgpt-header-omnibox">
+            <span class="header-omnibox-icon">🌐</span>
+            <input type="text" id="omnibox-input" placeholder="Search web or enter URL (e.g. en.wikipedia.org)..." autocomplete="off" spellcheck="false">
+            <button type="button" class="header-omnibox-go" id="omnibox-go" title="Navigate (Enter)">➔</button>
+          </div>
         </div>
 
         <!-- Top Right Controls -->
@@ -558,8 +585,17 @@
 
         <!-- 3. Webview View (Visible when navigating URLs) -->
         <div class="view-panel hidden" id="webview-view">
+          <!-- Persistent Floating "Return to Chat" HUD in Webview -->
+          <div class="floating-return-chat-container">
+            <button id="btn-floating-return-chat" class="floating-return-chat-btn" onclick="showDashboard()" title="Return to AI Chat &amp; Results">
+              <span class="floating-return-icon">💬</span>
+              <span>⬅ Return to AI Chat &amp; Results</span>
+            </button>
+          </div>
+
           <div class="webview-toolbar">
             <div class="wv-info">
+              <button type="button" class="wv-btn-return-chat" onclick="showDashboard()" title="Return to AI Chat">⬅ Back to Chat</button>
               <span class="wv-indicator">Browsing:</span>
               <span class="wv-current-url" id="wv-current-url">about:blank</span>
             </div>
@@ -596,7 +632,6 @@
           <button id="btn-attach-file"></button>
           <span id="footer-active-model"></span>
           <span id="brand-home"></span>
-          <span id="nav-back"></span><span id="nav-forward"></span><span id="nav-reload"></span><span id="nav-home"></span>
           <span id="omnibox-protocol"></span><span id="omnibox-clear"></span>
           <span id="btn-som"></span><span id="btn-acdso"></span><span id="btn-summarize"></span><span id="btn-research"></span>
           <span id="status-ipc"></span><span id="dot-ipc"></span><span id="text-ipc"></span>
