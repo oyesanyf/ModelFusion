@@ -275,17 +275,25 @@ if (Test-Path $dbSrcPath) {
         New-Item -ItemType Directory -Force -Path $dbDestDir | Out-Null
     }
     $dbDestPath = Join-Path $dbDestDir "hf_models.db"
-    Write-Host "[INFO] Copying pre-populated models database to installer package ($dbSrcPath)..." -ForegroundColor Yellow
-    Copy-Item -Path $dbSrcPath -Destination $dbDestPath -Force
-    Write-Host "[OK] Copied ModelFusion Database to: $dbDestPath ($( (Get-Item $dbDestPath).Length ) bytes)" -ForegroundColor Green
+    if (-not (Test-Path $dbDestPath) -or (Get-Item $dbDestPath).Length -ne (Get-Item $dbSrcPath).Length) {
+        Write-Host "[INFO] Copying pre-populated models database to installer package ($dbSrcPath)..." -ForegroundColor Yellow
+        Copy-Item -Path $dbSrcPath -Destination $dbDestPath -Force
+        Write-Host "[OK] Copied ModelFusion Database to: $dbDestPath ($( (Get-Item $dbDestPath).Length ) bytes)" -ForegroundColor Green
+    } else {
+        Write-Host "[OK] ModelFusion Database already up to date at: $dbDestPath" -ForegroundColor Green
+    }
 
     $binDbDestDir = Join-Path $vsCodePackDir "bin\db"
     if (-not (Test-Path $binDbDestDir)) {
         New-Item -ItemType Directory -Force -Path $binDbDestDir | Out-Null
     }
     $binDbDestPath = Join-Path $binDbDestDir "hf_models.db"
-    Copy-Item -Path $dbSrcPath -Destination $binDbDestPath -Force
-    Write-Host "[OK] Copied ModelFusion Database to: $binDbDestPath ($( (Get-Item $binDbDestPath).Length ) bytes)" -ForegroundColor Green
+    if (-not (Test-Path $binDbDestPath) -or (Get-Item $binDbDestPath).Length -ne (Get-Item $dbSrcPath).Length) {
+        Copy-Item -Path $dbSrcPath -Destination $binDbDestPath -Force
+        Write-Host "[OK] Copied ModelFusion Database to: $binDbDestPath ($( (Get-Item $binDbDestPath).Length ) bytes)" -ForegroundColor Green
+    } else {
+        Write-Host "[OK] ModelFusion Database already up to date at: $binDbDestPath" -ForegroundColor Green
+    }
 } else {
     Write-Host "[WARNING] Pre-populated database not found at $dbSrcPath. Packaging without pre-populated DB." -ForegroundColor Yellow
 }
@@ -917,7 +925,6 @@ Write-Host "[INFO] Using WiX Toolset at: $wixExe" -ForegroundColor Yellow
 
 # Ensure Windows Installer service is running before WiX database generation
 try {
-    net start msiserver 2>$null
     $msiSvc = Get-Service msiserver -ErrorAction SilentlyContinue
     if ($msiSvc -and $msiSvc.Status -ne 'Running') {
         Start-Service -Name msiserver -ErrorAction SilentlyContinue
@@ -925,30 +932,12 @@ try {
     }
 } catch {}
 
-# Start background heartbeat to prevent Windows Installer (msiserver) from auto-stopping during multi-minute cabinet compression
-$heartbeatJob = Start-Job -ScriptBlock {
-    while ($true) {
-        Start-Sleep -Seconds 10
-        try {
-            $svc = Get-Service msiserver -ErrorAction SilentlyContinue
-            if ($svc -and $svc.Status -ne 'Running') {
-                Start-Service -Name msiserver -ErrorAction SilentlyContinue
-            }
-        } catch {}
-    }
-}
-
-try {
-    if (-not (Test-Path $msiPath) -or ((Get-Item $msiPath).LastWriteTime -lt (Get-Item $wxsPath).LastWriteTime)) {
-        & $wixExe build -v -b $PSScriptRoot -arch x64 $wxsPath -out $msiPath
-        $wixExit = $LASTEXITCODE
-    } else {
-        Write-Host "[OK] Existing MSI installer is fresh and matches current WiX manifest." -ForegroundColor Green
-        $wixExit = 0
-    }
-} finally {
-    Stop-Job $heartbeatJob -ErrorAction SilentlyContinue
-    Remove-Job $heartbeatJob -Force -ErrorAction SilentlyContinue
+if (-not (Test-Path $msiPath) -or ((Get-Item $msiPath).LastWriteTime -lt (Get-Item $wxsPath).LastWriteTime)) {
+    & $wixExe build -v -b $PSScriptRoot -arch x64 $wxsPath -out $msiPath
+    $wixExit = $LASTEXITCODE
+} else {
+    Write-Host "[OK] Existing MSI installer is fresh and matches current WiX manifest." -ForegroundColor Green
+    $wixExit = 0
 }
 if ($wixExit -ne 0 -or -not (Test-Path $msiPath)) {
     Write-Host "[ERROR] WiX build failed (Exit code: $wixExit)." -ForegroundColor Red

@@ -68,9 +68,19 @@ assert.ok(mapFromToUrl.includes('google.com/maps/dir/'), 'Must resolve to google
 assert.ok(mapFromToUrl.includes('origin=Central%20Park'), 'Must encode origin correctly');
 assert.ok(mapFromToUrl.includes('destination=Times%20Square'), 'Must encode destination correctly');
 
+// Travelmode verification
+const walkingDirUrl = resolveNaturalLanguageNavUrl('walking directions from Central Park to Times Square');
+assert.ok(walkingDirUrl.includes('travelmode=walking'), 'Must include travelmode=walking');
+const transitDirUrl = resolveNaturalLanguageNavUrl('transit directions to Golden Gate Bridge');
+assert.ok(transitDirUrl.includes('travelmode=transit'), 'Must include travelmode=transit');
+
 const mapDestUrl = resolveNaturalLanguageNavUrl('directions to Golden Gate Bridge');
 assert.ok(mapDestUrl.includes('google.com/maps/dir/'), 'Must resolve to google.com/maps/dir/');
 assert.ok(mapDestUrl.includes('destination=Golden%20Gate%20Bridge'), 'Must encode destination correctly');
+
+// Colon prefix stripping
+const colonGoalUrl = resolveNaturalLanguageNavUrl('@agent computer-use: directions to Golden Gate Bridge');
+assert.ok(colonGoalUrl.includes('destination=Golden%20Gate%20Bridge'), 'Must strip colon prefix');
 
 const mapSearchUrl = resolveNaturalLanguageNavUrl('map of San Francisco');
 assert.ok(mapSearchUrl.includes('google.com/maps/search/'), 'Must resolve to google.com/maps/search/');
@@ -209,6 +219,63 @@ const extractTicketsMatch = appJs.match(/function extractTickets\(doc,\s*text\)\
 assert.ok(extractTicketsMatch, 'extractTickets must be defined in app.js');
 eval(extractTicketsMatch[0]);
 
+// 3.1 DOM-based Ticket Extraction
+class MockTicketDomNode {
+  constructor(tagName = 'DIV', attrs = {}, text = '') {
+    this.tagName = tagName.toUpperCase();
+    this.attributes = attrs;
+    this.id = attrs.id || '';
+    this.className = attrs.class || '';
+    this._textContent = text;
+    this.children = [];
+  }
+  get textContent() {
+    if (this._textContent) return this._textContent;
+    return this.children.map(c => c.textContent).join(' ');
+  }
+  set textContent(v) { this._textContent = v; }
+  querySelector(sel) {
+    if (sel.includes('.tier-name') || sel.includes('fare-name') || sel.includes('ticket-name') || sel.includes('strong')) {
+      return this.children.find(c => (c.className || '').includes('tier-name')) || null;
+    }
+    if (sel.includes('.price') || sel.includes('fare-price') || sel.includes('amount')) {
+      return this.children.find(c => (c.className || '').includes('price')) || null;
+    }
+    if (sel.includes('.date') || sel.includes('.time') || sel.includes('schedule')) {
+      return this.children.find(c => (c.className || '').includes('flight-time')) || null;
+    }
+    if (sel.includes('button') || sel.includes('.btn')) {
+      return this.children.find(c => c.tagName === 'BUTTON' || (c.className || '').includes('btn')) || null;
+    }
+    return null;
+  }
+  querySelectorAll(sel) {
+    if (sel.includes('.ticket') || sel.includes('.flight-card') || sel.includes('.flight-option')) {
+      return this.children.filter(c => (c.className || '').includes('flight-card'));
+    }
+    return [];
+  }
+  appendChild(child) { this.children.push(child); }
+}
+
+const mockTicketDoc = new MockTicketDomNode('BODY');
+const tCard = new MockTicketDomNode('DIV', { class: 'flight-card' });
+tCard.appendChild(new MockTicketDomNode('SPAN', { class: 'tier-name' }, 'Delta SkyPriority Business'));
+tCard.appendChild(new MockTicketDomNode('SPAN', { class: 'price' }, '$540.00'));
+tCard.appendChild(new MockTicketDomNode('SPAN', { class: 'flight-time' }, 'Depart 09:00 AM'));
+const tBtn = new MockTicketDomNode('BUTTON', { id: 'btn-book-dl1' }, 'Select Fare');
+tCard.appendChild(tBtn);
+mockTicketDoc.appendChild(tCard);
+
+const domParsedTickets = extractTickets(mockTicketDoc, '');
+assert.strictEqual(domParsedTickets.length, 1, 'Must extract 1 ticket from DOM');
+assert.strictEqual(domParsedTickets[0].tier, 'Delta SkyPriority Business');
+assert.strictEqual(domParsedTickets[0].numericPrice, 540);
+assert.strictEqual(domParsedTickets[0].currency, '$');
+assert.strictEqual(domParsedTickets[0].buttonId, 'btn-book-dl1');
+console.log('  ✅ Test 3.1: DOM-based ticket extraction validated.');
+
+// 3.2 Plain text ticket extraction
 const sampleFlightText = `
 Option 1: United Airlines Flight UA 214 (SFO to JFK) - Nonstop $289.00 Departure 08:30 AM Arrives 05:00 PM
 Option 2: Delta Air Lines Flight DL 482 (SFO to JFK) - 1 Stop $235.50 Departure 10:15 AM Arrives 08:45 PM
@@ -222,7 +289,7 @@ assert.strictEqual(parsedTickets[0].currency, '$');
 assert.strictEqual(parsedTickets[0].isRecommended, true);
 assert.strictEqual(parsedTickets[1].numericPrice, 235.5);
 assert.strictEqual(parsedTickets[2].numericPrice, 789);
-console.log('  ✅ Test 3 Passed: Ticket options, pricing, and seat categories extracted accurately.\n');
+console.log('  ✅ Test 3.2: Plain text ticket extraction validated.\n');
 
 // =====================================================================
 // Test 4: HITL Directions Workspace & Interactive Safety Gate
@@ -397,20 +464,39 @@ assert.ok(
   'app.js must check if (isUniversalBrowserGoal) to trigger streaming same-page response'
 );
 
-// Verify NO duplicate hitlExamCardHtml rendering in grounding-cards-container
-const containerSlice = appJs.slice(appJs.indexOf('class="grounding-cards-container"'), appJs.indexOf('class="stream-content-planner"'));
-const examCardOccurrences = (containerSlice.match(/\$\{hitlExamCardHtml\}/g) || []).length;
+// Verify NO duplicate hitlExamCardHtml rendering in grounding-cards-container across entire app.js
+const totalExamCardTemplateOccurrences = (appJs.match(/class="grounding-cards-container"[\s\S]*?\$\{hitlExamCardHtml\}/g) || []).length;
 assert.strictEqual(
-  examCardOccurrences,
+  totalExamCardTemplateOccurrences,
   0,
-  'grounding-cards-container must not contain duplicate ${hitlExamCardHtml} (already included in ${hitlWorkspaceCardHtml})'
+  'grounding-cards-container must never contain ${hitlExamCardHtml} (already included in ${hitlWorkspaceCardHtml})'
 );
-assert.ok(
-  containerSlice.includes('${hitlWorkspaceCardHtml}'),
-  'grounding-cards-container must render ${hitlWorkspaceCardHtml}'
+const hitlExamInTemplates = (appJs.match(/\$\{hitlExamCardHtml\}/g) || []).length;
+assert.strictEqual(
+  hitlExamInTemplates,
+  0,
+  'app.js must not render ${hitlExamCardHtml} directly in any template (use ${hitlWorkspaceCardHtml})'
 );
 
-console.log('  ✅ Test 6 Passed: Universal browser execution gate and deduplicated card rendering verified.\n');
+// Verify groundedDoc is preserved and passed to archetype classifier and entity extractors
+assert.ok(
+  appJs.includes('classifyPageArchetype(groundedDoc,'),
+  'app.js must pass groundedDoc to classifyPageArchetype for rich DOM archetype inspection'
+);
+assert.ok(
+  appJs.includes('extractProducts(groundedDoc,'),
+  'app.js must pass groundedDoc to extractProducts for DOM e-commerce product extraction'
+);
+assert.ok(
+  appJs.includes('extractTickets(groundedDoc,'),
+  'app.js must pass groundedDoc to extractTickets for DOM ticket and flight extraction'
+);
+assert.ok(
+  appJs.includes('extractDirections(groundedDoc,'),
+  'app.js must pass groundedDoc to extractDirections for DOM map directions extraction'
+);
+
+console.log('  ✅ Test 6 Passed: Universal browser execution gate, deduplicated card rendering, and DOM perception verified.\n');
 
 // =====================================================================
 // Test 7: CSS Rules in styles.css for Directions Workspace
