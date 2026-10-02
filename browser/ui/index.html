@@ -250,7 +250,108 @@
               </div>
             </div>
 
-            <!-- 7. Utilities & System -->
+            <!-- 7. Science & Discovery -->
+            <div class="tool-category">
+              <button type="button" class="tool-category-header" data-cat="science" title="Science &amp; Discovery Foundation Models">
+                <span class="cat-icon">🔬</span>
+                <span class="cat-title">Science &amp; Discovery</span>
+                <span class="cat-chevron">▸</span>
+              </button>
+              <div class="tool-category-content collapsed">
+                <!-- Domain Filter Tabs -->
+                <div class="science-domain-tabs" style="display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; margin-bottom: 6px; background: rgba(0,0,0,0.15); border-radius: 6px;">
+                  <button type="button" class="science-domain-tab active" data-domain="all" onclick="filterScienceDomain('all', this)" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--accent-color); color: #fff; cursor: pointer;">All (20)</button>
+                  <button type="button" class="science-domain-tab" data-domain="biology" onclick="filterScienceDomain('biology', this)" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); cursor: pointer;">🧬 Biology (6)</button>
+                  <button type="button" class="science-domain-tab" data-domain="chemistry" onclick="filterScienceDomain('chemistry', this)" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); cursor: pointer;">🧪 Chemistry (6)</button>
+                  <button type="button" class="science-domain-tab" data-domain="earth" onclick="filterScienceDomain('earth', this)" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); cursor: pointer;">🌍 Earth (4)</button>
+                  <button type="button" class="science-domain-tab" data-domain="literature" onclick="filterScienceDomain('literature', this)" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); cursor: pointer;">📚 Reasoning (4)</button>
+                </div>
+
+                <!-- 20 Scientific Models in Strict Alphabetical Order A-Z for test_alphabetical_menu.py -->
+                <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_aurora" data-category="science" data-domain="earth" data-cmd="@agent science aurora " data-original-title="Aurora: High-resolution atmospheric and operational weather forecasting" title="Aurora: High-resolution atmospheric and operational weather forecasting">
+                  <span class="tool-btn-left"><span class="tool-icon">🌦️</span><span class="tool-label">Aurora</span></span>
+                  <span class="tool-tag">@aurora</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_chemberta" data-category="science" data-domain="chemistry" data-cmd="@agent science chemberta " data-original-title="ChemBERTa: Molecular property prediction and toxicity modeling" title="ChemBERTa: Molecular property prediction and toxicity modeling">
+                  <span class="tool-btn-left"><span class="tool-icon">🧪</span><span class="tool-label">ChemBERTa</span></span>
+                  <span class="tool-tag">@chemberta</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_climatebert" data-category="science" data-domain="earth" data-cmd="@agent science climatebert " data-original-title="ClimateBERT: Climate science and environmental risk text analysis" title="ClimateBERT: Climate science and environmental risk text analysis">
+                  <span class="tool-btn-left"><span class="tool-icon">🌡️</span><span class="tool-label">ClimateBERT</span></span>
+                  <span class="tool-tag">@climatebert</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_climax" data-category="science" data-domain="earth" data-cmd="@agent science climax " data-original-title="ClimaX: Climate modeling and global weather forecasting" title="ClimaX: Climate modeling and global weather forecasting">
+                  <span class="tool-btn-left"><span class="tool-icon">🌪️</span><span class="tool-label">ClimaX</span></span>
+                  <span class="tool-tag">@climax</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_esm2" data-category="science" data-domain="biology" data-cmd="@agent science esm2 " data-original-title="ESM2: Protein language modeling and evolutionary embeddings" title="ESM2: Protein language modeling and evolutionary embeddings">
+                  <span class="tool-btn-left"><span class="tool-icon">🧬</span><span class="tool-label">ESM2</span></span>
+                  <span class="tool-tag">@esm2</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_esm3" data-category="science" data-domain="biology" data-cmd="@agent science esm3 " data-original-title="ESM3: Generative biology and multimodal protein design" title="ESM3: Generative biology and multimodal protein design">
+                  <span class="tool-btn-left"><span class="tool-icon">✨</span><span class="tool-label">ESM3</span></span>
+                  <span class="tool-tag">@esm3</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_esmfold" data-category="science" data-domain="biology" data-cmd="@agent science esmfold " data-original-title="ESMFold: Protein 3D structure prediction from sequences" title="ESMFold: Protein 3D structure prediction from sequences">
+                  <span class="tool-btn-left"><span class="tool-icon">🔬</span><span class="tool-label">ESMFold</span></span>
+                  <span class="tool-tag">@esmfold</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_evo" data-category="science" data-domain="biology" data-cmd="@agent science evo " data-original-title="Evo: Genomics and sequence modeling across DNA, RNA, and proteins" title="Evo: Genomics and sequence modeling across DNA, RNA, and proteins">
+                  <span class="tool-btn-left"><span class="tool-icon">🧬</span><span class="tool-label">Evo</span></span>
+                  <span class="tool-tag">@evo</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_galactica" data-category="science" data-domain="literature" data-cmd="@agent science galactica " data-original-title="Galactica: Scientific knowledge, mathematical equations, and chemical formulas" title="Galactica: Scientific knowledge, mathematical equations, and chemical formulas">
+                  <span class="tool-btn-left"><span class="tool-icon">🌌</span><span class="tool-label">Galactica</span></span>
+                  <span class="tool-tag">@galactica</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_geneformer" data-category="science" data-domain="biology" data-cmd="@agent science geneformer " data-original-title="Geneformer: Single cell transcriptomics and gene networks" title="Geneformer: Single cell transcriptomics and gene networks">
+                  <span class="tool-btn-left"><span class="tool-icon">🧫</span><span class="tool-label">Geneformer</span></span>
+                  <span class="tool-tag">@geneformer</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_matscibert" data-category="science" data-domain="chemistry" data-cmd="@agent science matscibert " data-original-title="MatSciBERT: Materials science literature and crystal synthesis analysis" title="MatSciBERT: Materials science literature and crystal synthesis analysis">
+                  <span class="tool-btn-left"><span class="tool-icon">💎</span><span class="tool-label">MatSciBERT</span></span>
+                  <span class="tool-tag">@matscibert</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_mhg_ged" data-category="science" data-domain="chemistry" data-cmd="@agent science mhg-ged " data-original-title="MHG-GED: Molecular hypergraph grammar autoencoder" title="MHG-GED: Molecular hypergraph grammar autoencoder">
+                  <span class="tool-btn-left"><span class="tool-icon">🕸️</span><span class="tool-label">MHG-GED</span></span>
+                  <span class="tool-tag">@mhg-ged</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_molformer" data-category="science" data-domain="chemistry" data-cmd="@agent science molformer " data-original-title="MoLFormer: Molecular representation and drug candidate screening" title="MoLFormer: Molecular representation and drug candidate screening">
+                  <span class="tool-btn-left"><span class="tool-icon">💊</span><span class="tool-label">MoLFormer</span></span>
+                  <span class="tool-tag">@molformer</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_nucleotide_transformer" data-category="science" data-domain="biology" data-cmd="@agent science nucleotide-transformer " data-original-title="Nucleotide Transformer: Genomics and DNA regulatory element analysis" title="Nucleotide Transformer: Genomics and DNA regulatory element analysis">
+                  <span class="tool-btn-left"><span class="tool-icon">🧬</span><span class="tool-label">Nucleotide Transformer</span></span>
+                  <span class="tool-tag">@nucleotide</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_prithvi" data-category="science" data-domain="earth" data-cmd="@agent science prithvi " data-original-title="Prithvi: Geospatial satellite observation and Earth science" title="Prithvi: Geospatial satellite observation and Earth science">
+                  <span class="tool-btn-left"><span class="tool-icon">🛰️</span><span class="tool-label">Prithvi</span></span>
+                  <span class="tool-tag">@prithvi</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_s1_omni" data-category="science" data-domain="literature" data-cmd="@agent science s1-omni " data-original-title="S1-Omni: Unified multimodal scientific reasoning" title="S1-Omni: Unified multimodal scientific reasoning">
+                  <span class="tool-btn-left"><span class="tool-icon">🔭</span><span class="tool-label">S1-Omni</span></span>
+                  <span class="tool-tag">@s1-omni</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_scholarbert" data-category="science" data-domain="literature" data-cmd="@agent science scholarbert " data-original-title="ScholarBERT: Scientific literature and research publication analysis" title="ScholarBERT: Scientific literature and research publication analysis">
+                  <span class="tool-btn-left"><span class="tool-icon">📖</span><span class="tool-label">ScholarBERT</span></span>
+                  <span class="tool-tag">@scholarbert</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_scibert" data-category="science" data-domain="literature" data-cmd="@agent science scibert " data-original-title="SciBERT: Biomedical and scientific paper semantic representation" title="SciBERT: Biomedical and scientific paper semantic representation">
+                  <span class="tool-btn-left"><span class="tool-icon">📄</span><span class="tool-label">SciBERT</span></span>
+                  <span class="tool-tag">@scibert</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_selfies_ted" data-category="science" data-domain="chemistry" data-cmd="@agent science selfies-ted " data-original-title="SELFIES-TED: Molecular generation and property forecasting" title="SELFIES-TED: Molecular generation and property forecasting">
+                  <span class="tool-btn-left"><span class="tool-icon">🔬</span><span class="tool-label">SELFIES-TED</span></span>
+                  <span class="tool-tag">@selfies-ted</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_smi_ted" data-category="science" data-domain="chemistry" data-cmd="@agent science smi-ted " data-original-title="SMI-TED: Chemical representation and quantum property prediction" title="SMI-TED: Chemical representation and quantum property prediction">
+                  <span class="tool-btn-left"><span class="tool-icon">⚗️</span><span class="tool-label">SMI-TED</span></span>
+                  <span class="tool-tag">@smi-ted</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 8. Utilities & System -->
             <div class="tool-category">
               <button type="button" class="tool-category-header" data-cat="utilities" title="Utilities &amp; System Maintenance">
                 <span class="cat-icon">🛠️</span>

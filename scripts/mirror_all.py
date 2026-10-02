@@ -5,11 +5,14 @@ import hashlib
 src = os.path.abspath("target/release/cli.exe")
 
 def get_sha256(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        while chunk := f.read(65536):
-            h.update(chunk)
-    return h.hexdigest()
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            while chunk := f.read(65536):
+                h.update(chunk)
+        return h.hexdigest()
+    except (PermissionError, OSError):
+        return None
 
 src_hash = get_sha256(src)
 print(f"Authoritative Source Hash: {src_hash}")
