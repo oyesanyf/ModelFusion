@@ -488,12 +488,84 @@ body {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
-.assistant-bubble.streaming:not(:has(.msg-action-bar))::after {
-  content: "▋";
-  display: inline-block;
-  color: var(--accent-color);
+/* Dynamic Animated Streaming Cursor & Status Indicator */
+.assistant-bubble.streaming:not(:has(.msg-action-bar))::after,
+.assistant-bubble.streaming:not(:has(.msg-action-bar)):not(:has(.streaming-live-cursor))::after {
+  content: "▋ " attr(data-cursor-status);
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent-color, #38bdf8);
+  font-family: var(--font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  font-size: 11px;
+  font-weight: 600;
+  font-style: italic;
+  letter-spacing: 0.2px;
   animation: blink 0.8s infinite;
+  margin-left: 4px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  vertical-align: middle;
+}
+
+.assistant-bubble.streaming:has(.streaming-live-cursor)::after {
+  display: none !important;
+}
+
+.streaming-live-cursor {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
   margin-left: 2px;
+  vertical-align: middle;
+  user-select: none;
+  pointer-events: none;
+  line-height: 1.4;
+  white-space: nowrap;
+  animation: cursorFadeIn 0.2s ease-out;
+}
+
+@keyframes cursorFadeIn {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.streaming-live-cursor .cursor-block {
+  display: inline-block;
+  color: var(--accent-color, #38bdf8);
+  font-family: var(--mono-font, 'JetBrains Mono', 'Fira Code', monospace);
+  font-size: 13.5px;
+  font-weight: 700;
+  animation: blink 0.8s infinite;
+  text-shadow: 0 0 6px var(--accent-color-glow, rgba(56, 189, 248, 0.45));
+}
+
+.streaming-live-cursor .cursor-status-text {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  font-style: italic;
+  letter-spacing: 0.25px;
+  color: var(--accent-color, #38bdf8);
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 12px;
+  padding: 1.5px 8px;
+  transition: opacity 0.22s ease, transform 0.22s ease;
+  animation: cursorStatusPulse 2s ease-in-out infinite;
+}
+
+.streaming-live-cursor .cursor-status-text.fade-swap {
+  opacity: 0.2;
+  transform: translateY(-2px);
+}
+
+@keyframes cursorStatusPulse {
+  0%, 100% { opacity: 0.95; }
+  50% { opacity: 0.65; }
 }
 
 @keyframes blink {
@@ -2158,6 +2230,28 @@ body.theme-white .status-pulse-dot,
 body.theme-light .status-pulse-dot {
   background: #059669;
   box-shadow: 0 0 6px rgba(5, 150, 105, 0.6);
+}
+
+body.theme-white .streaming-live-cursor .cursor-block,
+body.theme-light .streaming-live-cursor .cursor-block {
+  color: #0284c7;
+  text-shadow: 0 0 4px rgba(2, 132, 199, 0.25);
+}
+
+body.theme-white .streaming-live-cursor .cursor-status-text,
+body.theme-light .streaming-live-cursor .cursor-status-text {
+  background: rgba(14, 165, 233, 0.12);
+  border-color: rgba(14, 165, 233, 0.35);
+  color: #0369a1;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+body.theme-white .assistant-bubble.streaming:not(:has(.msg-action-bar)):not(:has(.streaming-live-cursor))::after,
+body.theme-light .assistant-bubble.streaming:not(:has(.msg-action-bar)):not(:has(.streaming-live-cursor))::after {
+  background: rgba(14, 165, 233, 0.12);
+  border-color: rgba(14, 165, 233, 0.35);
+  color: #0369a1;
 }
 
 body.theme-white .pin-desktop-btn,

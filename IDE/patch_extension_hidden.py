@@ -8,6 +8,10 @@ def patch_file(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
 
+    if content.count('windowsHide: true') >= 12:
+        print(f"[OK] Already contains all windowsHide: true patches in {file_path}", flush=True)
+        return True
+
     original = content
 
     # 1. Match 1: ollama list

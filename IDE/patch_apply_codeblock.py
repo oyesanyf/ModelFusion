@@ -19,12 +19,30 @@ import sys
 import re
 import subprocess
 
-def patch_extension_js(file_path):
+def patch_extension_js(file_path, force_validate=False):
     if not os.path.isfile(file_path):
         return False
 
     with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
+
+    already_patched = (
+        ('hadError && codeBlock2?.resource' in content or 'codeBlock2 && codeBlock2.resource' in content) and
+        'this._pendingEdit.saveListener = saveListener;' in content and
+        '"avo": "editAgent"' in content and
+        '_isQaOrInformationalRequest' in content
+    )
+    if already_patched:
+        print(f"  [OK] Already patched: {file_path}", flush=True)
+        if force_validate:
+            node_bin = r"D:\tools\nodejs\node.exe" if os.path.exists(r"D:\tools\nodejs\node.exe") else "node"
+            chk = subprocess.run([node_bin, "--check", file_path], capture_output=True, text=True, timeout=30)
+            if chk.returncode != 0:
+                print(f"  [ERROR] Syntax check failed for {file_path}:\n{chk.stderr}", flush=True)
+                return False
+            else:
+                print(f"  [OK] Syntax check passed (node --check) for {file_path}", flush=True)
+        return True
 
     changed = False
 
@@ -64,7 +82,7 @@ def patch_extension_js(file_path):
         content = content.replace(target_pme, replacement_pme)
         changed = True
         print(f"  [OK] Patched provideMappedEdits fallback in {file_path}")
-    elif 'errorMessages.length > 0 && codeBlock2 && codeBlock2.resource' in content:
+    elif ('hadError && codeBlock2?.resource' in content or 'codeBlock2 && codeBlock2.resource' in content):
         print(f"  [INFO] provideMappedEdits already patched in {file_path}")
     else:
         print(f"  [WARN] provideMappedEdits target pattern not found in {file_path}")
@@ -350,32 +368,32 @@ def patch_extension_js(file_path):
         }}
       }}{suffix}_findCliBinary()'''
 
-    if try_inline_regex.search(content):
+    if '_isQaOrInformationalRequest' in content:
+        print(f"  [INFO] _tryInlineApply already QA-excluded in {file_path}", flush=True)
+    elif '_tryInlineApply' in content and '_findCliBinary' in content and try_inline_regex.search(content):
         new_content = try_inline_regex.sub(replace_try_inline, content)
         if new_content != content:
             content = new_content
             changed = True
-            print(f"  [OK] Replaced _tryInlineApply with QA-excluding implementation in {file_path}")
-    elif '_isQaOrInformationalRequest' in content:
-        print(f"  [INFO] _tryInlineApply already QA-excluded in {file_path}")
+            print(f"  [OK] Replaced _tryInlineApply with QA-excluding implementation in {file_path}", flush=True)
     else:
-        print(f"  [WARN] _tryInlineApply pattern not found in {file_path}")
+        print(f"  [WARN] _tryInlineApply pattern not found in {file_path}", flush=True)
 
     if changed:
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(content)
+        with open(file_path, "wb") as f:
+            f.write(content.encode("utf-8"))
 
     # Validate syntax with node --check
     try:
         node_bin = r"D:\tools\nodejs\node.exe" if os.path.exists(r"D:\tools\nodejs\node.exe") else "node"
-        chk = subprocess.run([node_bin, "--check", file_path], capture_output=True, text=True)
+        chk = subprocess.run([node_bin, "--check", file_path], capture_output=True, text=True, timeout=30)
         if chk.returncode != 0:
-            print(f"  [ERROR] Syntax check failed for {file_path}:\n{chk.stderr}")
+            print(f"  [ERROR] Syntax check failed for {file_path}:\n{chk.stderr}", flush=True)
             return False
         else:
-            print(f"  [OK] Syntax check passed (node --check) for {file_path}")
+            print(f"  [OK] Syntax check passed (node --check) for {file_path}", flush=True)
     except Exception as e:
-        print(f"  [WARN] Could not run node --check: {e}")
+        print(f"  [WARN] Could not run node --check: {e}", flush=True)
 
     return changed
 
@@ -453,48 +471,76 @@ def main():
     print("[HUGOS] Patching Code Block Apply & Save Pipeline")
     print("============================================================")
 
-    local_app_data = os.environ.get('LOCALAPPDATA', '')
-    user_profile = os.environ.get('USERPROFILE', '')
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    skip_installed = any(arg.lower() in ("--skip-installed", "--check-installed=false") for arg in sys.argv)
+    force_validate = "--force-validate" in sys.argv
+    pack_dir_args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    pack_dir = (
+        os.path.abspath(pack_dir_args[0].strip().strip('\"\''))
+        if pack_dir_args
+        else os.path.join(script_dir, "VSCode-win32-x64")
+    )
+    print(f"  Target packaging directory: {pack_dir}")
 
     extension_targets = [
-        r"D:\harfile\ModelFusion\IDE\vscode\extensions\copilot\dist\extension.js",
-        r"D:\harfile\ModelFusion\IDE\vscode\.build\extensions\copilot\dist\extension.js",
-        r"D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\extensions\copilot\dist\extension.js",
-        r"D:\harfile\ModelFusion\IDE\VSCode-win32-x64\7e7950df89\resources\app\extensions\copilot\dist\extension.js",
-        os.path.join(local_app_data, r"HugOS IDE\7e7950df89\resources\app\extensions\copilot\dist\extension.js"),
-        os.path.join(local_app_data, r"HugOS IDE\resources\app\extensions\copilot\dist\extension.js"),
-        r"C:\Users\oyesanyf\AppData\Local\HugOS IDE\7e7950df89\resources\app\extensions\copilot\dist\extension.js",
-        r"C:\Users\oyesanyf\AppData\Local\HugOS IDE\resources\app\extensions\copilot\dist\extension.js",
+        os.path.join(script_dir, "vscode", "extensions", "copilot", "dist", "extension.js"),
+        os.path.join(pack_dir, "resources", "app", "extensions", "copilot", "dist", "extension.js"),
     ]
+    if os.path.isdir(pack_dir):
+        for entry in os.listdir(pack_dir):
+            if re.match(r"^[0-9a-f]{7,40}$", entry, re.IGNORECASE):
+                sub = os.path.join(pack_dir, entry, "resources", "app", "extensions", "copilot", "dist", "extension.js")
+                if sub not in extension_targets:
+                    extension_targets.append(sub)
+
+    local_app_data = os.environ.get('LOCALAPPDATA', '')
+    if not skip_installed and local_app_data:
+        hugos_installed = os.path.join(local_app_data, "HugOS IDE")
+        extension_targets.append(os.path.join(hugos_installed, "resources", "app", "extensions", "copilot", "dist", "extension.js"))
+        if os.path.isdir(hugos_installed):
+            for entry in os.listdir(hugos_installed):
+                if re.match(r"^[0-9a-f]{7,40}$", entry, re.IGNORECASE):
+                    sub = os.path.join(hugos_installed, entry, "resources", "app", "extensions", "copilot", "dist", "extension.js")
+                    if sub not in extension_targets:
+                        extension_targets.append(sub)
 
     unminified_workbench_targets = [
-        r"D:\harfile\ModelFusion\IDE\vscode\out-vscode\vs\workbench\workbench.desktop.main.js",
-        r"D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\out\vs\workbench\workbench.desktop.main.js",
-        os.path.join(local_app_data, r"HugOS IDE\resources\app\out\vs\workbench\workbench.desktop.main.js"),
-        r"C:\Users\oyesanyf\AppData\Local\HugOS IDE\resources\app\out\vs\workbench\workbench.desktop.main.js",
+        os.path.join(script_dir, "vscode", "out-vscode", "vs", "workbench", "workbench.desktop.main.js"),
+        os.path.join(pack_dir, "resources", "app", "out", "vs", "workbench", "workbench.desktop.main.js"),
     ]
+    minified_workbench_targets = []
+    if os.path.isdir(pack_dir):
+        for entry in os.listdir(pack_dir):
+            if re.match(r"^[0-9a-f]{7,40}$", entry, re.IGNORECASE):
+                sub = os.path.join(pack_dir, entry, "resources", "app", "out", "vs", "workbench", "workbench.desktop.main.js")
+                if sub not in minified_workbench_targets:
+                    minified_workbench_targets.append(sub)
 
-    minified_workbench_targets = [
-        r"D:\harfile\ModelFusion\IDE\VSCode-win32-x64\7e7950df89\resources\app\out\vs\workbench\workbench.desktop.main.js",
-        os.path.join(local_app_data, r"HugOS IDE\7e7950df89\resources\app\out\vs\workbench\workbench.desktop.main.js"),
-        r"C:\Users\oyesanyf\AppData\Local\HugOS IDE\7e7950df89\resources\app\out\vs\workbench\workbench.desktop.main.js",
-    ]
+    if not skip_installed and local_app_data:
+        hugos_installed = os.path.join(local_app_data, "HugOS IDE")
+        unminified_workbench_targets.append(os.path.join(hugos_installed, "resources", "app", "out", "vs", "workbench", "workbench.desktop.main.js"))
+        if os.path.isdir(hugos_installed):
+            for entry in os.listdir(hugos_installed):
+                if re.match(r"^[0-9a-f]{7,40}$", entry, re.IGNORECASE):
+                    sub = os.path.join(hugos_installed, entry, "resources", "app", "out", "vs", "workbench", "workbench.desktop.main.js")
+                    if sub not in minified_workbench_targets:
+                        minified_workbench_targets.append(sub)
 
     seen = set()
     for p in extension_targets:
-        if p and p not in seen and os.path.exists(p):
+        if p and p not in seen and os.path.isfile(p):
             seen.add(p)
-            patch_extension_js(p)
+            patch_extension_js(p, force_validate=force_validate)
 
     seen = set()
     for p in unminified_workbench_targets:
-        if p and p not in seen and os.path.exists(p):
+        if p and p not in seen and os.path.isfile(p):
             seen.add(p)
             patch_unminified_workbench(p)
 
     seen = set()
     for p in minified_workbench_targets:
-        if p and p not in seen and os.path.exists(p):
+        if p and p not in seen and os.path.isfile(p):
             seen.add(p)
             patch_minified_workbench(p)
 

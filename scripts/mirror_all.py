@@ -46,17 +46,36 @@ for dst in destinations:
         else:
             print(f"[WARN: Locked by running process] {dst} ({e})")
 
-# Mirror browser UI files
-ui_dst = os.path.join(localappdata, r"HugOS Browser\ui")
-os.makedirs(ui_dst, exist_ok=True)
-for f in ["app.js", "index.html", "styles.css", "favicon.svg", "favicon.ico", "favicon-32x32.png", "favicon-16x16.png", "icon-192.png", "icon-512.png", "hugos_browser.ico", "manifest.webmanifest", "sw.js"]:
+# Mirror browser UI files across all targets (IDE, Browser, and packaged distributions)
+ui_destinations = [
+    os.path.join(localappdata, r"HugOS Browser\ui"),
+    os.path.join(localappdata, r"HugOS IDE\ui"),
+    os.path.join(localappdata, r"HugOS IDE\browser\ui"),
+    os.path.abspath(r"IDE\VSCode-win32-x64\ui"),
+    os.path.abspath(r"IDE\VSCode-win32-x64\browser\ui"),
+]
+ui_files = ["app.js", "index.html", "styles.css", "favicon.svg", "favicon.ico", "favicon-32x32.png", "favicon-16x16.png", "icon-192.png", "icon-512.png", "hugos_browser.ico", "manifest.webmanifest", "sw.js"]
+
+for target_ui_dir in ui_destinations:
+    os.makedirs(target_ui_dir, exist_ok=True)
+    for f in ui_files:
         src_ui = os.path.join(os.path.abspath("browser/ui"), f)
-        dst_ui = os.path.join(ui_dst, f)
+        dst_ui = os.path.join(target_ui_dir, f)
         if os.path.exists(src_ui):
             try:
+                if os.path.exists(dst_ui) and get_sha256(dst_ui) == get_sha256(src_ui):
+                    print(f"[MATCH UI (Already in Parity)] {dst_ui}")
+                    continue
                 shutil.copy2(src_ui, dst_ui)
                 print(f"[COPIED UI] {src_ui} -> {dst_ui}")
             except Exception as e:
+                if os.path.exists(dst_ui):
+                    try:
+                        if get_sha256(dst_ui) == get_sha256(src_ui):
+                            print(f"[MATCH UI (File in use, hash matched)] {dst_ui}")
+                            continue
+                    except Exception:
+                        pass
                 print(f"[ERROR COPYING UI] {src_ui} -> {dst_ui}: {e}")
 
 # Mirror launcher scripts & browser icon
