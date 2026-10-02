@@ -31,6 +31,21 @@ except ImportError:
     run_model_visual = None
 
 
+def get_cargo_cmd_and_env():
+    import shutil
+    cargo_bin = shutil.which("cargo") or os.path.expanduser(r"~/.cargo/bin/cargo.exe")
+    env = os.environ.copy()
+    llvm_bin = r"C:\Program Files\LLVM\bin"
+    cargo_dir = os.path.expanduser(r"~/.cargo/bin")
+    env["PATH"] = f"{llvm_bin};{cargo_dir};" + env.get("PATH", "")
+    env["CC"] = "clang-cl"
+    env["CXX"] = "clang-cl"
+    env["AR"] = "llvm-lib"
+    env["INCLUDE"] = r"D:\tools\xwin-crt\crt\include;D:\tools\xwin-crt\sdk\include\ucrt;D:\tools\xwin-crt\sdk\include\um;D:\tools\xwin-crt\sdk\include\shared"
+    env["LIB"] = r"D:\tools\xwin-crt\crt\lib\x64;D:\tools\xwin-crt\sdk\lib\um\x64;D:\tools\xwin-crt\sdk\lib\ucrt\x64"
+    return cargo_bin, env
+
+
 class TestEdgeCase1VisualCorruptedInputs(unittest.TestCase):
     """
     Edge Case 1: Corrupted or truncated image inputs in R4.
@@ -311,13 +326,17 @@ class TestEdgeCase3MeshDisconnectionFailover(unittest.TestCase):
         """
         # We know from cargo test that fusion_arbiter::tests::test_fallback_on_unreachable_endpoint passes.
         # Let's run `cargo test --bin cli fusion_arbiter::tests::test_fallback_on_unreachable_endpoint` to verify empirically.
+        cargo_bin, env = get_cargo_cmd_and_env()
         proc = subprocess.run(
-            ["cargo", "test", "--bin", "cli", "test_fallback_on_unreachable_endpoint", "--", "--nocapture"],
+            [cargo_bin, "test", "--bin", "cli", "test_fallback_on_unreachable_endpoint", "--", "--nocapture"],
             cwd=str(REPO_ROOT),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=30
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            timeout=120
         )
         self.assertEqual(proc.returncode, 0, f"Cargo test failed: {proc.stderr}\n{proc.stdout}")
         self.assertIn("test fusion_arbiter::tests::test_fallback_on_unreachable_endpoint ... ok", proc.stdout)
@@ -326,13 +345,17 @@ class TestEdgeCase3MeshDisconnectionFailover(unittest.TestCase):
         """
         Verify mesh offload failure fallback via cargo test.
         """
+        cargo_bin, env = get_cargo_cmd_and_env()
         proc = subprocess.run(
-            ["cargo", "test", "--bin", "cli", "test_mesh_offload_routing_with_fallback", "--", "--nocapture"],
+            [cargo_bin, "test", "--bin", "cli", "test_mesh_offload_routing_with_fallback", "--", "--nocapture"],
             cwd=str(REPO_ROOT),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=30
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            timeout=120
         )
         self.assertEqual(proc.returncode, 0, f"Cargo test failed: {proc.stderr}\n{proc.stdout}")
         self.assertIn("test fusion_arbiter::tests::test_mesh_offload_routing_with_fallback ... ok", proc.stdout)

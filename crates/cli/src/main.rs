@@ -7814,13 +7814,14 @@ async fn query_local_router(system_prompt: &str, user_prompt: &str) -> Option<St
         .ok();
 
     if let Some(ref client) = client {
-        // Try models in order of preference
+        // Try models in order of preference (favor fast classification models for routing)
         let candidates = vec![
-            "qwen2.5:32b",
-            "qwen2.5:14b",
             "qwen2.5:7b",
             "qwen2.5:3b",
             "qwen2.5:1.5b",
+            "gemma2:2b",
+            "qwen2.5:14b",
+            "qwen2.5:32b",
             "llama3.1:8b",
             "llama3.2:3b",
             "llama3.2:1b",
@@ -7880,6 +7881,9 @@ async fn query_local_router(system_prompt: &str, user_prompt: &str) -> Option<St
     }
 
     // 2. Second attempt/Fallback: Use local python script (cpu/transformers)
+    if std::env::var("MODELFUSION_SUBPROCESS").is_ok() || std::env::var("MODELFUSION_DISABLE_PYTORCH_FALLBACK").is_ok() {
+        return None;
+    }
     let script_path = "src/scripts/run_model_transformers.py";
     if !std::path::Path::new(script_path).exists() {
         return None;
