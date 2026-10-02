@@ -14396,6 +14396,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       }
       return;
     }
+  }
 
     // Check if goal mentions a direct URL for webview synchronization
     const urlMatch = goal.match(/https?:\/\/[^\s]+/i);
@@ -15512,6 +15513,168 @@ Instructions:
       return;
     }
 
+    // 4.496 Science & Discovery Foundation Models Directive (@agent science, /science, @agent esm2, etc.)
+    const isScienceCmd = (
+      lower.startsWith('@agent science') || lower === '@agent science' ||
+      lower.startsWith('/science') || lower === '/science' ||
+      lower.startsWith('@science') ||
+      /^(?:@agent\s+|@|\/)?(?:science|esm2|esm3|esmfold|evo|nucleotide-transformer|nucleotide|geneformer|chemberta|molformer|smi-ted|selfies-ted|mhg-ged|matscibert|prithvi|climax|aurora|climatebert|scibert|scholarbert|galactica|s1-omni)(?:\s*[:\s]|$)/i.test(cmd)
+    );
+
+    if (isScienceCmd) {
+      let rawQuery = cmd
+        .replace(/^(?:@agent\s+science|\/science|@science)\s*:?\s*/i, '')
+        .trim();
+
+      // Detect model target from first token or command
+      let targetModelKey = null;
+      let modelQuery = rawQuery;
+
+      for (const [k, m] of Object.entries(SCIENTIFIC_MODELS)) {
+        const altKey = k.replace('-', '');
+        const regex = new RegExp(`^(?:@agent\\s+|@|\\/)?(${k}|${altKey})\\b`, 'i');
+        if (regex.test(cmd) || new RegExp(`^${k}\\b`, 'i').test(rawQuery)) {
+          targetModelKey = k;
+          modelQuery = rawQuery.replace(new RegExp(`^${k}\\s*:?\\s*`, 'i'), '').trim();
+          break;
+        }
+      }
+
+      if (!targetModelKey) {
+        // Check if query mentions any model name
+        for (const [k, m] of Object.entries(SCIENTIFIC_MODELS)) {
+          if (new RegExp(`\\b${k}\\b`, 'i').test(rawQuery) || new RegExp(`\\b${m.name}\\b`, 'i').test(rawQuery)) {
+            targetModelKey = k;
+            break;
+          }
+        }
+      }
+
+      const modelInfo = targetModelKey ? SCIENTIFIC_MODELS[targetModelKey] : null;
+
+      // If no query or user asked for help/overview, render Science Model Explorer Card
+      if (!modelQuery && !modelInfo) {
+        termLog('[SCIENCE] 🔬 Displaying Science & Discovery Foundation Models Overview...', 'info');
+        const bubble = createAiBubble({
+          icon: '🔬',
+          title: 'Science & Discovery Foundation Models',
+          modelTag: 'Scientific AI Suite',
+          isTool: true,
+          streaming: false
+        });
+        const contentEl = bubble.querySelector('.stream-content') || bubble;
+        contentEl.innerHTML = `
+          <div class="science-model-card">
+            <div class="science-model-header">
+              <div class="science-model-title"><span>🔬</span> HugOS Science &amp; Discovery Foundation Suite</div>
+              <span class="science-domain-badge">20 Foundation Models</span>
+            </div>
+            <div class="science-model-desc">
+              Integrated multimodal scientific AI architectures across 4 primary discovery domains:
+            </div>
+            <div style="margin: 8px 0; font-size: 11.5px; line-height: 1.6;">
+              <div><strong>🧬 Biology &amp; Genomics:</strong> ESM2, ESMFold, ESM3, Evo, Nucleotide Transformer, Geneformer</div>
+              <div><strong>🧪 Chemistry &amp; Materials:</strong> ChemBERTa, MoLFormer, SMI-TED, SELFIES-TED, MHG-GED, MatSciBERT</div>
+              <div><strong>🌍 Earth &amp; Climate Science:</strong> Prithvi, ClimaX, Aurora, ClimateBERT</div>
+              <div><strong>📚 Scientific Reasoning:</strong> SciBERT, ScholarBERT, Galactica, S1-Omni</div>
+            </div>
+            <div style="margin-top: 10px; font-size: 11px; color: var(--text-muted);">
+              Use <code>@agent science &lt;model&gt; &lt;query/sequence/formula&gt;</code> to query any model directly.
+            </div>
+          </div>
+        `;
+        setChatRunningState(false);
+        if (currentAttachments.length > 0) clearAllAttachments();
+        return;
+      }
+
+      // If model identified but query is empty, show interactive card for that model
+      if (modelInfo && !modelQuery) {
+        termLog(`[SCIENCE] 🔬 Model selected: ${modelInfo.name} (${modelInfo.domain})`, 'info');
+        const bubble = createAiBubble({
+          icon: modelInfo.icon,
+          title: `${modelInfo.name} Foundation Model`,
+          modelTag: modelInfo.domainKey.toUpperCase(),
+          isTool: true,
+          streaming: false
+        });
+        const contentEl = bubble.querySelector('.stream-content') || bubble;
+        contentEl.innerHTML = `
+          <div class="science-model-card">
+            <div class="science-model-header">
+              <div class="science-model-title"><span>${modelInfo.icon}</span> ${escapeHtml(modelInfo.name)}</div>
+              <span class="science-domain-badge">${escapeHtml(modelInfo.domain)}</span>
+            </div>
+            <div class="science-model-desc">${escapeHtml(modelInfo.desc)}</div>
+            <div class="science-model-capabilities">
+              ${modelInfo.capabilities.map(c => `<span class="science-cap-pill">✓ ${escapeHtml(c)}</span>`).join('')}
+            </div>
+            <div style="margin-top: 10px; font-size: 11.5px; color: var(--text-secondary);">
+              Type your query, protein FASTA sequence, SMILES string, or scientific hypothesis below.
+            </div>
+          </div>
+        `;
+        const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+          ? cliPromptInputPinned
+          : cliPromptInput;
+        if (activeInput) {
+          activeInput.value = `@agent science ${targetModelKey} `;
+          activeInput.focus();
+          activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
+        }
+        setChatRunningState(false);
+        if (currentAttachments.length > 0) clearAllAttachments();
+        return;
+      }
+
+      // Execute scientific deep reasoning
+      const effectiveModelName = modelInfo ? modelInfo.name : 'Scientific Foundation AI';
+      const effectiveDomain = modelInfo ? modelInfo.domain : 'Interdisciplinary Science';
+      const effectiveIcon = modelInfo ? modelInfo.icon : '🔬';
+
+      termLog(`[SCIENCE] 🔬 Reasoning with ${effectiveModelName} on: "${modelQuery.slice(0, 60)}..."`, 'info');
+      setChatRunningState(true);
+      currentAbortController = new AbortController();
+      if (chatWelcome) chatWelcome.classList.add('hidden');
+
+      const activeSession = chatSessions.find(s => s.id === currentSessionId);
+      if (activeSession) {
+        const lastMsg = activeSession.messages[activeSession.messages.length - 1];
+        if (!lastMsg || lastMsg.role !== 'user' || lastMsg.content !== cmd) {
+          activeSession.messages.push({ role: 'user', content: cmd, attachments: currentAttachments });
+          saveChatHistory();
+        }
+      }
+
+      const bubble = createAiBubble({
+        icon: effectiveIcon,
+        title: `${effectiveModelName} Reasoning`,
+        modelTag: effectiveDomain,
+        isTool: true,
+        streaming: true
+      });
+
+      const scienceSysPrompt = `You are the ${effectiveModelName} Foundation Model specialist in ${effectiveDomain} within HugOS.
+Analyze the user's scientific query with rigorous technical precision.
+- Incorporate domain methodologies (e.g., sequence analysis, molecular graph topologies, geospatial bands, or mathematical derivations).
+- Provide structured, publication-grade explanations with key formulas, residue contacts, reaction mechanisms, or risk metrics where applicable.
+- Conclude with actionable takeaways and recommended next steps or experimental validations.`;
+
+      const scienceUserPrompt = attachmentContext
+        ? `[Domain: ${effectiveDomain} | Model: ${effectiveModelName}]\n\n${modelQuery}\n\n${attachmentContext}`
+        : `[Domain: ${effectiveDomain} | Model: ${effectiveModelName}]\n\n${modelQuery}`;
+
+      await streamAiChat(scienceUserPrompt, scienceSysPrompt, {
+        images: attachedImages,
+        panel: { id: 'science', name: `${effectiveModelName} (${effectiveDomain})` },
+        existingBubble: bubble,
+        intention: chatIntention
+      });
+
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
+
     // 4.5 Web Research & Search Agent Directives (@agent search, @agent web-agent, @agent search-index, @agent browser deep research on, @agent arxiv)
     if (
       lower.startsWith('@agent search ') || lower.startsWith('/search ') ||
@@ -16310,12 +16473,214 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     });
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // 🔬 Science & Discovery Foundation Models Registry
+  // ─────────────────────────────────────────────────────────────
+  const SCIENTIFIC_MODELS = {
+    'aurora': {
+      name: 'Aurora',
+      domain: 'Earth, Climate, and Atmospheric Science',
+      domainKey: 'earth',
+      icon: '🌦️',
+      desc: 'High-resolution atmospheric and operational weather forecasting foundation model delivering global numerical weather prediction at kilometer scale.',
+      capabilities: ['Atmospheric Fluid Dynamics', 'Operational Forecasting', 'Global Weather Trajectories', 'Extreme Weather Prediction']
+    },
+    'chemberta': {
+      name: 'ChemBERTa',
+      domain: 'Chemistry and Materials Science',
+      domainKey: 'chemistry',
+      icon: '🧪',
+      desc: 'BERT-like foundation model for molecular property prediction, quantitative structure-activity relationship (QSAR) modeling, and chemical toxicity screening.',
+      capabilities: ['Molecular Property Prediction', 'Toxicity Modeling', 'SMILES Tokenization', 'QSAR Benchmarking']
+    },
+    'climatebert': {
+      name: 'ClimateBERT',
+      domain: 'Earth, Climate, and Atmospheric Science',
+      domainKey: 'earth',
+      icon: '🌡️',
+      desc: 'Domain-adapted language model trained on climate-related texts, corporate disclosures, and scientific publications for climate risk and environmental text analysis.',
+      capabilities: ['Climate Risk Analysis', 'ESG Disclosure Fact-Checking', 'Environmental Sentiment', 'Emissions Claims Parsing']
+    },
+    'climax': {
+      name: 'ClimaX',
+      domain: 'Earth, Climate, and Atmospheric Science',
+      domainKey: 'earth',
+      icon: '🌪️',
+      desc: 'First foundation model for weather and climate developed with spatial self-attention and variable tokenization across heterogeneous spatial-temporal atmospheric variables.',
+      capabilities: ['Global Climate Modeling', 'Surface Temperature Projections', 'Precipitation Modeling', 'Sub-Seasonal Forecasting']
+    },
+    'esm2': {
+      name: 'ESM2',
+      domain: 'Biology and Genomics',
+      domainKey: 'biology',
+      icon: '🧬',
+      desc: 'Evolutionary Scale Modeling (ESM-2) protein language model trained on hundreds of millions of diverse protein sequences, capturing evolutionary patterns, secondary structures, and residue contacts.',
+      capabilities: ['Protein Language Modeling', 'Residue Contact Prediction', 'Evolutionary Conservation', 'Zero-Shot Variant Effect Prediction']
+    },
+    'esm3': {
+      name: 'ESM3',
+      domain: 'Biology and Genomics',
+      domainKey: 'biology',
+      icon: '✨',
+      desc: 'Frontier generative biology model simulating 500 million years of protein evolution, simultaneously reasoning over sequence, structure, and function for de novo molecular design.',
+      capabilities: ['De Novo Protein Generation', 'Sequence-Structure-Function Co-Design', 'Enzyme Active Site Engineering', 'Multimodal Biology Reasoning']
+    },
+    'esmfold': {
+      name: 'ESMFold',
+      domain: 'Biology and Genomics',
+      domainKey: 'biology',
+      icon: '🔬',
+      desc: 'Ultra-fast protein 3D structure prediction engine utilizing ESM-2 representations directly without requiring computationally intensive multiple sequence alignments (MSAs).',
+      capabilities: ['Fast 3D Structure Prediction', 'Atomic Coordinate Generation', 'PDB Output Modeling', 'Binding Pocket Topology']
+    },
+    'evo': {
+      name: 'Evo',
+      domain: 'Biology and Genomics',
+      domainKey: 'biology',
+      icon: '🧬',
+      desc: 'Long-context genomic foundation model with single-nucleotide resolution spanning DNA, RNA, and proteins across whole bacterial and viral genomes.',
+      capabilities: ['Genome-Scale Sequence Modeling', 'CRISPR Target Prediction', 'Regulatory Motifs', 'Cross-Modal DNA/RNA/Protein Translation']
+    },
+    'galactica': {
+      name: 'Galactica',
+      domain: 'Scientific Literature and Reasoning',
+      domainKey: 'literature',
+      icon: '🌌',
+      desc: 'Large scientific language model trained on papers, reference material, knowledge bases, and multimodal scientific data (LaTeX math, SMILES formulas, DNA sequences).',
+      capabilities: ['Mathematical Equation Derivation', 'Chemical Formula Synthesis', 'Scientific Literature Search', 'Proof Construction']
+    },
+    'geneformer': {
+      name: 'Geneformer',
+      domain: 'Biology and Genomics',
+      domainKey: 'biology',
+      icon: '🧫',
+      desc: 'Context-aware transformer trained on 30 million single-cell transcriptomes to model gene networks, dosage sensitivity, and cellular state transitions.',
+      capabilities: ['Single-Cell Transcriptomics', 'In Silico Gene Perturbation', 'Gene Network Architecture', 'Cell State Transition Analysis']
+    },
+    'matscibert': {
+      name: 'MatSciBERT',
+      domain: 'Chemistry and Materials Science',
+      domainKey: 'chemistry',
+      icon: '💎',
+      desc: 'Domain-specific language model pre-trained on materials science literature, syntheses recipes, crystal structures, and solid-state chemistry papers.',
+      capabilities: ['Crystal Synthesis Extraction', 'Materials Literature Parsing', 'Solid-State Phase Relations', 'Inorganic Composition Analysis']
+    },
+    'mhg-ged': {
+      name: 'MHG-GED',
+      domain: 'Chemistry and Materials Science',
+      domainKey: 'chemistry',
+      icon: '🕸️',
+      desc: 'Molecular hypergraph grammar autoencoder producing 100% syntactically and chemically valid molecular graphs with guaranteed valence satisfaction.',
+      capabilities: ['Grammar Autoencoding', 'Valid Molecular Graph Generation', 'Target Property Optimization', 'High-Valence Structure Design']
+    },
+    'molformer': {
+      name: 'MoLFormer',
+      domain: 'Chemistry and Materials Science',
+      domainKey: 'chemistry',
+      icon: '💊',
+      desc: 'Foundation model utilizing linear attention and rotary positional embeddings on 1.1 billion molecules for molecular representation and virtual drug candidate screening.',
+      capabilities: ['Drug Candidate Virtual Screening', 'Binding Affinity Estimation', 'ADMET Pharmacokinetics', 'Lead Compound Optimization']
+    },
+    'nucleotide-transformer': {
+      name: 'Nucleotide Transformer',
+      domain: 'Biology and Genomics',
+      domainKey: 'biology',
+      icon: '🧬',
+      desc: 'Multi-species genomic foundation model trained on genomes from thousands of organisms for DNA regulatory element discovery and epigenetic mark prediction.',
+      capabilities: ['Promoter & Enhancer Detection', 'Chromatin Accessibility Prediction', 'Splice Site Recognition', 'Transcription Factor Binding']
+    },
+    'prithvi': {
+      name: 'Prithvi',
+      domain: 'Earth, Climate, and Atmospheric Science',
+      domainKey: 'earth',
+      icon: '🛰️',
+      desc: 'NASA and IBM open geospatial foundation model trained on Harmonized Landsat and Sentinel-2 satellite imagery for Earth observation and land use classification.',
+      capabilities: ['Multispectral Satellite Grounding', 'Flood & Wildfire Scar Delineation', 'Crop & Vegetation Mapping', 'Geospatial Surface Segmentation']
+    },
+    's1-omni': {
+      name: 'S1-Omni',
+      domain: 'Scientific Literature and Reasoning',
+      domainKey: 'literature',
+      icon: '🔭',
+      desc: 'Unified multimodal scientific reasoning foundation model capable of step-by-step mathematical reasoning, diagram interpretation, and interdisciplinary problem solving.',
+      capabilities: ['Multimodal Scientific Reasoning', 'Diagram & Spectral Parsing', 'Step-by-Step Proof Verification', 'Cross-Domain Hypothesis Generation']
+    },
+    'scholarbert': {
+      name: 'ScholarBERT',
+      domain: 'Scientific Literature and Reasoning',
+      domainKey: 'literature',
+      icon: '📖',
+      desc: 'Language model trained on tens of millions of scientific journal articles spanning all scientific disciplines for scholarly citation parsing and interdisciplinary discovery.',
+      capabilities: ['Scholarly Publication Analysis', 'Interdisciplinary Concept Mapping', 'Citation Context Disambiguation', 'Bibliometric Knowledge Graphs']
+    },
+    'scibert': {
+      name: 'SciBERT',
+      domain: 'Scientific Literature and Reasoning',
+      domainKey: 'literature',
+      icon: '📄',
+      desc: 'Pretrained language model based on BERT trained on a random sample of 1.14 million papers from Semantic Scholar, optimizing biomedical and computer science paper representation.',
+      capabilities: ['Biomedical Entity Extraction', 'Scientific Named Entity Recognition (NER)', 'Relation Extraction', 'Method & Task Classification']
+    },
+    'selfies-ted': {
+      name: 'SELFIES-TED',
+      domain: 'Chemistry and Materials Science',
+      domainKey: 'chemistry',
+      icon: '🔬',
+      desc: 'Transformer encoder-decoder trained on SELFIES (Self-Referencing Embedded Strings) representing 100% chemically valid molecules for inverse molecular design.',
+      capabilities: ['SELFIES Chemical Representation', 'Inverse Molecular Design', 'Target Property Forecasting', '100% Robust Chemical Validity']
+    },
+    'smi-ted': {
+      name: 'SMI-TED',
+      domain: 'Chemistry and Materials Science',
+      domainKey: 'chemistry',
+      icon: '⚗️',
+      desc: 'SMILES-based transformer encoder-decoder model pre-trained on billions of molecules for chemical representation, quantum mechanical property prediction, and lead discovery.',
+      capabilities: ['Quantum Chemical Property Prediction', 'DFT Energy Approximations', 'Dipole & HOMO-LUMO Gap Prediction', 'Molecular Fingerprinting']
+    }
+  };
 
+  function filterScienceDomain(domain, btn) {
+    if (typeof document === 'undefined') return;
+    const tabs = document.querySelectorAll('.science-domain-tab');
+    tabs.forEach(t => t.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    const items = document.querySelectorAll('.science-tool-item');
+    items.forEach(item => {
+      const itemDomain = item.getAttribute('data-domain');
+      if (domain === 'all' || itemDomain === domain) {
+        item.classList.remove('hidden-domain');
+      } else {
+        item.classList.add('hidden-domain');
+      }
+    });
+  }
+  window.filterScienceDomain = filterScienceDomain;
 
   // ─────────────────────────────────────────────────────────────
   // Universal @agent Autocomplete / Prepopulation Engine
   // ─────────────────────────────────────────────────────────────
   const AGENT_COMMANDS = [
+    { cmd: '@agent science ', icon: '🔬', label: 'Science & Discovery', desc: 'Query 20 scientific foundation models across Biology, Chemistry, Earth, and Scientific Literature' },
+    { cmd: '@agent science aurora ', icon: '🌦️', label: 'Aurora (Weather)', desc: 'Atmospheric fluid dynamics and operational weather forecasting' },
+    { cmd: '@agent science chemberta ', icon: '🧪', label: 'ChemBERTa (Chemistry)', desc: 'Molecular property prediction and chemical toxicity screening' },
+    { cmd: '@agent science climatebert ', icon: '🌡️', label: 'ClimateBERT (Climate)', desc: 'Climate science text and environmental risk analysis' },
+    { cmd: '@agent science climax ', icon: '🌪️', label: 'ClimaX (Climate)', desc: 'Foundation climate modeling and global weather forecasting' },
+    { cmd: '@agent science esm2 ', icon: '🧬', label: 'ESM2 (Protein Language)', desc: 'Protein language modeling and residue contact prediction' },
+    { cmd: '@agent science esm3 ', icon: '✨', label: 'ESM3 (Generative Biology)', desc: 'Generative biology and de novo protein sequence-structure design' },
+    { cmd: '@agent science esmfold ', icon: '🔬', label: 'ESMFold (3D Structure)', desc: 'Fast protein 3D structure prediction from sequences' },
+    { cmd: '@agent science evo ', icon: '🧬', label: 'Evo (Genomics)', desc: 'Long-context genomic sequence modeling across DNA, RNA, and proteins' },
+    { cmd: '@agent science galactica ', icon: '🌌', label: 'Galactica (Scientific Reasoning)', desc: 'Scientific knowledge, mathematical equations, and chemical formulas' },
+    { cmd: '@agent science geneformer ', icon: '🧫', label: 'Geneformer (Transcriptomics)', desc: 'Single-cell transcriptomics and gene network modeling' },
+    { cmd: '@agent science matscibert ', icon: '💎', label: 'MatSciBERT (Materials Science)', desc: 'Materials science literature and crystal synthesis analysis' },
+    { cmd: '@agent science mhg-ged ', icon: '🕸️', label: 'MHG-GED (Molecular Graphs)', desc: 'Molecular hypergraph grammar autoencoder for valid graph design' },
+    { cmd: '@agent science molformer ', icon: '💊', label: 'MoLFormer (Drug Screening)', desc: 'Molecular representation and virtual drug candidate screening' },
+    { cmd: '@agent science nucleotide-transformer ', icon: '🧬', label: 'Nucleotide Transformer (DNA)', desc: 'Genomics and DNA regulatory element analysis' },
+    { cmd: '@agent science prithvi ', icon: '🛰️', label: 'Prithvi (Geospatial/Earth)', desc: 'NASA/IBM geospatial satellite observation and Earth science' },
+    { cmd: '@agent science s1-omni ', icon: '🔭', label: 'S1-Omni (Multimodal Science)', desc: 'Unified multimodal scientific reasoning and mathematical proof' },
+    { cmd: '@agent science scholarbert ', icon: '📖', label: 'ScholarBERT (Publications)', desc: 'Scientific literature and research publication analysis' },
+    { cmd: '@agent science scibert ', icon: '📄', label: 'SciBERT (Paper Representation)', desc: 'Biomedical and scientific paper semantic representation' },
+    { cmd: '@agent science selfies-ted ', icon: '🔬', label: 'SELFIES-TED (Molecular Design)', desc: 'SELFIES molecular generation and property forecasting' },
+    { cmd: '@agent science smi-ted ', icon: '⚗️', label: 'SMI-TED (Quantum Chemistry)', desc: 'Chemical representation and quantum mechanical property prediction' },
     { cmd: '@agent computer-use ', icon: '🖥️', label: 'Computer Use (UI-TARS)', desc: 'Autonomous OS computer use via UI-TARS action grounding and screen perception' },
     { cmd: '@agent exam-solver ', icon: '📝', label: 'Exam Solver', desc: 'Human-in-the-loop exam solver & assessment on active page' },
     { cmd: '@agent map-directions ', icon: '🧭', label: 'Map Directions', desc: 'Grounded map directions, routing, and transit navigation' },
