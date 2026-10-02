@@ -14,17 +14,40 @@ import re
 import subprocess
 import sys
 
-# All dist extension.js locations across source, staged, and installed paths
-EXTENSION_PATHS = [
-    r"D:\harfile\ModelFusion\IDE\vscode\extensions\copilot\dist\extension.js",
-    r"D:\harfile\ModelFusion\IDE\VSCode-win32-x64\resources\app\extensions\copilot\dist\extension.js",
-    r"D:\harfile\ModelFusion\IDE\VSCode-win32-x64\7e7950df89\resources\app\extensions\copilot\dist\extension.js",
-    os.path.expandvars(r"%LOCALAPPDATA%\HugOS IDE\resources\app\extensions\copilot\dist\extension.js"),
-    os.path.expandvars(r"%LOCALAPPDATA%\HugOS IDE\7e7950df89\resources\app\extensions\copilot\dist\extension.js"),
-]
+def get_extension_paths(pack_dir=None, skip_installed=False):
+    paths = []
+    src_ext = r"D:\harfile\ModelFusion\IDE\vscode\extensions\copilot\dist\extension.js"
+    if os.path.isfile(src_ext):
+        paths.append(src_ext)
 
-# Deduplicate and filter to existing files
-EXTENSION_PATHS = list(dict.fromkeys(p for p in EXTENSION_PATHS if os.path.isfile(p)))
+    if not pack_dir:
+        pack_dir = r"D:\harfile\ModelFusion\IDE\VSCode-win32-x64"
+
+    p1 = os.path.join(pack_dir, "resources", "app", "extensions", "copilot", "dist", "extension.js")
+    if os.path.isfile(p1):
+        paths.append(p1)
+
+    if os.path.isdir(pack_dir):
+        for entry in os.listdir(pack_dir):
+            if re.match(r"^[0-9a-f]{7,40}$", entry, re.IGNORECASE):
+                sub = os.path.join(pack_dir, entry, "resources", "app", "extensions", "copilot", "dist", "extension.js")
+                if os.path.isfile(sub):
+                    paths.append(sub)
+
+    local_app_data = os.environ.get("LOCALAPPDATA", "")
+    if local_app_data and not skip_installed:
+        installed_root = os.path.join(local_app_data, "HugOS IDE")
+        i1 = os.path.join(installed_root, "resources", "app", "extensions", "copilot", "dist", "extension.js")
+        if os.path.isfile(i1):
+            paths.append(i1)
+        if os.path.isdir(installed_root):
+            for entry in os.listdir(installed_root):
+                if re.match(r"^[0-9a-f]{7,40}$", entry, re.IGNORECASE):
+                    sub = os.path.join(installed_root, entry, "resources", "app", "extensions", "copilot", "dist", "extension.js")
+                    if os.path.isfile(sub):
+                        paths.append(sub)
+
+    return list(dict.fromkeys(os.path.abspath(p) for p in paths if os.path.isfile(p)))
 
 
 def cleanup_corrupted_leftovers(content: str) -> str:
@@ -272,33 +295,43 @@ def validate_syntax(filepath: str):
     """Validate JS syntax using node -c. Raise RuntimeError on failure."""
     node_bin = r"D:\tools\nodejs\node.exe" if os.path.exists(r"D:\tools\nodejs\node.exe") else "node"
     try:
-        res = subprocess.run([node_bin, "-c", filepath], capture_output=True, text=True)
+        res = subprocess.run([node_bin, "-c", filepath], capture_output=True, text=True, timeout=30)
         if res.returncode != 0:
             err_msg = f"Syntax validation failed for {filepath}:\n{res.stderr}"
-            print(f"  [ERROR] {err_msg}", file=sys.stderr)
+            print(f"  [ERROR] {err_msg}", file=sys.stderr, flush=True)
             raise RuntimeError(err_msg)
-        print(f"  [OK] Syntax validation passed (node -c): {filepath}")
+        print(f"  [OK] Syntax validation passed (node -c): {filepath}", flush=True)
     except Exception as e:
-        print(f"  [WARN] Could not run node -c: {e}")
+        print(f"  [WARN] Could not run node -c: {e}", flush=True)
 
 
 def main():
-    if not EXTENSION_PATHS:
-        print("[ERROR] No extension.js files found!")
+    skip_installed = "--skip-installed" in sys.argv
+    force_validate = "--force-validate" in sys.argv
+    pack_dir = None
+    for arg in sys.argv[1:]:
+        if not arg.startswith("--"):
+            pack_dir = arg
+            break
+
+    extension_paths = get_extension_paths(pack_dir=pack_dir, skip_installed=skip_installed)
+    if not extension_paths:
+        print("[ERROR] No extension.js files found!", flush=True)
         sys.exit(1)
 
-    print(f"[INFO] Found {len(EXTENSION_PATHS)} extension.js files to patch:\n")
-    for p in EXTENSION_PATHS:
-        print(f"  {p}")
-    print()
+    print(f"[INFO] Found {len(extension_paths)} extension.js files to patch:\n", flush=True)
+    for p in extension_paths:
+        print(f"  {p}", flush=True)
+    print(flush=True)
 
     success = 0
-    for filepath in EXTENSION_PATHS:
-        print(f"\n[PATCHING] {filepath}")
+    for filepath in extension_paths:
+        print(f"\n[PATCHING] {filepath}", flush=True)
         try:
             with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
                 content = f.read()
 
+            original_content = content
             original_len = len(content)
             content = cleanup_corrupted_leftovers(content)
             content = patch_eval_exit_code(content)
@@ -306,20 +339,23 @@ def main():
             content = patch_completion_handler(content)
             content = cleanup_corrupted_leftovers(content)
 
-            with open(filepath, 'w', encoding='utf-8', newline='') as f:
-                f.write(content)
+            if content != original_content:
+                with open(filepath, 'w', encoding='utf-8', newline='') as f:
+                    f.write(content)
+                print(f"  [DONE] {filepath} ({original_len} -> {len(content)} bytes)", flush=True)
+                validate_syntax(filepath)
+            else:
+                print(f"  [NO CHANGES] {filepath}", flush=True)
+                if force_validate:
+                    validate_syntax(filepath)
 
-            print(f"  [DONE] {filepath} ({original_len} -> {len(content)} bytes)")
-
-            # Validate syntax immediately
-            validate_syntax(filepath)
             success += 1
         except Exception as e:
-            print(f"  [ERROR] {e}", file=sys.stderr)
+            print(f"  [ERROR] {e}", file=sys.stderr, flush=True)
             return 1
 
-    print(f"\n[SUMMARY] Patched and validated {success}/{len(EXTENSION_PATHS)} files successfully (100% pass)")
-    return 0 if success == len(EXTENSION_PATHS) else 1
+    print(f"\n[SUMMARY] Patched and validated {success}/{len(extension_paths)} files successfully (100% pass)", flush=True)
+    return 0 if success == len(extension_paths) else 1
 
 
 if __name__ == "__main__":

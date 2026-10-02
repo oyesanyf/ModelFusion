@@ -149,9 +149,9 @@ def patch_file(fpath):
 
     if old_block2 in content:
         content = content.replace(old_block2, new_block2)
-        print(f"[PATCHED] _findCliBinary (2) in {fpath}")
+        print(f"[PATCHED] _findCliBinary (2) in {fpath}", flush=True)
     else:
-        print(f"[INFO] _findCliBinary (2) already patched or not matched in {fpath}")
+        print(f"[INFO] _findCliBinary (2) already patched or not matched in {fpath}", flush=True)
 
     # 3. Update Find-RealCopilot powershell script
     old_ps = """    # Check if we have our IDE's own cli.exe first (highest priority)
@@ -171,25 +171,27 @@ def patch_file(fpath):
 
     if old_ps in content:
         content = content.replace(old_ps, new_ps)
-        print(f"[PATCHED] Find-RealCopilot in {fpath}")
+        print(f"[PATCHED] Find-RealCopilot in {fpath}", flush=True)
     else:
-        print(f"[INFO] Find-RealCopilot already patched or not matched in {fpath}")
+        print(f"[INFO] Find-RealCopilot already patched or not matched in {fpath}", flush=True)
 
     if content != original:
-        with open(fpath, "w", encoding="utf-8") as f:
-            f.write(content)
-        print(f"[SAVED] {fpath}")
+        with open(fpath, "wb") as f:
+            f.write(content.encode("utf-8"))
+        print(f"[SAVED] {fpath}", flush=True)
 
         # Syntax check
         node_exe = r"D:\tools\nodejs\node.exe"
         if not os.path.isfile(node_exe):
             node_exe = "node"
-        res = subprocess.run([node_exe, "--check", fpath], capture_output=True, text=True)
+        res = subprocess.run([node_exe, "--check", fpath], capture_output=True, text=True, timeout=30)
         if res.returncode == 0:
-            print(f"[SYNTAX OK] {fpath}")
+            print(f"[SYNTAX OK] {fpath}", flush=True)
         else:
-            print(f"[SYNTAX ERROR] {fpath}:\n{res.stderr}")
+            print(f"[SYNTAX ERROR] {fpath}:\n{res.stderr}", flush=True)
             sys.exit(1)
+    else:
+        print(f"[NO CHANGES] {fpath}", flush=True)
 
 def main():
     repo_root = r"D:\harfile\ModelFusion"

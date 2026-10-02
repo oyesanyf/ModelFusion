@@ -297,6 +297,23 @@ if (Test-Path $dbSrcPath) {
 } else {
     Write-Host "[WARNING] Pre-populated database not found at $dbSrcPath. Packaging without pre-populated DB." -ForegroundColor Yellow
 }
+# 4.58 Copy HugOS Browser / Agent Capabilities UI assets into installer package
+$browserUiSrc = Join-Path (Split-Path $PSScriptRoot -Parent) "browser\ui"
+if (Test-Path $browserUiSrc) {
+    Write-Host "[INFO] Copying authoritative browser UI assets to installer package..." -ForegroundColor Yellow
+    $uiTargets = @(
+        (Join-Path $vsCodePackDir "ui"),
+        (Join-Path $vsCodePackDir "browser\ui")
+    )
+    foreach ($target in $uiTargets) {
+        if (-not (Test-Path $target)) {
+            New-Item -ItemType Directory -Force -Path $target | Out-Null
+        }
+        Copy-Item -Path "$browserUiSrc\*" -Destination $target -Force -Recurse
+        Write-Host "[OK] Copied browser UI assets to: $target" -ForegroundColor Green
+    }
+}
+
 # 4.6 Copy Python helper scripts into the packaged folder
 $scriptsSrcPath = Join-Path (Split-Path $PSScriptRoot -Parent) "src\scripts"
 if (Test-Path $scriptsSrcPath) {
@@ -614,7 +631,11 @@ if (Test-Path $patchFusionScript) {
 }
 $patchAvoOutputScript = Join-Path $PSScriptRoot "patch_avo_output.py"
 if (Test-Path $patchAvoOutputScript) {
-    python $patchAvoOutputScript
+    python $patchAvoOutputScript "$vsCodePackDir" --skip-installed
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] patch_avo_output script failed! Aborting MSI build." -ForegroundColor Red
+        Exit 1
+    }
     Write-Host "[OK] Applied AVO output reporting & diagnostic patches" -ForegroundColor Green
 }
 $patchProductJsonScript = Join-Path $PSScriptRoot "patch_product_json.py"
@@ -878,6 +899,11 @@ Write-Host "[OK] Signed $count ModelFusion binaries inside bin/." -ForegroundCol
 [System.GC]::WaitForPendingFinalizers()
 Start-Sleep -Seconds 3
 
+# Kill any lingering wix or wixnative processes from previous runs, as well as HugOS and cli to release locks
+Stop-Process -Name wix, wixnative, HugOS, cli -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:LOCALAPPDATA\Temp\#cab*" -Force -Recurse -ErrorAction SilentlyContinue
+Remove-Item "$env:TEMP\#cab*" -Force -Recurse -ErrorAction SilentlyContinue
+
 # 6. Generate the WiX source manifest (.wxs)
 Write-Host "[INFO] Generating WiX source manifest (.wxs)..." -ForegroundColor Yellow
 $wxsPath = Join-Path $PSScriptRoot "HugOS.wxs"
@@ -892,11 +918,6 @@ if ($LASTEXITCODE -ne 0) {
     Exit 1
 }
 Write-Host "[OK] WiX source generated at $wxsPath" -ForegroundColor Green
-
-# Kill any lingering wix or wixnative processes from previous runs, as well as HugOS and cli to release locks
-Stop-Process -Name wix, wixnative, HugOS, cli -Force -ErrorAction SilentlyContinue
-Remove-Item "$env:LOCALAPPDATA\Temp\#cab*" -Force -Recurse -ErrorAction SilentlyContinue
-Remove-Item "$env:TEMP\#cab*" -Force -Recurse -ErrorAction SilentlyContinue
 
 # 7. Compile the MSI using WiX Toolset
 Write-Host "[INFO] Compiling MSI using WiX Toolset..." -ForegroundColor Yellow

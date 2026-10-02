@@ -48,7 +48,7 @@ def validate_js_syntax(file_path, node_path):
         print(f"  [SYNTAX ERROR] Exception running node --check: {e}")
         return False
 
-def patch_extension_js(ext_js_path, node_path):
+def patch_extension_js(ext_js_path, node_path, force_validate=False):
     """Patch dist/extension.js with Ollama PATH helper, available RAM scaling, and watcher output."""
     if not os.path.isfile(ext_js_path):
         return False, False
@@ -253,16 +253,31 @@ def patch_extension_js(ext_js_path, node_path):
 
     if "calibrated_sweet_spot" in content and "qwen2.5:0.5b" in content:
         print("  [OK] _selectModelForSystem() already calibrates with hardware sweet spot.")
-    elif model_sel_re.search(content):
-        content = model_sel_re.sub(new_model_sel, content, count=1)
-        changed = True
-        print("  [APPLIED] Upgraded _selectModelForSystem() to hardware sweet spot calibration.")
-    elif model_sel_fallback_re.search(content):
-        content = model_sel_fallback_re.sub(new_model_sel, content, count=1)
-        changed = True
-        print("  [APPLIED] Upgraded stock _selectModelForSystem() to hardware sweet spot calibration.")
     else:
-        print("  [WARN] Could not match _selectModelForSystem() pattern.")
+        idx = content.find("_selectModelForSystem()")
+        if idx != -1:
+            window_end = min(len(content), idx + 4000)
+            window = content[idx:window_end]
+            if model_sel_re.search(window):
+                content = content[:idx] + model_sel_re.sub(new_model_sel, window, count=1) + content[window_end:]
+                changed = True
+                print("  [APPLIED] Upgraded _selectModelForSystem() to hardware sweet spot calibration.")
+            elif model_sel_fallback_re.search(window):
+                content = content[:idx] + model_sel_fallback_re.sub(new_model_sel, window, count=1) + content[window_end:]
+                changed = True
+                print("  [APPLIED] Upgraded stock _selectModelForSystem() to hardware sweet spot calibration.")
+            else:
+                print("  [WARN] Could not match _selectModelForSystem() pattern in window.")
+        elif model_sel_re.search(content):
+            content = model_sel_re.sub(new_model_sel, content, count=1)
+            changed = True
+            print("  [APPLIED] Upgraded _selectModelForSystem() to hardware sweet spot calibration.")
+        elif model_sel_fallback_re.search(content):
+            content = model_sel_fallback_re.sub(new_model_sel, content, count=1)
+            changed = True
+            print("  [APPLIED] Upgraded stock _selectModelForSystem() to hardware sweet spot calibration.")
+        else:
+            print("  [WARN] Could not match _selectModelForSystem() pattern.")
 
     # -------------------------------------------------------------------------
     # 5. Harden _runDatabaseUpdate() (safe os.setPriority, watcher output forwarding)
@@ -320,18 +335,25 @@ def patch_extension_js(ext_js_path, node_path):
     # -------------------------------------------------------------------------
     # 6. Silent Auto-Installation of Ollama (no user prompt, silent background setup)
     # -------------------------------------------------------------------------
-    prompt_match = re.search(
-        r'const choice = await vscode15\.window\.showInformationMessage\(\s*[\'"][^\'"]*Ollama is not installed[\s\S]*?vscode15\.window\.showInformationMessage\([^\)]*Downloading Ollama installer\.\.\.[^\)]*\);',
-        content
-    )
-    if prompt_match:
-        silent_install_code = '''this._outputChannel.appendLine("[OLLAMA] Ollama not found. Starting silent automatic background installation...");
-        vscode15.window.showInformationMessage("\\u{1F999} Installing Ollama for local AI in background...");'''
-        content = content[:prompt_match.start()] + silent_install_code + content[prompt_match.end():]
-        changed = True
-        print("  [APPLIED] Made Ollama installation 100% automatic and silent.")
-    elif "Starting silent automatic background installation" in content:
-        print("  [OK] Silent Ollama auto-installation already present.")
+    if "Downloading Ollama installer" in content:
+        idx = content.find("Downloading Ollama installer")
+        w_start = max(0, idx - 1500)
+        w_end = min(len(content), idx + 1500)
+        window = content[w_start:w_end]
+        prompt_match = re.search(
+            r'const choice = await (?:vscode\d*)\.window\.showInformationMessage\(\s*[\'"][^\'"]*Ollama is not installed[\s\S]*?(?:vscode\d*)\.window\.showInformationMessage\([^\)]*Downloading Ollama installer\.\.\.[^\)]*\);',
+            window
+        )
+        if prompt_match:
+            vsc_num_match = re.search(r'vscode\d*', prompt_match.group(0))
+            vsc_var = vsc_num_match.group(0) if vsc_num_match else "vscode15"
+            silent_install_code = f'''this._outputChannel.appendLine("[OLLAMA] Ollama not found. Starting silent automatic background installation...");
+            {vsc_var}.window.showInformationMessage("\\u{{1F999}} Installing Ollama for local AI in background...");'''
+            content = content[:w_start + prompt_match.start()] + silent_install_code + content[w_start + prompt_match.end():]
+            changed = True
+            print("  [APPLIED] Made Ollama installation 100% automatic and silent.", flush=True)
+    elif "Starting silent automatic background installation" in content or "Auto-installing..." in content:
+        print("  [OK] Silent Ollama auto-installation already present.", flush=True)
 
     # -------------------------------------------------------------------------
     # 7. Dynamic model adoption in _ensureModelPulled(ollamaPath)
@@ -435,17 +457,20 @@ def patch_extension_js(ext_js_path, node_path):
         print("  [APPLIED] Updated config log to fusion=true.")
 
     if changed:
-        with open(ext_js_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        print("  [SUCCESS] Written updated extension.js.")
+        with open(ext_js_path, "wb") as f:
+            f.write(content.encode("utf-8"))
+        print("  [SUCCESS] Written updated extension.js.", flush=True)
+        valid = validate_js_syntax(ext_js_path, node_path)
+        if not valid:
+            return False, False
+        return True, True
     else:
-        print("  [NO CHANGES] File already up to date.")
-
-    # Validate syntax with node --check
-    valid = validate_js_syntax(ext_js_path, node_path)
-    if not valid:
-        return False, False
-    return True, changed
+        print("  [NO CHANGES] File already up to date.", flush=True)
+        if force_validate:
+            valid = validate_js_syntax(ext_js_path, node_path)
+            if not valid:
+                return False, False
+        return True, False
 
 def main():
     print("============================================================")
@@ -454,6 +479,7 @@ def main():
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     skip_installed = any(arg.lower() in ("--skip-installed", "--check-installed=false") for arg in sys.argv)
+    force_validate = "--force-validate" in sys.argv
     pack_dir_args = [a for a in sys.argv[1:] if not a.startswith("--")]
     pack_dir = (
         os.path.abspath(pack_dir_args[0].strip().strip('\"\''))
@@ -497,7 +523,7 @@ def main():
     for t in targets:
         if t and t not in seen and os.path.isfile(t):
             seen.add(t)
-            success, changed = patch_extension_js(t, node_path)
+            success, changed = patch_extension_js(t, node_path, force_validate=force_validate)
             if not success:
                 error_count += 1
             elif changed:

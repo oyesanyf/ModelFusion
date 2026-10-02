@@ -3483,6 +3483,260 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   window.isClientDomOrJsError = isClientDomOrJsError;
 
+  // -----------------------------------------------------------------
+  // Dynamic Animated Streaming Cursor & Status Phrasing Engine
+  // Ensures that whenever a streaming cursor appears in the UI,
+  // it displays dynamic, smoothly cycling, randomized status phrases
+  // ("thinking...", "processing...", "searching...", "synthesizing...",
+  // "analyzing...", "grounding...", and contextual dynamic messages)
+  // across every command (including /boost, @agent, research, coding).
+  // -----------------------------------------------------------------
+  const StreamingCursorManager = (() => {
+    const activeControllers = new WeakMap();
+
+    const PHRASE_POOLS = {
+      general: [
+        "thinking...",
+        "processing...",
+        "searching...",
+        "synthesizing...",
+        "analyzing...",
+        "grounding...",
+        "deliberating...",
+        "evaluating...",
+        "optimizing...",
+        "formulating...",
+        "reasoning...",
+        "generating...",
+        "correlating...",
+        "validating...",
+        "crystallizing...",
+        "exploring knowledge..."
+      ],
+      boost: [
+        "boosting compute...",
+        "deliberating consensus...",
+        "evaluating multi-sample reasoning...",
+        "exploring candidate reasoning paths...",
+        "verifying formal logic & constraints...",
+        "synthesizing optimal response...",
+        "deep thinking...",
+        "stress-testing hypotheses...",
+        "evaluating Pareto trade-offs..."
+      ],
+      research: [
+        "searching web sources & papers...",
+        "crawling verified citations...",
+        "extracting empirical evidence...",
+        "cross-referencing references...",
+        "grounding verified facts...",
+        "synthesizing grounded brief...",
+        "searching..."
+      ],
+      data: [
+        "analyzing data distributions...",
+        "evaluating predictive signals...",
+        "optimizing Pareto objectives...",
+        "fitting regression/classification models...",
+        "validating cross-validation scores...",
+        "processing..."
+      ],
+      code: [
+        "inspecting syntax & AST...",
+        "checking boundary edge cases...",
+        "evaluating algorithmic complexity...",
+        "optimizing runtime efficiency...",
+        "generating robust implementation...",
+        "analyzing..."
+      ]
+    };
+
+    function selectPhrasesForContext(contextText) {
+      const text = (contextText || '').toLowerCase();
+      let specificPool = [];
+      if (/\b(?:boost|booster|reasoning|high[\s-]compute|deep[\s-]thinking)\b/.test(text)) {
+        specificPool = PHRASE_POOLS.boost;
+      } else if (/\b(?:search|research|arxiv|web|crawl|citation|wiki)\b/.test(text)) {
+        specificPool = PHRASE_POOLS.research;
+      } else if (/\b(?:data|dataset|datascience|dataanalyst|automl|acdso|matrix|csv)\b/.test(text)) {
+        specificPool = PHRASE_POOLS.data;
+      } else if (/\b(?:code|function|class|test|refactor|audit|bug|fix|rust|python|js|ts)\b/.test(text)) {
+        specificPool = PHRASE_POOLS.code;
+      }
+
+      // Interleave specific pool with randomized general pool
+      const genCopy = [...PHRASE_POOLS.general];
+      // Fisher-Yates shuffle of general pool
+      for (let i = genCopy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [genCopy[i], genCopy[j]] = [genCopy[j], genCopy[i]];
+      }
+
+      if (specificPool.length > 0) {
+        const combined = [];
+        const specCopy = [...specificPool];
+        for (let i = specCopy.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [specCopy[i], specCopy[j]] = [specCopy[j], specCopy[i]];
+        }
+        let sIdx = 0, gIdx = 0;
+        while (sIdx < specCopy.length || gIdx < genCopy.length) {
+          if (sIdx < specCopy.length) combined.push(specCopy[sIdx++]);
+          if (gIdx < genCopy.length) combined.push(genCopy[gIdx++]);
+        }
+        return combined;
+      }
+      return genCopy;
+    }
+
+    function start(bubbleElement, contextHint = '') {
+      if (!bubbleElement || !(bubbleElement instanceof Element)) return null;
+      if (activeControllers.has(bubbleElement)) return activeControllers.get(bubbleElement);
+
+      const promptContext = contextHint || bubbleElement.dataset.prompt || bubbleElement.textContent || '';
+      const phrases = selectPhrasesForContext(promptContext);
+      let step = 0;
+      let stopped = false;
+
+      // Ensure DOM cursor element
+      let liveCursor = bubbleElement.querySelector('.streaming-live-cursor');
+      if (!liveCursor) {
+        liveCursor = document.createElement('div');
+        liveCursor.className = 'streaming-live-cursor';
+        liveCursor.setAttribute('aria-live', 'polite');
+        liveCursor.innerHTML = `
+          <span class="cursor-block">▋</span>
+          <span class="cursor-status-text">${escapeHtml(phrases[0])}</span>
+        `;
+
+        const contentContainer = bubbleElement.querySelector('.bubble-content') || bubbleElement;
+        const streamTarget = contentContainer.querySelector('.stream-content-planner') || contentContainer.querySelector('.stream-content');
+        if (streamTarget && streamTarget.parentNode) {
+          safeInsertBefore(streamTarget.parentNode, liveCursor, streamTarget.nextSibling);
+        } else {
+          contentContainer.appendChild(liveCursor);
+        }
+      }
+
+      const initialPhrase = phrases[0];
+      bubbleElement.setAttribute('data-cursor-status', initialPhrase);
+
+      const cycleText = () => {
+        if (stopped || !bubbleElement.isConnected || !bubbleElement.classList.contains('streaming')) {
+          stop(bubbleElement);
+          return;
+        }
+        step = (step + 1) % phrases.length;
+        const nextPhrase = phrases[step];
+        bubbleElement.setAttribute('data-cursor-status', nextPhrase);
+
+        if (liveCursor && liveCursor.isConnected) {
+          const textSpan = liveCursor.querySelector('.cursor-status-text');
+          if (textSpan) {
+            textSpan.classList.add('fade-swap');
+            setTimeout(() => {
+              if (!stopped && textSpan.isConnected) {
+                textSpan.textContent = nextPhrase;
+                textSpan.classList.remove('fade-swap');
+              }
+            }, 180);
+          }
+        }
+      };
+
+      const intervalId = setInterval(cycleText, 1400);
+
+      const ctrl = {
+        intervalId,
+        phrases,
+        stop: () => {
+          if (stopped) return;
+          stopped = true;
+          clearInterval(intervalId);
+          bubbleElement.removeAttribute('data-cursor-status');
+          if (liveCursor && liveCursor.parentNode) {
+            liveCursor.remove();
+          }
+          activeControllers.delete(bubbleElement);
+        }
+      };
+
+      activeControllers.set(bubbleElement, ctrl);
+      return ctrl;
+    }
+
+    function stop(bubbleElement) {
+      if (!bubbleElement) return;
+      const ctrl = activeControllers.get(bubbleElement);
+      if (ctrl) {
+        ctrl.stop();
+      } else {
+        bubbleElement.removeAttribute('data-cursor-status');
+        const liveCursor = bubbleElement.querySelector('.streaming-live-cursor');
+        if (liveCursor) liveCursor.remove();
+      }
+    }
+
+    function initObserver(rootElement) {
+      if (typeof MutationObserver === 'undefined') return null;
+      const target = rootElement || (typeof chatMessages !== 'undefined' ? chatMessages : document.getElementById('chat-messages')) || document.body;
+      if (!target) return null;
+
+      const observer = new MutationObserver((mutations) => {
+        for (const m of mutations) {
+          if (m.type === 'childList') {
+            m.addedNodes.forEach((node) => {
+              if (node.nodeType === 1) {
+                if (node.classList && node.classList.contains('streaming') && node.classList.contains('assistant-bubble')) {
+                  start(node);
+                }
+                const streamings = node.querySelectorAll ? node.querySelectorAll('.assistant-bubble.streaming') : [];
+                streamings.forEach((el) => start(el));
+              }
+            });
+            m.removedNodes.forEach((node) => {
+              if (node.nodeType === 1) {
+                if (node.classList && node.classList.contains('assistant-bubble')) {
+                  stop(node);
+                }
+              }
+            });
+          } else if (m.type === 'attributes' && m.attributeName === 'class') {
+            const el = m.target;
+            if (el && el.classList && el.classList.contains('assistant-bubble')) {
+              if (el.classList.contains('streaming')) {
+                start(el);
+              } else {
+                stop(el);
+              }
+            }
+          }
+        }
+      });
+
+      observer.observe(target, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+      return observer;
+    }
+
+    return {
+      start,
+      stop,
+      initObserver,
+      PHRASE_POOLS,
+      selectPhrasesForContext
+    };
+  })();
+
+  window.StreamingCursorManager = StreamingCursorManager;
+  if (typeof chatMessages !== 'undefined' && chatMessages) {
+    StreamingCursorManager.initObserver(chatMessages);
+  } else if (typeof document !== 'undefined') {
+    document.addEventListener('DOMContentLoaded', () => {
+      const target = document.getElementById('chat-messages') || document.body;
+      if (target) StreamingCursorManager.initObserver(target);
+    });
+  }
+
   // Universal Assistant Bubble Creator
   function createAiBubble(options = {}) {
     const icon = options.icon || '🤖';
@@ -3491,6 +3745,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const bubble = document.createElement('div');
     bubble.className = 'msg-bubble assistant-bubble';
     if (options.isTool) bubble.classList.add('tool-bubble');
+    if (options.isBoost) bubble.classList.add('boost-bubble');
     if (options.streaming !== false) bubble.classList.add('streaming');
     bubble.innerHTML = `
       <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
@@ -3504,6 +3759,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (chatMessages) {
       chatMessages.appendChild(bubble);
       if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    if (options.streaming !== false && window.StreamingCursorManager) {
+      window.StreamingCursorManager.start(bubble, options.prompt || options.title || '');
     }
     return bubble;
   }
@@ -3526,6 +3784,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     bubbleElement.classList.remove('streaming');
+    if (window.StreamingCursorManager) {
+      window.StreamingCursorManager.stop(bubbleElement);
+    }
     const contentEl = bubbleElement.querySelector('.bubble-content') || bubbleElement;
     contentEl.style.color = '';
     contentEl.style.fontStyle = '';
@@ -4183,6 +4444,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (textSpan) textSpan.textContent = 'Continuing...';
 
     bubble.classList.add('streaming');
+    if (window.StreamingCursorManager) {
+      window.StreamingCursorManager.start(bubble, 'continue ' + (bubble.dataset.prompt || ''));
+    }
 
     let contSection = null;
     let statusTextEl = null;
@@ -4400,6 +4664,9 @@ MANDATORY CONTINUATION DIRECTIVES:
     } finally {
       if (btn) btn.disabled = false;
       bubble.classList.remove('streaming');
+      if (window.StreamingCursorManager) {
+        window.StreamingCursorManager.stop(bubble);
+      }
       if (iconSpan) iconSpan.textContent = origIcon;
       if (textSpan) textSpan.textContent = origLabel;
       setChatRunningState(false);
@@ -7871,6 +8138,9 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
       chatMessages.appendChild(assistantBubble);
       assistantBubble.dataset.prompt = (options && options.isContinuation && options.originalPrompt) ? options.originalPrompt : userPrompt;
       bubbleContent = assistantBubble.querySelector('.stream-content') || assistantBubble.querySelector('.bubble-content');
+      if (window.StreamingCursorManager) {
+        window.StreamingCursorManager.start(assistantBubble, assistantBubble.dataset.prompt);
+      }
       if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
@@ -8870,6 +9140,9 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
 
       if (assistantBubble) {
         assistantBubble.classList.remove('streaming');
+        if (window.StreamingCursorManager) {
+          window.StreamingCursorManager.stop(assistantBubble);
+        }
         assistantBubble.dataset.rawText = finalMergedText;
         assistantBubble.dataset.prompt = promptToSave;
         assistantBubble.dataset.model = resolvedOllamaModel;
@@ -14067,13 +14340,22 @@ Analyze the temporal progression across the sampled video keyframes, describing 
   window.confirmShellAction = confirmShellAction;
   window.abortShellAction = abortShellAction;
 
-  // 4.058 Autonomous Computer Use & UI-TARS Directive (@agent computer-use, /computer-use, @computer-use, @agent ui-tars, /ui-tars)
+  // 4.058 Autonomous Computer Use & UI-TARS Directive (@agent computer-use, /computer-use, @computer-use, @agent ui-tars, /ui-tars, @agent exam-solver, @agent ticket-booking, @agent map-directions, @agent shopping)
   if (
-    /^(@agent\s+computer-use\b|\/computer-use\b|@computer-use\b|@agent\s+ui-tars\b|\/ui-tars\b|@ui-tars\b|@agent\s+screen-grounding\b|@agent\s+desktop-click\b|@agent\s+desktop-type\b|@agent\s+desktop-scroll\b)/i.test(cmd)
+    /^(@agent\s+computer-use\b|\/computer-use\b|@computer-use\b|@agent\s+ui-tars\b|\/ui-tars\b|@ui-tars\b|@agent\s+screen-grounding\b|@agent\s+desktop-click\b|@agent\s+desktop-type\b|@agent\s+desktop-scroll\b|@agent\s+exam-solver\b|\/exam-solver\b|@exam-solver\b|@agent\s+ticket-booking\b|\/ticket-booking\b|@ticket-booking\b|@agent\s+map-directions\b|\/map-directions\b|@map-directions\b|@agent\s+shopping\b|\/shopping\b|@shopping\b)/i.test(cmd)
   ) {
-    let goal = cmd.replace(/^(@agent\s+computer-use\b|\/computer-use\b|@computer-use\b|@agent\s+ui-tars\b|\/ui-tars\b|@ui-tars\b|@agent\s+screen-grounding\b|@agent\s+desktop-click\b|@agent\s+desktop-type\b|@agent\s+desktop-scroll\b)(?:\s*[:]\s*|\s*)/i, '').trim();
+    let goal = cmd.replace(/^(@agent\s+computer-use\b|\/computer-use\b|@computer-use\b|@agent\s+ui-tars\b|\/ui-tars\b|@ui-tars\b|@agent\s+screen-grounding\b|@agent\s+desktop-click\b|@agent\s+desktop-type\b|@agent\s+desktop-scroll\b|@agent\s+exam-solver\b|\/exam-solver\b|@exam-solver\b|@agent\s+ticket-booking\b|\/ticket-booking\b|@ticket-booking\b|@agent\s+map-directions\b|\/map-directions\b|@map-directions\b|@agent\s+shopping\b|\/shopping\b|@shopping\b)(?:\s*[:]\s*|\s*)/i, '').trim();
 
     if (!goal) {
+      if (/exam-solver\b/i.test(cmd)) {
+        goal = 'Inspect active page and solve exam questions with human-in-the-loop validation';
+      } else if (/ticket-booking\b/i.test(cmd)) {
+        goal = 'Search and ground tickets, flights, or events on active page with booking safety gate';
+      } else if (/map-directions\b/i.test(cmd)) {
+        goal = 'Inspect active page and compute turn-by-turn map directions and transit routes';
+      } else if (/shopping\b/i.test(cmd)) {
+        goal = 'Discover products and compare prices on active page with e-commerce safety gate';
+      } else {
       termLog('🖥️ Please provide a goal or task for autonomous Computer Use (e.g. @agent computer-use Open Notepad and type hello).', 'warn');
       const cardBubble = createAiBubble({
         icon: '🖥️',
@@ -16035,10 +16317,14 @@ If you are asked about real-world facts such as world leaders, heads of state, c
   // ─────────────────────────────────────────────────────────────
   const AGENT_COMMANDS = [
     { cmd: '@agent computer-use ', icon: '🖥️', label: 'Computer Use (UI-TARS)', desc: 'Autonomous OS computer use via UI-TARS action grounding and screen perception' },
-    { cmd: '@agent screen-grounding ', icon: '👁️', label: 'Screen Grounding', desc: 'Perceive and ground interactive desktop screen elements' },
+    { cmd: '@agent exam-solver ', icon: '📝', label: 'Exam Solver', desc: 'Human-in-the-loop exam solver & assessment on active page' },
+    { cmd: '@agent map-directions ', icon: '🧭', label: 'Map Directions', desc: 'Grounded map directions, routing, and transit navigation' },
     { cmd: '@agent desktop-click ', icon: '🖱️', label: 'OS Mouse Click', desc: 'Execute OS-level mouse click at coordinates or visual target' },
     { cmd: '@agent desktop-type ', icon: '⌨️', label: 'OS Keystroke & Type', desc: 'Simulate physical keyboard text typing and OS hotkeys' },
     { cmd: '@agent desktop-scroll ', icon: '📜', label: 'OS Scroll Window', desc: 'Scroll active desktop window up or down' },
+    { cmd: '@agent screen-grounding ', icon: '👁️', label: 'Screen Grounding', desc: 'Perceive and ground interactive desktop screen elements' },
+    { cmd: '@agent shopping ', icon: '🛒', label: 'Shopping & Deals', desc: 'Grounded product discovery, deal comparison, and HITL checkout' },
+    { cmd: '@agent ticket-booking ', icon: '🎟️', label: 'Ticket Booking', desc: 'Flight, concert, transit, and event ticket booking with safety gates' },
     { cmd: '@agent ui-tars ', icon: '🤖', label: 'UI-TARS Agent Loop', desc: 'Closed-loop desktop automation agent with UI-TARS action parser' },
     { cmd: '@agent browser ', icon: '🌐', label: 'Browser Automation', desc: 'Navigate, interact, and automate web workflows' },
     { cmd: '@agent browser deep research on ', icon: '🔍', label: 'Deep Research', desc: 'Autonomous multi-step web research & synthesis' },

@@ -144,8 +144,22 @@ ${componentsXml}
 </Wix>
 `;
 
-    try { if (fs.existsSync(outputFile)) fs.unlinkSync(outputFile); } catch(e) {}
-    fs.writeFileSync(outputFile, wxsContent, 'utf8');
+    let written = false;
+    for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+            fs.writeFileSync(outputFile, wxsContent, 'utf8');
+            written = true;
+            break;
+        } catch (err) {
+            if (attempt === 4) {
+                console.error(`Error writing WiX manifest to ${outputFile}:`, err);
+                throw err;
+            }
+            const delay = 500 * (attempt + 1);
+            const start = Date.now();
+            while (Date.now() - start < delay) {}
+        }
+    }
     console.log(`Successfully generated WiX source at ${outputFile}`);
 }
 
