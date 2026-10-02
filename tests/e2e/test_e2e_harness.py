@@ -87,6 +87,10 @@ def sanitize_xml_context(raw_prompt: str) -> Dict[str, Any]:
             body = user_req_alt.group(2).strip()
             extracted_prompt = f"{prefix} {body}".strip() if prefix else body
             is_wrapped = True
+
+        # Strip any residual/nested <userRequest> tags in adversarial injections
+        extracted_prompt = re.sub(r'</?userrequest>', '', extracted_prompt, flags=re.IGNORECASE).strip()
+        extracted_prompt = re.sub(r'</?user_request>', '', extracted_prompt, flags=re.IGNORECASE).strip()
     else:
         # Strip system context tags that might contain paths like /mcp or /evolve
 
@@ -118,7 +122,7 @@ def route_slash_command(prompt: str) -> Dict[str, Any]:
     clean = sanitized["clean_prompt"].strip()
     
     # Normalize multiple leading slashes and whitespace
-    clean_normalized = re.sub(r'^\s*/*\s*', '/', clean)
+    clean_normalized = re.sub(r'^\s*/+\s*', '/', clean)
     
     # Check if starts with a slash
     if not clean_normalized.startswith("/"):
@@ -174,6 +178,8 @@ def _dispatch_command(cmd: str, args: str, from_agent: bool) -> Dict[str, Any]:
         res = f"💬 **Quick Answer**: Response to '{args or 'Hello'}'"
     elif canonical == "evolve":
         res = "❌ **OpenEvolve Routing Error**: The ModelFusion backend intercepted an `/evolve` request. OpenEvolve must be executed by the VS Code extension."
+    elif canonical == "cache-stats":
+        res = "📊 **ModelCache Statistics**\n\n- **Engine Status**: Operational"
     elif canonical in known_commands:
         res = f"⚡ **Command `/{canonical}`**: Executed successfully."
     else:

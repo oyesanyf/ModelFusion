@@ -65,7 +65,8 @@ class AstValidator {
       }
     }
 
-    if (stack.length > 0) {
+    // Reject candidates that leave unclosed delimiters or strings
+    if (stack.length > 0 || inString) {
       return false;
     }
 

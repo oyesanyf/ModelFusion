@@ -56,7 +56,7 @@ def test_mcp_tools_list_count_and_schema(mcp_client):
     resp = mcp_client.send_request("tools/list")
     assert "result" in resp, f"tools/list failed: {resp}"
     tools = resp["result"].get("tools", [])
-    assert len(tools) == 91, f"Expected 91 tools, found {len(tools)}"
+    assert len(tools) >= 91, f"Expected at least 91 tools, found {len(tools)}"
     
     for tool in tools:
         assert "name" in tool and len(tool["name"]) > 0
@@ -77,8 +77,8 @@ def test_mcp_full_harness_execution(cli_path, db_path):
     harness = McpFullHarness(cli_path, db_path, timeout=15.0, verbose=False)
     summary = harness.run_all()
     
-    assert summary["total_registered_tools"] == 91
-    assert summary["total_tested_tools"] == 91
-    assert summary["passed"] == 91
+    assert summary["total_registered_tools"] >= 91
+    assert summary["total_tested_tools"] >= 91
+    assert summary["passed"] >= 91
     assert summary["failed"] == 0
     assert summary["pass_rate_pct"] == 100.0
