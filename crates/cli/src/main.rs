@@ -4219,7 +4219,7 @@ async fn run(args: Args) -> Result<()> {
         };
 
         let req = decision_engine::DecisionRequest {
-            query: Some(query_text),
+            query: Some(query_text.clone()),
             prompt: None,
             choices: choices_list,
             schema: None,
@@ -4228,7 +4228,24 @@ async fn run(args: Args) -> Result<()> {
             temperature: Some(0.8),
         };
 
-        let mut resp = decision_engine::evaluate_decision(&req);
+        let mut resp = if let Some(ref m) = args.model {
+            if m.starts_with("@cf/") || m.contains("clef") {
+                if let Ok(cf_res) = decision_engine::query_cloudflare_clef_async(
+                    m,
+                    &query_text,
+                    req.choices.as_deref().unwrap_or(&[]),
+                    Some(0.8),
+                ).await {
+                    cf_res
+                } else {
+                    decision_engine::evaluate_decision(&req)
+                }
+            } else {
+                decision_engine::evaluate_decision(&req)
+            }
+        } else {
+            decision_engine::evaluate_decision(&req)
+        };
         let resolved_db = resolve_db_path(args.db_path.as_deref());
         let db_dir = resolved_db.parent().unwrap_or_else(|| std::path::Path::new("IDE/db"));
         {
@@ -9777,7 +9794,7 @@ public class ShortcutHelper {
         Type shellLinkType = Type.GetTypeFromCLSID(new Guid("00021401-0000-0000-C000-000000000046"));
         object shellLink = Activator.CreateInstance(shellLinkType);
         IPersistFile persistFile = (IPersistFile)shellLink;
-        persistFile.Load(lnkPath, 0);
+        persistFile.Load(lnkPath, 2); // STGM_READWRITE = 2
 
         IPropertyStore propStore = (IPropertyStore)shellLink;
         PropVariant pv = new PropVariant();
@@ -10004,7 +10021,24 @@ public class ShortcutHelper {
                 });
                 let resolved_db = resolve_db_path(Some(&db_path_str));
                 let db_dir = resolved_db.parent().unwrap_or_else(|| std::path::Path::new("IDE/db"));
-                let mut decision_res = decision_engine::evaluate_decision(&req);
+                let mut decision_res = if let Some(ref m) = req.model {
+                    if m.starts_with("@cf/") || m.contains("clef") {
+                        if let Ok(cf_res) = decision_engine::query_cloudflare_clef_async(
+                            m,
+                            req.query.as_deref().unwrap_or(""),
+                            req.choices.as_deref().unwrap_or(&[]),
+                            req.temperature,
+                        ).await {
+                            cf_res
+                        } else {
+                            decision_engine::evaluate_decision(&req)
+                        }
+                    } else {
+                        decision_engine::evaluate_decision(&req)
+                    }
+                } else {
+                    decision_engine::evaluate_decision(&req)
+                };
 
                 // Connect to AdaptiveController for RLCD
                 let (arm_id, rl_telem) = {
