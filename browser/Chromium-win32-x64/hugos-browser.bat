@@ -115,12 +115,7 @@ if "%CLI_BIN%"=="" (
 
 set USER_DATA_DIR=%LOCALAPPDATA%\HugOS Browser\User Data
 if not exist "%USER_DATA_DIR%" mkdir "%USER_DATA_DIR%"
-if exist "%USER_DATA_DIR%\Default\Web Applications" (
-    rmdir /s /q "%USER_DATA_DIR%\Default\Web Applications" >nul 2>&1
-)
-if exist "%USER_DATA_DIR%\Default\Favicons" (
-    del /f /q "%USER_DATA_DIR%\Default\Favicons*" >nul 2>&1
-)
+REM Preserve Chromium icon cache and Web Applications to prevent taskbar wireframe globe fallback
 
 REM 1. Search for local or installed Chromium / Chrome / Edge binary
 set CHROME_BIN=

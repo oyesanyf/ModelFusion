@@ -22,7 +22,8 @@ assert.ok(appJs.includes('window.evaluateEmotionScores = evaluateEmotionScores;'
 assert.ok(appJs.includes('window.sanitizeClassificationOutput = sanitizeClassificationOutput;'), 'sanitizeClassificationOutput must be exported on window');
 assert.ok(appJs.includes('window.analyzeQueryModelAlignment = analyzeQueryModelAlignment;'), 'analyzeQueryModelAlignment must be exported on window');
 assert.ok(appJs.includes('window.buildMismatchResolutionCardHtml = buildMismatchResolutionCardHtml;'), 'buildMismatchResolutionCardHtml must be exported on window');
-console.log('✅ Test 1 Passed: All 6 core functions are defined and exported on window.\n');
+assert.ok(appJs.includes('window.craftQuestionWithLlm = craftQuestionWithLlm;'), 'craftQuestionWithLlm must be exported on window');
+console.log('✅ Test 1 Passed: All 7 core functions are defined and exported on window.\n');
 
 // Mock DOM helpers for evaluation in node environment
 global.window = global;
@@ -38,7 +39,7 @@ function escapeHtml(str) {
 global.escapeHtml = escapeHtml;
 
 // Extract and eval the functions in node test context
-const evalBlockMatch = appJs.match(/\/\/ Intelligent Query Validation, Question Crafter & Refusal Prevention[\s\S]*?window\.buildMismatchResolutionCardHtml = buildMismatchResolutionCardHtml;/);
+const evalBlockMatch = appJs.match(/\/\/ Intelligent Query Validation, Question Crafter & Refusal Prevention[\s\S]*?window\.craftQuestionWithLlm = craftQuestionWithLlm;/);
 assert.ok(evalBlockMatch, 'Helper function block found in app.js');
 eval(evalBlockMatch[0]);
 
@@ -195,6 +196,109 @@ assert.ok(codeAlign.craftedDomain.includes('@agent code qwen2.5-coder:7b'), 'Mus
 
 console.log('✅ Test 10 Passed: Multi-domain intelligent question crafting accurately routes medical, code, and legal questions.\n');
 
-console.log('======================================================================');
-console.log('🌟 ALL 10 QUESTION CRAFTER, ALIGNMENT & REFUSAL TESTS PASSED 100%! 🌟');
-console.log('======================================================================\n');
+// =====================================================================
+// Test 11: Dynamic LLM Question Crafter (craftQuestionWithLlm)
+// =====================================================================
+console.log('--- Test 11: Dynamic LLM Question Crafter (craftQuestionWithLlm) ---');
+async function runTest11() {
+  assert.ok(typeof craftQuestionWithLlm === 'function', 'craftQuestionWithLlm must be a function');
+
+  // Test 11.1: Fallback generation when endpoints are offline
+  const fallbackRes = await craftQuestionWithLlm('nli-deberta-v3-base', nliModelInfo, userLegalQuery);
+  assert.ok(fallbackRes, 'Must return a result object');
+  assert.ok(fallbackRes.craftedThisModel.includes('nli-deberta-v3-base'), 'Fallback must craft model command');
+  assert.ok(fallbackRes.craftedThisModel.includes('--labels'), 'Fallback must include --labels');
+  assert.ok(fallbackRes.craftedDomain.includes('@agent legal saul-7b'), 'Fallback must route to legal specialist');
+
+  // Test 11.2: Mock DOM element updating
+  const mockCard = {
+    _attrs: {},
+    querySelector(selector) {
+      if (selector === '.crafter-btn-this-model') return {
+        setAttribute: (k, v) => { mockCard._attrs['this-model-cmd'] = v; },
+        querySelector: () => ({ textContent: '' })
+      };
+      if (selector === '.crafter-btn-domain') return {
+        setAttribute: (k, v) => { mockCard._attrs['domain-cmd'] = v; },
+        querySelector: () => ({ textContent: '' })
+      };
+      if (selector === '.crafter-explanation') return { textContent: '' };
+      if (selector === '.crafter-status-badge') return { innerHTML: '', style: {} };
+      return null;
+    }
+  };
+
+  await craftQuestionWithLlm('nli-deberta-v3-base', nliModelInfo, userLegalQuery, mockCard);
+  assert.ok(mockCard._attrs['this-model-cmd'].includes('--labels'), 'Mock card this-model command must be populated');
+  assert.ok(mockCard._attrs['domain-cmd'].includes('@agent legal'), 'Mock card domain command must be populated');
+
+  console.log('✅ Test 11 Passed: Dynamic LLM Question Crafter validated with resilient fallback and DOM binding.\n');
+}
+
+// =====================================================================
+// Test 12: /boost Sub-Agent Directive Forwarding
+// =====================================================================
+console.log('--- Test 12: /boost Sub-Agent Directive Forwarding ---');
+assert.ok(
+  appJs.includes('if (boostQuery && /^(?:@agent\\s+|@|\\/)(?!boost\\b)/i.test(boostQuery))'),
+  'executeCliCommand must forward /boost @agent ... directly to sub-agent with isBoost: true'
+);
+const boostSubAgentRegex = /^(?:@agent\s+|@|\/)(?!boost\b)/i;
+assert.strictEqual(boostSubAgentRegex.test('@agent sentiment distilbert-base-uncased-emotion I am very sad'), true, 'Must detect @agent sentiment as sub-agent');
+assert.strictEqual(boostSubAgentRegex.test('@agent classify nli-deberta-v3-base what is the statute of limitation'), true, 'Must detect @agent classify as sub-agent');
+assert.strictEqual(boostSubAgentRegex.test('/classify nli-deberta-v3-base test'), true, 'Must detect /classify as sub-agent');
+assert.strictEqual(boostSubAgentRegex.test('what is the capital of France'), false, 'Standard text query must NOT be detected as sub-agent');
+console.log('✅ Test 12 Passed: /boost sub-agent forwarding pattern verified.\n');
+
+// =====================================================================
+// Test 13: Neutral & Mixed Emotion Scoring Distribution (No False Fear Spike)
+// =====================================================================
+console.log('--- Test 13: Neutral & Mixed Emotion Scoring Distribution ---');
+// Neutral sentence with no emotion words: fear must NOT dominate (was 44.4% in prior attempt)
+const neutralScores = evaluateEmotionScores('The committee finalized the quarterly audit schedule');
+assert.ok(neutralScores.fear <= 17, `Neutral text fear score must be <= 17%, got: ${neutralScores.fear}%`);
+assert.strictEqual(neutralScores.sadness, 16.7, 'Neutral text sadness must be balanced 16.7%');
+assert.strictEqual(neutralScores.joy, 16.7, 'Neutral text joy must be balanced 16.7%');
+
+// Mixed emotions: both joy and sadness should score high
+const mixedScores = evaluateEmotionScores('I am overjoyed yet heartbroken');
+assert.ok(mixedScores.joy > 40, `Joy should be > 40% for mixed emotion, got: ${mixedScores.joy}%`);
+assert.ok(mixedScores.sadness > 40, `Sadness should be > 40% for mixed emotion, got: ${mixedScores.sadness}%`);
+console.log('✅ Test 13 Passed: Neutral inputs have balanced baseline and mixed inputs preserve multi-emotion peaks.\n');
+
+// =====================================================================
+// Test 14: Safety Moderation & Long-Doc Model-Query Mismatch
+// =====================================================================
+console.log('--- Test 14: Moderation & Long-Doc Model Mismatch Detection ---');
+// Factual question to moderation model
+const modAlign = analyzeQueryModelAlignment('toxic-bert', { name: 'Toxic-BERT', domainKey: 'moderation' }, 'how does photosynthesis work?');
+assert.strictEqual(modAlign.isMismatch, true, 'Factual question to toxic-bert must be flagged as mismatch');
+assert.strictEqual(modAlign.mismatchType, 'moderation_knowledge_mismatch', 'Must identify moderation mismatch');
+
+// Short factual query to longformer topic classifier
+const topicAlign = analyzeQueryModelAlignment('longformer-base-4096', { name: 'Longformer 4096', domainKey: 'topic' }, 'what time is it in London?');
+assert.strictEqual(topicAlign.isMismatch, true, 'Short factual query to longformer must be flagged as mismatch');
+assert.strictEqual(topicAlign.mismatchType, 'topic_short_query_mismatch', 'Must identify topic short query mismatch');
+console.log('✅ Test 14 Passed: Moderation and long-document classifiers accurately detect query mismatches.\n');
+
+// =====================================================================
+// Test 15: Finance & Science Domain Routing
+// =====================================================================
+console.log('--- Test 15: Finance & Science Domain Routing ---');
+const finAlign = analyzeQueryModelAlignment('bart-large-mnli', { name: 'BART-Large MNLI', domainKey: 'zero-shot' }, 'what is the dividend yield of Microsoft?');
+assert.strictEqual(finAlign.isMismatch, true, 'Stock question to zero-shot NLI must be flagged');
+assert.strictEqual(finAlign.domain, 'finance', 'Must identify finance domain');
+assert.ok(finAlign.craftedDomain.includes('@agent finance finbert'), 'Must recommend finbert for finance');
+
+const sciAlign = analyzeQueryModelAlignment('bart-large-mnli', { name: 'BART-Large MNLI', domainKey: 'zero-shot' }, 'how does quantum entanglement work?');
+assert.strictEqual(sciAlign.isMismatch, true, 'Quantum question to zero-shot NLI must be flagged');
+assert.strictEqual(sciAlign.domain, 'science', 'Must identify science domain');
+assert.ok(sciAlign.craftedDomain.includes('@agent science galactica-6.7b'), 'Must recommend galactica-6.7b for science');
+console.log('✅ Test 15 Passed: Finance and science domains accurately mapped to dedicated specialists.\n');
+
+(async () => {
+  await runTest11();
+  console.log('======================================================================');
+  console.log('🌟 ALL 15 QUESTION CRAFTER, ALIGNMENT & REFUSAL TESTS PASSED 100%! 🌟');
+  console.log('======================================================================\n');
+})();

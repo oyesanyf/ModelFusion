@@ -58,7 +58,7 @@ ui_destinations = [
     os.path.abspath(r"IDE\VSCode-win32-x64\ui"),
     os.path.abspath(r"IDE\VSCode-win32-x64\browser\ui"),
 ]
-ui_files = ["app.js", "index.html", "styles.css", "favicon.svg", "favicon.ico", "favicon-32x32.png", "favicon-16x16.png", "icon-192.png", "icon-512.png", "hugos_browser.ico", "manifest.webmanifest", "sw.js"]
+ui_files = ["app.js", "index.html", "styles.css", "favicon.svg", "favicon.ico", "favicon-32x32.png", "favicon-16x16.png", "icon-48.png", "icon-64.png", "icon-128.png", "icon-192.png", "icon-256.png", "icon-512.png", "hugos_browser.ico", "manifest.webmanifest", "sw.js"]
 
 for target_ui_dir in ui_destinations:
     os.makedirs(target_ui_dir, exist_ok=True)
