@@ -72,7 +72,7 @@ curl -s -o nul --max-time 2 http://127.0.0.1:5000/health
 if errorlevel 1 (
     echo [INFO] ModelFusion Master Server offline on port 5000. Auto-starting server...
     if not "%CLI_BIN%"=="" (
-        wscript.exe //B //nologo "%SCRIPT_DIR%run_hidden.vbs" "%CLI_BIN%" "--server" "--port" "5000"
+        wscript.exe //B //nologo "%SCRIPT_DIR%run_hidden.vbs" "%CLI_BIN%" --server --port 5000
         for /L %%i in (1,1,15) do (
             curl -s -o nul --max-time 1 http://127.0.0.1:5000/health
             if not errorlevel 1 goto :server_ready
@@ -82,35 +82,24 @@ if errorlevel 1 (
 )
 :server_ready
 
-REM 0c. Determine Startup URL (default to Master Server HTTP origin to prevent null CORS)
+REM 0c. Determine Startup URL (verify if server on port 5000 is active; fallback to file:/// to eliminate ERR_FAILED)
 set "START_URL=http://localhost:5000/index.html"
 if not "%~1"=="" (
     set "START_URL=%~1"
 )
-if "%CLI_BIN%"=="" (
-    curl -s -o nul --max-time 2 http://127.0.0.1:5000/health
-    if errorlevel 1 (
-        if "%START_URL%"=="http://localhost:5000" (
-            set "START_URL=file:///%HOME_FILE_PATH:\=/%"
-        )
-        if "%START_URL%"=="http://localhost:5000/index.html" (
-            set "START_URL=file:///%HOME_FILE_PATH:\=/%"
-        )
-        if "%START_URL%"=="http://127.0.0.1:5000/index.html" (
-            set "START_URL=file:///%HOME_FILE_PATH:\=/%"
-        )
-    )
+
+curl -s -o nul --max-time 1 http://127.0.0.1:5000/health
+if errorlevel 1 (
+    echo [WARN] ModelFusion Master Server not responding on port 5000. Launching local UI via file protocol...
+    if "%START_URL%"=="http://localhost:5000" set "START_URL=file:///%HOME_FILE_PATH:\=/%"
+    if "%START_URL%"=="http://localhost:5000/index.html" set "START_URL=file:///%HOME_FILE_PATH:\=/%"
+    if "%START_URL%"=="http://127.0.0.1:5000" set "START_URL=file:///%HOME_FILE_PATH:\=/%"
+    if "%START_URL%"=="http://127.0.0.1:5000/index.html" set "START_URL=file:///%HOME_FILE_PATH:\=/%"
+    if "!START_URL!"=="" set "START_URL=file:///%HOME_FILE_PATH:\=/%"
 ) else (
-    REM When CLI_BIN is present, ensure START_URL defaults to and remains http://localhost:5000/index.html without file:/// fallback
-    if "!START_URL:~0,7!"=="file://" (
-        set "START_URL=http://localhost:5000/index.html"
-    )
-    if "!START_URL!"=="%DEFAULT_HOME%" (
-        set "START_URL=http://localhost:5000/index.html"
-    )
-    if "!START_URL!"=="%HOME_FILE_PATH%" (
-        set "START_URL=http://localhost:5000/index.html"
-    )
+    if "!START_URL:~0,7!"=="file://" set "START_URL=http://localhost:5000/index.html"
+    if "!START_URL!"=="%DEFAULT_HOME%" set "START_URL=http://localhost:5000/index.html"
+    if "!START_URL!"=="%HOME_FILE_PATH%" set "START_URL=http://localhost:5000/index.html"
 )
 
 set USER_DATA_DIR=%LOCALAPPDATA%\HugOS Browser\User Data

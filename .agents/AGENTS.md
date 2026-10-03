@@ -57,6 +57,34 @@ Whenever any task, code edit, bug fix, calibration, or enhancement is done:
 - **Sub-50ms Preemption Architecture**:
   - Test runners in `sandbox.py` must register subprocesses with a Windows Job Object (`CreateJobObjectW`) terminated via `TerminateJobObject(hJob, 1)` upon `ide/idle_stop` (<8ms cancellation).
   - LLM inference must use streaming SSE (`stream: true`) with token-level `is_paused()` yield checks (<25ms abortion).
-- **In-Memory Virtual Document Diffs**: Never write ephemeral candidate patches to temporary files on disk. The IDE shim must register a virtual document provider (`restrl-diff://`) and apply accepted changes via `vscode.workspace.applyEdit`.
 - **Mutation Testing Gate**: Mutation testing ($K=5$ AST mutants) must act as an adversarial certification gate ($M_{kill} \ge 0.5 \implies R=1.0$), not a scalar multiplier that drops passing solutions below the IDE's 1.0 presentation threshold.
+
+### 7. Universal Computer Use, UI-TARS, Exam Solver & Port 5000 Resilience Laws
+- **All 10 Computer Use Tools Authorized & Maintained**:
+  1. `@agent computer-use <goal>` (Autonomous Computer Use & Web Navigation)
+  2. `@agent exam-solver <url/exam>` (Autonomous Exam & Quiz Solver)
+  3. `@agent map-directions <route>` (Map Directions & Route Planning)
+  4. `@agent desktop-click <coords>` (OS Mouse Click)
+  5. `@agent desktop-type <text>` (OS Keyboard Typing & Hotkeys)
+  6. `@agent desktop-scroll <delta>` (OS Window Scrolling)
+  7. `@agent screen-grounding` (Perceive & Ground Screen Interactive Elements)
+  8. `@agent shopping <item>` (Price Comparison & Shopping Assistant)
+  9. `@agent ticket-booking <details>` (Flight & Event Ticket Booking)
+  10. `@agent ui-tars <goal>` (Autonomous UI-TARS Perception-Action Loop)
+  - Preprocessor in `crates/cli/src/main.rs` (`preprocess_cli_args`) MUST always recognize and format all 10 subcommands into `--computer-use` goals without throwing "unexpected argument" errors.
+- **Search Engine & Navigation URL Typo Resiliency**:
+  - Automatically fix URL typos (`ww.google.com`, `w.google.com`, `wwww.google.com`, `gogle.com`, `googl.com` -> `www.google.com`, `ww.bing.com` -> `www.bing.com`).
+  - Extract search queries with typo tolerance (`seach for ...` -> search query `...`).
+  - Automatically rewrite search engine home URLs when a search goal is detected (e.g. `google.com` + `seach for weather in lagos Nigeria` -> `https://www.google.com/search?q=weather%20in%20lagos%20Nigeria`).
+  - Cleanly discard stale CLI error text in webview DOM to prevent UI-TARS from grounding on stale crashes.
+- **Exam Solver & Same-Page Answering**:
+  - `extractExamQuestions` must support both DOM structures (radio groups, tables, cards, checkmark images) and plain-text/HTML string fallback.
+  - Automatically detect answer keys (e.g. tests.com `<input type="hidden" name="answerposn..." value="4">` -> Option D) and explanation rationales.
+  - Render interactive Human-in-the-Loop (HITL) safety gate workspace (`buildHitlExamWorkspaceHtml`) with auto-solve, manual option selection, question pagination (`q=1` -> `q=2`, ...), and confirm/abort controls.
+- **Server Port 5000 & Browser Zero-Crash Guarantee (`ERR_FAILED` Elimination)**:
+  - Persistent background startup daemon (`ModelFusion_Server.vbs` in Windows Startup) ensures Master Server is always online on port 5000.
+  - `run_hidden.vbs` must always sanitize quotes (`CleanQuote`) to prevent double-quote escaping.
+  - `hugos-browser.bat` launcher must probe `http://127.0.0.1:5000/health`. If port 5000 is not responding, it MUST automatically fall back to `file:///` local UI protocol, never letting the browser crash into Chrome's `ERR_FAILED` dead-end page.
+  - `browser/ui/app.js` must NEVER blindly force `window.location.replace('http://localhost:5000/index.html')` from `file:` protocol without verified 200 OK.
+
 

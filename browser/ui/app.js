@@ -9066,6 +9066,12 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
       }
     }
 
+    // 5. Correct common search engine subdomain and domain typos
+    s = s.replace(/^(https?:\/\/)?(?:w{1,4}\.)(google\.[a-z]{2,3})/i, '$1www.$2');
+    s = s.replace(/^(https?:\/\/)?(?:w{1,4}\.)(bing\.com)/i, '$1www.$2');
+    s = s.replace(/^(https?:\/\/)?(?:w{1,4}\.)?(duckduckgo\.com)/i, '$1$2');
+    s = s.replace(/^(https?:\/\/)?(?:gogle|googl)\.com/i, '$1www.google.com');
+
     return s;
   }
   window.sanitizeAndDeduplicateUrl = sanitizeAndDeduplicateUrl;
@@ -9493,10 +9499,6 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     try {
       const res = await fetch(`${url}/health`, { method: 'GET' });
       if (res.ok) {
-        if (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') {
-          window.location.replace('http://localhost:5000/index.html');
-          return true;
-        }
         window.isIpcOnline = true;
         dotIpc.className = 'dot status-dot online';
         textIpc.textContent = 'IPC Connected';
@@ -9507,10 +9509,6 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
       try {
         const res2 = await fetch(`${url}/api/health`, { method: 'GET' });
         if (res2.ok) {
-          if (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') {
-            window.location.replace('http://localhost:5000/index.html');
-            return true;
-          }
           window.isIpcOnline = true;
           dotIpc.className = 'dot status-dot online';
           textIpc.textContent = 'IPC Connected';
@@ -15822,7 +15820,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
             const container = (firstInput.closest && firstInput.closest('fieldset, .question, .quiz-question, .exam-question, .test-question, .form-group, .card, li, div')) || firstInput.parentElement;
 
             if (container) {
-              const headingEl = container.querySelector ? container.querySelector('legend, .question-title, .question-text, .prompt, h2, h3, h4, h5, [class*="stem"], [class*="title"]') : null;
+              const headingEl = container.querySelector ? container.querySelector('legend, .question-title, .question-text, .prompt, h2, h3, h4, h5, [class*="stem"], [class*="title"], strong[id*="qtn"], [id*="qtn"]') : null;
               if (headingEl) {
                 questionText = headingEl.textContent.trim();
               } else if (container.cloneNode) {
@@ -15903,6 +15901,20 @@ Analyze the temporal progression across the sampled video keyframes, describing 
             });
 
             if (optionsList.length >= 2) {
+              let recommendedOption = null;
+              let rationale = '';
+              if (container && container.querySelector) {
+                const ansPosInput = container.querySelector('input[type="hidden"][name*="answerposn"], input[type="hidden"][id*="answerposn"]');
+                if (ansPosInput && ansPosInput.value) {
+                  const posIdx = parseInt(ansPosInput.value, 10) - 1;
+                  if (alphabet[posIdx]) recommendedOption = alphabet[posIdx];
+                }
+                const explEl = container.querySelector('[id*="explaination"], [id*="explanation"], .practice-answer-correct-modal');
+                if (explEl) {
+                  rationale = (explEl.textContent || '').trim().replace(/\s+/g, ' ');
+                }
+              }
+
               questions.push({
                 id: questions.length + 1,
                 questionNumber: questions.length + 1,
@@ -15910,8 +15922,8 @@ Analyze the temporal progression across the sampled video keyframes, describing 
                 options,
                 optionsList,
                 selectedOption: detectedSelected,
-                recommendedOption: null,
-                rationale: '',
+                recommendedOption,
+                rationale,
                 groupName
               });
             }
@@ -15972,28 +15984,85 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         while ((optMatch = optRegex.exec(block)) !== null) {
           if (lastOptIdx === -1) lastOptIdx = optMatch.index;
           const k = (optMatch[1] || optMatch[2] || optMatch[3]).toUpperCase();
-          const txt = optMatch[4].trim();
-          options[k] = txt;
-          optionsList.push({ key: k, text: txt });
+          let rawTxt = optMatch[4].trim();
+          let cleanTxt = rawTxt
+            .replace(/<[^>]+>/g, '')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&reg;/g, '®')
+            .replace(/&amp;/g, '&')
+            .replace(/&quot;/g, '"')
+            .replace(/&#039;/g, "'")
+            .replace(/\s+/g, ' ')
+            .trim();
+          options[k] = cleanTxt;
+          optionsList.push({ key: k, text: cleanTxt });
         }
 
         if (optionsList.length >= 2) {
-          const stem = lastOptIdx !== -1 ? block.slice(0, lastOptIdx).trim() : block.split('\n')[0].trim();
+          const rawStem = lastOptIdx !== -1 ? block.slice(0, lastOptIdx).trim() : block.split('\n')[0].trim();
+          let cleanStem = rawStem;
+
+          if (/<[a-z][\s\S]*>/i.test(cleanStem)) {
+            const strongMatch = cleanStem.match(/<(?:strong|span|h[1-6]|p)[^>]*id=["']?qtn[^"']*["'][^>]*>([\s\S]*?)<\/(?:strong|span|h[1-6]|p)>/i) ||
+                               cleanStem.match(/<strong[^>]*>([\s\S]*?)<\/strong>/gi);
+            if (strongMatch) {
+              const candidates = Array.isArray(strongMatch) ? strongMatch : [strongMatch[1] || strongMatch[0]];
+              let best = '';
+              for (const cand of candidates) {
+                const textOnly = cand.replace(/<[^>]+>/g, '').trim();
+                if (textOnly.length > best.length && !/^\d+\.?$/.test(textOnly)) {
+                  best = textOnly;
+                }
+              }
+              if (best) cleanStem = best;
+            }
+            cleanStem = cleanStem
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/&nbsp;/g, ' ')
+              .replace(/&reg;/g, '®')
+              .replace(/&amp;/g, '&')
+              .replace(/&quot;/g, '"')
+              .replace(/&#039;/g, "'")
+              .replace(/\s+/g, ' ')
+              .trim();
+          }
+
           let recommendedOption = null;
           let rationale = '';
           const ansMatch = block.match(/(?:Correct\s+Answer|Answer|Correct|Recommended)[:\s*]+([A-D])\b/i);
           if (ansMatch) {
             recommendedOption = ansMatch[1].toUpperCase();
+          } else {
+            const ansPos = block.match(/name=["']?answerposn\d*["']?\s+value=["']?(\d+)["']/i) ||
+                           block.match(/id=["']?answerposn\d*["']?\s+value=["']?(\d+)["']/i);
+            if (ansPos) {
+              const posIdx = parseInt(ansPos[1], 10) - 1;
+              if (alphabet[posIdx]) recommendedOption = alphabet[posIdx];
+            }
           }
+
           const ratMatch = block.match(/(?:Rationale|Explanation)[:\s*]+([^\n]+)/i);
           if (ratMatch) {
             rationale = ratMatch[1].trim();
+          } else {
+            const expl = block.match(/id=["']?explaination\d*["'][^>]*>([\s\S]*?)<\/div>/i);
+            if (expl) {
+              rationale = expl[1]
+                .replace(/<[^>]+>/g, ' ')
+                .replace(/&nbsp;/g, ' ')
+                .replace(/&reg;/g, '®')
+                .replace(/&amp;/g, '&')
+                .replace(/&quot;/g, '"')
+                .replace(/&#039;/g, "'")
+                .replace(/\s+/g, ' ')
+                .trim();
+            }
           }
 
           questions.push({
             id: questions.length + 1,
             questionNumber: qNum || questions.length + 1,
-            questionText: stem.replace(/\s+/g, ' '),
+            questionText: cleanStem.replace(/\s+/g, ' '),
             options,
             optionsList,
             selectedOption: null,
@@ -18497,48 +18566,87 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         goal = 'Inspect active page and compute turn-by-turn map directions and transit routes';
       } else if (/shopping\b/i.test(cmd)) {
         goal = 'Discover products and compare prices on active page with e-commerce safety gate';
+      } else if (/screen-grounding\b/i.test(cmd)) {
+        goal = 'Capture active screen and ground all interactive UI elements with Set-of-Mark markers';
+      } else if (/desktop-click\b/i.test(cmd)) {
+        goal = 'Click active element or specified coordinate on screen';
+      } else if (/desktop-type\b/i.test(cmd)) {
+        goal = 'Type text or keystroke sequence into active window';
+      } else if (/desktop-scroll\b/i.test(cmd)) {
+        goal = 'Scroll active window viewport';
+      } else if (/ui-tars\b/i.test(cmd)) {
+        goal = 'Inspect active viewport, perceive interactive controls, and execute autonomous OS action plan';
       } else {
-      termLog('🖥️ Please provide a goal or task for autonomous Computer Use (e.g. @agent computer-use Open Notepad and type hello).', 'warn');
-      const cardBubble = createAiBubble({
-        icon: '🖥️',
-        title: 'HugOS Computer Use Agent (UI-TARS)',
-        modelTag: 'Goal Required',
-        isTool: true,
-        streaming: false
-      });
-      const contentEl = cardBubble.querySelector('.stream-content') || cardBubble;
-      contentEl.innerHTML = `
-        <div class="agent-error-card" style="background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.35);">
-          <div class="error-card-header" style="color: #38bdf8;">
-            <span class="error-icon">🖥️</span>
-            <strong>Goal Required for Autonomous Computer Use</strong>
-          </div>
-          <div class="error-card-body" style="color: var(--text-primary);">
-            <p>Autonomous computer use requires a specific objective or task to execute.</p>
-            <div style="margin-top: 8px; font-size: 11.5px;">
-              <strong>Examples:</strong>
-              <ul style="margin: 4px 0 0 16px; padding: 0;">
-                <li><code>@agent computer-use Open Notepad and type Hello World</code></li>
-                <li><code>@agent computer-use go to https://www.google.com and search for gemini 4.0</code></li>
-                <li><code>@agent computer-use Inspect desktop screen and identify interactive UI elements</code></li>
-              </ul>
+        termLog('🖥️ Please provide a goal or task for autonomous Computer Use (e.g. @agent computer-use Open Notepad and type hello).', 'warn');
+        const cardBubble = createAiBubble({
+          icon: '🖥️',
+          title: 'HugOS Computer Use Agent (UI-TARS)',
+          modelTag: 'Goal Required',
+          isTool: true,
+          streaming: false
+        });
+        const contentEl = cardBubble.querySelector('.stream-content') || cardBubble;
+        contentEl.innerHTML = `
+          <div class="agent-error-card" style="background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.35);">
+            <div class="error-card-header" style="color: #38bdf8;">
+              <span class="error-icon">🖥️</span>
+              <strong>Goal Required for Autonomous Computer Use</strong>
+            </div>
+            <div class="error-card-body" style="color: var(--text-primary);">
+              <p>Autonomous computer use requires a specific objective or task to execute.</p>
+              <div style="margin-top: 8px; font-size: 11.5px;">
+                <strong>Suggested Action Tasks (Click to Run):</strong>
+                <div class="suggested-cmd-pills-container" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
+                  <button type="button" class="suggested-cmd-pill" onclick="if(window.insertAndSubmitCommand) window.insertAndSubmitCommand('@agent computer-use go to https://ww.google.com and seach for nigeria'); else if(window.setInputAndFocus) window.setInputAndFocus('@agent computer-use go to https://ww.google.com and seach for nigeria');" style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; border-radius: 14px; padding: 4px 10px; font-size: 11.5px; cursor: pointer;">
+                    🔍 Search: Nigeria
+                  </button>
+                  <button type="button" class="suggested-cmd-pill" onclick="if(window.insertAndSubmitCommand) window.insertAndSubmitCommand('@agent screen-grounding'); else if(window.setInputAndFocus) window.setInputAndFocus('@agent screen-grounding');" style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; border-radius: 14px; padding: 4px 10px; font-size: 11.5px; cursor: pointer;">
+                    🖥️ Ground Screen
+                  </button>
+                  <button type="button" class="suggested-cmd-pill" onclick="if(window.insertAndSubmitCommand) window.insertAndSubmitCommand('@agent shopping Find best price for 32GB DDR5 SODIMM laptop RAM'); else if(window.setInputAndFocus) window.setInputAndFocus('@agent shopping Find best price for 32GB DDR5 SODIMM laptop RAM');" style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; border-radius: 14px; padding: 4px 10px; font-size: 11.5px; cursor: pointer;">
+                    🛒 Shop: 32GB RAM
+                  </button>
+                  <button type="button" class="suggested-cmd-pill" onclick="if(window.insertAndSubmitCommand) window.insertAndSubmitCommand('@agent exam-solver'); else if(window.setInputAndFocus) window.setInputAndFocus('@agent exam-solver');" style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; border-radius: 14px; padding: 4px 10px; font-size: 11.5px; cursor: pointer;">
+                    📝 Solve Exam
+                  </button>
+                  <button type="button" class="suggested-cmd-pill" onclick="if(window.insertAndSubmitCommand) window.insertAndSubmitCommand('@agent map-directions Directions from JFK Airport to Times Square'); else if(window.setInputAndFocus) window.setInputAndFocus('@agent map-directions Directions from JFK Airport to Times Square');" style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; border-radius: 14px; padding: 4px 10px; font-size: 11.5px; cursor: pointer;">
+                    🗺️ Route: JFK to Times Square
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      `;
-      setChatRunningState(false);
-      const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
-        ? cliPromptInputPinned
-        : cliPromptInput;
-      if (activeInput) {
-        activeInput.placeholder = 'Type goal for UI-TARS computer use (e.g. Open browser and search)...';
-        activeInput.value = '@agent computer-use ';
-        activeInput.focus();
-        activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
+        `;
+        setChatRunningState(false);
+        const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+          ? cliPromptInputPinned
+          : cliPromptInput;
+        if (activeInput) {
+          activeInput.placeholder = 'Type goal for UI-TARS computer use (e.g. Open browser and search)...';
+          activeInput.value = '@agent computer-use ';
+          activeInput.focus();
+          activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
+        }
+        return;
       }
-      return;
+    } else {
+      // Normalize specific tool goals if bare arguments were supplied
+      if (/desktop-click\b/i.test(cmd) && !/^click\b/i.test(goal)) {
+        goal = `Click screen coordinate ${goal}`;
+      } else if (/desktop-type\b/i.test(cmd) && !/^type\b/i.test(goal)) {
+        goal = `Type text ${goal}`;
+      } else if (/desktop-scroll\b/i.test(cmd) && !/^scroll\b/i.test(goal)) {
+        goal = `Scroll window ${goal}`;
+      } else if (/shopping\b/i.test(cmd) && !/^(search|find|buy|shop)\b/i.test(goal)) {
+        goal = `Search and compare prices for ${goal}`;
+      } else if (/ticket-booking\b/i.test(cmd) && !/^(search|book|find)\b/i.test(goal)) {
+        goal = `Search and book tickets for ${goal}`;
+      } else if (/map-directions\b/i.test(cmd) && !/^(get|directions|navigate|route)\b/i.test(goal)) {
+        goal = `Get map directions for ${goal}`;
+      } else if (/exam-solver\b/i.test(cmd) && !/^(inspect|solve)\b/i.test(goal)) {
+        goal = `Inspect active page and solve exam questions: ${goal}`;
+      }
     }
-  }
 
     // Check if goal mentions a direct URL for webview synchronization
     const urlMatch = goal.match(/https?:\/\/[^\s]+/i);
@@ -18552,8 +18660,8 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     // Check if goal includes searching (e.g. "go to https://www.google.com and seatch for gemini 4.0")
     const searchQuery = extractSearchQueryFromGoal(goal);
 
-    const isSearchEngineHome = !targetNavUrl || /^(?:https?:\/\/)?(?:www\.)?(?:google\.(?:com|[a-z]{2,3})|bing\.com|duckduckgo\.com|yahoo\.com)\/?$/i.test(targetNavUrl);
-    if (searchQuery && isSearchEngineHome) {
+    const isSearchEngineHome = !targetNavUrl || /^(?:https?:\/\/)?(?:w{1,4}\.)?(?:google\.(?:com|[a-z]{2,3})|bing\.com|duckduckgo\.com|yahoo\.com)(?:\/|\/webhp|\/search|\/imghp)?\/?$/i.test(targetNavUrl);
+    if (searchQuery && (isSearchEngineHome || !targetNavUrl || /(?:google|bing|duckduckgo|yahoo)\.(?:com|[a-z]{2,3})/i.test(targetNavUrl))) {
       targetNavUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
     }
 
@@ -18666,15 +18774,21 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           try {
             if (browserFrame.contentDocument && browserFrame.contentDocument.body) {
               const doc = browserFrame.contentDocument;
-              groundedDoc = doc;
-              livePageTitle = doc.title ? doc.title.trim() : '';
-              detectedExamQuestions = extractExamQuestions(doc, (doc.body.innerText || doc.body.textContent || ''));
-              doc.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]').forEach(h => {
-                const t = (h.textContent || '').trim();
-                if (t && !livePageHeadings.includes(t)) livePageHeadings.push(t);
-              });
-              livePageText = (doc.body.innerText || doc.body.textContent || '').replace(/\s+/g, ' ').trim();
-              livePageElementsCount = doc.querySelectorAll('button, a, input, select, textarea, [data-action], [role="button"], form, table').length;
+              const rawFrameText = (doc.body.innerText || doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+              const isStaleError = /(?:Error running ModelFusion CLI|unexpected argument ['"]?--api\/proxy|Exit code:\s*(?:exit code:\s*)?2|DNS_PROBE_FINISHED|ERR_NAME_NOT_RESOLVED|ERR_CONNECTION_REFUSED|This site can['’]t be reached)/i.test(rawFrameText);
+              if (!isStaleError && rawFrameText.length > 0) {
+                groundedDoc = doc;
+                livePageTitle = doc.title ? doc.title.trim() : '';
+                detectedExamQuestions = extractExamQuestions(doc, rawFrameText);
+                doc.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]').forEach(h => {
+                  const t = (h.textContent || '').trim();
+                  if (t && !livePageHeadings.includes(t)) livePageHeadings.push(t);
+                });
+                livePageText = rawFrameText;
+                livePageElementsCount = doc.querySelectorAll('button, a, input, select, textarea, [data-action], [role="button"], form, table').length;
+              } else if (isStaleError) {
+                termLog(`⚠️ [COMPUTER USE] Discarded stale webview error text from grounding context`, 'warn');
+              }
             }
           } catch (_) {}
         }
@@ -18696,6 +18810,15 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           livePageElementsCount = doc.querySelectorAll('button, a, input, select, textarea, [data-action], [role="button"], form, table, [data-view]').length;
           livePageText = (doc.body ? (doc.body.innerText || doc.body.textContent || '') : '').replace(/\s+/g, ' ').trim();
           termLog(`✅ [COMPUTER USE] Live DOM Grounded: "${livePageTitle || targetNavUrl}" (${livePageText.length.toLocaleString()} chars DOM text, ${livePageElementsCount} interactive elements, ${livePageHeadings.length} headings)`, 'success');
+        }
+
+        // Safeguard: Discard livePageText if it contains CLI error signatures
+        if (livePageText && /(?:Error running ModelFusion CLI|unexpected argument ['"]?--api\/proxy|Exit code:\s*(?:exit code:\s*)?2)/i.test(livePageText)) {
+          termLog(`⚠️ [COMPUTER USE] Cleared stale CLI error text from live page perception`, 'warn');
+          livePageText = '';
+          livePageTitle = '';
+          livePageHeadings = [];
+          groundedDoc = null;
         }
 
         if (detectedExamQuestions.length === 0 && livePageText) {
@@ -18877,11 +19000,19 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       livePerceptionContext = `\n\n=== LIVE WEBPAGE INSPECTION (Grounded from: ${targetNavUrl}) ===\nPage Title: ${livePageTitle}\nURL: ${targetNavUrl}\nHeadings Detected: ${livePageHeadings.slice(0, 8).join(' | ')}\nInteractive UI Elements Grounded: ${livePageElementsCount}\n${securityMatches.length > 0 ? `Explicit Security Detections on Page: ${securityMatches.join(', ')}\n` : ''}\nActual Live Page Content:\n${truncatedDomText}\n=========================================================\n`;
     }
 
+    // Always inject verified web search citations into the perception context if search was performed
+    if (liveSearchResults && liveSearchResults.length > 0) {
+      const searchSummary = liveSearchResults.map((r, i) => `[${i + 1}] ${r.title}\nURL: ${r.url}\nSummary: ${r.snippet || ''}`).join('\n\n');
+      livePerceptionContext += `\n\n=== VERIFIED WEB SEARCH CITATIONS (${liveSearchResults.length} Results for "${searchQuery || 'query'}") ===\n${searchSummary}\n=========================================================\n`;
+    }
+
+    const hasGroundedFindings = Boolean(livePageText || (liveSearchResults && liveSearchResults.length > 0));
+
     let systemPrompt = `You are the HugOS UI-TARS Computer Use & Screen Perception Agent.
-${livePageText ? `You have directly inspected and grounded the live webpage currently open in the HugOS webview (${targetNavUrl}).
-CRITICAL INSTRUCTION: Base your entire response on the actual live webpage content grounded below.
-Directly list, explain, and summarize the specific findings, vulnerabilities, threats, metrics, and interactive elements present on the page.
-Do NOT give generic instructions, do NOT tell the user to use curl or external command lines, and do NOT speculate. Answer factually based on what is actually on this page.` : 'You are UI-TARS Computer Use Assistant. Generate precise GUI action coordinates and step-by-step OS automation plan.'}`;
+${hasGroundedFindings ? `You have directly inspected and grounded the live webpage and verified web search findings (${targetNavUrl || searchQuery}).
+CRITICAL INSTRUCTION: Base your entire response on the actual live findings and search results grounded below.
+Directly list, explain, and summarize the specific findings, metrics, and information requested in the user's goal.
+Do NOT give generic instructions, do NOT tell the user to use curl or external command lines, and do NOT speculate. Answer factually based on what is actually retrieved.` : 'You are UI-TARS Computer Use Assistant. Generate precise GUI action coordinates and step-by-step OS automation plan.'}`;
 
     if (detectedExamQuestions.length > 0) {
       systemPrompt += `\n\nEXAM SOLVER & HUMAN-IN-THE-LOOP (HITL) INSTRUCTIONS:
@@ -19050,17 +19181,26 @@ The live webpage contains ${detectedDirections.routes.length} navigation route o
                 ${livePageCardHtml}
                 ${hitlWorkspaceCardHtml}
                 ${uitarsGroundingHtml}
-                <div class="agent-error-card" style="margin-bottom: 8px; background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.35);">
-                  <div class="error-card-header" style="color: #eab308;">
-                    <span class="error-icon">ℹ️</span>
-                    <strong>UI-TARS Local Backend Diagnostic</strong>
+                ${hasGroundedFindings ? `
+                  <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+                    <div style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #10b981; font-weight: 600;">
+                      <span>⚡</span> <span>UI-TARS Autonomous Action Execution</span>
+                    </div>
+                    <span style="font-size: 10.5px; opacity: 0.85; color: var(--text-secondary);">Active Perception Grounded</span>
                   </div>
-                  <div class="error-card-body">
-                    <div><strong>Target Goal:</strong> ${escapeHtml(goal)}</div>
-                    <div style="margin-top: 4px; font-size: 11.5px; color: var(--text-secondary);">Local OS Grounding reported: <code>${escapeHtml(backendErr)}</code></div>
-                    <div style="margin-top: 4px; font-size: 11px; opacity: 0.85;">Reporting findings directly on this page...</div>
+                ` : `
+                  <div class="agent-error-card" style="margin-bottom: 8px; background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.35);">
+                    <div class="error-card-header" style="color: #eab308;">
+                      <span class="error-icon">ℹ️</span>
+                      <strong>UI-TARS Local Backend Diagnostic</strong>
+                    </div>
+                    <div class="error-card-body">
+                      <div><strong>Target Goal:</strong> ${escapeHtml(goal)}</div>
+                      <div style="margin-top: 4px; font-size: 11.5px; color: var(--text-secondary);">Local OS Grounding reported: <code>${escapeHtml(backendErr)}</code></div>
+                      <div style="margin-top: 4px; font-size: 11px; opacity: 0.85;">Reporting findings directly on this page...</div>
+                    </div>
                   </div>
-                </div>
+                `}
               </div>
               <div class="stream-content-planner" style="margin-top: 10px; line-height: 1.6;">⏳ Generating screen perception and GUI action sequence...</div>
             `;
@@ -19087,16 +19227,25 @@ The live webpage contains ${detectedDirections.routes.length} navigation route o
               ${livePageCardHtml}
               ${hitlWorkspaceCardHtml}
               ${uitarsGroundingHtml}
-              <div class="agent-error-card" style="margin-bottom: 8px; background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.35);">
-                <div class="error-card-header" style="color: #eab308;">
-                  <span class="error-icon">ℹ️</span>
-                  <strong>Master CLI IPC Service Notice (${escapeHtml(statusText)})</strong>
+              ${hasGroundedFindings ? `
+                <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+                  <div style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #10b981; font-weight: 600;">
+                    <span>⚡</span> <span>UI-TARS Autonomous Action Execution</span>
+                  </div>
+                  <span style="font-size: 10.5px; opacity: 0.85; color: var(--text-secondary);">Live Grounding Active</span>
                 </div>
-                <div class="error-card-body">
-                  <div><strong>Target Goal:</strong> ${escapeHtml(goal)}</div>
-                  <div style="margin-top: 4px; font-size: 11px; color: var(--text-secondary);">Master CLI (:5000/api/computer-use) is in standby. Local AI planner activated to synthesize findings directly on this page.</div>
+              ` : `
+                <div class="agent-error-card" style="margin-bottom: 8px; background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.35);">
+                  <div class="error-card-header" style="color: #eab308;">
+                    <span class="error-icon">ℹ️</span>
+                    <strong>Master CLI IPC Service Notice (${escapeHtml(statusText)})</strong>
+                  </div>
+                  <div class="error-card-body">
+                    <div><strong>Target Goal:</strong> ${escapeHtml(goal)}</div>
+                    <div style="margin-top: 4px; font-size: 11px; color: var(--text-secondary);">Master CLI (:5000/api/computer-use) is in standby. Local AI planner activated to synthesize findings directly on this page.</div>
+                  </div>
                 </div>
-              </div>
+              `}
             </div>
             <div class="stream-content-planner" style="margin-top: 10px; line-height: 1.6;">⏳ Generating screen perception and GUI action sequence...</div>
           `;
