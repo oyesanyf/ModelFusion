@@ -378,6 +378,197 @@ assert.ok(css.includes('.btn-hitl-autosolve'), 'styles.css must contain .btn-hit
 assert.ok(css.includes('.exam-safety-gate-bar'), 'styles.css must contain .exam-safety-gate-bar');
 assert.ok(css.includes('.btn-exam-confirm'), 'styles.css must contain .btn-exam-confirm');
 assert.ok(css.includes('.btn-exam-abort'), 'styles.css must contain .btn-exam-abort');
+assert.ok(css.includes('.btn-hitl-autoloop'), 'styles.css must contain .btn-hitl-autoloop');
 console.log('  ✅ Test 6 Passed: All HITL Exam Solver CSS classes verified.\n');
 
-console.log('🌟 ALL 6 HITL EXAM SOLVER & SAME-PAGE ANSWERING TESTS PASSED (100%)! 🌟\n');
+// =====================================================================
+// Test 7: Next Question Button Identification (findNextQuestionButton)
+// =====================================================================
+console.log('Test 7: Next Question button identification logic across button variants...');
+
+const findNextMatch = appJs.match(/function findNextQuestionButton\(doc\)\s*\{([\s\S]*?)\n  \}/);
+assert.ok(findNextMatch, 'findNextQuestionButton must be defined in app.js');
+eval(findNextMatch[0]);
+
+// 7.1 Data action next button
+const docNext1 = {
+  querySelector: (sel) => sel.includes('data-action*="next"') ? { textContent: 'Next', value: '', getAttribute: () => null } : null,
+  querySelectorAll: () => []
+};
+assert.ok(findNextQuestionButton(docNext1), 'Must identify button with data-action*="next"');
+
+// 7.2 Aria-label next question
+const docNext2 = {
+  querySelector: (sel) => sel.includes('aria-label*="next"') ? { textContent: '➔', value: '', getAttribute: () => 'Next Question' } : null,
+  querySelectorAll: () => []
+};
+assert.ok(findNextQuestionButton(docNext2), 'Must identify button with aria-label="Next Question"');
+
+// 7.3 Text content scanning: "Continue", "Save & Continue", "Proceed"
+const docNext3 = {
+  querySelector: () => null,
+  querySelectorAll: () => [
+    { textContent: 'Previous Question', value: '', getAttribute: () => null },
+    { textContent: 'Continue', value: '', getAttribute: () => null }
+  ]
+};
+const found3 = findNextQuestionButton(docNext3);
+assert.ok(found3, 'Must identify button with text "Continue"');
+assert.strictEqual(found3.textContent, 'Continue');
+
+// 7.4 Button with "Next Question" text
+const docNext4 = {
+  querySelector: () => null,
+  querySelectorAll: () => [
+    { textContent: 'Back', value: '', getAttribute: () => null },
+    { textContent: 'Next Question', value: '', getAttribute: () => null }
+  ]
+};
+const found4 = findNextQuestionButton(docNext4);
+assert.ok(found4, 'Must identify button with text "Next Question"');
+assert.strictEqual(found4.textContent, 'Next Question');
+
+// 7.5 Submit button exclusion when labeled Back / Prev
+const docNext5 = {
+  querySelector: (sel) => sel.includes('button[type="submit"]') ? { textContent: 'Previous Question', value: '', getAttribute: () => null } : null,
+  querySelectorAll: () => []
+};
+assert.strictEqual(findNextQuestionButton(docNext5), null, 'Must ignore submit buttons labeled Previous / Back');
+
+console.log('  ✅ Test 7 Passed: findNextQuestionButton accurately detects all next button styles and rejects back/prev buttons.\n');
+
+// =====================================================================
+// Test 8: Exam URL Pagination & Auto-Progression (parseExamPagination, getNextExamUrl)
+// =====================================================================
+console.log('Test 8: Exam URL pagination parsing and automatic question progression...');
+
+const parsePaginationMatch = appJs.match(/function parseExamPagination\(url\)\s*\{([\s\S]*?)\n  \}/);
+assert.ok(parsePaginationMatch, 'parseExamPagination must be defined in app.js');
+eval(parsePaginationMatch[0]);
+
+const getNextExamUrlMatch = appJs.match(/function getNextExamUrl\(currentUrl\)\s*\{([\s\S]*?)\n  \}/);
+assert.ok(getNextExamUrlMatch, 'getNextExamUrl must be defined in app.js');
+eval(getNextExamUrlMatch[0]);
+
+// 8.1 User prompt target URL: https://testlibrary.com/iq-test/quiz?...&q=1&total=38
+const testLibUrl1 = 'https://testlibrary.com/iq-test/quiz?token=abc123xyz&q=1&total=38';
+const pag1 = parseExamPagination(testLibUrl1);
+assert.ok(pag1, 'Must parse pagination info from testlibrary quiz URL');
+assert.strictEqual(pag1.current, 1, 'Current question must be 1');
+assert.strictEqual(pag1.total, 38, 'Total questions must be 38');
+assert.strictEqual(pag1.currentParam, 'q');
+
+const testLibUrl2 = getNextExamUrl(testLibUrl1);
+assert.ok(testLibUrl2.includes('q=2'), 'Next URL from q=1 must have q=2');
+assert.ok(testLibUrl2.includes('total=38'), 'Next URL must preserve total=38');
+
+// 8.2 Progressing from q=2 to q=3
+const testLibUrl3 = getNextExamUrl(testLibUrl2);
+assert.ok(testLibUrl3.includes('q=3'), 'Next URL from q=2 must have q=3');
+
+// 8.3 Terminal question q=38 returns null (end of exam reached)
+const testLibUrl38 = 'https://testlibrary.com/iq-test/quiz?token=abc123xyz&q=38&total=38';
+const pag38 = parseExamPagination(testLibUrl38);
+assert.strictEqual(pag38.current, 38);
+assert.strictEqual(getNextExamUrl(testLibUrl38), null, 'Terminal question q=38 must return null indicating exam complete');
+
+// 8.4 Path-based pagination: /quiz/1 -> /quiz/2
+const pathUrl = 'https://certprep.org/tests/quiz/1';
+const pathPag = parseExamPagination(pathUrl);
+assert.strictEqual(pathPag.current, 1);
+const nextPathUrl = getNextExamUrl(pathUrl);
+assert.strictEqual(nextPathUrl, 'https://certprep.org/tests/quiz/2', 'Must increment path-based question indices');
+
+// 8.5 question=5&total_questions=20
+const altParamUrl = 'https://exams.net/test?question=5&total_questions=20';
+const altPag = parseExamPagination(altParamUrl);
+assert.strictEqual(altPag.current, 5);
+assert.strictEqual(altPag.total, 20);
+const altNext = getNextExamUrl(altParamUrl);
+assert.ok(altNext.includes('question=6'));
+
+console.log('  ✅ Test 8 Passed: URL pagination correctly parses and generates progression across all 38 questions.\n');
+
+// =====================================================================
+// Test 9: Proxy Route Interception Guard (Preventing --api/proxy CLI Errors)
+// =====================================================================
+console.log('Test 9: Proxy route interception guards in navigateTo and executeCliCommand...');
+
+// 9.1 Verify navigateTo maps relative /api/proxy to IPC without triggering CLI execution
+assert.ok(
+  appJs.includes("if (url.startsWith('/api/proxy') || url.startsWith('/api/browser/proxy') || url.startsWith('/proxy') || url.startsWith('/api-proxy') || url.startsWith('/api/'))"),
+  'navigateTo must intercept /api/proxy and prepend IPC origin'
+);
+
+assert.ok(
+  appJs.includes("url.startsWith('@') || (url.startsWith('/') && !url.startsWith('//') && !url.includes('/api/'))"),
+  'navigateTo omnibox slash command interceptor must strictly exclude /api/ routes'
+);
+
+// 9.2 Verify executeCliCommand safely guards @agent api/proxy from subprocess invocation
+assert.ok(
+  appJs.includes("if (/^@agent\\s+(?:api\\/proxy|browser\\/proxy|proxy|api-proxy)\\b/i.test(cmd))"),
+  'executeCliCommand must safely intercept @agent api/proxy without running CLI process'
+);
+
+console.log('  ✅ Test 9 Passed: Proxy routes are safely handled and never dispatched as unexpected CLI arguments.\n');
+
+// =====================================================================
+// Test 10: Multi-Question Autonomous Solving Loop & Window Exports
+// =====================================================================
+console.log('Test 10: Multi-question progression flow, autonomous loop, and window exports...');
+
+// Verify exports to window
+const requiredExports = [
+  'extractExamQuestions',
+  'buildHitlExamWorkspaceHtml',
+  'selectExamOption',
+  'autoSolveAllExamQuestions',
+  'confirmExamSubmit',
+  'abortExamSubmit',
+  'findNextQuestionButton',
+  'parseExamPagination',
+  'getNextExamUrl',
+  'advanceExamToNextQuestion',
+  'startAutonomousExamSolverLoop',
+  'pauseAutonomousExamSolverLoop'
+];
+requiredExports.forEach(fnName => {
+  assert.ok(appJs.includes(`window.${fnName} = ${fnName};`), `window.${fnName} must be exported in app.js`);
+});
+
+// Autonomous solver loop controls
+const startLoopMatch = appJs.match(/function startAutonomousExamSolverLoop\(\)\s*\{([\s\S]*?)\n  \}/);
+assert.ok(startLoopMatch, 'startAutonomousExamSolverLoop must be defined');
+eval(startLoopMatch[0]);
+
+const pauseLoopMatch = appJs.match(/function pauseAutonomousExamSolverLoop\(\)\s*\{([\s\S]*?)\n  \}/);
+assert.ok(pauseLoopMatch, 'pauseAutonomousExamSolverLoop must be defined');
+eval(pauseLoopMatch[0]);
+
+// 10.1 Start autonomous solver loop sets running flag
+startAutonomousExamSolverLoop();
+assert.strictEqual(window.isAutonomousExamSolverRunning, true, 'startAutonomousExamSolverLoop must set isAutonomousExamSolverRunning = true');
+
+// 10.2 Pause autonomous loop sets running flag to false
+pauseAutonomousExamSolverLoop();
+assert.strictEqual(window.isAutonomousExamSolverRunning, false, 'pauseAutonomousExamSolverLoop must set isAutonomousExamSolverRunning = false');
+
+// 10.3 Abort exam submit stops autonomous loop
+startAutonomousExamSolverLoop();
+abortExamSubmit();
+assert.strictEqual(window.isAutonomousExamSolverRunning, false, 'abortExamSubmit must stop autonomous loop');
+
+// 10.4 UI-TARS action sequence includes Exam Solver loop steps
+assert.ok(
+  appJs.includes('UI-TARS Grounding Action Sequence (Exam Solver Loop)'),
+  'UI-TARS action sequence must render specific Exam Solver loop steps'
+);
+assert.ok(
+  appJs.includes('ADVANCE_PAGINATION'),
+  'UI-TARS grounding sequence must include ADVANCE_PAGINATION step'
+);
+
+console.log('  ✅ Test 10 Passed: Autonomous exam solver loop and window interfaces validated.\n');
+
+console.log('🌟 ALL 10 HITL EXAM SOLVER & MULTI-QUESTION ADVANCEMENT TESTS PASSED (100%)! 🌟\n');

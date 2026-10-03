@@ -922,9 +922,6 @@ Write-Host "[OK] WiX source generated at $wxsPath" -ForegroundColor Green
 # 7. Compile the MSI using WiX Toolset
 Write-Host "[INFO] Compiling MSI using WiX Toolset..." -ForegroundColor Yellow
 $msiPath = Join-Path $PSScriptRoot "HugOS.msi"
-if (Test-Path $msiPath) {
-    Remove-Item -Path $msiPath -Force -ErrorAction SilentlyContinue
-}
 
 # Allow file handles to settle before WiX packaging
 [System.GC]::Collect()
@@ -954,8 +951,20 @@ try {
 } catch {}
 
 if (-not (Test-Path $msiPath) -or ((Get-Item $msiPath).LastWriteTime -lt (Get-Item $wxsPath).LastWriteTime)) {
-    & $wixExe build -v -b $PSScriptRoot -arch x64 $wxsPath -out $msiPath
-    $wixExit = $LASTEXITCODE
+    if (Test-Path $msiPath) {
+        Remove-Item -Path $msiPath -Force -ErrorAction SilentlyContinue
+    }
+    $wixProc = Start-Process -FilePath $wixExe -ArgumentList "build", "-b", "`"$PSScriptRoot`"", "-arch", "x64", "`"$wxsPath`"", "-out", "`"$msiPath`"" -NoNewWindow -PassThru
+    while (-not $wixProc.HasExited) {
+        try {
+            $msiSvc = Get-Service msiserver -ErrorAction SilentlyContinue
+            if ($msiSvc -and $msiSvc.Status -ne 'Running') {
+                Start-Service -Name msiserver -ErrorAction SilentlyContinue
+            }
+        } catch {}
+        Start-Sleep -Seconds 3
+    }
+    $wixExit = $wixProc.ExitCode
 } else {
     Write-Host "[OK] Existing MSI installer is fresh and matches current WiX manifest." -ForegroundColor Green
     $wixExit = 0

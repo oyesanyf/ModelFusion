@@ -2398,9 +2398,45 @@ document.addEventListener('DOMContentLoaded', () => {
   // ─────────────────────────────────────────────────────────────
 // Test complete help subsystem logic and HTML rendering
 const HELP_CATEGORIES = {
+  'classification': {
+    id: 'classification',
+    menuIndex: 1,
+    icon: '🏷️',
+    title: 'Classification & Taxonomy',
+    subtitle: 'Zero-Shot NLI, Sentiment, Content Moderation & Document Categorization',
+    overview: 'High-throughput local text classification suite spanning zero-shot inference, multi-class sentiment, 28-emotion profiling, automated safety moderation, and 4096-token long-document categorization. Powered by Hugging Face foundation models fine-tuned on MultiNLI, GoEmotions, Toxic Comment Challenge, and financial disclosures.',
+    engines: [
+      { name: 'BART & DeBERTa NLI', spec: 'facebook/bart-large-mnli & cross-encoder/nli-deberta-v3-base', role: 'Zero-shot hypothesis entailment and custom candidate label ranking' },
+      { name: 'RoBERTa & DistilBERT Emotion', spec: 'SamLowe/roberta-base-go_emotions & bhadresh-psavani/distilbert-emotion', role: '28-class nuanced emotion and 6-class basic conversational sentiment' },
+      { name: 'Toxic-BERT & KoalaAI', spec: 'unitary/toxic-bert & KoalaAI/Text-Moderation', role: 'Automated moderation flagging toxicity, hate speech, threats, and self-harm' },
+      { name: 'Longformer & FinBERT', spec: 'allenai/longformer-base-4096 & ProsusAI/finbert', role: 'Long-form document taxonomy up to 4096 tokens and economic sentiment' }
+    ],
+    inputs: 'Raw text passages, candidate labels, customer reviews, social media posts, forum comments, or long-form PDF/article transcripts.',
+    directives: [
+      { cmd: '@agent classify <model/labels> <text>', desc: 'Zero-shot classification assigning probabilities across candidate labels' },
+      { cmd: '@agent zero-shot <text> --labels <l1,l2,...>', desc: 'Classify text into arbitrary candidate classes using NLI entailment' },
+      { cmd: '@agent sentiment <text>', desc: 'Evaluate positive, negative, and emotional intensity with calibrated probabilities' },
+      { cmd: '@agent moderation <text>', desc: 'Scan content for toxicity, harassment, obscenity, and safety violations' },
+      { cmd: '@agent topic <text>', desc: 'Categorize long-form document into hierarchical subject themes' }
+    ],
+    useCases: [
+      'Zero-shot routing of inbound customer support tickets to departments without retraining.',
+      'Real-time automated content moderation on community message boards and social posts.',
+      'Fine-grained emotion extraction across customer feedback to detect frustration or delight.',
+      'Long-document classification across multi-page legal briefs and financial disclosures.'
+    ],
+    examples: [
+      '@agent classify bart-large-mnli The quarterly results exceeded all expectations candidate labels: technology, earnings, healthcare',
+      '@agent zero-shot "This product broke after two days" --labels hardware, customer service, billing',
+      '@agent sentiment roberta-base-go_emotions I am deeply grateful for your continuous encouragement!',
+      '@agent moderation toxic-bert Stop messaging me or you will regret it',
+      '@agent topic longformer-base-4096 [Full Article Text]'
+    ]
+  },
+
   'code': {
     id: 'code',
-    menuIndex: 1,
+    menuIndex: 2,
     icon: '💻',
     title: 'Code & Security',
     subtitle: 'Code Architecture, Security Forensics & Vulnerability Audit',
@@ -2437,7 +2473,7 @@ const HELP_CATEGORIES = {
 
   'computer_use': {
     id: 'computer_use',
-    menuIndex: 2,
+    menuIndex: 3,
     icon: '🖱️',
     title: 'Computer Use & OS Automation',
     subtitle: 'Screen Grounding, VLM Desktop Agent & OS Automation',
@@ -2475,7 +2511,7 @@ const HELP_CATEGORIES = {
 
   'tabular': {
     id: 'tabular',
-    menuIndex: 3,
+    menuIndex: 4,
     icon: '📊',
     title: 'Data & Spreadsheets (CSV/Excel)',
     subtitle: 'Adaptive Contextual Data Science Optimization & Tabular AutoML',
@@ -2509,7 +2545,7 @@ const HELP_CATEGORIES = {
 
   'finance': {
     id: 'finance',
-    menuIndex: 4,
+    menuIndex: 5,
     icon: '💰',
     title: 'Finance & Markets',
     subtitle: 'Institutional Financial AI, Valuation, SEC Filings & Forecasting',
@@ -2551,7 +2587,7 @@ const HELP_CATEGORIES = {
 
   'vision': {
     id: 'vision',
-    menuIndex: 5,
+    menuIndex: 6,
     icon: '👁️',
     title: 'Images & Vision',
     subtitle: 'Computer Vision, Visual Grounding & Generative Synthesis',
@@ -2586,7 +2622,7 @@ const HELP_CATEGORIES = {
 
   'pe_binary': {
     id: 'pe_binary',
-    menuIndex: 6,
+    menuIndex: 7,
     icon: '🛡️',
     title: 'Inspect Windows Apps (.EXE / .DLL)',
     subtitle: 'Windows Portable Executable (PECOFF) Static Binary Forensics',
@@ -2618,7 +2654,7 @@ const HELP_CATEGORIES = {
 
   'legal': {
     id: 'legal',
-    menuIndex: 7,
+    menuIndex: 8,
     icon: '⚖️',
     title: 'Legal & Compliance',
     subtitle: 'Legal Reasoning, Statutory Interpretation & Contract Understanding',
@@ -2659,7 +2695,7 @@ const HELP_CATEGORIES = {
 
   'agent': {
     id: 'agent',
-    menuIndex: 8,
+    menuIndex: 9,
     icon: '🧠',
     title: 'Planning & Deep Thinking',
     subtitle: 'Autonomous Planning, Deep Reasoning & Adversarial Verification',
@@ -2695,7 +2731,7 @@ const HELP_CATEGORIES = {
 
   'science': {
     id: 'science',
-    menuIndex: 9,
+    menuIndex: 10,
     icon: '🔬',
     title: 'Science & Discovery',
     subtitle: 'Scientific Foundation Models (Biology, Chemistry, Climate & Literature)',
@@ -2736,7 +2772,7 @@ const HELP_CATEGORIES = {
 
   'utilities': {
     id: 'utilities',
-    menuIndex: 10,
+    menuIndex: 11,
     icon: '⚙️',
     title: 'Utilities & System',
     subtitle: 'System Telemetry, Hardware Sizing & Database Maintenance',
@@ -2757,7 +2793,7 @@ const HELP_CATEGORIES = {
       { cmd: '@agent db-vacuum', desc: 'Reclaim disk space and defragment database storage pages' },
       { cmd: '@agent db-rebuild', desc: 'Drop and recreate the local model catalog database from scratch' },
       { cmd: '@agent db-prune', desc: 'Safely clear orphaned caches and temporary query buffers' },
-      { cmd: '@agent audit-menus', desc: 'Programmatically click and audit all tool items across all 13 categories' },
+      { cmd: '@agent audit-menus', desc: 'Programmatically click and audit all tool items across all 14 categories' },
       { cmd: '@agent benchmark', desc: 'Run local token-generation speed, latency, and TTFT benchmarks' },
       { cmd: '@agent export', desc: 'Export chat history and session artifacts to Markdown / JSON' },
       { cmd: '@agent help', desc: 'Display interactive help and command palette' }
@@ -2777,7 +2813,7 @@ const HELP_CATEGORIES = {
 
   'audio': {
     id: 'audio',
-    menuIndex: 11,
+    menuIndex: 12,
     icon: '🎙️',
     title: 'Voice & Audio',
     subtitle: 'Acoustic Transcription, Voice Synthesis & Sound Classification',
@@ -2807,7 +2843,7 @@ const HELP_CATEGORIES = {
 
   'web': {
     id: 'web',
-    menuIndex: 12,
+    menuIndex: 13,
     icon: '🌐',
     title: 'Web Research & Automation',
     subtitle: 'Grounded Live Search, arXiv Research & WikiSkill Distillation',
@@ -2843,7 +2879,7 @@ const HELP_CATEGORIES = {
 
   'writing': {
     id: 'writing',
-    menuIndex: 13,
+    menuIndex: 14,
     icon: '✍️',
     title: 'Writing & Editing',
     subtitle: 'Anti-AI Stylometry, Token Watermark Detection & Translation',
@@ -2878,7 +2914,33 @@ const HELP_CATEGORIES = {
 };
 
 const SPECIFIC_MODELS = {
-  // Science & Discovery (Menu 9)
+  // Classification & Taxonomy (Menu 1)
+  'bart-large-mnli': { key: 'bart-large-mnli', name: 'BART-Large MNLI Zero-Shot Classifier', category: 'classification', cardKey: 'bart-large-mnli' },
+  'bart-mnli': { key: 'bart-mnli', name: 'BART-Large MNLI Zero-Shot Classifier', category: 'classification', cardKey: 'bart-large-mnli' },
+  'nli-deberta-v3-base': { key: 'nli-deberta-v3-base', name: 'Cross-Encoder DeBERTa-v3 NLI', category: 'classification', cardKey: 'deberta-v3' },
+  'deberta-v3': { key: 'deberta-v3', name: 'DeBERTa-v3 Natural Language Inference Suite', category: 'classification', cardKey: 'deberta-v3' },
+  'deberta-nli': { key: 'deberta-nli', name: 'Cross-Encoder DeBERTa-v3 NLI', category: 'classification', cardKey: 'deberta-v3' },
+  'deberta-v3-base-mnli-fever-anli': { key: 'deberta-v3-base-mnli-fever-anli', name: 'DeBERTa-v3 FEVER ANLI', category: 'classification', cardKey: 'deberta-v3' },
+  'distilbart-mnli-12-3': { key: 'distilbart-mnli-12-3', name: 'DistilBART MNLI High-Throughput Classifier', category: 'classification', cardKey: 'distilbart-mnli' },
+  'distilbart-mnli': { key: 'distilbart-mnli', name: 'DistilBART MNLI High-Throughput Classifier', category: 'classification', cardKey: 'distilbart-mnli' },
+  'distilbert-base-uncased-finetuned-sst-2-english': { key: 'distilbert-base-uncased-finetuned-sst-2-english', name: 'DistilBERT SST-2 Sentiment Classifier', category: 'classification', cardKey: 'distilbert-sst2' },
+  'distilbert-sst2': { key: 'distilbert-sst2', name: 'DistilBERT SST-2 Sentiment Classifier', category: 'classification', cardKey: 'distilbert-sst2' },
+  'sst2': { key: 'sst2', name: 'DistilBERT SST-2 Sentiment Classifier', category: 'classification', cardKey: 'distilbert-sst2' },
+  'twitter-roberta-base-sentiment-latest': { key: 'twitter-roberta-base-sentiment-latest', name: 'Twitter-RoBERTa Sentiment Classifier', category: 'classification', cardKey: 'twitter-roberta' },
+  'twitter-roberta': { key: 'twitter-roberta', name: 'Twitter-RoBERTa Sentiment Classifier', category: 'classification', cardKey: 'twitter-roberta' },
+  'roberta-base-go_emotions': { key: 'roberta-base-go_emotions', name: 'GoEmotions RoBERTa 28-Emotion Classifier', category: 'classification', cardKey: 'go-emotions' },
+  'go_emotions': { key: 'go_emotions', name: 'GoEmotions RoBERTa 28-Emotion Classifier', category: 'classification', cardKey: 'go-emotions' },
+  'go-emotions': { key: 'go-emotions', name: 'GoEmotions RoBERTa 28-Emotion Classifier', category: 'classification', cardKey: 'go-emotions' },
+  'distilbert-base-uncased-emotion': { key: 'distilbert-base-uncased-emotion', name: 'DistilBERT 6-Emotion Classifier', category: 'classification', cardKey: 'distilbert-emotion' },
+  'distilbert-emotion': { key: 'distilbert-emotion', name: 'DistilBERT 6-Emotion Classifier', category: 'classification', cardKey: 'distilbert-emotion' },
+  'toxic-bert': { key: 'toxic-bert', name: 'Toxic-BERT Multi-Label Safety Classifier', category: 'classification', cardKey: 'toxic-bert' },
+  'text-moderation': { key: 'text-moderation', name: 'KoalaAI Text Moderation Classifier', category: 'classification', cardKey: 'text-moderation' },
+  'koala-moderation': { key: 'koala-moderation', name: 'KoalaAI Text Moderation Classifier', category: 'classification', cardKey: 'text-moderation' },
+  'longformer-base-4096': { key: 'longformer-base-4096', name: 'Longformer 4096 Document Classifier', category: 'classification', cardKey: 'longformer' },
+  'longformer': { key: 'longformer', name: 'Longformer 4096 Document Classifier', category: 'classification', cardKey: 'longformer' },
+  'finbert-classifier': { key: 'finbert-classifier', name: 'FinBERT Domain Classifier', category: 'classification', cardKey: 'finbert' },
+
+  // Science & Discovery (Menu 10)
   'esm': { key: 'esm', name: 'ESM2 & ESMFold Protein Suite', category: 'science', cardKey: 'esm' },
   'esm2': { key: 'esm2', name: 'ESM-2 Protein Language Model', category: 'science', cardKey: 'esm' },
   'esm3': { key: 'esm3', name: 'ESM-3 Generative Biology', category: 'science', cardKey: 'esm' },
@@ -2960,6 +3022,257 @@ const SPECIFIC_MODELS = {
 };
 
 const SPECIFIC_MODEL_CARDS = {
+  // Classification & Taxonomy (Menu 1)
+  'bart-large-mnli': {
+    id: 'bart-large-mnli',
+    name: 'BART-Large MNLI Zero-Shot Classifier',
+    category: 'classification',
+    icon: '🎯',
+    author: 'Meta AI / Hugging Face',
+    architecture: 'BART Encoder-Decoder (407M params) fine-tuned on MultiNLI',
+    purpose: 'The standard benchmark for zero-shot text classification, fine-tuned on the MultiNLI dataset to determine whether a given premise text entails, contradicts, or remains neutral toward arbitrary candidate labels formulated as hypotheses.',
+    inputFormat: 'Text to classify followed by candidate labels (or --labels label1, label2, ...).',
+    sampleInput: 'Apple unveiled its latest M4 workstation processor with unified memory architecture. candidate labels: technology, sports, culinary, politics',
+    directives: [
+      { cmd: '@agent classify bart-large-mnli <text> candidate labels: <l1, l2>', desc: 'Zero-shot classification ranking candidate labels with softmax entailment probabilities' },
+      { cmd: '@agent zero-shot <text> --labels <l1, l2>', desc: 'Evaluate candidate hypotheses with multi-class inference' }
+    ],
+    useCases: [
+      'Automated customer support ticket triage into dynamic department queues without retraining.',
+      'Unsupervised intent recognition and topic routing for enterprise agent pipelines.',
+      'Zero-shot news article tagging against evolving editorial taxonomies.'
+    ],
+    examples: [
+      '@agent classify bart-large-mnli The central bank raised interest rates by 25 basis points candidate labels: finance, weather, sports',
+      '@agent zero-shot "The package arrived damaged and two days late" --labels shipping issue, billing inquiry, technical support'
+    ],
+    related: ['deberta-v3', 'distilbart-mnli', 'longformer']
+  },
+
+  'deberta-v3': {
+    id: 'deberta-v3',
+    name: 'DeBERTa-v3 Natural Language Inference Suite',
+    category: 'classification',
+    icon: '🔀',
+    author: 'Microsoft Research / Moritz Laurer',
+    architecture: 'DeBERTa-v3 with Disentangled Attention and Enhanced Masked Language Modeling',
+    purpose: 'Built on DeBERTa-v3 and trained on natural language inference pairs (MNLI, FEVER, ANLI), offering significantly higher precision and sharper semantic boundary detection than older BART checkpoints. Resilient to complex sentence structures and subtle negations in zero-shot classification.',
+    inputFormat: 'Premise text and hypothesis or candidate labels.',
+    sampleInput: 'Although the drug demonstrated efficacy in vitro, clinical trials failed to reproduce statistically significant improvements.',
+    directives: [
+      { cmd: '@agent classify nli-deberta-v3-base <text>', desc: 'High-precision cross-encoder zero-shot classification' },
+      { cmd: '@agent classify deberta-v3-base-mnli-fever-anli <text>', desc: 'Fact verification and adversarial NLI entailment scoring' }
+    ],
+    useCases: [
+      'Automated fact-checking and claim verification against scientific or news corpora.',
+      'Complex legal or statutory contract clause entailment analysis.',
+      'Disambiguating subtle negations in patient clinical feedback.'
+    ],
+    examples: [
+      '@agent classify nli-deberta-v3-base The server never crashed despite the denial of service attempt candidate labels: resilient, vulnerable, crashed',
+      '@agent classify deberta-v3-base-mnli-fever-anli Climate models predict warming trends across the Arctic candidate labels: climate change, fictional narrative'
+    ],
+    related: ['bart-large-mnli', 'distilbart-mnli']
+  },
+
+  'distilbart-mnli': {
+    id: 'distilbart-mnli',
+    name: 'DistilBART MNLI High-Throughput Classifier',
+    category: 'classification',
+    icon: '⚡',
+    author: 'Valhalla / Hugging Face Community',
+    architecture: 'DistilBART-12-3 (Distilled BART student with 60% fewer parameters)',
+    purpose: 'A distilled, lightweight alternative designed for high-throughput zero-shot classification where inference speed and memory footprint are the primary constraints. Retains over 90% of full BART-Large MNLI accuracy at 2.5x inference speed.',
+    inputFormat: 'Text passage and candidate classification categories.',
+    sampleInput: 'The database connection pool reached maximum capacity and threw connection timeout exceptions.',
+    directives: [
+      { cmd: '@agent classify distilbart-mnli-12-3 <text>', desc: 'Ultra-low latency zero-shot classification for edge and streaming pipelines' }
+    ],
+    useCases: [
+      'Edge deployment on resource-constrained devices or low-RAM environments.',
+      'Real-time streaming classification of log records and telemetry alerts.',
+      'High-volume microblog message categorizing.'
+    ],
+    examples: [
+      '@agent classify distilbart-mnli-12-3 Connection pool timeout on node 4 candidate labels: database error, network failure, user error'
+    ],
+    related: ['bart-large-mnli', 'distilbert-sst2']
+  },
+
+  'distilbert-sst2': {
+    id: 'distilbert-sst2',
+    name: 'DistilBERT SST-2 Binary Sentiment Classifier',
+    category: 'classification',
+    icon: '👍',
+    author: 'Hugging Face Hub Default Pipeline',
+    architecture: 'DistilBERT-Base-Uncased fine-tuned on Stanford Sentiment Treebank (SST-2)',
+    purpose: 'The default text classification pipeline model on Hugging Face, optimized for rapid binary positive and negative sentiment classification. Processes hundreds of sentences per second with minimal CPU and memory overhead.',
+    inputFormat: 'Short sentence, product review, or feedback statement.',
+    sampleInput: 'This software completely transformed our team productivity and workflow.',
+    directives: [
+      { cmd: '@agent sentiment distilbert-base-uncased-finetuned-sst-2-english <text>', desc: 'Rapid binary positive/negative sentiment scoring with confidence score' }
+    ],
+    useCases: [
+      'High-throughput consumer review sentiment aggregation.',
+      'Monitoring customer satisfaction signals in real-time chat interactions.',
+      'A/B testing feedback classification for marketing campaigns.'
+    ],
+    examples: [
+      '@agent sentiment distilbert-base-uncased-finetuned-sst-2-english The user interface is snappy, intuitive, and remarkably polished.',
+      '@agent sentiment distilbert-base-uncased-finetuned-sst-2-english It constantly freezes and lost two hours of work.'
+    ],
+    related: ['twitter-roberta', 'distilbert-emotion']
+  },
+
+  'twitter-roberta': {
+    id: 'twitter-roberta',
+    name: 'Twitter-RoBERTa Sentiment Classifier',
+    category: 'classification',
+    icon: '🐦',
+    author: 'Cardiff NLP',
+    architecture: 'RoBERTa-Base fine-tuned on ~124M tweets (TweetEval)',
+    purpose: 'Fine-tuned on modern social media text and microblogs to handle informal syntax, internet slang, abbreviations, and emojis across three-class sentiment: negative, neutral, and positive.',
+    inputFormat: 'Social media post, tweet, microblog comment, or emoji-heavy text.',
+    sampleInput: 'Loving the new release, totally game-changing! 🔥🙌',
+    directives: [
+      { cmd: '@agent sentiment twitter-roberta-base-sentiment-latest <text>', desc: '3-class sentiment scoring (Positive, Neutral, Negative) tuned for social slang' }
+    ],
+    useCases: [
+      'Brand sentiment tracking across Twitter, Reddit, and Discord communities.',
+      'Real-time crisis detection from social media chatter.',
+      'Public reaction monitoring during product launches and press announcements.'
+    ],
+    examples: [
+      '@agent sentiment twitter-roberta-base-sentiment-latest Not gonna lie, this update kinda broke everything smh 🙄',
+      '@agent sentiment twitter-roberta-base-sentiment-latest Just installed the app, looking forward to testing it out.'
+    ],
+    related: ['distilbert-sst2', 'go-emotions']
+  },
+
+  'go-emotions': {
+    id: 'go-emotions',
+    name: 'GoEmotions RoBERTa 28-Emotion Classifier',
+    category: 'classification',
+    icon: '💬',
+    author: 'Sam Lowe / Google Research',
+    architecture: 'RoBERTa-Base fine-tuned on GoEmotions (58k Reddit comments)',
+    purpose: 'Fine-tuned on the GoEmotions dataset to perform multi-label emotion classification across twenty-eight fine-grained emotional categories including admiration, amusement, anger, annoyance, approval, caring, confusion, curiosity, desire, disappointment, disapproval, disgust, embarrassment, excitement, fear, gratitude, grief, joy, love, nervousness, optimism, pride, realization, relief, remorse, sadness, surprise, and neutral.',
+    inputFormat: 'Conversational message, email snippet, or user dialogue turn.',
+    sampleInput: 'Thank you so much for walking me through this issue, you are an absolute lifesaver!',
+    directives: [
+      { cmd: '@agent sentiment roberta-base-go_emotions <text>', desc: 'Multi-label emotion classification across 28 distinct emotional states' }
+    ],
+    useCases: [
+      'Empathetic conversational agents adjusting tone based on user emotional state.',
+      'Clinical psychological research and mental health sentiment analysis.',
+      'Granular customer experience profiling beyond basic binary sentiment.'
+    ],
+    examples: [
+      '@agent sentiment roberta-base-go_emotions I am genuinely blown away by how supportive this community has been!',
+      '@agent sentiment roberta-base-go_emotions I was really hoping this feature would work, pretty disappointed honestly.'
+    ],
+    related: ['distilbert-emotion', 'twitter-roberta']
+  },
+
+  'distilbert-emotion': {
+    id: 'distilbert-emotion',
+    name: 'DistilBERT 6-Emotion Classifier',
+    category: 'classification',
+    icon: '🎭',
+    author: 'Bhadresh Savani',
+    architecture: 'DistilBERT fine-tuned on Emotion Dataset',
+    purpose: 'A compact six-class emotion classifier distinguishing sadness, joy, love, anger, fear, and surprise in personal or conversational text. Provides fast, low-latency emotion categorization for interactive dialogue agents.',
+    inputFormat: 'Personal narrative, diary entry, conversational message, or transcript.',
+    sampleInput: 'I woke up this morning feeling terrified about the upcoming performance review.',
+    directives: [
+      { cmd: '@agent sentiment distilbert-base-uncased-emotion <text>', desc: 'Evaluate 6 primary emotions (sadness, joy, love, anger, fear, surprise)' }
+    ],
+    useCases: [
+      'Interactive voice assistants detecting caller frustration or distress.',
+      'Creative writing mood tracking and narrative emotion arcs.',
+      'Customer service escalation triggers for angry or fearful users.'
+    ],
+    examples: [
+      '@agent sentiment distilbert-base-uncased-emotion I cannot believe they canceled the flight without any notice, absolutely furious!',
+      '@agent sentiment distilbert-base-uncased-emotion I never expected to see all my childhood friends gathered in one room!'
+    ],
+    related: ['go-emotions', 'distilbert-sst2']
+  },
+
+  'toxic-bert': {
+    id: 'toxic-bert',
+    name: 'Toxic-BERT Multi-Label Safety Classifier',
+    category: 'classification',
+    icon: '☣️',
+    author: 'Unitary AI / Jigsaw',
+    architecture: 'BERT-Base fine-tuned on Toxic Comment Classification Challenge',
+    purpose: 'Fine-tuned on the Toxic Comment Classification Challenge dataset to output multi-label scores for toxicity, severe toxicity, insults, identity attacks, obscenities, and threats across user-generated comments and communications.',
+    inputFormat: 'User input text, forum comment, chat message, or user review.',
+    sampleInput: 'You are completely incompetent and should be kicked off this platform immediately.',
+    directives: [
+      { cmd: '@agent moderation toxic-bert <text>', desc: 'Multi-label toxicity analysis flagging toxic, severe_toxic, obscene, threat, insult, identity_hate' }
+    ],
+    useCases: [
+      'Automated pre-moderation gate on public comments and forum submissions.',
+      'Protecting online gaming and community chat channels from harassment.',
+      'Safety guardrail auditing on LLM-generated conversational responses.'
+    ],
+    examples: [
+      '@agent moderation toxic-bert I disagree with your technical approach, but appreciate the detailed writeup.',
+      '@agent moderation toxic-bert Shut your mouth or I will come find you and make you pay.'
+    ],
+    related: ['text-moderation']
+  },
+
+  'text-moderation': {
+    id: 'text-moderation',
+    name: 'KoalaAI Text Moderation Safety Classifier',
+    category: 'classification',
+    icon: '🚨',
+    author: 'KoalaAI',
+    architecture: 'Transformer safety checkpoint fine-tuned on multi-hazard moderation corpora',
+    purpose: 'A focused safety classifier designed to flag self-harm, hate speech, harassment, sexual content, and graphic violence in user inputs and AI responses. Provides calibrated probability scores across standard safety risk categories.',
+    inputFormat: 'Text prompt, user message, or candidate model response.',
+    sampleInput: 'Instructions on how to bypass safety mechanisms and cause physical injury.',
+    directives: [
+      { cmd: '@agent moderation text-moderation <text>', desc: 'Scan text across self-harm, hate, harassment, sexual, and violent categories' }
+    ],
+    useCases: [
+      'Enterprise safety compliance auditing before deploying autonomous agents.',
+      'Real-time input filtering for educational and child-safe software applications.',
+      'Red-teaming language model outputs for policy non-compliance.'
+    ],
+    examples: [
+      '@agent moderation text-moderation Please explain how antibiotic resistance develops in bacteria.',
+      '@agent moderation text-moderation Write a step-by-step tutorial on manufacturing illicit substances.'
+    ],
+    related: ['toxic-bert']
+  },
+
+  'longformer': {
+    id: 'longformer',
+    name: 'Longformer 4096 Document Classifier',
+    category: 'classification',
+    icon: '📜',
+    author: 'Allen Institute for AI (allenai)',
+    architecture: 'Longformer-Base with Local Windowed Attention + Global Dilated Attention (4,096 tokens)',
+    purpose: 'Commonly fine-tuned on benchmark corpora like Hyperpartisan News or academic categorization datasets to classify documents containing thousands of words without truncating content. Scales linearly with sequence length instead of quadratically.',
+    inputFormat: 'Multi-page document, article, academic paper, or judicial opinion up to 4,096 tokens (~3,000 words).',
+    sampleInput: '[Full multi-page document text with multiple sections and thousands of words]',
+    directives: [
+      { cmd: '@agent topic longformer-base-4096 <long_text>', desc: 'Classify full multi-page document into hierarchical taxonomy without truncation' }
+    ],
+    useCases: [
+      'Categorizing multi-page scientific papers, patents, and technical RFCs.',
+      'Full-length news article political bias and topic classification.',
+      'Long-form compliance document archiving and taxonomy assignment.'
+    ],
+    examples: [
+      '@agent topic longformer-base-4096 [Full text of research paper discussing quantum annealing algorithms]'
+    ],
+    related: ['bart-large-mnli', 'finbert']
+  },
+
   'esm': {
     id: 'esm',
     name: 'ESM2 & ESMFold Protein Suite',
@@ -3813,6 +4126,7 @@ function escapeHtml(str) {
 }
 
 const CATEGORY_KEYWORDS = {
+  'classification': ['classification', 'taxonomy', 'nli', 'zeroshot', 'zero-shot', 'mnli', 'deberta', 'sst2', 'goemotions', 'moderation', 'toxic', 'multilabel', 'topic'],
   'code': ['code', 'security', 'sast', 'vuln', 'vulnerability', 'vulnerabilities', 'ast', 'transpile', 'dockerfile', 'owasp', 'secret', 'secrets'],
   'computer_use': ['computer_use', 'computer-use', 'computer', 'os', 'desktop', 'ui-tars', 'uitars', 'grounding', 'mouse', 'keyboard', 'screen-grounding'],
   'tabular': ['tabular', 'data', 'spreadsheets', 'spreadsheet', 'csv', 'excel', 'xlsx', 'parquet', 'acdso', 'automl', 'timeseries', 'eda', 'dataanalyst'],
@@ -3889,11 +4203,11 @@ function resolveHelpResolution(parsed) {
   const matchedModels = [];
   const modelTokens = new Set();
 
-  // 1. Check for menu index numbers (1 to 13)
+  // 1. Check for menu index numbers (1 to 14)
   for (const token of tokens) {
     const cleanToken = token.replace(/[^a-z0-9_-]/g, '');
     const num = parseInt(cleanToken, 10);
-    if (!isNaN(num) && num >= 1 && num <= 13) {
+    if (!isNaN(num) && num >= 1 && num <= 14) {
       const foundCat = Object.values(HELP_CATEGORIES).find(c => c.menuIndex === num);
       if (foundCat && !matchedCategories.includes(foundCat)) {
         matchedCategories.push(foundCat);
@@ -4001,11 +4315,11 @@ function renderDeepHelpHtml(res) {
         <div class="help-hero-banner">
           <div class="help-hero-title"><span>💡</span> ModelFusion &amp; HugOS Master Capabilities Hub</div>
           <div style="font-size: 12.5px; opacity: 0.92; line-height: 1.55; margin-bottom: 8px;">
-            Explore all <strong>13 specialized multi-modal AI sidebar menus</strong> and foundation model subsystems. All models and tools execute <strong>100% locally</strong> with zero cloud API fees, complete data sovereignty, and hardware tensor acceleration.
+            Explore all <strong>14 specialized multi-modal AI sidebar menus</strong> and foundation model subsystems. All models and tools execute <strong>100% locally</strong> with zero cloud API fees, complete data sovereignty, and hardware tensor acceleration.
           </div>
           <div style="font-size: 11px; opacity: 0.85; font-family: var(--mono-font, monospace); display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
             <span>⚡ Direct Syntax:</span>
-            <code>@help &lt;menu&gt;</code> (e.g. <code>@help science</code>, <code>@help finance</code>, <code>@help legal</code>) or <code>@help &lt;model&gt;</code> (e.g. <code>@helo esm</code>, <code>@help finbert</code>)
+            <code>@help &lt;menu&gt;</code> (e.g. <code>@help classification</code>, <code>@help science</code>, <code>@help finance</code>) or <code>@help &lt;model&gt;</code> (e.g. <code>@help bart-large-mnli</code>, <code>@helo esm</code>)
           </div>
         </div>
 
@@ -4013,7 +4327,7 @@ function renderDeepHelpHtml(res) {
           Sidebar Menus &amp; Domain Subsystems (Click Any Card For Deep Guide)
         </div>
 
-        <div class="help-grid-13">
+        <div class="help-grid-14">
     `;
 
     const sortedCats = Object.values(HELP_CATEGORIES).sort((a, b) => a.menuIndex - b.menuIndex);
@@ -4050,7 +4364,7 @@ function renderDeepHelpHtml(res) {
             <button type="button" class="help-action-btn" data-help-cmd="@agent sys-info">🖥️ Check Hardware (sys-info)</button>
             <button type="button" class="help-action-btn" data-help-cmd="@agent update">⚡ Update Catalog (~6,500 models)</button>
             <button type="button" class="help-action-btn" data-help-cmd="@agent active-model">🤖 Active Loaded Model</button>
-            <button type="button" class="help-action-btn" data-help-cmd="@agent audit-menus">🧪 Audit All 13 Menus</button>
+            <button type="button" class="help-action-btn" data-help-cmd="@agent audit-menus">🧪 Audit All 14 Menus</button>
           </div>
         </div>
       </div>
@@ -4074,7 +4388,7 @@ function renderDeepHelpHtml(res) {
     }
     html += `
       <div style="display: flex; gap: 8px; margin-top: 10px;">
-        <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ Back to All 13 Menus</button>
+        <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ Back to All 14 Menus</button>
       </div>
     </div>`;
     return html;
@@ -4095,7 +4409,7 @@ function renderDeepHelpHtml(res) {
     }
     html += `
       <div style="display: flex; gap: 8px; margin-top: 10px;">
-        <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ Back to All 13 Menus</button>
+        <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ Back to All 14 Menus</button>
       </div>
     </div>`;
     return html;
@@ -4121,7 +4435,7 @@ function renderDeepHelpHtml(res) {
           </div>
           <div class="help-pills-row">
             <button type="button" class="help-action-btn" data-help-cmd="@help ${cat.id}">🔬 View Full ${escapeHtml(cat.title)} Guide</button>
-            <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ All 13 Menus</button>
+            <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ All 14 Menus</button>
           </div>
         </div>
       `;
@@ -4148,7 +4462,7 @@ function renderDeepHelpHtml(res) {
     html += renderSingleCategorySection(cat);
     html += `
       <div style="display: flex; gap: 8px; margin-top: 6px;">
-        <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ Back to All 13 Menus</button>
+        <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ Back to All 14 Menus</button>
       </div>
     </div>`;
     return html;
@@ -8762,8 +9076,15 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     if (!targetUrl) return;
 
     let url = (targetUrl || '').trim();
-    // Intercept @ directives, slash commands, or local system directives entered in omnibox
-    if (url.startsWith('@') || url.startsWith('/') || /^(?:sys[-_ ]?info|system[-_ ]?info|systeminfo|sysinfo|help|update|updatedb|benchmark|status|version)\b/i.test(url)) {
+
+    // Map local proxy routes directly to the active IPC endpoint
+    if (url.startsWith('/api/proxy') || url.startsWith('/api/browser/proxy') || url.startsWith('/proxy') || url.startsWith('/api-proxy') || url.startsWith('/api/')) {
+      const ipc = (typeof currentSettings !== 'undefined' && currentSettings.ipcUrl ? currentSettings.ipcUrl : 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+      url = `${ipc}${url.startsWith('/') ? '' : '/'}${url}`;
+    }
+
+    // Intercept @ directives, slash commands, or local system directives entered in omnibox (strictly excluding API paths and relative URL protocols)
+    if (url.startsWith('@') || (url.startsWith('/') && !url.startsWith('//') && !url.includes('/api/')) || /^(?:sys[-_ ]?info|system[-_ ]?info|systeminfo|sysinfo|help|update|updatedb|benchmark|status|version)\b/i.test(url)) {
       executeCliCommand(url);
       return;
     }
@@ -12204,6 +12525,19 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
       }
     }
 
+    // Guard against unintended execution of internal proxy URLs as CLI subcommands
+    if (/^@agent\s+(?:api\/proxy|browser\/proxy|proxy|api-proxy)\b/i.test(cmd)) {
+      const targetMatch = cmd.match(/(?:url=|\s+)(https?:\/\/[^\s]+)/i);
+      if (targetMatch) {
+        navigateTo(targetMatch[1]);
+        termLog(`🌐 [PROXY] Redirected proxy command to live webview: ${targetMatch[1]}`, 'info');
+      } else {
+        termLog('🌐 ModelFusion Universal Web Proxy endpoint active at /api/proxy?url=<URL>', 'info');
+      }
+      setChatRunningState(false);
+      return;
+    }
+
     const lower = cmd.toLowerCase();
     const parsedMulti = parseMultiAgentDirectives(cmd);
 
@@ -12271,7 +12605,7 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
 
       let bubbleTitle = 'HugOS Interactive Help & Navigation Hub';
       let bubbleIcon = '💡';
-      let bubbleTag = 'All 13 Menus';
+      let bubbleTag = 'All 14 Menus';
       if (resolution.type === 'category_deep_dive' && resolution.category) {
         bubbleTitle = `Help: ${resolution.category.title}`;
         bubbleIcon = resolution.category.icon;
@@ -14451,6 +14785,10 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       window.activeExamQuestions = questions;
     }
 
+    const pagination = typeof parseExamPagination === 'function' ? parseExamPagination(typeof currentNavUrl === 'string' ? currentNavUrl : '') : null;
+    const currentQNum = questions[0] ? (questions[0].questionNumber || (pagination ? pagination.current : 1)) : 1;
+    const totalCount = questions[0] && questions[0].totalQuestions ? questions[0].totalQuestions : (pagination ? pagination.total : (questions.length > 1 ? questions.length : 38));
+
     let html = `
       <div class="hitl-exam-workspace" style="background: var(--bg-secondary, #111827); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 14px; margin: 12px 0; font-family: var(--font-family, system-ui, sans-serif);">
         <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
@@ -14463,10 +14801,13 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           </div>
           <div style="display: flex; align-items: center; gap: 8px;">
             <span class="exam-progress-badge" style="font-size: 11px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 3px 8px; border-radius: 4px; font-weight: 600;">
-              ${questions.length} Questions Detected
+              ${questions.length > 1 ? `${questions.length} Questions Detected` : `Question ${currentQNum} of ${totalCount}`}
             </span>
             <button type="button" class="btn-hitl-autosolve" onclick="window.autoSolveAllExamQuestions()" style="background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.4); color: #10b981; font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 4px;">
               <span>⚡</span> <span>Auto-Solve All (AI Recommended)</span>
+            </button>
+            <button type="button" class="btn-hitl-autoloop" onclick="window.startAutonomousExamSolverLoop()" style="background: rgba(56, 189, 248, 0.2); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 4px;" title="Autonomously solve and progress through all questions">
+              <span>🚀</span> <span>Solve & Advance Loop</span>
             </button>
           </div>
         </div>
@@ -14648,10 +14989,352 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     }
   }
 
+  function findNextQuestionButton(doc) {
+    if (!doc) return null;
+    const selectors = [
+      'button[data-action*="next"]',
+      'a[data-action*="next"]',
+      'input[data-action*="next"]',
+      'button[aria-label*="next" i]',
+      'a[aria-label*="next" i]',
+      'button.next-question',
+      'button.btn-next',
+      'button.next-btn',
+      'button.next',
+      'a.next-question',
+      'a.btn-next',
+      'a.next-btn',
+      'a.next',
+      'button#next-question',
+      'button#btn-next',
+      'button#next',
+      'a#next-question',
+      'a#btn-next',
+      'a#next',
+      'input#next-question',
+      'input#btn-next',
+      'input#next',
+      '[data-testid*="next" i]',
+      '[data-cy*="next" i]',
+      'button[type="submit"]',
+      'input[type="submit"]',
+      'button.submit',
+      'button#submit',
+      'form button:last-of-type'
+    ];
+
+    for (const sel of selectors) {
+      try {
+        if (typeof doc.querySelector === 'function') {
+          const el = doc.querySelector(sel);
+          if (el) {
+            const text = (el.textContent || el.value || (el.getAttribute && el.getAttribute('aria-label')) || '').trim().toLowerCase();
+            if (!/(?:prev|back|return|cancel|abort)/i.test(text)) {
+              return el;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    try {
+      if (typeof doc.querySelectorAll === 'function') {
+        const candidates = Array.from(doc.querySelectorAll('button, a, input, [role="button"]'));
+        const nextRegex = /^(?:next(?:\s*question)?|continue|proceed|save\s*&\s*continue|forward|advance|submit\s*&\s*next|next\s*step|next\s*page|go\s*to\s*next)\b/i;
+        for (const el of candidates) {
+          const text = (el.textContent || el.value || (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title'))) || '').trim();
+          if (nextRegex.test(text)) {
+            return el;
+          }
+        }
+        for (const el of candidates) {
+          const text = (el.textContent || el.value || (el.getAttribute && el.getAttribute('aria-label')) || '').trim();
+          if (/\bnext\b/i.test(text) && !/\b(?:prev|back)\b/i.test(text)) {
+            return el;
+          }
+        }
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  function parseExamPagination(url) {
+    if (!url || typeof url !== 'string') return null;
+    try {
+      const parsed = new URL(url, 'http://127.0.0.1');
+      const searchParams = parsed.searchParams;
+      let current = null;
+      let currentParam = null;
+      let total = null;
+      let totalParam = null;
+
+      const currentKeys = ['q', 'question', 'question_id', 'question_no', 'qno', 'qid', 'step', 'page', 'index', 'cur', 'current'];
+      for (const p of currentKeys) {
+        if (searchParams.has(p)) {
+          const val = parseInt(searchParams.get(p), 10);
+          if (!isNaN(val)) {
+            current = val;
+            currentParam = p;
+            break;
+          }
+        }
+      }
+
+      const totalKeys = ['total', 'total_questions', 'max', 'count', 'num', 'total_count', 'limit'];
+      for (const p of totalKeys) {
+        if (searchParams.has(p)) {
+          const val = parseInt(searchParams.get(p), 10);
+          if (!isNaN(val)) {
+            total = val;
+            totalParam = p;
+            break;
+          }
+        }
+      }
+
+      if (current === null) {
+        const pathMatch = parsed.pathname.match(/\/(?:quiz|question|q|step|page)\/(\d+)/i);
+        if (pathMatch) {
+          current = parseInt(pathMatch[1], 10);
+        }
+      }
+
+      if (current !== null) {
+        return {
+          current,
+          currentParam,
+          total: total || 38,
+          totalParam,
+          hasParams: Boolean(currentParam)
+        };
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  function getNextExamUrl(currentUrl) {
+    if (!currentUrl) return null;
+    try {
+      const parsed = new URL(currentUrl, typeof window !== 'undefined' && window.location ? window.location.href : 'http://127.0.0.1');
+      const info = parseExamPagination(currentUrl);
+      if (!info) return null;
+
+      const nextQ = info.current + 1;
+      if (info.total && nextQ > info.total) {
+        return null;
+      }
+
+      if (info.currentParam) {
+        parsed.searchParams.set(info.currentParam, nextQ.toString());
+        return parsed.toString();
+      } else {
+        const newPath = parsed.pathname.replace(/(\/(?:quiz|question|q|step|page)\/)(\d+)/i, `$1${nextQ}`);
+        if (newPath !== parsed.pathname) {
+          parsed.pathname = newPath;
+          return parsed.toString();
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  async function advanceExamToNextQuestion() {
+    if (typeof termLog === 'function') {
+      termLog('[HITL EXAM] 🔄 Advancing to next question...', 'info');
+    }
+
+    let doc = null;
+    if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
+      doc = browserFrame.contentDocument;
+    }
+
+    const nextBtn = findNextQuestionButton(doc);
+    const currentUrl = (typeof currentNavUrl === 'string' && currentNavUrl) ? currentNavUrl : '';
+    const nextUrl = getNextExamUrl(currentUrl);
+    const prevQNum = (window.activeExamQuestions && window.activeExamQuestions[0]) ? (window.activeExamQuestions[0].questionNumber || 1) : 1;
+
+    let clicked = false;
+    if (nextBtn) {
+      try {
+        if (typeof nextBtn.click === 'function') {
+          nextBtn.click();
+          clicked = true;
+          if (typeof termLog === 'function') {
+            termLog('[HITL EXAM] Triggered Next Question button in active viewport', 'info');
+          }
+        }
+      } catch (clickErr) {
+        if (typeof termLog === 'function') {
+          termLog(`[HITL EXAM] Next button click error: ${clickErr.message}`, 'warn');
+        }
+      }
+    }
+
+    // Wait for DOM mutation or navigation
+    await new Promise(r => setTimeout(r, 600));
+
+    // Check if URL navigation is needed
+    if (nextUrl) {
+      const liveFrameUrl = (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentWindow && browserFrame.contentWindow.location)
+        ? browserFrame.contentWindow.location.href
+        : '';
+      const paginationLive = parseExamPagination(liveFrameUrl);
+      let stemChanged = false;
+      if (doc && doc.body) {
+        const newQuestions = extractExamQuestions(doc, doc.body.innerText || '');
+        if (newQuestions.length > 0 && newQuestions[0].questionNumber !== prevQNum) {
+          stemChanged = true;
+        }
+      }
+
+      if (!stemChanged && (!paginationLive || paginationLive.current <= prevQNum)) {
+        if (typeof termLog === 'function') {
+          termLog(`[HITL EXAM] Advancing URL to: ${nextUrl}`, 'info');
+        }
+        if (typeof navigateTo === 'function') {
+          navigateTo(nextUrl, true, false);
+        }
+        await new Promise(r => setTimeout(r, 800));
+      }
+    }
+
+    // Re-ground perception on updated page
+    return await regroundActiveExamPerception();
+  }
+
+  async function regroundActiveExamPerception() {
+    let doc = null;
+    let text = '';
+    if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
+      doc = browserFrame.contentDocument;
+      if (doc.body) {
+        text = doc.body.innerText || doc.body.textContent || '';
+      }
+    }
+
+    let questions = (typeof extractExamQuestions === 'function') ? extractExamQuestions(doc, text) : (window.activeExamQuestions || []);
+    const pagination = typeof parseExamPagination === 'function' ? parseExamPagination(typeof currentNavUrl === 'string' ? currentNavUrl : '') : null;
+    if (pagination && questions.length === 1) {
+      questions[0].questionNumber = pagination.current;
+      questions[0].totalQuestions = pagination.total;
+    }
+
+    if (questions.length > 0) {
+      window.activeExamQuestions = questions;
+      const qNum = questions[0].questionNumber || 1;
+      const totalNum = questions[0].totalQuestions || (pagination ? pagination.total : 38);
+      if (typeof termLog === 'function') {
+        termLog(`📝 [HITL EXAM] Grounded Question ${qNum} of ${totalNum}`, 'success');
+      }
+
+      // Update the HITL workspace DOM
+      const workspaceEl = (typeof document !== 'undefined' && document.querySelector) ? document.querySelector('.hitl-exam-workspace') : null;
+      if (workspaceEl) {
+        const titleEl = workspaceEl.querySelector('div[style*="font-weight: 700"]');
+        if (titleEl) {
+          titleEl.textContent = `Autonomous Exam & Assessment Workspace (Question ${qNum} of ${totalNum})`;
+        }
+        const badgeEl = workspaceEl.querySelector('.exam-progress-badge');
+        if (badgeEl) {
+          badgeEl.textContent = `Question ${qNum} of ${totalNum}`;
+        }
+
+        const listEl = workspaceEl.querySelector('.exam-questions-list');
+        if (listEl) {
+          let listHtml = '';
+          questions.forEach((q, idx) => {
+            listHtml += `
+              <div id="exam-q-${idx}" class="exam-question-card" data-q-index="${idx}" style="background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 10px 12px;">
+                <div style="font-weight: 600; font-size: 12.5px; color: var(--text-primary, #f1f5f9); margin-bottom: 8px; line-height: 1.4;">
+                  <span style="color: #38bdf8;">Question ${q.questionNumber || qNum}:</span> ${escapeHtml(q.questionText)}
+                </div>
+                <div class="exam-options-grid" style="display: flex; flex-direction: column; gap: 6px;">
+            `;
+            const opts = q.optionsList && q.optionsList.length ? q.optionsList : Object.entries(q.options || {}).map(([k, v]) => ({ key: k, text: v }));
+            opts.forEach(opt => {
+              const isSelected = q.selectedOption === opt.key;
+              const isRecommended = q.recommendedOption === opt.key;
+              const optStyle = isSelected
+                ? 'background: rgba(16, 185, 129, 0.22); border: 1px solid #10b981; color: #fff;'
+                : (isRecommended
+                  ? 'background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.4); color: var(--text-primary);'
+                  : 'background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); color: var(--text-secondary);');
+              listHtml += `
+                <button type="button" class="exam-opt-btn" data-q="${idx}" data-opt="${escapeHtml(opt.key)}" onclick="window.selectExamOption(${idx}, '${escapeHtml(opt.key)}')" style="${optStyle} text-align: left; padding: 6px 10px; border-radius: 4px; font-size: 11.5px; cursor: pointer; display: flex; align-items: flex-start; gap: 8px; transition: all 0.15s ease;">
+                  <span style="font-weight: 700; color: ${isSelected ? '#10b981' : (isRecommended ? '#38bdf8' : 'var(--text-muted)')}; min-width: 18px;">${escapeHtml(opt.key)}.</span>
+                  <span style="flex: 1; line-height: 1.35;">${escapeHtml(opt.text)}</span>
+                  ${isRecommended ? '<span class="exam-rec-tag" style="font-size: 10px; background: rgba(56, 189, 248, 0.25); color: #38bdf8; padding: 1px 5px; border-radius: 3px; font-weight: 600;">AI Rec</span>' : ''}
+                  ${isSelected ? '<span class="exam-selected-tag" style="font-size: 10px; color: #10b981; font-weight: 700;">✓ Selected</span>' : ''}
+                </button>
+              `;
+            });
+            listHtml += `
+                </div>
+              </div>
+            `;
+          });
+          listEl.innerHTML = listHtml;
+        }
+
+        const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('exam-hitl-safety-gate') : null;
+        if (gate) {
+          gate.innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+              <div>
+                <div style="font-weight: 600; color: #eab308; font-size: 12px; display: flex; align-items: center; gap: 6px;">
+                  <span>🛡️</span> <span>Human-in-the-Loop Safety Gate Active (Question ${qNum} of ${totalNum})</span>
+                </div>
+                <div style="font-size: 11px; color: var(--text-secondary, #cbd5e1); margin-top: 2px;">
+                  Verify selections above. No exam answers will be submitted without your explicit confirmation.
+                </div>
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <button type="button" class="btn-exam-abort" onclick="window.abortExamSubmit()" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; font-size: 11.5px; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: 600;">
+                  ✋ Abort
+                </button>
+                <button type="button" class="btn-exam-confirm" onclick="window.confirmExamSubmit()" style="background: #10b981; border: none; color: #fff; font-size: 11.5px; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
+                  ${(qNum < totalNum) ? '✅ Confirm & Next Question ➔' : '✅ Confirm & Submit Final Answers'}
+                </button>
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      // If autonomous loop is running, proceed to next step
+      if (window.isAutonomousExamSolverRunning) {
+        if (typeof autoSolveAllExamQuestions === 'function') {
+          autoSolveAllExamQuestions();
+        }
+        await new Promise(r => setTimeout(r, 800));
+        if (window.isAutonomousExamSolverRunning) {
+          if (qNum < totalNum) {
+            confirmExamSubmit();
+          } else {
+            if (typeof termLog === 'function') {
+              termLog(`🎉 [AUTONOMOUS EXAM SOLVER] All ${totalNum} questions successfully solved and submitted!`, 'success');
+            }
+            window.isAutonomousExamSolverRunning = false;
+          }
+        }
+      }
+    }
+    return questions;
+  }
+
   function confirmExamSubmit() {
     if (!window.activeExamQuestions || !window.activeExamQuestions.length) return;
     const answeredCount = window.activeExamQuestions.filter(q => q.selectedOption).length;
     const total = window.activeExamQuestions.length;
+
+    const currentQ = window.activeExamQuestions[0];
+    const pagination = typeof parseExamPagination === 'function' ? parseExamPagination(typeof currentNavUrl === 'string' ? currentNavUrl : '') : null;
+    const qNum = currentQ ? (currentQ.questionNumber || (pagination ? pagination.current : 1)) : 1;
+    const totalQuestions = currentQ && currentQ.totalQuestions ? currentQ.totalQuestions : (pagination ? pagination.total : total);
+    const hasNextBtn = typeof findNextQuestionButton === 'function' ? Boolean(findNextQuestionButton(typeof browserFrame !== 'undefined' && browserFrame ? browserFrame.contentDocument : null)) : false;
+    const hasNextUrl = typeof getNextExamUrl === 'function' ? Boolean(getNextExamUrl(typeof currentNavUrl === 'string' ? currentNavUrl : '')) : false;
+    const hasMoreQuestions = qNum < totalQuestions || hasNextBtn || hasNextUrl;
 
     const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('exam-hitl-safety-gate') : null;
     if (gate) {
@@ -14670,12 +15353,17 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     try {
       if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
         const doc = browserFrame.contentDocument;
-        const submitBtn = doc.querySelector('button[type="submit"], input[type="submit"], button.submit, button#submit, form button:last-of-type');
-        if (submitBtn && submitBtn.click) {
-          submitBtn.click();
+        const nextBtn = typeof findNextQuestionButton === 'function' ? findNextQuestionButton(doc) : null;
+        if (nextBtn && nextBtn.click) {
+          nextBtn.click();
         } else {
-          const form = doc.querySelector('form');
-          if (form && form.submit) form.submit();
+          const submitBtn = doc.querySelector ? doc.querySelector('button[type="submit"], input[type="submit"], button.submit, button#submit, form button:last-of-type') : null;
+          if (submitBtn && submitBtn.click) {
+            submitBtn.click();
+          } else {
+            const form = doc.querySelector ? doc.querySelector('form') : null;
+            if (form && form.submit) form.submit();
+          }
         }
       }
     } catch (_) {}
@@ -14683,9 +15371,57 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     if (typeof termLog === 'function') {
       termLog(`[HITL EXAM] ✅ Human-in-the-Loop approval confirmed. Exam answers submitted (${answeredCount}/${total}).`, 'success');
     }
+
+    // If there are subsequent questions, automatically advance perception and workspace
+    if (hasMoreQuestions && qNum < totalQuestions && typeof advanceExamToNextQuestion === 'function') {
+      setTimeout(() => {
+        advanceExamToNextQuestion();
+      }, 500);
+    }
+  }
+
+  function startAutonomousExamSolverLoop() {
+    window.isAutonomousExamSolverRunning = true;
+    if (typeof termLog === 'function') {
+      termLog('🚀 [HITL EXAM] Starting Autonomous Multi-Question Exam Solver Loop...', 'info');
+    }
+    autoSolveAllExamQuestions();
+    const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('exam-hitl-safety-gate') : null;
+    if (gate) {
+      const notice = gate.querySelector ? gate.querySelector('.exam-auto-solved-notice') : null;
+      if (notice) {
+        notice.textContent = '🚀 Autonomous loop active: Auto-advancing through questions with AI recommendations. Click Abort or Pause anytime.';
+      }
+    }
+    setTimeout(() => {
+      if (window.isAutonomousExamSolverRunning) {
+        confirmExamSubmit();
+      }
+    }, 800);
+  }
+
+  function pauseAutonomousExamSolverLoop() {
+    window.isAutonomousExamSolverRunning = false;
+    if (typeof termLog === 'function') {
+      termLog('⏸️ [HITL EXAM] Autonomous Exam Solver Loop paused by user.', 'warn');
+    }
+    const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('exam-hitl-safety-gate') : null;
+    if (gate) {
+      gate.innerHTML = `
+        <div class="exam-paused-banner" style="background: rgba(234, 179, 8, 0.12); border: 1px solid rgba(234, 179, 8, 0.4); border-radius: 6px; padding: 10px 14px; color: #eab308;">
+          <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+            <span>⏸️</span> <span>Autonomous Exam Solver Paused</span>
+          </div>
+          <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
+            Automated progression paused. You can review selections, resume loop, or submit manually.
+          </div>
+        </div>
+      `;
+    }
   }
 
   function abortExamSubmit() {
+    window.isAutonomousExamSolverRunning = false;
     const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('exam-hitl-safety-gate') : null;
     if (gate) {
       gate.innerHTML = `
@@ -14742,6 +15478,13 @@ Analyze the temporal progression across the sampled video keyframes, describing 
   window.confirmExamSubmit = confirmExamSubmit;
   window.abortExamSubmit = abortExamSubmit;
   window.updateExamRecommendationsFromAiText = updateExamRecommendationsFromAiText;
+  window.findNextQuestionButton = findNextQuestionButton;
+  window.parseExamPagination = parseExamPagination;
+  window.getNextExamUrl = getNextExamUrl;
+  window.advanceExamToNextQuestion = advanceExamToNextQuestion;
+  window.regroundActiveExamPerception = regroundActiveExamPerception;
+  window.startAutonomousExamSolverLoop = startAutonomousExamSolverLoop;
+  window.pauseAutonomousExamSolverLoop = pauseAutonomousExamSolverLoop;
 
   // -----------------------------------------------------------------
   // 4.057b Universal Page Archetype Classifier & Action Synthesizer
@@ -16775,7 +17518,19 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 
     // Build Step-by-Step UI-TARS Grounding Actions HTML
     const groundingTargetUrl = targetNavUrl || 'https://www.google.com';
-    const uitarsGroundingHtml = `
+    const isExamGoal = /exam-solver\b|exam|quiz|test|questions?/i.test(goal);
+    const uitarsGroundingHtml = isExamGoal ? `
+      <div style="background: var(--bg-secondary, rgba(0,0,0,0.1)); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 11.5px; line-height: 1.6; margin-bottom: 10px; border: 1px solid rgba(56, 189, 248, 0.2);">
+        <div style="color: #38bdf8; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+          <span>🎯</span> <span>UI-TARS Grounding Action Sequence (Exam Solver Loop)</span>
+        </div>
+        <div>• <strong>Step 1:</strong> <span style="color:#38bdf8;">NAVIGATE_VIEWPORT</span> ➔ <code style="word-break:break-all;">${escapeHtml(groundingTargetUrl)}</code> (ModelFusion Proxy active: X-Frame-Options SAMEORIGIN bypassed)</div>
+        <div>• <strong>Step 2:</strong> <span style="color:#38bdf8;">SCREEN_PERCEPTION</span> ➔ Grounded DOM tree (${livePageElementsCount || 1} interactive elements, ${detectedExamQuestions.length} exam question nodes identified)</div>
+        <div>• <strong>Step 3:</strong> <span style="color:#38bdf8;">MULTI_CHOICE_REASONING</span> ➔ Synthesizing questions, stems, and diagrams into high-confidence recommendations</div>
+        <div>• <strong>Step 4:</strong> <span style="color:#38bdf8;">HITL_SAFETY_GATE</span> ➔ Human review active: AI recommendations staged for interactive confirmation</div>
+        <div>• <strong>Step 5:</strong> <span style="color:#38bdf8;">ADVANCE_PAGINATION</span> ➔ Automated "Next Question" detector and URL query incrementation (q=1..total) ready</div>
+      </div>
+    ` : `
       <div style="background: var(--bg-secondary, rgba(0,0,0,0.1)); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 11.5px; line-height: 1.6; margin-bottom: 10px; border: 1px solid rgba(56, 189, 248, 0.2);">
         <div style="color: #38bdf8; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
           <span>🎯</span> <span>UI-TARS Grounding Action Sequence</span>
@@ -17617,6 +18372,227 @@ Instructions:
         saveChatHistory();
       }
       setChatRunningState(false);
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
+
+    // 4.495 Classification & Taxonomy Foundation Models Directive (@agent classify, @agent zero-shot, @agent sentiment, @agent moderation, @agent topic)
+    const isClassificationCmd = (
+      lower.startsWith('@agent classify') || lower === '@agent classify' ||
+      lower.startsWith('/classify') || lower === '/classify' ||
+      lower.startsWith('@classify') ||
+      lower.startsWith('@agent zero-shot') || lower === '@agent zero-shot' ||
+      lower.startsWith('/zero-shot') || lower === '/zero-shot' ||
+      lower.startsWith('@zero-shot') ||
+      lower.startsWith('@agent sentiment') || lower === '@agent sentiment' ||
+      lower.startsWith('/sentiment') || lower === '/sentiment' ||
+      lower.startsWith('@sentiment') ||
+      lower.startsWith('@agent moderation') || lower === '@agent moderation' ||
+      lower.startsWith('/moderation') || lower === '/moderation' ||
+      lower.startsWith('@moderation') ||
+      lower.startsWith('@agent topic') || lower === '@agent topic' ||
+      lower.startsWith('/topic') || lower === '/topic' ||
+      lower.startsWith('@topic') ||
+      /^(?:@agent\s+|@|\/)?(?:bart-large-mnli|bart-mnli|nli-deberta-v3-base|deberta-nli|deberta-v3-base-mnli-fever-anli|distilbart-mnli|toxic-bert|text-moderation|longformer-base-4096|go_emotions|go-emotions)(?:\s*[:\s]|$)/i.test(cmd)
+    );
+
+    if (isClassificationCmd) {
+      let rawQuery = cmd
+        .replace(/^(?:@agent\s+(?:classify|zero-shot|sentiment|moderation|topic)|\/(?:classify|zero-shot|sentiment|moderation|topic)|@(?:classify|zero-shot|sentiment|moderation|topic))\s*:?\s*/i, '')
+        .trim();
+
+      let defaultDomain = 'Zero-Shot Classification';
+      let defaultIcon = '🏷️';
+      if (/sentiment/i.test(cmd)) {
+        defaultDomain = 'Sentiment & Tone';
+        defaultIcon = '❤️';
+      } else if (/moderation/i.test(cmd)) {
+        defaultDomain = 'Moderation & Safety';
+        defaultIcon = '🚨';
+      } else if (/topic/i.test(cmd)) {
+        defaultDomain = 'Long-Document & Topic';
+        defaultIcon = '📑';
+      } else if (/zero-shot/i.test(cmd)) {
+        defaultDomain = 'Zero-Shot Classification';
+        defaultIcon = '🎯';
+      }
+
+      let targetModelKey = null;
+      let modelQuery = rawQuery;
+
+      for (const [k, m] of Object.entries(CLASSIFICATION_MODELS)) {
+        const altKey = k.replace(/[-_]/g, '');
+        const regex = new RegExp(`^(?:@agent\\s+|@|\\/)?(${k}|${altKey})\\b`, 'i');
+        if (regex.test(cmd) || new RegExp(`^${k}\\b`, 'i').test(rawQuery)) {
+          targetModelKey = k;
+          modelQuery = rawQuery.replace(new RegExp(`^${k}\\s*:?\\s*`, 'i'), '').trim();
+          break;
+        }
+      }
+
+      if (!targetModelKey) {
+        const aliasMap = {
+          'bart': 'bart-large-mnli',
+          'bart-mnli': 'bart-large-mnli',
+          'deberta': 'nli-deberta-v3-base',
+          'deberta-nli': 'nli-deberta-v3-base',
+          'deberta-fever': 'deberta-v3-base-mnli-fever-anli',
+          'distilbart': 'distilbart-mnli-12-3',
+          'distilbart-mnli': 'distilbart-mnli-12-3',
+          'sst2': 'distilbert-base-uncased-finetuned-sst-2-english',
+          'distilbert-sst2': 'distilbert-base-uncased-finetuned-sst-2-english',
+          'twitter-roberta': 'twitter-roberta-base-sentiment-latest',
+          'twitter-sentiment': 'twitter-roberta-base-sentiment-latest',
+          'go-emotions': 'roberta-base-go_emotions',
+          'go_emotions': 'roberta-base-go_emotions',
+          'emotion': 'distilbert-base-uncased-emotion',
+          'distilbert-emotion': 'distilbert-base-uncased-emotion',
+          'toxic': 'toxic-bert',
+          'toxic-bert': 'toxic-bert',
+          'moderation': 'text-moderation',
+          'text-moderation': 'text-moderation',
+          'longformer': 'longformer-base-4096',
+          'finbert': 'finbert'
+        };
+        const firstToken = rawQuery.split(/\s+/)[0]?.toLowerCase();
+        if (firstToken && aliasMap[firstToken]) {
+          targetModelKey = aliasMap[firstToken];
+          modelQuery = rawQuery.replace(new RegExp(`^${firstToken}\\s*:?\\s*`, 'i'), '').trim();
+        }
+      }
+
+      if (!targetModelKey) {
+        for (const [k, m] of Object.entries(CLASSIFICATION_MODELS)) {
+          if (new RegExp(`\\b${k}\\b`, 'i').test(rawQuery) || new RegExp(`\\b${m.name}\\b`, 'i').test(rawQuery)) {
+            targetModelKey = k;
+            break;
+          }
+        }
+      }
+
+      const modelInfo = targetModelKey ? CLASSIFICATION_MODELS[targetModelKey] : null;
+
+      // If no query or overview requested, render interactive Classification Explorer Card
+      if (!modelQuery && !modelInfo) {
+        termLog('[CLASSIFICATION] 🏷️ Displaying Classification & Taxonomy Foundation Models Overview...', 'info');
+        const bubble = createAiBubble({
+          icon: '🏷️',
+          title: 'Classification & Taxonomy Suite',
+          modelTag: 'Classification AI',
+          isTool: true,
+          streaming: false
+        });
+        const contentEl = bubble.querySelector('.stream-content') || bubble;
+        contentEl.innerHTML = `
+          <div class="classification-model-card">
+            <div class="classification-model-header">
+              <div class="classification-model-title"><span>🏷️</span> HugOS Classification &amp; Taxonomy Suite</div>
+              <span class="classification-domain-badge">12 Foundation Models</span>
+            </div>
+            <div class="classification-model-desc">
+              High-throughput local text classification, zero-shot NLI entailment, multi-class sentiment, 28-emotion profiling, automated safety moderation, and long-document categorization:
+            </div>
+            <div style="margin: 8px 0; font-size: 11.5px; line-height: 1.6;">
+              <div><strong>🎯 Zero-Shot Classification:</strong> BART-Large MNLI, DeBERTa-v3 NLI, DeBERTa-v3 FEVER ANLI, DistilBART MNLI</div>
+              <div><strong>❤️ Sentiment &amp; Tone:</strong> DistilBERT SST-2, Twitter-RoBERTa Sentiment, GoEmotions RoBERTa (28 classes), DistilBERT Emotion (6 classes)</div>
+              <div><strong>🚨 Moderation &amp; Safety:</strong> Toxic-BERT (6-label toxicity), KoalaAI Text-Moderation (multi-hazard safety)</div>
+              <div><strong>📑 Long-Document &amp; Topic:</strong> Longformer 4096 (multi-page documents), FinBERT (financial disclosures)</div>
+            </div>
+            <div style="margin-top: 10px; font-size: 11px; color: var(--text-muted);">
+              Use <code>@agent classify &lt;model&gt; &lt;text&gt; [candidate labels: ...]</code> or <code>@agent zero-shot &lt;text&gt; --labels &lt;l1,l2&gt;</code> to classify text directly.
+            </div>
+          </div>
+        `;
+        setChatRunningState(false);
+        if (currentAttachments.length > 0) clearAllAttachments();
+        return;
+      }
+
+      // If model identified but query is empty, show interactive card for that model
+      if (modelInfo && !modelQuery) {
+        termLog(`[CLASSIFICATION] 🏷️ Model selected: ${modelInfo.name} (${modelInfo.domain})`, 'info');
+        const bubble = createAiBubble({
+          icon: modelInfo.icon,
+          title: `${modelInfo.name} Foundation Model`,
+          modelTag: modelInfo.domainKey.toUpperCase(),
+          isTool: true,
+          streaming: false
+        });
+        const contentEl = bubble.querySelector('.stream-content') || bubble;
+        contentEl.innerHTML = `
+          <div class="classification-model-card">
+            <div class="classification-model-header">
+              <div class="classification-model-title"><span>${modelInfo.icon}</span> ${escapeHtml(modelInfo.name)}</div>
+              <span class="classification-domain-badge">${escapeHtml(modelInfo.domain)}</span>
+            </div>
+            <div class="classification-model-desc">${escapeHtml(modelInfo.desc)}</div>
+            <div class="classification-model-capabilities">
+              ${modelInfo.capabilities.map(c => `<span class="classification-cap-pill">✓ ${escapeHtml(c)}</span>`).join('')}
+            </div>
+            <div style="margin-top: 10px; font-size: 11.5px; color: var(--text-secondary);">
+              Type your text or passage to classify below, along with optional candidate labels.
+            </div>
+          </div>
+        `;
+        const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+          ? cliPromptInputPinned
+          : cliPromptInput;
+        if (activeInput) {
+          activeInput.value = `@agent classify ${targetModelKey} `;
+          activeInput.focus();
+          activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
+        }
+        setChatRunningState(false);
+        if (currentAttachments.length > 0) clearAllAttachments();
+        return;
+      }
+
+      // Execute classification inference
+      const effectiveModelName = modelInfo ? modelInfo.name : 'Universal Text Classifier';
+      const effectiveDomain = modelInfo ? modelInfo.domain : defaultDomain;
+      const effectiveIcon = modelInfo ? modelInfo.icon : defaultIcon;
+
+      termLog(`[CLASSIFICATION] 🏷️ Classifying with ${effectiveModelName} on: "${modelQuery.slice(0, 60)}..."`, 'info');
+      setChatRunningState(true);
+      currentAbortController = new AbortController();
+      if (chatWelcome) chatWelcome.classList.add('hidden');
+
+      const activeSession = chatSessions.find(s => s.id === currentSessionId);
+      if (activeSession) {
+        const lastMsg = activeSession.messages[activeSession.messages.length - 1];
+        if (!lastMsg || lastMsg.role !== 'user' || lastMsg.content !== cmd) {
+          activeSession.messages.push({ role: 'user', content: cmd, attachments: currentAttachments });
+          saveChatHistory();
+        }
+      }
+
+      const bubble = createAiBubble({
+        icon: effectiveIcon,
+        title: `${effectiveModelName} Inference`,
+        modelTag: effectiveDomain,
+        isTool: true,
+        streaming: true
+      });
+
+      const classificationSysPrompt = `You are the ${effectiveModelName} Foundation Model specialist in ${effectiveDomain} within HugOS.
+Analyze and classify the input text with high precision.
+- Zero-Shot: Evaluate entailment/contradiction against candidate labels, providing confidence percentages for each candidate.
+- Sentiment & Tone: Score polarity (positive, negative, neutral) or fine-grained emotional nuances (e.g. GoEmotions 28 categories).
+- Moderation & Safety: Output multi-label safety flags (toxicity, hate speech, harassment, profanity, self-harm) with risk ratings (None, Low, Medium, High, Critical).
+- Long-Document & Topic: Synthesize macro themes and provide hierarchical taxonomy categories.
+- Provide structured classification results with probabilities and confidence scores, followed by concise analytical rationale.`;
+
+      const classificationUserPrompt = attachmentContext
+        ? `[Domain: ${effectiveDomain} | Model: ${effectiveModelName}]\n\n${modelQuery}\n\n${attachmentContext}`
+        : `[Domain: ${effectiveDomain} | Model: ${effectiveModelName}]\n\n${modelQuery}`;
+
+      await streamAiChat(classificationUserPrompt, classificationSysPrompt, {
+        images: attachedImages,
+        panel: { id: 'classification', name: `${effectiveModelName} (${effectiveDomain})` },
+        existingBubble: bubble,
+        intention: chatIntention
+      });
+
       if (currentAttachments.length > 0) clearAllAttachments();
       return;
     }
@@ -18582,6 +19558,126 @@ If you are asked about real-world facts such as world leaders, heads of state, c
   }
 
   // ─────────────────────────────────────────────────────────────
+  // 🏷️ Classification & Taxonomy Foundation Models Registry
+  // ─────────────────────────────────────────────────────────────
+  const CLASSIFICATION_MODELS = {
+    'bart-large-mnli': {
+      name: 'BART-Large MNLI',
+      domain: 'Zero-Shot Classification',
+      domainKey: 'zero-shot',
+      icon: '🎯',
+      desc: 'Zero-shot classification benchmark fine-tuned on MultiNLI for custom candidate label hypothesis testing and entailment.',
+      capabilities: ['Zero-Shot Hypothesis Entailment', 'Candidate Label Softmax Ranking', 'Multi-Class Text Triage', 'Unsupervised Intent Recognition']
+    },
+    'nli-deberta-v3-base': {
+      name: 'Cross-Encoder DeBERTa-v3',
+      domain: 'Zero-Shot Classification',
+      domainKey: 'zero-shot',
+      icon: '🔀',
+      desc: 'High-precision cross-encoder zero-shot NLI classifier with disentangled attention for subtle semantic boundary detection.',
+      capabilities: ['Disentangled Attention', 'Cross-Encoder Scoring', 'Subtle Negation Handling', 'High-Precision Premise Entailment']
+    },
+    'deberta-v3-base-mnli-fever-anli': {
+      name: 'DeBERTa-v3 NLI FEVER',
+      domain: 'Zero-Shot Classification',
+      domainKey: 'zero-shot',
+      icon: '⚖️',
+      desc: 'Fact verification and adversarial NLI entailment scoring model fine-tuned on MNLI, FEVER, and Adversarial NLI datasets.',
+      capabilities: ['Fact Verification', 'Adversarial NLI', 'Claim Validation', 'Robust Entailment Scoring']
+    },
+    'distilbart-mnli-12-3': {
+      name: 'DistilBART MNLI',
+      domain: 'Zero-Shot Classification',
+      domainKey: 'zero-shot',
+      icon: '⚡',
+      desc: 'Ultra-low latency, distilled BART model providing 2.5x faster inference for edge and real-time streaming zero-shot categorization.',
+      capabilities: ['Distilled Architecture', 'Ultra-Low Latency', 'Edge Resource Efficiency', 'Real-Time Streaming Triage']
+    },
+    'distilbert-base-uncased-finetuned-sst-2-english': {
+      name: 'DistilBERT SST-2',
+      domain: 'Sentiment & Tone',
+      domainKey: 'sentiment',
+      icon: '👍',
+      desc: 'High-throughput binary sentiment classifier fine-tuned on Stanford Sentiment Treebank for rapid positive/negative polarity detection.',
+      capabilities: ['Binary Sentiment Scoring', 'Confidence Calibration', 'Micro-Latency Throughput', 'Customer Review Triage']
+    },
+    'twitter-roberta-base-sentiment-latest': {
+      name: 'Twitter-RoBERTa Sentiment',
+      domain: 'Sentiment & Tone',
+      domainKey: 'sentiment',
+      icon: '🐦',
+      desc: '3-class sentiment classifier tuned on ~124M tweets for social media text, modern slang, abbreviations, and emoji semantics.',
+      capabilities: ['Social Media Slang Parsing', 'Emoji Semantic Grounding', '3-Way Polarity Scoring', 'Brand Sentiment Tracking']
+    },
+    'roberta-base-go_emotions': {
+      name: 'GoEmotions RoBERTa',
+      domain: 'Sentiment & Tone',
+      domainKey: 'sentiment',
+      icon: '💬',
+      desc: 'Multi-label emotion classifier across 28 distinct emotional states fine-tuned on 58k conversational Reddit comments.',
+      capabilities: ['28-Class Emotion Profiling', 'Multi-Label Attribution', 'Conversational Tone Profiling', 'Empathetic Dialogue Grounding']
+    },
+    'distilbert-base-uncased-emotion': {
+      name: 'DistilBERT Emotion',
+      domain: 'Sentiment & Tone',
+      domainKey: 'sentiment',
+      icon: '🎭',
+      desc: 'Fast 6-class emotion classifier identifying sadness, joy, love, anger, fear, and surprise in personal text and dialogues.',
+      capabilities: ['6 Basic Emotion Dimensions', 'Low-Overhead Inference', 'Frustration & Distress Detection', 'Customer Feedback Categorization']
+    },
+    'toxic-bert': {
+      name: 'Toxic-BERT',
+      domain: 'Moderation & Safety',
+      domainKey: 'moderation',
+      icon: '☣️',
+      desc: 'Multi-label toxicity safety classifier flagging toxic comments, severe toxicity, insults, identity attacks, obscenities, and threats.',
+      capabilities: ['Multi-Label Toxicity Auditing', 'Threat & Harassment Flagging', 'Identity Attack Detection', 'Automated Forum Guardrails']
+    },
+    'text-moderation': {
+      name: 'KoalaAI Text Moderation',
+      domain: 'Moderation & Safety',
+      domainKey: 'moderation',
+      icon: '🚨',
+      desc: 'Targeted safety classifier flagging self-harm, hate speech, harassment, sexual content, and graphic violence in prompts and completions.',
+      capabilities: ['Multi-Hazard Safety Audit', 'Self-Harm Intervention Detection', 'Harassment Prevention', 'Policy Compliance Verification']
+    },
+    'longformer-base-4096': {
+      name: 'Longformer 4096',
+      domain: 'Long-Doc & Topic',
+      domainKey: 'topic',
+      icon: '📜',
+      desc: 'Long-document classification foundation model handling multi-page articles, judicial opinions, and technical specs up to 4,096 tokens.',
+      capabilities: ['4,096-Token Attention Window', 'Linear Complexity Scaling', 'Multi-Page Document Taxonomy', 'Full-Length Article Analysis']
+    },
+    'finbert': {
+      name: 'FinBERT Classifier',
+      domain: 'Long-Doc & Topic',
+      domainKey: 'topic',
+      icon: '💼',
+      desc: 'Specialized domain classifier for financial disclosures, earnings transcripts, SEC filings, and corporate ESG reporting.',
+      capabilities: ['Financial Sentiment & Tone', 'Earnings Release Categorization', 'Regulatory Filing Taxonomy', 'Market Reaction Analysis']
+    }
+  };
+
+  function filterClassificationDomain(domain, btn) {
+    if (typeof document === 'undefined') return;
+    const tabs = document.querySelectorAll('.classification-domain-tab');
+    tabs.forEach(t => t.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    const items = document.querySelectorAll('.classification-tool-item');
+    items.forEach(item => {
+      const itemDomain = item.getAttribute('data-domain');
+      if (domain === 'all' || itemDomain === domain) {
+        item.classList.remove('hidden-domain');
+      } else {
+        item.classList.add('hidden-domain');
+      }
+    });
+  }
+  window.filterClassificationDomain = filterClassificationDomain;
+  window.CLASSIFICATION_MODELS = CLASSIFICATION_MODELS;
+
+  // ─────────────────────────────────────────────────────────────
   // 🔬 Science & Discovery Foundation Models Registry
   // ─────────────────────────────────────────────────────────────
   const SCIENTIFIC_MODELS = {
@@ -18768,6 +19864,23 @@ If you are asked about real-world facts such as world leaders, heads of state, c
   // Universal @agent Autocomplete / Prepopulation Engine
   // ─────────────────────────────────────────────────────────────
   const AGENT_COMMANDS = [
+    { cmd: '@agent classify ', icon: '🏷️', label: 'Classification & Taxonomy', desc: 'Zero-shot classification, NLI entailment, sentiment, and safety moderation' },
+    { cmd: '@agent classify bart-large-mnli ', icon: '🎯', label: 'BART-Large MNLI (Zero-Shot)', desc: 'Zero-shot classification benchmark for custom candidate labels' },
+    { cmd: '@agent classify nli-deberta-v3-base ', icon: '🔀', label: 'DeBERTa-v3 NLI (Zero-Shot)', desc: 'High-precision cross-encoder zero-shot classification' },
+    { cmd: '@agent classify deberta-v3-base-mnli-fever-anli ', icon: '⚖️', label: 'DeBERTa-v3 FEVER ANLI (NLI)', desc: 'Fact verification and adversarial NLI entailment scoring' },
+    { cmd: '@agent classify distilbart-mnli-12-3 ', icon: '⚡', label: 'DistilBART MNLI (Fast NLI)', desc: 'Ultra-low latency zero-shot classification for edge and streaming' },
+    { cmd: '@agent sentiment ', icon: '❤️', label: 'Sentiment & Tone Analysis', desc: 'Score polarity and 28-class emotional states' },
+    { cmd: '@agent sentiment distilbert-base-uncased-finetuned-sst-2-english ', icon: '👍', label: 'DistilBERT SST-2 (Sentiment)', desc: 'Rapid binary positive/negative sentiment scoring' },
+    { cmd: '@agent sentiment twitter-roberta-base-sentiment-latest ', icon: '🐦', label: 'Twitter-RoBERTa (Sentiment)', desc: '3-class sentiment scoring tuned for social slang and emojis' },
+    { cmd: '@agent sentiment roberta-base-go_emotions ', icon: '💬', label: 'GoEmotions RoBERTa (28 Emotions)', desc: 'Multi-label emotion classification across 28 distinct emotional states' },
+    { cmd: '@agent sentiment distilbert-base-uncased-emotion ', icon: '🎭', label: 'DistilBERT Emotion (6 Emotions)', desc: 'Evaluate 6 primary emotions (sadness, joy, love, anger, fear, surprise)' },
+    { cmd: '@agent moderation ', icon: '🚨', label: 'Content Safety & Moderation', desc: 'Audit toxicity, hate speech, harassment, threats, and self-harm' },
+    { cmd: '@agent moderation toxic-bert ', icon: '☣️', label: 'Toxic-BERT (Multi-Label)', desc: 'Multi-label toxicity analysis for toxic comments, threats, and insults' },
+    { cmd: '@agent moderation text-moderation ', icon: '🚨', label: 'KoalaAI Text Moderation (Safety)', desc: 'Scan text across self-harm, hate, harassment, and violent categories' },
+    { cmd: '@agent topic ', icon: '📑', label: 'Long-Doc & Topic Classification', desc: 'Categorize long-form documents up to 4096 tokens or financial reports' },
+    { cmd: '@agent topic longformer-base-4096 ', icon: '📜', label: 'Longformer 4096 (Long-Doc)', desc: 'Long-document taxonomy up to 4,096 tokens without truncation' },
+    { cmd: '@agent topic finbert ', icon: '💼', label: 'FinBERT Classifier (Finance)', desc: 'Domain-specific classification for financial disclosures and earnings' },
+    { cmd: '@agent zero-shot ', icon: '🎯', label: 'Zero-Shot NLI Entailment', desc: 'Zero-shot classification into arbitrary candidate labels' },
     { cmd: '@agent science ', icon: '🔬', label: 'Science & Discovery', desc: 'Query 20 scientific foundation models across Biology, Chemistry, Earth, and Scientific Literature' },
     { cmd: '@agent science aurora ', icon: '🌦️', label: 'Aurora (Weather)', desc: 'Atmospheric fluid dynamics and operational weather forecasting' },
     { cmd: '@agent science chemberta ', icon: '🧪', label: 'ChemBERTa (Chemistry)', desc: 'Molecular property prediction and chemical toxicity screening' },
@@ -18968,7 +20081,8 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     { cmd: '@agent backtrack ', icon: '↩️', label: 'Backtrack Rollback', desc: 'Rollback erroneous reasoning branches to previous valid state' },
     { cmd: '@agent reflection ', icon: '🪞', label: 'Error Reflection', desc: 'Analyze execution failure traces and synthesize self-corrections' },
     { cmd: '@agent adversarial ', icon: '⚔️', label: 'Adversarial Test', desc: 'Subject assumptions and architecture to worst-case stresses' },
-    { cmd: '@help ', icon: '💡', label: 'Help Hub (All 13 Menus)', desc: 'Explore all 13 sidebar menus and foundation models' },
+    { cmd: '@help ', icon: '💡', label: 'Help Hub (All 14 Menus)', desc: 'Explore all 14 sidebar menus and foundation models' },
+    { cmd: '@help classification', icon: '🏷️', label: 'Help: Classification & Taxonomy', desc: 'Guide to 12 models (BART, DeBERTa, GoEmotions, Toxic-BERT...)' },
     { cmd: '@help science', icon: '🔬', label: 'Help: Science & Discovery', desc: 'Guide to 20 scientific models (ESM2, ChemBERTa, ClimaX...)' },
     { cmd: '@help esm', icon: '🧬', label: 'Help: ESM Protein Suite', desc: 'Architecture, FASTA input format & 3D folding prompts' },
     { cmd: '@help finance', icon: '💰', label: 'Help: Finance & Markets', desc: 'Guide to 9 financial models (FinBERT, Chronos, FinGPT...)' },
