@@ -2780,7 +2780,7 @@ where
     if !verb.starts_with('-') {
         if (verb == "@agent" || verb == "agent") && args.len() > 2 {
             let sub = args[2].to_lowercase();
-            let sub_clean = sub.trim_start_matches('/');
+            let sub_clean = sub.trim_start_matches('-').trim_start_matches('/');
             let has_combinator = args.iter().any(|a| a == "&" || a == "+" || a == "and" || a == "," || a.contains(" & ") || a.contains(" + "));
             if (sub_clean == "markers" || sub_clean == "marker" || sub_clean == "som") && !has_combinator {
                 args.remove(1);
@@ -2857,14 +2857,106 @@ where
                 args.remove(1);
                 args[1] = "--translate".to_string();
             }
-            if (sub_clean == "computer-use" || sub_clean == "computer_use" || sub_clean == "computeruse" || sub_clean == "ui-tars" || sub_clean == "uitars") && !has_combinator {
+            let is_computer_use_tool = sub_clean == "computer-use" || sub_clean == "computer_use" || sub_clean == "computeruse"
+                || sub_clean == "ui-tars" || sub_clean == "uitars"
+                || sub_clean == "exam-solver" || sub_clean == "examsolver"
+                || sub_clean == "ticket-booking" || sub_clean == "ticketbooking"
+                || sub_clean == "map-directions" || sub_clean == "mapdirections"
+                || sub_clean == "shopping" || sub_clean == "shop"
+                || sub_clean == "desktop-click" || sub_clean == "desktopclick" || sub_clean == "click"
+                || sub_clean == "desktop-type" || sub_clean == "desktoptype" || sub_clean == "type"
+                || sub_clean == "desktop-scroll" || sub_clean == "desktopscroll" || sub_clean == "scroll"
+                || sub_clean == "screen-grounding" || sub_clean == "screengrounding" || sub_clean == "screen";
+
+            if is_computer_use_tool && !has_combinator {
+                let tool_kind = sub_clean.to_string();
                 args.remove(1);
                 args[1] = "--computer-use".to_string();
-                if args.len() > 3 {
-                    let combined = args[2..].join(" ");
-                    args.truncate(2);
-                    args.push(combined);
-                }
+                let combined_raw = if args.len() > 2 {
+                    args[2..].join(" ")
+                } else {
+                    String::new()
+                };
+                let formatted_goal = match tool_kind.as_str() {
+                    "desktop-click" | "desktopclick" | "click" => {
+                        if combined_raw.is_empty() {
+                            "Click active element or specified coordinate on screen".to_string()
+                        } else if !combined_raw.to_lowercase().starts_with("click") {
+                            format!("Click screen coordinate {}", combined_raw)
+                        } else {
+                            combined_raw
+                        }
+                    }
+                    "desktop-type" | "desktoptype" | "type" => {
+                        if combined_raw.is_empty() {
+                            "Type text into active window".to_string()
+                        } else if !combined_raw.to_lowercase().starts_with("type") {
+                            format!("Type text {}", combined_raw)
+                        } else {
+                            combined_raw
+                        }
+                    }
+                    "desktop-scroll" | "desktopscroll" | "scroll" => {
+                        if combined_raw.is_empty() {
+                            "Scroll active window".to_string()
+                        } else if !combined_raw.to_lowercase().starts_with("scroll") {
+                            format!("Scroll window {}", combined_raw)
+                        } else {
+                            combined_raw
+                        }
+                    }
+                    "screen-grounding" | "screengrounding" | "screen" => {
+                        if combined_raw.is_empty() {
+                            "Capture desktop screen and ground interactive UI elements".to_string()
+                        } else {
+                            format!("Capture screen and ground {}", combined_raw)
+                        }
+                    }
+                    "shopping" | "shop" => {
+                        if combined_raw.is_empty() {
+                            "Discover products and compare prices with e-commerce safety gate".to_string()
+                        } else if !combined_raw.to_lowercase().starts_with("search") && !combined_raw.to_lowercase().starts_with("find") {
+                            format!("Search and compare prices for {}", combined_raw)
+                        } else {
+                            combined_raw
+                        }
+                    }
+                    "ticket-booking" | "ticketbooking" => {
+                        if combined_raw.is_empty() {
+                            "Search and ground ticket options with booking safety gate".to_string()
+                        } else if !combined_raw.to_lowercase().starts_with("search") && !combined_raw.to_lowercase().starts_with("book") {
+                            format!("Search and book tickets for {}", combined_raw)
+                        } else {
+                            combined_raw
+                        }
+                    }
+                    "map-directions" | "mapdirections" => {
+                        if combined_raw.is_empty() {
+                            "Compute turn-by-turn map directions and transit routes".to_string()
+                        } else if !combined_raw.to_lowercase().starts_with("get") && !combined_raw.to_lowercase().starts_with("directions") {
+                            format!("Get map directions for {}", combined_raw)
+                        } else {
+                            combined_raw
+                        }
+                    }
+                    "exam-solver" | "examsolver" => {
+                        if combined_raw.is_empty() {
+                            "Inspect active page and solve exam questions with human-in-the-loop validation".to_string()
+                        } else {
+                            format!("Inspect and solve questions on {}", combined_raw)
+                        }
+                    }
+                    _ => {
+                        if combined_raw.is_empty() {
+                            "Inspect desktop screen and identify interactive UI elements".to_string()
+                        } else {
+                            combined_raw
+                        }
+                    }
+                };
+
+                args.truncate(2);
+                args.push(formatted_goal);
                 return args;
             }
             if (sub_clean == "kv" || sub_clean == "kv-bench" || sub_clean == "kv-cache" || sub_clean == "kvbench" || sub_clean == "kvcache") && !has_combinator {
@@ -3046,13 +3138,101 @@ where
         "translate" | "/translate" | "@agent/translate" | "@agent:translate" | "@translate" | "translation" | "/translation" => {
             args[1] = "--translate".to_string();
         }
-        "computer-use" | "computer_use" | "computeruse" | "--computer-use" | "--computer_use" | "--ui-tars" | "/computer-use" | "/computer_use" | "@agent/computer-use" | "@agent:computer-use" | "@computer-use" | "ui-tars" | "uitars" | "/ui-tars" | "@agent/ui-tars" | "@ui-tars" => {
+        "computer-use" | "computer_use" | "computeruse" | "--computer-use" | "--computer_use" | "--ui-tars" | "/computer-use" | "/computer_use" | "@agent/computer-use" | "@agent:computer-use" | "@computer-use" | "ui-tars" | "uitars" | "/ui-tars" | "@agent/ui-tars" | "@ui-tars"
+        | "exam-solver" | "examsolver" | "/exam-solver" | "@exam-solver" | "@agent/exam-solver"
+        | "ticket-booking" | "ticketbooking" | "/ticket-booking" | "@ticket-booking" | "@agent/ticket-booking"
+        | "map-directions" | "mapdirections" | "/map-directions" | "@map-directions" | "@agent/map-directions"
+        | "shopping" | "shop" | "/shopping" | "@shopping" | "@agent/shopping"
+        | "desktop-click" | "desktopclick" | "click" | "/desktop-click" | "@desktop-click" | "@agent/desktop-click"
+        | "desktop-type" | "desktoptype" | "type" | "/desktop-type" | "@desktop-type" | "@agent/desktop-type"
+        | "desktop-scroll" | "desktopscroll" | "scroll" | "/desktop-scroll" | "@desktop-scroll" | "@agent/desktop-scroll"
+        | "screen-grounding" | "screengrounding" | "screen" | "/screen-grounding" | "@screen-grounding" | "@agent/screen-grounding" => {
+            let tool_kind = sub.trim_start_matches('/').trim_start_matches('@').trim_start_matches("agent/").trim_start_matches("agent:").to_lowercase();
             args[1] = "--computer-use".to_string();
-            if args.len() > 3 {
-                let combined = args[2..].join(" ");
-                args.truncate(2);
-                args.push(combined);
-            }
+            let combined_raw = if args.len() > 2 {
+                args[2..].join(" ")
+            } else {
+                String::new()
+            };
+            let formatted_goal = match tool_kind.as_str() {
+                "desktop-click" | "desktopclick" | "click" => {
+                    if combined_raw.is_empty() {
+                        "Click active element or specified coordinate on screen".to_string()
+                    } else if !combined_raw.to_lowercase().starts_with("click") {
+                        format!("Click screen coordinate {}", combined_raw)
+                    } else {
+                        combined_raw
+                    }
+                }
+                "desktop-type" | "desktoptype" | "type" => {
+                    if combined_raw.is_empty() {
+                        "Type text into active window".to_string()
+                    } else if !combined_raw.to_lowercase().starts_with("type") {
+                        format!("Type text {}", combined_raw)
+                    } else {
+                        combined_raw
+                    }
+                }
+                "desktop-scroll" | "desktopscroll" | "scroll" => {
+                    if combined_raw.is_empty() {
+                        "Scroll active window".to_string()
+                    } else if !combined_raw.to_lowercase().starts_with("scroll") {
+                        format!("Scroll window {}", combined_raw)
+                    } else {
+                        combined_raw
+                    }
+                }
+                "screen-grounding" | "screengrounding" | "screen" => {
+                    if combined_raw.is_empty() {
+                        "Capture desktop screen and ground interactive UI elements".to_string()
+                    } else {
+                        format!("Capture screen and ground {}", combined_raw)
+                    }
+                }
+                "shopping" | "shop" => {
+                    if combined_raw.is_empty() {
+                        "Discover products and compare prices with e-commerce safety gate".to_string()
+                    } else if !combined_raw.to_lowercase().starts_with("search") && !combined_raw.to_lowercase().starts_with("find") {
+                        format!("Search and compare prices for {}", combined_raw)
+                    } else {
+                        combined_raw
+                    }
+                }
+                "ticket-booking" | "ticketbooking" => {
+                    if combined_raw.is_empty() {
+                        "Search and ground ticket options with booking safety gate".to_string()
+                    } else if !combined_raw.to_lowercase().starts_with("search") && !combined_raw.to_lowercase().starts_with("book") {
+                        format!("Search and book tickets for {}", combined_raw)
+                    } else {
+                        combined_raw
+                    }
+                }
+                "map-directions" | "mapdirections" => {
+                    if combined_raw.is_empty() {
+                        "Compute turn-by-turn map directions and transit routes".to_string()
+                    } else if !combined_raw.to_lowercase().starts_with("get") && !combined_raw.to_lowercase().starts_with("directions") {
+                        format!("Get map directions for {}", combined_raw)
+                    } else {
+                        combined_raw
+                    }
+                }
+                "exam-solver" | "examsolver" => {
+                    if combined_raw.is_empty() {
+                        "Inspect active page and solve exam questions with human-in-the-loop validation".to_string()
+                    } else {
+                        format!("Inspect and solve questions on {}", combined_raw)
+                    }
+                }
+                _ => {
+                    if combined_raw.is_empty() {
+                        "Inspect desktop screen and identify interactive UI elements".to_string()
+                    } else {
+                        combined_raw
+                    }
+                }
+            };
+            args.truncate(2);
+            args.push(formatted_goal);
         }
         "boost" | "/boost" | "@agent/boost" | "@agent:boost" | "@boost" | "booster" => {
             args[1] = "--boost".to_string();
@@ -4029,12 +4209,16 @@ async fn run(args: Args) -> Result<()> {
     }
 
     if let Some(ref target_url_raw) = args.proxy {
-        let target_url = if !target_url_raw.trim().is_empty() {
+        let is_valid_url_target = |s: &str| -> bool {
+            let t = s.trim();
+            !t.is_empty() && t != "@agent" && t != "agent" && (t.starts_with("http://") || t.starts_with("https://") || t.starts_with("localhost") || t.starts_with("127.0.0.1") || t.contains('.'))
+        };
+        let target_url = if is_valid_url_target(target_url_raw) {
             target_url_raw.trim().to_string()
         } else if let Some(ref q) = args.query {
-            q.trim().to_string()
+            if is_valid_url_target(q) { q.trim().to_string() } else { String::new() }
         } else if let Some(ref p) = args.prompt {
-            p.trim().to_string()
+            if is_valid_url_target(p) { p.trim().to_string() } else { String::new() }
         } else {
             String::new()
         };
@@ -8372,13 +8556,28 @@ pub fn sanitize_and_deduplicate_url(raw: &str) -> String {
     }
 
     // 4. Ensure proper scheme
-    if s.starts_with("http://") || s.starts_with("https://") {
+    let mut final_url = if s.starts_with("http://") || s.starts_with("https://") {
         s
     } else if s.starts_with("localhost") || s.starts_with("127.0.0.1") {
         format!("http://{}", s)
     } else {
         format!("https://{}", s)
+    };
+
+    // 5. Correct common search engine subdomain and domain typos
+    let lower_final = final_url.to_lowercase();
+    if lower_final.contains("://ww.google.") || lower_final.contains("://w.google.") || lower_final.contains("://wwww.google.") {
+        final_url = final_url.replacen("://ww.google.", "://www.google.", 1)
+            .replacen("://w.google.", "://www.google.", 1)
+            .replacen("://wwww.google.", "://www.google.", 1);
+    } else if lower_final.contains("://gogle.com") || lower_final.contains("://googl.com") {
+        final_url = final_url.replacen("://gogle.com", "://www.google.com", 1)
+            .replacen("://googl.com", "://www.google.com", 1);
+    } else if lower_final.contains("://ww.bing.") || lower_final.contains("://w.bing.") {
+        final_url = final_url.replacen("://ww.bing.", "://www.bing.", 1)
+            .replacen("://w.bing.", "://www.bing.", 1);
     }
+    final_url
 }
 
 /// Normalizes a target URL to ensure proper scheme and formatting with full deduplication.
@@ -18909,6 +19108,47 @@ public class Pr {
         let proc_alias = preprocess_cli_args(vec!["cli.exe".to_string(), "--computer_use".to_string(), "open".to_string(), "terminal".to_string()]);
         assert_eq!(proc_alias[1], "--computer-use");
         assert_eq!(proc_alias[2], "open terminal");
+
+        // Rigorous verification of all 10 Computer Use tools
+        // 1. @agent computer-use
+        let cu1 = preprocess_cli_args(vec!["cli.exe".to_string(), "@agent".to_string(), "computer-use".to_string(), "open".to_string(), "notepad".to_string()]);
+        assert_eq!(cu1, vec!["cli.exe", "--computer-use", "open notepad"]);
+
+        // 2. @agent ui-tars
+        let cu2 = preprocess_cli_args(vec!["cli.exe".to_string(), "@agent".to_string(), "ui-tars".to_string(), "perceive".to_string(), "viewport".to_string()]);
+        assert_eq!(cu2, vec!["cli.exe", "--computer-use", "perceive viewport"]);
+
+        // 3. @agent desktop-click
+        let cu3 = preprocess_cli_args(vec!["cli.exe".to_string(), "@agent".to_string(), "desktop-click".to_string(), "500,300".to_string()]);
+        assert_eq!(cu3, vec!["cli.exe", "--computer-use", "Click screen coordinate 500,300"]);
+
+        // 4. @agent desktop-type
+        let cu4 = preprocess_cli_args(vec!["cli.exe".to_string(), "@agent".to_string(), "desktop-type".to_string(), "Hello".to_string(), "World".to_string()]);
+        assert_eq!(cu4, vec!["cli.exe", "--computer-use", "Type text Hello World"]);
+
+        // 5. @agent desktop-scroll
+        let cu5 = preprocess_cli_args(vec!["cli.exe".to_string(), "@agent".to_string(), "desktop-scroll".to_string(), "-5".to_string()]);
+        assert_eq!(cu5, vec!["cli.exe", "--computer-use", "Scroll window -5"]);
+
+        // 6. @agent screen-grounding (bare and with arg)
+        let cu6 = preprocess_cli_args(vec!["cli.exe".to_string(), "@agent".to_string(), "screen-grounding".to_string()]);
+        assert_eq!(cu6, vec!["cli.exe", "--computer-use", "Capture desktop screen and ground interactive UI elements"]);
+
+        // 7. @agent shopping
+        let cu7 = preprocess_cli_args(vec!["cli.exe".to_string(), "@agent".to_string(), "shopping".to_string(), "32GB".to_string(), "RAM".to_string()]);
+        assert_eq!(cu7, vec!["cli.exe", "--computer-use", "Search and compare prices for 32GB RAM"]);
+
+        // 8. @agent ticket-booking
+        let cu8 = preprocess_cli_args(vec!["cli.exe".to_string(), "@agent".to_string(), "ticket-booking".to_string(), "flight".to_string(), "JFK to LHR".to_string()]);
+        assert_eq!(cu8, vec!["cli.exe", "--computer-use", "Search and book tickets for flight JFK to LHR"]);
+
+        // 9. @agent map-directions
+        let cu9 = preprocess_cli_args(vec!["cli.exe".to_string(), "@agent".to_string(), "map-directions".to_string(), "JFK".to_string(), "to".to_string(), "Times Square".to_string()]);
+        assert_eq!(cu9, vec!["cli.exe", "--computer-use", "Get map directions for JFK to Times Square"]);
+
+        // 10. @agent exam-solver
+        let cu10 = preprocess_cli_args(vec!["cli.exe".to_string(), "@agent".to_string(), "exam-solver".to_string(), "https://example.com/quiz".to_string()]);
+        assert_eq!(cu10, vec!["cli.exe", "--computer-use", "Inspect and solve questions on https://example.com/quiz"]);
     }
 
     #[test]
@@ -18999,6 +19239,12 @@ public class Pr {
         // Duplicated protocol prefix
         let double_scheme = "https://https://example.com/test";
         assert_eq!(sanitize_and_deduplicate_url(double_scheme), "https://example.com/test");
+
+        // Subdomain and domain typos for search engines
+        assert_eq!(sanitize_and_deduplicate_url("https://ww.google.com"), "https://www.google.com");
+        assert_eq!(sanitize_and_deduplicate_url("https://w.google.com"), "https://www.google.com");
+        assert_eq!(sanitize_and_deduplicate_url("https://gogle.com"), "https://www.google.com");
+        assert_eq!(sanitize_and_deduplicate_url("https://ww.bing.com"), "https://www.bing.com");
     }
 
     #[test]
