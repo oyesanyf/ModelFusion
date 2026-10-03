@@ -2753,12 +2753,15 @@ where
     for i in 1..args.len() {
         let tok = args[i].to_lowercase();
         let tok_clean = tok.trim_start_matches('-');
-        if tok == "--api/proxy" || tok == "/api/proxy" || tok == "api/proxy"
-            || tok == "--browser/proxy" || tok == "/browser/proxy" || tok == "browser/proxy"
-            || tok == "--api-proxy" || tok == "/api-proxy" || tok == "api-proxy"
-            || tok_clean == "api/proxy" || tok_clean == "browser/proxy" || tok_clean == "api-proxy" {
+        if tok == "--api/proxy" || tok == "-api/proxy" || tok == "/api/proxy" || tok == "api/proxy"
+            || tok == "--browser/proxy" || tok == "-browser/proxy" || tok == "/browser/proxy" || tok == "browser/proxy"
+            || tok == "--api-proxy" || tok == "-api-proxy" || tok == "/api-proxy" || tok == "api-proxy"
+            || tok == "-proxy" || tok == "--proxy" || tok == "/proxy" || tok == "proxy"
+            || tok_clean == "api/proxy" || tok_clean == "browser/proxy" || tok_clean == "api-proxy" || tok_clean == "proxy" {
             args[i] = "--proxy".to_string();
-        } else if tok.starts_with("--api/proxy=") || tok.starts_with("/api/proxy=") || tok.starts_with("--browser/proxy=") {
+        } else if tok.starts_with("--api/proxy=") || tok.starts_with("-api/proxy=") || tok.starts_with("/api/proxy=")
+            || tok.starts_with("--browser/proxy=") || tok.starts_with("-browser/proxy=") || tok.starts_with("/browser/proxy=")
+            || tok.starts_with("--api-proxy=") || tok.starts_with("-api-proxy=") {
             if let Some(eq_pos) = args[i].find('=') {
                 args[i] = format!("--proxy={}", &args[i][eq_pos + 1..]);
             }
@@ -3061,7 +3064,7 @@ where
         "db-prune" | "/db-prune" | "@agent/db-prune" | "dbprune" | "prune-db" => {
             args[1] = "--db-prune".to_string();
         }
-        "proxy" | "/proxy" | "--proxy" | "--api/proxy" | "/api/proxy" | "api/proxy" | "api-proxy" | "--browser/proxy" | "/browser/proxy" | "browser/proxy" | "@agent/proxy" | "@agent:proxy" | "@proxy" => {
+        "proxy" | "/proxy" | "--proxy" | "-proxy" | "--api/proxy" | "-api/proxy" | "/api/proxy" | "api/proxy" | "api-proxy" | "-api-proxy" | "--api-proxy" | "--browser/proxy" | "-browser/proxy" | "/browser/proxy" | "browser/proxy" | "@agent/proxy" | "@agent:proxy" | "@proxy" => {
             args[1] = "--proxy".to_string();
         }
         _ => {}
@@ -14439,12 +14442,15 @@ async fn run_cli_subcommand(cmd_args: &[String], db_path: &std::path::Path) -> S
     for a in args.iter_mut() {
         let low = a.to_lowercase();
         let low_clean = low.trim_start_matches('-');
-        if low == "--api/proxy" || low == "/api/proxy" || low == "api/proxy"
-            || low == "--browser/proxy" || low == "/browser/proxy" || low == "browser/proxy"
-            || low == "--api-proxy" || low == "/api-proxy" || low == "api-proxy"
-            || low_clean == "api/proxy" || low_clean == "browser/proxy" || low_clean == "api-proxy" {
+        if low == "--api/proxy" || low == "-api/proxy" || low == "/api/proxy" || low == "api/proxy"
+            || low == "--browser/proxy" || low == "-browser/proxy" || low == "/browser/proxy" || low == "browser/proxy"
+            || low == "--api-proxy" || low == "-api-proxy" || low == "/api-proxy" || low == "api-proxy"
+            || low == "-proxy" || low == "--proxy" || low == "/proxy" || low == "proxy"
+            || low_clean == "api/proxy" || low_clean == "browser/proxy" || low_clean == "api-proxy" || low_clean == "proxy" {
             *a = "--proxy".to_string();
-        } else if low.starts_with("--api/proxy=") || low.starts_with("/api/proxy=") || low.starts_with("--browser/proxy=") {
+        } else if low.starts_with("--api/proxy=") || low.starts_with("-api/proxy=") || low.starts_with("/api/proxy=")
+            || low.starts_with("--browser/proxy=") || low.starts_with("-browser/proxy=") || low.starts_with("/browser/proxy=")
+            || low.starts_with("--api-proxy=") || low.starts_with("-api-proxy=") {
             if let Some(pos) = a.find('=') {
                 *a = format!("--proxy={}", &a[pos + 1..]);
             }

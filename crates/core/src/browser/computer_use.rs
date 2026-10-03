@@ -1243,7 +1243,15 @@ impl ComputerUseAgent {
             // 5. Execute actions
             for act in &parsed_step.actions {
                 println!("⚡ [ACTION] {:?}", act);
-                let exec_res = OsExecutor::execute(act, self.dry_run, dims)?;
+                let exec_res = match OsExecutor::execute(act, self.dry_run, dims) {
+                    Ok(res) => res,
+                    Err(e) => ExecutionResult {
+                        success: false,
+                        action_type: "error".to_string(),
+                        details: format!("Action execution notice: {}", e),
+                        is_dry_run: self.dry_run,
+                    },
+                };
 
                 let is_finish = matches!(act, UiTarsAction::Finished { .. });
 
