@@ -115,6 +115,12 @@ if "%CLI_BIN%"=="" (
 
 set USER_DATA_DIR=%LOCALAPPDATA%\HugOS Browser\User Data
 if not exist "%USER_DATA_DIR%" mkdir "%USER_DATA_DIR%"
+if exist "%USER_DATA_DIR%\Default\Web Applications" (
+    rmdir /s /q "%USER_DATA_DIR%\Default\Web Applications" >nul 2>&1
+)
+if exist "%USER_DATA_DIR%\Default\Favicons" (
+    del /f /q "%USER_DATA_DIR%\Default\Favicons*" >nul 2>&1
+)
 
 REM 1. Search for local or installed Chromium / Chrome / Edge binary
 set CHROME_BIN=
@@ -149,6 +155,6 @@ echo [INFO] Extension Path: "%EXTENSION_PATH%"
 echo [INFO] User Data Dir: "%USER_DATA_DIR%"
 echo [INFO] Startup URL: "%START_URL%"
 
-start "" "%CHROME_BIN%" --app="%START_URL%" --app-id="HugOS.Browser.Engine" --remote-debugging-port=9222 --remote-allow-origins=* --load-extension="%EXTENSION_PATH%" --user-data-dir="%USER_DATA_DIR%" --disable-backgrounding-occluded-windows --no-first-run --no-default-browser-check --enable-features=SidePanel,SidePanelPinning
+start "" "%CHROME_BIN%" --app="%START_URL%" --remote-debugging-port=9222 --remote-allow-origins=* --load-extension="%EXTENSION_PATH%" --user-data-dir="%USER_DATA_DIR%" --disable-backgrounding-occluded-windows --no-first-run --no-default-browser-check --enable-features=SidePanel,SidePanelPinning
 
 endlocal
