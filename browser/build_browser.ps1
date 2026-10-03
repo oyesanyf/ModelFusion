@@ -171,8 +171,26 @@ if (-not (Test-Path $wixExe)) {
     $wixExe = if ($wixCmd) { $wixCmd.Source } else { "wix" }
 }
 
-& $wixExe build -b $browserDir -arch x64 -ct 4 $wxsPath -out $msiPath
-if ($LASTEXITCODE -ne 0) {
+try {
+    $msiSvc = Get-Service msiserver -ErrorAction SilentlyContinue
+    if ($msiSvc -and $msiSvc.Status -ne 'Running') {
+        Start-Service -Name msiserver -ErrorAction SilentlyContinue
+    }
+} catch {}
+
+$wixProc = Start-Process -FilePath $wixExe -ArgumentList "build", "-b", "`"$browserDir`"", "-arch", "x64", "`"$wxsPath`"", "-out", "`"$msiPath`"" -NoNewWindow -PassThru
+while (-not $wixProc.HasExited) {
+    try {
+        $msiSvc = Get-Service msiserver -ErrorAction SilentlyContinue
+        if ($msiSvc -and $msiSvc.Status -ne 'Running') {
+            Start-Service -Name msiserver -ErrorAction SilentlyContinue
+        }
+    } catch {}
+    Start-Sleep -Seconds 2
+}
+$wixProc.WaitForExit()
+$wixExit = if ($wixProc.ExitCode -ne $null) { [int]$wixProc.ExitCode } else { 0 }
+if ($wixExit -ne 0 -or -not (Test-Path $msiPath)) {
     Write-Host "[ERROR] WiX build failed." -ForegroundColor Red
     Exit 1
 }
