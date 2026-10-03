@@ -438,9 +438,20 @@ assert.strictEqual(findNextQuestionButton(docNext5), null, 'Must ignore submit b
 console.log('  ✅ Test 7 Passed: findNextQuestionButton accurately detects all next button styles and rejects back/prev buttons.\n');
 
 // =====================================================================
-// Test 8: Exam URL Pagination & Auto-Progression (parseExamPagination, getNextExamUrl)
+// Test 8: Exam URL Pagination & Auto-Progression (parseExamPagination, getNextExamUrl, unwrapProxiedUrl)
 // =====================================================================
 console.log('Test 8: Exam URL pagination parsing and automatic question progression...');
+
+const isCrossOriginMatch = appJs.match(/function isCrossOriginBlockingUrl\(url\)\s*\{([\s\S]*?)\n  \}/);
+if (isCrossOriginMatch) eval(isCrossOriginMatch[0]);
+
+const unwrapProxyMatch = appJs.match(/function unwrapProxiedUrl\(rawUrl\)\s*\{([\s\S]*?)\n  \}/);
+assert.ok(unwrapProxyMatch, 'unwrapProxiedUrl must be defined in app.js');
+eval(unwrapProxyMatch[0]);
+
+const resolveProxyMatch = appJs.match(/function resolveProxiedUrl\(rawUrl\)\s*\{([\s\S]*?)\n  \}/);
+assert.ok(resolveProxyMatch, 'resolveProxiedUrl must be defined in app.js');
+eval(resolveProxyMatch[0]);
 
 const parsePaginationMatch = appJs.match(/function parseExamPagination\(url\)\s*\{([\s\S]*?)\n  \}/);
 assert.ok(parsePaginationMatch, 'parseExamPagination must be defined in app.js');
@@ -462,24 +473,38 @@ const testLibUrl2 = getNextExamUrl(testLibUrl1);
 assert.ok(testLibUrl2.includes('q=2'), 'Next URL from q=1 must have q=2');
 assert.ok(testLibUrl2.includes('total=38'), 'Next URL must preserve total=38');
 
-// 8.2 Progressing from q=2 to q=3
+// 8.2 Proxied URL unwrap and pagination parsing
+const proxiedExamUrl1 = `http://127.0.0.1:5000/api/proxy?url=${encodeURIComponent(testLibUrl1)}`;
+const unwrapped = unwrapProxiedUrl(proxiedExamUrl1);
+assert.strictEqual(unwrapped, testLibUrl1, 'unwrapProxiedUrl must unpack clean target URL');
+
+const proxiedPag = parseExamPagination(proxiedExamUrl1);
+assert.ok(proxiedPag, 'parseExamPagination must handle proxied URL envelopes');
+assert.strictEqual(proxiedPag.current, 1);
+assert.strictEqual(proxiedPag.total, 38);
+
+const nextProxiedUrl = getNextExamUrl(proxiedExamUrl1);
+assert.ok(nextProxiedUrl.includes('api%2Fproxy') || nextProxiedUrl.includes('/api/proxy'), 'Must preserve proxy wrapper for proxied URLs');
+assert.ok(nextProxiedUrl.includes('q%3D2') || nextProxiedUrl.includes('q=2'), 'Must advance to question 2 in next proxied URL');
+
+// 8.3 Progressing from q=2 to q=3
 const testLibUrl3 = getNextExamUrl(testLibUrl2);
 assert.ok(testLibUrl3.includes('q=3'), 'Next URL from q=2 must have q=3');
 
-// 8.3 Terminal question q=38 returns null (end of exam reached)
+// 8.4 Terminal question q=38 returns null (end of exam reached)
 const testLibUrl38 = 'https://testlibrary.com/iq-test/quiz?token=abc123xyz&q=38&total=38';
 const pag38 = parseExamPagination(testLibUrl38);
 assert.strictEqual(pag38.current, 38);
 assert.strictEqual(getNextExamUrl(testLibUrl38), null, 'Terminal question q=38 must return null indicating exam complete');
 
-// 8.4 Path-based pagination: /quiz/1 -> /quiz/2
+// 8.5 Path-based pagination: /quiz/1 -> /quiz/2
 const pathUrl = 'https://certprep.org/tests/quiz/1';
 const pathPag = parseExamPagination(pathUrl);
 assert.strictEqual(pathPag.current, 1);
 const nextPathUrl = getNextExamUrl(pathUrl);
 assert.strictEqual(nextPathUrl, 'https://certprep.org/tests/quiz/2', 'Must increment path-based question indices');
 
-// 8.5 question=5&total_questions=20
+// 8.6 question=5&total_questions=20
 const altParamUrl = 'https://exams.net/test?question=5&total_questions=20';
 const altPag = parseExamPagination(altParamUrl);
 assert.strictEqual(altPag.current, 5);
@@ -487,7 +512,7 @@ assert.strictEqual(altPag.total, 20);
 const altNext = getNextExamUrl(altParamUrl);
 assert.ok(altNext.includes('question=6'));
 
-console.log('  ✅ Test 8 Passed: URL pagination correctly parses and generates progression across all 38 questions.\n');
+console.log('  ✅ Test 8 Passed: URL pagination correctly parses and generates progression across all 38 questions (both direct and proxied).\n');
 
 // =====================================================================
 // Test 9: Proxy Route Interception Guard (Preventing --api/proxy CLI Errors)
@@ -507,8 +532,8 @@ assert.ok(
 
 // 9.2 Verify executeCliCommand safely guards @agent api/proxy from subprocess invocation
 assert.ok(
-  appJs.includes("if (/^@agent\\s+(?:api\\/proxy|browser\\/proxy|proxy|api-proxy)\\b/i.test(cmd))"),
-  'executeCliCommand must safely intercept @agent api/proxy without running CLI process'
+  appJs.includes("if (/^(?:@agent\\s+)?(?:--|\\/|@)?(?:api\\/proxy|browser\\/proxy|proxy|api-proxy)\\b/i.test(cmd) || cmd.includes('/api/proxy?url='))"),
+  'executeCliCommand must safely intercept proxy flags (--api/proxy, /api/proxy, @proxy) without running CLI process'
 );
 
 console.log('  ✅ Test 9 Passed: Proxy routes are safely handled and never dispatched as unexpected CLI arguments.\n');
@@ -529,6 +554,7 @@ const requiredExports = [
   'findNextQuestionButton',
   'parseExamPagination',
   'getNextExamUrl',
+  'unwrapProxiedUrl',
   'advanceExamToNextQuestion',
   'startAutonomousExamSolverLoop',
   'pauseAutonomousExamSolverLoop'
@@ -571,4 +597,42 @@ assert.ok(
 
 console.log('  ✅ Test 10 Passed: Autonomous exam solver loop and window interfaces validated.\n');
 
-console.log('🌟 ALL 10 HITL EXAM SOLVER & MULTI-QUESTION ADVANCEMENT TESTS PASSED (100%)! 🌟\n');
+// =====================================================================
+// Test 11: Cross-Origin Iframe Security & Error Resilience
+// =====================================================================
+console.log('Test 11: Cross-Origin Iframe Security & Error Resilience...');
+
+// 11.1 Verify advanceExamToNextQuestion wraps contentWindow.location and contentDocument in try/catch
+assert.ok(
+  appJs.includes("liveFrameUrl = browserFrame.contentWindow.location.href || '';") &&
+  appJs.includes("liveFrameUrl = '';"),
+  'advanceExamToNextQuestion must guard browserFrame.contentWindow.location.href in try/catch'
+);
+
+// 11.2 Verify confirmExamSubmit safely handles cross-origin frame without throwing
+const mockRestrictedFrame = {
+  get contentDocument() {
+    throw new Error('SecurityError: Blocked a frame with origin "http://127.0.0.1:8080" from accessing a cross-origin frame.');
+  },
+  get contentWindow() {
+    return {
+      get location() {
+        return {
+          get href() {
+            throw new Error('SecurityError: Blocked a frame with origin "http://127.0.0.1:8080" from accessing a cross-origin frame.');
+          }
+        };
+      }
+    };
+  }
+};
+
+global.browserFrame = mockRestrictedFrame;
+assert.doesNotThrow(() => {
+  confirmExamSubmit();
+}, 'confirmExamSubmit must not throw even if browserFrame throws SecurityError on cross-origin access');
+
+console.log('  ✅ Test 11 Passed: Cross-origin SecurityError resilience verified across all frame access points.\n');
+
+console.log('🌟 ALL 11 HITL EXAM SOLVER & MULTI-QUESTION ADVANCEMENT TESTS PASSED (100%)! 🌟\n');
+

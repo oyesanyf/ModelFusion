@@ -30,9 +30,9 @@ Stop-Process -Name clibrowser, chrome -Force -ErrorAction SilentlyContinue
 # 1. Verify binary staging
 $cliBrowserBinPath = Join-Path $browserDir "bin\clibrowser.exe"
 $cliBinPath = Join-Path $browserDir "bin\cli.exe"
-$srcCli = Join-Path $rootDir "target\release\clibrowser.exe"
+$srcCli = Join-Path $rootDir "target\release\cli.exe"
 if (-not (Test-Path $srcCli)) {
-    $srcCli = Join-Path $rootDir "target\release\cli.exe"
+    $srcCli = Join-Path $rootDir "target\release\clibrowser.exe"
 }
 if (-not (Test-Path $srcCli)) {
     $srcCli = Join-Path $rootDir "IDE\bin\cli.exe"
