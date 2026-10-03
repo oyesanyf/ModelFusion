@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-03T17:46:27Z",
+  "timestamp": "2026-10-03T18:06:50Z",
   "cli_runs": [
     {
       "run": 1,
@@ -7,49 +7,79 @@
         {
           "name": "Sys-Info Hardware Sweet-Spot Calibration",
           "passed": true,
-          "duration_ms": 868.5078620910645,
+          "duration_ms": 930.1586151123047,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Legal Statute Mismatch Detection",
           "passed": true,
-          "duration_ms": 81.61568641662598,
+          "duration_ms": 46.32234573364258,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Code Performance Choice Schema",
           "passed": true,
-          "duration_ms": 76.1721134185791,
+          "duration_ms": 82.97014236450195,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Financial Earnings Sentiment",
           "passed": true,
-          "duration_ms": 92.3459529876709,
+          "duration_ms": 66.14494323730469,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Biochemical Molecule Classification",
           "passed": true,
-          "duration_ms": 81.42280578613281,
+          "duration_ms": 54.60381507873535,
           "returncode": 0
         },
         {
           "name": "Decision Engine - HITL Computer Use Risk Gating",
           "passed": true,
-          "duration_ms": 163.55586051940918,
+          "duration_ms": 89.42151069641113,
           "returncode": 0
         },
         {
           "name": "Decision Engine - HITL Critical Veto Gating",
           "passed": true,
-          "duration_ms": 91.70818328857422,
+          "duration_ms": 73.35662841796875,
+          "returncode": 0
+        },
+        {
+          "name": "Task Registry & Model Catalog Query",
+          "passed": true,
+          "duration_ms": 78.2785415649414,
+          "returncode": 0
+        },
+        {
+          "name": "Watermark & Anti-AI Steganography Detection",
+          "passed": true,
+          "duration_ms": 185.04762649536133,
+          "returncode": 0
+        },
+        {
+          "name": "Performance Telemetry & Profiling Stats",
+          "passed": true,
+          "duration_ms": 51.28765106201172,
+          "returncode": 0
+        },
+        {
+          "name": "Database Cache & WAL Status Inspection",
+          "passed": true,
+          "duration_ms": 50.07433891296387,
+          "returncode": 0
+        },
+        {
+          "name": "Active Model & Hardware Allocation Query",
+          "passed": true,
+          "duration_ms": 1069.4196224212646,
           "returncode": 0
         }
       ],
-      "passed": 7,
+      "passed": 12,
       "failed": 0,
-      "total_time_ms": 1455.6796550750732
+      "total_time_ms": 2777.658462524414
     },
     {
       "run": 2,
@@ -57,49 +87,79 @@
         {
           "name": "Sys-Info Hardware Sweet-Spot Calibration",
           "passed": true,
-          "duration_ms": 863.947868347168,
+          "duration_ms": 765.6822204589844,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Legal Statute Mismatch Detection",
           "passed": true,
-          "duration_ms": 62.37959861755371,
+          "duration_ms": 58.78949165344238,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Code Performance Choice Schema",
           "passed": true,
-          "duration_ms": 46.349287033081055,
+          "duration_ms": 153.52320671081543,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Financial Earnings Sentiment",
           "passed": true,
-          "duration_ms": 69.62299346923828,
+          "duration_ms": 66.22648239135742,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Biochemical Molecule Classification",
           "passed": true,
-          "duration_ms": 61.5839958190918,
+          "duration_ms": 41.304588317871094,
           "returncode": 0
         },
         {
           "name": "Decision Engine - HITL Computer Use Risk Gating",
           "passed": true,
-          "duration_ms": 62.085866928100586,
+          "duration_ms": 36.78154945373535,
           "returncode": 0
         },
         {
           "name": "Decision Engine - HITL Critical Veto Gating",
           "passed": true,
-          "duration_ms": 83.22596549987793,
+          "duration_ms": 39.510250091552734,
+          "returncode": 0
+        },
+        {
+          "name": "Task Registry & Model Catalog Query",
+          "passed": true,
+          "duration_ms": 46.83947563171387,
+          "returncode": 0
+        },
+        {
+          "name": "Watermark & Anti-AI Steganography Detection",
+          "passed": true,
+          "duration_ms": 197.16691970825195,
+          "returncode": 0
+        },
+        {
+          "name": "Performance Telemetry & Profiling Stats",
+          "passed": true,
+          "duration_ms": 64.25285339355469,
+          "returncode": 0
+        },
+        {
+          "name": "Database Cache & WAL Status Inspection",
+          "passed": true,
+          "duration_ms": 50.44865608215332,
+          "returncode": 0
+        },
+        {
+          "name": "Active Model & Hardware Allocation Query",
+          "passed": true,
+          "duration_ms": 945.0569152832031,
           "returncode": 0
         }
       ],
-      "passed": 7,
+      "passed": 12,
       "failed": 0,
-      "total_time_ms": 1249.518871307373
+      "total_time_ms": 2466.172933578491
     },
     {
       "run": 3,
@@ -107,49 +167,239 @@
         {
           "name": "Sys-Info Hardware Sweet-Spot Calibration",
           "passed": true,
-          "duration_ms": 923.5894680023193,
+          "duration_ms": 801.0609149932861,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Legal Statute Mismatch Detection",
           "passed": true,
-          "duration_ms": 72.0062255859375,
+          "duration_ms": 89.65182304382324,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Code Performance Choice Schema",
           "passed": true,
-          "duration_ms": 79.38122749328613,
+          "duration_ms": 70.61481475830078,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Financial Earnings Sentiment",
           "passed": true,
-          "duration_ms": 79.25200462341309,
+          "duration_ms": 62.24417686462402,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Biochemical Molecule Classification",
           "passed": true,
-          "duration_ms": 71.32148742675781,
+          "duration_ms": 53.17330360412598,
           "returncode": 0
         },
         {
           "name": "Decision Engine - HITL Computer Use Risk Gating",
           "passed": true,
-          "duration_ms": 60.60910224914551,
+          "duration_ms": 82.96918869018555,
           "returncode": 0
         },
         {
           "name": "Decision Engine - HITL Critical Veto Gating",
           "passed": true,
-          "duration_ms": 58.257341384887695,
+          "duration_ms": 69.20862197875977,
+          "returncode": 0
+        },
+        {
+          "name": "Task Registry & Model Catalog Query",
+          "passed": true,
+          "duration_ms": 58.04181098937988,
+          "returncode": 0
+        },
+        {
+          "name": "Watermark & Anti-AI Steganography Detection",
+          "passed": true,
+          "duration_ms": 202.89015769958496,
+          "returncode": 0
+        },
+        {
+          "name": "Performance Telemetry & Profiling Stats",
+          "passed": true,
+          "duration_ms": 65.10639190673828,
+          "returncode": 0
+        },
+        {
+          "name": "Database Cache & WAL Status Inspection",
+          "passed": true,
+          "duration_ms": 61.58256530761719,
+          "returncode": 0
+        },
+        {
+          "name": "Active Model & Hardware Allocation Query",
+          "passed": true,
+          "duration_ms": 1091.019630432129,
           "returncode": 0
         }
       ],
-      "passed": 7,
+      "passed": 12,
       "failed": 0,
-      "total_time_ms": 1344.7024822235107
+      "total_time_ms": 2708.258867263794
+    },
+    {
+      "run": 4,
+      "cases": [
+        {
+          "name": "Sys-Info Hardware Sweet-Spot Calibration",
+          "passed": true,
+          "duration_ms": 820.9688663482666,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - Legal Statute Mismatch Detection",
+          "passed": true,
+          "duration_ms": 56.06341361999512,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - Code Performance Choice Schema",
+          "passed": true,
+          "duration_ms": 77.92401313781738,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - Financial Earnings Sentiment",
+          "passed": true,
+          "duration_ms": 70.4503059387207,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - Biochemical Molecule Classification",
+          "passed": true,
+          "duration_ms": 51.651954650878906,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - HITL Computer Use Risk Gating",
+          "passed": true,
+          "duration_ms": 68.96400451660156,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - HITL Critical Veto Gating",
+          "passed": true,
+          "duration_ms": 66.28847122192383,
+          "returncode": 0
+        },
+        {
+          "name": "Task Registry & Model Catalog Query",
+          "passed": true,
+          "duration_ms": 60.78815460205078,
+          "returncode": 0
+        },
+        {
+          "name": "Watermark & Anti-AI Steganography Detection",
+          "passed": true,
+          "duration_ms": 159.23738479614258,
+          "returncode": 0
+        },
+        {
+          "name": "Performance Telemetry & Profiling Stats",
+          "passed": true,
+          "duration_ms": 70.72067260742188,
+          "returncode": 0
+        },
+        {
+          "name": "Database Cache & WAL Status Inspection",
+          "passed": true,
+          "duration_ms": 66.68519973754883,
+          "returncode": 0
+        },
+        {
+          "name": "Active Model & Hardware Allocation Query",
+          "passed": true,
+          "duration_ms": 988.745927810669,
+          "returncode": 0
+        }
+      ],
+      "passed": 12,
+      "failed": 0,
+      "total_time_ms": 2559.2637062072754
+    },
+    {
+      "run": 5,
+      "cases": [
+        {
+          "name": "Sys-Info Hardware Sweet-Spot Calibration",
+          "passed": true,
+          "duration_ms": 932.4219226837158,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - Legal Statute Mismatch Detection",
+          "passed": true,
+          "duration_ms": 150.21419525146484,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - Code Performance Choice Schema",
+          "passed": true,
+          "duration_ms": 75.49738883972168,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - Financial Earnings Sentiment",
+          "passed": true,
+          "duration_ms": 78.37510108947754,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - Biochemical Molecule Classification",
+          "passed": true,
+          "duration_ms": 72.80492782592773,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - HITL Computer Use Risk Gating",
+          "passed": true,
+          "duration_ms": 58.01677703857422,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - HITL Critical Veto Gating",
+          "passed": true,
+          "duration_ms": 48.78735542297363,
+          "returncode": 0
+        },
+        {
+          "name": "Task Registry & Model Catalog Query",
+          "passed": true,
+          "duration_ms": 73.16350936889648,
+          "returncode": 0
+        },
+        {
+          "name": "Watermark & Anti-AI Steganography Detection",
+          "passed": true,
+          "duration_ms": 176.82790756225586,
+          "returncode": 0
+        },
+        {
+          "name": "Performance Telemetry & Profiling Stats",
+          "passed": true,
+          "duration_ms": 76.05457305908203,
+          "returncode": 0
+        },
+        {
+          "name": "Database Cache & WAL Status Inspection",
+          "passed": true,
+          "duration_ms": 66.18165969848633,
+          "returncode": 0
+        },
+        {
+          "name": "Active Model & Hardware Allocation Query",
+          "passed": true,
+          "duration_ms": 952.3606300354004,
+          "returncode": 0
+        }
+      ],
+      "passed": 12,
+      "failed": 0,
+      "total_time_ms": 2761.570692062378
     }
   ],
   "ide_runs": [
@@ -171,9 +421,13 @@
         {
           "check": "ReST-RL Extension Invariants",
           "passed": true
+        },
+        {
+          "check": "Clef Slash Commands",
+          "passed": true
         }
       ],
-      "passed": 4,
+      "passed": 5,
       "failed": 0
     },
     {
@@ -194,9 +448,13 @@
         {
           "check": "ReST-RL Extension Invariants",
           "passed": true
+        },
+        {
+          "check": "Clef Slash Commands",
+          "passed": true
         }
       ],
-      "passed": 4,
+      "passed": 5,
       "failed": 0
     },
     {
@@ -217,9 +475,67 @@
         {
           "check": "ReST-RL Extension Invariants",
           "passed": true
+        },
+        {
+          "check": "Clef Slash Commands",
+          "passed": true
         }
       ],
-      "passed": 4,
+      "passed": 5,
+      "failed": 0
+    },
+    {
+      "run": 4,
+      "checks": [
+        {
+          "check": "NLS Parity",
+          "passed": true
+        },
+        {
+          "check": "PE Icon",
+          "passed": true
+        },
+        {
+          "check": "MSI Signatures",
+          "passed": true
+        },
+        {
+          "check": "ReST-RL Extension Invariants",
+          "passed": true
+        },
+        {
+          "check": "Clef Slash Commands",
+          "passed": true
+        }
+      ],
+      "passed": 5,
+      "failed": 0
+    },
+    {
+      "run": 5,
+      "checks": [
+        {
+          "check": "NLS Parity",
+          "passed": true
+        },
+        {
+          "check": "PE Icon",
+          "passed": true
+        },
+        {
+          "check": "MSI Signatures",
+          "passed": true
+        },
+        {
+          "check": "ReST-RL Extension Invariants",
+          "passed": true
+        },
+        {
+          "check": "Clef Slash Commands",
+          "passed": true
+        }
+      ],
+      "passed": 5,
       "failed": 0
     }
   ],
@@ -230,7 +546,7 @@
       "passed": 106,
       "failed": 0,
       "pass_rate": "100.0%",
-      "duration_ms": 493.7117099761963
+      "duration_ms": 518.7816619873047
     },
     {
       "run": 2,
@@ -238,7 +554,7 @@
       "passed": 106,
       "failed": 0,
       "pass_rate": "100.0%",
-      "duration_ms": 496.4296817779541
+      "duration_ms": 572.2737312316895
     },
     {
       "run": 3,
@@ -246,15 +562,31 @@
       "passed": 106,
       "failed": 0,
       "pass_rate": "100.0%",
-      "duration_ms": 461.55571937561035
+      "duration_ms": 527.3623466491699
+    },
+    {
+      "run": 4,
+      "total_tools": 106,
+      "passed": 106,
+      "failed": 0,
+      "pass_rate": "100.0%",
+      "duration_ms": 471.2846279144287
+    },
+    {
+      "run": 5,
+      "total_tools": 106,
+      "passed": 106,
+      "failed": 0,
+      "pass_rate": "100.0%",
+      "duration_ms": 503.92746925354004
     }
   ],
   "summary": {
     "cli_pass_rate": "100.0%",
     "ide_pass_rate": "100.0%",
     "browser_pass_rate": "100.0%",
-    "grand_total_passed": 351,
-    "grand_total_cases": 351,
+    "grand_total_passed": 615,
+    "grand_total_cases": 615,
     "overall_pass_rate": "100.0%"
   }
 }
