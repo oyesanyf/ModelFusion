@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="HugOS Browser" Manufacturer="HugOS Team" Version="1.0.82" UpgradeCode="e98c7d08-91cb-4248-bfa5-765c96ddeca6" Scope="perUser">
+  <Package Name="HugOS Browser" Manufacturer="HugOS Team" Version="1.0.83" UpgradeCode="e98c7d08-91cb-4248-bfa5-765c96ddeca6" Scope="perUser">
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." Schedule="afterInstallInitialize" AllowSameVersionUpgrades="yes" />
 
     <MediaTemplate EmbedCab="yes" />
@@ -43,14 +43,18 @@
     </StandardDirectory>
     <StandardDirectory Id="DesktopFolder">
       <Component Id="ApplicationShortcutDesktop" Guid="*">
-        <Shortcut Id="ApplicationDesktopShortcut" Name="HugOS Browser" Target="[SystemFolder]wscript.exe" Arguments="&quot;[INSTALLFOLDER]Chromium-win32-x64\hugos-browser.vbs&quot;" WorkingDirectory="INSTALLFOLDER" Icon="HugOSBrowserIcon.ico" />
+        <Shortcut Id="ApplicationDesktopShortcut" Name="HugOS Browser" Target="[SystemFolder]wscript.exe" Arguments="&quot;[INSTALLFOLDER]Chromium-win32-x64\hugos-browser.vbs&quot;" WorkingDirectory="INSTALLFOLDER" Icon="HugOSBrowserIcon.ico">
+          <ShortcutProperty Key="System.AppUserModel.ID" Value="HugOS.Browser.Engine" />
+        </Shortcut>
         <RegistryValue Root="HKCU" Key="Software\HugOSTeam\HugOSBrowser" Name="desktop_shortcut" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </StandardDirectory>
 
     <DirectoryRef Id="ApplicationProgramsFolder">
       <Component Id="ApplicationShortcut" Guid="*">
-        <Shortcut Id="ApplicationStartMenuShortcut" Name="HugOS Browser" Target="[SystemFolder]wscript.exe" Arguments="&quot;[INSTALLFOLDER]Chromium-win32-x64\hugos-browser.vbs&quot;" Directory="ApplicationProgramsFolder" WorkingDirectory="INSTALLFOLDER" Icon="HugOSBrowserIcon.ico" />
+        <Shortcut Id="ApplicationStartMenuShortcut" Name="HugOS Browser" Target="[SystemFolder]wscript.exe" Arguments="&quot;[INSTALLFOLDER]Chromium-win32-x64\hugos-browser.vbs&quot;" Directory="ApplicationProgramsFolder" WorkingDirectory="INSTALLFOLDER" Icon="HugOSBrowserIcon.ico">
+          <ShortcutProperty Key="System.AppUserModel.ID" Value="HugOS.Browser.Engine" />
+        </Shortcut>
         <RemoveFolder Id="CleanUpShortcuts" On="uninstall" />
         <RegistryValue Root="HKCU" Key="Software\HugOSTeam\HugOSBrowser" Name="installed" Type="integer" Value="1" KeyPath="yes" />
       </Component>

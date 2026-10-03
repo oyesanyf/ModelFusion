@@ -93,7 +93,7 @@ if (-not (Test-Path $signtoolPath)) {
 }
 
 $pwdSecure = ConvertTo-SecureString $password -AsPlainText -Force
-$signCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($pfxPath, $pwdSecure)
+$signCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList $pfxPath, $pwdSecure
 
 function Sign-FileWithCert {
     param([string]$FilePath)

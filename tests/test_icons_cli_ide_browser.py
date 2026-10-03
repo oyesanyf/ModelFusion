@@ -106,7 +106,16 @@ def test_shortcuts():
         if not ico_ascii and not ico_utf16:
             print(f"FAILED: Shortcut does not reference an .ico icon: {lnk}")
             return False
-        print(f"PASS: {label} shortcut verified intact -> {lnk}")
+
+        # Verify AUMID in shortcut property store
+        expected_aumid = "hugos.hugos" if "ide" in label.lower() else "hugos.browser.engine"
+        aumid_ascii = expected_aumid.encode("ascii") in data
+        aumid_utf16 = expected_aumid.encode("utf-16le") in data
+        if not aumid_ascii and not aumid_utf16:
+            print(f"FAILED: Shortcut missing expected AUMID ({expected_aumid}): {lnk}")
+            return False
+
+        print(f"PASS: {label} shortcut verified intact with AUMID ({expected_aumid}) -> {lnk}")
         
     return True
 

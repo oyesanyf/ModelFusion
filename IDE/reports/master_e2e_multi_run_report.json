@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-03T17:21:41Z",
+  "timestamp": "2026-10-03T17:46:27Z",
   "cli_runs": [
     {
       "run": 1,
@@ -7,49 +7,49 @@
         {
           "name": "Sys-Info Hardware Sweet-Spot Calibration",
           "passed": true,
-          "duration_ms": 825.9258270263672,
+          "duration_ms": 868.5078620910645,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Legal Statute Mismatch Detection",
           "passed": true,
-          "duration_ms": 50.282955169677734,
+          "duration_ms": 81.61568641662598,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Code Performance Choice Schema",
           "passed": true,
-          "duration_ms": 86.15660667419434,
+          "duration_ms": 76.1721134185791,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Financial Earnings Sentiment",
           "passed": true,
-          "duration_ms": 61.05780601501465,
+          "duration_ms": 92.3459529876709,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Biochemical Molecule Classification",
           "passed": true,
-          "duration_ms": 56.05316162109375,
+          "duration_ms": 81.42280578613281,
           "returncode": 0
         },
         {
           "name": "Decision Engine - HITL Computer Use Risk Gating",
           "passed": true,
-          "duration_ms": 62.775373458862305,
+          "duration_ms": 163.55586051940918,
           "returncode": 0
         },
         {
           "name": "Decision Engine - HITL Critical Veto Gating",
           "passed": true,
-          "duration_ms": 59.54122543334961,
+          "duration_ms": 91.70818328857422,
           "returncode": 0
         }
       ],
       "passed": 7,
       "failed": 0,
-      "total_time_ms": 1202.1269798278809
+      "total_time_ms": 1455.6796550750732
     },
     {
       "run": 2,
@@ -57,49 +57,49 @@
         {
           "name": "Sys-Info Hardware Sweet-Spot Calibration",
           "passed": true,
-          "duration_ms": 835.5984687805176,
+          "duration_ms": 863.947868347168,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Legal Statute Mismatch Detection",
           "passed": true,
-          "duration_ms": 69.98157501220703,
+          "duration_ms": 62.37959861755371,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Code Performance Choice Schema",
           "passed": true,
-          "duration_ms": 83.70327949523926,
+          "duration_ms": 46.349287033081055,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Financial Earnings Sentiment",
           "passed": true,
-          "duration_ms": 62.95657157897949,
+          "duration_ms": 69.62299346923828,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Biochemical Molecule Classification",
           "passed": true,
-          "duration_ms": 79.19478416442871,
+          "duration_ms": 61.5839958190918,
           "returncode": 0
         },
         {
           "name": "Decision Engine - HITL Computer Use Risk Gating",
           "passed": true,
-          "duration_ms": 82.15165138244629,
+          "duration_ms": 62.085866928100586,
           "returncode": 0
         },
         {
           "name": "Decision Engine - HITL Critical Veto Gating",
           "passed": true,
-          "duration_ms": 53.169965744018555,
+          "duration_ms": 83.22596549987793,
           "returncode": 0
         }
       ],
       "passed": 7,
       "failed": 0,
-      "total_time_ms": 1267.1058177947998
+      "total_time_ms": 1249.518871307373
     },
     {
       "run": 3,
@@ -107,49 +107,49 @@
         {
           "name": "Sys-Info Hardware Sweet-Spot Calibration",
           "passed": true,
-          "duration_ms": 778.5031795501709,
+          "duration_ms": 923.5894680023193,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Legal Statute Mismatch Detection",
           "passed": true,
-          "duration_ms": 88.80305290222168,
+          "duration_ms": 72.0062255859375,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Code Performance Choice Schema",
           "passed": true,
-          "duration_ms": 52.24251747131348,
+          "duration_ms": 79.38122749328613,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Financial Earnings Sentiment",
           "passed": true,
-          "duration_ms": 55.17148971557617,
+          "duration_ms": 79.25200462341309,
           "returncode": 0
         },
         {
           "name": "Decision Engine - Biochemical Molecule Classification",
           "passed": true,
-          "duration_ms": 46.81205749511719,
+          "duration_ms": 71.32148742675781,
           "returncode": 0
         },
         {
           "name": "Decision Engine - HITL Computer Use Risk Gating",
           "passed": true,
-          "duration_ms": 76.39932632446289,
+          "duration_ms": 60.60910224914551,
           "returncode": 0
         },
         {
           "name": "Decision Engine - HITL Critical Veto Gating",
           "passed": true,
-          "duration_ms": 80.48605918884277,
+          "duration_ms": 58.257341384887695,
           "returncode": 0
         }
       ],
       "passed": 7,
       "failed": 0,
-      "total_time_ms": 1178.7254810333252
+      "total_time_ms": 1344.7024822235107
     }
   ],
   "ide_runs": [
@@ -230,7 +230,7 @@
       "passed": 106,
       "failed": 0,
       "pass_rate": "100.0%",
-      "duration_ms": 546.8270778656006
+      "duration_ms": 493.7117099761963
     },
     {
       "run": 2,
@@ -238,7 +238,7 @@
       "passed": 106,
       "failed": 0,
       "pass_rate": "100.0%",
-      "duration_ms": 500.96654891967773
+      "duration_ms": 496.4296817779541
     },
     {
       "run": 3,
@@ -246,7 +246,7 @@
       "passed": 106,
       "failed": 0,
       "pass_rate": "100.0%",
-      "duration_ms": 615.593433380127
+      "duration_ms": 461.55571937561035
     }
   ],
   "summary": {

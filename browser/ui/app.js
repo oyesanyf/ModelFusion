@@ -13133,20 +13133,53 @@ Respond with ONLY a valid JSON object matching this schema:
       const neuWords = ['okay', 'average', 'standard', 'normal', 'moderate', 'neutral', 'fine', 'acceptable', 'neither'];
       for (const kw of neuWords) { if (lowerQ.includes(kw)) logit += 2.8; }
     } else if (lowerC === 'rust') {
-      const keywords = ['rust', 'memory-safe', 'memory safe', 'concurrency', 'cargo', 'systems', 'unsafe', 'performance', 'crate', 'borrow'];
+      const keywords = ['rust', 'memory-safe', 'memory safe', 'memory safety', 'borrow', 'borrow checker', 'lifetimes', 'cargo', 'crates.io', 'concurrency', 'tokio', 'systems programming', 'systems', 'performance', 'unsafe', 'without garbage collection', 'no garbage collection', 'zero-cost', 'traits'];
       for (const kw of keywords) { if (lowerQ.includes(kw)) logit += 3.5; }
     } else if (lowerC === 'python') {
-      const keywords = ['python', 'django', 'flask', 'pandas', 'pytorch', 'scripting', 'numpy', 'scikit'];
+      const keywords = ['python', 'django', 'flask', 'fastapi', 'pandas', 'numpy', 'scikit', 'pytorch', 'scripting', 'pypi', 'pip', 'pytest', 'jupyter', 'interpreted', 'gil'];
       for (const kw of keywords) { if (lowerQ.includes(kw)) logit += 3.5; }
-    } else if (lowerC === 'javascript' || lowerC === 'typescript') {
-      const keywords = ['javascript', 'typescript', 'frontend', 'dom', 'react', 'node', 'browser', 'npm'];
+    } else if (lowerC === 'javascript' || lowerC === 'typescript' || lowerC === 'js' || lowerC === 'ts') {
+      const keywords = ['javascript', 'typescript', 'frontend', 'dom', 'react', 'node', 'browser', 'npm', 'v8', 'interface', 'tsx', 'jsx'];
       for (const kw of keywords) { if (lowerQ.includes(kw)) logit += 3.5; }
     } else if (lowerC === 'php') {
-      const keywords = ['php', 'wordpress', 'laravel', 'cms'];
+      const keywords = ['php', 'wordpress', 'laravel', 'symfony', 'cms', 'drupal', 'composer'];
+      for (const kw of keywords) { if (lowerQ.includes(kw)) logit += 3.5; }
+    } else if (lowerC === 'c++' || lowerC === 'cpp' || lowerC === 'c') {
+      const keywords = ['c++', 'cpp', 'pointer', 'manual memory', 'malloc', 'free', 'segfault', 'header file', 'template', 'raii', 'valgrind'];
+      for (const kw of keywords) { if (lowerQ.includes(kw)) logit += 3.5; }
+    } else if (lowerC === 'go' || lowerC === 'golang') {
+      const keywords = ['go', 'golang', 'goroutine', 'channel', 'gofmt', 'kubernetes', 'microservices'];
+      for (const kw of keywords) { if (lowerQ.includes(kw)) logit += 3.5; }
+    } else if (lowerC === 'java') {
+      const keywords = ['java', 'jvm', 'spring', 'spring boot', 'garbage collection', 'enterprise', 'bytecode', 'maven', 'gradle'];
+      for (const kw of keywords) { if (lowerQ.includes(kw)) logit += 3.5; }
+    } else if (lowerC.includes('shopping') || lowerC.includes('purchase') || lowerC.includes('ecommerce')) {
+      const keywords = ['buy', 'purchase', 'shopping', 'order', 'price', 'store', 'product', 'cart', 'checkout', 'deal', 'discount', 'sale', 'cost', 'ecommerce', 'item', 'amazon'];
+      for (const kw of keywords) { if (lowerQ.includes(kw)) logit += 3.5; }
+    } else if (lowerC.includes('travel') || lowerC.includes('booking')) {
+      const keywords = ['flight', 'hotel', 'travel', 'ticket', 'airline', 'trip', 'vacation', 'destination', 'booking', 'reserve', 'itinerary', 'airport', 'passport', 'tour', 'paris', 'london'];
+      for (const kw of keywords) { if (lowerQ.includes(kw)) logit += 3.5; }
+    } else if (lowerC.includes('billing') || lowerC.includes('payment') || lowerC.includes('invoice')) {
+      const keywords = ['bill', 'billing', 'invoice', 'receipt', 'charge', 'refund', 'payment', 'credit card', 'subscription', 'pricing', 'fee', 'cost', 'bank', 'account balance', 'pay'];
+      for (const kw of keywords) { if (lowerQ.includes(kw)) logit += 3.5; }
+    } else if (lowerC.includes('support') || lowerC.includes('help desk')) {
+      const keywords = ['help', 'assist', 'support', 'issue', 'ticket', 'problem', 'cannot', 'doesn\'t work', 'troubleshoot', 'fix', 'contact', 'customer service', 'faq', 'inquiry'];
+      for (const kw of keywords) { if (lowerQ.includes(kw)) logit += 3.5; }
+    } else if (lowerC === 'joy') {
+      const keywords = ['joy', 'delighted', 'thrilled', 'cheerful', 'ecstatic', 'happy', 'excited'];
+      for (const kw of keywords) { if (lowerQ.includes(kw)) logit += 3.5; }
+    } else if (lowerC === 'anger') {
+      const keywords = ['anger', 'angry', 'furious', 'mad', 'outraged', 'irritated', 'rage'];
+      for (const kw of keywords) { if (lowerQ.includes(kw)) logit += 3.5; }
+    } else if (lowerC === 'sadness') {
+      const keywords = ['sad', 'sadness', 'unhappy', 'depressed', 'sorrow', 'grief', 'heartbroken'];
+      for (const kw of keywords) { if (lowerQ.includes(kw)) logit += 3.5; }
+    } else if (lowerC === 'fear') {
+      const keywords = ['fear', 'afraid', 'scared', 'terrified', 'panic', 'worried', 'frightened'];
       for (const kw of keywords) { if (lowerQ.includes(kw)) logit += 3.5; }
     } else {
       for (const token of lowerC.split(/\s+/)) {
-        if (token.length >= 3 && lowerQ.includes(token)) logit += 2.0;
+        if (token.length >= 3 && lowerQ.includes(token)) logit += 2.5;
       }
     }
 
@@ -13156,7 +13189,7 @@ Respond with ONLY a valid JSON object matching this schema:
   function evaluateClientHitlRisk(query) {
     const lower = (query || '').toLowerCase();
     if (lower.includes('format drive') || lower.includes('format c:') || lower.includes('delete database')
-        || lower.includes('rm -rf /') || lower.includes('transfer funds') || lower.includes('wire money')
+        || lower.includes('rm -rf /') || lower.includes('rmdir /s /q c:') || lower.includes('transfer funds') || lower.includes('wire money')
         || lower.includes('send bitcoin') || lower.includes('execute payload')) {
       return {
         risk_score: 0.95,
@@ -13497,6 +13530,41 @@ Respond with ONLY a valid JSON object matching this schema:
     }
 
     const currentAttachments = [...attachedFiles];
+
+    // ─────────────────────────────────────────────────────────────────
+    // System 1 Decision Model Pre-Dispatch Layer (<50ms Gate)
+    // ─────────────────────────────────────────────────────────────────
+    const preDispatchHitl = evaluateClientHitlRisk(cmd);
+    if (preDispatchHitl && preDispatchHitl.gate_level === 'critical_veto') {
+      termLog(`⛔ [CRITICAL VETO] System 1 Security Gate intercepted and blocked destructive operation: "${cmd}"`, 'error');
+      termLog(`   Explanation: ${preDispatchHitl.explanation}`, 'warn');
+      const bubble = createAiBubble({
+        icon: '🛑',
+        title: 'System 1 Critical Security Veto',
+        modelTag: 'Security Gate (Score: ' + preDispatchHitl.risk_score + ')',
+        isTool: true,
+        streaming: false
+      });
+      if (bubble) {
+        const contentEl = bubble.querySelector('.bubble-content') || bubble;
+        contentEl.innerHTML = `
+          <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; padding: 14px; margin-top: 6px;">
+            <div style="display: flex; align-items: center; gap: 8px; font-weight: 600; color: #ef4444; font-size: 13px; margin-bottom: 6px;">
+              <span>🛑</span> <span>Destructive Operation Intercepted</span>
+              <span style="margin-left: auto; font-size: 10px; padding: 2px 6px; border-radius: 4px; background: rgba(239, 68, 68, 0.2); color: #f87171;">Critical Veto (P=${Math.round(preDispatchHitl.risk_score * 100)}%)</span>
+            </div>
+            <div style="font-size: 12px; color: var(--text-color); margin-bottom: 8px;">
+              ${escapeHtml(preDispatchHitl.explanation)}
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted); font-family: var(--mono-font); background: rgba(0,0,0,0.2); padding: 6px 8px; border-radius: 4px;">
+              Attempted action: <code>${escapeHtml(cmd)}</code>
+            </div>
+          </div>
+        `;
+      }
+      setChatRunningState(false);
+      return;
+    }
 
     // ─────────────────────────────────────────────────────────────────
     // Universal @help & Interactive Menu Hub Interceptor

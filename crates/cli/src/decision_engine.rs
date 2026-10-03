@@ -159,30 +159,102 @@ pub fn calculate_choice_logit(choice: &str, query: &str) -> f64 {
         logit += 4.5;
     }
 
-    // Domain-specific feature patterns
+    // Domain-specific feature patterns & choice taxonomy
     match lower_c.as_str() {
-        "legal" | "legal & compliance" | "law" | "statutory" => {
+        "legal" | "legal & compliance" | "law" | "statutory" | "compliance" => {
             let keywords = ["statute", "felony", "misdemeanor", "court", "judge", "attorney", "lawyer", "nda", "contract", "liability", "tort", "jurisdiction", "clause", "compliance", "law", "legal", "plaintiff", "defendant", "california", "penal", "civil procedure"];
             for kw in &keywords {
                 if lower_q.contains(kw) { logit += 3.2; }
             }
         }
-        "finance" | "finance & markets" | "market" | "financial" => {
+        "finance" | "finance & markets" | "market" | "financial" | "banking" => {
             let keywords = ["stock", "p/e", "ratio", "ebitda", "dividend", "nasdaq", "nyse", "earnings", "sec", "10-k", "10-q", "portfolio", "yield", "bond", "shares", "valuation", "balance sheet", "revenue", "cash flow", "market cap"];
             for kw in &keywords {
                 if lower_q.contains(kw) { logit += 3.2; }
             }
         }
         "code" | "code & security" | "coding" | "software" | "programming" => {
-            let keywords = ["fn ", "def ", "class ", "function", "import ", "const ", "let ", "var ", "return ", "git ", "commit", "compile", "bug", "syntax", "refactor", "rust", "python", "typescript", "javascript", "c++", "async", "await", "cargo", "docker"];
+            let keywords = ["fn ", "def ", "class ", "function", "import ", "const ", "let ", "var ", "return ", "git ", "commit", "compile", "bug", "syntax", "refactor", "rust", "python", "typescript", "javascript", "c++", "async", "await", "cargo", "docker", "algorithm", "quicksort", "backend"];
             for kw in &keywords {
                 if lower_q.contains(kw) { logit += 3.2; }
             }
         }
-        "computer use" | "computer use & os automation" | "browser agent" => {
+        "rust" => {
+            let keywords = ["rust", "memory-safe", "memory safe", "memory safety", "borrow", "borrow checker", "lifetimes", "cargo", "crates.io", "concurrency", "tokio", "systems programming", "systems", "performance", "unsafe", "without garbage collection", "no garbage collection", "zero-cost", "traits"];
+            for kw in &keywords {
+                if lower_q.contains(kw) { logit += 3.5; }
+            }
+        }
+        "python" => {
+            let keywords = ["python", "django", "flask", "fastapi", "pandas", "numpy", "scikit", "pytorch", "scripting", "pypi", "pip", "pytest", "jupyter", "interpreted", "gil"];
+            for kw in &keywords {
+                if lower_q.contains(kw) { logit += 3.5; }
+            }
+        }
+        "javascript" | "js" => {
+            let keywords = ["javascript", "frontend", "dom", "react", "node", "browser", "npm", "v8", "ecmascript", "vanilla js", "express"];
+            for kw in &keywords {
+                if lower_q.contains(kw) { logit += 3.5; }
+            }
+        }
+        "typescript" | "ts" => {
+            let keywords = ["typescript", "interface", "type system", "tsc", "generic types", "strong typing", "angular", "tsx"];
+            for kw in &keywords {
+                if lower_q.contains(kw) { logit += 3.5; }
+            }
+        }
+        "php" => {
+            let keywords = ["php", "wordpress", "laravel", "symfony", "cms", "drupal", "composer"];
+            for kw in &keywords {
+                if lower_q.contains(kw) { logit += 3.5; }
+            }
+        }
+        "c++" | "cpp" | "c" => {
+            let keywords = ["c++", "cpp", "pointer", "manual memory", "malloc", "free", "segfault", "header file", "template", "raii", "valgrind"];
+            for kw in &keywords {
+                if lower_q.contains(kw) { logit += 3.5; }
+            }
+        }
+        "go" | "golang" => {
+            let keywords = ["go", "golang", "goroutine", "channel", "gofmt", "kubernetes", "microservices"];
+            for kw in &keywords {
+                if lower_q.contains(kw) { logit += 3.5; }
+            }
+        }
+        "java" => {
+            let keywords = ["java", "jvm", "spring", "spring boot", "garbage collection", "enterprise", "bytecode", "maven", "gradle"];
+            for kw in &keywords {
+                if lower_q.contains(kw) { logit += 3.5; }
+            }
+        }
+        "computer use" | "computer use & os automation" | "browser agent" | "automation" => {
             let keywords = ["click", "buy", "book", "flight", "hotel", "order", "cart", "checkout", "navigate to", "form", "fill", "ui-tars", "ticket", "exam", "shopping", "submit button", "scroll", "browser", "window"];
             for kw in &keywords {
                 if lower_q.contains(kw) { logit += 3.0; }
+            }
+        }
+        "shopping" | "purchase" | "ecommerce" => {
+            let keywords = ["buy", "purchase", "shopping", "order", "price", "store", "product", "cart", "checkout", "deal", "discount", "sale", "cost", "ecommerce", "item", "amazon"];
+            for kw in &keywords {
+                if lower_q.contains(kw) { logit += 3.5; }
+            }
+        }
+        "travel" | "booking" => {
+            let keywords = ["flight", "hotel", "travel", "ticket", "airline", "trip", "vacation", "destination", "booking", "reserve", "itinerary", "airport", "passport", "tour", "paris", "london"];
+            for kw in &keywords {
+                if lower_q.contains(kw) { logit += 3.5; }
+            }
+        }
+        "billing" | "payment" | "invoice" => {
+            let keywords = ["bill", "billing", "invoice", "receipt", "charge", "refund", "payment", "credit card", "subscription", "pricing", "fee", "cost", "bank", "account balance", "pay"];
+            for kw in &keywords {
+                if lower_q.contains(kw) { logit += 3.5; }
+            }
+        }
+        "support" | "customer service" | "help desk" => {
+            let keywords = ["help", "assist", "support", "issue", "ticket", "problem", "cannot", "doesn't work", "troubleshoot", "fix", "contact", "customer service", "faq", "inquiry"];
+            for kw in &keywords {
+                if lower_q.contains(kw) { logit += 3.5; }
             }
         }
         "science" | "science & discovery" | "biology" | "chemistry" | "molecular" => {
@@ -253,22 +325,38 @@ pub fn calculate_choice_logit(choice: &str, query: &str) -> f64 {
         }
         // General classification values (e.g. positive, negative, neutral)
         "positive" => {
-            let pos_words = ["good", "great", "excellent", "love", "amazing", "wonderful", "fantastic", "positive", "happy", "pleased", "impressive", "best", "satisfied"];
+            let pos_words = ["good", "great", "excellent", "love", "amazing", "wonderful", "fantastic", "positive", "happy", "pleased", "impressive", "best", "satisfied", "awesome"];
             for kw in &pos_words { if lower_q.contains(kw) { logit += 3.5; } }
         }
         "negative" => {
-            let neg_words = ["bad", "terrible", "awful", "hate", "horrible", "poor", "negative", "sad", "disappointed", "worst", "unacceptable", "broken", "annoying"];
+            let neg_words = ["bad", "terrible", "awful", "hate", "horrible", "poor", "negative", "sad", "disappointed", "worst", "unacceptable", "broken", "annoying", "frustrating"];
             for kw in &neg_words { if lower_q.contains(kw) { logit += 3.5; } }
         }
         "neutral" => {
             let neu_words = ["okay", "average", "standard", "normal", "moderate", "neutral", "fine", "acceptable", "neither"];
             for kw in &neu_words { if lower_q.contains(kw) { logit += 2.8; } }
         }
+        "joy" => {
+            let joy_words = ["joy", "delighted", "thrilled", "cheerful", "ecstatic", "happy", "excited"];
+            for kw in &joy_words { if lower_q.contains(kw) { logit += 3.5; } }
+        }
+        "anger" => {
+            let anger_words = ["anger", "angry", "furious", "mad", "outraged", "irritated", "rage"];
+            for kw in &anger_words { if lower_q.contains(kw) { logit += 3.5; } }
+        }
+        "sadness" => {
+            let sad_words = ["sad", "sadness", "unhappy", "depressed", "sorrow", "grief", "heartbroken"];
+            for kw in &sad_words { if lower_q.contains(kw) { logit += 3.5; } }
+        }
+        "fear" => {
+            let fear_words = ["fear", "afraid", "scared", "terrified", "panic", "worried", "frightened"];
+            for kw in &fear_words { if lower_q.contains(kw) { logit += 3.5; } }
+        }
         _ => {
-            // General word token matching
+            // General word token matching for arbitrary user choice schemas
             for token in lower_c.split_whitespace() {
                 if token.len() >= 3 && lower_q.contains(token) {
-                    logit += 2.0;
+                    logit += 2.5;
                 }
             }
         }
@@ -435,10 +523,15 @@ pub fn evaluate_decision(req: &DecisionRequest) -> DecisionResponse {
     let is_mismatch = mismatch.as_ref().map(|m| m.is_mismatch).unwrap_or(false);
 
     let latency = (start.elapsed().as_micros() as f64) / 1000.0;
+    let engine_name = if model_tag.starts_with("@cf/") {
+        format!("{}-local-fallback", model_tag)
+    } else {
+        "clef-flash-local".to_string()
+    };
 
     DecisionResponse {
         status: "ok".to_string(),
-        engine: "clef-flash-local".to_string(),
+        engine: engine_name,
         query: query_str,
         decision: top_choice.clone(),
         top_choice,
@@ -452,4 +545,123 @@ pub fn evaluate_decision(req: &DecisionRequest) -> DecisionResponse {
         rl_arm: None,
         rl_telemetry: None,
     }
+}
+
+/// Queries Cloudflare Workers AI for Clef / Clef-flash decision scoring if credentials and model are configured.
+pub async fn query_cloudflare_clef_async(
+    model: &str,
+    query: &str,
+    choices: &[String],
+    temperature: Option<f64>,
+) -> Result<DecisionResponse, String> {
+    let cf_token = std::env::var("CLOUDFLARE_API_TOKEN")
+        .or_else(|_| std::env::var("CF_API_TOKEN"))
+        .map_err(|_| "CLOUDFLARE_API_TOKEN not configured".to_string())?;
+    let cf_account = std::env::var("CLOUDFLARE_ACCOUNT_ID")
+        .or_else(|_| std::env::var("CF_ACCOUNT_ID"))
+        .map_err(|_| "CLOUDFLARE_ACCOUNT_ID not configured".to_string())?;
+
+    let model_endpoint = if model.starts_with("@cf/") {
+        model.to_string()
+    } else if model.contains("clef-flash") {
+        "@cf/cloudflare/clef-flash".to_string()
+    } else {
+        "@cf/cloudflare/clef".to_string()
+    };
+
+    let url = format!(
+        "https://api.cloudflare.com/client/v4/accounts/{}/ai/run/{}",
+        cf_account, model_endpoint
+    );
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(2500))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let payload = serde_json::json!({
+        "query": query,
+        "choices": choices,
+        "temperature": temperature.unwrap_or(0.8),
+    });
+
+    let start = std::time::Instant::now();
+    let resp = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", cf_token))
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("Cloudflare Workers AI request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Cloudflare API returned status {}", resp.status()));
+    }
+
+    let val: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let latency = (start.elapsed().as_micros() as f64) / 1000.0;
+
+    let hitl = evaluate_hitl_risk(query);
+    let mismatch = evaluate_prerequisite_mismatch(model, query);
+    let is_mismatch = mismatch.as_ref().map(|m| m.is_mismatch).unwrap_or(false);
+
+    let top_choice = val["result"]["decision"]
+        .as_str()
+        .or_else(|| val["result"]["top_choice"].as_str())
+        .unwrap_or_else(|| choices.first().map(|s| s.as_str()).unwrap_or("General"))
+        .to_string();
+
+    let mut scores_map = HashMap::new();
+    let mut dist = Vec::new();
+    if let Some(obj) = val["result"]["scores"].as_object() {
+        for (k, v) in obj {
+            if let Some(s) = v.as_f64() {
+                scores_map.insert(k.clone(), s);
+            }
+        }
+    }
+    if let Some(arr) = val["result"]["distribution"].as_array() {
+        for (idx, item) in arr.iter().enumerate() {
+            if let Some(c) = item["choice"].as_str() {
+                let score = item["score"].as_f64().unwrap_or(0.0);
+                let logprob = item["logprob"].as_f64().unwrap_or_else(|| (score.max(1e-12)).ln());
+                dist.push(DecisionScore {
+                    choice: c.to_string(),
+                    score,
+                    logprob,
+                    rank: idx + 1,
+                });
+            }
+        }
+    }
+
+    if dist.is_empty() {
+        let logits: Vec<(String, f64)> = choices
+            .iter()
+            .map(|c| (c.clone(), calculate_choice_logit(c, query)))
+            .collect();
+        dist = softmax_calibrate(&logits, temperature.unwrap_or(0.8));
+        for d in &dist {
+            scores_map.insert(d.choice.clone(), d.score);
+        }
+    }
+
+    let top_score = dist.first().map(|d| d.score).unwrap_or(1.0);
+
+    Ok(DecisionResponse {
+        status: "ok".to_string(),
+        engine: model_endpoint,
+        query: query.to_string(),
+        decision: top_choice.clone(),
+        top_choice,
+        top_score,
+        scores: scores_map,
+        distribution: dist,
+        is_mismatch,
+        mismatch,
+        hitl_gate: Some(hitl),
+        latency_ms: (latency * 100.0).round() / 100.0,
+        rl_arm: None,
+        rl_telemetry: None,
+    })
 }
