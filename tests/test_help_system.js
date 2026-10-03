@@ -355,6 +355,52 @@ for (const modelKey of deepModelsToCheck) {
 }
 console.log(`✅ Check 10 Passed: All ${deepModelsToCheck.length} foundation models verified with complete architectural cards, input specs, and runnable examples.`);
 
+// 11. Test Full HF Repository Paths & Tool Tags Resolution (All 12 Foundation Models)
+console.log('\n--- Check 11: Full HF Hub Paths & Sidebar Tool-Tag Resolution ---');
+const classificationVariations = [
+  // Full HF Repository IDs
+  { q: '@help facebook/bart-large-mnli', expectedModel: 'facebook/bart-large-mnli' },
+  { q: '@help cross-encoder/nli-deberta-v3-base', expectedModel: 'cross-encoder/nli-deberta-v3-base' },
+  { q: '@help MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli', expectedModel: 'moritzlaurer/deberta-v3-base-mnli-fever-anli' },
+  { q: '@help valhalla/distilbart-mnli-12-3', expectedModel: 'valhalla/distilbart-mnli-12-3' },
+  { q: '@help distilbert/distilbert-base-uncased-finetuned-sst-2-english', expectedModel: 'distilbert/distilbert-base-uncased-finetuned-sst-2-english' },
+  { q: '@help cardiffnlp/twitter-roberta-base-sentiment-latest', expectedModel: 'cardiffnlp/twitter-roberta-base-sentiment-latest' },
+  { q: '@help SamLowe/roberta-base-go_emotions', expectedModel: 'samlowe/roberta-base-go_emotions' },
+  { q: '@help bhadresh-psavani/distilbert-base-uncased-emotion', expectedModel: 'bhadresh-psavani/distilbert-base-uncased-emotion' },
+  { q: '@help unitary/toxic-bert', expectedModel: 'unitary/toxic-bert' },
+  { q: '@help KoalaAI/Text-Moderation', expectedModel: 'koalaai/text-moderation' },
+  { q: '@help allenai/longformer-base-4096', expectedModel: 'allenai/longformer-base-4096' },
+  { q: '@help ProsusAI/finbert', expectedModel: 'prosusai/finbert' },
+
+  // Sidebar Button Tool Tags
+  { q: '@help bart-mnli', expectedModel: 'bart-mnli' },
+  { q: '@help deberta-nli', expectedModel: 'deberta-nli' },
+  { q: '@help deberta-fever', expectedModel: 'deberta-fever' },
+  { q: '@help distilbart-mnli', expectedModel: 'distilbart-mnli' },
+  { q: '@help distilbart', expectedModel: 'distilbart' },
+  { q: '@help emotion', expectedModel: 'emotion' },
+  { q: '@help sst2', expectedModel: 'sst2' },
+  { q: '@help distilbert-sst2', expectedModel: 'distilbert-sst2' },
+  { q: '@help finbert-cls', expectedModel: 'finbert-cls' },
+  { q: '@help go-emotions', expectedModel: 'go-emotions' },
+  { q: '@help moderation', expectedModel: 'moderation' },
+  { q: '@help longformer', expectedModel: 'longformer' },
+  { q: '@help toxic-bert', expectedModel: 'toxic-bert' },
+  { q: '@help toxic', expectedModel: 'toxic' },
+  { q: '@help twitter-sentiment', expectedModel: 'twitter-sentiment' }
+];
+
+for (const cv of classificationVariations) {
+  const p = parseHelpQuery(cv.q);
+  assert.ok(p && p.isHelp, `Query "${cv.q}" must parse as help`);
+  const r = resolveHelpResolution(p);
+  assert.ok(r, `Resolution must exist for "${cv.q}"`);
+  assert.ok(r.model, `Model must be recognized for "${cv.q}"`);
+  assert.strictEqual(r.model.key, cv.expectedModel, `Model mismatch for "${cv.q}": expected "${cv.expectedModel}", got "${r.model.key}"`);
+  assert.ok(r.modelCard, `Model card must exist for "${cv.q}"`);
+}
+console.log(`✅ Check 11 Passed: All ${classificationVariations.length} full HF hub paths and sidebar tool tags resolve to authoritative model cards.`);
+
 console.log('\n======================================================');
 console.log('🌟 ALL HELP SUB-SYSTEM TESTS PASSED 100% GREEN! 🌟');
 console.log('======================================================\n');
