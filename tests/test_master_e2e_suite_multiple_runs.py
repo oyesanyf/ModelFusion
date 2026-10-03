@@ -43,8 +43,10 @@ results = {
 # ============================================================================
 # PART 1: CLI MULTI-RUN SUITE
 # ============================================================================
+NUM_ITERATIONS = 5
+
 print("\n" + "=" * 60)
-print("PART 1: CLI EXTENSIVE TESTING WITH SYNTHETIC DATA (3 RUNS)")
+print(f"PART 1: CLI EXTENSIVE TESTING WITH SYNTHETIC DATA ({NUM_ITERATIONS} RUNS)")
 print("=" * 60)
 
 cli_synthetic_cases = [
@@ -82,11 +84,36 @@ cli_synthetic_cases = [
         "name": "Decision Engine - HITL Critical Veto Gating",
         "args": ["--decision", "rmdir /s /q c: and delete database"],
         "expect_contains": ["hitl_gate", "critical_veto"],
+    },
+    {
+        "name": "Task Registry & Model Catalog Query",
+        "args": ["--tasks", "text"],
+        "expect_contains": ["Available text tasks", "text-classification", "question-answering"],
+    },
+    {
+        "name": "Watermark & Anti-AI Steganography Detection",
+        "args": ["--watermark", "Furthermore, statistical analysis indicates synthetic text generation"],
+        "expect_contains": ["Text Watermark Analysis", "Token Green-List Detector"],
+    },
+    {
+        "name": "Performance Telemetry & Profiling Stats",
+        "args": ["--performance-stats"],
+        "expect_contains": ["Performance stats summary"],
+    },
+    {
+        "name": "Database Cache & WAL Status Inspection",
+        "args": ["--cache-stats"],
+        "expect_contains": ["Cache stats", "healthy"],
+    },
+    {
+        "name": "Active Model & Hardware Allocation Query",
+        "args": ["--active-model"],
+        "expect_contains": ["Local AI Engine", "Hugging Face Hub"],
     }
 ]
 
-for run_idx in range(1, 4):
-    print(f"\n--- CLI Test Iteration {run_idx}/3 ---")
+for run_idx in range(1, NUM_ITERATIONS + 1):
+    print(f"\n--- CLI Test Iteration {run_idx}/{NUM_ITERATIONS} ---")
     run_report = {"run": run_idx, "cases": [], "passed": 0, "failed": 0}
     t_start = time.time()
     
@@ -94,9 +121,9 @@ for run_idx in range(1, 4):
         c_name = case["name"]
         cmd = [CLI_BIN] + case["args"]
         t0 = time.time()
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30)
         dt = (time.time() - t0) * 1000
-        output = res.stdout + res.stderr
+        output = (res.stdout or "") + (res.stderr or "")
         
         passed = (res.returncode == 0) and all(exp in output for exp in case["expect_contains"])
         if passed:
@@ -117,14 +144,14 @@ for run_idx in range(1, 4):
     results["cli_runs"].append(run_report)
 
 # ============================================================================
-# PART 2: IDE EXTENSIVE TESTING (3 RUNS)
+# PART 2: IDE EXTENSIVE TESTING (5 RUNS)
 # ============================================================================
 print("\n" + "=" * 60)
-print("PART 2: IDE EXTENSIVE TESTING & INTEGRITY SUITE (3 RUNS)")
+print(f"PART 2: IDE EXTENSIVE TESTING & INTEGRITY SUITE ({NUM_ITERATIONS} RUNS)")
 print("=" * 60)
 
-for run_idx in range(1, 4):
-    print(f"\n--- IDE Test Iteration {run_idx}/3 ---")
+for run_idx in range(1, NUM_ITERATIONS + 1):
+    print(f"\n--- IDE Test Iteration {run_idx}/{NUM_ITERATIONS} ---")
     run_report = {"run": run_idx, "checks": [], "passed": 0, "failed": 0}
     
     # Check 1: NLS localization table alignment
@@ -175,8 +202,8 @@ for run_idx in range(1, 4):
     if os.path.exists(hugos_msi) and os.path.getsize(hugos_msi) > 100 * 1024 * 1024 and os.path.exists(browser_msi):
         for attempt in range(2):
             ps_cmd = ["powershell", "-NoProfile", "-Command", f"(Get-AuthenticodeSignature '{hugos_msi}', '{browser_msi}').SignerCertificate.Subject"]
-            res_sig = subprocess.run(ps_cmd, capture_output=True, text=True, timeout=30)
-            if res_sig.stdout.count("HugOS IDE") >= 2:
+            res_sig = subprocess.run(ps_cmd, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30)
+            if res_sig.stdout and res_sig.stdout.count("HugOS IDE") >= 2:
                 msi_ok = True
                 break
             time.sleep(0.5)
@@ -206,21 +233,35 @@ for run_idx in range(1, 4):
         run_report["failed"] += 1
     run_report["checks"].append({"check": "ReST-RL Extension Invariants", "passed": ext_ok})
 
+    # Check 5: Clef & Decision Slash Command Registration in Extension Bundles
+    t0 = time.time()
+    slash_ok = False
+    if os.path.exists(ext_js):
+        slash_ok = any(t in ext_content for t in ["clef", "decision", "classify-intent"])
+    dt = (time.time() - t0) * 1000
+    if slash_ok:
+        print(f"  ✅ [PASS] Clef & Decision Slash Commands Registered ({dt:.1f}ms)")
+        run_report["passed"] += 1
+    else:
+        print(f"  ❌ [FAIL] Clef Slash Commands missing in extension.js ({dt:.1f}ms)")
+        run_report["failed"] += 1
+    run_report["checks"].append({"check": "Clef Slash Commands", "passed": slash_ok})
+
     results["ide_runs"].append(run_report)
 
 # ============================================================================
-# PART 3: BROWSER 106-TOOL EXTENSIVE TESTING WITH SYNTHETIC DATA (3 RUNS)
+# PART 3: BROWSER 106-TOOL EXTENSIVE TESTING WITH SYNTHETIC DATA (5 RUNS)
 # ============================================================================
 print("\n" + "=" * 60)
-print("PART 3: BROWSER 106-TOOL E2E SUITE WITH SYNTHETIC DATA (3 RUNS)")
+print(f"PART 3: BROWSER 106-TOOL E2E SUITE WITH SYNTHETIC DATA ({NUM_ITERATIONS} RUNS)")
 print("=" * 60)
 
 browser_test_script = os.path.join(REPO_ROOT, "tests", "test_browser_all_106_tools_with_inputs.js")
 
-for run_idx in range(1, 4):
-    print(f"\n--- Browser Test Iteration {run_idx}/3 (All 106 Tools) ---")
+for run_idx in range(1, NUM_ITERATIONS + 1):
+    print(f"\n--- Browser Test Iteration {run_idx}/{NUM_ITERATIONS} (All 106 Tools) ---")
     t0 = time.time()
-    res = subprocess.run(["node", browser_test_script], capture_output=True, text=True)
+    res = subprocess.run(["node", browser_test_script], capture_output=True, text=True, encoding='utf-8', errors='replace')
     dt = (time.time() - t0) * 1000
     
     # Read generated report
