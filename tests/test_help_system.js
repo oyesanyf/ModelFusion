@@ -228,6 +228,122 @@ for (const catKey of expectedCategories) {
 
 console.log('✅ Check 5 Passed: Global @help overview contains all 13 interactive navigation cards with runnable pills.');
 
+// 6. Test False Positive Guard (conversational requests MUST NOT be hijacked)
+console.log('\n--- Check 6: Conversational Natural Language Guard (Zero False Positives) ---');
+const conversationalQueries = [
+  'Please help me write a python script to parse logs',
+  'How does gradient descent help with optimization?',
+  'Can you help me understand this error: segmentation fault',
+  'help me write a poem',
+  'help me debug this race condition in Rust',
+  'tell me about pe ratio in finance',
+  'what is pe in physical education'
+];
+
+for (const cq of conversationalQueries) {
+  const p = parseHelpQuery(cq);
+  assert.strictEqual(p, null, `Conversational query "${cq}" must NOT be hijacked by help parser`);
+  assert.strictEqual(isHelpDirective(cq), false, `isHelpDirective must be false for "${cq}"`);
+}
+console.log(`✅ Check 6 Passed: All ${conversationalQueries.length} conversational queries safely bypass help interceptor.`);
+
+// 7. Test Preposition & Stop-Word Robustness (No collision with Finance or Automation)
+console.log('\n--- Check 7: Preposition & Stop-Word Routing Robustness ---');
+const prepCases = [
+  { q: '@help in science', expectedCat: 'science' },
+  { q: '@help on science', expectedCat: 'science' },
+  { q: '@help for science', expectedCat: 'science' },
+  { q: '@help about science', expectedCat: 'science' },
+  { q: '@help of science', expectedCat: 'science' },
+  { q: '@help on finance', expectedCat: 'finance' },
+  { q: '@help for finance', expectedCat: 'finance' },
+  { q: '@help about legal', expectedCat: 'legal' },
+  { q: '@help with code', expectedCat: 'code' },
+  { q: '@help saul-7b in legal', expectedCat: 'legal', expectedModel: 'saul-7b' },
+  { q: '@help som in computer use', expectedCat: 'computer_use', expectedModel: 'som' },
+  { q: '@help acdso in data', expectedCat: 'tabular', expectedModel: 'acdso' },
+  { q: '@help esm in science', expectedCat: 'science', expectedModel: 'esm' }
+];
+
+for (const pc of prepCases) {
+  const p = parseHelpQuery(pc.q);
+  assert.ok(p && p.isHelp, `Query "${pc.q}" must be parsed as help`);
+  const r = resolveHelpResolution(p);
+  assert.ok(r, `Resolution must exist for "${pc.q}"`);
+  assert.strictEqual(r.category.id, pc.expectedCat, `Preposition query "${pc.q}" misrouted: expected category "${pc.expectedCat}", got "${r.category.id}"`);
+  if (pc.expectedModel) {
+    assert.ok(r.model, `Model expected for "${pc.q}"`);
+    assert.strictEqual(r.model.key, pc.expectedModel, `Model mismatch for "${pc.q}": expected "${pc.expectedModel}", got "${r.model.key}"`);
+  }
+}
+console.log(`✅ Check 7 Passed: All ${prepCases.length} preposition variations correctly routed with zero false category collisions.`);
+
+// 8. Test Numbered Menus (Menu 1 to Menu 13)
+console.log('\n--- Check 8: Numbered Menus (1 to 13) ---');
+for (let i = 1; i <= 13; i++) {
+  const p1 = parseHelpQuery(`@help ${i}`);
+  const r1 = resolveHelpResolution(p1);
+  assert.ok(r1 && r1.category, `@help ${i} must resolve to a category`);
+  assert.strictEqual(r1.category.menuIndex, i, `@help ${i} must match menuIndex ${i} (${r1.category.title})`);
+
+  const p2 = parseHelpQuery(`@help menu ${i}`);
+  const r2 = resolveHelpResolution(p2);
+  assert.ok(r2 && r2.category, `@help menu ${i} must resolve to a category`);
+  assert.strictEqual(r2.category.menuIndex, i, `@help menu ${i} must match menuIndex ${i}`);
+}
+console.log('✅ Check 8 Passed: All 13 numbered menus (@help 1..13, @help menu 1..13) accurately resolved.');
+
+// 9. Test Multi-Entity Compound Guides
+console.log('\n--- Check 9: Multi-Entity Compound Guides ---');
+const multiModelParsed = parseHelpQuery('@help esm and finbert');
+const multiModelRes = resolveHelpResolution(multiModelParsed);
+assert.strictEqual(multiModelRes.type, 'multi_model_guide', 'Must resolve to multi_model_guide');
+assert.strictEqual(multiModelRes.models.length, 2, 'Must contain 2 models');
+const multiModelHtml = renderDeepHelpHtml(multiModelRes);
+assert.ok(multiModelHtml.includes('ESM2 &amp; ESMFold Protein Suite') || multiModelHtml.includes('ESM2 & ESMFold Protein Suite'), 'Must render ESM card');
+assert.ok(multiModelHtml.includes('FinBERT Financial Sentiment Classifier'), 'Must render FinBERT card');
+
+const multiCatParsed = parseHelpQuery('@help science and finance');
+const multiCatRes = resolveHelpResolution(multiCatParsed);
+assert.strictEqual(multiCatRes.type, 'multi_category_guide', 'Must resolve to multi_category_guide');
+assert.strictEqual(multiCatRes.categories.length, 2, 'Must contain 2 categories');
+const multiCatHtml = renderDeepHelpHtml(multiCatRes);
+assert.ok(multiCatHtml.includes('Science &amp; Discovery') || multiCatHtml.includes('Science & Discovery'), 'Must render Science section');
+assert.ok(multiCatHtml.includes('Finance &amp; Markets') || multiCatHtml.includes('Finance & Markets'), 'Must render Finance section');
+console.log('✅ Check 9 Passed: Multi-model and multi-category queries render comparative multi-cards.');
+
+// 10. Test Deep Foundation Model Cards Across All Domains
+console.log('\n--- Check 10: Deep Foundation Model Cards Across All 13 Domains ---');
+const deepModelsToCheck = [
+  'esm', 'chemberta', 'galactica', 'prithvi', 'climax', 'aurora', 'evo', 'scibert',
+  'finbert', 'chronos', 'patchtst', 'llama-fin', 'fingpt',
+  'saul-7b', 'cuad-bert', 'legal-longformer', 'lawma',
+  'som', 'ui-tars',
+  'watermark', 'humanize',
+  'acdso', 'timeseries',
+  'pe',
+  'flux', 'yolo', 'florence',
+  'whisper', 'piper',
+  'boost', 'rest-rl', 'grill-me',
+  'sast', 'arxiv'
+];
+
+for (const modelKey of deepModelsToCheck) {
+  const p = parseHelpQuery(`@help ${modelKey}`);
+  const r = resolveHelpResolution(p);
+  assert.ok(r.model, `Model must be recognized for @help ${modelKey}`);
+  assert.ok(r.modelCard, `Model card must exist for ${modelKey}`);
+  assert.ok(r.modelCard.directives && r.modelCard.directives.length > 0, `${modelKey} must have directives`);
+  assert.ok(r.modelCard.examples && r.modelCard.examples.length > 0, `${modelKey} must have runnable examples`);
+
+  const html = renderDeepHelpHtml(r);
+  const escapedName = r.modelCard.name.replace(/&/g, '&amp;');
+  assert.ok(html.includes(r.modelCard.name) || html.includes(escapedName), `Rendered HTML for ${modelKey} must contain model name "${r.modelCard.name}"`);
+  assert.ok(html.includes('help-table') || html.includes('help-pills-row'), `Rendered HTML for ${modelKey} must contain tables or action pills`);
+}
+console.log(`✅ Check 10 Passed: All ${deepModelsToCheck.length} foundation models verified with complete architectural cards, input specs, and runnable examples.`);
+
 console.log('\n======================================================');
 console.log('🌟 ALL HELP SUB-SYSTEM TESTS PASSED 100% GREEN! 🌟');
 console.log('======================================================\n');
+
