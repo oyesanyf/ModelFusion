@@ -2878,50 +2878,85 @@ const HELP_CATEGORIES = {
 };
 
 const SPECIFIC_MODELS = {
+  // Science & Discovery (Menu 9)
   'esm': { key: 'esm', name: 'ESM2 & ESMFold Protein Suite', category: 'science', cardKey: 'esm' },
   'esm2': { key: 'esm2', name: 'ESM-2 Protein Language Model', category: 'science', cardKey: 'esm' },
   'esm3': { key: 'esm3', name: 'ESM-3 Generative Biology', category: 'science', cardKey: 'esm' },
   'esmfold': { key: 'esmfold', name: 'ESMFold 3D Structure Prediction', category: 'science', cardKey: 'esm' },
-  'evo': { key: 'evo', name: 'Evo Genomic Foundation Model', category: 'science', cardKey: 'esm' },
+  'evo': { key: 'evo', name: 'Evo Genomic Foundation Model', category: 'science', cardKey: 'evo' },
+  'nucleotide-transformer': { key: 'nucleotide-transformer', name: 'Nucleotide Transformer DNA Model', category: 'science', cardKey: 'evo' },
+  'geneformer': { key: 'geneformer', name: 'Geneformer Single-Cell Transcriptomics', category: 'science', cardKey: 'evo' },
   'chemberta': { key: 'chemberta', name: 'ChemBERTa Molecular Property Prediction', category: 'science', cardKey: 'chemberta' },
   'molformer': { key: 'molformer', name: 'MoLFormer Chemical Screening', category: 'science', cardKey: 'chemberta' },
   'smi-ted': { key: 'smi-ted', name: 'SMI-TED 3D Conformer Model', category: 'science', cardKey: 'chemberta' },
   'selfies-ted': { key: 'selfies-ted', name: 'SELFIES-TED Robust Molecular Design', category: 'science', cardKey: 'chemberta' },
-  'geneformer': { key: 'geneformer', name: 'Geneformer Single-Cell Transcriptomics', category: 'science', cardKey: 'esm' },
-  'nucleotide-transformer': { key: 'nucleotide-transformer', name: 'Nucleotide Transformer DNA Model', category: 'science', cardKey: 'esm' },
-  'aurora': { key: 'aurora', name: 'Aurora High-Resolution Weather Prediction', category: 'science', cardKey: 'science' },
-  'climax': { key: 'climax', name: 'ClimaX Weather & Climate Model', category: 'science', cardKey: 'science' },
-  'climatebert': { key: 'climatebert', name: 'ClimateBERT Environmental Fact-Checking', category: 'science', cardKey: 'science' },
-  'prithvi': { key: 'prithvi', name: 'Prithvi NASA Geospatial Earth Model', category: 'science', cardKey: 'science' },
-  'galactica': { key: 'galactica', name: 'Galactica Scientific Literature & Reasoning', category: 'science', cardKey: 'science' },
-  'scibert': { key: 'scibert', name: 'SciBERT Biomedical & Computer Science', category: 'science', cardKey: 'science' },
-  'scholarbert': { key: 'scholarbert', name: 'ScholarBERT Multi-Disciplinary Literature', category: 'science', cardKey: 'science' },
-  's1-omni': { key: 's1-omni', name: 'S1-Omni Multimodal Scientific Suite', category: 'science', cardKey: 'science' },
-  'matscibert': { key: 'matscibert', name: 'MatSciBERT Materials Science', category: 'science', cardKey: 'science' },
-  'mhg-ged': { key: 'mhg-ged', name: 'MHG-GED Molecular Graph Edit Distance', category: 'science', cardKey: 'science' },
+  'aurora': { key: 'aurora', name: 'Aurora High-Resolution Weather Prediction', category: 'science', cardKey: 'aurora' },
+  'climax': { key: 'climax', name: 'ClimaX Weather & Climate Model', category: 'science', cardKey: 'climax' },
+  'climatebert': { key: 'climatebert', name: 'ClimateBERT Environmental Fact-Checking', category: 'science', cardKey: 'climax' },
+  'prithvi': { key: 'prithvi', name: 'Prithvi NASA Geospatial Earth Model', category: 'science', cardKey: 'prithvi' },
+  'galactica': { key: 'galactica', name: 'Galactica Scientific Literature & Reasoning', category: 'science', cardKey: 'galactica' },
+  'scibert': { key: 'scibert', name: 'SciBERT Biomedical & Computer Science', category: 'science', cardKey: 'scibert' },
+  'scholarbert': { key: 'scholarbert', name: 'ScholarBERT Multi-Disciplinary Literature', category: 'science', cardKey: 'scibert' },
+  's1-omni': { key: 's1-omni', name: 'S1-Omni Multimodal Scientific Suite', category: 'science', cardKey: 'galactica' },
+  'matscibert': { key: 'matscibert', name: 'MatSciBERT Materials Science', category: 'science', cardKey: 'scibert' },
+  'mhg-ged': { key: 'mhg-ged', name: 'MHG-GED Molecular Graph Edit Distance', category: 'science', cardKey: 'chemberta' },
+
+  // Finance & Markets (Menu 4)
   'finbert': { key: 'finbert', name: 'FinBERT Financial Sentiment Classification', category: 'finance', cardKey: 'finbert' },
   'finbert-esg': { key: 'finbert-esg', name: 'FinBERT-ESG Corporate Sustainability', category: 'finance', cardKey: 'finbert' },
   'finbert-tone': { key: 'finbert-tone', name: 'FinBERT-Tone Executive Tone Classifier', category: 'finance', cardKey: 'finbert' },
-  'fingpt': { key: 'fingpt', name: 'FinGPT-Forecaster Market Movement Predictor', category: 'finance', cardKey: 'finbert' },
-  'chronos': { key: 'chronos', name: 'Chronos-T5 Zero-Shot Time-Series Forecaster', category: 'finance', cardKey: 'finbert' },
-  'patchtst': { key: 'patchtst', name: 'PatchTST High-Frequency Market Forecaster', category: 'finance', cardKey: 'finbert' },
-  'llama-fin': { key: 'llama-fin', name: 'Llama-Fin-8B Valuation & DCF Engine', category: 'finance', cardKey: 'finbert' },
-  'finance-llm': { key: 'finance-llm', name: 'Finance-LLM Financial Reasoning Model', category: 'finance', cardKey: 'finbert' },
-  'qwen-finance': { key: 'qwen-finance', name: 'Qwen-Pro-Finance-32B Macro Risk Engine', category: 'finance', cardKey: 'finbert' },
-  'cuad-bert': { key: 'cuad-bert', name: 'CUAD-BERT 41 Contract Clause Extraction', category: 'legal', cardKey: 'saul-7b' },
+  'fingpt': { key: 'fingpt', name: 'FinGPT-Forecaster Market Movement Predictor', category: 'finance', cardKey: 'fingpt' },
+  'chronos': { key: 'chronos', name: 'Chronos-T5 Zero-Shot Time-Series Forecaster', category: 'finance', cardKey: 'chronos' },
+  'patchtst': { key: 'patchtst', name: 'PatchTST High-Frequency Market Forecaster', category: 'finance', cardKey: 'patchtst' },
+  'llama-fin': { key: 'llama-fin', name: 'Llama-Fin-8B Valuation & DCF Engine', category: 'finance', cardKey: 'llama-fin' },
+  'finance-llm': { key: 'finance-llm', name: 'Finance-LLM Financial Reasoning Model', category: 'finance', cardKey: 'llama-fin' },
+  'qwen-finance': { key: 'qwen-finance', name: 'Qwen-Pro-Finance-32B Macro Risk Engine', category: 'finance', cardKey: 'llama-fin' },
+
+  // Legal & Compliance (Menu 7)
+  'cuad-bert': { key: 'cuad-bert', name: 'CUAD-BERT 41 Contract Clause Extraction', category: 'legal', cardKey: 'cuad-bert' },
   'saul-7b': { key: 'saul-7b', name: 'Saul-7B Mistral Legal Reasoning LLM', category: 'legal', cardKey: 'saul-7b' },
   'legal-bert': { key: 'legal-bert', name: 'Legal-BERT Statutory & Precedent Classifier', category: 'legal', cardKey: 'saul-7b' },
-  'legal-longformer': { key: 'legal-longformer', name: 'Legal-Longformer Judicial Brief Reader', category: 'legal', cardKey: 'saul-7b' },
+  'legal-longformer': { key: 'legal-longformer', name: 'Legal-Longformer Judicial Brief Reader', category: 'legal', cardKey: 'legal-longformer' },
   'law-chat': { key: 'law-chat', name: 'Law-Chat Interactive Legal Advice', category: 'legal', cardKey: 'saul-7b' },
   'law-llm': { key: 'law-llm', name: 'Law-LLM Case Law Analysis', category: 'legal', cardKey: 'saul-7b' },
-  'lawma': { key: 'lawma', name: 'Lawma-8B Automated Contract Drafting', category: 'legal', cardKey: 'saul-7b' },
-  'pile-of-law': { key: 'pile-of-law', name: 'Pile-of-Law LegalBERT Federal Filings', category: 'legal', cardKey: 'saul-7b' },
+  'lawma': { key: 'lawma', name: 'Lawma-8B Automated Contract Drafting', category: 'legal', cardKey: 'lawma' },
+  'pile-of-law': { key: 'pile-of-law', name: 'Pile-of-Law LegalBERT Federal Filings', category: 'legal', cardKey: 'legal-longformer' },
+
+  // Computer Use & OS Automation (Menu 2)
   'som': { key: 'som', name: 'Set-of-Mark Visual UI Element Grounding', category: 'computer_use', cardKey: 'som' },
-  'markers': { key: 'markers', name: 'Set-of-Mark Interactive Web Markers', category: 'web', cardKey: 'som' },
+  'ui-tars': { key: 'ui-tars', name: 'UI-TARS Vision-Language Desktop Agent', category: 'computer_use', cardKey: 'ui-tars' },
+  'uitars': { key: 'uitars', name: 'UI-TARS Vision-Language Desktop Agent', category: 'computer_use', cardKey: 'ui-tars' },
+
+  // Writing & Editing (Menu 13)
   'watermark': { key: 'watermark', name: 'Dual AI Watermark Detector (Text & Image)', category: 'writing', cardKey: 'watermark' },
+  'humanize': { key: 'humanize', name: 'Humanize AI Text (Anti-AI Stylometry)', category: 'writing', cardKey: 'humanize' },
+
+  // Data & Spreadsheets (Menu 3)
   'acdso': { key: 'acdso', name: 'Adaptive Contextual Data Science Optimization', category: 'tabular', cardKey: 'acdso' },
+  'timeseries': { key: 'timeseries', name: 'Multi-Horizon Time-Series Forecasting', category: 'tabular', cardKey: 'timeseries' },
+
+  // Inspect Windows Apps PECOFF (Menu 6)
   'pe': { key: 'pe', name: 'Windows PE Binary (.EXE / .DLL) Inspector', category: 'pe_binary', cardKey: 'pe' },
-  'humanize': { key: 'humanize', name: 'Humanize AI Text (Anti-AI Stylometry)', category: 'writing', cardKey: 'watermark' }
+
+  // Images & Vision (Menu 5)
+  'flux': { key: 'flux', name: 'FLUX.1-schnell & SDXL Image Synthesis', category: 'vision', cardKey: 'flux' },
+  'yolo': { key: 'yolo', name: 'YOLOv10 / DETR Real-Time Object Detection', category: 'vision', cardKey: 'yolo' },
+  'florence': { key: 'florence', name: 'Florence-2 Dense Perception, OCR & Grounding', category: 'vision', cardKey: 'florence' },
+
+  // Voice & Audio (Menu 11)
+  'whisper': { key: 'whisper', name: 'OpenAI Whisper Multilingual ASR', category: 'audio', cardKey: 'whisper' },
+  'piper': { key: 'piper', name: 'Piper & Kokoro Neural Text-To-Speech (TTS)', category: 'audio', cardKey: 'piper' },
+
+  // Planning & Deep Thinking (Menu 8)
+  'boost': { key: 'boost', name: 'Deep Deliberation & Verification Engine', category: 'agent', cardKey: 'boost' },
+  'rest-rl': { key: 'rest-rl', name: 'ReST-RL Reinforcement Learning Preemption Daemon', category: 'agent', cardKey: 'rest-rl' },
+  'grill-me': { key: 'grill-me', name: 'Adversarial Requirements Interviewer', category: 'agent', cardKey: 'grill-me' },
+
+  // Code & Security (Menu 1)
+  'sast': { key: 'sast', name: 'Static Application Security Testing & SAST', category: 'code', cardKey: 'sast' },
+
+  // Web Research & Automation (Menu 12)
+  'arxiv': { key: 'arxiv', name: 'arXiv Academic Preprint Research Engine', category: 'web', cardKey: 'arxiv' }
 };
 
 const SPECIFIC_MODEL_CARDS = {
@@ -2978,6 +3013,151 @@ const SPECIFIC_MODEL_CARDS = {
     related: ['molformer', 'smi-ted', 'selfies-ted', 'matscibert']
   },
 
+  'galactica': {
+    id: 'galactica',
+    name: 'Galactica Scientific Literature & Reasoning',
+    category: 'science',
+    icon: '🌌',
+    author: 'Meta AI / Papers with Code',
+    architecture: '120B Token Pretrained Science Transformer (1.3B - 120B params)',
+    purpose: 'Specialized language model trained on 48 million scientific papers, textbooks, LaTeX equations, and chemical reactions. Excels at mathematical equation derivation, summarizing multidisciplinary literature, and reasoning through quantum mechanics and thermodynamics.',
+    inputFormat: 'LaTeX formulas, scientific problem statements, or citations.',
+    sampleInput: 'Derive the Navier-Stokes equations from the Boltzmann transport equation',
+    directives: [
+      { cmd: '@agent science galactica <query/equation>', desc: 'Synthesize scientific explanations, step-by-step derivations, and citations' }
+    ],
+    useCases: [
+      'Formulating rigorous mathematical proofs and LaTeX notation for journal publications.',
+      'Synthesizing cross-domain discoveries between physics, chemistry, and molecular biology.'
+    ],
+    examples: [
+      '@agent science galactica Derive the Navier-Stokes equations from the Boltzmann transport equation',
+      '@agent science galactica Explain the mechanism of CRISPR-Cas9 genome cleavage with reaction steps'
+    ],
+    related: ['scibert', 'scholarbert', 's1-omni']
+  },
+
+  'prithvi': {
+    id: 'prithvi',
+    name: 'Prithvi NASA-IBM Geospatial Earth Model',
+    category: 'science',
+    icon: '🛰️',
+    author: 'NASA & IBM Research',
+    architecture: 'Temporal Vision Transformer (ViT) on Harmonized Landsat Sentinel-2 (HLS)',
+    purpose: 'Geospatial foundation model trained on multi-spectral satellite imagery. Predicts flood extents, wildfire burn scars, crop yield distributions, and urban land cover transitions directly from raw satellite coordinates or GeoTIFF rasters.',
+    inputFormat: 'Latitude/longitude bounding box [min_lat, min_lon, max_lat, max_lon] or GeoTIFF image file.',
+    sampleInput: '37.7749,-122.4194 (San Francisco Bay Area HLS imagery)',
+    directives: [
+      { cmd: '@agent science prithvi <coords_or_geotiff>', desc: 'Segment satellite bands into flood, burn scar, or land use classifications' }
+    ],
+    useCases: [
+      'Disaster response mapping during active flash floods and hurricanes.',
+      'Longitudinal tracking of deforestation and glacial retreat without cloud API costs.'
+    ],
+    examples: [
+      '@agent science prithvi 29.9511,-90.0715 (Mississippi Delta flood classification)',
+      '@agent science prithvi satellite_burn_scar_sample.tif'
+    ],
+    related: ['climax', 'aurora', 'climatebert']
+  },
+
+  'climax': {
+    id: 'climax',
+    name: 'ClimaX Global Climate & Weather Model',
+    category: 'science',
+    icon: '🌍',
+    author: 'Microsoft Research / Climate AI Lab',
+    architecture: 'Heterogeneous Spatiotemporal Transformer trained on ERA5 Reanalysis',
+    purpose: 'First foundation model for weather and climate capable of processing heterogeneous atmospheric variables (geopotential height, temperature, humidity, wind vectors) across diverse spatial grids and temporal resolutions.',
+    inputFormat: 'Global atmospheric coordinates, ERA5 NetCDF/GRIB variables, or date-time ranges.',
+    sampleInput: '500hPa geopotential height grid at 2026-10-01T00:00Z',
+    directives: [
+      { cmd: '@agent science climax <location/data>', desc: 'Compute sub-seasonal atmospheric trajectory and temperature anomalies' }
+    ],
+    useCases: [
+      'Extreme weather forecasting (heatwaves, atmospheric rivers, polar vortex disruptions).',
+      'Assessing 10-year regional climate risk for renewable energy infrastructure.'
+    ],
+    examples: [
+      '@agent science climax Forecast 7-day temperature anomalies over North America',
+      '@agent science climax atmospheric_grid_era5.nc'
+    ],
+    related: ['aurora', 'prithvi', 'climatebert']
+  },
+
+  'aurora': {
+    id: 'aurora',
+    name: 'Aurora High-Resolution Weather Prediction',
+    category: 'science',
+    icon: '⚡',
+    author: 'Microsoft Research AI for Science',
+    architecture: '3D Swin Transformer operational weather forecasting model (1.3B params)',
+    purpose: 'Kilometer-scale operational global weather forecasting model surpassing numerical ECMWF IFS baselines in speed and accuracy. Generates 5-day forecasts of surface temperature, pressure, and wind speeds in under 1 minute locally.',
+    inputFormat: 'Latitude, longitude coordinates or global surface meteorological tensor.',
+    sampleInput: '40.7128,-74.0060 (New York City metro weather prediction)',
+    directives: [
+      { cmd: '@agent science aurora <coords>', desc: 'Generate kilometer-scale high-resolution 5-day atmospheric forecast' }
+    ],
+    useCases: [
+      'Precision wind and solar farm generation scheduling.',
+      'Maritime shipping route optimization avoiding oceanic cyclones.'
+    ],
+    examples: [
+      '@agent science aurora 51.5074,-0.1278 (London atmospheric pressure and precipitation)',
+      '@agent science aurora Forecast wind vectors for North Sea offshore turbine array'
+    ],
+    related: ['climax', 'prithvi']
+  },
+
+  'evo': {
+    id: 'evo',
+    name: 'Evo Genomic Foundation Suite',
+    category: 'science',
+    icon: '🧬',
+    author: 'Arc Institute, Stanford & Together AI',
+    architecture: 'StripedHyena Architecture (7B parameters, 131,072 base-pair context window)',
+    purpose: 'Long-context DNA, RNA, and protein language model trained on prokaryotic and eukaryotic genomes. Accurately predicts gene expression, CRISPR-Cas guide RNA cleavage efficiencies, and functional non-coding regulatory elements.',
+    inputFormat: 'Nucleotide sequence (A, C, G, T) or FASTA genomic file.',
+    sampleInput: 'ATGCGATCGATCGATCGATCGATCGATCGA',
+    directives: [
+      { cmd: '@agent science evo <dna_sequence>', desc: 'Analyze genomic regulatory motifs, promoter strength, and variant impacts' },
+      { cmd: '@agent science nucleotide-transformer <sequence>', desc: 'Extract chromatin accessibility and splice site predictions' }
+    ],
+    useCases: [
+      'Designing synthetic bacterial genomes and optimized promoter sequences.',
+      'CRISPR off-target cleavage risk assessment in gene editing therapeutics.'
+    ],
+    examples: [
+      '@agent science evo ATGCGATCGATCGATCGATCGATCGATCGATCGATCGA',
+      '@agent science nucleotide-transformer GGCATGCATTGCATTGCA'
+    ],
+    related: ['esm', 'geneformer', 'nucleotide-transformer']
+  },
+
+  'scibert': {
+    id: 'scibert',
+    name: 'SciBERT Biomedical & Computer Science',
+    category: 'science',
+    icon: '📚',
+    author: 'Allen Institute for AI (AI2)',
+    architecture: 'BERT-Base pretrained on 1.14M papers from Semantic Scholar',
+    purpose: 'Domain-adapted representation model specialized for biomedical and computational literature. Excels at scientific named entity recognition (NER), relation extraction, and literature search.',
+    inputFormat: 'Scientific abstract, paper paragraph, or clinical notes.',
+    sampleInput: 'Inhibition of mTORC1 by rapamycin extends lifespan in model organisms...',
+    directives: [
+      { cmd: '@agent science scibert <abstract>', desc: 'Extract scientific entities (genes, diseases, algorithms, metrics) and relationships' }
+    ],
+    useCases: [
+      'Automated curation of clinical trial biomarkers and drug repurposing targets.',
+      'Semantic literature review and citation graph extraction.'
+    ],
+    examples: [
+      '@agent science scibert Extract all biomolecules and pharmacological actions from this abstract.',
+      '@agent science scibert Classify research methodology in the attached preprint.'
+    ],
+    related: ['galactica', 'scholarbert']
+  },
+
   'finbert': {
     id: 'finbert',
     name: 'FinBERT Financial Sentiment Classifier',
@@ -3003,6 +3183,102 @@ const SPECIFIC_MODEL_CARDS = {
       '@agent finance finbert Management reported a 22% reduction in debt covenants while expanding R&D expenditures.'
     ],
     related: ['finbert-tone', 'finbert-esg', 'fingpt', 'chronos']
+  },
+
+  'chronos': {
+    id: 'chronos',
+    name: 'Chronos-T5 Zero-Shot Time-Series Forecaster',
+    category: 'finance',
+    icon: '⏱️',
+    author: 'Amazon Science',
+    architecture: 'T5 Encoder-Decoder tokenizing numerical time-series into language vocabularies',
+    purpose: 'Pretrained time-series foundation model that treats numerical sequences as language tokens. Delivers accurate probabilistic zero-shot forecasts without requiring per-dataset model retraining or hyperparameter tuning.',
+    inputFormat: 'Comma-separated numerical historical time-series or CSV column.',
+    sampleInput: '124.5, 126.2, 125.8, 128.4, 131.0, 129.5, 133.2',
+    directives: [
+      { cmd: '@agent finance chronos <series_values>', desc: 'Generate multi-step probabilistic future trajectory with 80% and 95% prediction intervals' }
+    ],
+    useCases: [
+      'Forecasting stock closing prices, ETF volatility, and currency exchange rates.',
+      'Retail demand and inventory supply replenishment scheduling.'
+    ],
+    examples: [
+      '@agent finance chronos 124.5, 126.2, 125.8, 128.4, 131.0, 129.5, 133.2',
+      '@agent finance chronos 10.2, 11.5, 12.1, 11.8, 13.4, 14.2, 15.0'
+    ],
+    related: ['patchtst', 'finbert', 'timeseries']
+  },
+
+  'patchtst': {
+    id: 'patchtst',
+    name: 'PatchTST High-Frequency Market Forecaster',
+    category: 'finance',
+    icon: '📊',
+    author: 'Nie et al. / Transformer Lab',
+    architecture: 'Patch-based Time-Series Transformer with Channel-Independent Attention',
+    purpose: 'Segments continuous numerical sequences into sub-series patches to preserve local semantic context while dramatically reducing attention compute. Ideal for high-frequency market forecasting and multi-variate price prediction.',
+    inputFormat: 'Historical numerical price sequences or multi-column financial CSV.',
+    sampleInput: 'Historical price vector or multi-variable time-series',
+    directives: [
+      { cmd: '@agent finance patchtst <data>', desc: 'Multi-horizon volatility and directional price trend projection' }
+    ],
+    useCases: [
+      'Intraday equity volatility estimation and risk surface modeling.',
+      'Multi-asset correlation tracking during high-stress macroeconomic events.'
+    ],
+    examples: [
+      '@agent finance patchtst historical_sp500_hourly.csv',
+      '@agent finance patchtst 450.2, 452.1, 451.8, 454.0, 453.6, 456.1'
+    ],
+    related: ['chronos', 'llama-fin']
+  },
+
+  'llama-fin': {
+    id: 'llama-fin',
+    name: 'Llama-Fin-8B Valuation & DCF Engine',
+    category: 'finance',
+    icon: '💼',
+    author: 'ModelFusion Quantitative Finance Group',
+    architecture: 'Llama-3 Architecture specialized in Corporate Finance and Valuation',
+    purpose: 'Specialized corporate finance reasoning model. Constructs Discounted Cash Flow (DCF) models, computes Weighted Average Cost of Capital (WACC), parses debt covenants, and executes comparable company multiple analysis.',
+    inputFormat: 'Financial statements, revenue projections, beta, interest rates, or tax rates.',
+    sampleInput: 'EBITDA $45M, CAPEX $8M, Tax Rate 21%, Discount Rate 9.5%, Terminal Growth 2.5%',
+    directives: [
+      { cmd: '@agent finance llama-fin <financial_parameters>', desc: 'Construct DCF valuation table with sensitivity analysis' }
+    ],
+    useCases: [
+      'M&A fairness opinion generation and corporate valuation modeling.',
+      'Analyzing enterprise capital structure tradeoffs between equity dilution and debt service.'
+    ],
+    examples: [
+      '@agent finance llama-fin Compute WACC with Cost of Equity 9.2%, Pre-tax Cost of Debt 5.5%, Tax Rate 21%, Debt/Equity 40/60',
+      '@agent finance llama-fin Build DCF model with Free Cash Flows $12M, $15M, $18M, $22M, WACC 8.5%, Terminal Growth 2%'
+    ],
+    related: ['finbert', 'fingpt']
+  },
+
+  'fingpt': {
+    id: 'fingpt',
+    name: 'FinGPT-Forecaster Market Movement Predictor',
+    category: 'finance',
+    icon: '📉',
+    author: 'AI4Finance Foundation',
+    architecture: 'Instruction-tuned financial LLM with multi-source news grounding',
+    purpose: 'Combines real-time market sentiment, financial news headlines, and fundamental ratios to predict directional stock movements and formulate reasoned investment theses.',
+    inputFormat: 'Stock ticker, recent company events, or market news snippet.',
+    sampleInput: 'AAPL Q3 earnings beat EPS estimates by 8% with services revenue up 12%',
+    directives: [
+      { cmd: '@agent finance fingpt <ticker_or_news>', desc: 'Synthesize directional forecast with bullish/bearish arguments' }
+    ],
+    useCases: [
+      'Automated equity research briefings prior to market opening bell.',
+      'Assessing market reaction probabilities to unexpected Federal Reserve interest rate moves.'
+    ],
+    examples: [
+      '@agent finance fingpt Analyze market impact of semiconductor export restrictions on NVDA',
+      '@agent finance fingpt Synthesize investment thesis for MSFT cloud infrastructure growth'
+    ],
+    related: ['finbert', 'llama-fin']
   },
 
   'saul-7b': {
@@ -3031,6 +3307,78 @@ const SPECIFIC_MODEL_CARDS = {
     related: ['cuad-bert', 'legal-longformer', 'lawma', 'legal-bert']
   },
 
+  'cuad-bert': {
+    id: 'cuad-bert',
+    name: 'CUAD-BERT 41 High-Risk Contract Clause Extractor',
+    category: 'legal',
+    icon: '📜',
+    author: 'Atticus Project / Stanford Law',
+    architecture: 'DeBERTa / RoBERTa fine-tuned on 13,000+ human-annotated commercial contract labels',
+    purpose: 'Automated contract clause extraction across 41 critical legal categories (e.g., Limitation of Liability, Non-Compete, Governing Law, Change of Control, Unilateral Termination, Indemnification).',
+    inputFormat: 'Commercial contract text (.docx, .pdf, or pasted text).',
+    sampleInput: 'Entire Master Services Agreement or commercial license agreement',
+    directives: [
+      { cmd: '@agent legal cuad-bert <contract_text>', desc: 'Extract and label all 41 high-risk contract clauses with confidence scores' }
+    ],
+    useCases: [
+      'Pre-acquisition M&A due diligence scanning thousands of supplier contracts.',
+      'Highlighting hidden renewal penalties or automatic term extension traps.'
+    ],
+    examples: [
+      '@agent legal cuad-bert Audit this Master Services Agreement for unilateral termination and uncapped indemnity.',
+      '@agent legal cuad-bert Scan attached vendor agreement for audit rights and non-solicitation clauses.'
+    ],
+    related: ['saul-7b', 'legal-longformer']
+  },
+
+  'legal-longformer': {
+    id: 'legal-longformer',
+    name: 'Legal-Longformer Judicial Brief Reader',
+    category: 'legal',
+    icon: '📑',
+    author: 'Chalkidis et al. / LexGLUE Benchmark',
+    architecture: 'Longformer Local & Global Attention (4,096+ token context)',
+    purpose: 'Deep attention architecture designed specifically for lengthy legal texts: appellate court opinions, comprehensive judicial briefs, and SEC filings that exceed standard Transformer context boundaries.',
+    inputFormat: 'Multi-page court brief, legal opinion, or regulatory filing.',
+    sampleInput: 'Supreme Court or appellate court opinion text',
+    directives: [
+      { cmd: '@agent legal legal-longformer <brief_text>', desc: 'Summarize procedural history, key holdings, and doctrinal citations' }
+    ],
+    useCases: [
+      'Summarizing complex 60-page judicial rulings in minutes.',
+      'Extracting majority, concurring, and dissenting rationales from federal case law.'
+    ],
+    examples: [
+      '@agent legal legal-longformer Summarize the legal holding and procedural history of the attached judicial brief.',
+      '@agent legal legal-longformer Extract all statutory references and case citations from this appellate opinion.'
+    ],
+    related: ['saul-7b', 'pile-of-law']
+  },
+
+  'lawma': {
+    id: 'lawma',
+    name: 'Lawma-8B Automated Contract Drafting Engine',
+    category: 'legal',
+    icon: '🦙',
+    author: 'Legal Technology Consortium',
+    architecture: 'Llama-3-8B fine-tuned on legal precedents and standard boilerplate covenant libraries',
+    purpose: 'Generative legal drafting engine for precision formulation of contracts, NDAs, licensing terms, and corporate board resolutions with legally enforceable terminology.',
+    inputFormat: 'Contract specification, desired covenants, jurisdiction, and governing terms.',
+    sampleInput: 'Mutual NDA under Delaware jurisdiction with 2-year survival term and standard confidentiality exclusions',
+    directives: [
+      { cmd: '@agent legal lawma <terms>', desc: 'Draft clean, enforceable legal agreements conforming to specified jurisdiction' }
+    ],
+    useCases: [
+      'Rapid first-draft generation of standard nondisclosure and consulting agreements.',
+      'Formulating bespoke representations and warranties for commercial software licenses.'
+    ],
+    examples: [
+      '@agent legal lawma Draft a mutual non-disclosure agreement with a 2-year survival term under New York jurisdiction.',
+      '@agent legal lawma Generate an intellectual property assignment agreement for an independent software contractor.'
+    ],
+    related: ['saul-7b', 'cuad-bert']
+  },
+
   'som': {
     id: 'som',
     name: 'Set-of-Mark (SoM) Visual UI Element Grounding',
@@ -3056,7 +3404,32 @@ const SPECIFIC_MODEL_CARDS = {
       '@agent markers',
       '@agent computer-use Click the Submit button tagged with marker 14'
     ],
-    related: ['computer-use', 'ui-tars', 'markers', 'vision']
+    related: ['ui-tars', 'vision']
+  },
+
+  'ui-tars': {
+    id: 'ui-tars',
+    name: 'UI-TARS Vision-Language Desktop Agent',
+    category: 'computer_use',
+    icon: '🖱️',
+    author: 'ByteDance & UI-TARS Open Source Consortium',
+    architecture: 'Vision-Language GUI Model (7B & 72B params) with Native Action Callout',
+    purpose: 'State-of-the-art native GUI agent trained on desktop operating systems (Windows, macOS, Linux). Directly observes desktop screenshots and outputs precise OS action coordinates (mouse clicks, drags, keyboard hotkeys) with sub-50ms preemption.',
+    inputFormat: 'High-level user goal in natural language (e.g. "Open Excel, import sales.csv, and create a bar chart").',
+    sampleInput: 'Open Notepad, write today\'s date and save it as notes.txt',
+    directives: [
+      { cmd: '@agent ui-tars <goal>', desc: 'Launch autonomous UI-TARS desktop control loop' },
+      { cmd: '@agent computer-use <goal>', desc: 'Dispatch full computer use agent with Windows Job Object preemption' }
+    ],
+    useCases: [
+      'Automating complex desktop workflows across native legacy Windows applications without APIs.',
+      'End-to-end multi-step automated software smoke testing.'
+    ],
+    examples: [
+      '@agent ui-tars Open Chrome, go to weather.com, and check temperature in Chicago',
+      '@agent computer-use Open Notepad and write a project status report'
+    ],
+    related: ['som']
   },
 
   'watermark': {
@@ -3083,7 +3456,31 @@ const SPECIFIC_MODEL_CARDS = {
       '@agent watermark attached_document.docx',
       '@agent watermark suspect_ai_artwork.png'
     ],
-    related: ['humanize', 'boost', 'style-transfer', 'writing']
+    related: ['humanize', 'boost']
+  },
+
+  'humanize': {
+    id: 'humanize',
+    name: 'Humanize AI Text (Anti-AI Stylometry)',
+    category: 'writing',
+    icon: '✍️',
+    author: 'HugOS Stylometry Core',
+    architecture: 'Entropy Optimization & Dynamic Burstiness Re-synthesizer',
+    purpose: 'Transforms rigid, repetitive, and formulaic AI-generated text into expressive, natural prose. Injects rhythmic cadence, organic sentence length variance, and nuanced vocabulary to bypass commercial AI detectors.',
+    inputFormat: 'AI-generated paragraphs or essays.',
+    sampleInput: 'Furthermore, it is important to remember that artificial intelligence has become increasingly prevalent...',
+    directives: [
+      { cmd: '@agent humanize <text>', desc: 'Rewrite text with human-like cadence, dynamic burstiness, and varied sentence structures' }
+    ],
+    useCases: [
+      'Polishing articles and marketing copy so they read authentically rather than like machine output.',
+      'Eliminating robotic transitions like "In conclusion", "Furthermore", and "Delve into".'
+    ],
+    examples: [
+      '@agent humanize In today\'s digital era, artificial intelligence plays an indispensable role in modern society.',
+      '@agent humanize attached_draft.txt'
+    ],
+    related: ['watermark', 'boost']
   },
 
   'acdso': {
@@ -3111,7 +3508,31 @@ const SPECIFIC_MODEL_CARDS = {
       '@agent timeseries sales_history_2025.csv',
       '@agent dataanalyst user_retention.csv'
     ],
-    related: ['timeseries', 'dataanalyst', 'predict', 'datascience']
+    related: ['timeseries', 'predict']
+  },
+
+  'timeseries': {
+    id: 'timeseries',
+    name: 'Multi-Horizon Time-Series Forecasting',
+    category: 'tabular',
+    icon: '📈',
+    author: 'ModelFusion Tabular Analytics',
+    architecture: 'Hybrid Chronos-T5 & PatchTST Time-Series Pipeline',
+    purpose: 'Univariate and multivariate probabilistic forecasting over historical metrics. Decomposes trend, seasonality, and residual noise with quantified prediction intervals.',
+    inputFormat: 'CSV with timestamp column and numeric target metric.',
+    sampleInput: 'sales_history.csv with date and volume columns',
+    directives: [
+      { cmd: '@agent timeseries <file.csv>', desc: 'Generate 30-day probabilistic forecast with upper and lower confidence bounds' }
+    ],
+    useCases: [
+      'Demand forecasting for inventory replenishment.',
+      'Server capacity planning and compute resource utilization trends.'
+    ],
+    examples: [
+      '@agent timeseries server_cpu_load.csv',
+      '@agent timeseries revenue_quarterly.csv'
+    ],
+    related: ['acdso', 'chronos']
   },
 
   'pe': {
@@ -3140,7 +3561,249 @@ const SPECIFIC_MODEL_CARDS = {
       '@agent entropy target/release/cli.exe',
       '@agent pe browser/bin/clibrowser.exe'
     ],
-    related: ['entropy', 'strings', 'packer-detect', 'security']
+    related: ['entropy', 'sast']
+  },
+
+  'flux': {
+    id: 'flux',
+    name: 'FLUX.1-schnell & SDXL Generative Image Synthesis',
+    category: 'vision',
+    icon: '🎨',
+    author: 'Black Forest Labs & Stability AI',
+    architecture: '12B Parameter Rectified Flow Transformer',
+    purpose: 'High-fidelity offline text-to-image synthesis delivering photorealistic quality, accurate text rendering inside images, and cinematic compositions with 4-step distilled inference.',
+    inputFormat: 'Descriptive text prompt with style, lighting, and composition details.',
+    sampleInput: 'A futuristic cybernetic laboratory with glowing holographic neural graphs, 8k resolution, cinematic lighting',
+    directives: [
+      { cmd: '@agent image <prompt>', desc: 'Locally synthesize photorealistic 8K image via FLUX.1 / SDXL' }
+    ],
+    useCases: [
+      'Creating private visual concept art, UI mockups, and marketing assets entirely offline.',
+      'Generating custom illustrations for technical documentation without cloud subscription costs.'
+    ],
+    examples: [
+      '@agent image A sleek dark-mode AI code editor workstation with glowing teal neon accents',
+      '@agent image A photorealistic portrait of an astronaut on Mars observing a sunset'
+    ],
+    related: ['yolo', 'florence']
+  },
+
+  'yolo': {
+    id: 'yolo',
+    name: 'YOLOv10 / DETR Real-Time Object Detection',
+    category: 'vision',
+    icon: '🔍',
+    author: 'Tsinghua University / Ultralytics',
+    architecture: 'NMS-free Dual-Label End-to-End Real-Time Object Detector',
+    purpose: 'Ultra-fast visual object detection that identifies classes and calculates bounding box coordinates [x_min, y_min, x_max, y_max] in milliseconds on local CPU or GPU.',
+    inputFormat: 'Attached image (.png, .jpg, .webp).',
+    sampleInput: 'Attached photo of street scene or industrial manufacturing line',
+    directives: [
+      { cmd: '@agent object-detection <image>', desc: 'Detect all objects, bounding boxes, and class confidence scores' }
+    ],
+    useCases: [
+      'Automated defect inspection on manufacturing conveyor belts.',
+      'Counting vehicles, pedestrians, or inventory items in security footage.'
+    ],
+    examples: [
+      '@agent object-detection Identify all components on this printed circuit board',
+      '@agent object-detection Count all vehicles in the attached intersection photo'
+    ],
+    related: ['florence', 'flux']
+  },
+
+  'florence': {
+    id: 'florence',
+    name: 'Florence-2 Dense Perception & Visual Grounding',
+    category: 'vision',
+    icon: '👁️',
+    author: 'Microsoft Research',
+    architecture: 'Sequence-to-Sequence Vision-Language Foundation Model',
+    purpose: 'Unified vision representation engine capable of dense image captioning, optical character recognition (OCR), visual question answering, and fine-grained phrase grounding.',
+    inputFormat: 'Attached image and text query.',
+    sampleInput: 'Attached blueprint schematic or document screenshot',
+    directives: [
+      { cmd: '@agent vision <image> <query>', desc: 'Extract fine-grained details, captions, and text from image' }
+    ],
+    useCases: [
+      'Transcribing text and tables from non-searchable scanned PDF schematics.',
+      'Dense visual description for accessibility screen readers.'
+    ],
+    examples: [
+      '@agent vision Describe the architecture diagram in the attached image',
+      '@agent vision Read the serial number on the engine plate in the photo'
+    ],
+    related: ['yolo', 'som']
+  },
+
+  'whisper': {
+    id: 'whisper',
+    name: 'OpenAI Whisper Large-v3 Multilingual ASR',
+    category: 'audio',
+    icon: '🎙️',
+    author: 'OpenAI & Open-Source Community',
+    architecture: 'Encoder-Decoder Transformer trained on 680,000 hours of labeled audio',
+    purpose: 'State-of-the-art offline automatic speech recognition (ASR) with native support for 99+ languages, automatic language identification, background noise robustness, and word-level timestamping.',
+    inputFormat: 'Audio file (WAV, MP3, FLAC, M4A, OGG, AAC).',
+    sampleInput: 'meeting_audio.mp3',
+    directives: [
+      { cmd: '@agent asr <audio_file>', desc: 'Transcribe speech to text with timestamps and speaker turn separation' }
+    ],
+    useCases: [
+      'Transcribing confidential executive board meetings and attorney-client consultations locally.',
+      'Generating accurate subtitle captions for video tutorials and conference recordings.'
+    ],
+    examples: [
+      '@agent asr quarterly_review.mp3',
+      '@agent asr interview_recording.wav'
+    ],
+    related: ['piper']
+  },
+
+  'piper': {
+    id: 'piper',
+    name: 'Piper & Kokoro Neural Text-To-Speech (TTS)',
+    category: 'audio',
+    icon: '🗣️',
+    author: 'Rhasspy & Kokoro Open Source',
+    architecture: 'Fast VITS / Diffusion Neural Vocoder Architecture',
+    purpose: 'Real-time human-like voice synthesizer running with sub-100ms latency on CPU. Converts articles, books, and code walkthroughs into clear, expressive speech without robotic artifacts.',
+    inputFormat: 'Text string or text document.',
+    sampleInput: 'Welcome to HugOS, your sovereign local AI environment.',
+    directives: [
+      { cmd: '@agent tts <text>', desc: 'Synthesize natural voice audio from text' }
+    ],
+    useCases: [
+      'Audio playback of lengthy technical specifications and documentation.',
+      'Accessibility voice readout for visually impaired developers.'
+    ],
+    examples: [
+      '@agent tts Welcome to HugOS, your sovereign local AI environment.',
+      '@agent tts System diagnostics indicate all neural tensor cores are operational.'
+    ],
+    related: ['whisper']
+  },
+
+  'boost': {
+    id: 'boost',
+    name: 'Deep Deliberation & Verification Engine',
+    category: 'agent',
+    icon: '🧠',
+    author: 'ModelFusion High-Compute Reasoning Core',
+    architecture: 'Multi-Sample Consensus & Chain-of-Thought Verification Framework',
+    purpose: 'High-compute deliberation framework that explores multiple reasoning paths, applies formal constraint verification, and cross-checks edge cases to eliminate hallucinations on complex engineering problems.',
+    inputFormat: 'Complex architectural, algorithmic, or mathematical problem statement.',
+    sampleInput: 'Design a lock-free multi-producer single-consumer ring buffer in Rust with zero memory allocations',
+    directives: [
+      { cmd: '@agent boost <problem>', desc: 'Trigger deep multi-perspective reasoning deliberation with formal constraint checks' },
+      { cmd: '@agent cot <problem>', desc: 'Execute step-by-step chain-of-thought mathematical and algorithmic derivation' }
+    ],
+    useCases: [
+      'Solving difficult distributed systems edge cases and race conditions.',
+      'Proving mathematical theorems and verifying complex business rules.'
+    ],
+    examples: [
+      '@agent boost Design a lock-free multi-producer single-consumer ring buffer in Rust with zero allocations',
+      '@agent cot Prove that square root of 2 is irrational using proof by contradiction'
+    ],
+    related: ['grill-me', 'rest-rl']
+  },
+
+  'rest-rl': {
+    id: 'rest-rl',
+    name: 'ReST-RL Reinforcement Learning Preemption Daemon',
+    category: 'agent',
+    icon: '⚡',
+    author: 'ModelFusion Systems Engineering Lab',
+    architecture: 'GRPO / Sub-50ms Windows Job Object Instant Preemption Architecture',
+    purpose: 'Autonomous background reinforcement learning daemon that optimizes code solutions while strictly respecting interactive editing performance with <8ms subprocess cancellation and <25ms streaming abortion.',
+    inputFormat: 'Background engineering optimization tasks and automated test suites.',
+    sampleInput: 'Automated test suite with mutation testing gates',
+    directives: [
+      { cmd: '@agent agentic-loop <task>', desc: 'Launch recursive self-correcting task execution loop' },
+      { cmd: '@agent reflection <error_trace>', desc: 'Analyze test failure and synthesize self-healing patch' }
+    ],
+    useCases: [
+      'Continuous background optimization of unit test suites during developer idle periods.',
+      'Automated bug-fixing loops with verified AST mutation testing gates.'
+    ],
+    examples: [
+      '@agent agentic-loop Refactor cli parser to handle unicode paths safely',
+      '@agent reflection cargo test failed with assertion failure at line 42'
+    ],
+    related: ['boost', 'grill-me']
+  },
+
+  'grill-me': {
+    id: 'grill-me',
+    name: 'Adversarial Requirements Interviewer',
+    category: 'agent',
+    icon: '🔥',
+    author: 'ModelFusion Deliberation Core',
+    architecture: 'Adversarial Socratic Interrogation Engine',
+    purpose: 'Flips the conversation: instead of passively implementing a vague specification, the AI aggressively interrogates the engineer with targeted questions to uncover hidden edge cases, failure modes, and security loopholes.',
+    inputFormat: 'Proposed architecture, RFC, or system migration plan.',
+    sampleInput: 'I want to migrate our Postgres database to an event-sourced architecture on Apache Kafka',
+    directives: [
+      { cmd: '@agent grill-me <plan>', desc: 'Start adversarial requirements interview to uncover design flaws' }
+    ],
+    useCases: [
+      'Architectural review of database migrations before making irreversible commitments.',
+      'Validating security threat models and permission boundaries in distributed systems.'
+    ],
+    examples: [
+      '@agent grill-me I want to migrate our Postgres database to an event-sourced architecture on Kafka',
+      '@agent grill-me We are replacing JWT authentication with stateful session tokens in Redis'
+    ],
+    related: ['boost', 'rest-rl']
+  },
+
+  'sast': {
+    id: 'sast',
+    name: 'Static Application Security Testing (SAST)',
+    category: 'code',
+    icon: '🛡️',
+    author: 'ModelFusion Application Security Group',
+    architecture: 'Tree-Sitter AST & OWASP Heuristic Rule Engine',
+    purpose: 'Deep static vulnerability discovery auditing source code against OWASP Top 10 vulnerabilities (SQL injection, command injection, path traversal, buffer overflows, use-after-free, unsafe memory operations).',
+    inputFormat: 'Source code file (.rs, .py, .ts, .go, .c, .cpp) or repository directory.',
+    sampleInput: 'Source code function or backend handler',
+    directives: [
+      { cmd: '@agent security <code/file>', desc: 'Comprehensive SAST security audit for buffer overflows and vulnerabilities' },
+      { cmd: '@agent secret-scan <file/repo>', desc: 'Scan for committed API keys, tokens, and private certificates' }
+    ],
+    useCases: [
+      'Pre-commit automated security gate preventing zero-day vulnerabilities in release builds.',
+      'Auditing third-party open-source libraries for backdoors or malicious payload injection.'
+    ],
+    examples: [
+      '@agent security fn authenticate(user: &str, pass: &str) -> bool { ... }',
+      '@agent secret-scan config/settings.json'
+    ],
+    related: ['pe', 'boost']
+  },
+
+  'arxiv': {
+    id: 'arxiv',
+    name: 'arXiv Academic Preprint Research Engine',
+    category: 'web',
+    icon: '📄',
+    author: 'arXiv API & ModelFusion Literature Distillation Engine',
+    purpose: 'Directly queries the arXiv scholarly repository to discover the latest preprints in computer science, physics, quantitative biology, and mathematics, synthesizing key methodologies and technical citations.',
+    inputFormat: 'Research query, author name, or paper title.',
+    sampleInput: 'mixture of agents speculative decoding',
+    directives: [
+      { cmd: '@agent arxiv <query>', desc: 'Search arXiv preprints and distill abstracts, authors, and methodologies' }
+    ],
+    useCases: [
+      'Conducting academic literature reviews on cutting-edge machine learning advancements.',
+      'Fact-checking claims against peer-reviewed preprint methodologies.'
+    ],
+    examples: [
+      '@agent arxiv mixture of agents speculative decoding',
+      '@agent arxiv diffusion transformers text to video'
+    ],
+    related: ['galactica', 'scibert']
   }
 };
 
@@ -3149,97 +3812,177 @@ function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
 
+const CATEGORY_KEYWORDS = {
+  'code': ['code', 'security', 'sast', 'vuln', 'vulnerability', 'vulnerabilities', 'ast', 'transpile', 'dockerfile', 'owasp', 'secret', 'secrets'],
+  'computer_use': ['computer_use', 'computer-use', 'computer', 'os', 'desktop', 'ui-tars', 'uitars', 'grounding', 'mouse', 'keyboard', 'screen-grounding'],
+  'tabular': ['tabular', 'data', 'spreadsheets', 'spreadsheet', 'csv', 'excel', 'xlsx', 'parquet', 'acdso', 'automl', 'timeseries', 'eda', 'dataanalyst'],
+  'finance': ['finance', 'markets', 'market', 'sec', '10-k', '10k', 'valuation', 'dcf', 'finbert', 'fingpt', 'stock', 'stocks', 'equity'],
+  'vision': ['vision', 'images', 'image', 'photo', 'photos', 'vqa', 'ocr', 'flux', 'yolo', 'florence', 'detection', 'classify', 'sdxl'],
+  'pe_binary': ['pe_binary', 'pe-binary', 'pe', 'pecoff', 'coff', 'exe', 'dll', 'binary', 'binaries', 'authenticode', 'entropy', 'strings', 'packer', 'packer-detect', 'inspect'],
+  'legal': ['legal', 'compliance', 'contract', 'contracts', 'law', 'statute', 'statutory', 'brief', 'briefs', 'cuad', 'saul', 'saul-7b', 'lawma'],
+  'agent': ['agent', 'planning', 'deep-thinking', 'deep_thinking', 'thinking', 'reasoning', 'boost', 'grill-me', 'grillme', 'cot', 'reflection', 'rest-rl', 'restrl'],
+  'science': ['science', 'discovery', 'biology', 'chemistry', 'genomic', 'genomics', 'protein', 'proteins', 'climate', 'scientific', 'biotech', 'pharma', 'earth'],
+  'utilities': ['utilities', 'utility', 'system', 'telemetry', 'sys-info', 'sysinfo', 'hardware', 'catalog', 'db', 'database', 'sqlite', 'vacuum', 'integrity'],
+  'audio': ['audio', 'voice', 'sound', 'speech', 'asr', 'tts', 'transcription', 'whisper', 'piper', 'kokoro'],
+  'web': ['web', 'research', 'automation', 'search', 'arxiv', 'wiki', 'wikiskill', 'browser', 'citations', 'cdp'],
+  'writing': ['writing', 'editing', 'humanize', 'watermark', 'stylometry', 'translate', 'translation', 'outline', 'book', 'author', 'style-transfer']
+};
+
+const STOP_WORDS_SET = new Set([
+  'of', 'or', 'and', 'in', 'on', 'to', 'for', 'with', 'about', 'under', 'from',
+  'the', 'a', 'an', 'me', 'please', 'show', 'tell', 'give', 'display', 'open',
+  'view', 'menu', 'menus', 'category', 'categories', 'subsystem', 'subsystems',
+  'overview', 'guide', 'docs', 'documentation', 'info'
+]);
+
+const CONVERSATIONAL_HELP_ACTIONS = /^(?:please\s+)?help\s+me\s+(?:write|code|create|generate|fix|debug|find|search|solve|understand|build|implement|explain|review|transpile|draft|calculate)\b/i;
+
 function parseHelpQuery(rawInput) {
   const input = (rawInput || '').trim();
   if (!input) return null;
 
   const lower = input.toLowerCase();
-  const isHelpRegex = /^(?:@agent\s+|@|\/|--)?(?:help|helo|hlp|halp)\b/i;
-  const containsHelpRegex = /(?:@|\/)?(?:help|helo|hlp|halp)\b/i;
 
-  if (!isHelpRegex.test(lower) && !containsHelpRegex.test(lower)) {
+  // If user says conversational "help me write a python script" without explicit directive prefix, do not hijack
+  if (CONVERSATIONAL_HELP_ACTIONS.test(lower) && !input.startsWith('@') && !input.startsWith('/')) {
+    return null;
+  }
+
+  const isHelpRegex = /^(?:@agent\s+|@|\/|--|-)?(?:help|helo|hlp|halp|\?)(?:\b|$)/i;
+  const containsExplicitHelp = /(?:^|\s)(?:@|\/)(?:help|helo|hlp|halp)\b/i;
+
+  if (!isHelpRegex.test(lower) && !containsExplicitHelp.test(input)) {
     return null;
   }
 
   let cleanArgs = input
-    .replace(/^(?:@agent\s+|@|\/|--)?(?:help|helo|hlp|halp)\s*:?\s*/gi, '')
-    .replace(/(?:of|or|and)?\s*(?:@agent\s+|@|\/|--)?(?:help|helo|hlp|halp)\s*:?\s*/gi, ' ')
+    .replace(/^(?:@agent\s+|@|\/|--|-)?(?:help|helo|hlp|halp|\?)\s*:?\s*/i, '')
+    .replace(/(?:of|or|and|with|on|in|for|about)?\s*(?:@agent\s+|@|\/|--|-)?(?:help|helo|hlp|halp|\?)\s*:?\s*/gi, ' ')
     .trim();
 
   const normalizedTokens = cleanArgs.toLowerCase().split(/\s+/).filter(Boolean);
+  const subjectTokens = normalizedTokens.filter(t => !STOP_WORDS_SET.has(t));
+  const effectiveTokens = subjectTokens.length > 0 ? subjectTokens : normalizedTokens;
 
   return {
     isHelp: true,
     rawInput,
     cleanArgs,
-    tokens: normalizedTokens
+    tokens: normalizedTokens,
+    subjectTokens: effectiveTokens
   };
 }
 
 function resolveHelpResolution(parsed) {
   if (!parsed || !parsed.isHelp) return null;
-  const tokens = parsed.tokens;
+  const tokens = parsed.subjectTokens || parsed.tokens || [];
 
   if (tokens.length === 0) {
     return { type: 'global_overview' };
   }
 
-  let matchedModel = null;
-  let matchedModelCard = null;
+  if (tokens.length === 1 && ['all', 'overview', 'list', 'menus', 'categories', 'menu'].includes(tokens[0])) {
+    return { type: 'global_overview' };
+  }
 
+  const matchedCategories = [];
+  const matchedModels = [];
+  const modelTokens = new Set();
+
+  // 1. Check for menu index numbers (1 to 13)
   for (const token of tokens) {
     const cleanToken = token.replace(/[^a-z0-9_-]/g, '');
-    if (SPECIFIC_MODELS[cleanToken]) {
-      matchedModel = SPECIFIC_MODELS[cleanToken];
-      matchedModelCard = SPECIFIC_MODEL_CARDS[matchedModel.cardKey] || SPECIFIC_MODEL_CARDS[cleanToken];
-      break;
+    const num = parseInt(cleanToken, 10);
+    if (!isNaN(num) && num >= 1 && num <= 13) {
+      const foundCat = Object.values(HELP_CATEGORIES).find(c => c.menuIndex === num);
+      if (foundCat && !matchedCategories.includes(foundCat)) {
+        matchedCategories.push(foundCat);
+      }
     }
-    for (const [k, m] of Object.entries(SPECIFIC_MODELS)) {
-      if (k === cleanToken || cleanToken === k.replace('-', '')) {
-        matchedModel = m;
-        matchedModelCard = SPECIFIC_MODEL_CARDS[matchedModel.cardKey] || SPECIFIC_MODEL_CARDS[k];
+  }
+
+  // 2. Match Models
+  for (const token of tokens) {
+    const cleanToken = token.replace(/[^a-z0-9_-]/g, '');
+    if (!cleanToken) continue;
+
+    let m = SPECIFIC_MODELS[cleanToken];
+    if (!m) {
+      for (const [k, modelObj] of Object.entries(SPECIFIC_MODELS)) {
+        if (k === cleanToken || cleanToken === k.replace('-', '')) {
+          m = modelObj;
+          break;
+        }
+      }
+    }
+    if (m && !matchedModels.some(item => item.model.key === m.key)) {
+      const card = SPECIFIC_MODEL_CARDS[m.cardKey] || SPECIFIC_MODEL_CARDS[m.key] || null;
+      matchedModels.push({ model: m, modelCard: card });
+      modelTokens.add(cleanToken);
+    }
+  }
+
+  // 3. Match Categories using precise non-colliding keywords
+  for (const token of tokens) {
+    const cleanToken = token.replace(/[^a-z0-9_-]/g, '');
+    if (!cleanToken || modelTokens.has(cleanToken)) continue;
+
+    for (const [catKey, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+      if (keywords.includes(cleanToken)) {
+        const cat = HELP_CATEGORIES[catKey];
+        if (cat && !matchedCategories.includes(cat)) {
+          matchedCategories.push(cat);
+        }
         break;
       }
     }
-    if (matchedModel) break;
   }
 
-  let matchedCategory = null;
-  for (const token of tokens) {
-    const cleanToken = token.replace(/[^a-z0-9_-]/g, '');
-    for (const [catKey, cat] of Object.entries(HELP_CATEGORIES)) {
-      const aliases = [catKey, catKey.replace('_', '-'), cat.title.toLowerCase()];
-      if (aliases.some(a => a.includes(cleanToken)) || cat.title.toLowerCase().includes(cleanToken)) {
-        matchedCategory = cat;
-        break;
-      }
-    }
-    if (matchedCategory) break;
-  }
-
-  if (matchedModel && matchedCategory) {
+  // Dual-Layer Combination: Model and Category
+  if (matchedModels.length > 0 && matchedCategories.length > 0) {
     return {
       type: 'combined_model_and_category',
-      model: matchedModel,
-      modelCard: matchedModelCard,
-      category: matchedCategory
+      model: matchedModels[0].model,
+      modelCard: matchedModels[0].modelCard,
+      category: matchedCategories[0],
+      allModels: matchedModels,
+      allCategories: matchedCategories
     };
   }
 
-  if (matchedModel) {
-    const cat = HELP_CATEGORIES[matchedModel.category];
+  // Multi-model Guide
+  if (matchedModels.length > 1) {
+    return {
+      type: 'multi_model_guide',
+      models: matchedModels
+    };
+  }
+
+  // Single Model Deep Dive
+  if (matchedModels.length === 1) {
+    const m = matchedModels[0];
+    const cat = HELP_CATEGORIES[m.model.category];
     return {
       type: 'model_deep_dive',
-      model: matchedModel,
-      modelCard: matchedModelCard,
+      model: m.model,
+      modelCard: m.modelCard,
       category: cat
     };
   }
 
-  if (matchedCategory) {
+  // Multi-category Guide
+  if (matchedCategories.length > 1) {
+    return {
+      type: 'multi_category_guide',
+      categories: matchedCategories
+    };
+  }
+
+  // Single Category Deep Dive
+  if (matchedCategories.length === 1) {
     return {
       type: 'category_deep_dive',
-      category: matchedCategory
+      category: matchedCategories[0]
     };
   }
 
@@ -3315,7 +4058,50 @@ function renderDeepHelpHtml(res) {
     return html;
   }
 
-  // Combined Model & Category
+  // Multi-Model Guide (e.g. "@help esm and finbert")
+  if (res.type === 'multi_model_guide') {
+    let html = `<div class="help-container">
+      <div class="help-hero-banner" style="border-color: rgba(59, 130, 246, 0.5); background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(16, 185, 129, 0.15));">
+        <div class="help-hero-title"><span>🤖</span> Foundation Model Multi-Guide (${res.models.length} Models)</div>
+        <div style="font-size: 12px; line-height: 1.55; opacity: 0.95;">
+          Comparative deep dives for requested foundation models. Each model operates with local tensor weights and hardware acceleration.
+        </div>
+      </div>
+    `;
+    for (const item of res.models) {
+      const cat = HELP_CATEGORIES[item.model.category];
+      html += renderSingleModelSection(item.modelCard, cat, item.model);
+    }
+    html += `
+      <div style="display: flex; gap: 8px; margin-top: 10px;">
+        <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ Back to All 13 Menus</button>
+      </div>
+    </div>`;
+    return html;
+  }
+
+  // Multi-Category Guide (e.g. "@help science and finance")
+  if (res.type === 'multi_category_guide') {
+    let html = `<div class="help-container">
+      <div class="help-hero-banner" style="border-color: rgba(147, 51, 234, 0.5); background: linear-gradient(135deg, rgba(147, 51, 234, 0.15), rgba(59, 130, 246, 0.15));">
+        <div class="help-hero-title"><span>📚</span> Multi-Domain Architectural Guide (${res.categories.length} Menus)</div>
+        <div style="font-size: 12px; line-height: 1.55; opacity: 0.95;">
+          Architecture specifications, directives, and runnable examples across requested domain menus.
+        </div>
+      </div>
+    `;
+    for (const cat of res.categories) {
+      html += renderSingleCategorySection(cat);
+    }
+    html += `
+      <div style="display: flex; gap: 8px; margin-top: 10px;">
+        <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ Back to All 13 Menus</button>
+      </div>
+    </div>`;
+    return html;
+  }
+
+  // Combined Model & Category (e.g. "@help science of @helo esm")
   if (res.type === 'combined_model_and_category') {
     const modelCard = res.modelCard;
     const cat = res.category;
@@ -3323,7 +4109,7 @@ function renderDeepHelpHtml(res) {
     let html = `<div class="help-container">`;
 
     if (modelCard) {
-      html += renderSingleModelSection(modelCard, cat);
+      html += renderSingleModelSection(modelCard, cat, res.model);
     }
 
     if (cat) {
@@ -3350,16 +4136,7 @@ function renderDeepHelpHtml(res) {
     const modelCard = res.modelCard;
     const cat = res.category;
     let html = `<div class="help-container">`;
-    if (modelCard) {
-      html += renderSingleModelSection(modelCard, cat);
-    } else {
-      html += `
-        <div class="help-hero-banner">
-          <div class="help-hero-title"><span>🤖</span> ${escapeHtml(res.model.name)}</div>
-          <div style="font-size: 12px; line-height: 1.55;">Model designated under ${escapeHtml(cat ? cat.title : 'ModelFusion')}.</div>
-        </div>
-      `;
-    }
+    html += renderSingleModelSection(modelCard, cat, res.model);
     html += `</div>`;
     return html;
   }
@@ -3367,169 +4144,81 @@ function renderDeepHelpHtml(res) {
   // Category Deep Dive
   if (res.type === 'category_deep_dive') {
     const cat = res.category;
-    let html = `
-      <div class="help-container">
-        <div class="help-hero-banner">
-          <div class="help-hero-title"><span>${cat.icon}</span> Menu ${cat.menuIndex}: ${escapeHtml(cat.title)}</div>
-          <div style="font-size: 13px; font-weight: 600; color: #93c5fd; margin-bottom: 6px;">${escapeHtml(cat.subtitle)}</div>
-          <div style="font-size: 12px; line-height: 1.6; opacity: 0.92;">${escapeHtml(cat.overview)}</div>
-        </div>
-
-        <!-- Engines & Foundation Models -->
-        <div class="help-deep-section">
-          <div class="help-deep-title"><span>🤖</span> Specialized Engines &amp; Foundation Models</div>
-          <table class="help-table">
-            <thead>
-              <tr>
-                <th style="width: 25%;">Engine / Model</th>
-                <th style="width: 30%;">Architecture / Specs</th>
-                <th style="width: 45%;">Core Capabilities</th>
-              </tr>
-            </thead>
-            <tbody>
-    `;
-
-    for (const eng of cat.engines) {
-      html += `
-        <tr>
-          <td><strong>${escapeHtml(eng.name)}</strong></td>
-          <td><code style="font-size: 10.5px; color: #38bdf8;">${escapeHtml(eng.spec)}</code></td>
-          <td>${escapeHtml(eng.role)}</td>
-        </tr>
-      `;
-    }
-
+    let html = `<div class="help-container">`;
+    html += renderSingleCategorySection(cat);
     html += `
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Supported Inputs & Data Formats -->
-        <div class="help-deep-section">
-          <div class="help-deep-title"><span>📥</span> Supported Input Formats &amp; Data Types</div>
-          <div style="font-size: 12px; line-height: 1.5; color: var(--text-primary, #ffffff); background: rgba(0,0,0,0.25); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.06);">
-            ${escapeHtml(cat.inputs)}
-          </div>
-        </div>
-
-        <!-- Directives & Syntax -->
-        <div class="help-deep-section">
-          <div class="help-deep-title"><span>📋</span> Directives &amp; Command Syntax</div>
-          <table class="help-table">
-            <thead>
-              <tr>
-                <th style="width: 40%;">Command Directive</th>
-                <th style="width: 60%;">Description &amp; Action</th>
-              </tr>
-            </thead>
-            <tbody>
-    `;
-
-    for (const dir of cat.directives) {
-      html += `
-        <tr>
-          <td><code style="color: #60a5fa; font-weight: 600;">${escapeHtml(dir.cmd)}</code></td>
-          <td>${escapeHtml(dir.desc)}</td>
-        </tr>
-      `;
-    }
-
-    html += `
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Real-World Scenarios -->
-        <div class="help-deep-section">
-          <div class="help-deep-title"><span>🏭</span> Industrial &amp; Academic Use Cases</div>
-          <ul style="margin: 0; padding-left: 20px; font-size: 12px; line-height: 1.6;">
-    `;
-
-    for (const uc of cat.useCases) {
-      html += `<li>${escapeHtml(uc)}</li>`;
-    }
-
-    html += `
-          </ul>
-        </div>
-
-        <!-- Live Runnable Examples -->
-        <div class="help-deep-section">
-          <div class="help-deep-title"><span>⚡</span> Live Runnable Examples (Click Any Button To Run)</div>
-          <div class="help-pills-row">
-    `;
-
-    for (const ex of cat.examples) {
-      const shortLabel = ex.length > 45 ? ex.slice(0, 42) + '...' : ex;
-      html += `
-        <button type="button" class="help-action-btn" data-help-cmd="${escapeHtml(ex)}" title="Execute: ${escapeHtml(ex)}">
-          <span>▶️</span> <code>${escapeHtml(shortLabel)}</code>
-        </button>
-      `;
-    }
-
-    html += `
-          </div>
-        </div>
-
-        <!-- Bottom Navigation -->
-        <div style="display: flex; gap: 8px; margin-top: 6px;">
-          <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ Back to All 13 Menus</button>
-        </div>
+      <div style="display: flex; gap: 8px; margin-top: 6px;">
+        <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ Back to All 13 Menus</button>
       </div>
-    `;
+    </div>`;
     return html;
   }
 
   return '';
 }
 
-function renderSingleModelSection(card, cat) {
+function renderSingleCategorySection(cat) {
   let html = `
-    <div class="help-hero-banner" style="border-color: rgba(16, 185, 129, 0.4); background: linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(59, 130, 246, 0.12));">
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-        <div class="help-hero-title" style="color: #34d399; margin-bottom: 0;">
-          <span>${card.icon}</span> ${escapeHtml(card.name)}
-        </div>
-        <span class="help-badge">${escapeHtml(card.author)}</span>
-      </div>
-      <div style="font-size: 11px; font-family: var(--mono-font, monospace); color: #93c5fd; margin-bottom: 8px;">
-        Architecture: ${escapeHtml(card.architecture)}
-      </div>
-      <div style="font-size: 12px; line-height: 1.6; opacity: 0.95;">
-        ${escapeHtml(card.purpose)}
-      </div>
+    <div class="help-hero-banner" style="margin-bottom: 14px;">
+      <div class="help-hero-title"><span>${cat.icon}</span> Menu ${cat.menuIndex}: ${escapeHtml(cat.title)}</div>
+      <div style="font-size: 13px; font-weight: 600; color: #93c5fd; margin-bottom: 6px;">${escapeHtml(cat.subtitle)}</div>
+      <div style="font-size: 12px; line-height: 1.6; opacity: 0.92;">${escapeHtml(cat.overview)}</div>
     </div>
 
-    <!-- Input Format & Sequence Specifications -->
+    <!-- Engines & Foundation Models -->
     <div class="help-deep-section">
-      <div class="help-deep-title"><span>🧬</span> Required Input Format &amp; Specifications</div>
-      <div style="font-size: 12px; line-height: 1.5; margin-bottom: 6px;">
-        ${escapeHtml(card.inputFormat)}
-      </div>
-      ${card.sampleInput ? `
-        <div style="font-size: 10.5px; color: var(--text-muted, #94a3b8); margin-top: 4px;">Sample Valid Input Sequence:</div>
-        <div class="help-code-snippet">${escapeHtml(card.sampleInput)}</div>
-      ` : ''}
-    </div>
-
-    <!-- Directives -->
-    <div class="help-deep-section">
-      <div class="help-deep-title"><span>📋</span> Execution Directives</div>
+      <div class="help-deep-title"><span>🤖</span> Specialized Engines &amp; Foundation Models</div>
       <table class="help-table">
         <thead>
           <tr>
-            <th style="width: 45%;">Directive Syntax</th>
-            <th style="width: 55%;">Operation</th>
+            <th style="width: 25%;">Engine / Model</th>
+            <th style="width: 30%;">Architecture / Specs</th>
+            <th style="width: 45%;">Core Capabilities</th>
           </tr>
         </thead>
         <tbody>
   `;
 
-  for (const dir of card.directives) {
+  for (const eng of cat.engines) {
     html += `
       <tr>
-        <td><code style="color: #34d399; font-weight: 600;">${escapeHtml(dir.cmd)}</code></td>
+        <td><strong>${escapeHtml(eng.name)}</strong></td>
+        <td><code style="font-size: 10.5px; color: #38bdf8;">${escapeHtml(eng.spec)}</code></td>
+        <td>${escapeHtml(eng.role)}</td>
+      </tr>
+    `;
+  }
+
+  html += `
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Supported Inputs & Data Formats -->
+    <div class="help-deep-section">
+      <div class="help-deep-title"><span>📥</span> Supported Input Formats &amp; Data Types</div>
+      <div style="font-size: 12px; line-height: 1.5; color: var(--text-primary, #ffffff); background: rgba(0,0,0,0.25); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.06);">
+        ${escapeHtml(cat.inputs)}
+      </div>
+    </div>
+
+    <!-- Directives & Syntax -->
+    <div class="help-deep-section">
+      <div class="help-deep-title"><span>📋</span> Directives &amp; Command Syntax</div>
+      <table class="help-table">
+        <thead>
+          <tr>
+            <th style="width: 40%;">Command Directive</th>
+            <th style="width: 60%;">Description &amp; Action</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
+  for (const dir of cat.directives) {
+    html += `
+      <tr>
+        <td><code style="color: #60a5fa; font-weight: 600;">${escapeHtml(dir.cmd)}</code></td>
         <td>${escapeHtml(dir.desc)}</td>
       </tr>
     `;
@@ -3540,13 +4229,13 @@ function renderSingleModelSection(card, cat) {
       </table>
     </div>
 
-    <!-- Real-World Applications -->
+    <!-- Real-World Scenarios -->
     <div class="help-deep-section">
-      <div class="help-deep-title"><span>🔬</span> Real-World Industry &amp; Discovery Applications</div>
+      <div class="help-deep-title"><span>🏭</span> Industrial &amp; Academic Use Cases</div>
       <ul style="margin: 0; padding-left: 20px; font-size: 12px; line-height: 1.6;">
   `;
 
-  for (const uc of card.useCases) {
+  for (const uc of cat.useCases) {
     html += `<li>${escapeHtml(uc)}</li>`;
   }
 
@@ -3554,14 +4243,14 @@ function renderSingleModelSection(card, cat) {
       </ul>
     </div>
 
-    <!-- Runnable Examples -->
+    <!-- Live Runnable Examples -->
     <div class="help-deep-section">
-      <div class="help-deep-title"><span>⚡</span> Live Runnable Prompts (Click To Run)</div>
+      <div class="help-deep-title"><span>⚡</span> Live Runnable Examples (Click Any Button To Run)</div>
       <div class="help-pills-row">
   `;
 
-  for (const ex of card.examples) {
-    const shortLabel = ex.length > 55 ? ex.slice(0, 52) + '...' : ex;
+  for (const ex of cat.examples) {
+    const shortLabel = ex.length > 45 ? ex.slice(0, 42) + '...' : ex;
     html += `
       <button type="button" class="help-action-btn" data-help-cmd="${escapeHtml(ex)}" title="Execute: ${escapeHtml(ex)}">
         <span>▶️</span> <code>${escapeHtml(shortLabel)}</code>
@@ -3573,6 +4262,135 @@ function renderSingleModelSection(card, cat) {
       </div>
     </div>
   `;
+
+  return html;
+}
+
+function renderSingleModelSection(card, cat, modelFallback) {
+  if (!card) {
+    const modelName = modelFallback ? modelFallback.name : 'Foundation Model';
+    const catTitle = cat ? cat.title : 'ModelFusion';
+    return `
+      <div class="help-hero-banner" style="border-color: rgba(59, 130, 246, 0.4); margin-bottom: 12px;">
+        <div class="help-hero-title"><span>🤖</span> ${escapeHtml(modelName)}</div>
+        <div style="font-size: 12px; line-height: 1.6; opacity: 0.95;">
+          Specialized foundation model designated under <strong>${escapeHtml(catTitle)}</strong>. Runs 100% locally with hardware tensor acceleration.
+        </div>
+        ${cat ? `
+          <div class="help-pills-row" style="margin-top: 10px;">
+            <button type="button" class="help-action-btn" data-help-cmd="@help ${cat.id}">🔬 Explore Parent ${escapeHtml(cat.title)} Guide</button>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  let html = `
+    <div class="help-hero-banner" style="border-color: rgba(16, 185, 129, 0.4); background: linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(59, 130, 246, 0.12)); margin-bottom: 12px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+        <div class="help-hero-title" style="color: #34d399; margin-bottom: 0;">
+          <span>${card.icon || '🤖'}</span> ${escapeHtml(card.name)}
+        </div>
+        ${card.author ? `<span class="help-badge">${escapeHtml(card.author)}</span>` : ''}
+      </div>
+      ${card.architecture ? `
+        <div style="font-size: 11px; font-family: var(--mono-font, monospace); color: #93c5fd; margin-bottom: 8px;">
+          Architecture: ${escapeHtml(card.architecture)}
+        </div>
+      ` : ''}
+      <div style="font-size: 12px; line-height: 1.6; opacity: 0.95;">
+        ${escapeHtml(card.purpose)}
+      </div>
+    </div>
+  `;
+
+  if (card.inputFormat) {
+    html += `
+      <!-- Input Format & Sequence Specifications -->
+      <div class="help-deep-section">
+        <div class="help-deep-title"><span>📥</span> Required Input Format &amp; Specifications</div>
+        <div style="font-size: 12px; line-height: 1.5; margin-bottom: 6px;">
+          ${escapeHtml(card.inputFormat)}
+        </div>
+        ${card.sampleInput ? `
+          <div style="font-size: 10.5px; color: var(--text-muted, #94a3b8); margin-top: 4px;">Sample Valid Input Sequence:</div>
+          <div class="help-code-snippet">${escapeHtml(card.sampleInput)}</div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  if (card.directives && card.directives.length > 0) {
+    html += `
+      <!-- Directives -->
+      <div class="help-deep-section">
+        <div class="help-deep-title"><span>📋</span> Execution Directives</div>
+        <table class="help-table">
+          <thead>
+            <tr>
+              <th style="width: 45%;">Directive Syntax</th>
+              <th style="width: 55%;">Operation</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    for (const dir of card.directives) {
+      html += `
+        <tr>
+          <td><code style="color: #34d399; font-weight: 600;">${escapeHtml(dir.cmd)}</code></td>
+          <td>${escapeHtml(dir.desc)}</td>
+        </tr>
+      `;
+    }
+
+    html += `
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  if (card.useCases && card.useCases.length > 0) {
+    html += `
+      <!-- Real-World Applications -->
+      <div class="help-deep-section">
+        <div class="help-deep-title"><span>🔬</span> Real-World Industry &amp; Discovery Applications</div>
+        <ul style="margin: 0; padding-left: 20px; font-size: 12px; line-height: 1.6;">
+    `;
+
+    for (const uc of card.useCases) {
+      html += `<li>${escapeHtml(uc)}</li>`;
+    }
+
+    html += `
+        </ul>
+      </div>
+    `;
+  }
+
+  if (card.examples && card.examples.length > 0) {
+    html += `
+      <!-- Runnable Examples -->
+      <div class="help-deep-section">
+        <div class="help-deep-title"><span>⚡</span> Live Runnable Prompts (Click To Run)</div>
+        <div class="help-pills-row">
+    `;
+
+    for (const ex of card.examples) {
+      const shortLabel = ex.length > 55 ? ex.slice(0, 52) + '...' : ex;
+      html += `
+        <button type="button" class="help-action-btn" data-help-cmd="${escapeHtml(ex)}" title="Execute: ${escapeHtml(ex)}">
+          <span>▶️</span> <code>${escapeHtml(shortLabel)}</code>
+        </button>
+      `;
+    }
+
+    html += `
+        </div>
+      </div>
+    `;
+  }
 
   if (card.related && card.related.length > 0) {
     html += `
@@ -3596,19 +4414,17 @@ function renderSingleModelSection(card, cat) {
   return html;
 }
 
-  function isHelpDirective(prompt) {
-    if (!prompt || typeof prompt !== 'string') return false;
-    const clean = prompt.trim().toLowerCase();
-    return /^(?:@agent\s+|@|\/|--)?(?:help|helo|hlp|halp)\b/i.test(clean) ||
-           /(?:@|\/)(?:help|helo|hlp|halp)\b/i.test(clean);
-  }
-  window.isHelpDirective = isHelpDirective;
-  window.parseHelpQuery = parseHelpQuery;
-  window.resolveHelpResolution = resolveHelpResolution;
-  window.renderDeepHelpHtml = renderDeepHelpHtml;
-  window.HELP_CATEGORIES = HELP_CATEGORIES;
-  window.SPECIFIC_MODELS = SPECIFIC_MODELS;
-  window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
+function isHelpDirective(prompt) {
+  if (!prompt || typeof prompt !== 'string') return false;
+  return parseHelpQuery(prompt) !== null;
+}
+window.isHelpDirective = isHelpDirective;
+window.parseHelpQuery = parseHelpQuery;
+window.resolveHelpResolution = resolveHelpResolution;
+window.renderDeepHelpHtml = renderDeepHelpHtml;
+window.HELP_CATEGORIES = HELP_CATEGORIES;
+window.SPECIFIC_MODELS = SPECIFIC_MODELS;
+window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
 
 
   // -----------------------------------------------------------------
@@ -19935,18 +20751,16 @@ If you are asked about real-world facts such as world leaders, heads of state, c
   // Initialize Tool Menu relevance and directives state
   updateToolMenuRelevance();
 
-  // Event delegation for interactive @help action buttons and pills
-  if (chatMessages) {
-    chatMessages.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-help-cmd]');
-      if (btn) {
-        const cmdToRun = btn.getAttribute('data-help-cmd');
-        if (cmdToRun) {
-          executeCliCommand(cmdToRun);
-        }
+  // Universal event delegation for interactive @help action buttons and pills
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-help-cmd]');
+    if (btn) {
+      const cmdToRun = btn.getAttribute('data-help-cmd');
+      if (cmdToRun) {
+        executeCliCommand(cmdToRun);
       }
-    });
-  }
+    }
+  });
 
   // Initialize Header Navigation UI and Breadcrumb state
   updateNavigationUiState();
