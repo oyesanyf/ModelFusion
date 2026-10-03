@@ -25,6 +25,7 @@ use modelfusion_core::{
 };
 use model_selection::SelectionStrategy;
 use std::collections::HashMap;
+use std::io::Write;
 use std::sync::{Arc, OnceLock};
 use tokio::sync::Semaphore;
 use chrono;
@@ -1856,6 +1857,9 @@ struct Args {
     #[arg(long, visible_alias = "computer_use", visible_alias = "ui-tars", num_args = 0..=1, default_missing_value = "", help = "Autonomous OS computer use via UI-TARS multimodal action grounding and screen perception (accepts goal string)")]
     computer_use: Option<String>,
 
+    #[arg(long = "proxy", visible_alias = "api-proxy", visible_alias = "api/proxy", visible_alias = "browser/proxy", num_args = 0..=1, default_missing_value = "", help = "Universal web proxy to fetch URL and strip X-Frame-Options and Content-Security-Policy headers")]
+    proxy: Option<String>,
+
     #[arg(long, help = "Path to folder for code review or analysis")]
     folder: Option<String>,
 
@@ -2841,6 +2845,11 @@ where
                 args[1] = "--kv-bench".to_string();
                 return args;
             }
+            if (sub_clean == "proxy" || sub_clean == "api/proxy" || sub_clean == "browser/proxy" || sub_clean == "api-proxy") && !has_combinator {
+                args.remove(1);
+                args[1] = "--proxy".to_string();
+                return args;
+            }
         if (sub_clean == "key" || sub_clean == "keys") && args.len() > 3 && args[3].to_lowercase() == "gemini" {
             let key = if args.len() > 4 { args[4].clone() } else { String::new() };
             args.remove(1);
@@ -3035,6 +3044,9 @@ where
         }
         "db-prune" | "/db-prune" | "@agent/db-prune" | "dbprune" | "prune-db" => {
             args[1] = "--db-prune".to_string();
+        }
+        "proxy" | "/proxy" | "--proxy" | "--api/proxy" | "/api/proxy" | "api/proxy" | "api-proxy" | "--browser/proxy" | "/browser/proxy" | "browser/proxy" | "@agent/proxy" | "@agent:proxy" | "@proxy" => {
+            args[1] = "--proxy".to_string();
         }
         _ => {}
     }
@@ -3952,6 +3964,56 @@ async fn run(args: Args) -> Result<()> {
             }
             Err(e) => {
                 eprintln!("❌ Computer Use Error: {}", e);
+            }
+        }
+        return Ok(());
+    }
+
+    if let Some(ref target_url_raw) = args.proxy {
+        let target_url = if !target_url_raw.trim().is_empty() {
+            target_url_raw.trim().to_string()
+        } else if let Some(ref q) = args.query {
+            q.trim().to_string()
+        } else if let Some(ref p) = args.prompt {
+            p.trim().to_string()
+        } else {
+            String::new()
+        };
+
+        if target_url.is_empty() {
+            println!("🌐 ModelFusion Universal Web Proxy\nUsage: cli.exe --proxy <URL>\nFetches the external webpage, strips X-Frame-Options and Content-Security-Policy headers, and injects <base href> for seamless webview embedding.");
+            return Ok(());
+        }
+
+        let client = reqwest::Client::builder()
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+            .timeout(std::time::Duration::from_secs(15))
+            .redirect(reqwest::redirect::Policy::limited(10))
+            .build()
+            .unwrap_or_default();
+
+        match client.get(&target_url).send().await {
+            Ok(res) => {
+                let status = res.status();
+                let content_type = res
+                    .headers()
+                    .get("content-type")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("text/html; charset=utf-8")
+                    .to_string();
+
+                let raw_bytes = res.bytes().await.unwrap_or_default().to_vec();
+
+                if content_type.to_lowercase().contains("text/html") {
+                    let html_str = String::from_utf8_lossy(&raw_bytes);
+                    let sanitized = sanitize_html_for_iframe_proxy(&html_str, &target_url);
+                    print!("{}", sanitized);
+                } else {
+                    let _ = std::io::stdout().write_all(&raw_bytes);
+                }
+            }
+            Err(e) => {
+                eprintln!("❌ Proxy error fetching {}: {}", target_url, e);
             }
         }
         return Ok(());
@@ -6879,6 +6941,7 @@ pub fn get_cli_flag_info(flag_name: &str) -> (bool, Option<&'static str>) {
         | "model" | "prepare-model" | "context" | "report" | "db-path" | "vscode-tag"
         | "btw" | "goal" | "schedule" | "browser-task" | "browser-extract" | "browser-agent" | "learn" | "generative-ui" | "genui"
         | "target" | "predict" | "datetime-col" | "treatment"
+        | "proxy" | "api-proxy" | "api/proxy" | "browser/proxy"
         | "memory-session" | "session" | "memory-user" | "user-id" | "memory-clear" => (true, None),
 
         // All other flags are boolean flags
@@ -8630,7 +8693,21 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         }
                         if parts.len() >= 2 {
                             raw_request_uri = parts[1].to_string();
-                            request_path = parts[1].split('?').next().unwrap_or("/orchestrate").to_string();
+                            let mut parsed_path = parts[1].split('?').next().unwrap_or("/orchestrate").to_string();
+                            if parsed_path.starts_with("http://") || parsed_path.starts_with("https://") {
+                                if let Some(pos) = parsed_path.find("://") {
+                                    let after_scheme = &parsed_path[pos + 3..];
+                                    if let Some(slash_pos) = after_scheme.find('/') {
+                                        parsed_path = after_scheme[slash_pos..].to_string();
+                                    } else {
+                                        parsed_path = "/".to_string();
+                                    }
+                                }
+                            }
+                            while parsed_path.len() > 1 && parsed_path.ends_with('/') {
+                                parsed_path.pop();
+                            }
+                            request_path = parsed_path;
                         }
                         if request_path == "/health" || request_path == "/api/health" {
                             let response = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"status\":\"ok\"}";
@@ -8759,7 +8836,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
             // ── Universal Web Proxy Endpoint (/api/proxy & /api/browser/proxy) ──
             // Strips X-Frame-Options and Content-Security-Policy headers and sets Access-Control-Allow-Origin: *
             // so any external website (Google, GitHub, Wikipedia, etc.) renders seamlessly inside the embedded webview iframe!
-            if request_path == "/api/proxy" || request_path == "/api/browser/proxy" {
+            if request_path == "/api/proxy" || request_path == "/api/browser/proxy" || request_path == "/proxy" || request_path == "/api-proxy" || request_path == "api/proxy" {
                 let target_url_opt = extract_proxy_target_url(&raw_request_uri, &request_json);
                 let target_url = match target_url_opt {
                     Some(u) if !u.is_empty() => u,
@@ -11092,6 +11169,26 @@ public class ShortcutHelper {
             }
 
             let result_content = match if is_openai_compat { "/orchestrate" } else { request_path.as_str() } {
+                "/api/proxy" | "/api/browser/proxy" | "/proxy" | "/api-proxy" | "api/proxy" | "proxy" => {
+                    let target_url_opt = extract_proxy_target_url(&raw_request_uri, &request_json);
+                    match target_url_opt {
+                        Some(u) if !u.is_empty() => {
+                            serde_json::json!({
+                                "status": "ok",
+                                "endpoint": "/api/proxy",
+                                "url": u,
+                                "message": "Universal web proxy active. Fetch content directly via GET /api/proxy?url=<URL>"
+                            }).to_string()
+                        }
+                        _ => {
+                            serde_json::json!({
+                                "status": "ok",
+                                "endpoint": "/api/proxy",
+                                "usage": "/api/proxy?url=https://www.google.com"
+                            }).to_string()
+                        }
+                    }
+                }
                 "/api/graph/index" | "/graph/index" => {
                     let ws_str = request_json["workspace"].as_str().unwrap_or(".").to_string();
                     let force = request_json["force"].as_bool().unwrap_or(false);
@@ -12986,6 +13083,11 @@ sequenceDiagram
                                           }
                                       },
 
+                                      "proxy" | "api/proxy" | "browser/proxy" | "api-proxy" => {
+                                          let u = args_owned.trim();
+                                          (idx, format!("🌐 **ModelFusion Universal Web Proxy**\n\n- Endpoint: `/api/proxy?url=<URL>`\n- Target: `{}`\n- Status: Active\n\nExternal pages are proxied with X-Frame-Options and Content-Security-Policy stripped for seamless webview embedding.", u))
+                                      },
+
                                       other => {
                                           let flag = format!("--{}", other.replace('_', "-"));
                                           let mut cmd_args = vec![flag];
@@ -14229,6 +14331,12 @@ sequenceDiagram
                     let clean_cmd = other.trim_start_matches('/');
                     if clean_cmd.is_empty() {
                         format!("ModelFusion API Server running on port {}", port)
+                    } else if clean_cmd == "api/proxy" || clean_cmd == "proxy" || clean_cmd == "browser/proxy" || clean_cmd == "api-proxy" {
+                        serde_json::json!({
+                            "status": "ok",
+                            "endpoint": "/api/proxy",
+                            "usage": "/api/proxy?url=https://www.google.com"
+                        }).to_string()
                     } else {
                         let flag = format!("--{}", clean_cmd.replace('_', "-"));
                         let mut cmd_args = vec![flag];
@@ -16794,6 +16902,8 @@ User: @agent --active-model";
         assert_eq!(super::get_cli_flag_info("tasks"), (true, Some("all")));
         assert_eq!(super::get_cli_flag_info("rest-rl"), (true, Some("status")));
         assert_eq!(super::get_cli_flag_info("rl"), (true, Some("status")));
+        assert_eq!(super::get_cli_flag_info("proxy"), (true, None));
+        assert_eq!(super::get_cli_flag_info("api/proxy"), (true, None));
     }
 
     #[test]

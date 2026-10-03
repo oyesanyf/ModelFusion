@@ -5720,6 +5720,26 @@ textarea.generating-locked {
   transform: translateY(-1px) !important;
 }
 
+.btn-hitl-autoloop {
+  background: rgba(56, 189, 248, 0.2) !important;
+  border: 1px solid rgba(56, 189, 248, 0.4) !important;
+  color: #38bdf8 !important;
+  font-size: 11px !important;
+  padding: 4px 10px !important;
+  border-radius: 4px !important;
+  cursor: pointer !important;
+  font-weight: 600 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  transition: all 0.15s ease !important;
+}
+
+.btn-hitl-autoloop:hover {
+  background: rgba(56, 189, 248, 0.35) !important;
+  transform: translateY(-1px) !important;
+}
+
 .exam-safety-gate-bar {
   margin-top: 14px;
   padding: 12px;
@@ -6872,10 +6892,108 @@ body.theme-midnight .agent-autocomplete-dropdown {
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+/* ─────────────────────────────────────────────────────────────
+   Classification & Taxonomy Domain Tabs & Model Cards
+   ───────────────────────────────────────────────────────────── */
+.classification-domain-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  background: var(--bg-tertiary, rgba(0, 0, 0, 0.25));
+  border-radius: 8px;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+}
 
+.classification-domain-tab {
+  font-size: 10.5px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary, #94a3b8);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.classification-domain-tab:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary, #ffffff);
+}
+
+.classification-domain-tab.active {
+  background: var(--accent-color, #10b981);
+  color: #ffffff;
+  font-weight: 600;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.classification-tool-item.hidden-domain {
+  display: none !important;
+}
+
+.classification-model-card {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.06), rgba(59, 130, 246, 0.06));
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin: 10px 0;
+}
+
+.classification-model-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.classification-model-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-primary, #ffffff);
+}
+
+.classification-domain-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 12px;
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.classification-model-desc {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary, #cbd5e1);
+  margin-bottom: 10px;
+}
+
+.classification-model-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.classification-cap-pill {
+  font-size: 10.5px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary, #cbd5e1);
+}
 
 /* ─────────────────────────────────────────────────────────────
-   Universal @help & Navigation Hub Styling (All 13 Menus)
+   Universal @help & Navigation Hub Styling (All 14 Menus)
    ───────────────────────────────────────────────────────────── */
 .help-container {
   display: flex;
@@ -6903,7 +7021,8 @@ body.theme-midnight .agent-autocomplete-dropdown {
   margin-bottom: 6px;
 }
 
-.help-grid-13 {
+.help-grid-13,
+.help-grid-14 {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 10px;

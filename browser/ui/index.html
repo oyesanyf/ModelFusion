@@ -68,7 +68,76 @@
                 <span>⚡</span> <span>Audit All</span>
               </button>
             </div>
-            <!-- 1. Code & Security -->
+            <!-- 1. Classification & Taxonomy -->
+            <div class="tool-category">
+              <button type="button" class="tool-category-header" data-cat="classification" title="Zero-Shot, Sentiment, Moderation &amp; Long-Document Classification">
+                <span class="cat-icon">🏷️</span>
+                <span class="cat-title">Classification &amp; Taxonomy</span>
+                <span class="cat-chevron">▸</span>
+              </button>
+              <div class="tool-category-content collapsed">
+                <!-- Domain Filter Tabs -->
+                <div class="classification-domain-tabs" style="display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; margin-bottom: 6px; background: rgba(0,0,0,0.15); border-radius: 6px;">
+                  <button type="button" class="classification-domain-tab active" data-domain="all" onclick="filterClassificationDomain('all', this)" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--accent-color); color: #fff; cursor: pointer;">All (12)</button>
+                  <button type="button" class="classification-domain-tab" data-domain="zero-shot" onclick="filterClassificationDomain('zero-shot', this)" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); cursor: pointer;">🎯 Zero-Shot (4)</button>
+                  <button type="button" class="classification-domain-tab" data-domain="sentiment" onclick="filterClassificationDomain('sentiment', this)" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); cursor: pointer;">❤️ Sentiment &amp; Tone (4)</button>
+                  <button type="button" class="classification-domain-tab" data-domain="moderation" onclick="filterClassificationDomain('moderation', this)" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); cursor: pointer;">🚨 Moderation (2)</button>
+                  <button type="button" class="classification-domain-tab" data-domain="topic" onclick="filterClassificationDomain('topic', this)" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); cursor: pointer;">📑 Long-Doc &amp; Topic (2)</button>
+                </div>
+
+                <!-- 12 Classification Models in Strict Alphabetical Order A-Z for test_alphabetical_menu.py -->
+                <button type="button" class="tool-item-btn tool-command-btn classification-tool-item" data-tool-id="tool_bart_large_mnli" data-category="classification" data-domain="zero-shot" data-cmd="@agent classify bart-large-mnli " data-original-title="BART-Large MNLI: Zero-shot classification benchmark fine-tuned on MultiNLI for custom candidate labels" title="BART-Large MNLI: Zero-shot classification benchmark fine-tuned on MultiNLI for custom candidate labels">
+                  <span class="tool-btn-left"><span class="tool-icon">🎯</span><span class="tool-label">BART-Large MNLI</span></span>
+                  <span class="tool-tag">@bart-mnli</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn classification-tool-item" data-tool-id="tool_nli_deberta_v3_base" data-category="classification" data-domain="zero-shot" data-cmd="@agent classify nli-deberta-v3-base " data-original-title="Cross-Encoder DeBERTa-v3: High-precision NLI pair classification and semantic boundary detection" title="Cross-Encoder DeBERTa-v3: High-precision NLI pair classification and semantic boundary detection">
+                  <span class="tool-btn-left"><span class="tool-icon">🔀</span><span class="tool-label">Cross-Encoder DeBERTa</span></span>
+                  <span class="tool-tag">@deberta-nli</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn classification-tool-item" data-tool-id="tool_deberta_v3_mnli_fever_anli" data-category="classification" data-domain="zero-shot" data-cmd="@agent classify deberta-v3-base-mnli-fever-anli " data-original-title="DeBERTa-v3 FEVER ANLI: Robust zero-shot NLI trained across MNLI, FEVER, and Adversarial NLI for complex negations" title="DeBERTa-v3 FEVER ANLI: Robust zero-shot NLI trained across MNLI, FEVER, and Adversarial NLI for complex negations">
+                  <span class="tool-btn-left"><span class="tool-icon">🛡️</span><span class="tool-label">DeBERTa-v3 NLI FEVER</span></span>
+                  <span class="tool-tag">@deberta-fever</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn classification-tool-item" data-tool-id="tool_distilbart_mnli_12_3" data-category="classification" data-domain="zero-shot" data-cmd="@agent classify distilbart-mnli-12-3 " data-original-title="DistilBART MNLI: Distilled lightweight zero-shot classifier optimized for high-throughput and low memory footprint" title="DistilBART MNLI: Distilled lightweight zero-shot classifier optimized for high-throughput and low memory footprint">
+                  <span class="tool-btn-left"><span class="tool-icon">⚡</span><span class="tool-label">DistilBART MNLI</span></span>
+                  <span class="tool-tag">@distilbart-mnli</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn classification-tool-item" data-tool-id="tool_distilbert_emotion" data-category="classification" data-domain="sentiment" data-cmd="@agent sentiment distilbert-base-uncased-emotion " data-original-title="DistilBERT Emotion: Compact 6-class emotion classifier (sadness, joy, love, anger, fear, surprise)" title="DistilBERT Emotion: Compact 6-class emotion classifier (sadness, joy, love, anger, fear, surprise)">
+                  <span class="tool-btn-left"><span class="tool-icon">🎭</span><span class="tool-label">DistilBERT Emotion</span></span>
+                  <span class="tool-tag">@emotion</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn classification-tool-item" data-tool-id="tool_distilbert_sst2" data-category="classification" data-domain="sentiment" data-cmd="@agent sentiment distilbert-base-uncased-finetuned-sst-2-english " data-original-title="DistilBERT SST-2: High-speed binary positive and negative sentiment classification" title="DistilBERT SST-2: High-speed binary positive and negative sentiment classification">
+                  <span class="tool-btn-left"><span class="tool-icon">👍</span><span class="tool-label">DistilBERT SST-2</span></span>
+                  <span class="tool-tag">@sst2</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn classification-tool-item" data-tool-id="tool_finbert_classifier" data-category="classification" data-domain="topic" data-cmd="@agent topic finbert " data-original-title="FinBERT: Specialized domain classifier for financial disclosures, earnings transcripts, and market sentiment" title="FinBERT: Specialized domain classifier for financial disclosures, earnings transcripts, and market sentiment">
+                  <span class="tool-btn-left"><span class="tool-icon">📈</span><span class="tool-label">FinBERT Classifier</span></span>
+                  <span class="tool-tag">@finbert-cls</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn classification-tool-item" data-tool-id="tool_roberta_go_emotions" data-category="classification" data-domain="sentiment" data-cmd="@agent sentiment roberta-base-go_emotions " data-original-title="GoEmotions RoBERTa: Multi-label emotion classifier across 28 fine-grained emotional categories" title="GoEmotions RoBERTa: Multi-label emotion classifier across 28 fine-grained emotional categories">
+                  <span class="tool-btn-left"><span class="tool-icon">💬</span><span class="tool-label">GoEmotions RoBERTa</span></span>
+                  <span class="tool-tag">@go-emotions</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn classification-tool-item" data-tool-id="tool_koalaai_text_moderation" data-category="classification" data-domain="moderation" data-cmd="@agent moderation text-moderation " data-original-title="KoalaAI Text-Moderation: Safety classifier flagging self-harm, hate speech, harassment, and violence" title="KoalaAI Text-Moderation: Safety classifier flagging self-harm, hate speech, harassment, and violence">
+                  <span class="tool-btn-left"><span class="tool-icon">🚨</span><span class="tool-label">KoalaAI Text Moderation</span></span>
+                  <span class="tool-tag">@moderation</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn classification-tool-item" data-tool-id="tool_longformer_base_4096" data-category="classification" data-domain="topic" data-cmd="@agent topic longformer-base-4096 " data-original-title="Longformer 4096: Long-document classification for multi-page documents and articles up to 4,096 tokens" title="Longformer 4096: Long-document classification for multi-page documents and articles up to 4,096 tokens">
+                  <span class="tool-btn-left"><span class="tool-icon">📜</span><span class="tool-label">Longformer 4096</span></span>
+                  <span class="tool-tag">@longformer</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn classification-tool-item" data-tool-id="tool_toxic_bert" data-category="classification" data-domain="moderation" data-cmd="@agent moderation toxic-bert " data-original-title="Toxic-BERT: Multi-label toxicity classifier for toxic comments, threats, insults, and identity attacks" title="Toxic-BERT: Multi-label toxicity classifier for toxic comments, threats, insults, and identity attacks">
+                  <span class="tool-btn-left"><span class="tool-icon">☣️</span><span class="tool-label">Toxic-BERT</span></span>
+                  <span class="tool-tag">@toxic-bert</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn classification-tool-item" data-tool-id="tool_twitter_roberta_sentiment" data-category="classification" data-domain="sentiment" data-cmd="@agent sentiment twitter-roberta-base-sentiment-latest " data-original-title="Twitter-RoBERTa Sentiment: 3-class sentiment classifier tuned on social media, slang, and emojis" title="Twitter-RoBERTa Sentiment: 3-class sentiment classifier tuned on social media, slang, and emojis">
+                  <span class="tool-btn-left"><span class="tool-icon">🐦</span><span class="tool-label">Twitter-RoBERTa Sentiment</span></span>
+                  <span class="tool-tag">@twitter-sentiment</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 2. Code & Security -->
             <div class="tool-category">
               <button type="button" class="tool-category-header" data-cat="code" title="Code &amp; Security Auditing Tools">
                 <span class="cat-icon">💻</span>

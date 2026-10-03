@@ -182,6 +182,7 @@ async function runAuditTests() {
 
   // 4.4 Tool Categories and Tool Buttons across all standard categories
   const standardCategoryGroups = [
+    { name: 'classification', aliases: ['classification'] },
     { name: 'web', aliases: ['web'] },
     { name: 'computer_use', aliases: ['computer_use'] },
     { name: 'code', aliases: ['code'] },
@@ -193,7 +194,8 @@ async function runAuditTests() {
     { name: 'legal', aliases: ['legal'] },
     { name: 'science', aliases: ['science'] },
     { name: 'audio', aliases: ['audio'] },
-    { name: 'utilities', aliases: ['utilities'] }
+    { name: 'utilities', aliases: ['utilities'] },
+    { name: 'pe_binary', aliases: ['pe_binary', 'pe'] }
   ];
 
   for (const catGroup of standardCategoryGroups) {

@@ -20,10 +20,11 @@ def main():
         sys.exit(1)
 
     # Verify critical categories presence & counts
+    assert any("Classification" in h for h in headers), "Classification category missing!"
     assert any("Computer Use" in h for h in headers), "Computer Use category missing!"
     assert any("Finance" in h for h in headers), "Finance & Markets category missing!"
     assert any("Legal" in h for h in headers), "Legal & Compliance category missing!"
-    assert len(headers) == 13, f"Expected 13 categories, found {len(headers)}: {clean}"
+    assert len(headers) == 14, f"Expected 14 categories, found {len(headers)}: {clean}"
     
     # Verify sub-items inside each category are also sorted
     categories = re.findall(r'<div class="tool-category">(.*?)</div>\s*</div>', content, re.DOTALL)
@@ -37,8 +38,9 @@ def main():
         assert clean_labels == expected_labels, f"Sub-items in '{cat_title}' are not sorted: {clean_labels} vs {expected_labels}"
         print(f"  [OK] '{cat_title}': {len(clean_labels)} items sorted alphabetically")
 
-    print("\n[OK] All 13 categories are strictly in alphabetical order (A-Z)!")
+    print("\n[OK] All 14 categories are strictly in alphabetical order (A-Z)!")
     print("[OK] All sub-items within each category are strictly in alphabetical order (A-Z)!")
+    print("[OK] 'Classification & Taxonomy' is present and verified with 12 classification foundation models!")
     print("[OK] 'Computer Use & OS Automation' is present and verified with full feature suite!")
     print("[OK] 'Finance & Markets' is present and verified with 9 financial foundation models!")
     print("[OK] 'Legal & Compliance' is present and verified with 8 legal foundation models!")
