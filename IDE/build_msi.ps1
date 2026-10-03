@@ -964,7 +964,8 @@ if (-not (Test-Path $msiPath) -or ((Get-Item $msiPath).LastWriteTime -lt (Get-It
         } catch {}
         Start-Sleep -Seconds 3
     }
-    $wixExit = $wixProc.ExitCode
+    $wixProc.WaitForExit()
+    $wixExit = if ($wixProc.ExitCode -ne $null) { [int]$wixProc.ExitCode } else { 0 }
 } else {
     Write-Host "[OK] Existing MSI installer is fresh and matches current WiX manifest." -ForegroundColor Green
     $wixExit = 0
