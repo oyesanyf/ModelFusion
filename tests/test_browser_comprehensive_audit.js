@@ -180,7 +180,7 @@ async function runAuditTests() {
   assert.ok(indexHtml.includes('id="btn-sidebar-audit-all"'), 'Missing #btn-sidebar-audit-all');
   console.log('  ✅ Sidebar tools audit bar contains both "Menus" and "Audit All" buttons');
 
-  // 4.4 Tool Categories and Tool Buttons across all 9 standard categories
+  // 4.4 Tool Categories and Tool Buttons across all standard categories
   const standardCategoryGroups = [
     { name: 'web', aliases: ['web'] },
     { name: 'computer_use', aliases: ['computer_use'] },
@@ -189,6 +189,9 @@ async function runAuditTests() {
     { name: 'reasoning', aliases: ['agent', 'reasoning'] },
     { name: 'multimodal', aliases: ['vision', 'multimodal'] },
     { name: 'data_science', aliases: ['tabular', 'data_science'] },
+    { name: 'finance', aliases: ['finance'] },
+    { name: 'legal', aliases: ['legal'] },
+    { name: 'science', aliases: ['science'] },
     { name: 'audio', aliases: ['audio'] },
     { name: 'utilities', aliases: ['utilities'] }
   ];
@@ -204,7 +207,7 @@ async function runAuditTests() {
 
   const toolBtnMatches = indexHtml.match(/class="[^"]*tool-item-btn[^"]*"/g) || [];
   assert.ok(toolBtnMatches.length >= 40, `Must have at least 40 tool buttons, found ${toolBtnMatches.length}`);
-  console.log(`  ✅ All 9 categories and ${toolBtnMatches.length} tool buttons verified with valid IDs and command attributes`);
+  console.log(`  ✅ All ${standardCategoryGroups.length} categories and ${toolBtnMatches.length} tool buttons verified with valid IDs and command attributes`);
 
   // 4.5 Settings Tabs & Matching Panes (all 13)
   const expectedTabs = [

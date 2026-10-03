@@ -2392,6 +2392,1225 @@ document.addEventListener('DOMContentLoaded', () => {
     return { isImage: false, cleanPrompt: '' };
   }
 
+
+  // ─────────────────────────────────────────────────────────────
+  // 💡 Comprehensive Universal @help & 13-Menu Navigation Registry
+  // ─────────────────────────────────────────────────────────────
+// Test complete help subsystem logic and HTML rendering
+const HELP_CATEGORIES = {
+  'code': {
+    id: 'code',
+    menuIndex: 1,
+    icon: '💻',
+    title: 'Code & Security',
+    subtitle: 'Code Architecture, Security Forensics & Vulnerability Audit',
+    overview: 'Enterprise-grade local static application security testing (SAST), code architecture dependency graphing, memory safety review, secret leak detection, and polyglot transpilation. All code analysis executes 100% locally with zero external API calls, protecting intellectual property and sensitive credentials.',
+    engines: [
+      { name: 'Local Coder LLM', spec: 'Qwen2.5-Coder / DeepSeek-Coder', role: 'Static vulnerability discovery, code review, and polyglot transpilation' },
+      { name: 'Tree-Sitter AST Engine', spec: 'Native AST Grammar Parser', role: 'Call-graph extraction, symbol dependency indexing, and structural refactoring' },
+      { name: 'OWASP Security Scanner', spec: 'Heuristic Rule Base', role: 'Auditing against OWASP Top 10 (Injection, Broken Auth, Cryptographic Failures)' },
+      { name: 'Secret Leak Detector', spec: 'Regex & Entropy Scanner', role: 'Identifying committed API keys, tokens, RSA private keys, and passwords' }
+    ],
+    inputs: 'Source code files (.rs, .py, .ts, .js, .go, .cpp, .c, .java, .cs), project directories, Git diffs, or pasted code snippets.',
+    directives: [
+      { cmd: '@agent security <code/file>', desc: 'Comprehensive SAST security audit for buffer overflows, SQL/command injection, and memory safety' },
+      { cmd: '@agent graph-index <path>', desc: 'Build full abstract syntax tree and call-graph architecture dependency map' },
+      { cmd: '@agent vuln-scan <file>', desc: 'Deep vulnerability scan targeting memory corruption, use-after-free, and unsafe blocks' },
+      { cmd: '@agent secret-scan <file/repo>', desc: 'Scan for leaked API keys, tokens, private certificates, and credentials' },
+      { cmd: '@agent pii-scan <text/file>', desc: 'Discover leaked SSNs, credit cards, emails, and confidential identity data' },
+      { cmd: '@agent code-translate to <lang>: <code>', desc: 'Polyglot AST-preserving code transpile across Rust, Python, Go, TypeScript, C++' },
+      { cmd: '@agent dockerfile <path>', desc: 'Synthesize minimal attack-surface multi-stage production Dockerfiles' },
+      { cmd: '@agent api-docs <code>', desc: 'Generate OpenAPI 3.0 / Swagger specs and markdown documentation directly from code' }
+    ],
+    useCases: [
+      'Pre-commit verification of zero-day buffer overflows or unescaped queries before merging code.',
+      'Reverse-engineering complex microservice architectures into interactive visual dependency graphs.',
+      'Polyglot migration of performance-critical Python or Node microservices to memory-safe Rust.'
+    ],
+    examples: [
+      '@agent security fn authenticate(user: &str, pass: &str) -> bool { ... }',
+      '@agent graph-index crates/cli/src',
+      '@agent secret-scan config/settings.json',
+      '@agent code-translate to Rust: function fib(n) { return n <= 1 ? n : fib(n-1) + fib(n-2); }'
+    ]
+  },
+
+  'computer_use': {
+    id: 'computer_use',
+    menuIndex: 2,
+    icon: '🖱️',
+    title: 'Computer Use & OS Automation',
+    subtitle: 'Screen Grounding, VLM Desktop Agent & OS Automation',
+    overview: 'Autonomous Windows OS desktop control and GUI automation powered by Vision-Language Models (UI-TARS / Qwen2.5-VL), Set-of-Mark visual coordinate grounding, and native input dispatchers. HugOS enables natural language control over mouse clicks, window scrolling, keyboard hotkeys, and automated multi-step browser workflows.',
+    engines: [
+      { name: 'UI-TARS 7B/72B', spec: 'Vision-Language GUI Agent', role: 'End-to-end desktop perception, reasoning, and OS action sequence generation' },
+      { name: 'Set-of-Mark (SoM)', spec: 'Visual Coordinate Grounding', role: 'Assigning numerical bounding badges to all interactive desktop buttons and inputs' },
+      { name: 'Native Windows Dispatcher', spec: 'Win32 SendInput / Job Object', role: 'Hardware-level mouse, keyboard, and scroll event injection with sub-50ms preemption' }
+    ],
+    inputs: 'Natural language desktop goals, viewport/screen screenshots, screen coordinates [x, y], window titles, or web application URLs.',
+    directives: [
+      { cmd: '@agent computer-use <task>', desc: 'Launch end-to-end autonomous OS desktop agent to accomplish goal' },
+      { cmd: '@agent ui-tars <goal>', desc: 'Dispatch UI-TARS action loop with sub-50ms preemption' },
+      { cmd: '@agent screen-grounding', desc: 'Capture active screen, assign numbered Set-of-Mark bounding boxes to all controls' },
+      { cmd: '@agent desktop-click <x,y>', desc: 'Simulate hardware mouse click at specified viewport or screen coordinate' },
+      { cmd: '@agent desktop-type <text>', desc: 'Send verified keyboard strokes or hotkey sequences to active window' },
+      { cmd: '@agent desktop-scroll <delta>', desc: 'Dispatch vertical or horizontal mouse wheel scroll event' },
+      { cmd: '@agent shopping <item>', desc: 'Automate e-commerce navigation, price comparison, cart addition, and checkout flow' },
+      { cmd: '@agent ticket-booking <details>', desc: 'Automate airline/train reservation forms and seat selection' },
+      { cmd: '@agent exam-solver <question>', desc: 'Visual reasoning solver for complex multi-choice exam figures and diagrams' },
+      { cmd: '@agent map-directions <route>', desc: 'Navigate GIS mapping web applications and compute optimal route waypoints' }
+    ],
+    useCases: [
+      'Automating legacy Windows desktop enterprise software that lacks public REST APIs.',
+      'Complex multi-step form entry across web portals with CAPTCHA human-in-the-loop gates.',
+      'Continuous end-to-end visual regression testing and UI validation across native desktop apps.'
+    ],
+    examples: [
+      '@agent computer-use Open Notepad and write a project status report',
+      '@agent screen-grounding',
+      '@agent shopping Find best price for 32GB DDR5 SODIMM laptop RAM',
+      '@agent ticket-booking Find one-way flight from JFK to LHR on November 15'
+    ]
+  },
+
+  'tabular': {
+    id: 'tabular',
+    menuIndex: 3,
+    icon: '📊',
+    title: 'Data & Spreadsheets (CSV/Excel)',
+    subtitle: 'Adaptive Contextual Data Science Optimization & Tabular AutoML',
+    overview: 'Adaptive Contextual Data Science Optimization (ACDSO), automated feature synthesis, statistical hypothesis testing, time-series forecasting, and machine learning model training on tabular data. Processes structured datasets entirely in memory using DuckDB and Polars with zero cloud transmission.',
+    engines: [
+      { name: 'ACDSO AutoML Pipeline', spec: 'Context-Aware Feature Engine', role: 'Automated missing value imputation, categorical encoding, and model selection' },
+      { name: 'PatchTST / Chronos', spec: 'Time-Series Transformers', role: 'Multi-horizon probabilistic trend forecasting with confidence intervals' },
+      { name: 'DuckDB / Polars', spec: 'In-Memory OLAP Vector Engine', role: 'Sub-millisecond aggregation, SQL querying, and outlier detection across million-row tables' }
+    ],
+    inputs: 'CSV (.csv), TSV (.tsv), Excel spreadsheets (.xlsx), Parquet (.parquet), JSON records, or pasted tabular text.',
+    directives: [
+      { cmd: '@agent acdso <file.csv>', desc: 'Run end-to-end ACDSO AutoML pipeline: automated data cleaning, profiling, and model training' },
+      { cmd: '@agent dataanalyst <file.csv>', desc: 'Compute exploratory data analysis (EDA), kurtosis, skewness, and Pearson correlations' },
+      { cmd: '@agent timeseries <file.csv>', desc: 'Multi-horizon univariate/multivariate time-series forecasting with confidence intervals' },
+      { cmd: '@agent predict <target_col> on <file.csv>', desc: 'Train supervised classification or regression model to predict target column' },
+      { cmd: '@agent datascience <file.csv>', desc: 'Full pipeline: data imputation, cross-validation, and feature importance ranking' },
+      { cmd: '@agent decision <matrix>', desc: 'Multi-criteria decision analysis (MCDA) evaluating trade-offs across competing options' }
+    ],
+    useCases: [
+      'Instant offline exploratory data analysis on sensitive financial or HIPAA healthcare records.',
+      'Customer churn prediction and feature importance extraction from enterprise CRM export tables.',
+      'Demand forecasting for inventory supply chains without cloud fees or external data leakage.'
+    ],
+    examples: [
+      '@agent acdso dataset.csv',
+      '@agent timeseries sales_history_2025.csv',
+      '@agent dataanalyst customer_retention.csv',
+      '@agent predict churn_status on telecom_users.csv'
+    ]
+  },
+
+  'finance': {
+    id: 'finance',
+    menuIndex: 4,
+    icon: '💰',
+    title: 'Finance & Markets',
+    subtitle: 'Institutional Financial AI, Valuation, SEC Filings & Forecasting',
+    overview: '9 specialized institutional financial foundation models and forecasting architectures for quantitative market analysis, SEC 10-K/10-Q filing dissection, ESG disclosures, sentiment extraction, and economic reasoning. Runs zero-cloud private valuation without leaking investment theses or internal trades.',
+    engines: [
+      { name: 'Chronos-T5', spec: 'Amazon Science / T5 Architecture', role: 'Zero-shot probabilistic time-series forecasting tokenized into language representations' },
+      { name: 'FinBERT', spec: 'Prosus / Financial PhraseBank', role: 'High-accuracy positive/neutral/negative sentiment scoring for earnings reports' },
+      { name: 'FinBERT-ESG', spec: 'ESG Domain Adaptation', role: 'Evaluating corporate disclosures against SASB and TCFD environmental/social standards' },
+      { name: 'FinBERT-Tone', spec: 'Managerial Tone Classifier', role: 'Measuring executive optimism vs hedging in conference call transcripts' },
+      { name: 'FinGPT-Forecaster', spec: 'AI4Finance Foundation Model', role: 'Synthesizing market news, price charts, and SEC disclosures into directional forecasts' },
+      { name: 'Llama-Fin-8B', spec: 'Llama-3 Architecture', role: 'Discounted Cash Flow (DCF), WACC calculation, and comparable company multiples' },
+      { name: 'PatchTST', spec: 'Patch Time-Series Transformer', role: 'Sub-daily and high-frequency volatility modeling and price trend prediction' },
+      { name: 'Finance-LLM', spec: 'Domain-Specialized Reasoning', role: 'Macroeconomic debt analysis, bond yields, and central bank statement parsing' },
+      { name: 'Qwen-Pro-Finance-32B', spec: '32B Parameter Flagship', role: 'Institutional portfolio optimization, sovereign debt restructuring, and quantitative analysis' }
+    ],
+    inputs: 'SEC filings (10-K, 10-Q, 8-K), earnings conference transcripts, balance sheets, CSV time series (OHLCV prices), equity research reports.',
+    directives: [
+      { cmd: '@agent finance chronos <data>', desc: 'Zero-shot probabilistic price and revenue time-series prediction' },
+      { cmd: '@agent finance finbert <text>', desc: 'Extract institutional market sentiment score (-1.0 to +1.0)' },
+      { cmd: '@agent finance finbert-esg <text>', desc: 'Audit corporate disclosures against SASB and TCFD ESG frameworks' },
+      { cmd: '@agent finance finbert-tone <text>', desc: 'Evaluate executive management optimism vs hedging in earnings call transcripts' },
+      { cmd: '@agent finance fingpt <query>', desc: 'Multi-source stock movement and market forecast synthesis' },
+      { cmd: '@agent finance llama-fin <data>', desc: 'Construct DCF valuation model and capital structure analysis' },
+      { cmd: '@agent finance patchtst <data>', desc: 'Run patch-based time-series transformer for volatility projections' },
+      { cmd: '@agent finance qwen-finance <query>', desc: 'In-depth quantitative market structure and sovereign risk analysis' }
+    ],
+    useCases: [
+      'Automated analysis of quarterly 10-Q filings to detect hidden debt covenants or accounting discrepancies.',
+      'Real-time sentiment and managerial tone analysis on earnings call transcripts.',
+      'Zero-shot volatility and sales revenue forecasting using Chronos-T5 and PatchTST without training custom neural networks.'
+    ],
+    examples: [
+      '@agent finance finbert Despite headwinds in supply chain, Q3 operating margins expanded by 180 basis points.',
+      '@agent finance chronos 124.5, 126.2, 125.8, 128.4, 131.0, 129.5, 133.2',
+      '@agent finance finbert-tone Management noted cautious optimism regarding European expansion while noting margin pressures.',
+      '@agent finance llama-fin Compute WACC with Cost of Equity 9.2%, Pre-tax Cost of Debt 5.5%, Tax Rate 21%, Debt/Equity 40/60'
+    ]
+  },
+
+  'vision': {
+    id: 'vision',
+    menuIndex: 5,
+    icon: '👁️',
+    title: 'Images & Vision',
+    subtitle: 'Computer Vision, Visual Grounding & Generative Synthesis',
+    overview: 'Local multi-modal computer vision suite for visual question answering (VQA), fine-grained object detection, optical character recognition (OCR), video comprehension, and generative image creation. Enables zero-cloud visual inspection of blueprints, diagrams, and artistic synthesis.',
+    engines: [
+      { name: 'LLaVA-1.6 / Qwen2.5-VL', spec: 'Multimodal Vision-Language LLM', role: 'Detailed visual inspection, scene comprehension, and diagram question answering' },
+      { name: 'YOLOv10 / DETR', spec: 'Real-Time Object Detector', role: 'Predicting bounding box coordinates and object classes with high precision' },
+      { name: 'Florence-2', spec: 'Fine-Grained Perception Model', role: 'Dense captioning, visual grounding, and text-in-image optical character recognition' },
+      { name: 'FLUX.1-schnell / SDXL', spec: 'Latent Flow / Diffusion Engine', role: 'Generating photorealistic 8K images from descriptive text prompts' }
+    ],
+    inputs: 'Images (PNG, JPEG, WebP, GIF, BMP), video files (MP4, MKV, AVI), or text prompts for generative synthesis.',
+    directives: [
+      { cmd: '@agent vision <image> <prompt>', desc: 'Comprehensive visual inspection, reasoning, and scene understanding' },
+      { cmd: '@agent vqa <image> <question>', desc: 'Visual question answering on technical diagrams, blueprints, and charts' },
+      { cmd: '@agent object-detection <image>', desc: 'Identify and classify all visual objects with bounding box coordinates' },
+      { cmd: '@agent image-classification <image>', desc: 'Categorize image into ImageNet / specialized taxonomic hierarchies' },
+      { cmd: '@agent video <video.mp4>', desc: 'Temporal video scene analysis, action recognition, and frame-by-frame summarization' },
+      { cmd: '@agent image <prompt>', desc: 'Locally synthesize photorealistic or artistic images via FLUX.1 / SDXL diffusion' }
+    ],
+    useCases: [
+      'Inspecting complex circuit diagrams or architectural CAD schematics for component verification.',
+      'Automated quality assurance and defect detection on manufacturing product photos.',
+      'Generating private visual design assets, mockups, and conceptual artwork entirely offline.'
+    ],
+    examples: [
+      '@agent vision Describe the architecture diagram in the attached image',
+      '@agent image A futuristic high-tech AI research workstation with glowing neural networks, 8k resolution, cinematic lighting',
+      '@agent object-detection Identify all components on this printed circuit board',
+      '@agent vqa What is the reading on the pressure gauge in the attached photo?'
+    ]
+  },
+
+  'pe_binary': {
+    id: 'pe_binary',
+    menuIndex: 6,
+    icon: '🛡️',
+    title: 'Inspect Windows Apps (.EXE / .DLL)',
+    subtitle: 'Windows Portable Executable (PECOFF) Static Binary Forensics',
+    overview: 'In-depth static binary analysis of Windows x86, x64, and ARM64 Portable Executable files (.exe, .dll, .sys). Inspects DOS/NT headers, optional headers, data directories, memory protection flags (ASLR, DEP/NX, CFG, SafeSEH), import/export tables, and section entropy for packer detection.',
+    engines: [
+      { name: 'HugOS PECOFF Parser', spec: 'Native Rust Binary Deconstructor', role: 'Zero-dependency extraction of COFF headers, optional headers, and section tables' },
+      { name: 'Shannon Entropy Scanner', spec: 'Statistical Byte Distribution', role: 'Detecting UPX, Themida, VMProtect, and encrypted/compressed binary payloads' },
+      { name: 'Authenticode Validator', spec: 'WinTrust PKCS#7 Engine', role: 'Verifying digital signatures, timestamp countersignatures, and root CA trust chains' }
+    ],
+    inputs: '32-bit and 64-bit Windows PE files (.exe, .dll, .sys, .ocx, .cpl, .scr, .efi) from disk or drag-and-dropped into chat.',
+    directives: [
+      { cmd: '@agent pe <file.exe>', desc: 'Full static PE parsing: Architecture, Subsystem, ASLR/DEP/CFG security mitigations, Sections, Imports' },
+      { cmd: '@agent entropy <file>', desc: 'Calculate per-section Shannon entropy (0.0 to 8.0) to detect UPX, Themida, or encrypted payloads' },
+      { cmd: '@agent strings <file>', desc: 'Extract ASCII/Unicode printable strings filtered for IPs, URLs, registry keys, and error messages' },
+      { cmd: '@agent packer-detect <file>', desc: 'Determine if the binary is packed, obfuscated, or contains anti-debugging flags' }
+    ],
+    useCases: [
+      'Verifying if a third-party Windows utility or driver complies with enterprise ASLR and DEP security baselines.',
+      'Incident response triage to determine whether an unknown executable contains obfuscated or packed malicious payloads.',
+      'Auditing compiled DLL exports and import tables during native Windows software development.'
+    ],
+    examples: [
+      '@agent pe C:\\Windows\\System32\\notepad.exe',
+      '@agent entropy target/release/cli.exe',
+      '@agent pe browser/bin/clibrowser.exe',
+      '@agent packer-detect suspicious_installer.exe'
+    ]
+  },
+
+  'legal': {
+    id: 'legal',
+    menuIndex: 7,
+    icon: '⚖️',
+    title: 'Legal & Compliance',
+    subtitle: 'Legal Reasoning, Statutory Interpretation & Contract Understanding',
+    overview: '8 specialized legal foundation models for contract clause extraction, indemnification analysis, statutory interpretation, judicial scholarship, and automated legal drafting. Enables law firms and enterprise legal teams to review contracts and analyze regulations with 100% data sovereignty and attorney-client privilege protection.',
+    engines: [
+      { name: 'CUAD-BERT', spec: 'Atticus Project / Contract Understanding', role: 'Clause-level extraction across 41 critical categories (indemnity, non-compete, change of control)' },
+      { name: 'Saul-7B', spec: 'Mistral Architecture / LegalBench Leader', role: 'Statutory reasoning, regulatory compliance, contract summarization, and legal drafting' },
+      { name: 'Lawma-8B', spec: 'Llama-3 Architecture', role: 'Automated contract drafting, clause redlining, and statutory reconciliation' },
+      { name: 'Legal-Longformer', spec: 'Long-Context Attention (4,096+ tokens)', role: 'Deep attention over multi-page judicial briefs, opinions, and complex transactional agreements' },
+      { name: 'Legal-BERT', spec: 'European & US Legal Corpora', role: 'Statutory classification, semantic case precedent search, and LexGLUE benchmarks' },
+      { name: 'Pile-of-Law LegalBERT', spec: '256GB Legal Corpus', role: 'Federal court opinions, administrative filings, and SEC disclosures analysis' },
+      { name: 'Law-Chat', spec: 'Instruction-Tuned Legal Assistant', role: 'Interactive statutory Q&A and client advice synthesis' },
+      { name: 'Law-LLM', spec: 'Legal Scholarship Base Model', role: 'Case law doctrine extraction and jurisprudential reasoning' }
+    ],
+    inputs: 'Contracts (NDA, MSA, SLA, EULA, Employment), judicial briefs, court opinions, statutory texts (GDPR, CCPA, HIPAA, Delaware General Corporation Law), PDF/DOCX attachments.',
+    directives: [
+      { cmd: '@agent legal cuad-bert <contract>', desc: 'Extract all 41 high-risk legal clauses from agreements' },
+      { cmd: '@agent legal saul-7b <statute/contract>', desc: 'In-depth legal reasoning, liability evaluation, and clause redlining' },
+      { cmd: '@agent legal legal-bert <clause>', desc: 'Legal classification and semantic precedent matching' },
+      { cmd: '@agent legal legal-longformer <brief>', desc: 'Long document legal analysis for multi-page judicial briefs' },
+      { cmd: '@agent legal law-chat <question>', desc: 'Interactive legal consultation and statutory clarification' },
+      { cmd: '@agent legal law-llm <case>', desc: 'Analyze case law precedents and judicial holding interpretations' },
+      { cmd: '@agent legal lawma <terms>', desc: 'Draft legally enforceable contractual covenants and clauses' },
+      { cmd: '@agent legal pile-of-law <filing>', desc: 'Federal administrative filing and court opinion analysis' }
+    ],
+    useCases: [
+      'Rapid contract redlining to identify non-standard indemnification, unlimited liability, or IP assignment clauses.',
+      'Statutory compliance audits against data privacy regulations without exposing confidential client data to third-party APIs.',
+      'Summarizing lengthy 80-page appellate briefs and extracting authoritative case citations.'
+    ],
+    examples: [
+      '@agent legal cuad-bert Audit this Master Services Agreement for unilateral termination for convenience and limitation of liability caps.',
+      '@agent legal saul-7b Analyze whether this non-compete clause with a 24-month duration across all 50 states is enforceable under California law.',
+      '@agent legal legal-longformer Summarize the legal holding and procedural history of the attached judicial brief.',
+      '@agent legal lawma Draft a mutual non-disclosure agreement with a 2-year survival term under New York jurisdiction.'
+    ]
+  },
+
+  'agent': {
+    id: 'agent',
+    menuIndex: 8,
+    icon: '🧠',
+    title: 'Planning & Deep Thinking',
+    subtitle: 'Autonomous Planning, Deep Reasoning & Adversarial Verification',
+    overview: 'High-compute deliberation framework featuring Monte Carlo tree search, ReST-RL sub-50ms preemption, chain-of-thought verification, adversarial Grill Me interviews, and self-correcting task loops. Designed to eliminate hallucinations on complex logical, algorithmic, and architectural engineering problems.',
+    engines: [
+      { name: 'HugOS ReST-RL Daemon', spec: 'GRPO / Sub-50ms Preemption', role: 'Reinforcement learning daemon with Windows Job Object instant preemption (<8ms cancellation)' },
+      { name: 'Reasoning Deliberation Engine', spec: 'Qwen2.5-32B / DeepSeek-R1', role: 'Multi-sample consensus, formal constraint verification, and step-by-step reflection' },
+      { name: 'Mutation Testing Gate', spec: 'AST Mutant Verification (M_kill >= 0.5)', role: 'Adversarial code certification preventing degenerate solutions from reaching users' }
+    ],
+    inputs: 'Complex system architecture RFCs, mathematical proofs, algorithmic specifications, failure traces, strategic roadmaps.',
+    directives: [
+      { cmd: '@agent boost <problem>', desc: 'Trigger deep multi-perspective reasoning deliberation with formal constraint checks' },
+      { cmd: '@agent grill-me <plan>', desc: 'Adversarial requirements interview: AI interrogates user to uncover hidden edge cases' },
+      { cmd: '@agent goal <autonomous_goal>', desc: 'Autonomous multi-turn agent execution loop until goal is mathematically verified' },
+      { cmd: '@agent plan <architecture>', desc: 'Deconstruct complex specifications into structured, dependency-ordered milestones' },
+      { cmd: '@agent cot <problem>', desc: 'Step-by-step chain-of-thought mathematical and algorithmic derivation' },
+      { cmd: '@agent agentic-loop <task>', desc: 'Recursive task execution with self-healing feedback up to 256k tokens' },
+      { cmd: '@agent reflection <error_trace>', desc: 'Analyze error traceback and generate self-correcting patch' },
+      { cmd: '@agent decompose <problem>', desc: 'Split monolithic architectural challenges into atomic micro-tasks' }
+    ],
+    useCases: [
+      'Stress-testing new software architectures before writing a single line of code.',
+      'Resolving complex algorithmic puzzles, mathematical formulations, or distributed consensus edge cases.',
+      'Autonomous multi-step research and development loops with sub-50ms preemption on system load.'
+    ],
+    examples: [
+      '@agent boost Design a lock-free multi-producer single-consumer ring buffer in Rust with zero memory allocations',
+      '@agent grill-me I want to migrate our Postgres transactional database to an event-sourced architecture on Apache Kafka',
+      '@agent plan Build a distributed Raft consensus cluster with heartbeat election timers and log compaction',
+      '@agent cot Prove that square root of 2 is irrational using proof by contradiction'
+    ]
+  },
+
+  'science': {
+    id: 'science',
+    menuIndex: 9,
+    icon: '🔬',
+    title: 'Science & Discovery',
+    subtitle: 'Scientific Foundation Models (Biology, Chemistry, Climate & Literature)',
+    overview: '20 scientific foundation models across Biology, Genomics, Chemistry, Materials Science, Climate, and Scientific Literature. Runs specialized neural architectures (ESM2, ChemBERTa, ClimaX, Prithvi, Galactica) locally for accelerating discoveries with zero cloud subscription fees.',
+    engines: [
+      { name: 'ESM2 & ESMFold', spec: 'Meta AI / Evolutionary Scale Modeling', role: 'Protein language modeling and ultra-fast single-sequence 3D atomic structure folding (PDB output)' },
+      { name: 'ESM3', spec: 'EvolutionaryScale Frontier Model', role: 'Generative biology model co-designing sequence, structure, and biological function simultaneously' },
+      { name: 'Evo & Nucleotide Transformer', spec: 'Arc Institute / InstaDeep', role: 'Long-context single-nucleotide genomic models for DNA, RNA, and regulatory promoter modeling' },
+      { name: 'ChemBERTa & MoLFormer', spec: 'SMILES Chemical Transformers', role: 'Molecular property prediction, toxicity estimation, and high-throughput drug screening' },
+      { name: 'Prithvi & ClimaX', spec: 'NASA-IBM / Microsoft Research', role: 'Geospatial satellite Earth observation and heterogeneous atmospheric weather forecasting' },
+      { name: 'Galactica & SciBERT', spec: 'Scientific Reasoning & Literature', role: 'Mathematical LaTeX equation derivation, reaction prediction, and paper summarization' }
+    ],
+    inputs: 'FASTA amino acid sequences, DNA/RNA sequences, SMILES/SELFIES chemical strings, PDB 3D structures, NetCDF climate grids, LaTeX math expressions.',
+    directives: [
+      { cmd: '@agent science <model> <query/sequence>', desc: 'Query any of the 20 scientific models' },
+      { cmd: '@agent science esm2 <fasta>', desc: 'Protein residue contacts, evolutionary conservation, and variant prediction' },
+      { cmd: '@agent science esmfold <fasta>', desc: 'Ultra-fast 3D protein structure folding and PDB coordinate output' },
+      { cmd: '@agent science esm3 <prompt>', desc: 'Generative de novo protein co-design across sequence and structure' },
+      { cmd: '@agent science chemberta <smiles>', desc: 'Molecular property, solubility, and toxicity prediction' },
+      { cmd: '@agent science molformer <smiles>', desc: 'High-throughput drug candidate binding affinity screening' },
+      { cmd: '@agent science evo <dna>', desc: 'Genome-scale nucleotide and CRISPR target sequence modeling' },
+      { cmd: '@agent science prithvi <coords>', desc: 'Geospatial flood, wildfire, and land cover satellite classification' },
+      { cmd: '@agent science aurora <lat,lon>', desc: 'Kilometer-scale operational numerical weather and atmospheric trajectory forecasting' },
+      { cmd: '@agent science galactica <math/chem>', desc: 'Scientific literature reasoning and equation derivation' }
+    ],
+    useCases: [
+      'De novo enzyme design and targeted therapeutic protein engineering without expensive wet lab iterations.',
+      'High-throughput in silico drug screening for binding affinity and oral bioavailability.',
+      'Global sub-seasonal climate risk modeling and extreme weather trajectory tracking.'
+    ],
+    examples: [
+      '@agent science esm2 MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLTLKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHDFFKSAMPEGYVQERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNYNSHNVYIMADKQKNGIKVNFKIRHNIEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSTQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK',
+      '@agent science chemberta CC(=O)OC1=CC=CC=C1C(=O)O',
+      '@agent science molformer CN1C=NC2=C1C(=O)N(C(=O)N2C)C',
+      '@agent science galactica Derive the Navier-Stokes equations from the Boltzmann transport equation'
+    ]
+  },
+
+  'utilities': {
+    id: 'utilities',
+    menuIndex: 10,
+    icon: '⚙️',
+    title: 'Utilities & System',
+    subtitle: 'System Telemetry, Hardware Sizing & Database Maintenance',
+    overview: 'Local system health monitoring, dynamic hardware RAM/VRAM resource calibration, SQLite FTS5 catalog ingestion, database integrity verification, and chat session lifecycle management. Ensures local models match runtime available free memory to avoid fatal OOM aborts.',
+    engines: [
+      { name: 'ModelFusion Master CLI', spec: 'Native Rust Binary (cli.exe)', role: 'Authoritative execution engine for hardware discovery, model sizing, and catalog updates' },
+      { name: 'SQLite FTS5 Catalog', spec: 'Local Database (hf_models.db)', role: 'Indexed offline repository of 2M+ Hugging Face models across all 45 tasks' },
+      { name: 'Dynamic Memory Calibrator', spec: 'Runtime Free RAM/VRAM Matrix', role: 'Enforcing runtime free RAM evaluation (>=48GB -> 32B, >=24GB -> 14B, >=12GB -> 7B, <6GB -> 1.5B)' }
+    ],
+    inputs: 'System maintenance directives, export formats (Markdown/JSON), benchmark parameters.',
+    directives: [
+      { cmd: '@agent sys-info', desc: 'Display live hardware telemetry: CPU name, cores, GPU model, free VRAM, free RAM, and certified tier' },
+      { cmd: '@agent update', desc: 'Fast curated update: indexes top ~6,500 production models across all 45 tasks and provisions matching Ollama model' },
+      { cmd: '@agent updatedb', desc: 'Full registry crawler: traverses all 2M+ models on Hugging Face Hub directly into local SQLite database' },
+      { cmd: '@agent active-model', desc: 'Inspect currently loaded local Ollama model, context window, and quantization level' },
+      { cmd: '@agent fusion-status', desc: 'Check multi-modal model catalog count and speculative consensus status' },
+      { cmd: '@agent db-check', desc: 'Run low-level SQLite PRAGMA integrity checks and index verification' },
+      { cmd: '@agent db-vacuum', desc: 'Reclaim disk space and defragment database storage pages' },
+      { cmd: '@agent db-rebuild', desc: 'Drop and recreate the local model catalog database from scratch' },
+      { cmd: '@agent db-prune', desc: 'Safely clear orphaned caches and temporary query buffers' },
+      { cmd: '@agent audit-menus', desc: 'Programmatically click and audit all tool items across all 13 categories' },
+      { cmd: '@agent benchmark', desc: 'Run local token-generation speed, latency, and TTFT benchmarks' },
+      { cmd: '@agent export', desc: 'Export chat history and session artifacts to Markdown / JSON' },
+      { cmd: '@agent help', desc: 'Display interactive help and command palette' }
+    ],
+    useCases: [
+      'Managing local offline AI resources with zero unexpected cloud costs.',
+      'Indexing 2M+ open-source AI models for offline search in hf_models.db.',
+      'Keeping Ollama and the Master CLI in 100% cryptographic parity across all IDE and browser installations.'
+    ],
+    examples: [
+      '@agent sys-info',
+      '@agent update',
+      '@agent db-check',
+      '@agent active-model'
+    ]
+  },
+
+  'audio': {
+    id: 'audio',
+    menuIndex: 11,
+    icon: '🎙️',
+    title: 'Voice & Audio',
+    subtitle: 'Acoustic Transcription, Voice Synthesis & Sound Classification',
+    overview: 'Offline automatic speech recognition (ASR), neural text-to-speech (TTS), and acoustic event classification. Transcribes voice memos, dictations, and audio files locally using OpenAI Whisper models with zero transmission over the internet.',
+    engines: [
+      { name: 'OpenAI Whisper', spec: 'large-v3 / medium / base', role: 'Multilingual automatic speech recognition with word-level timestamping' },
+      { name: 'Piper / Kokoro TTS', spec: 'Neural Speech Synthesizer', role: 'Real-time human-like natural voice audio generation from text' },
+      { name: 'Audio Spectrogram Transformer', spec: 'Acoustic Event Classifier', role: 'Environmental sound identification and acoustic anomaly detection' }
+    ],
+    inputs: 'Audio files (WAV, MP3, FLAC, OGG, M4A, AAC) or plain text strings for voice synthesis.',
+    directives: [
+      { cmd: '@agent asr <audio_file>', desc: 'Transcribe speech to text with precise timestamping and language identification' },
+      { cmd: '@agent tts <text>', desc: 'Synthesize natural human-like voice audio from text' },
+      { cmd: '@agent audio <sound_file>', desc: 'Classify environmental sounds, acoustic events, or musical genres' }
+    ],
+    useCases: [
+      'Transcribing confidential meeting recordings and patient-doctor clinical dictations locally.',
+      'Voice reading of long-form articles, books, and code walkthroughs.',
+      'Acoustic fault diagnosis in industrial machinery from microphone recordings.'
+    ],
+    examples: [
+      '@agent asr meeting_recording.mp3',
+      '@agent tts Welcome to HugOS, your sovereign local AI environment.',
+      '@agent audio pump_vibration_sample.wav'
+    ]
+  },
+
+  'web': {
+    id: 'web',
+    menuIndex: 12,
+    icon: '🌐',
+    title: 'Web Research & Automation',
+    subtitle: 'Grounded Live Search, arXiv Research & WikiSkill Distillation',
+    overview: 'Dual-source deep web and academic research engine, grounded citation synthesis, live Wikipedia knowledge distillation (WikiSkill), visual element marking (Set-of-Mark), and integrated browser viewport automation. Binds live verified internet knowledge directly into local LLM inference.',
+    engines: [
+      { name: 'Live Web Search Proxy', spec: 'Multi-Engine Crawler', role: 'Grounded web search with source footnote citations and fact synthesis' },
+      { name: 'arXiv API Engine', spec: 'Academic Literature Pipeline', role: 'Querying scientific preprints, abstracts, author networks, and technical citations' },
+      { name: 'WikiSkill Distillation', spec: 'Wikipedia REST Knowledge API', role: 'Deep section retrieval, cross-reference linking, and structured factual extraction' },
+      { name: 'Chrome DevTools Viewport', spec: 'CDP Automation Harness', role: 'Live DOM extraction, web navigation, and visual marker overlay' }
+    ],
+    inputs: 'Search queries, academic research topics, Wikipedia article titles, web URLs.',
+    directives: [
+      { cmd: '@agent search <query>', desc: 'Grounded web search with source footnotes and synthesized takeaways' },
+      { cmd: '@agent arxiv <query>', desc: 'Search academic papers, preprints, and citation metadata on arXiv' },
+      { cmd: '@agent wiki <topic>', desc: 'Distill Wikipedia article with key takeaways, deep sections, and cross-references' },
+      { cmd: '@agent browser <url>', desc: 'Navigate internal HugOS browser viewport to specified web page' },
+      { cmd: '@agent browser deep research on <topic>', desc: 'Multi-query iterative deep web research engine' },
+      { cmd: '@agent summarize', desc: 'Extract and summarize clean text from currently loaded browser viewport' },
+      { cmd: '@agent markers', desc: 'Inject numbered Set-of-Mark visual bounding markers onto web page controls' }
+    ],
+    useCases: [
+      'Fact-checking emerging news stories with grounded citations.',
+      'Literature reviews summarizing latest arXiv machine learning preprints.',
+      'Browsing intranet or sensitive web portals inside the secure local sandbox.'
+    ],
+    examples: [
+      '@agent search latest quantum computing milestones 2026',
+      '@agent arxiv mixture of agents speculative decoding',
+      '@agent wiki CRISPR gene editing',
+      '@agent browser https://en.wikipedia.org'
+    ]
+  },
+
+  'writing': {
+    id: 'writing',
+    menuIndex: 13,
+    icon: '✍️',
+    title: 'Writing & Editing',
+    subtitle: 'Anti-AI Stylometry, Token Watermark Detection & Translation',
+    overview: 'Humanization of AI prose with anti-AI stylometry, statistical token watermark detection (Kirchenbauer et al.), multilingual neural translation, author voice style transfer, and interactive book/chapter outline planning. Restores natural cadence, varied sentence structures, and authentic human voice.',
+    engines: [
+      { name: 'Anti-AI Stylometry Engine', spec: 'Entropy & Burstiness Optimizer', role: 'Rewriting robotic AI drafts into natural, engaging human prose that bypasses AI detectors' },
+      { name: 'Dual Watermark Scanner', spec: 'Kirchenbauer Z-Score & Spatial LSB', role: 'Statistical token green-list detection (text) and chi-square LSB entropy analysis (images)' },
+      { name: 'NLLB Multilingual Engine', spec: 'Neural Translation (100+ Languages)', role: 'High-fidelity language translation with automatic source language detection' },
+      { name: 'Outline & Book Pacing Workspace', spec: 'Human-in-the-Loop Architecture', role: 'Structured multi-chapter manuscript planning with pacing targets and grounded research' }
+    ],
+    inputs: 'Raw text, Markdown documents, Word DOCX files, PDFs, or image files (for spatial image watermark scans).',
+    directives: [
+      { cmd: '@agent humanize <text/file>', desc: 'Rewrite AI-generated text into natural, varied human prose that bypasses AI detectors' },
+      { cmd: '@agent watermark <text/file/image>', desc: 'Detect statistical token distribution watermarks (text) or spatial LSB artifacts (images)' },
+      { cmd: '@agent translate to <language>: <text/file>', desc: 'High-fidelity multilingual translation with automatic source language detection' },
+      { cmd: '@agent style-transfer to <style>: <text>', desc: 'Shift voice and tone (e.g. conversational, academic, journalistic, executive)' },
+      { cmd: '@agent outline <topic/book>', desc: 'Launch the Writing Outline & Chapter Pacing Workspace for long-form manuscripts' },
+      { cmd: '@agent boost <prose>', desc: 'Enhance prose with deep deliberation, rhetorical elegance, and structural polish' }
+    ],
+    useCases: [
+      'Converting robotic AI drafts into natural, engaging human writing with organic sentence length variation.',
+      'Verifying whether a submitted essay, article, or generated image contains an invisible AI watermark.',
+      'Translating technical documentation into Spanish, French, German, Japanese, Chinese, or 100+ languages.'
+    ],
+    examples: [
+      '@agent humanize In today\'s digital era, artificial intelligence plays an indispensable role in modern society.',
+      '@agent watermark Check this paragraph for synthetic AI green-list watermarking patterns.',
+      '@agent translate to Spanish: Welcome to our local AI browser. All data stays on your machine.',
+      '@agent outline The History of Silicon Computing from Vacuum Tubes to Quantum Processors'
+    ]
+  }
+};
+
+const SPECIFIC_MODELS = {
+  'esm': { key: 'esm', name: 'ESM2 & ESMFold Protein Suite', category: 'science', cardKey: 'esm' },
+  'esm2': { key: 'esm2', name: 'ESM-2 Protein Language Model', category: 'science', cardKey: 'esm' },
+  'esm3': { key: 'esm3', name: 'ESM-3 Generative Biology', category: 'science', cardKey: 'esm' },
+  'esmfold': { key: 'esmfold', name: 'ESMFold 3D Structure Prediction', category: 'science', cardKey: 'esm' },
+  'evo': { key: 'evo', name: 'Evo Genomic Foundation Model', category: 'science', cardKey: 'esm' },
+  'chemberta': { key: 'chemberta', name: 'ChemBERTa Molecular Property Prediction', category: 'science', cardKey: 'chemberta' },
+  'molformer': { key: 'molformer', name: 'MoLFormer Chemical Screening', category: 'science', cardKey: 'chemberta' },
+  'smi-ted': { key: 'smi-ted', name: 'SMI-TED 3D Conformer Model', category: 'science', cardKey: 'chemberta' },
+  'selfies-ted': { key: 'selfies-ted', name: 'SELFIES-TED Robust Molecular Design', category: 'science', cardKey: 'chemberta' },
+  'geneformer': { key: 'geneformer', name: 'Geneformer Single-Cell Transcriptomics', category: 'science', cardKey: 'esm' },
+  'nucleotide-transformer': { key: 'nucleotide-transformer', name: 'Nucleotide Transformer DNA Model', category: 'science', cardKey: 'esm' },
+  'aurora': { key: 'aurora', name: 'Aurora High-Resolution Weather Prediction', category: 'science', cardKey: 'science' },
+  'climax': { key: 'climax', name: 'ClimaX Weather & Climate Model', category: 'science', cardKey: 'science' },
+  'climatebert': { key: 'climatebert', name: 'ClimateBERT Environmental Fact-Checking', category: 'science', cardKey: 'science' },
+  'prithvi': { key: 'prithvi', name: 'Prithvi NASA Geospatial Earth Model', category: 'science', cardKey: 'science' },
+  'galactica': { key: 'galactica', name: 'Galactica Scientific Literature & Reasoning', category: 'science', cardKey: 'science' },
+  'scibert': { key: 'scibert', name: 'SciBERT Biomedical & Computer Science', category: 'science', cardKey: 'science' },
+  'scholarbert': { key: 'scholarbert', name: 'ScholarBERT Multi-Disciplinary Literature', category: 'science', cardKey: 'science' },
+  's1-omni': { key: 's1-omni', name: 'S1-Omni Multimodal Scientific Suite', category: 'science', cardKey: 'science' },
+  'matscibert': { key: 'matscibert', name: 'MatSciBERT Materials Science', category: 'science', cardKey: 'science' },
+  'mhg-ged': { key: 'mhg-ged', name: 'MHG-GED Molecular Graph Edit Distance', category: 'science', cardKey: 'science' },
+  'finbert': { key: 'finbert', name: 'FinBERT Financial Sentiment Classification', category: 'finance', cardKey: 'finbert' },
+  'finbert-esg': { key: 'finbert-esg', name: 'FinBERT-ESG Corporate Sustainability', category: 'finance', cardKey: 'finbert' },
+  'finbert-tone': { key: 'finbert-tone', name: 'FinBERT-Tone Executive Tone Classifier', category: 'finance', cardKey: 'finbert' },
+  'fingpt': { key: 'fingpt', name: 'FinGPT-Forecaster Market Movement Predictor', category: 'finance', cardKey: 'finbert' },
+  'chronos': { key: 'chronos', name: 'Chronos-T5 Zero-Shot Time-Series Forecaster', category: 'finance', cardKey: 'finbert' },
+  'patchtst': { key: 'patchtst', name: 'PatchTST High-Frequency Market Forecaster', category: 'finance', cardKey: 'finbert' },
+  'llama-fin': { key: 'llama-fin', name: 'Llama-Fin-8B Valuation & DCF Engine', category: 'finance', cardKey: 'finbert' },
+  'finance-llm': { key: 'finance-llm', name: 'Finance-LLM Financial Reasoning Model', category: 'finance', cardKey: 'finbert' },
+  'qwen-finance': { key: 'qwen-finance', name: 'Qwen-Pro-Finance-32B Macro Risk Engine', category: 'finance', cardKey: 'finbert' },
+  'cuad-bert': { key: 'cuad-bert', name: 'CUAD-BERT 41 Contract Clause Extraction', category: 'legal', cardKey: 'saul-7b' },
+  'saul-7b': { key: 'saul-7b', name: 'Saul-7B Mistral Legal Reasoning LLM', category: 'legal', cardKey: 'saul-7b' },
+  'legal-bert': { key: 'legal-bert', name: 'Legal-BERT Statutory & Precedent Classifier', category: 'legal', cardKey: 'saul-7b' },
+  'legal-longformer': { key: 'legal-longformer', name: 'Legal-Longformer Judicial Brief Reader', category: 'legal', cardKey: 'saul-7b' },
+  'law-chat': { key: 'law-chat', name: 'Law-Chat Interactive Legal Advice', category: 'legal', cardKey: 'saul-7b' },
+  'law-llm': { key: 'law-llm', name: 'Law-LLM Case Law Analysis', category: 'legal', cardKey: 'saul-7b' },
+  'lawma': { key: 'lawma', name: 'Lawma-8B Automated Contract Drafting', category: 'legal', cardKey: 'saul-7b' },
+  'pile-of-law': { key: 'pile-of-law', name: 'Pile-of-Law LegalBERT Federal Filings', category: 'legal', cardKey: 'saul-7b' },
+  'som': { key: 'som', name: 'Set-of-Mark Visual UI Element Grounding', category: 'computer_use', cardKey: 'som' },
+  'markers': { key: 'markers', name: 'Set-of-Mark Interactive Web Markers', category: 'web', cardKey: 'som' },
+  'watermark': { key: 'watermark', name: 'Dual AI Watermark Detector (Text & Image)', category: 'writing', cardKey: 'watermark' },
+  'acdso': { key: 'acdso', name: 'Adaptive Contextual Data Science Optimization', category: 'tabular', cardKey: 'acdso' },
+  'pe': { key: 'pe', name: 'Windows PE Binary (.EXE / .DLL) Inspector', category: 'pe_binary', cardKey: 'pe' },
+  'humanize': { key: 'humanize', name: 'Humanize AI Text (Anti-AI Stylometry)', category: 'writing', cardKey: 'watermark' }
+};
+
+const SPECIFIC_MODEL_CARDS = {
+  'esm': {
+    id: 'esm',
+    name: 'ESM2 & ESMFold Protein Suite',
+    category: 'science',
+    icon: '🧬',
+    author: 'Meta Fundamental AI Research (FAIR)',
+    architecture: 'Transformer (33 layers, up to 15B params) + Folding Trunk',
+    purpose: 'Evolutionary Scale Modeling (ESM-2) protein language representations and ultra-fast atomic 3D protein structure prediction (ESMFold). Captures evolutionary constraints, residue-residue contacts, secondary structure elements, and zero-shot pathogenic variant effects directly from amino acid sequences without multiple sequence alignments (MSAs).',
+    inputFormat: 'Single-letter IUPAC amino acid sequence without spaces (e.g. A, C, D, E, F, G, H, I, K, L, M, N, P, Q, R, S, T, V, W, Y) or standard FASTA format starting with >header.',
+    sampleInput: 'MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLTLKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHDFFKSAMPEGYVQERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNYNSHNVYIMADKQKNGIKVNFKIRHNIEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSTQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK',
+    directives: [
+      { cmd: '@agent science esm2 <fasta_sequence>', desc: 'Extract protein embeddings, residue contact maps, and predicted variant effect scores' },
+      { cmd: '@agent science esmfold <fasta_sequence>', desc: 'Fold 3D protein structure and output atomic coordinates in standard PDB format in seconds' },
+      { cmd: '@agent science esm3 <prompt/motif>', desc: 'De novo protein generative design across sequence, structure, and enzymatic function' }
+    ],
+    useCases: [
+      'De novo enzyme engineering for plastic degradation and green chemistry catalysts.',
+      'Antibody affinity maturation and therapeutic biologics stability optimization.',
+      'Zero-shot in silico prediction of pathogenic missense variants in human genomic medicine.'
+    ],
+    examples: [
+      '@agent science esm2 MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLTLKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHDFFKSAMPEGYVQERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNYNSHNVYIMADKQKNGIKVNFKIRHNIEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSTQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK',
+      '@agent science esmfold MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLTLKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHDFFKSAMPEGYVQERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNYNSHNVYIMADKQKNGIKVNFKIRHNIEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSTQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK'
+    ],
+    related: ['esmfold', 'esm3', 'evo', 'nucleotide-transformer', 'geneformer']
+  },
+
+  'chemberta': {
+    id: 'chemberta',
+    name: 'ChemBERTa Molecular Property Prediction',
+    category: 'science',
+    icon: '🧪',
+    author: 'DeepChem / Hugging Face Community',
+    architecture: 'RoBERTa Transformer trained on 77M PubChem SMILES',
+    purpose: 'Chemical language model designed for molecular property prediction, quantitative structure-activity relationship (QSAR) benchmarking, lipophilicity, aqueous solubility (ESOL), and ADMET toxicity screening directly from canonical SMILES strings.',
+    inputFormat: 'Canonical SMILES string representing chemical molecular structure (e.g. CC(=O)OC1=CC=CC=C1C(=O)O for Aspirin).',
+    sampleInput: 'CC(=O)OC1=CC=CC=C1C(=O)O',
+    directives: [
+      { cmd: '@agent science chemberta <smiles>', desc: 'Predict molecular lipophilicity, blood-brain barrier penetration, and toxicity' },
+      { cmd: '@agent science molformer <smiles>', desc: 'High-throughput binding affinity screening across target receptor pockets' }
+    ],
+    useCases: [
+      'Rapid virtual screening of combinatorial drug candidate libraries.',
+      'Predicting hERG cardiac toxicity and liver microsomal stability prior to synthesis.',
+      'Estimating environmental chemical persistence and bioaccumulation factors.'
+    ],
+    examples: [
+      '@agent science chemberta CC(=O)OC1=CC=CC=C1C(=O)O',
+      '@agent science chemberta CN1C=NC2=C1C(=O)N(C(=O)N2C)C'
+    ],
+    related: ['molformer', 'smi-ted', 'selfies-ted', 'matscibert']
+  },
+
+  'finbert': {
+    id: 'finbert',
+    name: 'FinBERT Financial Sentiment Classifier',
+    category: 'finance',
+    icon: '📈',
+    author: 'Prosus AI / Financial PhraseBank',
+    architecture: 'BERT-Base fine-tuned on Corporate Financial Communications',
+    purpose: 'State-of-the-art financial sentiment analysis trained on 10-K, 10-Q, analyst reports, and Financial PhraseBank. Accurately distinguishes institutional market nuances where ordinary language models fail (e.g. interpreting "liability reduction" as positive, not negative).',
+    inputFormat: 'Financial news headline, earnings statement, analyst commentary, or conference call quote.',
+    sampleInput: 'Operating income grew 14% year-over-year despite macro headwinds in foreign exchange rates.',
+    directives: [
+      { cmd: '@agent finance finbert <text>', desc: 'Classify sentiment into Positive, Neutral, or Negative with calibrated confidence scores' },
+      { cmd: '@agent finance finbert-tone <text>', desc: 'Measure managerial optimism vs hedging in conference transcripts' },
+      { cmd: '@agent finance finbert-esg <text>', desc: 'Evaluate corporate disclosures against ESG sustainability standards' }
+    ],
+    useCases: [
+      'Automated news sentiment scoring for quantitative trading algorithms.',
+      'Monitoring real-time earnings call feeds for sudden shifts in executive tone.',
+      'Auditing corporate sustainability reports for genuine ESG commitments.'
+    ],
+    examples: [
+      '@agent finance finbert Despite headwinds in supply chain, Q3 operating margins expanded by 180 basis points.',
+      '@agent finance finbert Management reported a 22% reduction in debt covenants while expanding R&D expenditures.'
+    ],
+    related: ['finbert-tone', 'finbert-esg', 'fingpt', 'chronos']
+  },
+
+  'saul-7b': {
+    id: 'saul-7b',
+    name: 'Saul-7B Mistral Legal Reasoning LLM',
+    category: 'legal',
+    icon: '⚖️',
+    author: 'Equall AI / LegalBench',
+    architecture: 'Mistral-7B fine-tuned on 30B tokens of English Legal Corpora',
+    purpose: 'First 7-billion parameter open-weights legal LLM surpassing GPT-3.5 on LegalBench benchmark tasks. Demonstrates mastery over statutory interpretation, contract clause analysis, indemnification liability assessment, and legal doctrine synthesis.',
+    inputFormat: 'Contract clause, statutory provision (e.g. GDPR Art 17, UCC 2-207), judicial brief excerpt, or legal scenario.',
+    sampleInput: 'The Consultant agrees to indemnify, defend, and hold harmless the Company from any claims, losses, or liabilities exceeding the total consulting fees paid hereunder.',
+    directives: [
+      { cmd: '@agent legal saul-7b <contract_or_statute>', desc: 'Perform deep legal reasoning, identify one-sided terms, and recommend redlines' },
+      { cmd: '@agent legal cuad-bert <contract>', desc: 'Extract all 41 high-risk contract clauses from an agreement' }
+    ],
+    useCases: [
+      'Reviewing master services agreements for unlimited indemnification risks.',
+      'Drafting statutory compliance memorandums for regulatory changes.',
+      'Comparing conflicting state non-compete laws across multi-jurisdiction employment contracts.'
+    ],
+    examples: [
+      '@agent legal saul-7b Analyze whether this non-compete clause with a 24-month duration across all 50 states is enforceable under California law.',
+      '@agent legal saul-7b Redline this limitation of liability clause to add a mutual aggregate cap equal to 12 months fees.'
+    ],
+    related: ['cuad-bert', 'legal-longformer', 'lawma', 'legal-bert']
+  },
+
+  'som': {
+    id: 'som',
+    name: 'Set-of-Mark (SoM) Visual UI Element Grounding',
+    category: 'computer_use',
+    icon: '🎯',
+    author: 'Microsoft Research / HugOS Vision Core',
+    architecture: 'Visual Segmentation & Numbered Coordinate Marker Injection',
+    purpose: 'Set-of-Mark visual grounding overlays numbered alphanumeric badges onto every clickable button, input field, link, and interactive control on the screen or web page. Empowers Vision-Language Models to interact with desktop applications with sub-millimeter precision.',
+    inputFormat: 'Full desktop screenshot, web page DOM viewport, or application window.',
+    sampleInput: 'Active desktop display or browser viewport',
+    directives: [
+      { cmd: '@agent screen-grounding', desc: 'Capture active screen, assign numbered Set-of-Mark bounding boxes to all interactive controls' },
+      { cmd: '@agent markers', desc: 'Inject numbered Set-of-Mark visual markers onto web page controls in browser' },
+      { cmd: '@agent desktop-click <x,y>', desc: 'Click specific grounded element coordinate' }
+    ],
+    useCases: [
+      'Enabling autonomous desktop agents to click small UI icons without coordinate hallucination.',
+      'Automated visual accessibility audits for interactive button contrast and target sizes.',
+      'Visual debugging of automated browser end-to-end testing scripts.'
+    ],
+    examples: [
+      '@agent screen-grounding',
+      '@agent markers',
+      '@agent computer-use Click the Submit button tagged with marker 14'
+    ],
+    related: ['computer-use', 'ui-tars', 'markers', 'vision']
+  },
+
+  'watermark': {
+    id: 'watermark',
+    name: 'Dual AI Watermark Detector (Text & Image)',
+    category: 'writing',
+    icon: '🔍',
+    author: 'University of Maryland (Kirchenbauer et al.) & HugOS Forensics',
+    architecture: 'Statistical Green-List Z-Score + Spatial LSB Entropy Scanner',
+    purpose: 'Dual-mode AI watermark verification engine. For text: calculates the Kirchenbauer statistical green-list token distribution z-score (evaluating whether token selections match deterministic pseudorandom red/green partitions). For images: computes spatial least-significant-bit (LSB) entropy, chi-square artifacts, and high-frequency Fourier spectral anomalies.',
+    inputFormat: 'Plain text paragraph (minimum ~100 words for statistical significance) or image file (PNG/JPEG).',
+    sampleInput: 'In the rapidly expanding landscape of artificial intelligence, foundation models represent a monumental paradigm shift...',
+    directives: [
+      { cmd: '@agent watermark <text_or_file>', desc: 'Detect statistical token watermarking patterns or spatial LSB image watermarks' },
+      { cmd: '@agent humanize <text>', desc: 'Restyle AI text with varied entropy to remove synthetic watermarks and AI markers' }
+    ],
+    useCases: [
+      'Academic integrity auditing to verify student essays and research manuscripts.',
+      'Authenticating commercial image provenance and detecting synthetic generator watermarks.',
+      'Compliance verification for synthetic media regulatory disclosure mandates.'
+    ],
+    examples: [
+      '@agent watermark Check this paragraph for synthetic AI green-list watermarking patterns.',
+      '@agent watermark attached_document.docx',
+      '@agent watermark suspect_ai_artwork.png'
+    ],
+    related: ['humanize', 'boost', 'style-transfer', 'writing']
+  },
+
+  'acdso': {
+    id: 'acdso',
+    name: 'Adaptive Contextual Data Science Optimization (ACDSO)',
+    category: 'tabular',
+    icon: '🔬',
+    author: 'ModelFusion Core Data Science Lab',
+    architecture: 'Automated Tabular AutoML & Contextual Feature Synthesis Pipeline',
+    purpose: 'End-to-end automated data science engine for structured tabular datasets. Automatically identifies variable types, handles missing value imputation, executes contextual feature engineering, performs cross-validated algorithm selection (Gradient Boosting, Random Forest, ElasticNet), and outputs trained model weights.',
+    inputFormat: 'CSV, TSV, or Excel spreadsheet file path or attached table.',
+    sampleInput: 'dataset.csv containing target column with numerical features',
+    directives: [
+      { cmd: '@agent acdso <file.csv>', desc: 'Run complete automated data cleaning, feature profiling, and model training' },
+      { cmd: '@agent timeseries <file.csv>', desc: 'Multi-horizon probabilistic forecasting on time-series columns' },
+      { cmd: '@agent dataanalyst <file.csv>', desc: 'Generate complete statistical EDA report with correlation matrices' }
+    ],
+    useCases: [
+      'Zero-code training of customer churn, loan default, or fraud detection models.',
+      'Immediate exploratory profiling of massive datasets without writing pandas code.',
+      'Automated time-series demand forecasting for supply chain inventory management.'
+    ],
+    examples: [
+      '@agent acdso dataset.csv',
+      '@agent timeseries sales_history_2025.csv',
+      '@agent dataanalyst user_retention.csv'
+    ],
+    related: ['timeseries', 'dataanalyst', 'predict', 'datascience']
+  },
+
+  'pe': {
+    id: 'pe',
+    name: 'Windows PE Binary (.EXE / .DLL) Inspector',
+    category: 'pe_binary',
+    icon: '🛡️',
+    author: 'ModelFusion Native Windows Security Subsystem',
+    architecture: 'Native PECOFF Binary Parser & Section Entropy Scanner',
+    purpose: 'Comprehensive static inspection of Windows Portable Executable (PE) binaries. Analyzes DOS, COFF, and Optional headers, PE checksums, subsystem target, address space layout randomization (ASLR), data execution prevention (DEP/NX), control flow guard (CFG), section table entropy, and Authenticode signatures.',
+    inputFormat: 'Path to 32-bit or 64-bit Windows PE executable (.exe), dynamic link library (.dll), or system driver (.sys).',
+    sampleInput: 'target/release/cli.exe',
+    directives: [
+      { cmd: '@agent pe <file.exe>', desc: 'Full static PE header, security mitigation, and section analysis' },
+      { cmd: '@agent entropy <file>', desc: 'Per-section Shannon entropy calculation (0.0 to 8.0) for packer detection' },
+      { cmd: '@agent strings <file>', desc: 'Extract filtered ASCII/Unicode strings from binary' },
+      { cmd: '@agent packer-detect <file>', desc: 'Heuristic UPX, Themida, VMProtect packer and crypter detection' }
+    ],
+    useCases: [
+      'Verifying digital signatures and ASLR/DEP compiler security flags on enterprise software.',
+      'Static malware analysis and reverse-engineering of unknown binaries without execution.',
+      'Diagnosing missing exported symbols or dependency DLLs on native Windows apps.'
+    ],
+    examples: [
+      '@agent pe C:\\Windows\\System32\\notepad.exe',
+      '@agent entropy target/release/cli.exe',
+      '@agent pe browser/bin/clibrowser.exe'
+    ],
+    related: ['entropy', 'strings', 'packer-detect', 'security']
+  }
+};
+
+function escapeHtml(str) {
+  if (typeof str !== 'string') return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
+function parseHelpQuery(rawInput) {
+  const input = (rawInput || '').trim();
+  if (!input) return null;
+
+  const lower = input.toLowerCase();
+  const isHelpRegex = /^(?:@agent\s+|@|\/|--)?(?:help|helo|hlp|halp)\b/i;
+  const containsHelpRegex = /(?:@|\/)?(?:help|helo|hlp|halp)\b/i;
+
+  if (!isHelpRegex.test(lower) && !containsHelpRegex.test(lower)) {
+    return null;
+  }
+
+  let cleanArgs = input
+    .replace(/^(?:@agent\s+|@|\/|--)?(?:help|helo|hlp|halp)\s*:?\s*/gi, '')
+    .replace(/(?:of|or|and)?\s*(?:@agent\s+|@|\/|--)?(?:help|helo|hlp|halp)\s*:?\s*/gi, ' ')
+    .trim();
+
+  const normalizedTokens = cleanArgs.toLowerCase().split(/\s+/).filter(Boolean);
+
+  return {
+    isHelp: true,
+    rawInput,
+    cleanArgs,
+    tokens: normalizedTokens
+  };
+}
+
+function resolveHelpResolution(parsed) {
+  if (!parsed || !parsed.isHelp) return null;
+  const tokens = parsed.tokens;
+
+  if (tokens.length === 0) {
+    return { type: 'global_overview' };
+  }
+
+  let matchedModel = null;
+  let matchedModelCard = null;
+
+  for (const token of tokens) {
+    const cleanToken = token.replace(/[^a-z0-9_-]/g, '');
+    if (SPECIFIC_MODELS[cleanToken]) {
+      matchedModel = SPECIFIC_MODELS[cleanToken];
+      matchedModelCard = SPECIFIC_MODEL_CARDS[matchedModel.cardKey] || SPECIFIC_MODEL_CARDS[cleanToken];
+      break;
+    }
+    for (const [k, m] of Object.entries(SPECIFIC_MODELS)) {
+      if (k === cleanToken || cleanToken === k.replace('-', '')) {
+        matchedModel = m;
+        matchedModelCard = SPECIFIC_MODEL_CARDS[matchedModel.cardKey] || SPECIFIC_MODEL_CARDS[k];
+        break;
+      }
+    }
+    if (matchedModel) break;
+  }
+
+  let matchedCategory = null;
+  for (const token of tokens) {
+    const cleanToken = token.replace(/[^a-z0-9_-]/g, '');
+    for (const [catKey, cat] of Object.entries(HELP_CATEGORIES)) {
+      const aliases = [catKey, catKey.replace('_', '-'), cat.title.toLowerCase()];
+      if (aliases.some(a => a.includes(cleanToken)) || cat.title.toLowerCase().includes(cleanToken)) {
+        matchedCategory = cat;
+        break;
+      }
+    }
+    if (matchedCategory) break;
+  }
+
+  if (matchedModel && matchedCategory) {
+    return {
+      type: 'combined_model_and_category',
+      model: matchedModel,
+      modelCard: matchedModelCard,
+      category: matchedCategory
+    };
+  }
+
+  if (matchedModel) {
+    const cat = HELP_CATEGORIES[matchedModel.category];
+    return {
+      type: 'model_deep_dive',
+      model: matchedModel,
+      modelCard: matchedModelCard,
+      category: cat
+    };
+  }
+
+  if (matchedCategory) {
+    return {
+      type: 'category_deep_dive',
+      category: matchedCategory
+    };
+  }
+
+  return {
+    type: 'global_overview',
+    unmatchedTokens: tokens
+  };
+}
+
+function renderDeepHelpHtml(res) {
+  if (!res) return '';
+
+  if (res.type === 'global_overview') {
+    let html = `
+      <div class="help-container">
+        <div class="help-hero-banner">
+          <div class="help-hero-title"><span>💡</span> ModelFusion &amp; HugOS Master Capabilities Hub</div>
+          <div style="font-size: 12.5px; opacity: 0.92; line-height: 1.55; margin-bottom: 8px;">
+            Explore all <strong>13 specialized multi-modal AI sidebar menus</strong> and foundation model subsystems. All models and tools execute <strong>100% locally</strong> with zero cloud API fees, complete data sovereignty, and hardware tensor acceleration.
+          </div>
+          <div style="font-size: 11px; opacity: 0.85; font-family: var(--mono-font, monospace); display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+            <span>⚡ Direct Syntax:</span>
+            <code>@help &lt;menu&gt;</code> (e.g. <code>@help science</code>, <code>@help finance</code>, <code>@help legal</code>) or <code>@help &lt;model&gt;</code> (e.g. <code>@helo esm</code>, <code>@help finbert</code>)
+          </div>
+        </div>
+
+        <div style="font-size: 12px; font-weight: 700; color: var(--text-primary, #ffffff); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px;">
+          Sidebar Menus &amp; Domain Subsystems (Click Any Card For Deep Guide)
+        </div>
+
+        <div class="help-grid-13">
+    `;
+
+    const sortedCats = Object.values(HELP_CATEGORIES).sort((a, b) => a.menuIndex - b.menuIndex);
+    for (const cat of sortedCats) {
+      html += `
+        <div class="help-cat-card" data-help-cmd="@help ${cat.id}" title="Click to view full architecture &amp; command guide for Menu ${cat.menuIndex}: ${escapeHtml(cat.title)}">
+          <div>
+            <div class="help-cat-header">
+              <span class="help-cat-title"><span>${cat.icon}</span> ${cat.menuIndex}. ${escapeHtml(cat.title)}</span>
+              <span class="help-cat-count">${cat.directives.length} directives</span>
+            </div>
+            <div class="help-cat-desc">${escapeHtml(cat.subtitle)}</div>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 6px;">
+            <span style="font-size: 10px; font-family: var(--mono-font, monospace); color: #60a5fa;">@help ${cat.id}</span>
+            <span style="font-size: 11px; opacity: 0.7;">Explore ▸</span>
+          </div>
+        </div>
+      `;
+    }
+
+    html += `
+        </div>
+
+        <div class="help-deep-section">
+          <div class="help-deep-title"><span>⌨️</span> System Keyboard Shortcuts &amp; Quick Directives</div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; font-size: 11.5px;">
+            <div><kbd style="padding: 2px 6px; background: rgba(255,255,255,0.1); border-radius: 4px;">Ctrl+,</kbd> Open Settings &amp; Resource Telemetry</div>
+            <div><kbd style="padding: 2px 6px; background: rgba(255,255,255,0.1); border-radius: 4px;">Ctrl+O</kbd> Attach File (Code, CSV, PDF, Image, PE)</div>
+            <div><kbd style="padding: 2px 6px; background: rgba(255,255,255,0.1); border-radius: 4px;">Alt+S</kbd> Toggle Live Web Search (Auto / On / Off)</div>
+            <div><kbd style="padding: 2px 6px; background: rgba(255,255,255,0.1); border-radius: 4px;">Ctrl+L</kbd> Clear Terminal Logs &amp; Chat Screen</div>
+          </div>
+          <div class="help-pills-row" style="margin-top: 10px;">
+            <button type="button" class="help-action-btn" data-help-cmd="@agent sys-info">🖥️ Check Hardware (sys-info)</button>
+            <button type="button" class="help-action-btn" data-help-cmd="@agent update">⚡ Update Catalog (~6,500 models)</button>
+            <button type="button" class="help-action-btn" data-help-cmd="@agent active-model">🤖 Active Loaded Model</button>
+            <button type="button" class="help-action-btn" data-help-cmd="@agent audit-menus">🧪 Audit All 13 Menus</button>
+          </div>
+        </div>
+      </div>
+    `;
+    return html;
+  }
+
+  // Combined Model & Category
+  if (res.type === 'combined_model_and_category') {
+    const modelCard = res.modelCard;
+    const cat = res.category;
+
+    let html = `<div class="help-container">`;
+
+    if (modelCard) {
+      html += renderSingleModelSection(modelCard, cat);
+    }
+
+    if (cat) {
+      html += `
+        <div class="help-deep-section" style="margin-top: 14px; border-color: rgba(59, 130, 246, 0.4);">
+          <div class="help-deep-title"><span>${cat.icon}</span> Parent Domain: Menu ${cat.menuIndex} — ${escapeHtml(cat.title)}</div>
+          <div style="font-size: 12px; line-height: 1.55; opacity: 0.9; margin-bottom: 10px;">
+            ${escapeHtml(cat.overview)}
+          </div>
+          <div class="help-pills-row">
+            <button type="button" class="help-action-btn" data-help-cmd="@help ${cat.id}">🔬 View Full ${escapeHtml(cat.title)} Guide</button>
+            <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ All 13 Menus</button>
+          </div>
+        </div>
+      `;
+    }
+
+    html += `</div>`;
+    return html;
+  }
+
+  // Model Deep Dive
+  if (res.type === 'model_deep_dive') {
+    const modelCard = res.modelCard;
+    const cat = res.category;
+    let html = `<div class="help-container">`;
+    if (modelCard) {
+      html += renderSingleModelSection(modelCard, cat);
+    } else {
+      html += `
+        <div class="help-hero-banner">
+          <div class="help-hero-title"><span>🤖</span> ${escapeHtml(res.model.name)}</div>
+          <div style="font-size: 12px; line-height: 1.55;">Model designated under ${escapeHtml(cat ? cat.title : 'ModelFusion')}.</div>
+        </div>
+      `;
+    }
+    html += `</div>`;
+    return html;
+  }
+
+  // Category Deep Dive
+  if (res.type === 'category_deep_dive') {
+    const cat = res.category;
+    let html = `
+      <div class="help-container">
+        <div class="help-hero-banner">
+          <div class="help-hero-title"><span>${cat.icon}</span> Menu ${cat.menuIndex}: ${escapeHtml(cat.title)}</div>
+          <div style="font-size: 13px; font-weight: 600; color: #93c5fd; margin-bottom: 6px;">${escapeHtml(cat.subtitle)}</div>
+          <div style="font-size: 12px; line-height: 1.6; opacity: 0.92;">${escapeHtml(cat.overview)}</div>
+        </div>
+
+        <!-- Engines & Foundation Models -->
+        <div class="help-deep-section">
+          <div class="help-deep-title"><span>🤖</span> Specialized Engines &amp; Foundation Models</div>
+          <table class="help-table">
+            <thead>
+              <tr>
+                <th style="width: 25%;">Engine / Model</th>
+                <th style="width: 30%;">Architecture / Specs</th>
+                <th style="width: 45%;">Core Capabilities</th>
+              </tr>
+            </thead>
+            <tbody>
+    `;
+
+    for (const eng of cat.engines) {
+      html += `
+        <tr>
+          <td><strong>${escapeHtml(eng.name)}</strong></td>
+          <td><code style="font-size: 10.5px; color: #38bdf8;">${escapeHtml(eng.spec)}</code></td>
+          <td>${escapeHtml(eng.role)}</td>
+        </tr>
+      `;
+    }
+
+    html += `
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Supported Inputs & Data Formats -->
+        <div class="help-deep-section">
+          <div class="help-deep-title"><span>📥</span> Supported Input Formats &amp; Data Types</div>
+          <div style="font-size: 12px; line-height: 1.5; color: var(--text-primary, #ffffff); background: rgba(0,0,0,0.25); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.06);">
+            ${escapeHtml(cat.inputs)}
+          </div>
+        </div>
+
+        <!-- Directives & Syntax -->
+        <div class="help-deep-section">
+          <div class="help-deep-title"><span>📋</span> Directives &amp; Command Syntax</div>
+          <table class="help-table">
+            <thead>
+              <tr>
+                <th style="width: 40%;">Command Directive</th>
+                <th style="width: 60%;">Description &amp; Action</th>
+              </tr>
+            </thead>
+            <tbody>
+    `;
+
+    for (const dir of cat.directives) {
+      html += `
+        <tr>
+          <td><code style="color: #60a5fa; font-weight: 600;">${escapeHtml(dir.cmd)}</code></td>
+          <td>${escapeHtml(dir.desc)}</td>
+        </tr>
+      `;
+    }
+
+    html += `
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Real-World Scenarios -->
+        <div class="help-deep-section">
+          <div class="help-deep-title"><span>🏭</span> Industrial &amp; Academic Use Cases</div>
+          <ul style="margin: 0; padding-left: 20px; font-size: 12px; line-height: 1.6;">
+    `;
+
+    for (const uc of cat.useCases) {
+      html += `<li>${escapeHtml(uc)}</li>`;
+    }
+
+    html += `
+          </ul>
+        </div>
+
+        <!-- Live Runnable Examples -->
+        <div class="help-deep-section">
+          <div class="help-deep-title"><span>⚡</span> Live Runnable Examples (Click Any Button To Run)</div>
+          <div class="help-pills-row">
+    `;
+
+    for (const ex of cat.examples) {
+      const shortLabel = ex.length > 45 ? ex.slice(0, 42) + '...' : ex;
+      html += `
+        <button type="button" class="help-action-btn" data-help-cmd="${escapeHtml(ex)}" title="Execute: ${escapeHtml(ex)}">
+          <span>▶️</span> <code>${escapeHtml(shortLabel)}</code>
+        </button>
+      `;
+    }
+
+    html += `
+          </div>
+        </div>
+
+        <!-- Bottom Navigation -->
+        <div style="display: flex; gap: 8px; margin-top: 6px;">
+          <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ Back to All 13 Menus</button>
+        </div>
+      </div>
+    `;
+    return html;
+  }
+
+  return '';
+}
+
+function renderSingleModelSection(card, cat) {
+  let html = `
+    <div class="help-hero-banner" style="border-color: rgba(16, 185, 129, 0.4); background: linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(59, 130, 246, 0.12));">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+        <div class="help-hero-title" style="color: #34d399; margin-bottom: 0;">
+          <span>${card.icon}</span> ${escapeHtml(card.name)}
+        </div>
+        <span class="help-badge">${escapeHtml(card.author)}</span>
+      </div>
+      <div style="font-size: 11px; font-family: var(--mono-font, monospace); color: #93c5fd; margin-bottom: 8px;">
+        Architecture: ${escapeHtml(card.architecture)}
+      </div>
+      <div style="font-size: 12px; line-height: 1.6; opacity: 0.95;">
+        ${escapeHtml(card.purpose)}
+      </div>
+    </div>
+
+    <!-- Input Format & Sequence Specifications -->
+    <div class="help-deep-section">
+      <div class="help-deep-title"><span>🧬</span> Required Input Format &amp; Specifications</div>
+      <div style="font-size: 12px; line-height: 1.5; margin-bottom: 6px;">
+        ${escapeHtml(card.inputFormat)}
+      </div>
+      ${card.sampleInput ? `
+        <div style="font-size: 10.5px; color: var(--text-muted, #94a3b8); margin-top: 4px;">Sample Valid Input Sequence:</div>
+        <div class="help-code-snippet">${escapeHtml(card.sampleInput)}</div>
+      ` : ''}
+    </div>
+
+    <!-- Directives -->
+    <div class="help-deep-section">
+      <div class="help-deep-title"><span>📋</span> Execution Directives</div>
+      <table class="help-table">
+        <thead>
+          <tr>
+            <th style="width: 45%;">Directive Syntax</th>
+            <th style="width: 55%;">Operation</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
+  for (const dir of card.directives) {
+    html += `
+      <tr>
+        <td><code style="color: #34d399; font-weight: 600;">${escapeHtml(dir.cmd)}</code></td>
+        <td>${escapeHtml(dir.desc)}</td>
+      </tr>
+    `;
+  }
+
+  html += `
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Real-World Applications -->
+    <div class="help-deep-section">
+      <div class="help-deep-title"><span>🔬</span> Real-World Industry &amp; Discovery Applications</div>
+      <ul style="margin: 0; padding-left: 20px; font-size: 12px; line-height: 1.6;">
+  `;
+
+  for (const uc of card.useCases) {
+    html += `<li>${escapeHtml(uc)}</li>`;
+  }
+
+  html += `
+      </ul>
+    </div>
+
+    <!-- Runnable Examples -->
+    <div class="help-deep-section">
+      <div class="help-deep-title"><span>⚡</span> Live Runnable Prompts (Click To Run)</div>
+      <div class="help-pills-row">
+  `;
+
+  for (const ex of card.examples) {
+    const shortLabel = ex.length > 55 ? ex.slice(0, 52) + '...' : ex;
+    html += `
+      <button type="button" class="help-action-btn" data-help-cmd="${escapeHtml(ex)}" title="Execute: ${escapeHtml(ex)}">
+        <span>▶️</span> <code>${escapeHtml(shortLabel)}</code>
+      </button>
+    `;
+  }
+
+  html += `
+      </div>
+    </div>
+  `;
+
+  if (card.related && card.related.length > 0) {
+    html += `
+      <div class="help-deep-section">
+        <div class="help-deep-title"><span>🔗</span> Related Models in Same Domain</div>
+        <div class="help-pills-row">
+    `;
+    for (const rel of card.related) {
+      html += `
+        <button type="button" class="help-action-btn" data-help-cmd="@help ${escapeHtml(rel)}">
+          <span>🔍</span> @help ${escapeHtml(rel)}
+        </button>
+      `;
+    }
+    html += `
+        </div>
+      </div>
+    `;
+  }
+
+  return html;
+}
+
+  function isHelpDirective(prompt) {
+    if (!prompt || typeof prompt !== 'string') return false;
+    const clean = prompt.trim().toLowerCase();
+    return /^(?:@agent\s+|@|\/|--)?(?:help|helo|hlp|halp)\b/i.test(clean) ||
+           /(?:@|\/)(?:help|helo|hlp|halp)\b/i.test(clean);
+  }
+  window.isHelpDirective = isHelpDirective;
+  window.parseHelpQuery = parseHelpQuery;
+  window.resolveHelpResolution = resolveHelpResolution;
+  window.renderDeepHelpHtml = renderDeepHelpHtml;
+  window.HELP_CATEGORIES = HELP_CATEGORIES;
+  window.SPECIFIC_MODELS = SPECIFIC_MODELS;
+  window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
+
+
   // -----------------------------------------------------------------
   // Adaptive Multimodal Fusion Router
   // -----------------------------------------------------------------
@@ -2399,7 +3618,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const clean = (prompt || '').trim().toLowerCase();
     const isSysInfoDir = /^(?:@agent\s+|@|\/|--)?(?:sys[-_ ]?info(?:rmation)?|system[-_ ]?info(?:rmation)?|info)(?:\b|$)/i.test(clean) ||
                          /^(?:sys[-_ ]?info|system[-_ ]?info|systeminfo|sysinfo|system_info|sys_info)$/i.test(clean);
-    if (isSysInfoDir ||
+    if (isSysInfoDir || isHelpDirective(clean) ||
         clean === '@agent sys-info' || clean === '@agent sysinfo' || clean === '/sys-info' || clean === '/sysinfo' ||
         clean.startsWith('@agent sys-info') || clean.startsWith('@agent sysinfo') || clean.startsWith('/sys-info') || clean.startsWith('/sysinfo') ||
         clean.startsWith('@agent help') || clean.startsWith('/help') ||
@@ -2636,7 +3855,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const clean = (query || '').trim().toLowerCase();
     const isSysInfoDir = /^(?:@agent\s+|@|\/|--)?(?:sys[-_ ]?info(?:rmation)?|system[-_ ]?info(?:rmation)?|info)(?:\b|$)/i.test(clean) ||
                          /^(?:sys[-_ ]?info|system[-_ ]?info|systeminfo|sysinfo|system_info|sys_info)$/i.test(clean);
-    if (isSysInfoDir ||
+    if (isSysInfoDir || isHelpDirective(clean) ||
         clean === '@agent sys-info' || clean === '@agent sysinfo' || clean === '/sys-info' || clean === '/sysinfo' ||
         clean.startsWith('@agent sys-info') || clean.startsWith('@agent sysinfo') || clean.startsWith('/sys-info') || clean.startsWith('/sysinfo') ||
         clean.startsWith('@agent help') || clean.startsWith('/help') ||
@@ -10205,6 +11424,79 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
     const currentAttachments = [...attachedFiles];
 
     // ─────────────────────────────────────────────────────────────────
+    // Universal @help & Interactive Menu Hub Interceptor
+    // ─────────────────────────────────────────────────────────────────
+    const helpQueryParsed = parseHelpQuery(cmd);
+    if (helpQueryParsed && helpQueryParsed.isHelp) {
+      termLog(`[HELP] 💡 Intercepting interactive help directive: "${cmd}"`, 'info');
+      termLog(cmd, 'cmd');
+      if (cliPromptInput) cliPromptInput.value = '';
+      if (cliPromptInputPinned) cliPromptInputPinned.value = '';
+
+      setChatRunningState(true);
+      currentAbortController = new AbortController();
+      if (chatWelcome) chatWelcome.classList.add('hidden');
+
+      const activeSession = chatSessions.find(s => s.id === currentSessionId);
+      if (activeSession) {
+        const lastMsg = activeSession.messages[activeSession.messages.length - 1];
+        if (!lastMsg || lastMsg.role !== 'user' || lastMsg.content !== cmd) {
+          activeSession.messages.push({
+            role: 'user',
+            content: cmd,
+            attachments: currentAttachments
+          });
+          saveChatHistory();
+        }
+      }
+
+      const resolution = resolveHelpResolution(helpQueryParsed);
+      const helpHtml = renderDeepHelpHtml(resolution);
+
+      let bubbleTitle = 'HugOS Interactive Help & Navigation Hub';
+      let bubbleIcon = '💡';
+      let bubbleTag = 'All 13 Menus';
+      if (resolution.type === 'category_deep_dive' && resolution.category) {
+        bubbleTitle = `Help: ${resolution.category.title}`;
+        bubbleIcon = resolution.category.icon;
+        bubbleTag = `Menu ${resolution.category.menuIndex}`;
+      } else if (resolution.type === 'model_deep_dive' && resolution.model) {
+        bubbleTitle = `Model Help: ${resolution.model.name}`;
+        bubbleIcon = resolution.modelCard ? resolution.modelCard.icon : '🤖';
+        bubbleTag = resolution.category ? resolution.category.title : 'Foundation Model';
+      } else if (resolution.type === 'combined_model_and_category') {
+        bubbleTitle = `Help: ${resolution.model ? resolution.model.name : ''} (${resolution.category ? resolution.category.title : ''})`;
+        bubbleIcon = resolution.modelCard ? resolution.modelCard.icon : (resolution.category ? resolution.category.icon : '🔬');
+        bubbleTag = resolution.category ? `Menu ${resolution.category.menuIndex}` : 'Combined Guide';
+      }
+
+      const bubble = createAiBubble({
+        icon: bubbleIcon,
+        title: bubbleTitle,
+        modelTag: bubbleTag,
+        isTool: true,
+        streaming: false
+      });
+      const streamContentEl = bubble.querySelector('.stream-content') || bubble;
+      streamContentEl.innerHTML = helpHtml;
+
+      if (activeSession) {
+        activeSession.messages.push({
+          role: 'assistant',
+          content: helpHtml,
+          model: 'system_guide'
+        });
+        saveChatHistory();
+      }
+
+      setChatRunningState(false);
+      if (chatMessages && currentSettings.autoScroll !== false) {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+      return;
+    }
+
+    // ─────────────────────────────────────────────────────────────────
     // Phase 1 HITL Interception Gate 1: Terminal Shell & File Safety
     // ─────────────────────────────────────────────────────────────────
     const shellSafety = detectPotentiallyDestructiveCommand(cmd);
@@ -16860,6 +18152,17 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     { cmd: '@agent backtrack ', icon: '↩️', label: 'Backtrack Rollback', desc: 'Rollback erroneous reasoning branches to previous valid state' },
     { cmd: '@agent reflection ', icon: '🪞', label: 'Error Reflection', desc: 'Analyze execution failure traces and synthesize self-corrections' },
     { cmd: '@agent adversarial ', icon: '⚔️', label: 'Adversarial Test', desc: 'Subject assumptions and architecture to worst-case stresses' },
+    { cmd: '@help ', icon: '💡', label: 'Help Hub (All 13 Menus)', desc: 'Explore all 13 sidebar menus and foundation models' },
+    { cmd: '@help science', icon: '🔬', label: 'Help: Science & Discovery', desc: 'Guide to 20 scientific models (ESM2, ChemBERTa, ClimaX...)' },
+    { cmd: '@help esm', icon: '🧬', label: 'Help: ESM Protein Suite', desc: 'Architecture, FASTA input format & 3D folding prompts' },
+    { cmd: '@help finance', icon: '💰', label: 'Help: Finance & Markets', desc: 'Guide to 9 financial models (FinBERT, Chronos, FinGPT...)' },
+    { cmd: '@help legal', icon: '⚖️', label: 'Help: Legal & Compliance', desc: 'Guide to 8 legal models (Saul-7B, CUAD-BERT, Lawma...)' },
+    { cmd: '@help computer-use', icon: '🖱️', label: 'Help: Computer Use', desc: 'Guide to UI-TARS, mouse/keyboard & screen grounding' },
+    { cmd: '@help code', icon: '💻', label: 'Help: Code & Security', desc: 'Guide to SAST scans, call-graphs & vulnerability audits' },
+    { cmd: '@help data', icon: '📊', label: 'Help: Data Science (ACDSO)', desc: 'Guide to automated tabular profiling & forecasting' },
+    { cmd: '@help vision', icon: '👁️', label: 'Help: Images & Vision', desc: 'Guide to VQA, object detection & FLUX.1 synthesis' },
+    { cmd: '@help writing', icon: '✍️', label: 'Help: Writing & Anti-AI', desc: 'Guide to Humanize, watermark detection & translation' },
+    { cmd: '@help pe', icon: '🛡️', label: 'Help: Windows PE Forensics', desc: 'Guide to .EXE / .DLL static header & entropy inspection' },
     { cmd: '@agent help', icon: '💡', label: 'Help & Guide', desc: 'Display complete command palette, capabilities & shortcuts' },
     { cmd: '@agent db-rebuild', icon: '🔄', label: 'Rebuild Catalog DB', desc: 'Drop and re-create local SQLite model database from scratch' },
     { cmd: '@agent db-vacuum', icon: '🧹', label: 'Vacuum Catalog DB', desc: 'Defragment pages and optimize SQLite database' },
@@ -18631,6 +19934,19 @@ If you are asked about real-world facts such as world leaders, heads of state, c
 
   // Initialize Tool Menu relevance and directives state
   updateToolMenuRelevance();
+
+  // Event delegation for interactive @help action buttons and pills
+  if (chatMessages) {
+    chatMessages.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-help-cmd]');
+      if (btn) {
+        const cmdToRun = btn.getAttribute('data-help-cmd');
+        if (cmdToRun) {
+          executeCliCommand(cmdToRun);
+        }
+      }
+    });
+  }
 
   // Initialize Header Navigation UI and Breadcrumb state
   updateNavigationUiState();

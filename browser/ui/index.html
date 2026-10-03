@@ -5,9 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HugOS Browser | ModelFusion AI Web Environment</title>
   <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+  <link rel="shortcut icon" href="favicon.ico">
   <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png">
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#0f172a">
   <link rel="stylesheet" href="styles.css">
@@ -169,7 +173,63 @@
               </div>
             </div>
 
-            <!-- 4. Images & Vision -->
+            <!-- 4. Finance & Markets -->
+            <div class="tool-category">
+              <button type="button" class="tool-category-header" data-cat="finance" title="Financial Markets, Quantitative Modeling &amp; SEC Filings">
+                <span class="cat-icon">💹</span>
+                <span class="cat-title">Finance &amp; Markets</span>
+                <span class="cat-chevron">▸</span>
+              </button>
+              <div class="tool-category-content collapsed">
+                <!-- Domain Filter Tabs -->
+                <div class="finance-domain-tabs" style="display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; margin-bottom: 6px; background: rgba(0,0,0,0.15); border-radius: 6px;">
+                  <button type="button" class="finance-domain-tab active" data-domain="all" onclick="filterFinanceDomain('all', this)" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--accent-color); color: #fff; cursor: pointer;">All (9)</button>
+                  <button type="button" class="finance-domain-tab" data-domain="forecasting" onclick="filterFinanceDomain('forecasting', this)" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); cursor: pointer;">📈 Forecasting (3)</button>
+                  <button type="button" class="finance-domain-tab" data-domain="generative" onclick="filterFinanceDomain('generative', this)" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); cursor: pointer;">💼 Generative (3)</button>
+                  <button type="button" class="finance-domain-tab" data-domain="sentiment" onclick="filterFinanceDomain('sentiment', this)" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); cursor: pointer;">📊 Sentiment &amp; ESG (3)</button>
+                </div>
+
+                <!-- 9 Financial Models in Strict Alphabetical Order A-Z for test_alphabetical_menu.py -->
+                <button type="button" class="tool-item-btn tool-command-btn finance-tool-item" data-tool-id="tool_chronos" data-category="finance" data-domain="forecasting" data-cmd="@agent finance chronos " data-original-title="Chronos-T5: Zero-shot transformer sequence-to-sequence time-series forecasting" title="Chronos-T5: Zero-shot transformer sequence-to-sequence time-series forecasting">
+                  <span class="tool-btn-left"><span class="tool-icon">⏳</span><span class="tool-label">Chronos-T5</span></span>
+                  <span class="tool-tag">@chronos</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn finance-tool-item" data-tool-id="tool_finance_llm" data-category="finance" data-domain="generative" data-cmd="@agent finance finance-llm " data-original-title="Finance-LLM: Pretrained on SEC filings, financial reports, and financial literature" title="Finance-LLM: Pretrained on SEC filings, financial reports, and financial literature">
+                  <span class="tool-btn-left"><span class="tool-icon">💼</span><span class="tool-label">Finance-LLM</span></span>
+                  <span class="tool-tag">@finance-llm</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn finance-tool-item" data-tool-id="tool_finbert" data-category="finance" data-domain="sentiment" data-cmd="@agent finance finbert " data-original-title="FinBERT: Market sentiment analysis on corporate disclosures and financial news" title="FinBERT: Market sentiment analysis on corporate disclosures and financial news">
+                  <span class="tool-btn-left"><span class="tool-icon">📊</span><span class="tool-label">FinBERT</span></span>
+                  <span class="tool-tag">@finbert</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn finance-tool-item" data-tool-id="tool_finbert_esg" data-category="finance" data-domain="sentiment" data-cmd="@agent finance finbert-esg " data-original-title="FinBERT-ESG: Categorize Environmental, Social, and Governance signals in corporate reports" title="FinBERT-ESG: Categorize Environmental, Social, and Governance signals in corporate reports">
+                  <span class="tool-btn-left"><span class="tool-icon">🌱</span><span class="tool-label">FinBERT-ESG</span></span>
+                  <span class="tool-tag">@finbert-esg</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn finance-tool-item" data-tool-id="tool_finbert_tone" data-category="finance" data-domain="sentiment" data-cmd="@agent finance finbert-tone " data-original-title="FinBERT-Tone: Tonal analysis within earnings conference calls and 10-K discussions" title="FinBERT-Tone: Tonal analysis within earnings conference calls and 10-K discussions">
+                  <span class="tool-btn-left"><span class="tool-icon">🎙️</span><span class="tool-label">FinBERT-Tone</span></span>
+                  <span class="tool-tag">@finbert-tone</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn finance-tool-item" data-tool-id="tool_fingpt" data-category="finance" data-domain="forecasting" data-cmd="@agent finance fingpt " data-original-title="FinGPT-Forecaster: Market movement prediction and qualitative financial analysis" title="FinGPT-Forecaster: Market movement prediction and qualitative financial analysis">
+                  <span class="tool-btn-left"><span class="tool-icon">🔮</span><span class="tool-label">FinGPT-Forecaster</span></span>
+                  <span class="tool-tag">@fingpt</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn finance-tool-item" data-tool-id="tool_llama_fin" data-category="finance" data-domain="generative" data-cmd="@agent finance llama-fin " data-original-title="Llama-Fin-8B: Conversational finance, regulatory compliance, and earnings summaries" title="Llama-Fin-8B: Conversational finance, regulatory compliance, and earnings summaries">
+                  <span class="tool-btn-left"><span class="tool-icon">🦙</span><span class="tool-label">Llama-Fin-8B</span></span>
+                  <span class="tool-tag">@llama-fin</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn finance-tool-item" data-tool-id="tool_patchtst" data-category="finance" data-domain="forecasting" data-cmd="@agent finance patchtst " data-original-title="PatchTST: Multivariate numerical sequence modeling for trend and price volume" title="PatchTST: Multivariate numerical sequence modeling for trend and price volume">
+                  <span class="tool-btn-left"><span class="tool-icon">📉</span><span class="tool-label">PatchTST</span></span>
+                  <span class="tool-tag">@patchtst</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn finance-tool-item" data-tool-id="tool_qwen_finance" data-category="finance" data-domain="generative" data-cmd="@agent finance qwen-finance " data-original-title="Qwen-Pro-Finance-32B: Financial mathematics, quantitative code, and balance sheet modeling" title="Qwen-Pro-Finance-32B: Financial mathematics, quantitative code, and balance sheet modeling">
+                  <span class="tool-btn-left"><span class="tool-icon">🏢</span><span class="tool-label">Qwen-Pro-Finance-32B</span></span>
+                  <span class="tool-tag">@qwen-finance</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 5. Images & Vision -->
             <div class="tool-category">
               <button type="button" class="tool-category-header" data-cat="vision" data-alt-cat="multimodal" title="Images &amp; Vision Tools">
                 <span class="cat-icon">👁️</span>
@@ -219,7 +279,58 @@
               </div>
             </div>
 
-            <!-- 6. Planning & Deep Thinking -->
+            <!-- 7. Legal & Compliance -->
+            <div class="tool-category">
+              <button type="button" class="tool-category-header" data-cat="legal" title="Legal Reasoning, Statutory Analysis &amp; Contract Understanding">
+                <span class="cat-icon">⚖️</span>
+                <span class="cat-title">Legal &amp; Compliance</span>
+                <span class="cat-chevron">▸</span>
+              </button>
+              <div class="tool-category-content collapsed">
+                <!-- Domain Filter Tabs -->
+                <div class="legal-domain-tabs" style="display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; margin-bottom: 6px; background: rgba(0,0,0,0.15); border-radius: 6px;">
+                  <button type="button" class="legal-domain-tab active" data-domain="all" onclick="filterLegalDomain('all', this)" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--accent-color); color: #fff; cursor: pointer;">All (8)</button>
+                  <button type="button" class="legal-domain-tab" data-domain="encoder" onclick="filterLegalDomain('encoder', this)" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); cursor: pointer;">📑 Extraction (4)</button>
+                  <button type="button" class="legal-domain-tab" data-domain="generative" onclick="filterLegalDomain('generative', this)" style="font-size: 10px; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); cursor: pointer;">⚖️ Reasoning (4)</button>
+                </div>
+
+                <!-- 8 Legal Models in Strict Alphabetical Order A-Z for test_alphabetical_menu.py -->
+                <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_cuad_bert" data-category="legal" data-domain="encoder" data-cmd="@agent legal cuad-bert " data-original-title="CUAD-BERT: Clause-level contract understanding and agreement analysis" title="CUAD-BERT: Clause-level contract understanding and agreement analysis">
+                  <span class="tool-btn-left"><span class="tool-icon">📜</span><span class="tool-label">CUAD-BERT</span></span>
+                  <span class="tool-tag">@cuad</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_law_chat" data-category="legal" data-domain="generative" data-cmd="@agent legal law-chat " data-original-title="Law-Chat: Instruction-tuned model for interactive statutory analysis and document Q&amp;A" title="Law-Chat: Instruction-tuned model for interactive statutory analysis and document Q&amp;A">
+                  <span class="tool-btn-left"><span class="tool-icon">💬</span><span class="tool-label">Law-Chat</span></span>
+                  <span class="tool-tag">@law-chat</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_law_llm" data-category="legal" data-domain="generative" data-cmd="@agent legal law-llm " data-original-title="Law-LLM: Pretrained base model on legal scholarship and case law comprehension" title="Law-LLM: Pretrained base model on legal scholarship and case law comprehension">
+                  <span class="tool-btn-left"><span class="tool-icon">📚</span><span class="tool-label">Law-LLM</span></span>
+                  <span class="tool-tag">@law-llm</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_lawma" data-category="legal" data-domain="generative" data-cmd="@agent legal lawma " data-original-title="Lawma-8B: Llama-based legal reasoning and automated contract drafting" title="Lawma-8B: Llama-based legal reasoning and automated contract drafting">
+                  <span class="tool-btn-left"><span class="tool-icon">🦙</span><span class="tool-label">Lawma-8B</span></span>
+                  <span class="tool-tag">@lawma</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_legal_bert" data-category="legal" data-domain="encoder" data-cmd="@agent legal legal-bert " data-original-title="Legal-BERT: Pretrained on European and US court rulings, contracts, and LexGLUE" title="Legal-BERT: Pretrained on European and US court rulings, contracts, and LexGLUE">
+                  <span class="tool-btn-left"><span class="tool-icon">⚖️</span><span class="tool-label">Legal-BERT</span></span>
+                  <span class="tool-tag">@legal-bert</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_legal_longformer" data-category="legal" data-domain="encoder" data-cmd="@agent legal legal-longformer " data-original-title="Legal-Longformer: Long document attention for thousands of tokens in judicial briefs" title="Legal-Longformer: Long document attention for thousands of tokens in judicial briefs">
+                  <span class="tool-btn-left"><span class="tool-icon">📑</span><span class="tool-label">Legal-Longformer</span></span>
+                  <span class="tool-tag">@longformer</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_pile_of_law" data-category="legal" data-domain="encoder" data-cmd="@agent legal pile-of-law " data-original-title="Pile-of-Law LegalBERT: Pretrained on federal filings, court opinions, and administrative law" title="Pile-of-Law LegalBERT: Pretrained on federal filings, court opinions, and administrative law">
+                  <span class="tool-btn-left"><span class="tool-icon">🏛️</span><span class="tool-label">Pile-of-Law LegalBERT</span></span>
+                  <span class="tool-tag">@pile-of-law</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_saul_7b" data-category="legal" data-domain="generative" data-cmd="@agent legal saul-7b " data-original-title="Saul-7B: Mistral legal reasoning, statutory summarization, and LegalBench benchmarks" title="Saul-7B: Mistral legal reasoning, statutory summarization, and LegalBench benchmarks">
+                  <span class="tool-btn-left"><span class="tool-icon">⚡</span><span class="tool-label">Saul-7B</span></span>
+                  <span class="tool-tag">@saul</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 8. Planning & Deep Thinking -->
             <div class="tool-category">
               <button type="button" class="tool-category-header" data-cat="agent" data-alt-cat="reasoning" title="Planning &amp; Deep Thinking Directives">
                 <span class="cat-icon">🧠</span>
