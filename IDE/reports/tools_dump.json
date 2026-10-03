@@ -1,0 +1,1943 @@
+{
+  "total": 106,
+  "categories": {
+    "Classification &amp; Taxonomy": [
+      {
+        "category": "Classification &amp; Taxonomy",
+        "label": "BART-Large MNLI",
+        "tag": "@bart-mnli",
+        "data_cmd": "@agent classify bart-large-mnli ",
+        "id": "tool_bart_large_mnli",
+        "tool_id": "tool_bart_large_mnli",
+        "onclick": ""
+      },
+      {
+        "category": "Classification &amp; Taxonomy",
+        "label": "Cross-Encoder DeBERTa",
+        "tag": "@deberta-nli",
+        "data_cmd": "@agent classify nli-deberta-v3-base ",
+        "id": "tool_nli_deberta_v3_base",
+        "tool_id": "tool_nli_deberta_v3_base",
+        "onclick": ""
+      },
+      {
+        "category": "Classification &amp; Taxonomy",
+        "label": "DeBERTa-v3 NLI FEVER",
+        "tag": "@deberta-fever",
+        "data_cmd": "@agent classify deberta-v3-base-mnli-fever-anli ",
+        "id": "tool_deberta_v3_mnli_fever_anli",
+        "tool_id": "tool_deberta_v3_mnli_fever_anli",
+        "onclick": ""
+      },
+      {
+        "category": "Classification &amp; Taxonomy",
+        "label": "DistilBART MNLI",
+        "tag": "@distilbart-mnli",
+        "data_cmd": "@agent classify distilbart-mnli-12-3 ",
+        "id": "tool_distilbart_mnli_12_3",
+        "tool_id": "tool_distilbart_mnli_12_3",
+        "onclick": ""
+      },
+      {
+        "category": "Classification &amp; Taxonomy",
+        "label": "DistilBERT Emotion",
+        "tag": "@emotion",
+        "data_cmd": "@agent sentiment distilbert-base-uncased-emotion ",
+        "id": "tool_distilbert_emotion",
+        "tool_id": "tool_distilbert_emotion",
+        "onclick": ""
+      },
+      {
+        "category": "Classification &amp; Taxonomy",
+        "label": "DistilBERT SST-2",
+        "tag": "@sst2",
+        "data_cmd": "@agent sentiment distilbert-base-uncased-finetuned-sst-2-english ",
+        "id": "tool_distilbert_sst2",
+        "tool_id": "tool_distilbert_sst2",
+        "onclick": ""
+      },
+      {
+        "category": "Classification &amp; Taxonomy",
+        "label": "FinBERT Classifier",
+        "tag": "@finbert-cls",
+        "data_cmd": "@agent topic finbert ",
+        "id": "tool_finbert_classifier",
+        "tool_id": "tool_finbert_classifier",
+        "onclick": ""
+      },
+      {
+        "category": "Classification &amp; Taxonomy",
+        "label": "GoEmotions RoBERTa",
+        "tag": "@go-emotions",
+        "data_cmd": "@agent sentiment roberta-base-go_emotions ",
+        "id": "tool_roberta_go_emotions",
+        "tool_id": "tool_roberta_go_emotions",
+        "onclick": ""
+      },
+      {
+        "category": "Classification &amp; Taxonomy",
+        "label": "KoalaAI Text Moderation",
+        "tag": "@moderation",
+        "data_cmd": "@agent moderation text-moderation ",
+        "id": "tool_koalaai_text_moderation",
+        "tool_id": "tool_koalaai_text_moderation",
+        "onclick": ""
+      },
+      {
+        "category": "Classification &amp; Taxonomy",
+        "label": "Longformer 4096",
+        "tag": "@longformer",
+        "data_cmd": "@agent topic longformer-base-4096 ",
+        "id": "tool_longformer_base_4096",
+        "tool_id": "tool_longformer_base_4096",
+        "onclick": ""
+      },
+      {
+        "category": "Classification &amp; Taxonomy",
+        "label": "Toxic-BERT",
+        "tag": "@toxic-bert",
+        "data_cmd": "@agent moderation toxic-bert ",
+        "id": "tool_toxic_bert",
+        "tool_id": "tool_toxic_bert",
+        "onclick": ""
+      },
+      {
+        "category": "Classification &amp; Taxonomy",
+        "label": "Twitter-RoBERTa Sentiment",
+        "tag": "@twitter-sentiment",
+        "data_cmd": "@agent sentiment twitter-roberta-base-sentiment-latest ",
+        "id": "tool_twitter_roberta_sentiment",
+        "tool_id": "tool_twitter_roberta_sentiment",
+        "onclick": ""
+      }
+    ],
+    "Code &amp; Security": [
+      {
+        "category": "Code &amp; Security",
+        "label": "Audit Code for Vulnerabilities",
+        "tag": "@security",
+        "data_cmd": "@agent security ",
+        "id": "tool_vuln_detection",
+        "tool_id": "tool_vuln_detection",
+        "onclick": ""
+      },
+      {
+        "category": "Code &amp; Security",
+        "label": "Code Architecture Map",
+        "tag": "@graph",
+        "data_cmd": "@agent graph-index ",
+        "id": "tool_graph_index",
+        "tool_id": "tool_graph_index",
+        "onclick": ""
+      }
+    ],
+    "Computer Use &amp; OS Automation": [
+      {
+        "category": "Computer Use &amp; OS Automation",
+        "label": "Autonomous Computer Use",
+        "tag": "@computer-use",
+        "data_cmd": "@agent computer-use ",
+        "id": "tool_computer_use",
+        "tool_id": "tool_computer_use",
+        "onclick": ""
+      },
+      {
+        "category": "Computer Use &amp; OS Automation",
+        "label": "Exam Solver",
+        "tag": "@exam-solver",
+        "data_cmd": "@agent exam-solver ",
+        "id": "tool_exam_solver",
+        "tool_id": "tool_exam_solver",
+        "onclick": ""
+      },
+      {
+        "category": "Computer Use &amp; OS Automation",
+        "label": "Map Directions",
+        "tag": "@map-directions",
+        "data_cmd": "@agent map-directions ",
+        "id": "tool_map_directions",
+        "tool_id": "tool_map_directions",
+        "onclick": ""
+      },
+      {
+        "category": "Computer Use &amp; OS Automation",
+        "label": "OS Mouse Click",
+        "tag": "@click",
+        "data_cmd": "@agent desktop-click ",
+        "id": "tool_desktop_click",
+        "tool_id": "tool_desktop_click",
+        "onclick": ""
+      },
+      {
+        "category": "Computer Use &amp; OS Automation",
+        "label": "OS Type &amp; Hotkey",
+        "tag": "@type",
+        "data_cmd": "@agent desktop-type ",
+        "id": "tool_desktop_type",
+        "tool_id": "tool_desktop_type",
+        "onclick": ""
+      },
+      {
+        "category": "Computer Use &amp; OS Automation",
+        "label": "OS Window Scroll",
+        "tag": "@scroll",
+        "data_cmd": "@agent desktop-scroll ",
+        "id": "tool_desktop_scroll",
+        "tool_id": "tool_desktop_scroll",
+        "onclick": ""
+      },
+      {
+        "category": "Computer Use &amp; OS Automation",
+        "label": "Screen Grounding",
+        "tag": "@screen",
+        "data_cmd": "@agent screen-grounding ",
+        "id": "tool_screen_grounding",
+        "tool_id": "tool_screen_grounding",
+        "onclick": ""
+      },
+      {
+        "category": "Computer Use &amp; OS Automation",
+        "label": "Shopping",
+        "tag": "@shopping",
+        "data_cmd": "@agent shopping ",
+        "id": "tool_shopping",
+        "tool_id": "tool_shopping",
+        "onclick": ""
+      },
+      {
+        "category": "Computer Use &amp; OS Automation",
+        "label": "Ticket Booking",
+        "tag": "@ticket-booking",
+        "data_cmd": "@agent ticket-booking ",
+        "id": "tool_ticket_booking",
+        "tool_id": "tool_ticket_booking",
+        "onclick": ""
+      },
+      {
+        "category": "Computer Use &amp; OS Automation",
+        "label": "UI-TARS Agent Loop",
+        "tag": "@ui-tars",
+        "data_cmd": "@agent ui-tars ",
+        "id": "tool_ui_tars",
+        "tool_id": "tool_ui_tars",
+        "onclick": ""
+      }
+    ],
+    "Data &amp; Spreadsheets (CSV/Excel)": [
+      {
+        "category": "Data &amp; Spreadsheets (CSV/Excel)",
+        "label": "Analyze Dataset &amp; Train Model",
+        "tag": "@acdso",
+        "data_cmd": "@agent acdso ",
+        "id": "tool_acdso",
+        "tool_id": "tool_acdso",
+        "onclick": ""
+      },
+      {
+        "category": "Data &amp; Spreadsheets (CSV/Excel)",
+        "label": "Data Insights &amp; Statistics",
+        "tag": "@dataanalyst",
+        "data_cmd": "@agent dataanalyst ",
+        "id": "tool_dataanalyst",
+        "tool_id": "tool_dataanalyst",
+        "onclick": ""
+      },
+      {
+        "category": "Data &amp; Spreadsheets (CSV/Excel)",
+        "label": "Forecast Future Trends",
+        "tag": "@timeseries",
+        "data_cmd": "@agent timeseries ",
+        "id": "tool_timeseries",
+        "tool_id": "tool_timeseries",
+        "onclick": ""
+      },
+      {
+        "category": "Data &amp; Spreadsheets (CSV/Excel)",
+        "label": "Full Data Science Pipeline",
+        "tag": "@datascience",
+        "data_cmd": "@agent datascience ",
+        "id": "tool_datascience",
+        "tool_id": "tool_datascience",
+        "onclick": ""
+      },
+      {
+        "category": "Data &amp; Spreadsheets (CSV/Excel)",
+        "label": "Predict Outcomes",
+        "tag": "@predict",
+        "data_cmd": "@agent predict ",
+        "id": "tool_predict",
+        "tool_id": "tool_predict",
+        "onclick": ""
+      },
+      {
+        "category": "Data &amp; Spreadsheets (CSV/Excel)",
+        "label": "Smart Decision Optimizer",
+        "tag": "@decision",
+        "data_cmd": "@agent decision ",
+        "id": "tool_decision",
+        "tool_id": "tool_decision",
+        "onclick": ""
+      }
+    ],
+    "Finance &amp; Markets": [
+      {
+        "category": "Finance &amp; Markets",
+        "label": "Chronos-T5",
+        "tag": "@chronos",
+        "data_cmd": "@agent finance chronos ",
+        "id": "tool_chronos",
+        "tool_id": "tool_chronos",
+        "onclick": ""
+      },
+      {
+        "category": "Finance &amp; Markets",
+        "label": "Finance-LLM",
+        "tag": "@finance-llm",
+        "data_cmd": "@agent finance finance-llm ",
+        "id": "tool_finance_llm",
+        "tool_id": "tool_finance_llm",
+        "onclick": ""
+      },
+      {
+        "category": "Finance &amp; Markets",
+        "label": "FinBERT",
+        "tag": "@finbert",
+        "data_cmd": "@agent finance finbert ",
+        "id": "tool_finbert",
+        "tool_id": "tool_finbert",
+        "onclick": ""
+      },
+      {
+        "category": "Finance &amp; Markets",
+        "label": "FinBERT-ESG",
+        "tag": "@finbert-esg",
+        "data_cmd": "@agent finance finbert-esg ",
+        "id": "tool_finbert_esg",
+        "tool_id": "tool_finbert_esg",
+        "onclick": ""
+      },
+      {
+        "category": "Finance &amp; Markets",
+        "label": "FinBERT-Tone",
+        "tag": "@finbert-tone",
+        "data_cmd": "@agent finance finbert-tone ",
+        "id": "tool_finbert_tone",
+        "tool_id": "tool_finbert_tone",
+        "onclick": ""
+      },
+      {
+        "category": "Finance &amp; Markets",
+        "label": "FinGPT-Forecaster",
+        "tag": "@fingpt",
+        "data_cmd": "@agent finance fingpt ",
+        "id": "tool_fingpt",
+        "tool_id": "tool_fingpt",
+        "onclick": ""
+      },
+      {
+        "category": "Finance &amp; Markets",
+        "label": "Llama-Fin-8B",
+        "tag": "@llama-fin",
+        "data_cmd": "@agent finance llama-fin ",
+        "id": "tool_llama_fin",
+        "tool_id": "tool_llama_fin",
+        "onclick": ""
+      },
+      {
+        "category": "Finance &amp; Markets",
+        "label": "PatchTST",
+        "tag": "@patchtst",
+        "data_cmd": "@agent finance patchtst ",
+        "id": "tool_patchtst",
+        "tool_id": "tool_patchtst",
+        "onclick": ""
+      },
+      {
+        "category": "Finance &amp; Markets",
+        "label": "Qwen-Pro-Finance-32B",
+        "tag": "@qwen-finance",
+        "data_cmd": "@agent finance qwen-finance ",
+        "id": "tool_qwen_finance",
+        "tool_id": "tool_qwen_finance",
+        "onclick": ""
+      }
+    ],
+    "Images &amp; Vision": [
+      {
+        "category": "Images &amp; Vision",
+        "label": "Analyze Video",
+        "tag": "@video",
+        "data_cmd": "@agent video ",
+        "id": "tool_video",
+        "tool_id": "tool_video",
+        "onclick": ""
+      },
+      {
+        "category": "Images &amp; Vision",
+        "label": "Ask Question About Image",
+        "tag": "@vqa",
+        "data_cmd": "@agent vqa ",
+        "id": "tool_vqa",
+        "tool_id": "tool_vqa",
+        "onclick": ""
+      },
+      {
+        "category": "Images &amp; Vision",
+        "label": "Detect Objects &amp; Boxes",
+        "tag": "@detect",
+        "data_cmd": "@agent object-detection ",
+        "id": "tool_object_detection",
+        "tool_id": "tool_object_detection",
+        "onclick": ""
+      },
+      {
+        "category": "Images &amp; Vision",
+        "label": "Identify Image Category",
+        "tag": "@classify",
+        "data_cmd": "@agent image-classification ",
+        "id": "tool_image_classification",
+        "tool_id": "tool_image_classification",
+        "onclick": ""
+      },
+      {
+        "category": "Images &amp; Vision",
+        "label": "Inspect Attached Image",
+        "tag": "@vision",
+        "data_cmd": "@agent vision ",
+        "id": "tool_vision",
+        "tool_id": "tool_vision",
+        "onclick": ""
+      },
+      {
+        "category": "Images &amp; Vision",
+        "label": "Synthesize Image (FLUX.1)",
+        "tag": "@image",
+        "data_cmd": "@agent image ",
+        "id": "tool_image_generation",
+        "tool_id": "tool_image_generation",
+        "onclick": ""
+      }
+    ],
+    "Inspect Windows Apps (.EXE / .DLL)": [
+      {
+        "category": "Inspect Windows Apps (.EXE / .DLL)",
+        "label": "Inspect File Headers &amp; Security",
+        "tag": "@pe",
+        "data_cmd": "@agent pe ",
+        "id": "tool_pe_header",
+        "tool_id": "tool_pe_header",
+        "onclick": ""
+      }
+    ],
+    "Legal &amp; Compliance": [
+      {
+        "category": "Legal &amp; Compliance",
+        "label": "CUAD-BERT",
+        "tag": "@cuad",
+        "data_cmd": "@agent legal cuad-bert ",
+        "id": "tool_cuad_bert",
+        "tool_id": "tool_cuad_bert",
+        "onclick": ""
+      },
+      {
+        "category": "Legal &amp; Compliance",
+        "label": "Law-Chat",
+        "tag": "@law-chat",
+        "data_cmd": "@agent legal law-chat ",
+        "id": "tool_law_chat",
+        "tool_id": "tool_law_chat",
+        "onclick": ""
+      },
+      {
+        "category": "Legal &amp; Compliance",
+        "label": "Law-LLM",
+        "tag": "@law-llm",
+        "data_cmd": "@agent legal law-llm ",
+        "id": "tool_law_llm",
+        "tool_id": "tool_law_llm",
+        "onclick": ""
+      },
+      {
+        "category": "Legal &amp; Compliance",
+        "label": "Lawma-8B",
+        "tag": "@lawma",
+        "data_cmd": "@agent legal lawma ",
+        "id": "tool_lawma",
+        "tool_id": "tool_lawma",
+        "onclick": ""
+      },
+      {
+        "category": "Legal &amp; Compliance",
+        "label": "Legal-BERT",
+        "tag": "@legal-bert",
+        "data_cmd": "@agent legal legal-bert ",
+        "id": "tool_legal_bert",
+        "tool_id": "tool_legal_bert",
+        "onclick": ""
+      },
+      {
+        "category": "Legal &amp; Compliance",
+        "label": "Legal-Longformer",
+        "tag": "@longformer",
+        "data_cmd": "@agent legal legal-longformer ",
+        "id": "tool_legal_longformer",
+        "tool_id": "tool_legal_longformer",
+        "onclick": ""
+      },
+      {
+        "category": "Legal &amp; Compliance",
+        "label": "Pile-of-Law LegalBERT",
+        "tag": "@pile-of-law",
+        "data_cmd": "@agent legal pile-of-law ",
+        "id": "tool_pile_of_law",
+        "tool_id": "tool_pile_of_law",
+        "onclick": ""
+      },
+      {
+        "category": "Legal &amp; Compliance",
+        "label": "Saul-7B",
+        "tag": "@saul",
+        "data_cmd": "@agent legal saul-7b ",
+        "id": "tool_saul_7b",
+        "tool_id": "tool_saul_7b",
+        "onclick": ""
+      }
+    ],
+    "Planning &amp; Deep Thinking": [
+      {
+        "category": "Planning &amp; Deep Thinking",
+        "label": "Deep Thinking Boost",
+        "tag": "@boost",
+        "data_cmd": "@agent boost ",
+        "id": "tool_boost",
+        "tool_id": "tool_boost",
+        "onclick": ""
+      },
+      {
+        "category": "Planning &amp; Deep Thinking",
+        "label": "Interview &amp; Clarify (Grill Me)",
+        "tag": "@grill-me",
+        "data_cmd": "@agent grill-me ",
+        "id": "tool_grill_me",
+        "tool_id": "tool_grill_me",
+        "onclick": ""
+      },
+      {
+        "category": "Planning &amp; Deep Thinking",
+        "label": "Multi-Step Goal Runner",
+        "tag": "@goal",
+        "data_cmd": "@agent goal ",
+        "id": "tool_goal",
+        "tool_id": "tool_goal",
+        "onclick": ""
+      },
+      {
+        "category": "Planning &amp; Deep Thinking",
+        "label": "Self-Correcting Task Loop",
+        "tag": "@loop",
+        "data_cmd": "@agent agentic-loop ",
+        "id": "tool_agentic_loop",
+        "tool_id": "tool_agentic_loop",
+        "onclick": ""
+      },
+      {
+        "category": "Planning &amp; Deep Thinking",
+        "label": "Step-by-Step Action Plan",
+        "tag": "@plan",
+        "data_cmd": "@agent plan ",
+        "id": "tool_plan",
+        "tool_id": "tool_plan",
+        "onclick": ""
+      }
+    ],
+    "Science &amp; Discovery": [
+      {
+        "category": "Science &amp; Discovery",
+        "label": "Aurora",
+        "tag": "@aurora",
+        "data_cmd": "@agent science aurora ",
+        "id": "tool_aurora",
+        "tool_id": "tool_aurora",
+        "onclick": ""
+      },
+      {
+        "category": "Science &amp; Discovery",
+        "label": "ChemBERTa",
+        "tag": "@chemberta",
+        "data_cmd": "@agent science chemberta ",
+        "id": "tool_chemberta",
+        "tool_id": "tool_chemberta",
+        "onclick": ""
+      },
+      {
+        "category": "Science &amp; Discovery",
+        "label": "ClimateBERT",
+        "tag": "@climatebert",
+        "data_cmd": "@agent science climatebert ",
+        "id": "tool_climatebert",
+        "tool_id": "tool_climatebert",
+        "onclick": ""
+      },
+      {
+        "category": "Science &amp; Discovery",
+        "label": "ClimaX",
+        "tag": "@climax",
+        "data_cmd": "@agent science climax ",
+        "id": "tool_climax",
+        "tool_id": "tool_climax",
+        "onclick": ""
+      },
+      {
+        "category": "Science &amp; Discovery",
+        "label": "ESM2",
+        "tag": "@esm2",
+        "data_cmd": "@agent science esm2 ",
+        "id": "tool_esm2",
+        "tool_id": "tool_esm2",
+        "onclick": ""
+      },
+      {
+        "category": "Science &amp; Discovery",
+        "label": "ESM3",
+        "tag": "@esm3",
+        "data_cmd": "@agent science esm3 ",
+        "id": "tool_esm3",
+        "tool_id": "tool_esm3",
+        "onclick": ""
+      },
+      {
+        "category": "Science &amp; Discovery",
+        "label": "ESMFold",
+        "tag": "@esmfold",
+        "data_cmd": "@agent science esmfold ",
+        "id": "tool_esmfold",
+        "tool_id": "tool_esmfold",
+        "onclick": ""
+      },
+      {
+        "category": "Science &amp; Discovery",
+        "label": "Evo",
+        "tag": "@evo",
+        "data_cmd": "@agent science evo ",
+        "id": "tool_evo",
+        "tool_id": "tool_evo",
+        "onclick": ""
+      },
+      {
+        "category": "Science &amp; Discovery",
+        "label": "Galactica",
+        "tag": "@galactica",
+        "data_cmd": "@agent science galactica ",
+        "id": "tool_galactica",
+        "tool_id": "tool_galactica",
+        "onclick": ""
+      },
+      {
+        "category": "Science &amp; Discovery",
+        "label": "Geneformer",
+        "tag": "@geneformer",
+        "data_cmd": "@agent science geneformer ",
+        "id": "tool_geneformer",
+        "tool_id": "tool_geneformer",
+        "onclick": ""
+      },
+      {
+        "category": "Science &amp; Discovery",
+        "label": "MatSciBERT",
+        "tag": "@matscibert",
+        "data_cmd": "@agent science matscibert ",
+        "id": "tool_matscibert",
+        "tool_id": "tool_matscibert",
+        "onclick": ""
+      },
+      {
+        "category": "Science &amp; Discovery",
+        "label": "MHG-GED",
+        "tag": "@mhg-ged",
+        "data_cmd": "@agent science mhg-ged ",
+        "id": "tool_mhg_ged",
+        "tool_id": "tool_mhg_ged",
+        "onclick": ""
+      },
+      {
+        "category": "Science &amp; Discovery",
+        "label": "MoLFormer",
+        "tag": "@molformer",
+        "data_cmd": "@agent science molformer ",
+        "id": "tool_molformer",
+        "tool_id": "tool_molformer",
+        "onclick": ""
+      },
+      {
+        "category": "Science &amp; Discovery",
+        "label": "Nucleotide Transformer",
+        "tag": "@nucleotide",
+        "data_cmd": "@agent science nucleotide-transformer ",
+        "id": "tool_nucleotide_transformer",
+        "tool_id": "tool_nucleotide_transformer",
+        "onclick": ""
+      },
+      {
+        "category": "Science &amp; Discovery",
+        "label": "Prithvi",
+        "tag": "@prithvi",
+        "data_cmd": "@agent science prithvi ",
+        "id": "tool_prithvi",
+        "tool_id": "tool_prithvi",
+        "onclick": ""
+      },
+      {
+        "category": "Science &amp; Discovery",
+        "label": "S1-Omni",
+        "tag": "@s1-omni",
+        "data_cmd": "@agent science s1-omni ",
+        "id": "tool_s1_omni",
+        "tool_id": "tool_s1_omni",
+        "onclick": ""
+      },
+      {
+        "category": "Science &amp; Discovery",
+        "label": "ScholarBERT",
+        "tag": "@scholarbert",
+        "data_cmd": "@agent science scholarbert ",
+        "id": "tool_scholarbert",
+        "tool_id": "tool_scholarbert",
+        "onclick": ""
+      },
+      {
+        "category": "Science &amp; Discovery",
+        "label": "SciBERT",
+        "tag": "@scibert",
+        "data_cmd": "@agent science scibert ",
+        "id": "tool_scibert",
+        "tool_id": "tool_scibert",
+        "onclick": ""
+      },
+      {
+        "category": "Science &amp; Discovery",
+        "label": "SELFIES-TED",
+        "tag": "@selfies-ted",
+        "data_cmd": "@agent science selfies-ted ",
+        "id": "tool_selfies_ted",
+        "tool_id": "tool_selfies_ted",
+        "onclick": ""
+      },
+      {
+        "category": "Science &amp; Discovery",
+        "label": "SMI-TED",
+        "tag": "@smi-ted",
+        "data_cmd": "@agent science smi-ted ",
+        "id": "tool_smi_ted",
+        "tool_id": "tool_smi_ted",
+        "onclick": ""
+      }
+    ],
+    "Utilities &amp; System": [
+      {
+        "category": "Utilities &amp; System",
+        "label": "Audit All Menus",
+        "tag": "@audit-menus",
+        "data_cmd": "@agent audit-menus",
+        "id": "tool_audit_menus",
+        "tool_id": "tool_audit_menus",
+        "onclick": ""
+      },
+      {
+        "category": "Utilities &amp; System",
+        "label": "Benchmark Telemetry",
+        "tag": "@benchmark",
+        "data_cmd": "@agent benchmark",
+        "id": "tool_benchmark",
+        "tool_id": "tool_benchmark",
+        "onclick": ""
+      },
+      {
+        "category": "Utilities &amp; System",
+        "label": "Current Active Model",
+        "tag": "@model",
+        "data_cmd": "@agent active-model",
+        "id": "tool_active_model",
+        "tool_id": "tool_active_model",
+        "onclick": ""
+      },
+      {
+        "category": "Utilities &amp; System",
+        "label": "Database Integrity",
+        "tag": "@db-check",
+        "data_cmd": "@agent db-check",
+        "id": "tool_db_check",
+        "tool_id": "tool_db_check",
+        "onclick": ""
+      },
+      {
+        "category": "Utilities &amp; System",
+        "label": "Export Chat History",
+        "tag": "@export",
+        "data_cmd": "@agent export",
+        "id": "tool_export",
+        "tool_id": "tool_export",
+        "onclick": ""
+      },
+      {
+        "category": "Utilities &amp; System",
+        "label": "Hardware &amp; Memory",
+        "tag": "@sys-info",
+        "data_cmd": "@agent sys-info",
+        "id": "tool_sys_info",
+        "tool_id": "tool_sys_info",
+        "onclick": ""
+      },
+      {
+        "category": "Utilities &amp; System",
+        "label": "Help &amp; Commands",
+        "tag": "@help",
+        "data_cmd": "@agent help",
+        "id": "tool_help",
+        "tool_id": "tool_help",
+        "onclick": ""
+      },
+      {
+        "category": "Utilities &amp; System",
+        "label": "Ingest All 2M+ Models",
+        "tag": "@updatedb",
+        "data_cmd": "@agent updatedb",
+        "id": "tool_updatedb",
+        "tool_id": "tool_updatedb",
+        "onclick": ""
+      },
+      {
+        "category": "Utilities &amp; System",
+        "label": "Prune Old Cache",
+        "tag": "@db-prune",
+        "data_cmd": "@agent db-prune",
+        "id": "tool_db_prune",
+        "tool_id": "tool_db_prune",
+        "onclick": ""
+      },
+      {
+        "category": "Utilities &amp; System",
+        "label": "Rebuild SQLite DB",
+        "tag": "@db-rebuild",
+        "data_cmd": "@agent db-rebuild",
+        "id": "tool_db_rebuild",
+        "tool_id": "tool_db_rebuild",
+        "onclick": ""
+      },
+      {
+        "category": "Utilities &amp; System",
+        "label": "Update Models",
+        "tag": "@update",
+        "data_cmd": "@agent update",
+        "id": "tool_update",
+        "tool_id": "tool_update",
+        "onclick": ""
+      },
+      {
+        "category": "Utilities &amp; System",
+        "label": "Vacuum &amp; Optimize",
+        "tag": "@db-vacuum",
+        "data_cmd": "@agent db-vacuum",
+        "id": "tool_db_vacuum",
+        "tool_id": "tool_db_vacuum",
+        "onclick": ""
+      }
+    ],
+    "Voice &amp; Audio": [
+      {
+        "category": "Voice &amp; Audio",
+        "label": "Identify Sound or Music",
+        "tag": "@audio",
+        "data_cmd": "@agent audio ",
+        "id": "tool_audio_classification",
+        "tool_id": "tool_audio_classification",
+        "onclick": ""
+      },
+      {
+        "category": "Voice &amp; Audio",
+        "label": "Read Aloud (Voice)",
+        "tag": "@tts",
+        "data_cmd": "@agent tts ",
+        "id": "tool_tts",
+        "tool_id": "tool_tts",
+        "onclick": ""
+      },
+      {
+        "category": "Voice &amp; Audio",
+        "label": "Transcribe Audio to Text",
+        "tag": "@asr",
+        "data_cmd": "@agent asr ",
+        "id": "tool_asr",
+        "tool_id": "tool_asr",
+        "onclick": ""
+      }
+    ],
+    "Web Research &amp; Automation": [
+      {
+        "category": "Web Research &amp; Automation",
+        "label": "Browse the Web",
+        "tag": "@browser",
+        "data_cmd": "@agent browser ",
+        "id": "tool_browser",
+        "tool_id": "tool_browser",
+        "onclick": ""
+      },
+      {
+        "category": "Web Research &amp; Automation",
+        "label": "Deep Web Research",
+        "tag": "@research",
+        "data_cmd": "@agent browser deep research on ",
+        "id": "tool_deep_research",
+        "tool_id": "tool_deep_research",
+        "onclick": ""
+      },
+      {
+        "category": "Web Research &amp; Automation",
+        "label": "Research Papers (arXiv)",
+        "tag": "@arxiv",
+        "data_cmd": "@agent arxiv ",
+        "id": "tool_arxiv",
+        "tool_id": "tool_arxiv",
+        "onclick": ""
+      },
+      {
+        "category": "Web Research &amp; Automation",
+        "label": "Summarize Active Page",
+        "tag": "@summarize",
+        "data_cmd": "@agent summarize",
+        "id": "tool_summarize",
+        "tool_id": "tool_summarize",
+        "onclick": ""
+      },
+      {
+        "category": "Web Research &amp; Automation",
+        "label": "Visual Element Markers",
+        "tag": "@markers",
+        "data_cmd": "@agent markers ",
+        "id": "tool_som",
+        "tool_id": "tool_som",
+        "onclick": ""
+      },
+      {
+        "category": "Web Research &amp; Automation",
+        "label": "Wikipedia Knowledge (WikiSkill)",
+        "tag": "@wiki",
+        "data_cmd": "@agent wiki ",
+        "id": "tool_wiki",
+        "tool_id": "tool_wiki",
+        "onclick": ""
+      }
+    ],
+    "Writing &amp; Editing": [
+      {
+        "category": "Writing &amp; Editing",
+        "label": "AI Watermark Detection",
+        "tag": "@watermark",
+        "data_cmd": "@agent watermark ",
+        "id": "tool_watermark",
+        "tool_id": "tool_watermark",
+        "onclick": ""
+      },
+      {
+        "category": "Writing &amp; Editing",
+        "label": "Humanize AI Text &amp; Files",
+        "tag": "@humanize",
+        "data_cmd": "@agent humanize ",
+        "id": "tool_humanize",
+        "tool_id": "tool_humanize",
+        "onclick": ""
+      },
+      {
+        "category": "Writing &amp; Editing",
+        "label": "Multilingual Translation (Auto-Detect)",
+        "tag": "@translate",
+        "data_cmd": "@agent translate to Spanish: ",
+        "id": "tool_translate",
+        "tool_id": "tool_translate",
+        "onclick": ""
+      },
+      {
+        "category": "Writing &amp; Editing",
+        "label": "Outline &amp; Book Pacing",
+        "tag": "@outline",
+        "data_cmd": "@agent outline ",
+        "id": "tool_outline",
+        "tool_id": "tool_outline",
+        "onclick": ""
+      },
+      {
+        "category": "Writing &amp; Editing",
+        "label": "Style Transfer &amp; Voice Shift",
+        "tag": "@style",
+        "data_cmd": "@agent style-transfer to conversational: ",
+        "id": "tool_style_transfer",
+        "tool_id": "tool_style_transfer",
+        "onclick": ""
+      },
+      {
+        "category": "Writing &amp; Editing",
+        "label": "Writing &amp; Reasoning Boost",
+        "tag": "@boost",
+        "data_cmd": "@agent boost ",
+        "id": "tool_writing_boost",
+        "tool_id": "tool_writing_boost",
+        "onclick": ""
+      }
+    ]
+  },
+  "all_tools": [
+    {
+      "category": "Classification &amp; Taxonomy",
+      "label": "BART-Large MNLI",
+      "tag": "@bart-mnli",
+      "data_cmd": "@agent classify bart-large-mnli ",
+      "id": "tool_bart_large_mnli",
+      "tool_id": "tool_bart_large_mnli",
+      "onclick": ""
+    },
+    {
+      "category": "Classification &amp; Taxonomy",
+      "label": "Cross-Encoder DeBERTa",
+      "tag": "@deberta-nli",
+      "data_cmd": "@agent classify nli-deberta-v3-base ",
+      "id": "tool_nli_deberta_v3_base",
+      "tool_id": "tool_nli_deberta_v3_base",
+      "onclick": ""
+    },
+    {
+      "category": "Classification &amp; Taxonomy",
+      "label": "DeBERTa-v3 NLI FEVER",
+      "tag": "@deberta-fever",
+      "data_cmd": "@agent classify deberta-v3-base-mnli-fever-anli ",
+      "id": "tool_deberta_v3_mnli_fever_anli",
+      "tool_id": "tool_deberta_v3_mnli_fever_anli",
+      "onclick": ""
+    },
+    {
+      "category": "Classification &amp; Taxonomy",
+      "label": "DistilBART MNLI",
+      "tag": "@distilbart-mnli",
+      "data_cmd": "@agent classify distilbart-mnli-12-3 ",
+      "id": "tool_distilbart_mnli_12_3",
+      "tool_id": "tool_distilbart_mnli_12_3",
+      "onclick": ""
+    },
+    {
+      "category": "Classification &amp; Taxonomy",
+      "label": "DistilBERT Emotion",
+      "tag": "@emotion",
+      "data_cmd": "@agent sentiment distilbert-base-uncased-emotion ",
+      "id": "tool_distilbert_emotion",
+      "tool_id": "tool_distilbert_emotion",
+      "onclick": ""
+    },
+    {
+      "category": "Classification &amp; Taxonomy",
+      "label": "DistilBERT SST-2",
+      "tag": "@sst2",
+      "data_cmd": "@agent sentiment distilbert-base-uncased-finetuned-sst-2-english ",
+      "id": "tool_distilbert_sst2",
+      "tool_id": "tool_distilbert_sst2",
+      "onclick": ""
+    },
+    {
+      "category": "Classification &amp; Taxonomy",
+      "label": "FinBERT Classifier",
+      "tag": "@finbert-cls",
+      "data_cmd": "@agent topic finbert ",
+      "id": "tool_finbert_classifier",
+      "tool_id": "tool_finbert_classifier",
+      "onclick": ""
+    },
+    {
+      "category": "Classification &amp; Taxonomy",
+      "label": "GoEmotions RoBERTa",
+      "tag": "@go-emotions",
+      "data_cmd": "@agent sentiment roberta-base-go_emotions ",
+      "id": "tool_roberta_go_emotions",
+      "tool_id": "tool_roberta_go_emotions",
+      "onclick": ""
+    },
+    {
+      "category": "Classification &amp; Taxonomy",
+      "label": "KoalaAI Text Moderation",
+      "tag": "@moderation",
+      "data_cmd": "@agent moderation text-moderation ",
+      "id": "tool_koalaai_text_moderation",
+      "tool_id": "tool_koalaai_text_moderation",
+      "onclick": ""
+    },
+    {
+      "category": "Classification &amp; Taxonomy",
+      "label": "Longformer 4096",
+      "tag": "@longformer",
+      "data_cmd": "@agent topic longformer-base-4096 ",
+      "id": "tool_longformer_base_4096",
+      "tool_id": "tool_longformer_base_4096",
+      "onclick": ""
+    },
+    {
+      "category": "Classification &amp; Taxonomy",
+      "label": "Toxic-BERT",
+      "tag": "@toxic-bert",
+      "data_cmd": "@agent moderation toxic-bert ",
+      "id": "tool_toxic_bert",
+      "tool_id": "tool_toxic_bert",
+      "onclick": ""
+    },
+    {
+      "category": "Classification &amp; Taxonomy",
+      "label": "Twitter-RoBERTa Sentiment",
+      "tag": "@twitter-sentiment",
+      "data_cmd": "@agent sentiment twitter-roberta-base-sentiment-latest ",
+      "id": "tool_twitter_roberta_sentiment",
+      "tool_id": "tool_twitter_roberta_sentiment",
+      "onclick": ""
+    },
+    {
+      "category": "Code &amp; Security",
+      "label": "Audit Code for Vulnerabilities",
+      "tag": "@security",
+      "data_cmd": "@agent security ",
+      "id": "tool_vuln_detection",
+      "tool_id": "tool_vuln_detection",
+      "onclick": ""
+    },
+    {
+      "category": "Code &amp; Security",
+      "label": "Code Architecture Map",
+      "tag": "@graph",
+      "data_cmd": "@agent graph-index ",
+      "id": "tool_graph_index",
+      "tool_id": "tool_graph_index",
+      "onclick": ""
+    },
+    {
+      "category": "Computer Use &amp; OS Automation",
+      "label": "Autonomous Computer Use",
+      "tag": "@computer-use",
+      "data_cmd": "@agent computer-use ",
+      "id": "tool_computer_use",
+      "tool_id": "tool_computer_use",
+      "onclick": ""
+    },
+    {
+      "category": "Computer Use &amp; OS Automation",
+      "label": "Exam Solver",
+      "tag": "@exam-solver",
+      "data_cmd": "@agent exam-solver ",
+      "id": "tool_exam_solver",
+      "tool_id": "tool_exam_solver",
+      "onclick": ""
+    },
+    {
+      "category": "Computer Use &amp; OS Automation",
+      "label": "Map Directions",
+      "tag": "@map-directions",
+      "data_cmd": "@agent map-directions ",
+      "id": "tool_map_directions",
+      "tool_id": "tool_map_directions",
+      "onclick": ""
+    },
+    {
+      "category": "Computer Use &amp; OS Automation",
+      "label": "OS Mouse Click",
+      "tag": "@click",
+      "data_cmd": "@agent desktop-click ",
+      "id": "tool_desktop_click",
+      "tool_id": "tool_desktop_click",
+      "onclick": ""
+    },
+    {
+      "category": "Computer Use &amp; OS Automation",
+      "label": "OS Type &amp; Hotkey",
+      "tag": "@type",
+      "data_cmd": "@agent desktop-type ",
+      "id": "tool_desktop_type",
+      "tool_id": "tool_desktop_type",
+      "onclick": ""
+    },
+    {
+      "category": "Computer Use &amp; OS Automation",
+      "label": "OS Window Scroll",
+      "tag": "@scroll",
+      "data_cmd": "@agent desktop-scroll ",
+      "id": "tool_desktop_scroll",
+      "tool_id": "tool_desktop_scroll",
+      "onclick": ""
+    },
+    {
+      "category": "Computer Use &amp; OS Automation",
+      "label": "Screen Grounding",
+      "tag": "@screen",
+      "data_cmd": "@agent screen-grounding ",
+      "id": "tool_screen_grounding",
+      "tool_id": "tool_screen_grounding",
+      "onclick": ""
+    },
+    {
+      "category": "Computer Use &amp; OS Automation",
+      "label": "Shopping",
+      "tag": "@shopping",
+      "data_cmd": "@agent shopping ",
+      "id": "tool_shopping",
+      "tool_id": "tool_shopping",
+      "onclick": ""
+    },
+    {
+      "category": "Computer Use &amp; OS Automation",
+      "label": "Ticket Booking",
+      "tag": "@ticket-booking",
+      "data_cmd": "@agent ticket-booking ",
+      "id": "tool_ticket_booking",
+      "tool_id": "tool_ticket_booking",
+      "onclick": ""
+    },
+    {
+      "category": "Computer Use &amp; OS Automation",
+      "label": "UI-TARS Agent Loop",
+      "tag": "@ui-tars",
+      "data_cmd": "@agent ui-tars ",
+      "id": "tool_ui_tars",
+      "tool_id": "tool_ui_tars",
+      "onclick": ""
+    },
+    {
+      "category": "Data &amp; Spreadsheets (CSV/Excel)",
+      "label": "Analyze Dataset &amp; Train Model",
+      "tag": "@acdso",
+      "data_cmd": "@agent acdso ",
+      "id": "tool_acdso",
+      "tool_id": "tool_acdso",
+      "onclick": ""
+    },
+    {
+      "category": "Data &amp; Spreadsheets (CSV/Excel)",
+      "label": "Data Insights &amp; Statistics",
+      "tag": "@dataanalyst",
+      "data_cmd": "@agent dataanalyst ",
+      "id": "tool_dataanalyst",
+      "tool_id": "tool_dataanalyst",
+      "onclick": ""
+    },
+    {
+      "category": "Data &amp; Spreadsheets (CSV/Excel)",
+      "label": "Forecast Future Trends",
+      "tag": "@timeseries",
+      "data_cmd": "@agent timeseries ",
+      "id": "tool_timeseries",
+      "tool_id": "tool_timeseries",
+      "onclick": ""
+    },
+    {
+      "category": "Data &amp; Spreadsheets (CSV/Excel)",
+      "label": "Full Data Science Pipeline",
+      "tag": "@datascience",
+      "data_cmd": "@agent datascience ",
+      "id": "tool_datascience",
+      "tool_id": "tool_datascience",
+      "onclick": ""
+    },
+    {
+      "category": "Data &amp; Spreadsheets (CSV/Excel)",
+      "label": "Predict Outcomes",
+      "tag": "@predict",
+      "data_cmd": "@agent predict ",
+      "id": "tool_predict",
+      "tool_id": "tool_predict",
+      "onclick": ""
+    },
+    {
+      "category": "Data &amp; Spreadsheets (CSV/Excel)",
+      "label": "Smart Decision Optimizer",
+      "tag": "@decision",
+      "data_cmd": "@agent decision ",
+      "id": "tool_decision",
+      "tool_id": "tool_decision",
+      "onclick": ""
+    },
+    {
+      "category": "Finance &amp; Markets",
+      "label": "Chronos-T5",
+      "tag": "@chronos",
+      "data_cmd": "@agent finance chronos ",
+      "id": "tool_chronos",
+      "tool_id": "tool_chronos",
+      "onclick": ""
+    },
+    {
+      "category": "Finance &amp; Markets",
+      "label": "Finance-LLM",
+      "tag": "@finance-llm",
+      "data_cmd": "@agent finance finance-llm ",
+      "id": "tool_finance_llm",
+      "tool_id": "tool_finance_llm",
+      "onclick": ""
+    },
+    {
+      "category": "Finance &amp; Markets",
+      "label": "FinBERT",
+      "tag": "@finbert",
+      "data_cmd": "@agent finance finbert ",
+      "id": "tool_finbert",
+      "tool_id": "tool_finbert",
+      "onclick": ""
+    },
+    {
+      "category": "Finance &amp; Markets",
+      "label": "FinBERT-ESG",
+      "tag": "@finbert-esg",
+      "data_cmd": "@agent finance finbert-esg ",
+      "id": "tool_finbert_esg",
+      "tool_id": "tool_finbert_esg",
+      "onclick": ""
+    },
+    {
+      "category": "Finance &amp; Markets",
+      "label": "FinBERT-Tone",
+      "tag": "@finbert-tone",
+      "data_cmd": "@agent finance finbert-tone ",
+      "id": "tool_finbert_tone",
+      "tool_id": "tool_finbert_tone",
+      "onclick": ""
+    },
+    {
+      "category": "Finance &amp; Markets",
+      "label": "FinGPT-Forecaster",
+      "tag": "@fingpt",
+      "data_cmd": "@agent finance fingpt ",
+      "id": "tool_fingpt",
+      "tool_id": "tool_fingpt",
+      "onclick": ""
+    },
+    {
+      "category": "Finance &amp; Markets",
+      "label": "Llama-Fin-8B",
+      "tag": "@llama-fin",
+      "data_cmd": "@agent finance llama-fin ",
+      "id": "tool_llama_fin",
+      "tool_id": "tool_llama_fin",
+      "onclick": ""
+    },
+    {
+      "category": "Finance &amp; Markets",
+      "label": "PatchTST",
+      "tag": "@patchtst",
+      "data_cmd": "@agent finance patchtst ",
+      "id": "tool_patchtst",
+      "tool_id": "tool_patchtst",
+      "onclick": ""
+    },
+    {
+      "category": "Finance &amp; Markets",
+      "label": "Qwen-Pro-Finance-32B",
+      "tag": "@qwen-finance",
+      "data_cmd": "@agent finance qwen-finance ",
+      "id": "tool_qwen_finance",
+      "tool_id": "tool_qwen_finance",
+      "onclick": ""
+    },
+    {
+      "category": "Images &amp; Vision",
+      "label": "Analyze Video",
+      "tag": "@video",
+      "data_cmd": "@agent video ",
+      "id": "tool_video",
+      "tool_id": "tool_video",
+      "onclick": ""
+    },
+    {
+      "category": "Images &amp; Vision",
+      "label": "Ask Question About Image",
+      "tag": "@vqa",
+      "data_cmd": "@agent vqa ",
+      "id": "tool_vqa",
+      "tool_id": "tool_vqa",
+      "onclick": ""
+    },
+    {
+      "category": "Images &amp; Vision",
+      "label": "Detect Objects &amp; Boxes",
+      "tag": "@detect",
+      "data_cmd": "@agent object-detection ",
+      "id": "tool_object_detection",
+      "tool_id": "tool_object_detection",
+      "onclick": ""
+    },
+    {
+      "category": "Images &amp; Vision",
+      "label": "Identify Image Category",
+      "tag": "@classify",
+      "data_cmd": "@agent image-classification ",
+      "id": "tool_image_classification",
+      "tool_id": "tool_image_classification",
+      "onclick": ""
+    },
+    {
+      "category": "Images &amp; Vision",
+      "label": "Inspect Attached Image",
+      "tag": "@vision",
+      "data_cmd": "@agent vision ",
+      "id": "tool_vision",
+      "tool_id": "tool_vision",
+      "onclick": ""
+    },
+    {
+      "category": "Images &amp; Vision",
+      "label": "Synthesize Image (FLUX.1)",
+      "tag": "@image",
+      "data_cmd": "@agent image ",
+      "id": "tool_image_generation",
+      "tool_id": "tool_image_generation",
+      "onclick": ""
+    },
+    {
+      "category": "Inspect Windows Apps (.EXE / .DLL)",
+      "label": "Inspect File Headers &amp; Security",
+      "tag": "@pe",
+      "data_cmd": "@agent pe ",
+      "id": "tool_pe_header",
+      "tool_id": "tool_pe_header",
+      "onclick": ""
+    },
+    {
+      "category": "Legal &amp; Compliance",
+      "label": "CUAD-BERT",
+      "tag": "@cuad",
+      "data_cmd": "@agent legal cuad-bert ",
+      "id": "tool_cuad_bert",
+      "tool_id": "tool_cuad_bert",
+      "onclick": ""
+    },
+    {
+      "category": "Legal &amp; Compliance",
+      "label": "Law-Chat",
+      "tag": "@law-chat",
+      "data_cmd": "@agent legal law-chat ",
+      "id": "tool_law_chat",
+      "tool_id": "tool_law_chat",
+      "onclick": ""
+    },
+    {
+      "category": "Legal &amp; Compliance",
+      "label": "Law-LLM",
+      "tag": "@law-llm",
+      "data_cmd": "@agent legal law-llm ",
+      "id": "tool_law_llm",
+      "tool_id": "tool_law_llm",
+      "onclick": ""
+    },
+    {
+      "category": "Legal &amp; Compliance",
+      "label": "Lawma-8B",
+      "tag": "@lawma",
+      "data_cmd": "@agent legal lawma ",
+      "id": "tool_lawma",
+      "tool_id": "tool_lawma",
+      "onclick": ""
+    },
+    {
+      "category": "Legal &amp; Compliance",
+      "label": "Legal-BERT",
+      "tag": "@legal-bert",
+      "data_cmd": "@agent legal legal-bert ",
+      "id": "tool_legal_bert",
+      "tool_id": "tool_legal_bert",
+      "onclick": ""
+    },
+    {
+      "category": "Legal &amp; Compliance",
+      "label": "Legal-Longformer",
+      "tag": "@longformer",
+      "data_cmd": "@agent legal legal-longformer ",
+      "id": "tool_legal_longformer",
+      "tool_id": "tool_legal_longformer",
+      "onclick": ""
+    },
+    {
+      "category": "Legal &amp; Compliance",
+      "label": "Pile-of-Law LegalBERT",
+      "tag": "@pile-of-law",
+      "data_cmd": "@agent legal pile-of-law ",
+      "id": "tool_pile_of_law",
+      "tool_id": "tool_pile_of_law",
+      "onclick": ""
+    },
+    {
+      "category": "Legal &amp; Compliance",
+      "label": "Saul-7B",
+      "tag": "@saul",
+      "data_cmd": "@agent legal saul-7b ",
+      "id": "tool_saul_7b",
+      "tool_id": "tool_saul_7b",
+      "onclick": ""
+    },
+    {
+      "category": "Planning &amp; Deep Thinking",
+      "label": "Deep Thinking Boost",
+      "tag": "@boost",
+      "data_cmd": "@agent boost ",
+      "id": "tool_boost",
+      "tool_id": "tool_boost",
+      "onclick": ""
+    },
+    {
+      "category": "Planning &amp; Deep Thinking",
+      "label": "Interview &amp; Clarify (Grill Me)",
+      "tag": "@grill-me",
+      "data_cmd": "@agent grill-me ",
+      "id": "tool_grill_me",
+      "tool_id": "tool_grill_me",
+      "onclick": ""
+    },
+    {
+      "category": "Planning &amp; Deep Thinking",
+      "label": "Multi-Step Goal Runner",
+      "tag": "@goal",
+      "data_cmd": "@agent goal ",
+      "id": "tool_goal",
+      "tool_id": "tool_goal",
+      "onclick": ""
+    },
+    {
+      "category": "Planning &amp; Deep Thinking",
+      "label": "Self-Correcting Task Loop",
+      "tag": "@loop",
+      "data_cmd": "@agent agentic-loop ",
+      "id": "tool_agentic_loop",
+      "tool_id": "tool_agentic_loop",
+      "onclick": ""
+    },
+    {
+      "category": "Planning &amp; Deep Thinking",
+      "label": "Step-by-Step Action Plan",
+      "tag": "@plan",
+      "data_cmd": "@agent plan ",
+      "id": "tool_plan",
+      "tool_id": "tool_plan",
+      "onclick": ""
+    },
+    {
+      "category": "Science &amp; Discovery",
+      "label": "Aurora",
+      "tag": "@aurora",
+      "data_cmd": "@agent science aurora ",
+      "id": "tool_aurora",
+      "tool_id": "tool_aurora",
+      "onclick": ""
+    },
+    {
+      "category": "Science &amp; Discovery",
+      "label": "ChemBERTa",
+      "tag": "@chemberta",
+      "data_cmd": "@agent science chemberta ",
+      "id": "tool_chemberta",
+      "tool_id": "tool_chemberta",
+      "onclick": ""
+    },
+    {
+      "category": "Science &amp; Discovery",
+      "label": "ClimateBERT",
+      "tag": "@climatebert",
+      "data_cmd": "@agent science climatebert ",
+      "id": "tool_climatebert",
+      "tool_id": "tool_climatebert",
+      "onclick": ""
+    },
+    {
+      "category": "Science &amp; Discovery",
+      "label": "ClimaX",
+      "tag": "@climax",
+      "data_cmd": "@agent science climax ",
+      "id": "tool_climax",
+      "tool_id": "tool_climax",
+      "onclick": ""
+    },
+    {
+      "category": "Science &amp; Discovery",
+      "label": "ESM2",
+      "tag": "@esm2",
+      "data_cmd": "@agent science esm2 ",
+      "id": "tool_esm2",
+      "tool_id": "tool_esm2",
+      "onclick": ""
+    },
+    {
+      "category": "Science &amp; Discovery",
+      "label": "ESM3",
+      "tag": "@esm3",
+      "data_cmd": "@agent science esm3 ",
+      "id": "tool_esm3",
+      "tool_id": "tool_esm3",
+      "onclick": ""
+    },
+    {
+      "category": "Science &amp; Discovery",
+      "label": "ESMFold",
+      "tag": "@esmfold",
+      "data_cmd": "@agent science esmfold ",
+      "id": "tool_esmfold",
+      "tool_id": "tool_esmfold",
+      "onclick": ""
+    },
+    {
+      "category": "Science &amp; Discovery",
+      "label": "Evo",
+      "tag": "@evo",
+      "data_cmd": "@agent science evo ",
+      "id": "tool_evo",
+      "tool_id": "tool_evo",
+      "onclick": ""
+    },
+    {
+      "category": "Science &amp; Discovery",
+      "label": "Galactica",
+      "tag": "@galactica",
+      "data_cmd": "@agent science galactica ",
+      "id": "tool_galactica",
+      "tool_id": "tool_galactica",
+      "onclick": ""
+    },
+    {
+      "category": "Science &amp; Discovery",
+      "label": "Geneformer",
+      "tag": "@geneformer",
+      "data_cmd": "@agent science geneformer ",
+      "id": "tool_geneformer",
+      "tool_id": "tool_geneformer",
+      "onclick": ""
+    },
+    {
+      "category": "Science &amp; Discovery",
+      "label": "MatSciBERT",
+      "tag": "@matscibert",
+      "data_cmd": "@agent science matscibert ",
+      "id": "tool_matscibert",
+      "tool_id": "tool_matscibert",
+      "onclick": ""
+    },
+    {
+      "category": "Science &amp; Discovery",
+      "label": "MHG-GED",
+      "tag": "@mhg-ged",
+      "data_cmd": "@agent science mhg-ged ",
+      "id": "tool_mhg_ged",
+      "tool_id": "tool_mhg_ged",
+      "onclick": ""
+    },
+    {
+      "category": "Science &amp; Discovery",
+      "label": "MoLFormer",
+      "tag": "@molformer",
+      "data_cmd": "@agent science molformer ",
+      "id": "tool_molformer",
+      "tool_id": "tool_molformer",
+      "onclick": ""
+    },
+    {
+      "category": "Science &amp; Discovery",
+      "label": "Nucleotide Transformer",
+      "tag": "@nucleotide",
+      "data_cmd": "@agent science nucleotide-transformer ",
+      "id": "tool_nucleotide_transformer",
+      "tool_id": "tool_nucleotide_transformer",
+      "onclick": ""
+    },
+    {
+      "category": "Science &amp; Discovery",
+      "label": "Prithvi",
+      "tag": "@prithvi",
+      "data_cmd": "@agent science prithvi ",
+      "id": "tool_prithvi",
+      "tool_id": "tool_prithvi",
+      "onclick": ""
+    },
+    {
+      "category": "Science &amp; Discovery",
+      "label": "S1-Omni",
+      "tag": "@s1-omni",
+      "data_cmd": "@agent science s1-omni ",
+      "id": "tool_s1_omni",
+      "tool_id": "tool_s1_omni",
+      "onclick": ""
+    },
+    {
+      "category": "Science &amp; Discovery",
+      "label": "ScholarBERT",
+      "tag": "@scholarbert",
+      "data_cmd": "@agent science scholarbert ",
+      "id": "tool_scholarbert",
+      "tool_id": "tool_scholarbert",
+      "onclick": ""
+    },
+    {
+      "category": "Science &amp; Discovery",
+      "label": "SciBERT",
+      "tag": "@scibert",
+      "data_cmd": "@agent science scibert ",
+      "id": "tool_scibert",
+      "tool_id": "tool_scibert",
+      "onclick": ""
+    },
+    {
+      "category": "Science &amp; Discovery",
+      "label": "SELFIES-TED",
+      "tag": "@selfies-ted",
+      "data_cmd": "@agent science selfies-ted ",
+      "id": "tool_selfies_ted",
+      "tool_id": "tool_selfies_ted",
+      "onclick": ""
+    },
+    {
+      "category": "Science &amp; Discovery",
+      "label": "SMI-TED",
+      "tag": "@smi-ted",
+      "data_cmd": "@agent science smi-ted ",
+      "id": "tool_smi_ted",
+      "tool_id": "tool_smi_ted",
+      "onclick": ""
+    },
+    {
+      "category": "Utilities &amp; System",
+      "label": "Audit All Menus",
+      "tag": "@audit-menus",
+      "data_cmd": "@agent audit-menus",
+      "id": "tool_audit_menus",
+      "tool_id": "tool_audit_menus",
+      "onclick": ""
+    },
+    {
+      "category": "Utilities &amp; System",
+      "label": "Benchmark Telemetry",
+      "tag": "@benchmark",
+      "data_cmd": "@agent benchmark",
+      "id": "tool_benchmark",
+      "tool_id": "tool_benchmark",
+      "onclick": ""
+    },
+    {
+      "category": "Utilities &amp; System",
+      "label": "Current Active Model",
+      "tag": "@model",
+      "data_cmd": "@agent active-model",
+      "id": "tool_active_model",
+      "tool_id": "tool_active_model",
+      "onclick": ""
+    },
+    {
+      "category": "Utilities &amp; System",
+      "label": "Database Integrity",
+      "tag": "@db-check",
+      "data_cmd": "@agent db-check",
+      "id": "tool_db_check",
+      "tool_id": "tool_db_check",
+      "onclick": ""
+    },
+    {
+      "category": "Utilities &amp; System",
+      "label": "Export Chat History",
+      "tag": "@export",
+      "data_cmd": "@agent export",
+      "id": "tool_export",
+      "tool_id": "tool_export",
+      "onclick": ""
+    },
+    {
+      "category": "Utilities &amp; System",
+      "label": "Hardware &amp; Memory",
+      "tag": "@sys-info",
+      "data_cmd": "@agent sys-info",
+      "id": "tool_sys_info",
+      "tool_id": "tool_sys_info",
+      "onclick": ""
+    },
+    {
+      "category": "Utilities &amp; System",
+      "label": "Help &amp; Commands",
+      "tag": "@help",
+      "data_cmd": "@agent help",
+      "id": "tool_help",
+      "tool_id": "tool_help",
+      "onclick": ""
+    },
+    {
+      "category": "Utilities &amp; System",
+      "label": "Ingest All 2M+ Models",
+      "tag": "@updatedb",
+      "data_cmd": "@agent updatedb",
+      "id": "tool_updatedb",
+      "tool_id": "tool_updatedb",
+      "onclick": ""
+    },
+    {
+      "category": "Utilities &amp; System",
+      "label": "Prune Old Cache",
+      "tag": "@db-prune",
+      "data_cmd": "@agent db-prune",
+      "id": "tool_db_prune",
+      "tool_id": "tool_db_prune",
+      "onclick": ""
+    },
+    {
+      "category": "Utilities &amp; System",
+      "label": "Rebuild SQLite DB",
+      "tag": "@db-rebuild",
+      "data_cmd": "@agent db-rebuild",
+      "id": "tool_db_rebuild",
+      "tool_id": "tool_db_rebuild",
+      "onclick": ""
+    },
+    {
+      "category": "Utilities &amp; System",
+      "label": "Update Models",
+      "tag": "@update",
+      "data_cmd": "@agent update",
+      "id": "tool_update",
+      "tool_id": "tool_update",
+      "onclick": ""
+    },
+    {
+      "category": "Utilities &amp; System",
+      "label": "Vacuum &amp; Optimize",
+      "tag": "@db-vacuum",
+      "data_cmd": "@agent db-vacuum",
+      "id": "tool_db_vacuum",
+      "tool_id": "tool_db_vacuum",
+      "onclick": ""
+    },
+    {
+      "category": "Voice &amp; Audio",
+      "label": "Identify Sound or Music",
+      "tag": "@audio",
+      "data_cmd": "@agent audio ",
+      "id": "tool_audio_classification",
+      "tool_id": "tool_audio_classification",
+      "onclick": ""
+    },
+    {
+      "category": "Voice &amp; Audio",
+      "label": "Read Aloud (Voice)",
+      "tag": "@tts",
+      "data_cmd": "@agent tts ",
+      "id": "tool_tts",
+      "tool_id": "tool_tts",
+      "onclick": ""
+    },
+    {
+      "category": "Voice &amp; Audio",
+      "label": "Transcribe Audio to Text",
+      "tag": "@asr",
+      "data_cmd": "@agent asr ",
+      "id": "tool_asr",
+      "tool_id": "tool_asr",
+      "onclick": ""
+    },
+    {
+      "category": "Web Research &amp; Automation",
+      "label": "Browse the Web",
+      "tag": "@browser",
+      "data_cmd": "@agent browser ",
+      "id": "tool_browser",
+      "tool_id": "tool_browser",
+      "onclick": ""
+    },
+    {
+      "category": "Web Research &amp; Automation",
+      "label": "Deep Web Research",
+      "tag": "@research",
+      "data_cmd": "@agent browser deep research on ",
+      "id": "tool_deep_research",
+      "tool_id": "tool_deep_research",
+      "onclick": ""
+    },
+    {
+      "category": "Web Research &amp; Automation",
+      "label": "Research Papers (arXiv)",
+      "tag": "@arxiv",
+      "data_cmd": "@agent arxiv ",
+      "id": "tool_arxiv",
+      "tool_id": "tool_arxiv",
+      "onclick": ""
+    },
+    {
+      "category": "Web Research &amp; Automation",
+      "label": "Summarize Active Page",
+      "tag": "@summarize",
+      "data_cmd": "@agent summarize",
+      "id": "tool_summarize",
+      "tool_id": "tool_summarize",
+      "onclick": ""
+    },
+    {
+      "category": "Web Research &amp; Automation",
+      "label": "Visual Element Markers",
+      "tag": "@markers",
+      "data_cmd": "@agent markers ",
+      "id": "tool_som",
+      "tool_id": "tool_som",
+      "onclick": ""
+    },
+    {
+      "category": "Web Research &amp; Automation",
+      "label": "Wikipedia Knowledge (WikiSkill)",
+      "tag": "@wiki",
+      "data_cmd": "@agent wiki ",
+      "id": "tool_wiki",
+      "tool_id": "tool_wiki",
+      "onclick": ""
+    },
+    {
+      "category": "Writing &amp; Editing",
+      "label": "AI Watermark Detection",
+      "tag": "@watermark",
+      "data_cmd": "@agent watermark ",
+      "id": "tool_watermark",
+      "tool_id": "tool_watermark",
+      "onclick": ""
+    },
+    {
+      "category": "Writing &amp; Editing",
+      "label": "Humanize AI Text &amp; Files",
+      "tag": "@humanize",
+      "data_cmd": "@agent humanize ",
+      "id": "tool_humanize",
+      "tool_id": "tool_humanize",
+      "onclick": ""
+    },
+    {
+      "category": "Writing &amp; Editing",
+      "label": "Multilingual Translation (Auto-Detect)",
+      "tag": "@translate",
+      "data_cmd": "@agent translate to Spanish: ",
+      "id": "tool_translate",
+      "tool_id": "tool_translate",
+      "onclick": ""
+    },
+    {
+      "category": "Writing &amp; Editing",
+      "label": "Outline &amp; Book Pacing",
+      "tag": "@outline",
+      "data_cmd": "@agent outline ",
+      "id": "tool_outline",
+      "tool_id": "tool_outline",
+      "onclick": ""
+    },
+    {
+      "category": "Writing &amp; Editing",
+      "label": "Style Transfer &amp; Voice Shift",
+      "tag": "@style",
+      "data_cmd": "@agent style-transfer to conversational: ",
+      "id": "tool_style_transfer",
+      "tool_id": "tool_style_transfer",
+      "onclick": ""
+    },
+    {
+      "category": "Writing &amp; Editing",
+      "label": "Writing &amp; Reasoning Boost",
+      "tag": "@boost",
+      "data_cmd": "@agent boost ",
+      "id": "tool_writing_boost",
+      "tool_id": "tool_writing_boost",
+      "onclick": ""
+    }
+  ]
+}
