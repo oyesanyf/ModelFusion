@@ -157,9 +157,12 @@ def upload_asset(release_id, file_path, asset_name, token, force=False):
             "curl.exe",
             "-sS",
             "-X", "POST",
+            "--connect-timeout", "60",
+            "--max-time", "1800",
             "-H", f"Authorization: Bearer {token}",
             "-H", "User-Agent: ModelFusion-Release-Pipeline",
             "-H", "Content-Type: application/octet-stream",
+            "-H", f"Content-Length: {file_size}",
             "--data-binary", f"@{file_path}",
             upload_url
         ]
