@@ -9100,6 +9100,21 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     return `${ipc}/api/proxy?url=${encodeURIComponent(url)}`;
   }
 
+  // Unwraps an iframe-safe proxy URL envelope back to its original target destination URL
+  function unwrapProxiedUrl(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string') return '';
+    try {
+      if (rawUrl.includes('/api/proxy') || rawUrl.includes('/api/browser/proxy') || rawUrl.includes('/proxy') || rawUrl.includes('/api-proxy')) {
+        const u = new URL(rawUrl, 'http://127.0.0.1:5000');
+        const target = u.searchParams.get('url') || u.searchParams.get('target');
+        if (target) {
+          return decodeURIComponent(target);
+        }
+      }
+    } catch (_) {}
+    return rawUrl;
+  }
+
   function navigateTo(targetUrl, addToHistory = true, switchView = true) {
     if (!targetUrl) return;
 
@@ -9132,19 +9147,20 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
       }
     }
 
-    currentNavUrl = url;
-    omniboxInput.value = url;
-    wvCurrentUrl.textContent = url;
+    const unwrapped = unwrapProxiedUrl(url);
+    currentNavUrl = unwrapped || url;
+    omniboxInput.value = currentNavUrl;
+    wvCurrentUrl.textContent = currentNavUrl;
 
     if (addToHistory) {
       if (historyIndex < historyStack.length - 1) {
         historyStack.splice(historyIndex + 1);
       }
-      historyStack.push(url);
+      historyStack.push(currentNavUrl);
       historyIndex = historyStack.length - 1;
     }
 
-    termLog(`Navigating to: ${url}`, 'info');
+    termLog(`Navigating to: ${currentNavUrl}`, 'info');
 
     if (switchView) {
       // Switch to webview
@@ -9155,14 +9171,14 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
 
     updateNavigationUiState();
 
-    const frameSrc = resolveProxiedUrl(url);
-    if (frameSrc !== url) {
-      termLog(`🛡️ Routing through ModelFusion proxy to bypass X-Frame-Options SAMEORIGIN for ${url}`, 'sys');
+    const frameSrc = resolveProxiedUrl(currentNavUrl);
+    if (frameSrc !== currentNavUrl) {
+      termLog(`🛡️ Routing through ModelFusion proxy to bypass X-Frame-Options SAMEORIGIN for ${currentNavUrl}`, 'sys');
     }
 
     // Attach iframe load error listener
     browserFrame.onerror = (e) => {
-      termLog(`Iframe load error detected for ${url}: Connection refused or blocked by security policy.`, 'warn');
+      termLog(`Iframe load error detected for ${currentNavUrl}: Connection refused or blocked by security policy.`, 'warn');
       frameFallback.classList.remove('hidden');
     };
 
@@ -12554,7 +12570,7 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
     }
 
     // Guard against unintended execution of internal proxy URLs as CLI subcommands
-    if (/^@agent\s+(?:api\/proxy|browser\/proxy|proxy|api-proxy)\b/i.test(cmd)) {
+    if (/^(?:@agent\s+)?(?:--|\/|@)?(?:api\/proxy|browser\/proxy|proxy|api-proxy)\b/i.test(cmd) || cmd.includes('/api/proxy?url=')) {
       const targetMatch = cmd.match(/(?:url=|\s+)(https?:\/\/[^\s]+)/i);
       if (targetMatch) {
         navigateTo(targetMatch[1]);
@@ -15089,8 +15105,9 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 
   function parseExamPagination(url) {
     if (!url || typeof url !== 'string') return null;
+    const cleanUrl = typeof unwrapProxiedUrl === 'function' ? unwrapProxiedUrl(url) : url;
     try {
-      const parsed = new URL(url, 'http://127.0.0.1');
+      const parsed = new URL(cleanUrl, 'http://127.0.0.1');
       const searchParams = parsed.searchParams;
       let current = null;
       let currentParam = null;
@@ -15143,9 +15160,11 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 
   function getNextExamUrl(currentUrl) {
     if (!currentUrl) return null;
+    const isProxied = currentUrl.includes('/api/proxy') || currentUrl.includes('/api/browser/proxy');
+    const cleanUrl = typeof unwrapProxiedUrl === 'function' ? unwrapProxiedUrl(currentUrl) : currentUrl;
     try {
-      const parsed = new URL(currentUrl, typeof window !== 'undefined' && window.location ? window.location.href : 'http://127.0.0.1');
-      const info = parseExamPagination(currentUrl);
+      const parsed = new URL(cleanUrl, typeof window !== 'undefined' && window.location ? window.location.href : 'http://127.0.0.1');
+      const info = parseExamPagination(cleanUrl);
       if (!info) return null;
 
       const nextQ = info.current + 1;
@@ -15153,15 +15172,20 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         return null;
       }
 
+      let resUrl = null;
       if (info.currentParam) {
         parsed.searchParams.set(info.currentParam, nextQ.toString());
-        return parsed.toString();
+        resUrl = parsed.toString();
       } else {
         const newPath = parsed.pathname.replace(/(\/(?:quiz|question|q|step|page)\/)(\d+)/i, `$1${nextQ}`);
         if (newPath !== parsed.pathname) {
           parsed.pathname = newPath;
-          return parsed.toString();
+          resUrl = parsed.toString();
         }
+      }
+
+      if (resUrl) {
+        return isProxied && typeof resolveProxiedUrl === 'function' ? resolveProxiedUrl(resUrl) : resUrl;
       }
     } catch (_) {}
     return null;
@@ -15173,8 +15197,12 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     }
 
     let doc = null;
-    if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
-      doc = browserFrame.contentDocument;
+    try {
+      if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
+        doc = browserFrame.contentDocument;
+      }
+    } catch (_) {
+      doc = null;
     }
 
     const nextBtn = findNextQuestionButton(doc);
@@ -15204,16 +15232,31 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 
     // Check if URL navigation is needed
     if (nextUrl) {
-      const liveFrameUrl = (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentWindow && browserFrame.contentWindow.location)
-        ? browserFrame.contentWindow.location.href
-        : '';
+      let liveFrameUrl = '';
+      try {
+        if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentWindow && browserFrame.contentWindow.location) {
+          liveFrameUrl = browserFrame.contentWindow.location.href || '';
+        }
+      } catch (_) {
+        liveFrameUrl = '';
+      }
       const paginationLive = parseExamPagination(liveFrameUrl);
       let stemChanged = false;
-      if (doc && doc.body) {
-        const newQuestions = extractExamQuestions(doc, doc.body.innerText || '');
-        if (newQuestions.length > 0 && newQuestions[0].questionNumber !== prevQNum) {
-          stemChanged = true;
+      let postClickDoc = null;
+      try {
+        if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
+          postClickDoc = browserFrame.contentDocument;
         }
+      } catch (_) {
+        postClickDoc = null;
+      }
+      if (postClickDoc && postClickDoc.body) {
+        try {
+          const newQuestions = extractExamQuestions(postClickDoc, postClickDoc.body.innerText || '');
+          if (newQuestions.length > 0 && newQuestions[0].questionNumber !== prevQNum) {
+            stemChanged = true;
+          }
+        } catch (_) {}
       }
 
       if (!stemChanged && (!paginationLive || paginationLive.current <= prevQNum)) {
@@ -15235,9 +15278,32 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     let doc = null;
     let text = '';
     if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
-      doc = browserFrame.contentDocument;
-      if (doc.body) {
-        text = doc.body.innerText || doc.body.textContent || '';
+      try {
+        doc = browserFrame.contentDocument;
+        if (doc.body) {
+          text = doc.body.innerText || doc.body.textContent || '';
+        }
+      } catch (_) {
+        doc = null;
+        text = '';
+      }
+    }
+
+    if (!doc || !text.trim()) {
+      const cleanUrl = typeof unwrapProxiedUrl === 'function' ? unwrapProxiedUrl(typeof currentNavUrl === 'string' ? currentNavUrl : '') : (typeof currentNavUrl === 'string' ? currentNavUrl : '');
+      if (cleanUrl && (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://'))) {
+        const ipcUrl = (typeof currentSettings !== 'undefined' && currentSettings.ipcUrl ? currentSettings.ipcUrl : 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+        try {
+          const resp = await fetch(`${ipcUrl}/api/proxy?url=${encodeURIComponent(cleanUrl)}`);
+          if (resp.ok) {
+            const html = await resp.text();
+            if (typeof DOMParser !== 'undefined') {
+              const parser = new DOMParser();
+              doc = parser.parseFromString(html, 'text/html');
+              text = doc.body ? (doc.body.innerText || doc.body.textContent || '') : '';
+            }
+          }
+        } catch (_) {}
       }
     }
 
@@ -15359,8 +15425,17 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     const currentQ = window.activeExamQuestions[0];
     const pagination = typeof parseExamPagination === 'function' ? parseExamPagination(typeof currentNavUrl === 'string' ? currentNavUrl : '') : null;
     const qNum = currentQ ? (currentQ.questionNumber || (pagination ? pagination.current : 1)) : 1;
-    const totalQuestions = currentQ && currentQ.totalQuestions ? currentQ.totalQuestions : (pagination ? pagination.total : total);
-    const hasNextBtn = typeof findNextQuestionButton === 'function' ? Boolean(findNextQuestionButton(typeof browserFrame !== 'undefined' && browserFrame ? browserFrame.contentDocument : null)) : false;
+    const totalQuestions = currentQ && currentQ.totalQuestions ? currentQ.totalQuestions : (pagination ? pagination.total : (total > 1 ? total : 38));
+
+    let frameDoc = null;
+    try {
+      if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
+        frameDoc = browserFrame.contentDocument;
+      }
+    } catch (_) {
+      frameDoc = null;
+    }
+    const hasNextBtn = typeof findNextQuestionButton === 'function' ? Boolean(findNextQuestionButton(frameDoc)) : false;
     const hasNextUrl = typeof getNextExamUrl === 'function' ? Boolean(getNextExamUrl(typeof currentNavUrl === 'string' ? currentNavUrl : '')) : false;
     const hasMoreQuestions = qNum < totalQuestions || hasNextBtn || hasNextUrl;
 
@@ -15401,7 +15476,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     }
 
     // If there are subsequent questions, automatically advance perception and workspace
-    if (hasMoreQuestions && qNum < totalQuestions && typeof advanceExamToNextQuestion === 'function') {
+    if (hasMoreQuestions && (qNum < totalQuestions || hasNextBtn || hasNextUrl) && typeof advanceExamToNextQuestion === 'function') {
       setTimeout(() => {
         advanceExamToNextQuestion();
       }, 500);
@@ -15509,6 +15584,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
   window.findNextQuestionButton = findNextQuestionButton;
   window.parseExamPagination = parseExamPagination;
   window.getNextExamUrl = getNextExamUrl;
+  window.unwrapProxiedUrl = unwrapProxiedUrl;
   window.advanceExamToNextQuestion = advanceExamToNextQuestion;
   window.regroundActiveExamPerception = regroundActiveExamPerception;
   window.startAutonomousExamSolverLoop = startAutonomousExamSolverLoop;

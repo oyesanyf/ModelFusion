@@ -20,6 +20,7 @@ print(f"Authoritative Source Hash: {src_hash}")
 localappdata = os.environ.get("LOCALAPPDATA", r"C:\Users\oyesanyf\AppData\Local")
 
 destinations = [
+    os.path.abspath(r"target\release\clibrowser.exe"),
     os.path.abspath(r"IDE\bin\cli.exe"),
     os.path.abspath(r"IDE\bin\cliide.exe"),
     os.path.abspath(r"IDE\VSCode-win32-x64\bin\cli.exe"),

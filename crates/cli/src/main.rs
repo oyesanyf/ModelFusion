@@ -2749,6 +2749,22 @@ where
         return args;
     }
 
+    // Normalize proxy flags across all argument positions
+    for i in 1..args.len() {
+        let tok = args[i].to_lowercase();
+        let tok_clean = tok.trim_start_matches('-');
+        if tok == "--api/proxy" || tok == "/api/proxy" || tok == "api/proxy"
+            || tok == "--browser/proxy" || tok == "/browser/proxy" || tok == "browser/proxy"
+            || tok == "--api-proxy" || tok == "/api-proxy" || tok == "api-proxy"
+            || tok_clean == "api/proxy" || tok_clean == "browser/proxy" || tok_clean == "api-proxy" {
+            args[i] = "--proxy".to_string();
+        } else if tok.starts_with("--api/proxy=") || tok.starts_with("/api/proxy=") || tok.starts_with("--browser/proxy=") {
+            if let Some(eq_pos) = args[i].find('=') {
+                args[i] = format!("--proxy={}", &args[i][eq_pos + 1..]);
+            }
+        }
+    }
+
     let verb = args[1].to_lowercase();
     if !verb.starts_with('-') {
         if (verb == "@agent" || verb == "agent") && args.len() > 2 {
@@ -14329,14 +14345,28 @@ sequenceDiagram
                 }
                 other => {
                     let clean_cmd = other.trim_start_matches('/');
-                    if clean_cmd.is_empty() {
+                    let cmd_base = clean_cmd.split('?').next().unwrap_or(clean_cmd).trim_end_matches('/');
+                    if cmd_base.is_empty() {
                         format!("ModelFusion API Server running on port {}", port)
-                    } else if clean_cmd == "api/proxy" || clean_cmd == "proxy" || clean_cmd == "browser/proxy" || clean_cmd == "api-proxy" {
-                        serde_json::json!({
-                            "status": "ok",
-                            "endpoint": "/api/proxy",
-                            "usage": "/api/proxy?url=https://www.google.com"
-                        }).to_string()
+                    } else if cmd_base == "api/proxy" || cmd_base == "proxy" || cmd_base == "browser/proxy" || cmd_base == "api-proxy" || cmd_base.starts_with("api/proxy") || cmd_base.starts_with("browser/proxy") {
+                        let target_url_opt = extract_proxy_target_url(&raw_request_uri, &request_json);
+                        match target_url_opt {
+                            Some(u) if !u.is_empty() => {
+                                serde_json::json!({
+                                    "status": "ok",
+                                    "endpoint": "/api/proxy",
+                                    "url": u,
+                                    "message": "Universal web proxy active. Fetch content directly via GET /api/proxy?url=<URL>"
+                                }).to_string()
+                            }
+                            _ => {
+                                serde_json::json!({
+                                    "status": "ok",
+                                    "endpoint": "/api/proxy",
+                                    "usage": "/api/proxy?url=https://www.google.com"
+                                }).to_string()
+                            }
+                        }
                     } else {
                         let flag = format!("--{}", clean_cmd.replace('_', "-"));
                         let mut cmd_args = vec![flag];
@@ -14406,6 +14436,20 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 
 async fn run_cli_subcommand(cmd_args: &[String], db_path: &std::path::Path) -> String {
     let mut args = cmd_args.to_vec();
+    for a in args.iter_mut() {
+        let low = a.to_lowercase();
+        let low_clean = low.trim_start_matches('-');
+        if low == "--api/proxy" || low == "/api/proxy" || low == "api/proxy"
+            || low == "--browser/proxy" || low == "/browser/proxy" || low == "browser/proxy"
+            || low == "--api-proxy" || low == "/api-proxy" || low == "api-proxy"
+            || low_clean == "api/proxy" || low_clean == "browser/proxy" || low_clean == "api-proxy" {
+            *a = "--proxy".to_string();
+        } else if low.starts_with("--api/proxy=") || low.starts_with("/api/proxy=") || low.starts_with("--browser/proxy=") {
+            if let Some(pos) = a.find('=') {
+                *a = format!("--proxy={}", &a[pos + 1..]);
+            }
+        }
+    }
     if !args.iter().any(|a| a == "--db-path") {
         args.push("--db-path".to_string());
         args.push(db_path.to_string_lossy().to_string());
