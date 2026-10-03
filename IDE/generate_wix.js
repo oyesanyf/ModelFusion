@@ -26,8 +26,20 @@ function generateWix(srcDir, outputFile) {
         for (const item of items) {
             const itemPath = path.join(currentPath, item);
             const stat = fs.statSync(itemPath);
+            const itemLower = item.toLowerCase();
 
             if (stat.isDirectory()) {
+                // Exclude large model caches, duplicate database directories, test runs, and caches
+                // Windows Installer .cab format has a strict 2 GB size limit.
+                if (itemLower === 'ov_models' ||
+                    itemLower === '.git' ||
+                    itemLower === '__pycache__' ||
+                    itemLower === '.pytest_cache' ||
+                    itemLower === '7e7950df89' ||
+                    /^[0-9a-f]{8,40}$/i.test(itemLower) ||
+                    (itemLower === 'db' && path.basename(currentPath).toLowerCase() === 'bin')) {
+                    continue;
+                }
                 const dirId = `dir_${dirIdCounter++}`;
                 directories.push({
                     id: dirId,
@@ -36,8 +48,8 @@ function generateWix(srcDir, outputFile) {
                 });
                 walk(itemPath, dirId);
             } else {
-                // Skip source maps (.map files) to optimize package size and eliminate MAX_PATH collisions
-                if (item.endsWith('.map')) {
+                // Skip source maps (.map files) and pyc files to optimize package size and eliminate MAX_PATH collisions
+                if (item.endsWith('.map') || item.endsWith('.pyc')) {
                     continue;
                 }
                 const relSource = path.relative(path.dirname(outputFile), itemPath);

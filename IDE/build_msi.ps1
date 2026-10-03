@@ -136,36 +136,36 @@ $vscodeDlUrl  = "https://update.code.visualstudio.com/1.126.0/win32-x64-archive/
 
 # Check if current HugOS.exe has a valid (Microsoft) signature AND the versioned runtime dir exists
 $exeSig = Get-AuthenticodeSignature $hugosExePath -ErrorAction SilentlyContinue
-$versionedDirExists = (Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' }).Count -gt 0
-if ($exeSig.Status -ne 'Valid' -or $exeSig.SignerCertificate.Subject -notlike '*Microsoft*' -or -not $versionedDirExists) {
-    Write-Host "[INFO] HugOS.exe has invalid/untrusted signature. Restoring from VSCode 1.126.0..." -ForegroundColor Yellow
+$versionedDirs = @(Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' })
+$versionedComplete = ($versionedDirs.Count -gt 0) -and (Test-Path (Join-Path $vsCodePackDir "7e7950df89\locales\ms.pak"))
+if ($exeSig.Status -ne 'Valid' -or $exeSig.SignerCertificate.Subject -notlike '*Microsoft*' -or -not $versionedComplete) {
+    Write-Host "[INFO] Restoring Electron binary & versioned runtime from VSCode 1.126.0..." -ForegroundColor Yellow
     if (-not (Test-Path $vscodeDlZip) -or (Get-Item $vscodeDlZip).Length -lt 100MB) {
         Write-Host "[INFO] Downloading VSCode 1.126.0 (~280MB)..." -ForegroundColor Yellow
         Invoke-WebRequest -Uri $vscodeDlUrl -OutFile $vscodeDlZip -UseBasicParsing
     }
-    $extractDir = Join-Path $env:TEMP "vscode-126-restore"
-    Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
-    Expand-Archive -Path $vscodeDlZip -DestinationPath $extractDir -Force
-
-    # Replace HugOS.exe with Code.exe (same Electron, valid Microsoft signature)
-    $codeExeFile = Get-ChildItem $extractDir -Filter "Code.exe" -Recurse | Select-Object -First 1
-    Copy-Item $codeExeFile.FullName $hugosExePath -Force
-    Write-Host "[OK] HugOS.exe restored from Code.exe ($([int]($codeExeFile.Length/1MB)) MB, valid Microsoft sig)" -ForegroundColor Green
-
-    # Also sync matching Electron runtime data files (root-level copies)
-    foreach ($f in @('icudtl.dat','v8_context_snapshot.bin','snapshot_blob.bin')) {
-        $src = Get-ChildItem $extractDir -Filter $f -Recurse | Select-Object -First 1
-        if ($src) { Copy-Item $src.FullName (Join-Path $vsCodePackDir $f) -Force }
-    }
-
-    # CRITICAL: Copy the versioned Electron runtime directory (e.g. 7e7950df89/).
-    # Code.exe loads ICU data from this subdirectory, NOT from root.
-    # Without it, HugOS.exe crashes with "Invalid file descriptor to ICU data received".
-    $versionedDir = Get-ChildItem $extractDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' } | Select-Object -First 1
+    $pyExtract = "
+import zipfile, os
+zp = r'$vscodeDlZip'
+dest = r'$vsCodePackDir'
+with zipfile.ZipFile(zp) as z:
+    for m in z.infolist():
+        if m.filename.startswith('7e7950df89/') or m.filename == 'Code.exe':
+            z.extract(m, dest)
+src_exe = os.path.join(dest, 'Code.exe')
+dst_exe = os.path.join(dest, 'HugOS.exe')
+if os.path.exists(src_exe):
+    if os.path.exists(dst_exe):
+        try: os.remove(dst_exe)
+        except: pass
+    os.replace(src_exe, dst_exe)
+"
+    python -c "$pyExtract"
+    Write-Host "[OK] Extracted versioned runtime and restored HugOS.exe via Python zipfile" -ForegroundColor Green
+    $versionedDirs = @(Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' })
+    $versionedDir = $versionedDirs | Select-Object -First 1
     if ($versionedDir) {
-        $destVersionedDir = Join-Path $vsCodePackDir $versionedDir.Name
-        Copy-Item $versionedDir.FullName $destVersionedDir -Recurse -Force
-        Write-Host "[OK] Copied Electron versioned runtime directory: $($versionedDir.Name)/" -ForegroundColor Green
+        $destVersionedDir = $versionedDir.FullName
 
         # CRITICAL: Replace the versioned dir's product.json with HugOS branding.
         # The VSCode zip ships with product.json containing nameShort:"Code" / nameLong:"Visual Studio Code"
@@ -259,13 +259,18 @@ foreach ($vDir in $versionedDirs) {
 }
 
 # 4.5 Copy Pre-populated HF Models Database (hf_models.db) into the packaged folder
-$candidateDbs = @(
-    (Join-Path $PSScriptRoot "db\hf_models.db"),
-    (Join-Path (Split-Path $PSScriptRoot -Parent) "db\hf_models.db"),
-    "$env:LOCALAPPDATA\HugOS IDE\db\hf_models.db",
-    "$env:LOCALAPPDATA\ModelFusion\db\hf_models.db"
-)
-$dbSrcPath = $candidateDbs | Where-Object { (Test-Path $_) -and (Get-Item $_).Length -gt 50000 } | Select-Object -First 1
+# Prefer the canonical seed database (1.18 MB) to prevent installer bloat and stay well below the 2 GB MSI cabinet limit.
+$canonicalSeedDb = Join-Path (Split-Path $PSScriptRoot -Parent) "db\hf_models.db"
+if (Test-Path $canonicalSeedDb) {
+    $dbSrcPath = $canonicalSeedDb
+} else {
+    $candidateDbs = @(
+        (Join-Path $PSScriptRoot "db\hf_models.db"),
+        "$env:LOCALAPPDATA\HugOS IDE\db\hf_models.db",
+        "$env:LOCALAPPDATA\ModelFusion\db\hf_models.db"
+    )
+    $dbSrcPath = $candidateDbs | Where-Object { (Test-Path $_) -and (Get-Item $_).Length -gt 50000 } | Select-Object -First 1
+}
 if (-not $dbSrcPath) {
     $dbSrcPath = Join-Path (Split-Path $PSScriptRoot -Parent) "db\hf_models.db"
 }
@@ -283,16 +288,10 @@ if (Test-Path $dbSrcPath) {
         Write-Host "[OK] ModelFusion Database already up to date at: $dbDestPath" -ForegroundColor Green
     }
 
+    # Clean up duplicate bin\db directory if present to prevent cabinet overflow
     $binDbDestDir = Join-Path $vsCodePackDir "bin\db"
-    if (-not (Test-Path $binDbDestDir)) {
-        New-Item -ItemType Directory -Force -Path $binDbDestDir | Out-Null
-    }
-    $binDbDestPath = Join-Path $binDbDestDir "hf_models.db"
-    if (-not (Test-Path $binDbDestPath) -or (Get-Item $binDbDestPath).Length -ne (Get-Item $dbSrcPath).Length) {
-        Copy-Item -Path $dbSrcPath -Destination $binDbDestPath -Force
-        Write-Host "[OK] Copied ModelFusion Database to: $binDbDestPath ($( (Get-Item $binDbDestPath).Length ) bytes)" -ForegroundColor Green
-    } else {
-        Write-Host "[OK] ModelFusion Database already up to date at: $binDbDestPath" -ForegroundColor Green
+    if (Test-Path $binDbDestDir) {
+        Remove-Item -Path $binDbDestDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 } else {
     Write-Host "[WARNING] Pre-populated database not found at $dbSrcPath. Packaging without pre-populated DB." -ForegroundColor Yellow
@@ -402,23 +401,11 @@ if (Test-Path $stubsDir) {
     Write-Host "[WARNING] Native stubs directory not found at $stubsDir - IDE may fail to start." -ForegroundColor Yellow
 }
 
-# 4.8 Bundle starter OpenVINO model for offline-ready experience
-$ovModelName = "OpenVINO--Qwen2.5-1.5B-Instruct-int4-ov"
-$ovSrcPath = Join-Path $env:USERPROFILE ".hugos-ide\ov_models\$ovModelName"
-if (Test-Path $ovSrcPath) {
-    $ovDestDir = Join-Path $vsCodePackDir "ov_models\$ovModelName"
-    if (-not (Test-Path $ovDestDir)) {
-        New-Item -ItemType Directory -Force -Path $ovDestDir | Out-Null
-    }
-    Write-Host "[INFO] Bundling starter OpenVINO model ($ovModelName) into installer..." -ForegroundColor Yellow
-    # Copy only the essential model files (skip .metadata and cache files)
-    Get-ChildItem -Path $ovSrcPath -File | Where-Object { $_.Name -notlike "*.metadata" -and $_.Name -ne "CACHEDIR.TAG" -and $_.Name -ne ".gitignore" } | ForEach-Object {
-        Copy-Item -Path $_.FullName -Destination $ovDestDir -Force
-    }
-    $modelSize = [math]::Round((Get-ChildItem $ovDestDir -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1MB, 1)
-    Write-Host "[OK] Bundled starter model ($modelSize MB) to: $ovDestDir" -ForegroundColor Green
-} else {
-    Write-Host "[WARNING] Starter OpenVINO model not found at $ovSrcPath. Packaging without bundled model." -ForegroundColor Yellow
+# 4.8 Clean up any large local ov_models from packaged directory to prevent exceeding 2 GB MSI limit
+$ovDestDir = Join-Path $vsCodePackDir "ov_models"
+if (Test-Path $ovDestDir) {
+    Remove-Item -Path $ovDestDir -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "[OK] Cleaned up ov_models directory from packaged staging." -ForegroundColor Green
 }
 
 # 4.9 Patch extensionHostProcess.js to accept ModelFusion as default vendor
@@ -954,18 +941,9 @@ if (-not (Test-Path $msiPath) -or ((Get-Item $msiPath).LastWriteTime -lt (Get-It
     if (Test-Path $msiPath) {
         Remove-Item -Path $msiPath -Force -ErrorAction SilentlyContinue
     }
-    $wixProc = Start-Process -FilePath $wixExe -ArgumentList "build", "-b", "`"$PSScriptRoot`"", "-arch", "x64", "`"$wxsPath`"", "-out", "`"$msiPath`"" -NoNewWindow -PassThru
-    while (-not $wixProc.HasExited) {
-        try {
-            $msiSvc = Get-Service msiserver -ErrorAction SilentlyContinue
-            if ($msiSvc -and $msiSvc.Status -ne 'Running') {
-                Start-Service -Name msiserver -ErrorAction SilentlyContinue
-            }
-        } catch {}
-        Start-Sleep -Seconds 3
-    }
-    $wixProc.WaitForExit()
-    $wixExit = if ($wixProc.ExitCode -ne $null) { [int]$wixProc.ExitCode } else { 0 }
+    Write-Host "[INFO] Executing WiX build command..." -ForegroundColor Yellow
+    & $wixExe build -b $PSScriptRoot -arch x64 $wxsPath -out $msiPath
+    $wixExit = $LASTEXITCODE
 } else {
     Write-Host "[OK] Existing MSI installer is fresh and matches current WiX manifest." -ForegroundColor Green
     $wixExit = 0

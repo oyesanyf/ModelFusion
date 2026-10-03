@@ -16,6 +16,11 @@ pub use watermark::{
     detect_watermark_input, DetectionResult, ImageLsbAnalysis, ImageWatermarkScanner,
     TokenWatermarkDetector, WatermarkReport,
 };
+pub mod decision_engine;
+pub use decision_engine::{
+    evaluate_decision, softmax_calibrate, DecisionRequest, DecisionResponse, DecisionScore,
+    HitlGateDecision, MismatchDecision, HUGOS_14_CATEGORIES,
+};
 
 use anyhow::Result;
 use clap::Parser;
@@ -2280,8 +2285,11 @@ struct Args {
     #[arg(long, default_value = "7", help = "Forecast horizon for ACDSO time series")]
     horizon: usize,
 
-    #[arg(long, help = "Run ACDSO Decision Intelligence (causal analysis & uplift modeling)")]
-    decision: bool,
+    #[arg(long, visible_alias = "classify-intent", visible_alias = "classify", num_args = 0..=1, default_missing_value = "", help = "Evaluate query against choice schema via sub-50ms System 1 Decision Model or ACDSO Decision Intelligence")]
+    decision: Option<String>,
+
+    #[arg(long, visible_alias = "decision-schema", visible_alias = "choices", help = "JSON array or comma-separated list of choice categories/schema for decision engine")]
+    schema: Option<String>,
 
     #[arg(long, help = "Treatment column for ACDSO decision intelligence")]
     treatment: Option<String>,
@@ -2869,6 +2877,11 @@ where
                 args[1] = "--proxy".to_string();
                 return args;
             }
+            if (sub_clean == "decision" || sub_clean == "classify-intent" || sub_clean == "classify_intent" || sub_clean == "clef") && !has_combinator {
+                args.remove(1);
+                args[1] = "--decision".to_string();
+                return args;
+            }
         if (sub_clean == "key" || sub_clean == "keys") && args.len() > 3 && args[3].to_lowercase() == "gemini" {
             let key = if args.len() > 4 { args[4].clone() } else { String::new() };
             args.remove(1);
@@ -3002,7 +3015,7 @@ where
         "timeseries" => {
             args[1] = "--timeseries".to_string();
         }
-        "causal" | "decision" => {
+        "causal" => {
             args[1] = "--decision".to_string();
         }
         "graph-index" => {
@@ -3067,6 +3080,9 @@ where
         "proxy" | "/proxy" | "--proxy" | "-proxy" | "--api/proxy" | "-api/proxy" | "/api/proxy" | "api/proxy" | "api-proxy" | "-api-proxy" | "--api-proxy" | "--browser/proxy" | "-browser/proxy" | "/browser/proxy" | "browser/proxy" | "@agent/proxy" | "@agent:proxy" | "@proxy" => {
             args[1] = "--proxy".to_string();
         }
+        "decision" | "/decision" | "@agent/decision" | "@agent:decision" | "@decision" | "classify-intent" | "/classify-intent" | "clef" | "/clef" => {
+            args[1] = "--decision".to_string();
+        }
         _ => {}
     }
     }
@@ -3104,6 +3120,30 @@ where
             let combined = args[2..].join(" ");
             args.truncate(2);
             args.push(combined);
+        }
+    }
+
+    if args.len() > 2 && args[1] == "--decision" {
+        let mut query_tokens = Vec::new();
+        let mut flag_tokens = Vec::new();
+        let mut i = 2;
+        while i < args.len() {
+            if args[i].starts_with('-') {
+                flag_tokens.push(args[i].clone());
+                if (args[i] == "--choices" || args[i] == "--schema" || args[i] == "--decision-schema") && i + 1 < args.len() {
+                    flag_tokens.push(args[i + 1].clone());
+                    i += 1;
+                }
+            } else {
+                query_tokens.push(args[i].clone());
+            }
+            i += 1;
+        }
+        if !query_tokens.is_empty() {
+            let combined = query_tokens.join(" ");
+            args.truncate(2);
+            args.push(combined);
+            args.extend(flag_tokens);
         }
     }
 
@@ -4144,6 +4184,80 @@ async fn run(args: Args) -> Result<()> {
         return Ok(());
     }
 
+    // System 1 Decision Model CLI Dispatch
+    if !args.acdso && (args.decision.is_some() || args.schema.is_some()) {
+        let raw_decision_val = args.decision.as_deref().unwrap_or("");
+        let query_text = if !raw_decision_val.trim().is_empty() {
+            raw_decision_val.trim().to_string()
+        } else if let Some(ref q) = args.query {
+            q.trim().to_string()
+        } else if let Some(ref p) = args.prompt {
+            p.trim().to_string()
+        } else if let Some(ref t) = args.text {
+            t.trim().to_string()
+        } else {
+            String::new()
+        };
+
+        if query_text.is_empty() {
+            println!("⚡ **System 1 Decision Engine (Clef & Clef-flash)**\n\nSub-50ms non-autoregressive schema evaluation, category routing, mismatch detection, and HITL risk gating.\n\n**Usage**:\n- `cli.exe --decision \"What is the statute of limitations for felony?\" --choices \"legal,finance,code,general\"`\n- `cli.exe --classify-intent \"buy flight to London\" --schema '[\"shopping\", \"research\", \"coding\"]'`\n- `cli.exe @agent decision \"def fib(n):\"`\n\n*Key Flags*: `--decision <query>`, `--classify-intent <query>`, `--choices <list>`, `--schema <json>`.");
+            return Ok(());
+        }
+
+        let choices_list: Option<Vec<String>> = if let Some(ref s) = args.schema {
+            if s.starts_with('[') && s.ends_with(']') {
+                serde_json::from_str::<Vec<String>>(s).ok().or_else(|| {
+                    Some(s.trim_matches(|c| c == '[' || c == ']').split(',').map(|x| x.trim().trim_matches('"').to_string()).collect())
+                })
+            } else if s.contains(',') {
+                Some(s.split(',').map(|x| x.trim().to_string()).collect())
+            } else {
+                Some(vec![s.clone()])
+            }
+        } else {
+            None
+        };
+
+        let req = decision_engine::DecisionRequest {
+            query: Some(query_text),
+            prompt: None,
+            choices: choices_list,
+            schema: None,
+            model: args.model.clone(),
+            task_type: None,
+            temperature: Some(0.8),
+        };
+
+        let mut resp = decision_engine::evaluate_decision(&req);
+        let resolved_db = resolve_db_path(args.db_path.as_deref());
+        let db_dir = resolved_db.parent().unwrap_or_else(|| std::path::Path::new("IDE/db"));
+        {
+            let mut ctrl = get_adaptive_controller(db_dir).lock().unwrap();
+            let q_text = &resp.query;
+            let is_code = q_text.contains("fn ") || q_text.contains("def ") || q_text.contains("function ") || q_text.contains("class ") || q_text.contains("```");
+            let is_tabular = q_text.contains("csv") || q_text.contains("excel") || q_text.contains("dataframe");
+            let is_multimodal = q_text.contains("image") || q_text.contains("photo") || q_text.contains("audio");
+            let is_web = q_text.contains("search") || q_text.contains("browse") || q_text.contains("wikipedia");
+            let complexity = if is_code || is_tabular { 0.7 } else if q_text.len() > 200 { 0.5 } else { 0.25 };
+            let feature_state = FeatureState::new(complexity, 16.0, 4000.0, q_text.len(), is_code, is_tabular, is_multimodal, is_web);
+            let candidate_actions = DecisionAction::default_candidate_actions();
+            let (action, _score) = ctrl.select_action(&feature_state, &candidate_actions);
+            let telem = ctrl.telemetry();
+            resp.rl_arm = Some(action.arm_id);
+            resp.rl_telemetry = Some(serde_json::json!({
+                "regime": telem.regime,
+                "decisions_count": telem.decisions_count,
+                "exploration_rate": telem.exploration_rate,
+                "selected_arm": action.arm_id,
+                "model_tier": action.model_tier,
+                "consensus_panel_size": action.consensus_panel_size,
+                "verification_depth": action.verification_depth,
+            }));
+        }
+        println!("{}", serde_json::to_string_pretty(&resp)?);
+        return Ok(());
+    }
+
     // Dispatch system commands first
     if let Some(ref rl_args) = args.rest_rl {
         let res = handle_rest_rl(rl_args).await;
@@ -4877,7 +4991,7 @@ async fn run(args: Args) -> Result<()> {
             let effective_timeseries = parsed_from_prompt.as_ref().map(|p| p.timeseries).unwrap_or(false) || args.timeseries;
             let effective_datetime_col = parsed_from_prompt.as_ref().and_then(|p| p.datetime_col.clone()).or_else(|| args.datetime_col.clone());
             let effective_horizon = parsed_from_prompt.as_ref().and_then(|p| p.horizon).unwrap_or(args.horizon);
-            let effective_decision = parsed_from_prompt.as_ref().map(|p| p.decision).unwrap_or(false) || args.decision;
+            let effective_decision = parsed_from_prompt.as_ref().map(|p| p.decision).unwrap_or(false) || args.decision.is_some();
             let effective_treatment = parsed_from_prompt.as_ref().and_then(|p| p.treatment.clone()).or_else(|| args.treatment.clone());
 
             if effective_file.is_none() && effective_target.is_none() && effective_predict.is_none() && !effective_timeseries && !effective_decision {
@@ -9874,6 +9988,62 @@ public class ShortcutHelper {
                 return;
             }
 
+            // ── Cloudflare Clef & Clef-flash System 1 Decision Model API (/api/decision & /api/clef) ──
+            if request_path == "/api/decision" || request_path == "/api/clef" || request_path == "/api/classify-intent" || request_path == "/api/classify" {
+                let req: decision_engine::DecisionRequest = serde_json::from_value(request_json.clone()).unwrap_or_else(|_| {
+                    let q = request_json.get("query").or_else(|| request_json.get("prompt")).and_then(|v| v.as_str()).map(|s| s.to_string());
+                    decision_engine::DecisionRequest {
+                        query: q,
+                        prompt: None,
+                        choices: request_json.get("choices").and_then(|c| c.as_array()).map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect()),
+                        schema: request_json.get("schema").cloned(),
+                        model: request_json.get("model").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        task_type: request_json.get("task_type").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        temperature: request_json.get("temperature").and_then(|v| v.as_f64()),
+                    }
+                });
+                let resolved_db = resolve_db_path(Some(&db_path_str));
+                let db_dir = resolved_db.parent().unwrap_or_else(|| std::path::Path::new("IDE/db"));
+                let mut decision_res = decision_engine::evaluate_decision(&req);
+
+                // Connect to AdaptiveController for RLCD
+                let (arm_id, rl_telem) = {
+                    let mut ctrl = get_adaptive_controller(db_dir).lock().unwrap();
+                    let q_text = &decision_res.query;
+                    let is_code = q_text.contains("fn ") || q_text.contains("def ") || q_text.contains("function ") || q_text.contains("class ") || q_text.contains("```");
+                    let is_tabular = q_text.contains("csv") || q_text.contains("excel") || q_text.contains("dataframe");
+                    let is_multimodal = q_text.contains("image") || q_text.contains("photo") || q_text.contains("audio");
+                    let is_web = q_text.contains("search") || q_text.contains("browse") || q_text.contains("wikipedia");
+                    let complexity = if is_code || is_tabular { 0.7 } else if q_text.len() > 200 { 0.5 } else { 0.25 };
+                    let feature_state = FeatureState::new(complexity, 16.0, 4000.0, q_text.len(), is_code, is_tabular, is_multimodal, is_web);
+                    let candidate_actions = DecisionAction::default_candidate_actions();
+                    let (action, _score) = ctrl.select_action(&feature_state, &candidate_actions);
+                    let telem = ctrl.telemetry();
+                    let telem_val = serde_json::json!({
+                        "regime": telem.regime,
+                        "decisions_count": telem.decisions_count,
+                        "exploration_rate": telem.exploration_rate,
+                        "selected_arm": action.arm_id,
+                        "model_tier": action.model_tier,
+                        "consensus_panel_size": action.consensus_panel_size,
+                        "verification_depth": action.verification_depth,
+                    });
+                    (action.arm_id, telem_val)
+                };
+
+                decision_res.rl_arm = Some(arm_id);
+                decision_res.rl_telemetry = Some(rl_telem);
+                let resp_body = serde_json::to_string_pretty(&decision_res).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
             // ── Sound RL Evaluation Mode Toggle (/api/rl/eval-mode) ──
             if request_path == "/api/rl/eval-mode" {
                 let mode_str = request_json.get("mode")
@@ -9925,7 +10095,13 @@ public class ShortcutHelper {
                 let model = request_json.get("model").and_then(|v| v.as_str()).unwrap_or("default").to_string();
                 let feedback_type = request_json.get("feedback_type").and_then(|v| v.as_str()).unwrap_or("thumbs_up").to_string();
                 let reward = request_json.get("reward").and_then(|v| v.as_f64()).unwrap_or_else(|| {
-                    if feedback_type == "thumbs_down" { -1.0 } else { 1.0 }
+                    if feedback_type == "thumbs_down" || feedback_type == "discard_action" || feedback_type == "discard" || feedback_type == "veto" {
+                        -0.5
+                    } else if feedback_type == "action_pill_click" || feedback_type == "confirm_action" || feedback_type == "pill_click" || feedback_type == "confirm" || feedback_type == "thumbs_up" {
+                        1.0
+                    } else {
+                        1.0
+                    }
                 });
                 let context = request_json.get("context").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
                 let arm = request_json.get("arm").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
@@ -9946,21 +10122,22 @@ public class ShortcutHelper {
                 save_bandit_state(db_dir, &state);
 
                 // 2. Also update AdaptiveController if active
-                {
+                let (decisions_count, exploration_rate) = {
                     let mut ctrl = get_adaptive_controller(db_dir).lock().unwrap();
                     let is_code = prompt.contains("fn ") || prompt.contains("def ") || prompt.contains("function ") || prompt.contains("class ") || prompt.contains("```");
                     let complexity = if is_code { 0.7 } else if prompt.len() > 300 { 0.6 } else { 0.3 };
                     let feature_state = FeatureState::new(complexity, 16.0, 4000.0, prompt.len(), is_code, false, false, false);
                     let candidate_actions = DecisionAction::default_candidate_actions();
-                    let action = if arm_idx == 1 {
-                        candidate_actions.iter().find(|a| a.consensus_panel_size > 1).cloned().unwrap_or_else(|| candidate_actions[0].clone())
+                    let action = if arm_idx < candidate_actions.len() {
+                        candidate_actions[arm_idx].clone()
                     } else {
                         candidate_actions[0].clone()
                     };
                     ctrl.update(&feature_state, &action, reward, Some(0.0));
                     let checkpoint_path = db_dir.join("adaptive_rl_policy.json");
                     let _ = ctrl.save_checkpoint(&checkpoint_path);
-                }
+                    (ctrl.telemetry().decisions_count, ctrl.exploration_rate())
+                };
 
                 // 3. Record feedback pair into IDE/db/rl_feedback_pairs.json for offline DPO/RLHF training
                 let feedback_path = db_dir.join("rl_feedback_pairs.json");
@@ -9998,7 +10175,9 @@ public class ShortcutHelper {
                     "status": "ok",
                     "message": "Bandit policy and RL feedback updated successfully",
                     "reward": reward,
-                    "new_val": new_val
+                    "new_val": new_val,
+                    "decisions_count": decisions_count,
+                    "exploration_rate": exploration_rate
                 });
                 let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
                 let response = format!(

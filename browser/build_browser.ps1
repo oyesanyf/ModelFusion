@@ -171,14 +171,19 @@ if (-not (Test-Path $wixExe)) {
     $wixExe = if ($wixCmd) { $wixCmd.Source } else { "wix" }
 }
 
+# Keep msiserver active during WiX build
+$comInstaller = $null
 try {
-    $msiSvc = Get-Service msiserver -ErrorAction SilentlyContinue
-    if ($msiSvc -and $msiSvc.Status -ne 'Running') {
-        Start-Service -Name msiserver -ErrorAction SilentlyContinue
-    }
+    Start-Service -Name msiserver -ErrorAction SilentlyContinue
+    $comInstaller = New-Object -ComObject WindowsInstaller.Installer
 } catch {}
 
-$wixProc = Start-Process -FilePath $wixExe -ArgumentList "build", "-b", "`"$browserDir`"", "-arch", "x64", "`"$wxsPath`"", "-out", "`"$msiPath`"" -NoNewWindow -PassThru
+$wixOutLog = Join-Path $browserDir "wix_browser_stdout.log"
+$wixErrLog = Join-Path $browserDir "wix_browser_stderr.log"
+if (Test-Path $wixOutLog) { Remove-Item $wixOutLog -Force -ErrorAction SilentlyContinue }
+if (Test-Path $wixErrLog) { Remove-Item $wixErrLog -Force -ErrorAction SilentlyContinue }
+
+$wixProc = Start-Process -FilePath $wixExe -ArgumentList "build", "-b", "`"$browserDir`"", "-arch", "x64", "`"$wxsPath`"", "-out", "`"$msiPath`"" -NoNewWindow -PassThru -RedirectStandardOutput $wixOutLog -RedirectStandardError $wixErrLog
 while (-not $wixProc.HasExited) {
     try {
         $msiSvc = Get-Service msiserver -ErrorAction SilentlyContinue
@@ -186,15 +191,23 @@ while (-not $wixProc.HasExited) {
             Start-Service -Name msiserver -ErrorAction SilentlyContinue
         }
     } catch {}
-    Start-Sleep -Seconds 2
+    Start-Sleep -Seconds 1
 }
 $wixProc.WaitForExit()
 $wixExit = if ($wixProc.ExitCode -ne $null) { [int]$wixProc.ExitCode } else { 0 }
-if ($wixExit -ne 0 -or -not (Test-Path $msiPath)) {
-    Write-Host "[ERROR] WiX build failed." -ForegroundColor Red
+
+# Release COM keepalive
+$comInstaller = $null
+[System.GC]::Collect()
+
+if ((Test-Path $msiPath) -and (Get-Item $msiPath).Length -gt 10MB) {
+    Write-Host "[OK] MSI built successfully at $msiPath ($([math]::Round((Get-Item $msiPath).Length / 1MB, 2)) MB)" -ForegroundColor Green
+} elseif ($wixExit -ne 0 -or -not (Test-Path $msiPath)) {
+    Write-Host "[ERROR] WiX build failed (Exit code: $wixExit)." -ForegroundColor Red
+    if (Test-Path $wixErrLog) { Get-Content $wixErrLog | Write-Host -ForegroundColor Red }
+    if (Test-Path $wixOutLog) { Get-Content $wixOutLog -Tail 50 | Write-Host -ForegroundColor Yellow }
     Exit 1
 }
-Write-Host "[OK] MSI built successfully at $msiPath" -ForegroundColor Green
 
 # 6. Sign final MSI
 Write-Host "[INFO] Digitally signing HugOS_Browser.msi..." -ForegroundColor Yellow
