@@ -1,0 +1,260 @@
+{
+  "timestamp": "2026-10-03T17:21:41Z",
+  "cli_runs": [
+    {
+      "run": 1,
+      "cases": [
+        {
+          "name": "Sys-Info Hardware Sweet-Spot Calibration",
+          "passed": true,
+          "duration_ms": 825.9258270263672,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - Legal Statute Mismatch Detection",
+          "passed": true,
+          "duration_ms": 50.282955169677734,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - Code Performance Choice Schema",
+          "passed": true,
+          "duration_ms": 86.15660667419434,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - Financial Earnings Sentiment",
+          "passed": true,
+          "duration_ms": 61.05780601501465,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - Biochemical Molecule Classification",
+          "passed": true,
+          "duration_ms": 56.05316162109375,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - HITL Computer Use Risk Gating",
+          "passed": true,
+          "duration_ms": 62.775373458862305,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - HITL Critical Veto Gating",
+          "passed": true,
+          "duration_ms": 59.54122543334961,
+          "returncode": 0
+        }
+      ],
+      "passed": 7,
+      "failed": 0,
+      "total_time_ms": 1202.1269798278809
+    },
+    {
+      "run": 2,
+      "cases": [
+        {
+          "name": "Sys-Info Hardware Sweet-Spot Calibration",
+          "passed": true,
+          "duration_ms": 835.5984687805176,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - Legal Statute Mismatch Detection",
+          "passed": true,
+          "duration_ms": 69.98157501220703,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - Code Performance Choice Schema",
+          "passed": true,
+          "duration_ms": 83.70327949523926,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - Financial Earnings Sentiment",
+          "passed": true,
+          "duration_ms": 62.95657157897949,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - Biochemical Molecule Classification",
+          "passed": true,
+          "duration_ms": 79.19478416442871,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - HITL Computer Use Risk Gating",
+          "passed": true,
+          "duration_ms": 82.15165138244629,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - HITL Critical Veto Gating",
+          "passed": true,
+          "duration_ms": 53.169965744018555,
+          "returncode": 0
+        }
+      ],
+      "passed": 7,
+      "failed": 0,
+      "total_time_ms": 1267.1058177947998
+    },
+    {
+      "run": 3,
+      "cases": [
+        {
+          "name": "Sys-Info Hardware Sweet-Spot Calibration",
+          "passed": true,
+          "duration_ms": 778.5031795501709,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - Legal Statute Mismatch Detection",
+          "passed": true,
+          "duration_ms": 88.80305290222168,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - Code Performance Choice Schema",
+          "passed": true,
+          "duration_ms": 52.24251747131348,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - Financial Earnings Sentiment",
+          "passed": true,
+          "duration_ms": 55.17148971557617,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - Biochemical Molecule Classification",
+          "passed": true,
+          "duration_ms": 46.81205749511719,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - HITL Computer Use Risk Gating",
+          "passed": true,
+          "duration_ms": 76.39932632446289,
+          "returncode": 0
+        },
+        {
+          "name": "Decision Engine - HITL Critical Veto Gating",
+          "passed": true,
+          "duration_ms": 80.48605918884277,
+          "returncode": 0
+        }
+      ],
+      "passed": 7,
+      "failed": 0,
+      "total_time_ms": 1178.7254810333252
+    }
+  ],
+  "ide_runs": [
+    {
+      "run": 1,
+      "checks": [
+        {
+          "check": "NLS Parity",
+          "passed": true
+        },
+        {
+          "check": "PE Icon",
+          "passed": true
+        },
+        {
+          "check": "MSI Signatures",
+          "passed": true
+        },
+        {
+          "check": "ReST-RL Extension Invariants",
+          "passed": true
+        }
+      ],
+      "passed": 4,
+      "failed": 0
+    },
+    {
+      "run": 2,
+      "checks": [
+        {
+          "check": "NLS Parity",
+          "passed": true
+        },
+        {
+          "check": "PE Icon",
+          "passed": true
+        },
+        {
+          "check": "MSI Signatures",
+          "passed": true
+        },
+        {
+          "check": "ReST-RL Extension Invariants",
+          "passed": true
+        }
+      ],
+      "passed": 4,
+      "failed": 0
+    },
+    {
+      "run": 3,
+      "checks": [
+        {
+          "check": "NLS Parity",
+          "passed": true
+        },
+        {
+          "check": "PE Icon",
+          "passed": true
+        },
+        {
+          "check": "MSI Signatures",
+          "passed": true
+        },
+        {
+          "check": "ReST-RL Extension Invariants",
+          "passed": true
+        }
+      ],
+      "passed": 4,
+      "failed": 0
+    }
+  ],
+  "browser_runs": [
+    {
+      "run": 1,
+      "total_tools": 106,
+      "passed": 106,
+      "failed": 0,
+      "pass_rate": "100.0%",
+      "duration_ms": 546.8270778656006
+    },
+    {
+      "run": 2,
+      "total_tools": 106,
+      "passed": 106,
+      "failed": 0,
+      "pass_rate": "100.0%",
+      "duration_ms": 500.96654891967773
+    },
+    {
+      "run": 3,
+      "total_tools": 106,
+      "passed": 106,
+      "failed": 0,
+      "pass_rate": "100.0%",
+      "duration_ms": 615.593433380127
+    }
+  ],
+  "summary": {
+    "cli_pass_rate": "100.0%",
+    "ide_pass_rate": "100.0%",
+    "browser_pass_rate": "100.0%",
+    "grand_total_passed": 351,
+    "grand_total_cases": 351,
+    "overall_pass_rate": "100.0%"
+  }
+}
