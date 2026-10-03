@@ -2915,30 +2915,52 @@ const HELP_CATEGORIES = {
 
 const SPECIFIC_MODELS = {
   // Classification & Taxonomy (Menu 1)
+  // Full Hugging Face Repository IDs across all 12 Foundation Models
+  'facebook/bart-large-mnli': { key: 'facebook/bart-large-mnli', name: 'BART-Large MNLI Zero-Shot Classifier', category: 'classification', cardKey: 'bart-large-mnli' },
+  'cross-encoder/nli-deberta-v3-base': { key: 'cross-encoder/nli-deberta-v3-base', name: 'Cross-Encoder DeBERTa-v3 NLI', category: 'classification', cardKey: 'deberta-v3' },
+  'moritzlaurer/deberta-v3-base-mnli-fever-anli': { key: 'moritzlaurer/deberta-v3-base-mnli-fever-anli', name: 'DeBERTa-v3 FEVER ANLI', category: 'classification', cardKey: 'deberta-v3' },
+  'valhalla/distilbart-mnli-12-3': { key: 'valhalla/distilbart-mnli-12-3', name: 'DistilBART MNLI High-Throughput Classifier', category: 'classification', cardKey: 'distilbart-mnli' },
+  'distilbert/distilbert-base-uncased-finetuned-sst-2-english': { key: 'distilbert/distilbert-base-uncased-finetuned-sst-2-english', name: 'DistilBERT SST-2 Sentiment Classifier', category: 'classification', cardKey: 'distilbert-sst2' },
+  'cardiffnlp/twitter-roberta-base-sentiment-latest': { key: 'cardiffnlp/twitter-roberta-base-sentiment-latest', name: 'Twitter-RoBERTa Sentiment Classifier', category: 'classification', cardKey: 'twitter-roberta' },
+  'samlowe/roberta-base-go_emotions': { key: 'samlowe/roberta-base-go_emotions', name: 'GoEmotions RoBERTa 28-Emotion Classifier', category: 'classification', cardKey: 'go-emotions' },
+  'bhadresh-psavani/distilbert-base-uncased-emotion': { key: 'bhadresh-psavani/distilbert-base-uncased-emotion', name: 'DistilBERT 6-Emotion Classifier', category: 'classification', cardKey: 'distilbert-emotion' },
+  'unitary/toxic-bert': { key: 'unitary/toxic-bert', name: 'Toxic-BERT Multi-Label Safety Classifier', category: 'classification', cardKey: 'toxic-bert' },
+  'koalaai/text-moderation': { key: 'koalaai/text-moderation', name: 'KoalaAI Text Moderation Classifier', category: 'classification', cardKey: 'text-moderation' },
+  'allenai/longformer-base-4096': { key: 'allenai/longformer-base-4096', name: 'Longformer 4096 Document Classifier', category: 'classification', cardKey: 'longformer' },
+  'prosusai/finbert': { key: 'prosusai/finbert', name: 'FinBERT Domain Classifier', category: 'classification', cardKey: 'finbert' },
+
+  // Model Aliases & Direct UI Tool-Tags
   'bart-large-mnli': { key: 'bart-large-mnli', name: 'BART-Large MNLI Zero-Shot Classifier', category: 'classification', cardKey: 'bart-large-mnli' },
   'bart-mnli': { key: 'bart-mnli', name: 'BART-Large MNLI Zero-Shot Classifier', category: 'classification', cardKey: 'bart-large-mnli' },
   'nli-deberta-v3-base': { key: 'nli-deberta-v3-base', name: 'Cross-Encoder DeBERTa-v3 NLI', category: 'classification', cardKey: 'deberta-v3' },
   'deberta-v3': { key: 'deberta-v3', name: 'DeBERTa-v3 Natural Language Inference Suite', category: 'classification', cardKey: 'deberta-v3' },
   'deberta-nli': { key: 'deberta-nli', name: 'Cross-Encoder DeBERTa-v3 NLI', category: 'classification', cardKey: 'deberta-v3' },
   'deberta-v3-base-mnli-fever-anli': { key: 'deberta-v3-base-mnli-fever-anli', name: 'DeBERTa-v3 FEVER ANLI', category: 'classification', cardKey: 'deberta-v3' },
+  'deberta-fever': { key: 'deberta-fever', name: 'DeBERTa-v3 FEVER ANLI', category: 'classification', cardKey: 'deberta-v3' },
   'distilbart-mnli-12-3': { key: 'distilbart-mnli-12-3', name: 'DistilBART MNLI High-Throughput Classifier', category: 'classification', cardKey: 'distilbart-mnli' },
   'distilbart-mnli': { key: 'distilbart-mnli', name: 'DistilBART MNLI High-Throughput Classifier', category: 'classification', cardKey: 'distilbart-mnli' },
+  'distilbart': { key: 'distilbart', name: 'DistilBART MNLI High-Throughput Classifier', category: 'classification', cardKey: 'distilbart-mnli' },
   'distilbert-base-uncased-finetuned-sst-2-english': { key: 'distilbert-base-uncased-finetuned-sst-2-english', name: 'DistilBERT SST-2 Sentiment Classifier', category: 'classification', cardKey: 'distilbert-sst2' },
   'distilbert-sst2': { key: 'distilbert-sst2', name: 'DistilBERT SST-2 Sentiment Classifier', category: 'classification', cardKey: 'distilbert-sst2' },
   'sst2': { key: 'sst2', name: 'DistilBERT SST-2 Sentiment Classifier', category: 'classification', cardKey: 'distilbert-sst2' },
   'twitter-roberta-base-sentiment-latest': { key: 'twitter-roberta-base-sentiment-latest', name: 'Twitter-RoBERTa Sentiment Classifier', category: 'classification', cardKey: 'twitter-roberta' },
   'twitter-roberta': { key: 'twitter-roberta', name: 'Twitter-RoBERTa Sentiment Classifier', category: 'classification', cardKey: 'twitter-roberta' },
+  'twitter-sentiment': { key: 'twitter-sentiment', name: 'Twitter-RoBERTa Sentiment Classifier', category: 'classification', cardKey: 'twitter-roberta' },
   'roberta-base-go_emotions': { key: 'roberta-base-go_emotions', name: 'GoEmotions RoBERTa 28-Emotion Classifier', category: 'classification', cardKey: 'go-emotions' },
   'go_emotions': { key: 'go_emotions', name: 'GoEmotions RoBERTa 28-Emotion Classifier', category: 'classification', cardKey: 'go-emotions' },
   'go-emotions': { key: 'go-emotions', name: 'GoEmotions RoBERTa 28-Emotion Classifier', category: 'classification', cardKey: 'go-emotions' },
   'distilbert-base-uncased-emotion': { key: 'distilbert-base-uncased-emotion', name: 'DistilBERT 6-Emotion Classifier', category: 'classification', cardKey: 'distilbert-emotion' },
   'distilbert-emotion': { key: 'distilbert-emotion', name: 'DistilBERT 6-Emotion Classifier', category: 'classification', cardKey: 'distilbert-emotion' },
+  'emotion': { key: 'emotion', name: 'DistilBERT 6-Emotion Classifier', category: 'classification', cardKey: 'distilbert-emotion' },
   'toxic-bert': { key: 'toxic-bert', name: 'Toxic-BERT Multi-Label Safety Classifier', category: 'classification', cardKey: 'toxic-bert' },
+  'toxic': { key: 'toxic', name: 'Toxic-BERT Multi-Label Safety Classifier', category: 'classification', cardKey: 'toxic-bert' },
   'text-moderation': { key: 'text-moderation', name: 'KoalaAI Text Moderation Classifier', category: 'classification', cardKey: 'text-moderation' },
+  'moderation': { key: 'moderation', name: 'KoalaAI Text Moderation Classifier', category: 'classification', cardKey: 'text-moderation' },
   'koala-moderation': { key: 'koala-moderation', name: 'KoalaAI Text Moderation Classifier', category: 'classification', cardKey: 'text-moderation' },
   'longformer-base-4096': { key: 'longformer-base-4096', name: 'Longformer 4096 Document Classifier', category: 'classification', cardKey: 'longformer' },
   'longformer': { key: 'longformer', name: 'Longformer 4096 Document Classifier', category: 'classification', cardKey: 'longformer' },
   'finbert-classifier': { key: 'finbert-classifier', name: 'FinBERT Domain Classifier', category: 'classification', cardKey: 'finbert' },
+  'finbert-cls': { key: 'finbert-cls', name: 'FinBERT Domain Classifier', category: 'classification', cardKey: 'finbert' },
 
   // Science & Discovery (Menu 10)
   'esm': { key: 'esm', name: 'ESM2 & ESMFold Protein Suite', category: 'science', cardKey: 'esm' },
@@ -4217,13 +4239,16 @@ function resolveHelpResolution(parsed) {
 
   // 2. Match Models
   for (const token of tokens) {
-    const cleanToken = token.replace(/[^a-z0-9_-]/g, '');
-    if (!cleanToken) continue;
+    const rawClean = (token || '').toLowerCase().trim();
+    const tokenNoSlash = rawClean.split('/').pop().replace(/[^a-z0-9_-]/g, '');
+    const cleanTokenWithSlash = rawClean.replace(/[^a-z0-9_\/-]/g, '');
+    const cleanToken = rawClean.replace(/[^a-z0-9_-]/g, '');
+    if (!cleanToken && !cleanTokenWithSlash) continue;
 
-    let m = SPECIFIC_MODELS[cleanToken];
+    let m = SPECIFIC_MODELS[cleanTokenWithSlash] || SPECIFIC_MODELS[tokenNoSlash] || SPECIFIC_MODELS[cleanToken];
     if (!m) {
       for (const [k, modelObj] of Object.entries(SPECIFIC_MODELS)) {
-        if (k === cleanToken || cleanToken === k.replace('-', '')) {
+        if (k === cleanTokenWithSlash || k === tokenNoSlash || k === cleanToken || cleanToken === k.replace('-', '')) {
           m = modelObj;
           break;
         }
@@ -4233,13 +4258,16 @@ function resolveHelpResolution(parsed) {
       const card = SPECIFIC_MODEL_CARDS[m.cardKey] || SPECIFIC_MODEL_CARDS[m.key] || null;
       matchedModels.push({ model: m, modelCard: card });
       modelTokens.add(cleanToken);
+      if (tokenNoSlash) modelTokens.add(tokenNoSlash);
+      if (cleanTokenWithSlash) modelTokens.add(cleanTokenWithSlash);
     }
   }
 
   // 3. Match Categories using precise non-colliding keywords
   for (const token of tokens) {
-    const cleanToken = token.replace(/[^a-z0-9_-]/g, '');
-    if (!cleanToken || modelTokens.has(cleanToken)) continue;
+    const cleanToken = (token || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    const tokenNoSlash = (token || '').toLowerCase().split('/').pop().replace(/[^a-z0-9_-]/g, '');
+    if (!cleanToken || modelTokens.has(cleanToken) || modelTokens.has(tokenNoSlash)) continue;
 
     for (const [catKey, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
       if (keywords.includes(cleanToken)) {
@@ -18393,13 +18421,29 @@ Instructions:
       lower.startsWith('@agent topic') || lower === '@agent topic' ||
       lower.startsWith('/topic') || lower === '/topic' ||
       lower.startsWith('@topic') ||
-      /^(?:@agent\s+|@|\/)?(?:bart-large-mnli|bart-mnli|nli-deberta-v3-base|deberta-nli|deberta-v3-base-mnli-fever-anli|distilbart-mnli|toxic-bert|text-moderation|longformer-base-4096|go_emotions|go-emotions)(?:\s*[:\s]|$)/i.test(cmd)
+      /^(?:@agent\s+|@|\/)?(?:facebook\/)?bart-large-mnli(?:\s*[:\s]|$)/i.test(cmd) ||
+      /^(?:@agent\s+|@|\/)?(?:cross-encoder\/)?nli-deberta-v3-base(?:\s*[:\s]|$)/i.test(cmd) ||
+      /^(?:@agent\s+|@|\/)?(?:moritzlaurer\/)?deberta-v3-base-mnli-fever-anli(?:\s*[:\s]|$)/i.test(cmd) ||
+      /^(?:@agent\s+|@|\/)?(?:valhalla\/)?distilbart-mnli(?:-12-3)?(?:\s*[:\s]|$)/i.test(cmd) ||
+      /^(?:@agent\s+|@|\/)?(?:distilbert\/)?distilbert-base-uncased-finetuned-sst-2-english(?:\s*[:\s]|$)/i.test(cmd) ||
+      /^(?:@agent\s+|@|\/)?(?:cardiffnlp\/)?twitter-roberta-base-sentiment-latest(?:\s*[:\s]|$)/i.test(cmd) ||
+      /^(?:@agent\s+|@|\/)?(?:samlowe\/)?roberta-base-go_emotions(?:\s*[:\s]|$)/i.test(cmd) ||
+      /^(?:@agent\s+|@|\/)?(?:bhadresh-psavani\/)?distilbert-base-uncased-emotion(?:\s*[:\s]|$)/i.test(cmd) ||
+      /^(?:@agent\s+|@|\/)?(?:unitary\/)?toxic-bert(?:\s*[:\s]|$)/i.test(cmd) ||
+      /^(?:@agent\s+|@|\/)?(?:koalaai\/)?text-moderation(?:\s*[:\s]|$)/i.test(cmd) ||
+      /^(?:@agent\s+|@|\/)?(?:allenai\/)?longformer-base-4096(?:\s*[:\s]|$)/i.test(cmd) ||
+      /^(?:@agent\s+|@|\/)?(?:prosusai\/)?finbert(?:\s*[:\s]|$)/i.test(cmd) ||
+      /^(?:@agent\s+|@|\/)?(?:bart-mnli|deberta-nli|deberta-fever|distilbart|distilbert-sst2|sst2|twitter-sentiment|twitter-roberta|go-emotions|go_emotions|emotion|distilbert-emotion|toxic|koala-moderation|longformer|finbert-cls|finbert-classifier)(?:\s*[:\s]|$)/i.test(cmd)
     );
 
     if (isClassificationCmd) {
       let rawQuery = cmd
         .replace(/^(?:@agent\s+(?:classify|zero-shot|sentiment|moderation|topic)|\/(?:classify|zero-shot|sentiment|moderation|topic)|@(?:classify|zero-shot|sentiment|moderation|topic))\s*:?\s*/i, '')
         .trim();
+
+      if (rawQuery === cmd.trim()) {
+        rawQuery = rawQuery.replace(/^(?:@agent\s+|@|\/)/i, '').trim();
+      }
 
       let defaultDomain = 'Zero-Shot Classification';
       let defaultIcon = '🏷️';
@@ -18420,44 +18464,72 @@ Instructions:
       let targetModelKey = null;
       let modelQuery = rawQuery;
 
-      for (const [k, m] of Object.entries(CLASSIFICATION_MODELS)) {
-        const altKey = k.replace(/[-_]/g, '');
-        const regex = new RegExp(`^(?:@agent\\s+|@|\\/)?(${k}|${altKey})\\b`, 'i');
-        if (regex.test(cmd) || new RegExp(`^${k}\\b`, 'i').test(rawQuery)) {
-          targetModelKey = k;
-          modelQuery = rawQuery.replace(new RegExp(`^${k}\\s*:?\\s*`, 'i'), '').trim();
-          break;
-        }
+      const aliasMap = {
+        // HF Full paths
+        'facebook/bart-large-mnli': 'bart-large-mnli',
+        'cross-encoder/nli-deberta-v3-base': 'nli-deberta-v3-base',
+        'moritzlaurer/deberta-v3-base-mnli-fever-anli': 'deberta-v3-base-mnli-fever-anli',
+        'valhalla/distilbart-mnli-12-3': 'distilbart-mnli-12-3',
+        'distilbert/distilbert-base-uncased-finetuned-sst-2-english': 'distilbert-base-uncased-finetuned-sst-2-english',
+        'cardiffnlp/twitter-roberta-base-sentiment-latest': 'twitter-roberta-base-sentiment-latest',
+        'samlowe/roberta-base-go_emotions': 'roberta-base-go_emotions',
+        'bhadresh-psavani/distilbert-base-uncased-emotion': 'distilbert-base-uncased-emotion',
+        'unitary/toxic-bert': 'toxic-bert',
+        'koalaai/text-moderation': 'text-moderation',
+        'allenai/longformer-base-4096': 'longformer-base-4096',
+        'prosusai/finbert': 'finbert',
+
+        // Short keys & tags
+        'bart': 'bart-large-mnli',
+        'bart-mnli': 'bart-large-mnli',
+        'bart-large-mnli': 'bart-large-mnli',
+        'deberta': 'nli-deberta-v3-base',
+        'deberta-nli': 'nli-deberta-v3-base',
+        'nli-deberta-v3-base': 'nli-deberta-v3-base',
+        'deberta-fever': 'deberta-v3-base-mnli-fever-anli',
+        'deberta-v3-base-mnli-fever-anli': 'deberta-v3-base-mnli-fever-anli',
+        'distilbart': 'distilbart-mnli-12-3',
+        'distilbart-mnli': 'distilbart-mnli-12-3',
+        'distilbart-mnli-12-3': 'distilbart-mnli-12-3',
+        'sst2': 'distilbert-base-uncased-finetuned-sst-2-english',
+        'distilbert-sst2': 'distilbert-base-uncased-finetuned-sst-2-english',
+        'distilbert-base-uncased-finetuned-sst-2-english': 'distilbert-base-uncased-finetuned-sst-2-english',
+        'twitter-roberta': 'twitter-roberta-base-sentiment-latest',
+        'twitter-sentiment': 'twitter-roberta-base-sentiment-latest',
+        'twitter-roberta-base-sentiment-latest': 'twitter-roberta-base-sentiment-latest',
+        'go-emotions': 'roberta-base-go_emotions',
+        'go_emotions': 'roberta-base-go_emotions',
+        'roberta-base-go_emotions': 'roberta-base-go_emotions',
+        'emotion': 'distilbert-base-uncased-emotion',
+        'distilbert-emotion': 'distilbert-base-uncased-emotion',
+        'distilbert-base-uncased-emotion': 'distilbert-base-uncased-emotion',
+        'toxic': 'toxic-bert',
+        'toxic-bert': 'toxic-bert',
+        'moderation': 'text-moderation',
+        'text-moderation': 'text-moderation',
+        'koala-moderation': 'text-moderation',
+        'longformer': 'longformer-base-4096',
+        'longformer-base-4096': 'longformer-base-4096',
+        'finbert': 'finbert',
+        'finbert-cls': 'finbert',
+        'finbert-classifier': 'finbert'
+      };
+
+      const firstToken = rawQuery.split(/\s+/)[0]?.toLowerCase();
+      if (firstToken && aliasMap[firstToken]) {
+        targetModelKey = aliasMap[firstToken];
+        modelQuery = rawQuery.replace(new RegExp(`^${firstToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*:?\\s*`, 'i'), '').trim();
       }
 
       if (!targetModelKey) {
-        const aliasMap = {
-          'bart': 'bart-large-mnli',
-          'bart-mnli': 'bart-large-mnli',
-          'deberta': 'nli-deberta-v3-base',
-          'deberta-nli': 'nli-deberta-v3-base',
-          'deberta-fever': 'deberta-v3-base-mnli-fever-anli',
-          'distilbart': 'distilbart-mnli-12-3',
-          'distilbart-mnli': 'distilbart-mnli-12-3',
-          'sst2': 'distilbert-base-uncased-finetuned-sst-2-english',
-          'distilbert-sst2': 'distilbert-base-uncased-finetuned-sst-2-english',
-          'twitter-roberta': 'twitter-roberta-base-sentiment-latest',
-          'twitter-sentiment': 'twitter-roberta-base-sentiment-latest',
-          'go-emotions': 'roberta-base-go_emotions',
-          'go_emotions': 'roberta-base-go_emotions',
-          'emotion': 'distilbert-base-uncased-emotion',
-          'distilbert-emotion': 'distilbert-base-uncased-emotion',
-          'toxic': 'toxic-bert',
-          'toxic-bert': 'toxic-bert',
-          'moderation': 'text-moderation',
-          'text-moderation': 'text-moderation',
-          'longformer': 'longformer-base-4096',
-          'finbert': 'finbert'
-        };
-        const firstToken = rawQuery.split(/\s+/)[0]?.toLowerCase();
-        if (firstToken && aliasMap[firstToken]) {
-          targetModelKey = aliasMap[firstToken];
-          modelQuery = rawQuery.replace(new RegExp(`^${firstToken}\\s*:?\\s*`, 'i'), '').trim();
+        for (const [k, m] of Object.entries(CLASSIFICATION_MODELS)) {
+          const altKey = k.replace(/[-_]/g, '');
+          const regex = new RegExp(`^(?:@agent\\s+|@|\\/)?(${k}|${altKey})\\b`, 'i');
+          if (regex.test(cmd) || new RegExp(`^${k}\\b`, 'i').test(rawQuery)) {
+            targetModelKey = k;
+            modelQuery = rawQuery.replace(new RegExp(`^${k}\\s*:?\\s*`, 'i'), '').trim();
+            break;
+          }
         }
       }
 
@@ -18471,6 +18543,10 @@ Instructions:
       }
 
       const modelInfo = targetModelKey ? CLASSIFICATION_MODELS[targetModelKey] : null;
+      if (modelInfo) {
+        defaultDomain = modelInfo.domain;
+        defaultIcon = modelInfo.icon;
+      }
 
       // If no query or overview requested, render interactive Classification Explorer Card
       if (!modelQuery && !modelInfo) {

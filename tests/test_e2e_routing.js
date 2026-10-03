@@ -42,6 +42,7 @@ let chatSessions = [
 // Evaluate function in sandbox
 const shouldRouteToWeb = new Function('currentSettings', 'activeOllamaModel', 'chatSessions', 'currentSessionId', `
   function isImageGenerationDirective() { return { isImage: false, cleanPrompt: '' }; }
+  function isHelpDirective(clean) { return new RegExp('^(?:@agent\\\\s+|@|\\\\/|--|-)?(?:help|helo|hlp|halp|\\\\?)(?:\\\\b|$)', 'i').test(clean); }
   ${shouldRouteToWebSrc}
   return shouldRouteToWeb;
 `)(currentSettings, activeOllamaModel, chatSessions, currentSessionId);
@@ -110,6 +111,13 @@ const testCases = [
   { q: '/benchmark', expectWeb: false },
   { q: '@agent audit-menus', expectWeb: false },
   { q: '/audit-menus', expectWeb: false },
+  { q: '@agent classify bart-large-mnli "sample text"', expectWeb: false },
+  { q: '@agent zero-shot "test" --labels positive,negative', expectWeb: false },
+  { q: '@agent sentiment "great product"', expectWeb: false },
+  { q: '@agent moderation toxic-bert "threat text"', expectWeb: false },
+  { q: '@agent topic longformer-base-4096 "multi page article"', expectWeb: false },
+  { q: '@sst2 "loving this release"', expectWeb: false },
+  { q: '@emotion "so proud and excited"', expectWeb: false },
 
   // 6. Explicit @commands and directives for search (Route to web)
   { q: '@agent search quantum computing breakthroughs 2026', expectWeb: true },
@@ -150,6 +158,7 @@ const freshChatSessions = [
 ];
 const shouldRouteToWebFresh = new Function('currentSettings', 'activeOllamaModel', 'chatSessions', 'currentSessionId', `
   function isImageGenerationDirective() { return { isImage: false, cleanPrompt: '' }; }
+  function isHelpDirective(clean) { return new RegExp('^(?:@agent\\\\s+|@|\\\\/|--|-)?(?:help|helo|hlp|halp|\\\\?)(?:\\\\b|$)', 'i').test(clean); }
   ${shouldRouteToWebSrc}
   return shouldRouteToWeb;
 `)(currentSettings, activeOllamaModel, freshChatSessions, freshSessionId);
