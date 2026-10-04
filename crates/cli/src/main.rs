@@ -6519,8 +6519,7 @@ pub fn extract_attached_code_context(raw_prompt: &str) -> Vec<(String, String)> 
                     let after_attr = &tag_header[val_start..];
                     let trimmed_after = after_attr.trim_start();
                     let quote_char = trimmed_after.chars().next();
-                    let raw_val = if quote_char == Some('"') || quote_char == Some('\'') {
-                        let q = quote_char.unwrap();
+                    let raw_val = if let Some(q) = quote_char.filter(|&c| c == '"' || c == '\'') {
                         let inner_val = &trimmed_after[1..];
                         if let Some(q_end) = inner_val.find(q) {
                             inner_val[..q_end].trim().to_string()
@@ -8324,15 +8323,17 @@ async fn query_hf_router(system_prompt: &str, user_prompt: &str) -> Option<Strin
         .or_else(|_| std::env::var("HUGGINGFACE_TOKEN"))
         .ok();
     
-    if token.is_none() {
-        eprintln!("⚠️ [ROUTER] No Hugging Face token found in environment variables (HF_TOKEN, HUGGINGFACE_API_KEY, HF_API_KEY, HUGGINGFACE_TOKEN).");
-        return query_local_router(system_prompt, user_prompt).await;
-    }
-    let token = token.unwrap();
-    if token.is_empty() {
-        eprintln!("⚠️ [ROUTER] Hugging Face token is empty.");
-        return query_local_router(system_prompt, user_prompt).await;
-    }
+    let token = match token {
+        Some(t) if !t.is_empty() => t,
+        Some(_) => {
+            eprintln!("⚠️ [ROUTER] Hugging Face token is empty.");
+            return query_local_router(system_prompt, user_prompt).await;
+        }
+        None => {
+            eprintln!("⚠️ [ROUTER] No Hugging Face token found in environment variables (HF_TOKEN, HUGGINGFACE_API_KEY, HF_API_KEY, HUGGINGFACE_TOKEN).");
+            return query_local_router(system_prompt, user_prompt).await;
+        }
+    };
     
     let custom_timeout = std::env::var("MODELFUSION_HF_ROUTER_TIMEOUT")
         .and_then(|v| v.parse::<u64>().map_err(|_| std::env::VarError::NotPresent))

@@ -12058,11 +12058,6 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
   // -----------------------------------------------------------------
   // 4b. Autonomous Multi-Step Browser Agent & Safety Gate System
   // -----------------------------------------------------------------
-  function escapeHtml(str) {
-    if (typeof str !== 'string') return '';
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-  }
-
   function isBrowserAgentDirective(task) {
     if (!task || typeof task !== 'string') return false;
     const trimmed = task.trim();
@@ -13315,7 +13310,7 @@ Respond with ONLY a valid JSON object matching this schema:
     if (window.isIpcOnline && ipcUrl) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60);
+        const timeoutId = setTimeout(() => controller.abort(), 300);
         const res = await fetch(`${ipcUrl}/api/decision`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

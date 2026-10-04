@@ -168,11 +168,12 @@ def main():
         browser_wxs = os.path.join(browser_dir, "HugOS_Browser.wxs")
         browser_msi = os.path.join(browser_dir, "HugOS_Browser.msi")
         
-        print("[INFO] Regenerating HugOS Browser WiX manifest...")
-        node_exe = r"D:\tools\nodejs\node.exe"
-        if not os.path.exists(node_exe):
-            node_exe = "node"
-        subprocess.run([node_exe, os.path.join(browser_dir, "generate_wix.js"), browser_dir, browser_wxs], check=True)
+        if not os.path.exists(browser_wxs) or "--force-wxs" in sys.argv:
+            print("[INFO] Regenerating HugOS Browser WiX manifest...")
+            node_exe = r"D:\tools\nodejs\node.exe"
+            if not os.path.exists(node_exe):
+                node_exe = "node"
+            subprocess.run([node_exe, os.path.join(browser_dir, "generate_wix.js"), browser_dir, browser_wxs], check=True)
 
         if build_wix_msi(browser_wxs, browser_dir, browser_msi):
             sign_msi(browser_msi)
@@ -185,11 +186,12 @@ def main():
         ide_msi = os.path.join(ide_dir, "HugOS.msi")
         pack_dir = os.path.join(ide_dir, "VSCode-win32-x64")
 
-        print("[INFO] Regenerating HugOS IDE WiX manifest...")
-        node_exe = r"D:\tools\nodejs\node.exe"
-        if not os.path.exists(node_exe):
-            node_exe = "node"
-        subprocess.run([node_exe, os.path.join(ide_dir, "generate_wix.js"), pack_dir, ide_wxs], check=True)
+        if not os.path.exists(ide_wxs) or "--force-wxs" in sys.argv:
+            print("[INFO] Regenerating HugOS IDE WiX manifest...")
+            node_exe = r"D:\tools\nodejs\node.exe"
+            if not os.path.exists(node_exe):
+                node_exe = "node"
+            subprocess.run([node_exe, os.path.join(ide_dir, "generate_wix.js"), pack_dir, ide_wxs], check=True)
 
         if build_wix_msi(ide_wxs, ide_dir, ide_msi):
             sign_msi(ide_msi)
