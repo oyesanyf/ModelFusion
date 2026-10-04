@@ -3147,7 +3147,7 @@ where
         | "desktop-type" | "desktoptype" | "type" | "/desktop-type" | "@desktop-type" | "@agent/desktop-type"
         | "desktop-scroll" | "desktopscroll" | "scroll" | "/desktop-scroll" | "@desktop-scroll" | "@agent/desktop-scroll"
         | "screen-grounding" | "screengrounding" | "screen" | "/screen-grounding" | "@screen-grounding" | "@agent/screen-grounding" => {
-            let tool_kind = sub.trim_start_matches('/').trim_start_matches('@').trim_start_matches("agent/").trim_start_matches("agent:").to_lowercase();
+            let tool_kind = verb.trim_start_matches('/').trim_start_matches('@').trim_start_matches("agent/").trim_start_matches("agent:").to_lowercase();
             args[1] = "--computer-use".to_string();
             let combined_raw = if args.len() > 2 {
                 args[2..].join(" ")
