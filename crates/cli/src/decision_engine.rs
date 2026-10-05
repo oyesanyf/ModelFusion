@@ -36,6 +36,14 @@ pub struct MismatchDecision {
     pub candidate_labels: Vec<String>,
 }
 
+fn default_engine_family() -> String {
+    "strands".to_string()
+}
+
+fn default_decision_mode() -> String {
+    "hybrid".to_string()
+}
+
 /// Incoming decision evaluation request.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DecisionRequest {
@@ -44,6 +52,8 @@ pub struct DecisionRequest {
     pub choices: Option<Vec<String>>,
     pub schema: Option<serde_json::Value>,
     pub model: Option<String>,
+    pub mode: Option<String>,
+    pub engine: Option<String>,
     pub task_type: Option<String>,
     pub temperature: Option<f64>,
 }
@@ -53,6 +63,10 @@ pub struct DecisionRequest {
 pub struct DecisionResponse {
     pub status: String,
     pub engine: String,
+    #[serde(default = "default_engine_family")]
+    pub engine_family: String,
+    #[serde(default = "default_decision_mode")]
+    pub mode: String,
     pub query: String,
     pub decision: String,
     pub top_choice: String,
@@ -523,15 +537,36 @@ pub fn evaluate_decision(req: &DecisionRequest) -> DecisionResponse {
     let is_mismatch = mismatch.as_ref().map(|m| m.is_mismatch).unwrap_or(false);
 
     let latency = (start.elapsed().as_micros() as f64) / 1000.0;
-    let engine_name = if model_tag.starts_with("@cf/") {
-        format!("{}-local-fallback", model_tag)
+    let mode_val = req.mode.as_deref().unwrap_or("hybrid").to_lowercase();
+    let engine_name = if let Some(ref e) = req.engine {
+        e.clone()
+    } else if let Some(ref m) = req.model {
+        if m.starts_with("@cf/") {
+            format!("{}-local-fallback", m)
+        } else {
+            m.clone()
+        }
+    } else if mode_val == "cloud" {
+        "clef-flash".to_string()
+    } else if mode_val == "fast" {
+        "fast-rlcd".to_string()
     } else {
-        "clef-flash-local".to_string()
+        "strands-decider-2b".to_string()
+    };
+
+    let engine_family = if engine_name.contains("strands") || engine_name.contains("2b") {
+        "strands".to_string()
+    } else if engine_name.contains("clef") {
+        "cloudflare".to_string()
+    } else {
+        "strands".to_string()
     };
 
     DecisionResponse {
         status: "ok".to_string(),
         engine: engine_name,
+        engine_family,
+        mode: mode_val,
         query: query_str,
         decision: top_choice.clone(),
         top_choice,
@@ -651,6 +686,8 @@ pub async fn query_cloudflare_clef_async(
     Ok(DecisionResponse {
         status: "ok".to_string(),
         engine: model_endpoint,
+        engine_family: "cloudflare".to_string(),
+        mode: "cloud".to_string(),
         query: query.to_string(),
         decision: top_choice.clone(),
         top_choice,

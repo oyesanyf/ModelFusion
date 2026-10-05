@@ -39,12 +39,31 @@ ModelFusion provides two distinct, non-aliased update commands:
   - Syntax: `cli.exe --updatedb --db-path "IDE/db/hf_models.db"`
   - Optional cap: `--max-models <N>` (e.g. `--max-models 50000`).
 
-### 1. 4-Way Cryptographic Binary Parity
-Whenever `cli.exe` is recompiled, it MUST be mirrored across all 4 locations with identical SHA-256 hashes:
-1. `d:\harfile\ModelFusion\target\release\cli.exe` (Authoritative build target)
-2. `d:\harfile\ModelFusion\IDE\bin\cli.exe` (IDE packaging staging)
-3. `d:\harfile\ModelFusion\IDE\VSCode-win32-x64\bin\cli.exe` (Packaged distribution directory)
-4. `%LOCALAPPDATA%\HugOS IDE\bin\cli.exe` (Locally installed production IDE)
+### 1. 18-Way Cryptographic Binary Parity & Component Priority Laws
+Whenever `cli.exe` is recompiled, it MUST be mirrored with identical SHA-256 hashes across all 18 distribution locations via `scripts/mirror_all.py`:
+1. `d:\harfile\ModelFusion\target\release\cli.exe` (Authoritative master CLI build target)
+2. `d:\harfile\ModelFusion\browser\bin\clibrowser.exe` (Authoritative dedicated binary for HugOS Browser)
+3. `d:\harfile\ModelFusion\target\release\clibrowser.exe` (Browser release staging binary)
+4. `%LOCALAPPDATA%\HugOS Browser\bin\clibrowser.exe` (Locally installed production browser binary)
+5. `d:\harfile\ModelFusion\browser\dist\win-unpacked\resources\bin\clibrowser.exe` (Unpacked browser distribution binary)
+6. `d:\harfile\ModelFusion\browser\bin\cli.exe` (Browser staging fallback binary)
+7. `%LOCALAPPDATA%\HugOS Browser\bin\cli.exe` (Browser installed fallback binary)
+8. `d:\harfile\ModelFusion\IDE\bin\cliide.exe` (Authoritative dedicated binary for HugOS IDE)
+9. `d:\harfile\ModelFusion\IDE\VSCode-win32-x64\bin\cliide.exe` (Packaged IDE distribution binary)
+10. `%LOCALAPPDATA%\HugOS IDE\bin\cliide.exe` (Locally installed production IDE binary)
+11. `d:\harfile\ModelFusion\IDE\bin\cli.exe` (IDE packaging staging fallback binary)
+12. `%LOCALAPPDATA%\HugOS IDE\bin\cli.exe` (IDE installed fallback binary)
+13. `d:\harfile\ModelFusion\target\release\climcp.exe` (Authoritative dedicated binary for HugOS MCP Server)
+14. `d:\harfile\ModelFusion\mcp\bin\climcp.exe` (MCP staging dedicated binary)
+15. `d:\harfile\ModelFusion\mcp\bin\cli.exe` (MCP staging fallback binary)
+16. `%LOCALAPPDATA%\HugOS MCP\bin\climcp.exe` (Locally installed production MCP binary)
+17. `%LOCALAPPDATA%\HugOS MCP\bin\cli.exe` (MCP installed fallback binary)
+18. `C:\Users\oyesanyf\AppData\Local\Programs\ModelFusion\cli.exe` (Root application distribution binary)
+
+**Component Priority Laws**:
+- **Browser Law**: `clibrowser.exe` is the primary execution binary for HugOS Browser (`hugos-browser.bat`, `HugOS_Browser.wxs`) for all OS automation, UI-TARS, and web browsing tasks, with fallback to `cli.exe`.
+- **IDE Law**: `cliide.exe` is the primary execution binary for HugOS IDE (`_findCliBinary` in `copilot/dist/extension.js`), with fallback to `cli.exe`.
+- **MCP Law**: Universal MCP Server launcher (`run_mcp.ps1`, `run_mcp.bat`, `run_mcp.sh`) discovers `climcp.exe` first (`target/release/climcp.exe`, `mcp/bin/climcp.exe`, `%LOCALAPPDATA%/HugOS MCP/bin/climcp.exe`), with fallback to `cliide.exe`, `clibrowser.exe`, or `cli.exe`.
 
 ### 2. Universal Multi-Modal Catalog (All 45+ Tasks & 2M+ Models)
 - HugOS IDE is a universal multi-modal operating system, not solely a coding assistant.
@@ -119,4 +138,17 @@ During `--update` or local engine startup (`ensure_ollama_running()`):
   - `run_hidden.vbs` must always sanitize quotes (`CleanQuote`) to prevent double-quote escaping.
   - `hugos-browser.bat` launcher must probe `http://127.0.0.1:5000/health`. If port 5000 is not responding, it MUST automatically fall back to `file:///` local UI protocol, never letting the browser crash into Chrome's `ERR_FAILED` dead-end page.
   - `browser/ui/app.js` must NEVER blindly force `window.location.replace('http://localhost:5000/index.html')` from `file:` protocol without verified 200 OK.
+
+### 8. Hybrid Decision Model Engine (Strands Decider 2B + Cloudflare Clef/Clef-Flash)
+- **Architecture**: Dual-engine System 1 decision-making combining AWS Strands Labs' Strands Decider 2B (local 1.9B pointer-head fast router, sub-15ms, zero VRAM) with Cloudflare Workers AI Clef / Clef-Flash (edge 9B dual-attention router, multimodal vision routing).
+- **Ensemble Modes**:
+  - `hybrid` (default): Fast local Strands Decider 2B pass; if confidence >= 0.75, routes immediately; if uncertainty is high or vision input is detected, invokes Cloudflare Clef-Flash with Bayesian calibration ($P_{\text{cal}} = \sigma(\alpha \cdot z)$) ensuring sum of probabilities = 1.0.
+  - `strands`: Ultra-low latency local execution (<15ms) via Strands Decider 2B pointer network.
+  - `clef`: Cloudflare Clef-Flash / Clef edge execution for multimodal queries.
+  - `fast`: Dynamic heuristic rule-based routing fallback (<5ms).
+- **Execution & Endpoints**:
+  - CLI: `cli.exe --decision "<query>" --choices "A, B, C" [--decision-mode <mode>] [--decision-engine <engine>]`
+  - Chat Agent: `@agent decision <query> --choices "A, B, C"`
+  - HTTP Server (Port 5000): `/api/decision` (JSON evaluation) and `/api/decision/status` (engine health & status).
+  - Human-in-the-Loop (HITL) Gate: When top choice confidence is <0.50 or high ambiguity is detected, returns `hitl_gate_triggered: true` with interactive confirmation.
 

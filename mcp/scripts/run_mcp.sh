@@ -9,7 +9,13 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Discover ModelFusion Master CLI Binary
 CLI_BIN=""
-if [ -f "$REPO_ROOT/target/release/cli" ]; then
+if [ -f "$REPO_ROOT/mcp/bin/climcp" ]; then
+    CLI_BIN="$REPO_ROOT/mcp/bin/climcp"
+elif [ -f "$REPO_ROOT/target/release/climcp" ]; then
+    CLI_BIN="$REPO_ROOT/target/release/climcp"
+elif command -v climcp &>/dev/null; then
+    CLI_BIN="$(command -v climcp)"
+elif [ -f "$REPO_ROOT/target/release/cli" ]; then
     CLI_BIN="$REPO_ROOT/target/release/cli"
 elif command -v cli &>/dev/null; then
     CLI_BIN="$(command -v cli)"
@@ -18,7 +24,7 @@ elif [ -f "$HOME/.local/bin/cli" ]; then
 fi
 
 if [ -z "$CLI_BIN" ]; then
-    echo "[ERROR] ModelFusion Master CLI (cli) not found. Compile with 'cargo build --release --bin cli'." >&2
+    echo "[ERROR] ModelFusion Master CLI (climcp / cli) not found. Compile with 'cargo build --release --bin cli'." >&2
     exit 1
 fi
 

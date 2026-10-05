@@ -33,6 +33,11 @@ destinations = [
     os.path.join(localappdata, r"HugOS Browser\bin\clibrowser.exe"),
     os.path.abspath(r"browser\dist\win-unpacked\resources\bin\cli.exe"),
     os.path.abspath(r"browser\dist\win-unpacked\resources\bin\clibrowser.exe"),
+    os.path.abspath(r"target\release\climcp.exe"),
+    os.path.abspath(r"mcp\bin\climcp.exe"),
+    os.path.abspath(r"mcp\bin\cli.exe"),
+    os.path.join(localappdata, r"HugOS MCP\bin\climcp.exe"),
+    os.path.join(localappdata, r"HugOS MCP\bin\cli.exe"),
 ]
 
 for dst in destinations:
