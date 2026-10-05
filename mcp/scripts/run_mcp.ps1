@@ -6,9 +6,18 @@ $repoRoot = Split-Path $PSScriptRoot -Parent | Split-Path -Parent
 
 # 1. Discover ModelFusion Master CLI Binary
 $cliCandidates = @(
+    (Join-Path $repoRoot "mcp\bin\climcp.exe"),
+    (Join-Path $repoRoot "target\release\climcp.exe"),
+    "$env:LOCALAPPDATA\HugOS MCP\bin\climcp.exe",
+    (Join-Path $repoRoot "mcp\bin\cli.exe"),
+    "$env:LOCALAPPDATA\HugOS MCP\bin\cli.exe",
     (Join-Path $repoRoot "target\release\cli.exe"),
+    (Join-Path $repoRoot "IDE\bin\cliide.exe"),
     (Join-Path $repoRoot "IDE\bin\cli.exe"),
+    "$env:LOCALAPPDATA\HugOS IDE\bin\cliide.exe",
     "$env:LOCALAPPDATA\HugOS IDE\bin\cli.exe",
+    (Join-Path $repoRoot "browser\bin\clibrowser.exe"),
+    "$env:LOCALAPPDATA\HugOS Browser\bin\clibrowser.exe",
     "$env:LOCALAPPDATA\HugOS Browser\bin\cli.exe",
     (Join-Path $repoRoot "browser\bin\cli.exe")
 )
@@ -16,14 +25,17 @@ $cliCandidates = @(
 $cliBin = $cliCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 
 if (-not $cliBin) {
-    $cliCommand = Get-Command "cli.exe" -ErrorAction SilentlyContinue
+    $cliCommand = Get-Command "climcp.exe" -ErrorAction SilentlyContinue
+    if (-not $cliCommand) {
+        $cliCommand = Get-Command "cli.exe" -ErrorAction SilentlyContinue
+    }
     if ($cliCommand) {
         $cliBin = $cliCommand.Source
     }
 }
 
 if (-not $cliBin) {
-    Write-Error "[ERROR] ModelFusion Master CLI (cli.exe) not found. Build via 'cargo build --release --bin cli' or install HugOS IDE."
+    Write-Error "[ERROR] ModelFusion Master CLI (climcp.exe / cli.exe) not found. Build via 'cargo build --release --bin cli' or install HugOS MCP / IDE."
     exit 1
 }
 

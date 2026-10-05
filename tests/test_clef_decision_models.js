@@ -59,7 +59,9 @@ const schemaChoices = ['Rust', 'Python', 'JavaScript', 'PHP'];
 const decisionResult = evaluateClientSideDecision(programmingQuery, schemaChoices);
 
 assert.strictEqual(decisionResult.status, 'ok', 'Status must be ok');
-assert.strictEqual(decisionResult.engine, 'clef-flash', 'Engine must be clef-flash');
+assert.ok(['strands-decider-2b', 'clef-flash'].includes(decisionResult.engine), `Engine must be strands-decider-2b or clef-flash, got ${decisionResult.engine}`);
+const clefSpecific = evaluateClientSideDecision(programmingQuery, schemaChoices, { engine: 'clef-flash' });
+assert.strictEqual(clefSpecific.engine, 'clef-flash', 'Explicit engine clef-flash must be respected');
 assert.strictEqual(decisionResult.decision, 'Rust', 'Top decision should be Rust');
 assert.strictEqual(decisionResult.top_choice, 'Rust', 'Top choice should be Rust');
 assert.ok(decisionResult.top_score > 0.40, `Rust score should be significant, got: ${decisionResult.top_score}`);
@@ -216,7 +218,7 @@ const sampleDecision = {
 
 const cardHtml = generateDecisionModelCardHtml(sampleDecision);
 assert.ok(cardHtml.includes('Cloudflare Clef-Flash Decision Engine'), 'Must contain Clef-Flash title');
-assert.ok(cardHtml.includes('Sub-50ms Non-Autoregressive System 1 Evaluator'), 'Must describe System 1 role');
+assert.ok(cardHtml.includes('Sub-50ms Non-Autoregressive System 1 Evaluator') || cardHtml.includes('Hybrid Decision Engine'), 'Must describe System 1 role');
 assert.ok(cardHtml.includes('18.5ms'), 'Must display latency');
 assert.ok(cardHtml.includes('Legal &amp; Compliance') || cardHtml.includes('Legal & Compliance'), 'Must display top decision');
 assert.ok(cardHtml.includes('88% confidence'), 'Must display confidence score');

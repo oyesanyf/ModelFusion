@@ -171,7 +171,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // 4.057g Persistent Author Style Memory & Formatting (Initialized early to prevent temporal dead zone ReferenceErrors)
-  const DEFAULT_AUTHOR_STYLE_PROFILE = {
+  var DEFAULT_AUTHOR_STYLE_PROFILE = {
     tone: 'engaging, authentic, vivid',
     targetSentenceLength: '12-25 words, varied burstiness',
     bannedBuzzwords: [
@@ -182,6 +182,9 @@ document.addEventListener('DOMContentLoaded', () => {
     pacing: 'sensory grounding, show-don\'t-tell',
     groundingEnabled: true
   };
+  if (typeof window !== 'undefined') {
+    window.DEFAULT_AUTHOR_STYLE_PROFILE = DEFAULT_AUTHOR_STYLE_PROFILE;
+  }
 
   // Default Flight and Ticket Tiers (Initialized early for robust fallback synthesis)
   const DEFAULT_FLIGHT_TIERS = [
@@ -11787,7 +11790,14 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
       statusLine.textContent = `[${time}] Error connecting to local AI engine (${err.message}). Ensure Ollama is running at ${ollamaUrl} with an installed model (e.g. ${fallbackDisplayModel}).`;
       if (assistantBubble) {
         assistantBubble.classList.remove('streaming');
-        if (options && options.isContinuation) {
+        if (options && (options.taskType === 'computer_use' || options.streamContentTarget)) {
+          const target = options.streamContentTarget || assistantBubble.querySelector('.stream-content-planner');
+          if (target) {
+            target.innerHTML = `<div style="padding: 10px; border-radius: 6px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
+              <span style="color: #38bdf8; font-weight: 600;">✨ Interactive Workspace Ready:</span> Review your options in the workspace above. Select your preferred tier and click <strong>Confirm</strong>.
+            </div>`;
+          }
+        } else if (options && options.isContinuation) {
           if (options.continuationStatusEl) {
             options.continuationStatusEl.textContent = `⚠️ Error continuing: ${err.message}. Check that Local AI is running.`;
             options.continuationStatusEl.style.color = 'var(--error-color, #ef4444)';
@@ -13300,7 +13310,7 @@ Respond with ONLY a valid JSON object matching this schema:
     const hitlGate = evaluateClientHitlRisk(q);
 
     // Prerequisite mismatch analysis
-    const modelTag = options.model || 'clef-flash';
+    const modelTag = options.model || (options.mode === 'cloud' ? 'clef-flash' : 'strands-decider-2b');
     let mismatch = null;
     let isMismatch = false;
     if (typeof analyzeQueryModelAlignment === 'function') {
@@ -13322,9 +13332,15 @@ Respond with ONLY a valid JSON object matching this schema:
     const t1 = performance.now();
     const latency_ms = Math.round((t1 - t0) * 100) / 100;
 
+    const engine = options.engine || (options.mode === 'cloud' ? 'clef-flash' : (options.mode === 'fast' ? 'fast-rlcd' : 'strands-decider-2b'));
+    const mode = options.mode || 'hybrid';
+    const engine_family = engine.startsWith('strands') || engine.includes('2b') ? 'strands' : 'cloudflare';
+
     return {
       status: 'ok',
-      engine: 'clef-flash',
+      engine,
+      engine_family,
+      mode,
       query: q,
       decision: topChoice,
       top_choice: topChoice,
@@ -13345,11 +13361,14 @@ Respond with ONLY a valid JSON object matching this schema:
       return evaluateClientSideDecision('', candidateChoices, options);
     }
 
+    const mode = options.mode || 'hybrid';
+    let engine = options.engine || (options.image ? 'clef-flash' : (mode === 'cloud' ? 'clef-flash' : 'strands-decider-2b'));
+
     const ipcUrl = (typeof currentSettings !== 'undefined' && currentSettings.ipcUrl ? currentSettings.ipcUrl : 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
     if (window.isIpcOnline && ipcUrl) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 300);
+        const timeoutId = setTimeout(() => controller.abort(), 350);
         const res = await fetch(`${ipcUrl}/api/decision`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -13357,7 +13376,9 @@ Respond with ONLY a valid JSON object matching this schema:
           body: JSON.stringify({
             query: q,
             choices: candidateChoices,
-            model: options.model || 'clef-flash',
+            mode: mode,
+            engine: engine,
+            model: options.model || engine,
             task_type: options.taskType || 'intent_routing',
             temperature: options.temperature || 0.8
           })
@@ -13368,6 +13389,12 @@ Respond with ONLY a valid JSON object matching this schema:
           if (data && data.status === 'ok') {
             const totalMs = Math.round((performance.now() - startTime) * 100) / 100;
             data.latency_ms = totalMs;
+            if (!data.engine_family) {
+              data.engine_family = (data.engine || '').startsWith('strands') ? 'strands' : 'cloudflare';
+            }
+            if (!data.mode) {
+              data.mode = mode;
+            }
             return data;
           }
         }
@@ -13376,7 +13403,7 @@ Respond with ONLY a valid JSON object matching this schema:
       }
     }
 
-    return evaluateClientSideDecision(q, candidateChoices, options);
+    return evaluateClientSideDecision(q, candidateChoices, { ...options, mode, engine });
   }
 
   function generateDecisionModelCardHtml(decisionRes) {
@@ -13385,6 +13412,37 @@ Respond with ONLY a valid JSON object matching this schema:
     const scorePct = Math.round((decisionRes.top_score || 0) * 100);
     const latency = decisionRes.latency_ms || 28;
     const distribution = Array.isArray(decisionRes.distribution) ? decisionRes.distribution.slice(0, 5) : [];
+    const engine = (decisionRes.engine || 'strands-decider-2b').toLowerCase();
+    const mode = (decisionRes.mode || 'hybrid').toLowerCase();
+
+    let headerBadgeHtml = '';
+    let subtitleHtml = '';
+    if (engine.includes('strands') || engine.includes('2b')) {
+      headerBadgeHtml = `⚡ Strands Decider 2B <span style="font-size: 10px; background: rgba(16, 185, 129, 0.2); color: #34d399; padding: 2px 6px; border-radius: 4px; margin-left: 6px;">Local System 1 • 1.9B Pointer Head</span>`;
+      subtitleHtml = mode === 'hybrid'
+        ? `🔄 Hybrid Decision Engine (Strands 2B + Clef • Calibrated RLCD)`
+        : `Sub-50ms Non-Autoregressive System 1 Evaluator`;
+    } else if (engine.includes('clef')) {
+      headerBadgeHtml = `☁️ Cloudflare Clef-Flash Decision Engine <span style="font-size: 10px; background: rgba(99, 102, 241, 0.2); color: #818cf8; padding: 2px 6px; border-radius: 4px; margin-left: 6px;">Edge System 1 • 9B Dual Attention</span>`;
+      subtitleHtml = mode === 'hybrid'
+        ? `🔄 Hybrid Decision Engine (Strands 2B + Clef • Calibrated RLCD)`
+        : `Sub-50ms Non-Autoregressive System 1 Evaluator`;
+    } else {
+      headerBadgeHtml = `⚡ Hybrid Decision Engine <span style="font-size: 10px; background: rgba(59, 130, 246, 0.2); color: #60a5fa; padding: 2px 6px; border-radius: 4px; margin-left: 6px;">Calibrated RLCD</span>`;
+      subtitleHtml = `Sub-50ms Non-Autoregressive System 1 Evaluator`;
+    }
+
+    let hitlBadgeHtml = '';
+    if (decisionRes.hitl_gate) {
+      const gate = decisionRes.hitl_gate.gate_level || 'safe_auto';
+      if (gate === 'critical_veto') {
+        hitlBadgeHtml = `<span style="font-size: 10px; background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.35); padding: 2px 6px; border-radius: 4px; font-weight: 600;">🛑 Critical Veto</span>`;
+      } else if (gate === 'hitl_confirm') {
+        hitlBadgeHtml = `<span style="font-size: 10px; background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); padding: 2px 6px; border-radius: 4px; font-weight: 600;">🟡 HITL Confirm Required</span>`;
+      } else {
+        hitlBadgeHtml = `<span style="font-size: 10px; background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); padding: 2px 6px; border-radius: 4px; font-weight: 500;">🟢 Safe Auto</span>`;
+      }
+    }
 
     let rowsHtml = '';
     for (const d of distribution) {
@@ -13405,13 +13463,15 @@ Respond with ONLY a valid JSON object matching this schema:
       <div class="decision-model-card" style="background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(59, 130, 246, 0.35); border-radius: 10px; padding: 12px 14px; margin: 8px 0; max-width: 540px; box-shadow: 0 4px 15px rgba(0,0,0,0.25);">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
           <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 16px;">⚡</span>
             <div>
-              <div style="font-size: 12px; font-weight: 600; color: #60a5fa;">Cloudflare Clef-Flash Decision Engine</div>
-              <div style="font-size: 10px; color: var(--text-secondary);">Sub-50ms Non-Autoregressive System 1 Evaluator</div>
+              <div style="font-size: 12px; font-weight: 600; color: #60a5fa;">${headerBadgeHtml}</div>
+              <div style="font-size: 10px; color: var(--text-secondary); margin-top: 2px;">${subtitleHtml}</div>
             </div>
           </div>
-          <span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: rgba(59, 130, 246, 0.15); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.3); font-family: monospace;">${latency}ms</span>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            ${hitlBadgeHtml}
+            <span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: rgba(59, 130, 246, 0.15); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.3); font-family: monospace;">${latency}ms</span>
+          </div>
         </div>
         <div style="background: rgba(0,0,0,0.25); border-radius: 6px; padding: 8px 10px; margin-bottom: 10px;">
           <div style="font-size: 10px; color: var(--text-secondary); margin-bottom: 2px;">CALIBRATED TOP DECISION</div>
@@ -18220,16 +18280,31 @@ Analyze the temporal progression across the sampled video keyframes, describing 
   // Note: DEFAULT_AUTHOR_STYLE_PROFILE is initialized early at the top of the file
 
   function getAuthorStyleProfile() {
+    const fallbackProfile = (typeof DEFAULT_AUTHOR_STYLE_PROFILE !== 'undefined')
+      ? DEFAULT_AUTHOR_STYLE_PROFILE
+      : (typeof window !== 'undefined' && window.DEFAULT_AUTHOR_STYLE_PROFILE)
+        ? window.DEFAULT_AUTHOR_STYLE_PROFILE
+        : {
+            tone: 'engaging, authentic, vivid',
+            targetSentenceLength: '12-25 words, varied burstiness',
+            bannedBuzzwords: [
+              'delve', 'tapestry', 'testament', 'beacon', 'unleash', 'crucial',
+              'pivotal', 'moreover', 'furthermore', 'interconnected', 'revolutionize',
+              'multifaceted', 'paramount', 'dynamic landscape'
+            ],
+            pacing: 'sensory grounding, show-don\'t-tell',
+            groundingEnabled: true
+          };
     try {
       const raw = (typeof localStorage !== 'undefined' && localStorage.getItem) ? localStorage.getItem('modelfusion_author_style_profile') : null;
       if (raw) {
         const parsed = JSON.parse(raw);
-        return { ...DEFAULT_AUTHOR_STYLE_PROFILE, ...parsed };
+        return { ...fallbackProfile, ...parsed };
       }
     } catch (e) {
       console.warn('Error reading author style profile:', e);
     }
-    return { ...DEFAULT_AUTHOR_STYLE_PROFILE };
+    return { ...fallbackProfile };
   }
 
   function saveAuthorStyleProfile(profile) {
@@ -19971,6 +20046,82 @@ Instructions:
 
       if (activeSession) {
         activeSession.messages.push({ role: 'assistant', content: respMsg });
+        saveChatHistory();
+      }
+      setChatRunningState(false);
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
+
+    // 4.494 System 1 Hybrid Decision Model Directive (@agent decision, @agent decision-model, @agent decider, /decision)
+    const isDecisionCmd = (
+      lower.startsWith('@agent decision') || lower === '@agent decision' ||
+      lower.startsWith('/decision') || lower === '/decision' ||
+      lower.startsWith('@decision') ||
+      lower.startsWith('@agent decision-model') || lower === '@agent decision-model' ||
+      lower.startsWith('/decision-model') || lower === '/decision-model' ||
+      lower.startsWith('@agent decider') || lower === '@agent decider' ||
+      lower.startsWith('/decider') || lower === '/decider' ||
+      /^(?:@agent\s+|@|\/)?(?:decision|decision-model|decider)(?:\s*[:\s]|$)/i.test(cmd)
+    );
+
+    if (isDecisionCmd) {
+      let rawQuery = cmd
+        .replace(/^(?:@agent\s+(?:decision|decision-model|decider)|\/(?:decision|decision-model|decider)|@(?:decision|decision-model|decider))\s*:?\s*/i, '')
+        .trim();
+
+      // Extract optional --choices or -choices
+      let parsedChoices = null;
+      let choicesMatch = rawQuery.match(/(?:--choices|-choices|choices:)\s*(\[[^\]]+\]|[^\-]+?)(?:\s+--(?:mode|engine|task)|$)/i);
+      if (choicesMatch) {
+        const rawChoicesStr = choicesMatch[1].trim();
+        rawQuery = rawQuery.replace(choicesMatch[0], '').trim();
+        if (rawChoicesStr.startsWith('[') && rawChoicesStr.endsWith(']')) {
+          try {
+            parsedChoices = JSON.parse(rawChoicesStr);
+          } catch (_) {
+            parsedChoices = rawChoicesStr.slice(1, -1).split(',').map(s => s.trim().replace(/^["']|["']$/g, ''));
+          }
+        } else {
+          parsedChoices = rawChoicesStr.split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+        }
+      }
+
+      // Extract optional --mode
+      let modeMatch = rawQuery.match(/--(?:mode|decision-mode)\s+([a-zA-Z0-9_\-]+)/i);
+      let decisionMode = 'hybrid';
+      if (modeMatch) {
+        decisionMode = modeMatch[1].trim().toLowerCase();
+        rawQuery = rawQuery.replace(modeMatch[0], '').trim();
+      }
+
+      // Extract optional --engine
+      let engineMatch = rawQuery.match(/--(?:engine|decision-engine)\s+([a-zA-Z0-9_\-]+)/i);
+      let decisionEngine = 'strands-decider-2b';
+      if (engineMatch) {
+        decisionEngine = engineMatch[1].trim();
+        rawQuery = rawQuery.replace(engineMatch[0], '').trim();
+      }
+
+      const evalQuery = rawQuery || 'General Task Routing';
+      const decisionRes = await evaluateDecisionModel(evalQuery, parsedChoices, {
+        mode: decisionMode,
+        engine: decisionEngine
+      });
+
+      const cardHtml = generateDecisionModelCardHtml(decisionRes);
+      const decisionBubble = createAiBubble({
+        icon: '⚡',
+        title: 'Hybrid Decision Model',
+        modelTag: decisionRes.engine || 'Strands Decider 2B',
+        isTool: true,
+        streaming: false
+      });
+      const streamContentEl = decisionBubble.querySelector('.stream-content') || decisionBubble;
+      streamContentEl.innerHTML = cardHtml;
+
+      if (activeSession) {
+        activeSession.messages.push({ role: 'assistant', content: cardHtml });
         saveChatHistory();
       }
       setChatRunningState(false);

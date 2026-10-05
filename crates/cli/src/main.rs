@@ -2288,10 +2288,22 @@ struct Args {
     #[arg(long, default_value = "7", help = "Forecast horizon for ACDSO time series")]
     horizon: usize,
 
-    #[arg(long, visible_alias = "classify-intent", visible_alias = "classify", num_args = 0..=1, default_missing_value = "", help = "Evaluate query against choice schema via sub-50ms System 1 Decision Model or ACDSO Decision Intelligence")]
+    #[arg(long, visible_alias = "decision-model", visible_alias = "decider", visible_alias = "classify-intent", visible_alias = "classify", num_args = 0..=1, default_missing_value = "", help = "Execute Hybrid Decision Model (Strands Decider 2B & Clef-Flash) for fast sub-50ms choice scoring and routing")]
     decision: Option<String>,
 
-    #[arg(long, visible_alias = "decision-schema", visible_alias = "choices", help = "JSON array or comma-separated list of choice categories/schema for decision engine")]
+    #[arg(long, help = "Candidate choices for decision model (comma-separated or JSON array)")]
+    choices: Option<String>,
+
+    #[arg(long, default_value = "hybrid", help = "Decision model mode: hybrid, local, cloud, or fast")]
+    decision_mode: String,
+
+    #[arg(long, default_value = "auto", help = "Decision engine preference: strands-decider-2b, clef-flash, clef, or auto")]
+    decision_engine: String,
+
+    #[arg(long, default_value = "0.8", help = "Temperature parameter for decision choice calibration")]
+    decision_temperature: f64,
+
+    #[arg(long, visible_alias = "decision-schema", help = "JSON array or comma-separated list of choice categories/schema for decision engine")]
     schema: Option<String>,
 
     #[arg(long, help = "Treatment column for ACDSO decision intelligence")]
@@ -3033,9 +3045,25 @@ where
                 args[1] = "--proxy".to_string();
                 return args;
             }
-            if (sub_clean == "decision" || sub_clean == "classify-intent" || sub_clean == "classify_intent" || sub_clean == "clef") && !has_combinator {
+            if (sub_clean == "decision" || sub_clean == "decision-model" || sub_clean == "decider" || sub_clean == "decision_model" || sub_clean == "classify-intent" || sub_clean == "classify_intent" || sub_clean == "clef") && !has_combinator {
                 args.remove(1);
                 args[1] = "--decision".to_string();
+                if args.len() > 3 {
+                    let flag_pos = args[2..].iter().position(|a| a.starts_with("--") || a.starts_with("-choices"));
+                    if let Some(pos) = flag_pos {
+                        if pos > 0 {
+                            let query_tokens = args[2..2 + pos].join(" ");
+                            let remaining_flags = args[2 + pos..].to_vec();
+                            args.truncate(2);
+                            args.push(query_tokens);
+                            args.extend(remaining_flags);
+                        }
+                    } else {
+                        let combined = args[2..].join(" ");
+                        args.truncate(2);
+                        args.push(combined);
+                    }
+                }
                 return args;
             }
         if (sub_clean == "key" || sub_clean == "keys") && args.len() > 3 && args[3].to_lowercase() == "gemini" {
@@ -3361,8 +3389,24 @@ where
         "proxy" | "/proxy" | "--proxy" | "-proxy" | "--api/proxy" | "-api/proxy" | "/api/proxy" | "api/proxy" | "api-proxy" | "-api-proxy" | "--api-proxy" | "--browser/proxy" | "-browser/proxy" | "/browser/proxy" | "browser/proxy" | "@agent/proxy" | "@agent:proxy" | "@proxy" => {
             args[1] = "--proxy".to_string();
         }
-        "decision" | "/decision" | "@agent/decision" | "@agent:decision" | "@decision" | "classify-intent" | "/classify-intent" | "clef" | "/clef" => {
+        "decision" | "/decision" | "@agent/decision" | "@agent:decision" | "@decision" | "decision-model" | "/decision-model" | "@agent/decision-model" | "decider" | "/decider" | "@agent/decider" | "classify-intent" | "/classify-intent" | "clef" | "/clef" => {
             args[1] = "--decision".to_string();
+            if args.len() > 3 {
+                let flag_pos = args[2..].iter().position(|a| a.starts_with("--") || a.starts_with("-choices"));
+                if let Some(pos) = flag_pos {
+                    if pos > 0 {
+                        let query_tokens = args[2..2 + pos].join(" ");
+                        let remaining_flags = args[2 + pos..].to_vec();
+                        args.truncate(2);
+                        args.push(query_tokens);
+                        args.extend(remaining_flags);
+                    }
+                } else {
+                    let combined = args[2..].join(" ");
+                    args.truncate(2);
+                    args.push(combined);
+                }
+            }
         }
         _ => {}
     }
@@ -4064,7 +4108,7 @@ async fn run(args: Args) -> Result<()> {
         return Ok(());
     }
 
-    if let Some(ref style_arg) = args.style {
+    if let Some(ref _style_arg) = args.style {
         let combined_style = match (&args.style, &args.query) {
             (Some(s), Some(pos)) if !pos.is_empty() => format!("{} {}", s, pos),
             (Some(s), _) => s.clone(),
@@ -4338,7 +4382,7 @@ async fn run(args: Args) -> Result<()> {
 
         match client.get(&target_url).send().await {
             Ok(res) => {
-                let status = res.status();
+                let _status = res.status();
                 let content_type = res
                     .headers()
                     .get("content-type")
@@ -4483,7 +4527,7 @@ async fn run(args: Args) -> Result<()> {
     }
 
     // System 1 Decision Model CLI Dispatch
-    if !args.acdso && (args.decision.is_some() || args.schema.is_some()) {
+    if !args.acdso && (args.decision.is_some() || args.choices.is_some() || args.schema.is_some()) {
         let raw_decision_val = args.decision.as_deref().unwrap_or("");
         let query_text = if !raw_decision_val.trim().is_empty() {
             raw_decision_val.trim().to_string()
@@ -4498,22 +4542,33 @@ async fn run(args: Args) -> Result<()> {
         };
 
         if query_text.is_empty() {
-            println!("⚡ **System 1 Decision Engine (Clef & Clef-flash)**\n\nSub-50ms non-autoregressive schema evaluation, category routing, mismatch detection, and HITL risk gating.\n\n**Usage**:\n- `cli.exe --decision \"What is the statute of limitations for felony?\" --choices \"legal,finance,code,general\"`\n- `cli.exe --classify-intent \"buy flight to London\" --schema '[\"shopping\", \"research\", \"coding\"]'`\n- `cli.exe @agent decision \"def fib(n):\"`\n\n*Key Flags*: `--decision <query>`, `--classify-intent <query>`, `--choices <list>`, `--schema <json>`.");
+            println!("⚡ **Hybrid Decision Model Engine (Strands Decider 2B & Clef-Flash)**\n\nSub-50ms non-autoregressive choice scoring, intent routing, mismatch detection, and HITL risk gating.\n\n**Usage**:\n- `cli.exe --decision \"Which language for fast memory safety?\" --choices \"Rust, Python, Go\"`\n- `cli.exe --decision \"What is the statute of limitations for felony?\" --choices \"legal, finance, code\"`\n- `cli.exe @agent decision \"def fib(n):\"`\n\n*Key Flags*: `--decision <query>`, `--choices <list>`, `--decision-mode <hybrid|local|cloud|fast>`, `--decision-engine <engine>`, `--decision-temperature <float>`.");
             return Ok(());
         }
 
-        let choices_list: Option<Vec<String>> = if let Some(ref s) = args.schema {
+        let choices_list: Option<Vec<String>> = if let Some(ref s) = args.choices.as_ref().or(args.schema.as_ref()) {
             if s.starts_with('[') && s.ends_with(']') {
                 serde_json::from_str::<Vec<String>>(s).ok().or_else(|| {
                     Some(s.trim_matches(|c| c == '[' || c == ']').split(',').map(|x| x.trim().trim_matches('"').to_string()).collect())
                 })
             } else if s.contains(',') {
-                Some(s.split(',').map(|x| x.trim().to_string()).collect())
+                Some(s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect())
             } else {
-                Some(vec![s.clone()])
+                Some(vec![s.to_string()])
             }
         } else {
             None
+        };
+
+        let mode_val = args.decision_mode.clone();
+        let engine_val = if args.decision_engine != "auto" {
+            args.decision_engine.clone()
+        } else if let Some(ref m) = args.model {
+            m.clone()
+        } else if mode_val == "cloud" {
+            "clef-flash".to_string()
+        } else {
+            "strands-decider-2b".to_string()
         };
 
         let req = decision_engine::DecisionRequest {
@@ -4522,17 +4577,19 @@ async fn run(args: Args) -> Result<()> {
             choices: choices_list,
             schema: None,
             model: args.model.clone(),
+            mode: Some(mode_val.clone()),
+            engine: Some(engine_val.clone()),
             task_type: None,
-            temperature: Some(0.8),
+            temperature: Some(args.decision_temperature),
         };
 
         let mut resp = if let Some(ref m) = args.model {
-            if m.starts_with("@cf/") || m.contains("clef") {
+            if (m.starts_with("@cf/") || m.contains("clef")) && mode_val == "cloud" {
                 if let Ok(cf_res) = decision_engine::query_cloudflare_clef_async(
                     m,
                     &query_text,
                     req.choices.as_deref().unwrap_or(&[]),
-                    Some(0.8),
+                    Some(args.decision_temperature),
                 ).await {
                     cf_res
                 } else {
@@ -4569,7 +4626,46 @@ async fn run(args: Args) -> Result<()> {
                 "verification_depth": action.verification_depth,
             }));
         }
-        println!("{}", serde_json::to_string_pretty(&resp)?);
+
+        if args.reporttype == "json" {
+            println!("{}", serde_json::to_string_pretty(&resp)?);
+            return Ok(());
+        }
+
+        let gate_str = if let Some(ref g) = resp.hitl_gate {
+            format!("{} (risk score: {:.2}) - {}", g.gate_level, g.risk_score, g.explanation)
+        } else {
+            "safe_auto (read_only)".to_string()
+        };
+
+        let mut dist_bars = String::new();
+        for (i, d) in resp.distribution.iter().enumerate() {
+            let pct = (d.score * 100.0).round() as usize;
+            let bar_len = (pct / 3).min(30);
+            let bar = "█".repeat(bar_len);
+            dist_bars.push_str(&format!("  {:2}. {:<25} {:5.1}%  {}\n", i + 1, d.choice, d.score * 100.0, bar));
+        }
+
+        println!(
+            "⚡ **Hybrid Decision Model Engine (Strands Decider 2B & Clef-Flash)**\n\n\
+            - **Query**: \"{}\"\n\
+            - **Top Decision**: **{}** ({:.1}% confidence)\n\
+            - **Engine**: `{}` (Family: `{}`)\n\
+            - **Mode**: `{}`\n\
+            - **Latency**: {:.2} ms (Sub-50ms System 1 SLA)\n\
+            - **HITL Gate**: `{}`\n\n\
+            ### 📊 Candidate Probability Distribution:\n\
+            {}",
+            resp.query,
+            resp.top_choice,
+            resp.top_score * 100.0,
+            resp.engine,
+            resp.engine_family,
+            resp.mode,
+            resp.latency_ms,
+            gate_str,
+            dist_bars.trim_end()
+        );
         return Ok(());
     }
 
@@ -9284,7 +9380,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                                 "application/octet-stream"
                             };
                             let resp = format!(
-                                "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n",
+                                "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-cache, no-store, must-revalidate\r\nPragma: no-cache\r\nConnection: close\r\n\r\n",
                                 mime,
                                 content.len()
                             );
@@ -10319,9 +10415,62 @@ public class ShortcutHelper {
                 return;
             }
 
-            // ── Cloudflare Clef & Clef-flash System 1 Decision Model API (/api/decision & /api/clef) ──
+            // ── Hybrid Decision Engine Status Endpoint (/api/decision/status) ──
+            if request_path == "/api/decision/status" {
+                let status_json = serde_json::json!({
+                    "status": "ok",
+                    "hybrid_enabled": true,
+                    "default_mode": "hybrid",
+                    "default_engine": "strands-decider-2b",
+                    "registered_engines": [
+                        "strands_decider_2b",
+                        "clef_flash",
+                        "clef",
+                        "fast_rlcd"
+                    ],
+                    "engines": {
+                        "strands_decider_2b": {
+                            "name": "Strands Decider 2B",
+                            "parameters": "1.9B",
+                            "type": "Local System 1 Pointer Head",
+                            "origin": "AWS Strands Labs",
+                            "latency_sla_ms": 50.0
+                        },
+                        "clef_flash": {
+                            "name": "Cloudflare Clef-Flash",
+                            "parameters": "9B",
+                            "type": "Edge System 1 Dual Attention",
+                            "origin": "Cloudflare Workers AI",
+                            "latency_sla_ms": 50.0
+                        },
+                        "clef": {
+                            "name": "Cloudflare Clef",
+                            "parameters": "9B",
+                            "type": "Edge System 1 Full Attention",
+                            "origin": "Cloudflare Workers AI",
+                            "latency_sla_ms": 100.0
+                        },
+                        "fast_rlcd": {
+                            "name": "Fast RLCD",
+                            "type": "Calibrated Brier Loss Optimizer",
+                            "latency_sla_ms": 5.0
+                        }
+                    }
+                });
+                let resp_body = serde_json::to_string_pretty(&status_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Hybrid Decision Model Engine API (/api/decision, /api/clef, /api/classify-intent, /api/classify) ──
             if request_path == "/api/decision" || request_path == "/api/clef" || request_path == "/api/classify-intent" || request_path == "/api/classify" {
-                let req: decision_engine::DecisionRequest = serde_json::from_value(request_json.clone()).unwrap_or_else(|_| {
+                let mut req: decision_engine::DecisionRequest = serde_json::from_value(request_json.clone()).unwrap_or_else(|_| {
                     let q = request_json.get("query").or_else(|| request_json.get("prompt")).and_then(|v| v.as_str()).map(|s| s.to_string());
                     decision_engine::DecisionRequest {
                         query: q,
@@ -10329,16 +10478,35 @@ public class ShortcutHelper {
                         choices: request_json.get("choices").and_then(|c| c.as_array()).map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect()),
                         schema: request_json.get("schema").cloned(),
                         model: request_json.get("model").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        mode: request_json.get("mode").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        engine: request_json.get("engine").and_then(|v| v.as_str()).map(|s| s.to_string()),
                         task_type: request_json.get("task_type").and_then(|v| v.as_str()).map(|s| s.to_string()),
                         temperature: request_json.get("temperature").and_then(|v| v.as_f64()),
                     }
                 });
+
+                if req.mode.is_none() {
+                    let mode_str = request_json.get("mode").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_else(|| "hybrid".to_string());
+                    req.mode = Some(mode_str);
+                }
+                if req.engine.is_none() {
+                    if let Some(ref m) = req.model {
+                        req.engine = Some(m.clone());
+                    } else {
+                        let eng_str = request_json.get("engine").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_else(|| "strands-decider-2b".to_string());
+                        req.engine = Some(eng_str);
+                    }
+                }
+                if req.choices.as_ref().map_or(true, |c| c.is_empty()) && req.schema.is_none() {
+                    req.choices = Some(decision_engine::HUGOS_14_CATEGORIES.iter().map(|s| s.to_string()).collect());
+                }
+
                 let resolved_db = resolve_db_path(Some(&db_path_str));
                 let db_dir = resolved_db.parent().unwrap_or_else(|| std::path::Path::new("IDE/db"));
-                let mut decision_res = if let Some(ref m) = req.model {
-                    if m.starts_with("@cf/") || m.contains("clef") {
+                let mut decision_res = if let Some(ref e) = req.engine {
+                    if (e.starts_with("@cf/") || e.contains("clef")) && req.mode.as_deref() == Some("cloud") {
                         if let Ok(cf_res) = decision_engine::query_cloudflare_clef_async(
-                            m,
+                            e,
                             req.query.as_deref().unwrap_or(""),
                             req.choices.as_deref().unwrap_or(&[]),
                             req.temperature,
