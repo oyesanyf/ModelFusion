@@ -141,6 +141,28 @@ async function runTests() {
   // ----------------------------------------------------
   console.log('\n▶️  Section 2: HTTP Server Endpoints (Port 5000)');
 
+  // Ensure server is online on port 5000
+  let spawnedServer = null;
+  try {
+    await getRequest('http://127.0.0.1:5000/health');
+  } catch (_) {
+    console.log('  • Port 5000 not responding, launching cli.exe --server --port 5000...');
+    const { spawn } = require('child_process');
+    spawnedServer = spawn(CLI_PATH, ['--server', '--port', '5000'], { stdio: 'ignore' });
+    let healthy = false;
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      try {
+        await getRequest('http://127.0.0.1:5000/health');
+        healthy = true;
+        break;
+      } catch (_) {}
+    }
+    if (!healthy) {
+      throw new Error('Failed to start cli.exe --server on port 5000 within 15 seconds.');
+    }
+  }
+
   // 2.1 POST /api/cli with {"command": "@agent sys-info"}
   console.log('  • Testing POST /api/cli {"command": "@agent sys-info"} ...');
   const respCli = await postJson('http://127.0.0.1:5000/api/cli', { command: '@agent sys-info' });

@@ -5,6 +5,7 @@ $PSScriptRoot = Split-Path -Parent -Path $MyInvocation.MyCommand.Definition
 $vsCodePackDir = Join-Path (Split-Path $PSScriptRoot -Parent) "IDE\VSCode-win32-x64"
 $pfxPath = Join-Path $PSScriptRoot "hugos-signing-cert.pfx"
 $password = "HugOSPassword123!"
+$env:PYTHONUNBUFFERED = "1"
 
 # Ensure common tools are available in PATH
 $toolDirs = @(
@@ -204,7 +205,9 @@ if os.path.exists(src_exe):
     }
 
     Write-Host "[OK] Electron runtime data files synced" -ForegroundColor Green
-    Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+    if ($extractDir -and (Test-Path $extractDir)) {
+        Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
 } else {
     Write-Host "[OK] HugOS.exe already has valid Microsoft signature - no restore needed" -ForegroundColor Green
 }
@@ -536,6 +539,17 @@ $targetExtDirs = @(
 $verDirs = Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' }
 foreach ($vd in $verDirs) {
     $targetExtDirs += (Join-Path $vd.FullName "resources\app\extensions\copilot")
+}
+# Ensure source extension.js is valid and non-empty
+$srcExtJs = Join-Path $srcExtDir "dist\extension.js"
+if (-not (Test-Path $srcExtJs) -or (Get-Item $srcExtJs).Length -eq 0) {
+    $fallbackExtJs = Join-Path $vsCodePackDir "resources\app\extensions\copilot\dist\extension.js"
+    if ((Test-Path $fallbackExtJs) -and (Get-Item $fallbackExtJs).Length -gt 1MB) {
+        Write-Host "[RECOVERY] Restoring source extension.js from $fallbackExtJs..." -ForegroundColor Yellow
+        $distSrcDir = Split-Path $srcExtJs -Parent
+        if (-not (Test-Path $distSrcDir)) { New-Item -ItemType Directory -Force -Path $distSrcDir | Out-Null }
+        Copy-Item $fallbackExtJs $srcExtJs -Force
+    }
 }
 
 foreach ($tDir in $targetExtDirs) {

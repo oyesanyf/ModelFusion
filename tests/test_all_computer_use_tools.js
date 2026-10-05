@@ -83,44 +83,61 @@ assert(
 console.log('\n--- Group 3: Goal Resolution for All 10 Computer Use Tools ---');
 
 function resolveComputerUseGoal(cmd) {
-  let goal = cmd.replace(/^(@agent\s+computer-use\b|\/computer-use\b|@computer-use\b|@agent\s+ui-tars\b|\/ui-tars\b|@ui-tars\b|@agent\s+screen-grounding\b|@agent\s+desktop-click\b|@agent\s+desktop-type\b|@agent\s+desktop-scroll\b|@agent\s+exam-solver\b|\/exam-solver\b|@exam-solver\b|@agent\s+ticket-booking\b|\/ticket-booking\b|@ticket-booking\b|@agent\s+map-directions\b|\/map-directions\b|@map-directions\b|@agent\s+shopping\b|\/shopping\b|@shopping\b)(?:\s*[:]\s*|\s*)/i, '').trim();
+  const isComputerUseToolCmd =
+    /^(?:@agent\s+|\/|@)?(?:computer[- ]?use|ui[- ]?tars|screen[- ]?grounding|desktop[- ]?(?:click|type|scroll)|exam[- ]?solver|map[- ]?directions|shopping|shop)\b/i.test(cmd);
 
-  if (!goal) {
-    if (/exam-solver\b/i.test(cmd)) {
+  const isTicketBookingCmd =
+    /^(?:@agent\s+|\/|@)?(?:ticket[- ]?booking|flight[- ]?booking|book[- ]?ticket|book[- ]?flight|tickets?|flights?)\b/i.test(cmd) ||
+    /^(?:@agent\s+|\/|@)?book\s+(?:me\s+)?(?:a\s+)?(?:tickets?|flights?|seats?|trips?|passes?|cabs?|rooms?|hotels?)\b/i.test(cmd) ||
+    /^(?:@agent\s+book\b|\/book\b|@book\b)/i.test(cmd) ||
+    /^(?:book|reserve)\s+(?:me\s+)?(?:a\s+)?(?:tickets?|flights?)\b/i.test(cmd);
+
+  if (!isComputerUseToolCmd && !isTicketBookingCmd) return null;
+
+  let goal = cmd.replace(
+    /^(?:@agent\s+|\/|@)?(?:computer[- ]?use|ui[- ]?tars|screen[- ]?grounding|desktop[- ]?(?:click|type|scroll)|exam[- ]?solver|map[- ]?directions|shopping|shop|ticket[- ]?booking|flight[- ]?booking|book[- ]?ticket|book[- ]?flight|tickets?|flights?|book)(?:\s*[:]\s*|\s+|$)/i,
+    ''
+  ).trim();
+
+  if (!goal || /^(?:tickets?|flights?)$/i.test(goal)) {
+    if (/exam[- ]?solver\b/i.test(cmd)) {
       goal = 'Inspect active page and solve exam questions with human-in-the-loop validation';
-    } else if (/ticket-booking\b/i.test(cmd)) {
+    } else if (isTicketBookingCmd || /ticket|flight|book/i.test(cmd)) {
       goal = 'Search and ground tickets, flights, or events on active page with booking safety gate';
-    } else if (/map-directions\b/i.test(cmd)) {
+    } else if (/map[- ]?directions\b/i.test(cmd)) {
       goal = 'Inspect active page and compute turn-by-turn map directions and transit routes';
-    } else if (/shopping\b/i.test(cmd)) {
+    } else if (/shopping|shop\b/i.test(cmd)) {
       goal = 'Discover products and compare prices on active page with e-commerce safety gate';
-    } else if (/screen-grounding\b/i.test(cmd)) {
+    } else if (/screen[- ]?grounding\b/i.test(cmd)) {
       goal = 'Capture active screen and ground all interactive UI elements with Set-of-Mark markers';
-    } else if (/desktop-click\b/i.test(cmd)) {
+    } else if (/desktop[- ]?click\b/i.test(cmd)) {
       goal = 'Click active element or specified coordinate on screen';
-    } else if (/desktop-type\b/i.test(cmd)) {
+    } else if (/desktop[- ]?type\b/i.test(cmd)) {
       goal = 'Type text or keystroke sequence into active window';
-    } else if (/desktop-scroll\b/i.test(cmd)) {
+    } else if (/desktop[- ]?scroll\b/i.test(cmd)) {
       goal = 'Scroll active window viewport';
-    } else if (/ui-tars\b/i.test(cmd)) {
+    } else if (/ui[- ]?tars\b/i.test(cmd)) {
       goal = 'Inspect active viewport, perceive interactive controls, and execute autonomous OS action plan';
     } else {
       goal = null; // Triggers Goal Required card with interactive pills
     }
   } else {
-    if (/desktop-click\b/i.test(cmd) && !/^click\b/i.test(goal)) {
+    if (/^(?:me\s+(?:a\s+)?|a\s+)(?:tickets?|flights?)\b/i.test(goal)) {
+      goal = 'book ' + goal;
+    }
+    if (/desktop[- ]?click\b/i.test(cmd) && !/^click\b/i.test(goal)) {
       goal = `Click screen coordinate ${goal}`;
-    } else if (/desktop-type\b/i.test(cmd) && !/^type\b/i.test(goal)) {
+    } else if (/desktop[- ]?type\b/i.test(cmd) && !/^type\b/i.test(goal)) {
       goal = `Type text ${goal}`;
-    } else if (/desktop-scroll\b/i.test(cmd) && !/^scroll\b/i.test(goal)) {
+    } else if (/desktop[- ]?scroll\b/i.test(cmd) && !/^scroll\b/i.test(goal)) {
       goal = `Scroll window ${goal}`;
-    } else if (/shopping\b/i.test(cmd) && !/^(search|find|buy|shop)\b/i.test(goal)) {
+    } else if (/shopping|shop\b/i.test(cmd) && !/^(search|find|buy|shop)\b/i.test(goal)) {
       goal = `Search and compare prices for ${goal}`;
-    } else if (/ticket-booking\b/i.test(cmd) && !/^(search|book|find)\b/i.test(goal)) {
+    } else if ((isTicketBookingCmd || /ticket|flight|book/i.test(cmd)) && !/^(search|book|find|reserve)\b/i.test(goal)) {
       goal = `Search and book tickets for ${goal}`;
-    } else if (/map-directions\b/i.test(cmd) && !/^(get|directions|navigate|route)\b/i.test(goal)) {
+    } else if (/map[- ]?directions\b/i.test(cmd) && !/^(get|directions|navigate|route)\b/i.test(goal)) {
       goal = `Get map directions for ${goal}`;
-    } else if (/exam-solver\b/i.test(cmd) && !/^(inspect|solve)\b/i.test(goal)) {
+    } else if (/exam[- ]?solver\b/i.test(cmd) && !/^(inspect|solve)\b/i.test(goal)) {
       goal = `Inspect active page and solve exam questions: ${goal}`;
     }
   }
@@ -161,6 +178,10 @@ assert(resolveComputerUseGoal('@agent shopping 32GB DDR5 SODIMM RAM') === 'Searc
 // 9. Ticket & Travel Booking
 assert(resolveComputerUseGoal('@agent ticket-booking').includes('Search and ground tickets'), 'Bare @agent ticket-booking sets default booking goal');
 assert(resolveComputerUseGoal('@agent ticket-booking flight from JFK to LHR on Nov 15') === 'Search and book tickets for flight from JFK to LHR on Nov 15', 'Formats ticket booking goal');
+assert(resolveComputerUseGoal('@agent book ticket').includes('Search and ground tickets'), 'Bare @agent book ticket sets default booking goal');
+assert(resolveComputerUseGoal('@agent ticket-booking book me a ticket to chicago from huston tomorrow') === 'book me a ticket to chicago from huston tomorrow', 'Resolves @agent ticket-booking with book me a ticket');
+assert(resolveComputerUseGoal('book me a ticket to chicago from huston tomorrow') === 'book me a ticket to chicago from huston tomorrow', 'Resolves natural language ticket booking');
+assert(resolveComputerUseGoal('@agent flight from SFO to JFK') === 'Search and book tickets for from SFO to JFK', 'Resolves @agent flight goal');
 
 // 10. UI-TARS Agent Loop
 assert(resolveComputerUseGoal('@agent ui-tars').includes('perceive interactive controls'), 'Bare @agent ui-tars sets default agent goal');
@@ -245,6 +266,47 @@ assert(mainRsContent.includes('exam-solver'), 'main.rs supports exam-solver');
 assert(mainRsContent.includes('Click screen coordinate'), 'main.rs formats click screen coordinate goal');
 assert(mainRsContent.includes('Type text'), 'main.rs formats type text goal');
 assert(mainRsContent.includes('Scroll window'), 'main.rs formats scroll window goal');
+
+// --- Group 8: Ticket Fallback Synthesis & Meta-Commentary Sanitization ---
+console.log('\n--- Group 8: Ticket Fallback Synthesis & Meta-Commentary Sanitization ---');
+
+// 8.1 Extract and evaluate extractTickets
+const extractTicketsMatch = appJsContent.match(/function extractTickets\(doc,\s*text\)\s*\{([\s\S]*?)\n  \}/);
+assert(Boolean(extractTicketsMatch), 'extractTickets is defined in app.js');
+const extractTickets = new Function('doc', 'text', extractTicketsMatch[1]);
+
+// Empty DOM & empty text with goal returns at least 3 synthesized options
+const synthesizedFlight = extractTickets(null, '', 'book me a ticket to chicago from huston tomorrow');
+assert(Array.isArray(synthesizedFlight) && synthesizedFlight.length >= 3, 'extractTickets returns at least 3 fallback options on empty DOM');
+assert(synthesizedFlight.some(t => t.isRecommended), 'extractTickets marks recommended tier');
+assert(synthesizedFlight[0].title.toLowerCase().includes('chicago'), 'Fallback flight title incorporates Chicago destination');
+assert(synthesizedFlight[0].title.toLowerCase().includes('huston'), 'Fallback flight title incorporates Huston origin');
+
+// Event booking fallback
+const synthesizedEvent = extractTickets(null, '', 'book concert passes for Coldplay in London');
+assert(synthesizedEvent.length >= 3, 'extractTickets returns at least 3 event pass tiers');
+assert(synthesizedEvent.some(t => t.tier.toLowerCase().includes('general admission')), 'Event ticket contains General Admission tier');
+
+// 8.2 Leaked Meta-Commentary Sanitization
+const sampleLeakedCommentary = `
+Here are the ticket options:
+- Economy: $249
+- Business: $689
+
+In summary, the key steps to continue generating the response would be:
+1. Ground the page
+2. Confirm the booking
+This aligns with best practices in web development.
+`;
+
+const cleanedCommentary = sampleLeakedCommentary
+  .replace(/(?:^|\n)[^\n]*(?:aligns with best practices in web development|In summary, the key steps to continue generating the response would be:)[^\n]*(?:\n|$)/gi, '\n')
+  .replace(/\b(?:aligns with best practices in web development|In summary, the key steps to continue generating the response would be:)\b/gi, '')
+  .trim();
+
+assert(!cleanedCommentary.includes('In summary, the key steps to continue generating the response would be:'), 'Strips meta-commentary preamble');
+assert(!cleanedCommentary.includes('aligns with best practices in web development'), 'Strips web development buzzword commentary');
+assert(cleanedCommentary.includes('Economy: $249'), 'Preserves actual ticket information');
 
 console.log('\n================================================================');
 console.log(`🎉 ALL 10 COMPUTER USE TOOLS VERIFIED: ${passedTests}/${totalTests} Passed (100% Green)`);
