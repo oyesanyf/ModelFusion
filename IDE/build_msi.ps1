@@ -608,7 +608,7 @@ if (Test-Path $patchEvolveScript) {
 }
 $patchApplyCodeblockScript = Join-Path $PSScriptRoot "patch_apply_codeblock.py"
 if (Test-Path $patchApplyCodeblockScript) {
-    python $patchApplyCodeblockScript
+    python $patchApplyCodeblockScript "$vsCodePackDir" --skip-installed
     Write-Host "[OK] Applied code block apply and auto-save patches" -ForegroundColor Green
 }
 $patchFusionScript = Join-Path $PSScriptRoot "patch_evolution_fusion.py"

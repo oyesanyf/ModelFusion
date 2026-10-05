@@ -18770,7 +18770,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
             if (browserFrame.contentDocument && browserFrame.contentDocument.body) {
               const doc = browserFrame.contentDocument;
               const rawFrameText = (doc.body.innerText || doc.body.textContent || '').replace(/\s+/g, ' ').trim();
-              const isStaleError = /(?:Error running ModelFusion CLI|unexpected argument ['"]?--api\/proxy|Exit code:\s*(?:exit code:\s*)?2|DNS_PROBE_FINISHED|ERR_NAME_NOT_RESOLVED|ERR_CONNECTION_REFUSED|This site can['’]t be reached)/i.test(rawFrameText);
+              const isStaleError = /(?:Error running ModelFusion CLI|unexpected argument ['"]?--(?:api[\/-])?(?:proxy|cli)|Exit code:\s*(?:exit code:\s*)?2|DNS_PROBE_FINISHED|ERR_NAME_NOT_RESOLVED|ERR_CONNECTION_REFUSED|This site can['’]t be reached)/i.test(rawFrameText);
               if (!isStaleError && rawFrameText.length > 0) {
                 groundedDoc = doc;
                 livePageTitle = doc.title ? doc.title.trim() : '';

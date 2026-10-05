@@ -49,10 +49,10 @@ if (Test-Path $srcCli) {
 
 # 1.1 Stage hf_models.db into browser\db and browser\bin\db
 $dbCandidates = @(
+    (Join-Path $rootDir "db\hf_models.db"),
+    (Join-Path $rootDir "IDE\VSCode-win32-x64\db\hf_models.db"),
     (Join-Path $rootDir "IDE\db\hf_models.db"),
-    "$env:LOCALAPPDATA\HugOS IDE\db\hf_models.db",
-    "$env:LOCALAPPDATA\ModelFusion\db\hf_models.db",
-    (Join-Path $rootDir "db\hf_models.db")
+    "$env:LOCALAPPDATA\HugOS IDE\db\hf_models.db"
 )
 $dbSrc = $dbCandidates | Where-Object { (Test-Path $_) -and (Get-Item $_).Length -gt 50000 } | Select-Object -First 1
 if ($dbSrc) {
@@ -177,24 +177,25 @@ try {
     Start-Service -Name msiserver -ErrorAction SilentlyContinue
     $comInstaller = New-Object -ComObject WindowsInstaller.Installer
 } catch {}
-
-$wixOutLog = Join-Path $browserDir "wix_browser_stdout.log"
-$wixErrLog = Join-Path $browserDir "wix_browser_stderr.log"
-if (Test-Path $wixOutLog) { Remove-Item $wixOutLog -Force -ErrorAction SilentlyContinue }
-if (Test-Path $wixErrLog) { Remove-Item $wixErrLog -Force -ErrorAction SilentlyContinue }
-
-$wixProc = Start-Process -FilePath $wixExe -ArgumentList "build", "-b", "`"$browserDir`"", "-arch", "x64", "`"$wxsPath`"", "-out", "`"$msiPath`"" -NoNewWindow -PassThru -RedirectStandardOutput $wixOutLog -RedirectStandardError $wixErrLog
-while (-not $wixProc.HasExited) {
-    try {
-        $msiSvc = Get-Service msiserver -ErrorAction SilentlyContinue
-        if ($msiSvc -and $msiSvc.Status -ne 'Running') {
-            Start-Service -Name msiserver -ErrorAction SilentlyContinue
-        }
-    } catch {}
-    Start-Sleep -Seconds 1
+$safeScript = Join-Path $rootDir "scripts\build_msi_safe.py"
+if (Test-Path $safeScript) {
+    Write-Host "[INFO] Executing WiX build command via safe Python runner ($safeScript)..." -ForegroundColor Yellow
+    python $safeScript browser
+    $wixExit = $LASTEXITCODE
+} else {
+    $wixProc = Start-Process -FilePath $wixExe -ArgumentList "build", "-b", "`"$browserDir`"", "-arch", "x64", "`"$wxsPath`"", "-out", "`"$msiPath`"" -NoNewWindow -PassThru -RedirectStandardOutput $wixOutLog -RedirectStandardError $wixErrLog
+    while (-not $wixProc.HasExited) {
+        try {
+            $msiSvc = Get-Service msiserver -ErrorAction SilentlyContinue
+            if ($msiSvc -and $msiSvc.Status -ne 'Running') {
+                Start-Service -Name msiserver -ErrorAction SilentlyContinue
+            }
+        } catch {}
+        Start-Sleep -Seconds 1
+    }
+    $wixProc.WaitForExit()
+    $wixExit = if ($wixProc.ExitCode -ne $null) { [int]$wixProc.ExitCode } else { 0 }
 }
-$wixProc.WaitForExit()
-$wixExit = if ($wixProc.ExitCode -ne $null) { [int]$wixProc.ExitCode } else { 0 }
 
 # Release COM keepalive
 $comInstaller = $null
