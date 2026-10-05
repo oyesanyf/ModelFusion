@@ -1865,6 +1865,12 @@ struct Args {
     #[arg(long = "proxy", visible_alias = "api-proxy", visible_alias = "api/proxy", visible_alias = "browser/proxy", num_args = 0..=1, default_missing_value = "", help = "Universal web proxy to fetch URL and strip X-Frame-Options and Content-Security-Policy headers")]
     proxy: Option<String>,
 
+    #[arg(long, visible_alias = "wdsi", visible_alias = "submit-defender", num_args = 0..=1, default_missing_value = "", help = "Submit binary or installer to Microsoft Security Intelligence (WDSI) for Windows Defender / SmartScreen analysis")]
+    submit_wdsi: Option<String>,
+
+    #[arg(long, help = "Validate actions or payloads without performing network requests or changes")]
+    dry_run: bool,
+
     #[arg(long = "cli", visible_alias = "api-cli", visible_alias = "api/cli", num_args = 0..=1, default_missing_value = "", help = "Run ModelFusion CLI command wrapper")]
     cli: Option<String>,
 
@@ -2930,6 +2936,11 @@ where
                 args.remove(1);
                 args[1] = "--translate".to_string();
             }
+            if (sub_clean == "submit-wdsi" || sub_clean == "wdsi" || sub_clean == "defender-submit" || sub_clean == "submit-defender") && !has_combinator {
+                args.remove(1);
+                args[1] = "--submit-wdsi".to_string();
+                return args;
+            }
             let is_computer_use_tool = sub_clean == "computer-use" || sub_clean == "computer_use" || sub_clean == "computeruse"
                 || sub_clean == "ui-tars" || sub_clean == "uitars"
                 || sub_clean == "exam-solver" || sub_clean == "examsolver"
@@ -3407,6 +3418,12 @@ where
                     args.push(combined);
                 }
             }
+        }
+        "submit-wdsi" | "/submit-wdsi" | "@agent/submit-wdsi" | "@agent:submit-wdsi" | "@submit-wdsi"
+        | "wdsi" | "/wdsi" | "@agent/wdsi" | "@agent:wdsi" | "@wdsi"
+        | "defender-submit" | "/defender-submit" | "@agent/defender-submit" | "@agent:defender-submit"
+        | "submit-defender" | "/submit-defender" | "@agent/submit-defender" | "@agent:submit-defender" => {
+            args[1] = "--submit-wdsi".to_string();
         }
         _ => {}
     }
@@ -3888,6 +3905,60 @@ async fn run(args: Args) -> Result<()> {
     dotenv::dotenv().ok();
 
     let mut args = Box::new(args);
+
+    if let Some(ref target_file) = args.submit_wdsi {
+        println!("🛡️ Submitting binary or installer to Microsoft Security Intelligence (WDSI)...");
+        let py_cmd = resolve_python_command().unwrap_or_else(|| std::path::PathBuf::from("python"));
+
+        let mut script_path = std::path::PathBuf::from("scripts/submit_to_wdsi.py");
+        if !script_path.exists() {
+            if let Ok(exe) = std::env::current_exe() {
+                if let Some(parent) = exe.parent() {
+                    for check in &[
+                        parent.join("scripts").join("submit_to_wdsi.py"),
+                        parent.join("..").join("scripts").join("submit_to_wdsi.py"),
+                        parent.join("..").join("..").join("scripts").join("submit_to_wdsi.py"),
+                    ] {
+                        if check.exists() {
+                            script_path = check.clone();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut cmd = std::process::Command::new(&py_cmd);
+        cmd.arg(&script_path);
+
+        let trimmed = target_file.trim();
+        if !trimmed.is_empty() {
+            cmd.arg("--file").arg(trimmed);
+        } else if let Some(ref f) = args.file {
+            cmd.arg("--file").arg(f);
+        } else {
+            cmd.arg("--all");
+        }
+
+        if args.dry_run {
+            cmd.arg("--dry-run");
+        }
+
+        let status = cmd.status();
+        match status {
+            Ok(s) => {
+                if s.success() {
+                    println!("✅ Microsoft Security Intelligence submission completed successfully.");
+                } else {
+                    eprintln!("⚠️ Microsoft Security Intelligence submission exited with status: {}", s);
+                }
+            }
+            Err(e) => {
+                eprintln!("❌ Failed to execute scripts/submit_to_wdsi.py: {}", e);
+            }
+        }
+        return Ok(());
+    }
 
     if args.kv_bench {
         handle_kv_benchmark(args.kv_seq_len, args.kv_heads, args.kv_head_dim, args.kv_decode_steps)?;
