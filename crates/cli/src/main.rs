@@ -2813,8 +2813,36 @@ where
     if !verb.starts_with('-') {
         if (verb == "@agent" || verb == "agent") && args.len() > 2 {
             let sub = args[2].to_lowercase();
-            let sub_clean = sub.trim_start_matches('-').trim_start_matches('/');
+            let mut sub_clean = sub.trim_start_matches('-').trim_start_matches('/').to_string();
             let has_combinator = args.iter().any(|a| a == "&" || a == "+" || a == "and" || a == "," || a.contains(" & ") || a.contains(" + "));
+            if args.len() > 3 && !has_combinator {
+                let next_tok = args[3].to_lowercase();
+                if sub_clean == "book" && (next_tok == "ticket" || next_tok == "tickets" || next_tok == "flight" || next_tok == "flights") {
+                    args.remove(3);
+                    sub_clean = "ticket-booking".to_string();
+                } else if sub_clean == "flight" && next_tok == "booking" {
+                    args.remove(3);
+                    sub_clean = "ticket-booking".to_string();
+                } else if sub_clean == "computer" && next_tok == "use" {
+                    args.remove(3);
+                    sub_clean = "computer-use".to_string();
+                } else if sub_clean == "exam" && next_tok == "solver" {
+                    args.remove(3);
+                    sub_clean = "exam-solver".to_string();
+                } else if sub_clean == "map" && next_tok == "directions" {
+                    args.remove(3);
+                    sub_clean = "map-directions".to_string();
+                } else if sub_clean == "screen" && next_tok == "grounding" {
+                    args.remove(3);
+                    sub_clean = "screen-grounding".to_string();
+                } else if sub_clean == "desktop" && (next_tok == "click" || next_tok == "type" || next_tok == "scroll") {
+                    args.remove(3);
+                    sub_clean = format!("desktop-{}", next_tok);
+                } else if sub_clean == "ui" && next_tok == "tars" {
+                    args.remove(3);
+                    sub_clean = "ui-tars".to_string();
+                }
+            }
             if (sub_clean == "markers" || sub_clean == "marker" || sub_clean == "som") && !has_combinator {
                 args.remove(1);
                 args[1] = "som".to_string();
@@ -2894,6 +2922,9 @@ where
                 || sub_clean == "ui-tars" || sub_clean == "uitars"
                 || sub_clean == "exam-solver" || sub_clean == "examsolver"
                 || sub_clean == "ticket-booking" || sub_clean == "ticketbooking"
+                || sub_clean == "book-ticket" || sub_clean == "bookticket" || sub_clean == "book"
+                || sub_clean == "flight" || sub_clean == "flights" || sub_clean == "flight-booking" || sub_clean == "flightbooking"
+                || sub_clean == "tickets" || sub_clean == "ticket"
                 || sub_clean == "map-directions" || sub_clean == "mapdirections"
                 || sub_clean == "shopping" || sub_clean == "shop"
                 || sub_clean == "desktop-click" || sub_clean == "desktopclick" || sub_clean == "click"
@@ -2954,7 +2985,7 @@ where
                             combined_raw
                         }
                     }
-                    "ticket-booking" | "ticketbooking" => {
+                    "ticket-booking" | "ticketbooking" | "book-ticket" | "bookticket" | "book" | "flight" | "flights" | "flight-booking" | "flightbooking" | "tickets" | "ticket" => {
                         if combined_raw.is_empty() {
                             "Search and ground ticket options with booking safety gate".to_string()
                         } else if !combined_raw.to_lowercase().starts_with("search") && !combined_raw.to_lowercase().starts_with("book") {
@@ -3018,6 +3049,37 @@ where
                 args.truncate(2);
             }
             return args;
+        }
+    }
+
+    let mut verb = args[1].to_lowercase();
+    let has_combinator = args.iter().any(|a| a == "&" || a == "+" || a == "and" || a == "," || a.contains(" & ") || a.contains(" + "));
+    if args.len() > 2 && !has_combinator {
+        let next_tok = args[2].to_lowercase();
+        if verb == "book" && (next_tok == "ticket" || next_tok == "tickets" || next_tok == "flight" || next_tok == "flights") {
+            args.remove(2);
+            verb = "ticket-booking".to_string();
+        } else if verb == "flight" && next_tok == "booking" {
+            args.remove(2);
+            verb = "ticket-booking".to_string();
+        } else if verb == "computer" && next_tok == "use" {
+            args.remove(2);
+            verb = "computer-use".to_string();
+        } else if verb == "exam" && next_tok == "solver" {
+            args.remove(2);
+            verb = "exam-solver".to_string();
+        } else if verb == "map" && next_tok == "directions" {
+            args.remove(2);
+            verb = "map-directions".to_string();
+        } else if verb == "screen" && next_tok == "grounding" {
+            args.remove(2);
+            verb = "screen-grounding".to_string();
+        } else if verb == "desktop" && (next_tok == "click" || next_tok == "type" || next_tok == "scroll") {
+            args.remove(2);
+            verb = format!("desktop-{}", next_tok);
+        } else if verb == "ui" && next_tok == "tars" {
+            args.remove(2);
+            verb = "ui-tars".to_string();
         }
     }
 
@@ -3174,6 +3236,11 @@ where
         "computer-use" | "computer_use" | "computeruse" | "--computer-use" | "--computer_use" | "--ui-tars" | "/computer-use" | "/computer_use" | "@agent/computer-use" | "@agent:computer-use" | "@computer-use" | "ui-tars" | "uitars" | "/ui-tars" | "@agent/ui-tars" | "@ui-tars"
         | "exam-solver" | "examsolver" | "/exam-solver" | "@exam-solver" | "@agent/exam-solver"
         | "ticket-booking" | "ticketbooking" | "/ticket-booking" | "@ticket-booking" | "@agent/ticket-booking"
+        | "book-ticket" | "bookticket" | "/book-ticket" | "@book-ticket" | "@agent/book-ticket"
+        | "book" | "/book" | "@book" | "@agent/book"
+        | "flight" | "flights" | "/flight" | "/flights" | "@flight" | "@flights" | "@agent/flight" | "@agent/flights"
+        | "flight-booking" | "flightbooking" | "/flight-booking" | "@flight-booking" | "@agent/flight-booking"
+        | "ticket" | "tickets" | "/ticket" | "/tickets" | "@ticket" | "@tickets" | "@agent/ticket" | "@agent/tickets"
         | "map-directions" | "mapdirections" | "/map-directions" | "@map-directions" | "@agent/map-directions"
         | "shopping" | "shop" | "/shopping" | "@shopping" | "@agent/shopping"
         | "desktop-click" | "desktopclick" | "click" | "/desktop-click" | "@desktop-click" | "@agent/desktop-click"
@@ -3231,7 +3298,7 @@ where
                         combined_raw
                     }
                 }
-                "ticket-booking" | "ticketbooking" => {
+                "ticket-booking" | "ticketbooking" | "book-ticket" | "bookticket" | "book" | "flight" | "flights" | "flight-booking" | "flightbooking" | "tickets" | "ticket" => {
                     if combined_raw.is_empty() {
                         "Search and ground ticket options with booking safety gate".to_string()
                     } else if !combined_raw.to_lowercase().starts_with("search") && !combined_raw.to_lowercase().starts_with("book") {
@@ -3266,6 +3333,7 @@ where
             };
             args.truncate(2);
             args.push(formatted_goal);
+            return args;
         }
         "boost" | "/boost" | "@agent/boost" | "@agent:boost" | "@boost" | "booster" => {
             args[1] = "--boost".to_string();
@@ -19209,6 +19277,19 @@ public class Pr {
         // 10. @agent exam-solver
         let cu10 = preprocess_cli_args(vec!["cli.exe".to_string(), "@agent".to_string(), "exam-solver".to_string(), "https://example.com/quiz".to_string()]);
         assert_eq!(cu10, vec!["cli.exe", "--computer-use", "Inspect and solve questions on https://example.com/quiz"]);
+
+        // 11. Ticket booking natural variations and aliases
+        let cu_book1 = preprocess_cli_args(vec!["cli.exe".to_string(), "@agent".to_string(), "book".to_string(), "ticket".to_string(), "from".to_string(), "JFK".to_string(), "to".to_string(), "LHR".to_string()]);
+        assert_eq!(cu_book1, vec!["cli.exe", "--computer-use", "Search and book tickets for from JFK to LHR"]);
+
+        let cu_book2 = preprocess_cli_args(vec!["cli.exe".to_string(), "book".to_string(), "flight".to_string(), "to".to_string(), "Paris".to_string()]);
+        assert_eq!(cu_book2, vec!["cli.exe", "--computer-use", "Search and book tickets for to Paris"]);
+
+        let cu_book3 = preprocess_cli_args(vec!["cli.exe".to_string(), "@agent".to_string(), "flight".to_string(), "from".to_string(), "SFO".to_string(), "to".to_string(), "JFK".to_string()]);
+        assert_eq!(cu_book3, vec!["cli.exe", "--computer-use", "Search and book tickets for from SFO to JFK"]);
+
+        let cu_book4 = preprocess_cli_args(vec!["cli.exe".to_string(), "book-ticket".to_string(), "event".to_string(), "passes".to_string()]);
+        assert_eq!(cu_book4, vec!["cli.exe", "--computer-use", "Search and book tickets for event passes"]);
     }
 
     #[test]
