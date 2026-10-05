@@ -1865,6 +1865,9 @@ struct Args {
     #[arg(long = "proxy", visible_alias = "api-proxy", visible_alias = "api/proxy", visible_alias = "browser/proxy", num_args = 0..=1, default_missing_value = "", help = "Universal web proxy to fetch URL and strip X-Frame-Options and Content-Security-Policy headers")]
     proxy: Option<String>,
 
+    #[arg(long = "cli", visible_alias = "api-cli", visible_alias = "api/cli", num_args = 0..=1, default_missing_value = "", help = "Run ModelFusion CLI command wrapper")]
+    cli: Option<String>,
+
     #[arg(long, help = "Path to folder for code review or analysis")]
     folder: Option<String>,
 
@@ -2774,6 +2777,36 @@ where
                 args[i] = format!("--proxy={}", &args[i][eq_pos + 1..]);
             }
         }
+    }
+
+    // Normalize or strip api/cli flags across argument positions
+    for i in 1..args.len() {
+        let tok = args[i].to_lowercase();
+        if tok.starts_with("--api/cli=") || tok.starts_with("-api/cli=") || tok.starts_with("/api/cli=")
+            || tok.starts_with("--api-cli=") || tok.starts_with("-api-cli=") {
+            if let Some(eq_pos) = args[i].find('=') {
+                let inner = args[i][eq_pos + 1..].trim().to_string();
+                if inner.starts_with('-') {
+                    args[i] = inner;
+                } else {
+                    args[i] = format!("--cli={}", inner);
+                }
+            }
+        }
+    }
+
+    let is_cli_wrapper = |t: &str| -> bool {
+        let tok = t.to_lowercase();
+        let tok_clean = tok.trim_start_matches('-').trim_start_matches('/');
+        tok == "--api/cli" || tok == "-api/cli" || tok == "/api/cli" || tok == "api/cli"
+            || tok == "--api-cli" || tok == "-api-cli" || tok == "/api-cli" || tok == "api-cli"
+            || tok_clean == "api/cli" || tok_clean == "api-cli"
+    };
+
+    if args.len() > 2 && args.iter().skip(1).any(|a| is_cli_wrapper(a)) {
+        args.retain(|a| !is_cli_wrapper(a));
+    } else if args.len() == 2 && is_cli_wrapper(&args[1]) {
+        args[1] = "--cli".to_string();
     }
 
     let verb = args[1].to_lowercase();
@@ -4258,6 +4291,19 @@ async fn run(args: Args) -> Result<()> {
             Err(e) => {
                 eprintln!("❌ Proxy error fetching {}: {}", target_url, e);
             }
+        }
+        return Ok(());
+    }
+
+    if let Some(ref cli_cmd) = args.cli {
+        let trimmed = cli_cmd.trim();
+        if !trimmed.is_empty() {
+            let parts: Vec<String> = trimmed.split_whitespace().map(|s| s.to_string()).collect();
+            let db_path_buf = resolve_db_path(args.db_path.as_deref());
+            let out = run_cli_subcommand(&parts, &db_path_buf).await;
+            println!("{}", out);
+        } else {
+            println!("🤖 ModelFusion CLI Endpoint Active\nUsage: cli.exe --cli \"<COMMAND>\"\nExample: cli.exe --cli \"@agent sys-info\"");
         }
         return Ok(());
     }
@@ -14737,8 +14783,12 @@ sequenceDiagram
                         "Error: Invalid context or arm index".to_string()
                     }
                 }
-                "/command" | "/commands" | "/help" => {
-                    if let Some(args_arr) = request_json["args"].as_array() {
+                "/command" | "/commands" | "/help" | "/api/cli" | "/api/command" | "/api/commands" | "/cli" | "/api/run" | "/run" => {
+                    if let Some(cmd) = request_json["command"].as_str() {
+                        let trimmed = cmd.trim();
+                        let parts: Vec<String> = trimmed.split_whitespace().map(|s| s.to_string()).collect();
+                        run_cli_subcommand(&parts, db_path_val).await
+                    } else if let Some(args_arr) = request_json["args"].as_array() {
                         let mut cmd_args = Vec::new();
                         for a in args_arr {
                             if let Some(s) = a.as_str() {
@@ -14746,10 +14796,6 @@ sequenceDiagram
                             }
                         }
                         run_cli_subcommand(&cmd_args, db_path_val).await
-                    } else if let Some(cmd) = request_json["command"].as_str() {
-                        let trimmed = cmd.trim();
-                        let parts: Vec<String> = trimmed.split_whitespace().map(|s| s.to_string()).collect();
-                        run_cli_subcommand(&parts, db_path_val).await
                     } else if let Some(prompt) = request_json["prompt"].as_str() {
                         let trimmed = prompt.trim();
                         let parts: Vec<String> = trimmed.split_whitespace().map(|s| s.to_string()).collect();
@@ -14760,7 +14806,7 @@ sequenceDiagram
                     }
                 }
                 other => {
-                    let clean_cmd = other.trim_start_matches('/');
+                    let clean_cmd = other.trim_start_matches('/').trim_start_matches('-');
                     let cmd_base = clean_cmd.split('?').next().unwrap_or(clean_cmd).trim_end_matches('/');
                     if cmd_base.is_empty() {
                         format!("ModelFusion API Server running on port {}", port)
@@ -14783,6 +14829,10 @@ sequenceDiagram
                                 }).to_string()
                             }
                         }
+                    } else if let Some(cmd) = request_json["command"].as_str() {
+                        let trimmed = cmd.trim();
+                        let parts: Vec<String> = trimmed.split_whitespace().map(|s| s.to_string()).collect();
+                        run_cli_subcommand(&parts, db_path_val).await
                     } else {
                         let flag = format!("--{}", clean_cmd.replace('_', "-"));
                         let mut cmd_args = vec![flag];
@@ -14852,6 +14902,12 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 
 async fn run_cli_subcommand(cmd_args: &[String], db_path: &std::path::Path) -> String {
     let mut args = cmd_args.to_vec();
+    args.retain(|a| {
+        let l = a.to_lowercase();
+        let l_clean = l.trim_start_matches('-').trim_start_matches('/');
+        l != "--api/cli" && l != "-api/cli" && l != "/api/cli" && l != "api/cli" && l != "--api-cli"
+            && l != "-api-cli" && l != "/api-cli" && l != "api-cli" && l_clean != "api/cli" && l_clean != "api-cli"
+    });
     for a in args.iter_mut() {
         let low = a.to_lowercase();
         let low_clean = low.trim_start_matches('-');
@@ -14868,6 +14924,9 @@ async fn run_cli_subcommand(cmd_args: &[String], db_path: &std::path::Path) -> S
                 *a = format!("--proxy={}", &a[pos + 1..]);
             }
         }
+    }
+    if args.is_empty() {
+        args.push("--help".to_string());
     }
     if !args.iter().any(|a| a == "--db-path") {
         args.push("--db-path".to_string());
@@ -19150,6 +19209,34 @@ public class Pr {
         // 10. @agent exam-solver
         let cu10 = preprocess_cli_args(vec!["cli.exe".to_string(), "@agent".to_string(), "exam-solver".to_string(), "https://example.com/quiz".to_string()]);
         assert_eq!(cu10, vec!["cli.exe", "--computer-use", "Inspect and solve questions on https://example.com/quiz"]);
+    }
+
+    #[test]
+    fn test_api_cli_and_proxy_args() {
+        // Direct --proxy
+        let p1 = preprocess_cli_args(vec!["cli.exe".to_string(), "--proxy".to_string()]);
+        let parsed_p1 = Args::try_parse_from(p1).unwrap();
+        assert_eq!(parsed_p1.proxy.as_deref(), Some(""));
+
+        // Direct --api/proxy
+        let p2 = preprocess_cli_args(vec!["cli.exe".to_string(), "--api/proxy".to_string()]);
+        let parsed_p2 = Args::try_parse_from(p2).unwrap();
+        assert_eq!(parsed_p2.proxy.as_deref(), Some(""));
+
+        // Direct --api/cli --sys-info
+        let c1 = preprocess_cli_args(vec!["cli.exe".to_string(), "--api/cli".to_string(), "--sys-info".to_string()]);
+        let parsed_c1 = Args::try_parse_from(c1).unwrap();
+        assert!(parsed_c1.sys_info);
+
+        // Direct --api/cli alone
+        let c2 = preprocess_cli_args(vec!["cli.exe".to_string(), "--api/cli".to_string()]);
+        let parsed_c2 = Args::try_parse_from(c2).unwrap();
+        assert_eq!(parsed_c2.cli.as_deref(), Some(""));
+
+        // Direct --api-cli
+        let c3 = preprocess_cli_args(vec!["cli.exe".to_string(), "--api-cli".to_string()]);
+        let parsed_c3 = Args::try_parse_from(c3).unwrap();
+        assert_eq!(parsed_c3.cli.as_deref(), Some(""));
     }
 
     #[test]
