@@ -58,6 +58,60 @@ pub struct DecisionRequest {
     pub temperature: Option<f64>,
 }
 
+fn default_recommended_action() -> String {
+    "auto_execute".to_string()
+}
+
+/// Contextual Bandit Telemetry for online decision reinforcement learning.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextualBanditTelemetry {
+    pub arm_id: usize,
+    pub active_arm: String,
+    pub exploration_bonus: f64,
+    pub predicted_reward: f64,
+    pub domain_affinity: String,
+}
+
+/// Computes contextual bandit telemetry for decision actions.
+pub fn compute_bandit_telemetry(arm: usize, exploration_rate: f64, top_score: f64, top_choice: &str) -> ContextualBanditTelemetry {
+    let bonus = (exploration_rate * 0.15).min(0.25);
+    let predicted = ((top_score * 0.85 + bonus) * 1000.0).round() / 1000.0;
+    ContextualBanditTelemetry {
+        arm_id: arm,
+        active_arm: format!("arm_{}", arm),
+        exploration_bonus: (bonus * 1000.0).round() / 1000.0,
+        predicted_reward: predicted.min(1.0),
+        domain_affinity: top_choice.to_string(),
+    }
+}
+
+/// Computes Shannon Entropy (in bits) over a calibrated probability distribution.
+/// H(P) = - \sum P_i * log2(P_i)
+pub fn calculate_shannon_entropy(distribution: &[DecisionScore]) -> (f64, f64, f64) {
+    let n = distribution.len();
+    if n <= 1 {
+        return (0.0, 0.0, 1.0);
+    }
+    let mut entropy = 0.0;
+    for d in distribution {
+        if d.score > 1e-12 {
+            entropy -= d.score * d.score.log2();
+        }
+    }
+    let max_entropy = (n as f64).log2();
+    let normalized_entropy = if max_entropy > 0.0 { (entropy / max_entropy).min(1.0).max(0.0) } else { 0.0 };
+    
+    let p1 = distribution.first().map(|d| d.score).unwrap_or(1.0);
+    let p2 = distribution.get(1).map(|d| d.score).unwrap_or(0.0);
+    let margin = (p1 - p2).max(0.0);
+
+    (
+        (entropy * 1000.0).round() / 1000.0,
+        (normalized_entropy * 1000.0).round() / 1000.0,
+        (margin * 1000.0).round() / 1000.0
+    )
+}
+
 /// Strictly typed decision evaluation response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecisionResponse {
@@ -77,10 +131,22 @@ pub struct DecisionResponse {
     pub mismatch: Option<MismatchDecision>,
     pub hitl_gate: Option<HitlGateDecision>,
     pub latency_ms: f64,
+    #[serde(default)]
+    pub entropy: f64,
+    #[serde(default)]
+    pub normalized_entropy: f64,
+    #[serde(default)]
+    pub margin: f64,
+    #[serde(default)]
+    pub ambiguity_detected: bool,
+    #[serde(default = "default_recommended_action")]
+    pub recommended_action: String, // "auto_execute", "escalate_to_cloud", "hitl_confirm"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rl_arm: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rl_telemetry: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bandit_telemetry: Option<ContextualBanditTelemetry>,
 }
 
 /// Standard 14 HugOS Operating System Categories
@@ -562,6 +628,18 @@ pub fn evaluate_decision(req: &DecisionRequest) -> DecisionResponse {
         "strands".to_string()
     };
 
+    let (entropy, normalized_entropy, margin) = calculate_shannon_entropy(&distribution);
+    let ambiguity_detected = normalized_entropy > 0.70 || margin < 0.18;
+    let recommended_action = if ambiguity_detected {
+        "hitl_confirm".to_string()
+    } else if normalized_entropy > 0.45 || margin < 0.35 {
+        "escalate_to_cloud".to_string()
+    } else {
+        "auto_execute".to_string()
+    };
+    let default_bandit = compute_bandit_telemetry(0, 0.10, top_score, &top_choice);
+    let default_bandit_val = serde_json::to_value(&default_bandit).ok();
+
     DecisionResponse {
         status: "ok".to_string(),
         engine: engine_name,
@@ -577,8 +655,14 @@ pub fn evaluate_decision(req: &DecisionRequest) -> DecisionResponse {
         mismatch,
         hitl_gate: Some(hitl),
         latency_ms: (latency * 100.0).round() / 100.0,
-        rl_arm: None,
-        rl_telemetry: None,
+        entropy,
+        normalized_entropy,
+        margin,
+        ambiguity_detected,
+        recommended_action,
+        rl_arm: Some(0),
+        rl_telemetry: default_bandit_val,
+        bandit_telemetry: Some(default_bandit),
     }
 }
 
@@ -682,6 +766,17 @@ pub async fn query_cloudflare_clef_async(
     }
 
     let top_score = dist.first().map(|d| d.score).unwrap_or(1.0);
+    let (entropy, normalized_entropy, margin) = calculate_shannon_entropy(&dist);
+    let ambiguity_detected = normalized_entropy > 0.70 || margin < 0.18;
+    let recommended_action = if ambiguity_detected {
+        "hitl_confirm".to_string()
+    } else if normalized_entropy > 0.45 || margin < 0.35 {
+        "escalate_to_cloud".to_string()
+    } else {
+        "auto_execute".to_string()
+    };
+    let default_bandit = compute_bandit_telemetry(0, 0.10, top_score, &top_choice);
+    let default_bandit_val = serde_json::to_value(&default_bandit).ok();
 
     Ok(DecisionResponse {
         status: "ok".to_string(),
@@ -698,7 +793,13 @@ pub async fn query_cloudflare_clef_async(
         mismatch,
         hitl_gate: Some(hitl),
         latency_ms: (latency * 100.0).round() / 100.0,
-        rl_arm: None,
-        rl_telemetry: None,
+        entropy,
+        normalized_entropy,
+        margin,
+        ambiguity_detected,
+        recommended_action,
+        rl_arm: Some(0),
+        rl_telemetry: default_bandit_val,
+        bandit_telemetry: Some(default_bandit),
     })
 }

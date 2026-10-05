@@ -18,7 +18,8 @@ pub use watermark::{
 };
 pub mod decision_engine;
 pub use decision_engine::{
-    evaluate_decision, softmax_calibrate, DecisionRequest, DecisionResponse, DecisionScore,
+    evaluate_decision, softmax_calibrate, calculate_shannon_entropy, ContextualBanditTelemetry,
+    compute_bandit_telemetry, DecisionRequest, DecisionResponse, DecisionScore,
     HitlGateDecision, MismatchDecision, HUGOS_14_CATEGORIES,
 };
 
@@ -4686,7 +4687,9 @@ async fn run(args: Args) -> Result<()> {
             let candidate_actions = DecisionAction::default_candidate_actions();
             let (action, _score) = ctrl.select_action(&feature_state, &candidate_actions);
             let telem = ctrl.telemetry();
+            let bandit = decision_engine::compute_bandit_telemetry(action.arm_id, telem.exploration_rate, resp.top_score, &resp.top_choice);
             resp.rl_arm = Some(action.arm_id);
+            resp.bandit_telemetry = Some(bandit.clone());
             resp.rl_telemetry = Some(serde_json::json!({
                 "regime": telem.regime,
                 "decisions_count": telem.decisions_count,
@@ -4695,6 +4698,11 @@ async fn run(args: Args) -> Result<()> {
                 "model_tier": action.model_tier,
                 "consensus_panel_size": action.consensus_panel_size,
                 "verification_depth": action.verification_depth,
+                "contextual_bandit": bandit,
+                "active_arm": bandit.active_arm,
+                "exploration_bonus": bandit.exploration_bonus,
+                "predicted_reward": bandit.predicted_reward,
+                "domain_affinity": bandit.domain_affinity,
             }));
         }
 
@@ -4723,6 +4731,8 @@ async fn run(args: Args) -> Result<()> {
             - **Top Decision**: **{}** ({:.1}% confidence)\n\
             - **Engine**: `{}` (Family: `{}`)\n\
             - **Mode**: `{}`\n\
+            - **Entropy**: `H = {:.3} bits (Norm: {:.1}%), Margin: {:.1}%, Ambiguity: {}`\n\
+            - **Action**: `{}`\n\
             - **Latency**: {:.2} ms (Sub-50ms System 1 SLA)\n\
             - **HITL Gate**: `{}`\n\n\
             ### 📊 Candidate Probability Distribution:\n\
@@ -4733,6 +4743,11 @@ async fn run(args: Args) -> Result<()> {
             resp.engine,
             resp.engine_family,
             resp.mode,
+            resp.entropy,
+            resp.normalized_entropy * 100.0,
+            resp.margin * 100.0,
+            if resp.ambiguity_detected { "Yes" } else { "No" },
+            resp.recommended_action,
             resp.latency_ms,
             gate_str,
             dist_bars.trim_end()
@@ -10491,6 +10506,10 @@ public class ShortcutHelper {
                 let status_json = serde_json::json!({
                     "status": "ok",
                     "hybrid_enabled": true,
+                    "shannon_entropy_gating": true,
+                    "contextual_bandit_enabled": true,
+                    "margin_threshold": 0.18,
+                    "normalized_entropy_threshold": 0.70,
                     "default_mode": "hybrid",
                     "default_engine": "strands-decider-2b",
                     "registered_engines": [
@@ -10594,7 +10613,7 @@ public class ShortcutHelper {
                 };
 
                 // Connect to AdaptiveController for RLCD
-                let (arm_id, rl_telem) = {
+                let (arm_id, rl_telem, bandit) = {
                     let mut ctrl = get_adaptive_controller(db_dir).lock().unwrap();
                     let q_text = &decision_res.query;
                     let is_code = q_text.contains("fn ") || q_text.contains("def ") || q_text.contains("function ") || q_text.contains("class ") || q_text.contains("```");
@@ -10606,6 +10625,7 @@ public class ShortcutHelper {
                     let candidate_actions = DecisionAction::default_candidate_actions();
                     let (action, _score) = ctrl.select_action(&feature_state, &candidate_actions);
                     let telem = ctrl.telemetry();
+                    let bandit = decision_engine::compute_bandit_telemetry(action.arm_id, telem.exploration_rate, decision_res.top_score, &decision_res.top_choice);
                     let telem_val = serde_json::json!({
                         "regime": telem.regime,
                         "decisions_count": telem.decisions_count,
@@ -10614,12 +10634,18 @@ public class ShortcutHelper {
                         "model_tier": action.model_tier,
                         "consensus_panel_size": action.consensus_panel_size,
                         "verification_depth": action.verification_depth,
+                        "contextual_bandit": bandit,
+                        "active_arm": bandit.active_arm,
+                        "exploration_bonus": bandit.exploration_bonus,
+                        "predicted_reward": bandit.predicted_reward,
+                        "domain_affinity": bandit.domain_affinity,
                     });
-                    (action.arm_id, telem_val)
+                    (action.arm_id, telem_val, bandit)
                 };
 
                 decision_res.rl_arm = Some(arm_id);
                 decision_res.rl_telemetry = Some(rl_telem);
+                decision_res.bandit_telemetry = Some(bandit);
                 let resp_body = serde_json::to_string_pretty(&decision_res).unwrap_or_default();
                 let response = format!(
                     "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
