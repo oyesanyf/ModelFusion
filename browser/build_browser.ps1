@@ -227,3 +227,15 @@ Write-Host "MSI File : $msiPath" -ForegroundColor Cyan
 Write-Host "Size     : $sizeMb MB" -ForegroundColor Cyan
 Write-Host "SHA-256  : $hash" -ForegroundColor Cyan
 Write-Host "--------------------------------------------------------" -ForegroundColor Green
+
+# 7. Microsoft Security Intelligence (WDSI) Sample Submission
+Write-Host "[INFO] Submitting HugOS_Browser.msi to Microsoft Security Intelligence (WDSI)..." -ForegroundColor Yellow
+$wdsiScript = Join-Path $rootDir "scripts\submit_to_wdsi.py"
+if (Test-Path $wdsiScript) {
+    python $wdsiScript --file "$msiPath" --product "HugOS Browser" --no-launch
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "[OK] Microsoft WDSI submission processing complete." -ForegroundColor Green
+    } else {
+        Write-Host "[WARN] Microsoft WDSI submission returned non-zero (non-fatal)." -ForegroundColor Yellow
+    }
+}

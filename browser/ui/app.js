@@ -13262,6 +13262,48 @@ Respond with ONLY a valid JSON object matching this schema:
     };
   }
 
+  function speculativePreWarmDomain(query) {
+    const q = (typeof query === 'string' ? query : '').trim().toLowerCase();
+    if (!q) {
+      if (typeof window !== 'undefined') window.speculativeDomainTarget = null;
+      return null;
+    }
+    let topDomain = 'General';
+    if (q.includes('fn ') || q.includes('def ') || q.includes('class ') || q.includes('function') || q.includes('rust') || q.includes('python') || q.includes('code') || q.includes('bug') || q.includes('compile') || q.includes('async')) {
+      topDomain = 'Code & Security';
+    } else if (q.includes('stock') || q.includes('market') || q.includes('dividend') || q.includes('nasdaq') || q.includes('finance') || q.includes('p/e') || q.includes('portfolio') || q.includes('ebitda')) {
+      topDomain = 'Finance & Markets';
+    } else if (q.includes('court') || q.includes('law') || q.includes('statute') || q.includes('felony') || q.includes('legal') || q.includes('nda') || q.includes('attorney') || q.includes('judge')) {
+      topDomain = 'Legal & Compliance';
+    } else if (q.includes('image') || q.includes('photo') || q.includes('picture') || q.includes('vision') || q.includes('draw') || q.includes('flux') || q.includes('ocr')) {
+      topDomain = 'Images & Vision';
+    } else if (q.includes('voice') || q.includes('audio') || q.includes('tts') || q.includes('whisper') || q.includes('speech') || q.includes('sound') || q.includes('asr')) {
+      topDomain = 'Voice & Audio';
+    } else if (q.includes('csv') || q.includes('excel') || q.includes('dataframe') || q.includes('dataset') || q.includes('spreadsheet') || q.includes('parquet')) {
+      topDomain = 'Data & Spreadsheets (CSV/Excel)';
+    } else if (q.includes('click') || q.includes('buy') || q.includes('navigate') || q.includes('cart') || q.includes('automate') || q.includes('flight') || q.includes('hotel') || q.includes('ui-tars')) {
+      topDomain = 'Computer Use & OS Automation';
+    } else if (q.includes('search') || q.includes('google') || q.includes('browse') || q.includes('arxiv') || q.includes('wikipedia') || q.includes('research')) {
+      topDomain = 'Web Research & Automation';
+    } else if (q.includes('protein') || q.includes('dna') || q.includes('molecule') || q.includes('science') || q.includes('pdb') || q.includes('chemical') || q.includes('esm')) {
+      topDomain = 'Science & Discovery';
+    } else if (q.includes('classify') || q.includes('sentiment') || q.includes('emotion') || q.includes('toxic') || q.includes('positive') || q.includes('negative')) {
+      topDomain = 'Classification & Taxonomy';
+    } else if (q.includes('exe') || q.includes('dll') || q.includes('pe header') || q.includes('binary')) {
+      topDomain = 'Inspect Windows Apps (.EXE / .DLL)';
+    } else if (q.includes('boost') || q.includes('reason') || q.includes('think') || q.includes('plan')) {
+      topDomain = 'Planning & Deep Thinking';
+    } else if (q.includes('humanize') || q.includes('watermark') || q.includes('translate') || q.includes('rewrite')) {
+      topDomain = 'Writing & Editing';
+    } else if (q.includes('status') || q.includes('sys-info') || q.includes('hardware') || q.includes('ollama') || q.includes('update')) {
+      topDomain = 'Utilities & System';
+    }
+    if (typeof window !== 'undefined') {
+      window.speculativeDomainTarget = topDomain;
+    }
+    return topDomain;
+  }
+
   function evaluateClientSideDecision(query, candidateChoices = null, options = {}) {
     const t0 = performance.now();
     const q = (query || '').trim();
@@ -13307,6 +13349,24 @@ Respond with ONLY a valid JSON object matching this schema:
     const scores = {};
     distribution.forEach(d => { scores[d.choice] = d.score; });
 
+    // Mathematical Uncertainty Quantification (Shannon Entropy & Margin)
+    let entropy = 0.0;
+    for (const d of distribution) {
+      if (d.score > 1e-12) entropy -= d.score * Math.log2(d.score);
+    }
+    const maxEntropy = choices.length > 1 ? Math.log2(choices.length) : 1.0;
+    const normalizedEntropy = Math.min(1.0, Math.max(0.0, maxEntropy > 0 ? entropy / maxEntropy : 0.0));
+    const p1 = distribution[0] ? distribution[0].score : 1.0;
+    const p2 = distribution[1] ? distribution[1].score : 0.0;
+    const margin = Math.max(0.0, p1 - p2);
+    const ambiguityDetected = normalizedEntropy > 0.70 || margin < 0.18;
+    const recommendedAction = ambiguityDetected
+      ? 'hitl_confirm'
+      : (normalizedEntropy > 0.45 || margin < 0.35 ? 'escalate_to_cloud' : 'auto_execute');
+
+    const speculativeTarget = typeof window !== 'undefined' ? window.speculativeDomainTarget : null;
+    const speculativeHit = !!(speculativeTarget && (topChoice === speculativeTarget || (distribution[0] && distribution[0].choice === speculativeTarget)));
+
     const hitlGate = evaluateClientHitlRisk(q);
 
     // Prerequisite mismatch analysis
@@ -13350,7 +13410,13 @@ Respond with ONLY a valid JSON object matching this schema:
       is_mismatch: isMismatch,
       mismatch,
       hitl_gate: hitlGate,
-      latency_ms: Math.min(latency_ms, 38.0) // sub-40ms guarantee
+      latency_ms: Math.min(latency_ms, 38.0), // sub-40ms guarantee
+      entropy: Math.round(entropy * 1000) / 1000,
+      normalized_entropy: Math.round(normalizedEntropy * 1000) / 1000,
+      margin: Math.round(margin * 1000) / 1000,
+      ambiguity_detected: ambiguityDetected,
+      recommended_action: recommendedAction,
+      speculative_hit: speculativeHit
     };
   }
 
@@ -13363,6 +13429,7 @@ Respond with ONLY a valid JSON object matching this schema:
 
     const mode = options.mode || 'hybrid';
     let engine = options.engine || (options.image ? 'clef-flash' : (mode === 'cloud' ? 'clef-flash' : 'strands-decider-2b'));
+    const speculativeTarget = typeof window !== 'undefined' ? window.speculativeDomainTarget : null;
 
     const ipcUrl = (typeof currentSettings !== 'undefined' && currentSettings.ipcUrl ? currentSettings.ipcUrl : 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
     if (window.isIpcOnline && ipcUrl) {
@@ -13394,6 +13461,23 @@ Respond with ONLY a valid JSON object matching this schema:
             }
             if (!data.mode) {
               data.mode = mode;
+            }
+            data.speculative_hit = !!(speculativeTarget && (data.top_choice === speculativeTarget || data.decision === speculativeTarget));
+            if (data.entropy === undefined && Array.isArray(data.distribution)) {
+              let ent = 0.0;
+              for (const d of data.distribution) {
+                if (d.score > 1e-12) ent -= d.score * Math.log2(d.score);
+              }
+              const maxEnt = data.distribution.length > 1 ? Math.log2(data.distribution.length) : 1.0;
+              const normEnt = Math.min(1.0, Math.max(0.0, maxEnt > 0 ? ent / maxEnt : 0.0));
+              const p1 = data.distribution[0] ? data.distribution[0].score : 1.0;
+              const p2 = data.distribution[1] ? data.distribution[1].score : 0.0;
+              const mg = Math.max(0.0, p1 - p2);
+              data.entropy = Math.round(ent * 1000) / 1000;
+              data.normalized_entropy = Math.round(normEnt * 1000) / 1000;
+              data.margin = Math.round(mg * 1000) / 1000;
+              data.ambiguity_detected = normEnt > 0.70 || mg < 0.18;
+              data.recommended_action = data.ambiguity_detected ? 'hitl_confirm' : (normEnt > 0.45 || mg < 0.35 ? 'escalate_to_cloud' : 'auto_execute');
             }
             return data;
           }
@@ -13459,6 +13543,29 @@ Respond with ONLY a valid JSON object matching this schema:
         </div>`;
     }
 
+    let ambiguityPillBarHtml = '';
+    if (decisionRes.ambiguity_detected || (typeof decisionRes.normalized_entropy === 'number' && decisionRes.normalized_entropy > 0.70)) {
+      let topOptionsPillsHtml = '';
+      const topOptions = Array.isArray(decisionRes.distribution) ? decisionRes.distribution.slice(0, 4) : [];
+      for (const opt of topOptions) {
+        const optPct = Math.round((opt.score || 0) * 100);
+        const safeQuery = escapeHtml(decisionRes.query || '').replace(/'/g, "\\'");
+        const safeChoice = escapeHtml(opt.choice || '').replace(/'/g, "\\'");
+        topOptionsPillsHtml += `
+          <button class="ambiguity-pill-btn" onclick="if(window.sendRlDecisionFeedback) window.sendRlDecisionFeedback('${safeQuery}', 'ambiguity_resolve', 1.0); if(window.executeCliCommand) window.executeCliCommand('@agent \\'${safeChoice}\\' ${safeQuery}');" style="padding: 4px 10px; background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 4px; color: #fbbf24; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: background 0.15s ease;">
+            <span>🎯 ${escapeHtml(opt.choice)}</span> <span style="opacity: 0.75; font-size: 10px;">(${optPct}%)</span>
+          </button>`;
+      }
+      ambiguityPillBarHtml = `
+        <div style="margin-top: 8px; padding: 8px 10px; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 6px;">
+          <div style="font-size: 11px; color: #fbbf24; font-weight: 600; margin-bottom: 4px;">⚖️ Ambiguity Detected (Margin: ${Math.round((decisionRes.margin || 0) * 100)}%, Entropy: ${decisionRes.normalized_entropy}):</div>
+          <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 6px;">Select intended domain to execute & train local bandit:</div>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            ${topOptionsPillsHtml}
+          </div>
+        </div>`;
+    }
+
     return `
       <div class="decision-model-card" style="background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(59, 130, 246, 0.35); border-radius: 10px; padding: 12px 14px; margin: 8px 0; max-width: 540px; box-shadow: 0 4px 15px rgba(0,0,0,0.25);">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
@@ -13477,10 +13584,17 @@ Respond with ONLY a valid JSON object matching this schema:
           <div style="font-size: 10px; color: var(--text-secondary); margin-bottom: 2px;">CALIBRATED TOP DECISION</div>
           <div style="font-size: 14px; font-weight: 600; color: #38bdf8;">${escapeHtml(top)} <span style="font-size: 11px; font-weight: normal; color: #94a3b8;">(${scorePct}% confidence)</span></div>
         </div>
+        ${decisionRes.entropy !== undefined ? `
+        <div style="display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: var(--text-secondary); margin-bottom: 8px; padding: 4px 6px; background: rgba(255, 255, 255, 0.03); border-radius: 4px;">
+          <span>Entropy: <strong>${decisionRes.entropy} bits</strong> (${Math.round((decisionRes.normalized_entropy || 0) * 100)}%)</span>
+          <span>Margin: <strong>${Math.round((decisionRes.margin || 0) * 100)}%</strong></span>
+          <span>Action: <strong style="color: ${decisionRes.recommended_action === 'auto_execute' ? '#34d399' : (decisionRes.recommended_action === 'hitl_confirm' ? '#fbbf24' : '#818cf8')};">${escapeHtml(decisionRes.recommended_action || 'auto_execute')}</strong></span>
+        </div>` : ''}
         <div style="margin-bottom: 6px;">
           <div style="font-size: 10px; color: var(--text-secondary); margin-bottom: 6px;">CANDIDATE PROBABILITY DISTRIBUTION</div>
           ${rowsHtml}
         </div>
+        ${ambiguityPillBarHtml}
       </div>`;
   }
 
@@ -13523,6 +13637,7 @@ Respond with ONLY a valid JSON object matching this schema:
   window.calculateClientChoiceLogit = calculateClientChoiceLogit;
   window.generateDecisionModelCardHtml = generateDecisionModelCardHtml;
   window.sendRlDecisionFeedback = sendRlDecisionFeedback;
+  window.speculativePreWarmDomain = speculativePreWarmDomain;
 
   let pendingPromptDirective = null;
 

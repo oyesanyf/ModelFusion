@@ -18,7 +18,8 @@ pub use watermark::{
 };
 pub mod decision_engine;
 pub use decision_engine::{
-    evaluate_decision, softmax_calibrate, DecisionRequest, DecisionResponse, DecisionScore,
+    evaluate_decision, softmax_calibrate, calculate_shannon_entropy, ContextualBanditTelemetry,
+    compute_bandit_telemetry, DecisionRequest, DecisionResponse, DecisionScore,
     HitlGateDecision, MismatchDecision, HUGOS_14_CATEGORIES,
 };
 
@@ -1865,6 +1866,12 @@ struct Args {
     #[arg(long = "proxy", visible_alias = "api-proxy", visible_alias = "api/proxy", visible_alias = "browser/proxy", num_args = 0..=1, default_missing_value = "", help = "Universal web proxy to fetch URL and strip X-Frame-Options and Content-Security-Policy headers")]
     proxy: Option<String>,
 
+    #[arg(long, visible_alias = "wdsi", visible_alias = "submit-defender", num_args = 0..=1, default_missing_value = "", help = "Submit binary or installer to Microsoft Security Intelligence (WDSI) for Windows Defender / SmartScreen analysis")]
+    submit_wdsi: Option<String>,
+
+    #[arg(long, help = "Validate actions or payloads without performing network requests or changes")]
+    dry_run: bool,
+
     #[arg(long = "cli", visible_alias = "api-cli", visible_alias = "api/cli", num_args = 0..=1, default_missing_value = "", help = "Run ModelFusion CLI command wrapper")]
     cli: Option<String>,
 
@@ -2930,6 +2937,11 @@ where
                 args.remove(1);
                 args[1] = "--translate".to_string();
             }
+            if (sub_clean == "submit-wdsi" || sub_clean == "wdsi" || sub_clean == "defender-submit" || sub_clean == "submit-defender") && !has_combinator {
+                args.remove(1);
+                args[1] = "--submit-wdsi".to_string();
+                return args;
+            }
             let is_computer_use_tool = sub_clean == "computer-use" || sub_clean == "computer_use" || sub_clean == "computeruse"
                 || sub_clean == "ui-tars" || sub_clean == "uitars"
                 || sub_clean == "exam-solver" || sub_clean == "examsolver"
@@ -3407,6 +3419,12 @@ where
                     args.push(combined);
                 }
             }
+        }
+        "submit-wdsi" | "/submit-wdsi" | "@agent/submit-wdsi" | "@agent:submit-wdsi" | "@submit-wdsi"
+        | "wdsi" | "/wdsi" | "@agent/wdsi" | "@agent:wdsi" | "@wdsi"
+        | "defender-submit" | "/defender-submit" | "@agent/defender-submit" | "@agent:defender-submit"
+        | "submit-defender" | "/submit-defender" | "@agent/submit-defender" | "@agent:submit-defender" => {
+            args[1] = "--submit-wdsi".to_string();
         }
         _ => {}
     }
@@ -3888,6 +3906,60 @@ async fn run(args: Args) -> Result<()> {
     dotenv::dotenv().ok();
 
     let mut args = Box::new(args);
+
+    if let Some(ref target_file) = args.submit_wdsi {
+        println!("🛡️ Submitting binary or installer to Microsoft Security Intelligence (WDSI)...");
+        let py_cmd = resolve_python_command().unwrap_or_else(|| std::path::PathBuf::from("python"));
+
+        let mut script_path = std::path::PathBuf::from("scripts/submit_to_wdsi.py");
+        if !script_path.exists() {
+            if let Ok(exe) = std::env::current_exe() {
+                if let Some(parent) = exe.parent() {
+                    for check in &[
+                        parent.join("scripts").join("submit_to_wdsi.py"),
+                        parent.join("..").join("scripts").join("submit_to_wdsi.py"),
+                        parent.join("..").join("..").join("scripts").join("submit_to_wdsi.py"),
+                    ] {
+                        if check.exists() {
+                            script_path = check.clone();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut cmd = std::process::Command::new(&py_cmd);
+        cmd.arg(&script_path);
+
+        let trimmed = target_file.trim();
+        if !trimmed.is_empty() {
+            cmd.arg("--file").arg(trimmed);
+        } else if let Some(ref f) = args.file {
+            cmd.arg("--file").arg(f);
+        } else {
+            cmd.arg("--all");
+        }
+
+        if args.dry_run {
+            cmd.arg("--dry-run");
+        }
+
+        let status = cmd.status();
+        match status {
+            Ok(s) => {
+                if s.success() {
+                    println!("✅ Microsoft Security Intelligence submission completed successfully.");
+                } else {
+                    eprintln!("⚠️ Microsoft Security Intelligence submission exited with status: {}", s);
+                }
+            }
+            Err(e) => {
+                eprintln!("❌ Failed to execute scripts/submit_to_wdsi.py: {}", e);
+            }
+        }
+        return Ok(());
+    }
 
     if args.kv_bench {
         handle_kv_benchmark(args.kv_seq_len, args.kv_heads, args.kv_head_dim, args.kv_decode_steps)?;
@@ -4615,7 +4687,9 @@ async fn run(args: Args) -> Result<()> {
             let candidate_actions = DecisionAction::default_candidate_actions();
             let (action, _score) = ctrl.select_action(&feature_state, &candidate_actions);
             let telem = ctrl.telemetry();
+            let bandit = decision_engine::compute_bandit_telemetry(action.arm_id, telem.exploration_rate, resp.top_score, &resp.top_choice);
             resp.rl_arm = Some(action.arm_id);
+            resp.bandit_telemetry = Some(bandit.clone());
             resp.rl_telemetry = Some(serde_json::json!({
                 "regime": telem.regime,
                 "decisions_count": telem.decisions_count,
@@ -4624,6 +4698,11 @@ async fn run(args: Args) -> Result<()> {
                 "model_tier": action.model_tier,
                 "consensus_panel_size": action.consensus_panel_size,
                 "verification_depth": action.verification_depth,
+                "contextual_bandit": bandit,
+                "active_arm": bandit.active_arm,
+                "exploration_bonus": bandit.exploration_bonus,
+                "predicted_reward": bandit.predicted_reward,
+                "domain_affinity": bandit.domain_affinity,
             }));
         }
 
@@ -4652,6 +4731,8 @@ async fn run(args: Args) -> Result<()> {
             - **Top Decision**: **{}** ({:.1}% confidence)\n\
             - **Engine**: `{}` (Family: `{}`)\n\
             - **Mode**: `{}`\n\
+            - **Entropy**: `H = {:.3} bits (Norm: {:.1}%), Margin: {:.1}%, Ambiguity: {}`\n\
+            - **Action**: `{}`\n\
             - **Latency**: {:.2} ms (Sub-50ms System 1 SLA)\n\
             - **HITL Gate**: `{}`\n\n\
             ### 📊 Candidate Probability Distribution:\n\
@@ -4662,6 +4743,11 @@ async fn run(args: Args) -> Result<()> {
             resp.engine,
             resp.engine_family,
             resp.mode,
+            resp.entropy,
+            resp.normalized_entropy * 100.0,
+            resp.margin * 100.0,
+            if resp.ambiguity_detected { "Yes" } else { "No" },
+            resp.recommended_action,
             resp.latency_ms,
             gate_str,
             dist_bars.trim_end()
@@ -10420,6 +10506,10 @@ public class ShortcutHelper {
                 let status_json = serde_json::json!({
                     "status": "ok",
                     "hybrid_enabled": true,
+                    "shannon_entropy_gating": true,
+                    "contextual_bandit_enabled": true,
+                    "margin_threshold": 0.18,
+                    "normalized_entropy_threshold": 0.70,
                     "default_mode": "hybrid",
                     "default_engine": "strands-decider-2b",
                     "registered_engines": [
@@ -10523,7 +10613,7 @@ public class ShortcutHelper {
                 };
 
                 // Connect to AdaptiveController for RLCD
-                let (arm_id, rl_telem) = {
+                let (arm_id, rl_telem, bandit) = {
                     let mut ctrl = get_adaptive_controller(db_dir).lock().unwrap();
                     let q_text = &decision_res.query;
                     let is_code = q_text.contains("fn ") || q_text.contains("def ") || q_text.contains("function ") || q_text.contains("class ") || q_text.contains("```");
@@ -10535,6 +10625,7 @@ public class ShortcutHelper {
                     let candidate_actions = DecisionAction::default_candidate_actions();
                     let (action, _score) = ctrl.select_action(&feature_state, &candidate_actions);
                     let telem = ctrl.telemetry();
+                    let bandit = decision_engine::compute_bandit_telemetry(action.arm_id, telem.exploration_rate, decision_res.top_score, &decision_res.top_choice);
                     let telem_val = serde_json::json!({
                         "regime": telem.regime,
                         "decisions_count": telem.decisions_count,
@@ -10543,12 +10634,18 @@ public class ShortcutHelper {
                         "model_tier": action.model_tier,
                         "consensus_panel_size": action.consensus_panel_size,
                         "verification_depth": action.verification_depth,
+                        "contextual_bandit": bandit,
+                        "active_arm": bandit.active_arm,
+                        "exploration_bonus": bandit.exploration_bonus,
+                        "predicted_reward": bandit.predicted_reward,
+                        "domain_affinity": bandit.domain_affinity,
                     });
-                    (action.arm_id, telem_val)
+                    (action.arm_id, telem_val, bandit)
                 };
 
                 decision_res.rl_arm = Some(arm_id);
                 decision_res.rl_telemetry = Some(rl_telem);
+                decision_res.bandit_telemetry = Some(bandit);
                 let resp_body = serde_json::to_string_pretty(&decision_res).unwrap_or_default();
                 let response = format!(
                     "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",

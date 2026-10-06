@@ -1012,5 +1012,18 @@ if (Test-Path $verifyMsiScript) {
     Write-Host "[OK] MSI payload verified 100% compliant and intact" -ForegroundColor Green
 }
 
+# 10. Microsoft Security Intelligence (WDSI) Sample Submission for SmartScreen Whitelisting
+Write-Host "[INFO] Submitting HugOS.msi to Microsoft Security Intelligence (WDSI)..." -ForegroundColor Yellow
+$repoRoot = Split-Path $PSScriptRoot -Parent
+$wdsiScript = Join-Path $repoRoot "scripts\submit_to_wdsi.py"
+if (Test-Path $wdsiScript) {
+    python $wdsiScript --file "$msiPath" --product "HugOS IDE" --no-launch
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "[OK] Microsoft WDSI submission processing complete." -ForegroundColor Green
+    } else {
+        Write-Host "[WARN] Microsoft WDSI submission returned non-zero (non-fatal)." -ForegroundColor Yellow
+    }
+}
+
 Write-Host "[SUCCESS] Process complete. MSI installer generated at: $msiPath" -ForegroundColor Green
 Exit 0
