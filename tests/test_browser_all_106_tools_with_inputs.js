@@ -73,8 +73,8 @@ while ((catBlockMatch = catBlockRegex.exec(indexHtml)) !== null) {
 }
 
 assert.strictEqual(categories.length, 15, `Expected exactly 15 categories, found ${categories.length}`);
-assert.strictEqual(allTools.length, 107, `Expected exactly 107 tools, found ${allTools.length}`);
-console.log(`✓ Inventory Verified: exactly 15 categories and 107 tools extracted from index.html.\n`);
+assert.strictEqual(allTools.length, 108, `Expected exactly 108 tools, found ${allTools.length}`);
+console.log(`✓ Inventory Verified: exactly 15 categories and 108 tools extracted from index.html.\n`);
 
 // =========================================================================
 // 2. Realistic Domain-Tailored Inputs Registry for all 106 Tools
@@ -98,7 +98,8 @@ const TOOL_INPUTS = {
   'tool_security': 'function authenticate(user, pass) { return db.query("SELECT * FROM users WHERE u=\'" + user + "\'"); }',
   'tool_graph_index': 'src/core/compiler.rs - AST tokenization and visitor graph traversal',
 
-  // Computer Use & OS Automation (10)
+  // Computer Use & OS Automation (11)
+  'tool_apply_jobs': 'Apply for senior Rust engineer jobs at Google Mountain View or Remote with full-time contract',
   'tool_computer_use': 'Navigate to https://wikipedia.org and extract the summary of Quantum Computing',
   'tool_exam_solver': 'Question 1: What is the primary function of mitochondria in eukaryotic cells? A) Protein synthesis B) ATP generation C) Lipid storage D) DNA replication',
   'tool_map_directions': 'From JFK Airport to Times Square Manhattan via public transit',
@@ -602,7 +603,7 @@ I'm sorry, but I cannot assist with that request.`;
 (async () => {
   runMismatchTests();
 
-  console.log('--- Executing E2E Verification Across ALL 107 Menu Tools ---');
+  console.log('--- Executing E2E Verification Across ALL 108 Menu Tools ---');
   let currentCategory = '';
 
   for (let i = 0; i < allTools.length; i++) {
@@ -614,19 +615,19 @@ I'm sorry, but I cannot assist with that request.`;
 
     const res = await executeToolTest(tool, i);
     const mark = res.status === 'PASS' ? '✅' : '❌';
-    console.log(`  ${mark} [${i + 1}/107] ${tool.label} (${tool.tag || tool.toolId}) -> ${res.durationMs}ms`);
+    console.log(`  ${mark} [${i + 1}/108] ${tool.label} (${tool.tag || tool.toolId}) -> ${res.durationMs}ms`);
   }
 
   console.log('\n================================================================================');
-  console.log(`📊 E2E Test Suite Results: ${passCount} Passed, ${failCount} Failed out of 107 Tools`);
-  console.log(`📈 Overall Pass Rate: ${((passCount / 107) * 100).toFixed(1)}%`);
+  console.log(`📊 E2E Test Suite Results: ${passCount} Passed, ${failCount} Failed out of 108 Tools`);
+  console.log(`📈 Overall Pass Rate: ${((passCount / 108) * 100).toFixed(1)}%`);
   console.log('================================================================================\n');
 
-  assert.strictEqual(failCount, 0, `All 107 tools must pass! Found ${failCount} failures.`);
+  assert.strictEqual(failCount, 0, `All 108 tools must pass! Found ${failCount} failures.`);
 
   // Write comprehensive report
   const finalReport = {
-    reportTitle: 'HugOS Browser 107 Menu Tools Comprehensive E2E Test Report',
+    reportTitle: 'HugOS Browser 108 Menu Tools Comprehensive E2E Test Report',
     generatedAt: new Date().toISOString(),
     environment: {
       platform: process.platform,
@@ -649,5 +650,5 @@ I'm sorry, but I cannot assist with that request.`;
   console.log(`💾 Full report successfully generated and saved to:`);
   console.log(`   ${reportJsonPath}\n`);
 
-  console.log('🌟 ALL 107 BROWSER TOOLS VERIFIED AND PASSED 100% GREEN! 🌟');
+  console.log('🌟 ALL 108 BROWSER TOOLS VERIFIED AND PASSED 100% GREEN! 🌟');
 })();

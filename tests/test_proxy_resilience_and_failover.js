@@ -227,10 +227,32 @@ function fetchHttp(url) {
   });
 }
 
+const { spawn } = require('child_process');
+
 (async () => {
+  let spawnedServer = null;
   try {
-    const health = await fetchHttp('http://127.0.0.1:5000/health');
-    assert.strictEqual(health.statusCode, 200, 'Server /health must return 200 OK');
+    let health = null;
+    try {
+      health = await fetchHttp('http://127.0.0.1:5000/health');
+    } catch (_) {
+      console.log('  [INFO] Master Server offline on port 5000. Auto-starting test server instance...');
+      const cliPath = path.resolve(__dirname, '../target/release/cli.exe');
+      if (fs.existsSync(cliPath)) {
+        spawnedServer = spawn(cliPath, ['--server', '--port', '5000'], {
+          cwd: path.dirname(cliPath),
+          stdio: 'ignore'
+        });
+        for (let i = 0; i < 30; i++) {
+          await new Promise(r => setTimeout(r, 400));
+          try {
+            health = await fetchHttp('http://127.0.0.1:5000/health');
+            if (health && health.statusCode === 200) break;
+          } catch (_) {}
+        }
+      }
+    }
+    assert(health && health.statusCode === 200, 'Server /health must return 200 OK');
     console.log('  ✅ [PASS] Master Server health probe 200 OK on port 5000');
 
     console.log('  [INFO] Querying /api/proxy?url=https://www.yahoo.com...');
