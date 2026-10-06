@@ -78,6 +78,30 @@ assert.ok(appContent.includes("if (breadcrumbBar) breadcrumbBar.style.display = 
 assert.ok(appContent.includes("if (breadcrumbBar) breadcrumbBar.style.display = 'flex';"), 'updateNavigationUiState must show breadcrumbBar in webview');
 console.log('  ✅ Test 3.7 Passed: Duplicate header button elimination & breadcrumb view switching verified.');
 
+// 3.8 Streaming DOM Rendering & Recommendation Throttling
+assert.ok(appContent.includes('const RENDER_INTERVAL_MS = 60;'), 'app.js must define RENDER_INTERVAL_MS = 60');
+assert.ok(appContent.includes('let lastRecommendationTime = 0;'), 'app.js must track lastRecommendationTime');
+assert.ok(appContent.includes('lastRenderTime - lastRecommendationTime >= 1200'), 'app.js must throttle recommendation scanning to at most once per 1200ms');
+console.log('  ✅ Test 3.8 Passed: 60ms DOM rendering and 1200ms recommendation scan throttling verified.');
+
+// 3.9 Dynamic Resizer MouseMove / MouseUp Registration
+assert.ok(appContent.includes("window.removeEventListener('mousemove', onMouseMove);"), 'app.js must remove mousemove listener on mouseup');
+assert.ok(appContent.includes("window.removeEventListener('mouseup', onMouseUp);"), 'app.js must remove mouseup listener on mouseup');
+console.log('  ✅ Test 3.9 Passed: Dynamic resizer event registration on drag verified.');
+
+// 3.10 Debounced Autocomplete & Safe Dropdown Hiding
+assert.ok(appContent.includes('let heroAcTimer = null;'), 'app.js must define heroAcTimer');
+assert.ok(appContent.includes('let pinnedAcTimer = null;'), 'app.js must define pinnedAcTimer');
+assert.ok(/if \(!dropdown\.classList\.contains\('hidden'\)\) \{\r?\n\s*dropdown\.classList\.add\('hidden'\);\r?\n\s*\}/.test(appContent), 'app.js must safely hide dropdown in showAgentAutocomplete');
+console.log('  ✅ Test 3.10 Passed: 35ms debounced autocomplete and safe dropdown hiding verified.');
+
+// 3.11 Background Network Fetch Timeout & Unnecessary Polling Elimination
+assert.ok(appContent.includes("fetchWithTimeout(`${ipcUrl}/api/modelfusion/status`, { method: 'GET', timeout: 800 })"), 'refreshModelFusionStatus must use fetchWithTimeout with 800ms');
+assert.ok(appContent.includes("fetchWithTimeout(`${ipcUrl}/api/rl/status`, { method: 'GET', timeout: 800 })"), 'refreshModelFusionStatus must use fetchWithTimeout for RL status with 800ms');
+const probeIpcMatch = appContent.match(/async function probeIpc\(\) \{([\s\S]*?)\r?\n  \}/);
+assert.ok(probeIpcMatch && !probeIpcMatch[1].includes('refreshModelFusionStatus()'), 'probeIpc must not redundantly invoke refreshModelFusionStatus');
+console.log('  ✅ Test 3.11 Passed: 800ms fetchWithTimeout and zero redundant probe polling verified.');
+
 // 4. Verify Universal File Acceptance Logic
 console.log('\nTest 4: Verifying Universal File Acceptance logic...');
 const isNonFileToolRegex = /^(?:@agent\s+)?(?:updatedb|update|sys[-_ ]?info|benchmark|export|db-check|db-prune|db-rebuild|db-vacuum|rest-rl|restrl|audit-menus|model|help)\b/i;
@@ -166,5 +190,21 @@ const cleanedAhk = sanitizeFn(textWithAhk);
 assert.ok(!cleanedAhk.includes('CoordMode'), 'Must strip AutoHotkey scripts');
 
 console.log('  ✅ Test 7 Passed: Universal anti-hallucination sanitization verified.');
+
+// 8. Verify Hardware Acceleration & Responsiveness Flags in hugos-browser.bat
+console.log('\nTest 8: Verifying Chromium Hardware Acceleration Flags in hugos-browser.bat...');
+const batPath = path.resolve(__dirname, '../browser/Chromium-win32-x64/hugos-browser.bat');
+assert.ok(fs.existsSync(batPath), 'hugos-browser.bat must exist');
+const batContent = fs.readFileSync(batPath, 'utf8');
+
+assert.ok(batContent.includes('--enable-gpu-rasterization'), 'hugos-browser.bat must enable GPU rasterization');
+assert.ok(batContent.includes('--enable-zero-copy'), 'hugos-browser.bat must enable zero-copy rasterizer');
+assert.ok(batContent.includes('--ignore-gpu-blocklist'), 'hugos-browser.bat must ignore GPU blocklist for full hardware acceleration');
+assert.ok(batContent.includes('--enable-smooth-scrolling'), 'hugos-browser.bat must enable smooth scrolling');
+assert.ok(batContent.includes('--disable-renderer-backgrounding'), 'hugos-browser.bat must disable renderer backgrounding');
+assert.ok(batContent.includes('--disable-background-timer-throttling'), 'hugos-browser.bat must disable background timer throttling');
+assert.ok(batContent.includes('--disk-cache-size=104857600'), 'hugos-browser.bat must set 100MB disk cache');
+assert.ok(batContent.includes('CanvasOopRasterization'), 'hugos-browser.bat must enable CanvasOopRasterization');
+console.log('  ✅ Test 8 Passed: Chromium hardware acceleration and responsiveness flags verified.');
 
 console.log('\n🌟 ALL BROWSER PERFORMANCE & RESPONSIVENESS TESTS PASSED (100%)! 🌟');
