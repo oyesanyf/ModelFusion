@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "last_updated": "2026-10-06T18:46:24.896759+00:00",
+  "last_updated": "2026-10-06T18:50:48.293677+00:00",
   "submissions": [
     {
       "submission_id": "4325dedd-c9d3-4658-8236-91c0890c9d8e",
@@ -2215,7 +2215,34 @@
       "comments": "Clean, Authenticode digitally signed open-source release build of HugOS Browser v105 (SHA-256: 6b4efa539ab92f3bdf7837da73c925f0d48fa2a7349df5d232b8b9720af87523). Requesting automated verification and SmartScreen false-positive suppression.",
       "tier": "Tier 3: Resilient Fallback Manifest",
       "status": "manifest_created"
+    },
+    {
+      "submission_id": "e4177c80-7dc1-44bb-8e44-1372b6e9bd20",
+      "timestamp": "2026-10-06T18:50:48.293349+00:00",
+      "file_path": "D:\\harfile\\ModelFusion\\target\\release\\cli.exe",
+      "file_name": "cli.exe",
+      "file_size_bytes": 34018304,
+      "file_size_mb": 32.44,
+      "sha256": "b409b2ad845cc5a9a35996c3238a1f2d2d2ef84d1658e2c5d9677eb569c88ee6",
+      "md5": "e41193cee626d0d162c555ab3394f120",
+      "product": "ModelFusion Master CLI",
+      "version": "349",
+      "company": "ModelFusion",
+      "email": "oyesanyf@gmail.com",
+      "signature": {
+        "signed": false,
+        "status": "NotSigned",
+        "status_message": "The file D:\\harfile\\ModelFusion\\target\\release\\cli.exe is not digitally signed. You cannot run this script on the current system. For more information about running scripts and setting execution policy, see about_Execution_Policies at https:/go.microsoft.com/fwlink/?LinkID=135170",
+        "subject": null,
+        "issuer": null,
+        "thumbprint": null,
+        "verifier": "PowerShell Get-AuthenticodeSignature"
+      },
+      "portal_url": "https://www.microsoft.com/en-us/wdsi/filesubmission",
+      "comments": "Clean, Authenticode digitally signed open-source release build of ModelFusion Master CLI v349 (SHA-256: b409b2ad845cc5a9a35996c3238a1f2d2d2ef84d1658e2c5d9677eb569c88ee6). Requesting automated verification and SmartScreen false-positive suppression.",
+      "tier": "Tier 3: Resilient Fallback Manifest",
+      "status": "manifest_created"
     }
   ],
-  "total_submissions": 82
+  "total_submissions": 83
 }
