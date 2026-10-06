@@ -9188,6 +9188,46 @@ pub async fn fetch_installed_ollama_models(client: &reqwest::Client, ollama_endp
     Vec::new()
 }
 
+pub fn format_missing_ollama_model_guidance(model_name: &str, installed_models: &[String], auto_pull_started: bool) -> String {
+    let pull_status = if auto_pull_started {
+        format!("An **automatic background pull** for `{}` has been initiated.", model_name)
+    } else {
+        format!("The model `{}` could not be found in your local Ollama runtime.", model_name)
+    };
+
+    let models_formatted = if !installed_models.is_empty() {
+        installed_models
+            .iter()
+            .map(|m| format!("* `{}`", m))
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        "*(No local models found in your Ollama library yet)*".to_string()
+    };
+
+    let switch_tip = if let Some(first_m) = installed_models.first() {
+        format!("\n   *Tip: You can switch models immediately in chat, for example: `@agent model {}` or select it in your model picker.*", first_m)
+    } else {
+        String::new()
+    };
+
+    format!(
+r#"### ⚠️ Model Missing: `{model_name}`
+
+{pull_status}
+
+#### What you can do:
+1. **Run Ollama to pull the model** and monitor download progress in your terminal:
+   ```bash
+   ollama pull {model_name}
+   ```
+2. **Switch to an available local model** already installed in Ollama:
+{models_formatted}{switch_tip}
+
+3. **Re-run your request** once download completes."#
+    )
+}
+
 fn strip_images_from_chat_payload(val: &mut serde_json::Value) {
     if let Some(obj) = val.as_object_mut() {
         obj.remove("images");
@@ -11234,13 +11274,22 @@ public class ShortcutHelper {
                     let failed_model = current_json.get("model").and_then(|v| v.as_str()).unwrap_or("").to_string();
                     eprintln!("[SERVER WATCHER] ⚠️ Ollama returned status {} for model '{}'. Auto-healing daemon and switching to fallback...", res.status(), failed_model);
 
+                    if !failed_model.is_empty() {
+                        let pull_model = failed_model.clone();
+                        tokio::spawn(async move {
+                            let _ = hidden_std_command("ollama").args(["pull", &pull_model]).output();
+                        });
+                    }
+
                     if res.status().is_server_error() {
                         let _ = tokio::task::spawn_blocking(model_selection::memory::recover_and_restart_ollama).await;
                         tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
                     }
 
                     let installed = fetch_installed_ollama_models(&client, &ollama_endpoint).await;
-                    let candidates: Vec<String> = installed.into_iter().filter(|m| m != &failed_model).collect();
+                    let candidates: Vec<String> = installed.iter().filter(|m| *m != &failed_model).cloned().collect();
+                    let mut fallback_success = false;
+
                     if let Some(fallback_model) = select_best_installed_ollama_model(&candidates) {
                         eprintln!("[SERVER WATCHER] 🔄 Auto-healing fallback: switching model '{}' -> '{}'", failed_model, fallback_model);
                         current_json["model"] = serde_json::json!(&fallback_model);
@@ -11255,12 +11304,44 @@ public class ShortcutHelper {
                         if let Ok(retry_res) = client.post(&chat_url).header("Content-Type", "application/json").body(retry_bytes).send().await {
                             if retry_res.status().is_success() {
                                 res = retry_res;
+                                fallback_success = true;
                             }
                         }
                     } else if let Ok(retry_res) = client.post(&chat_url).header("Content-Type", "application/json").body(post_bytes.clone()).send().await {
                         if retry_res.status().is_success() {
                             res = retry_res;
+                            fallback_success = true;
                         }
+                    }
+
+                    if !fallback_success && (res.status() == reqwest::StatusCode::NOT_FOUND || res.status().is_server_error()) {
+                        let guidance = format_missing_ollama_model_guidance(&failed_model, &installed, true);
+                        let guidance_val = serde_json::json!({
+                            "model": failed_model,
+                            "created_at": chrono::Utc::now().to_rfc3339(),
+                            "message": {
+                                "role": "assistant",
+                                "content": guidance
+                            },
+                            "done": true
+                        });
+                        let bytes = serde_json::to_vec(&guidance_val).unwrap_or_default();
+                        if !is_streaming {
+                            let response = format!(
+                                "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                                bytes.len()
+                            );
+                            let _ = socket.write_all(response.as_bytes()).await;
+                            let _ = socket.write_all(&bytes).await;
+                            let _ = socket.flush().await;
+                        } else {
+                            let initial_resp = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/x-ndjson\r\nConnection: close\r\n\r\n";
+                            let _ = socket.write_all(initial_resp.as_bytes()).await;
+                            let _ = socket.write_all(&bytes).await;
+                            let _ = socket.write_all(b"\n").await;
+                            let _ = socket.flush().await;
+                        }
+                        return;
                     }
                 }
 
@@ -14312,7 +14393,8 @@ sequenceDiagram
                             } else {
                                 resolve_dynamic_ollama_model(model_override.as_deref(), budget <= 0.5, &endpoint).await
                             };
-                            let ollama_model = dynamic_model.as_str();
+                            let chosen_model = model_override.as_deref().unwrap_or(dynamic_model.as_str());
+                            let ollama_model = chosen_model;
 
                             let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
 
@@ -14566,7 +14648,31 @@ sequenceDiagram
                                             }
                                             eprintln!("[SERVER] 🔄 Agentic Loop: Turn {}/{} complete. Chaining next turn...", turn + 1, actual_loops);
                                         }
-                                        _ => {
+                                        Ok(res) => {
+                                            let status = res.status();
+                                            let err = res.text().await.unwrap_or_default();
+                                            if status == reqwest::StatusCode::NOT_FOUND || err.to_lowercase().contains("not found") {
+                                                let installed = fetch_installed_ollama_models(&client, &endpoint).await;
+                                                let to_pull = ollama_model.to_string();
+                                                tokio::spawn(async move {
+                                                    let _ = hidden_std_command("ollama").args(["pull", &to_pull]).output();
+                                                });
+                                                return format_missing_ollama_model_guidance(ollama_model, &installed, true);
+                                            }
+                                            if !accumulated_content.is_empty() {
+                                                break;
+                                            }
+                                        }
+                                        Err(e) => {
+                                            let err_str = e.to_string();
+                                            if err_str.to_lowercase().contains("not found") {
+                                                let installed = fetch_installed_ollama_models(&client, &endpoint).await;
+                                                let to_pull = ollama_model.to_string();
+                                                tokio::spawn(async move {
+                                                    let _ = hidden_std_command("ollama").args(["pull", &to_pull]).output();
+                                                });
+                                                return format_missing_ollama_model_guidance(ollama_model, &installed, true);
+                                            }
                                             if !accumulated_content.is_empty() {
                                                 break;
                                             }
@@ -14613,11 +14719,29 @@ sequenceDiagram
                                     return content;
                                 }
                                 Ok(res) => {
+                                    let status = res.status();
                                     let err = res.text().await.unwrap_or_default();
                                     eprintln!("[SERVER] ⚠️ Ollama fast path HTTP error: {}. Falling back to orchestrator.", err);
+                                    if status == reqwest::StatusCode::NOT_FOUND || err.to_lowercase().contains("not found") {
+                                        let installed = fetch_installed_ollama_models(&client, &endpoint).await;
+                                        let to_pull = ollama_model.to_string();
+                                        tokio::spawn(async move {
+                                            let _ = hidden_std_command("ollama").args(["pull", &to_pull]).output();
+                                        });
+                                        return format_missing_ollama_model_guidance(ollama_model, &installed, true);
+                                    }
                                 }
                                 Err(e) => {
-                                    eprintln!("[SERVER] ⚠️ Ollama fast path failed: {}. Falling back to orchestrator.", e);
+                                    let err_str = e.to_string();
+                                    eprintln!("[SERVER] ⚠️ Ollama fast path failed: {}. Falling back to orchestrator.", err_str);
+                                    if err_str.to_lowercase().contains("not found") {
+                                        let installed = fetch_installed_ollama_models(&client, &endpoint).await;
+                                        let to_pull = ollama_model.to_string();
+                                        tokio::spawn(async move {
+                                            let _ = hidden_std_command("ollama").args(["pull", &to_pull]).output();
+                                        });
+                                        return format_missing_ollama_model_guidance(ollama_model, &installed, true);
+                                    }
                                 }
                             }
                             // If fast path fails, fall through to full orchestrator below with fusion preserved

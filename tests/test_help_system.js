@@ -149,8 +149,8 @@ for (const tc of typoCommands) {
 }
 console.log(`✅ Check 2 Passed: All ${typoCommands.length} command & typo variants parsed with exact token accuracy.`);
 
-// 3. Test Resolution Across All 14 Categories
-console.log('\n--- Check 3: Resolution Across All 14 Menu Categories ---');
+// 3. Test Resolution Across All 15 Categories
+console.log('\n--- Check 3: Resolution Across All 15 Menu Categories ---');
 
 const expectedCategories = [
   'classification',
@@ -163,20 +163,21 @@ const expectedCategories = [
   'legal',
   'agent',
   'science',
+  'sentiment',
   'utilities',
   'audio',
   'web',
   'writing'
 ];
 
-assert.strictEqual(Object.keys(HELP_CATEGORIES).length, 14, 'HELP_CATEGORIES must contain exactly 14 menus');
+assert.strictEqual(Object.keys(HELP_CATEGORIES).length, 15, 'HELP_CATEGORIES must contain exactly 15 menus');
 
 for (const catKey of expectedCategories) {
   const cat = HELP_CATEGORIES[catKey];
   assert.ok(cat, `Category "${catKey}" must exist in HELP_CATEGORIES`);
   assert.ok(cat.title, `Category "${catKey}" must have a title`);
   assert.ok(cat.icon, `Category "${catKey}" must have an icon`);
-  assert.ok(cat.menuIndex >= 1 && cat.menuIndex <= 14, `Category "${catKey}" menuIndex must be 1..14`);
+  assert.ok(cat.menuIndex >= 1 && cat.menuIndex <= 15, `Category "${catKey}" menuIndex must be 1..15`);
   assert.ok(Array.isArray(cat.engines) && cat.engines.length >= 2, `Category "${catKey}" must have >=2 engines`);
   assert.ok(Array.isArray(cat.directives) && cat.directives.length >= 2, `Category "${catKey}" must have >=2 directives`);
   assert.ok(Array.isArray(cat.examples) && cat.examples.length >= 2, `Category "${catKey}" must have >=2 runnable examples`);
@@ -193,7 +194,7 @@ for (const catKey of expectedCategories) {
   assert.ok(html.includes('help-table'), `HTML for ${catKey} must contain help-table`);
   assert.ok(html.includes('data-help-cmd'), `HTML for ${catKey} must contain interactive data-help-cmd attributes`);
 }
-console.log(`✅ Check 3 Passed: All 14 categories verified with rich metadata, tables, and HTML rendering.`);
+console.log(`✅ Check 3 Passed: All 15 categories verified with rich metadata, tables, and HTML rendering.`);
 
 // 4. Test User Prompt Specific Case: "@help science of @helo esm" and Model Deep Dives
 console.log('\n--- Check 4: User Prompt Case ("@help science of @helo esm") & Models ---');

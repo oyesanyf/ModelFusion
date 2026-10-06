@@ -6293,6 +6293,118 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
   }
   window.renderErrorCard = renderErrorCard;
 
+  function renderMissingModelGuidanceCard(targetBubble, missingModel, installedModels, autoPullTriggered) {
+    if (!targetBubble) return;
+    const modelTag = missingModel || 'selected model';
+    const installed = Array.isArray(installedModels) ? installedModels.filter(Boolean) : [];
+    
+    let installedListHtml = '';
+    if (installed.length > 0) {
+      installedListHtml = `
+        <div style="margin-top: 10px; font-size: 12px;">
+          <div style="font-weight: 600; margin-bottom: 6px; color: var(--text-primary);">Installed Ollama Models:</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+            ${installed.map(m => `
+              <button type="button" class="hero-chip" style="font-size: 11px; padding: 3px 8px; cursor: pointer; background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.35); color: #60a5fa;" onclick="if(window.quickSwitchModel){window.quickSwitchModel('${m}');}">
+                🔄 Switch to ${m}
+              </button>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    } else {
+      installedListHtml = `
+        <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary);">
+          No local models currently found installed in Ollama. Run <code>ollama pull qwen2.5:7b</code> to get started.
+        </div>
+      `;
+    }
+
+    const autoPullNotice = autoPullTriggered ? `
+      <div style="margin-top: 8px; padding: 6px 10px; border-radius: 6px; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); font-size: 12px; color: #34d399;">
+        🚀 <strong>Automatic Background Pull Initiated:</strong> HugOS has triggered <code>ollama pull ${modelTag}</code> in the background. It will become ready as soon as the download finishes.
+      </div>
+    ` : '';
+
+    const contentHtml = `
+      <div class="error-card missing-model-card" style="border-left: 4px solid #f59e0b; background: rgba(245, 158, 11, 0.08); padding: 14px; border-radius: 8px; margin: 8px 0;">
+        <div style="display: flex; align-items: center; gap: 8px; font-weight: 700; color: #f59e0b; font-size: 14px;">
+          <span>⚠️ Model Not Found in Ollama</span>
+        </div>
+        <div style="margin-top: 8px; font-size: 13px; line-height: 1.5; color: var(--text-primary);">
+          The requested model <strong style="color: #60a5fa;">${modelTag}</strong> is not installed locally in Ollama.
+        </div>
+        ${autoPullNotice}
+        <div style="margin-top: 10px; font-size: 12px; color: var(--text-secondary);">
+          To download it manually in your terminal, run:
+          <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+            <code style="background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 4px; font-family: monospace; color: #38bdf8;">ollama pull ${modelTag}</code>
+            <button type="button" class="hero-chip" style="font-size: 11px; padding: 2px 8px; cursor: pointer;" onclick="navigator.clipboard.writeText('ollama pull ${modelTag}'); if(window.termLog) window.termLog('Copied to clipboard: ollama pull ${modelTag}', 'info');">📋 Copy</button>
+          </div>
+        </div>
+        ${installedListHtml}
+        <div class="error-card-actions" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;">
+          <button type="button" class="error-retry-btn" style="background: #3b82f6; color: #fff;" onclick="if(window.triggerModelPull){window.triggerModelPull('${modelTag}');}">📥 Pull Model Now</button>
+          <button type="button" class="error-retry-btn" style="background: rgba(255,255,255,0.1); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.2);" onclick="if(window.refreshOllamaTags){window.refreshOllamaTags();}">🔄 Refresh Models</button>
+          <button type="button" class="error-retry-btn" style="background: rgba(255,255,255,0.1); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.2);" onclick="if(window.executeCliCommand){window.executeCliCommand('@agent sys-info');}">💻 System Info</button>
+        </div>
+      </div>
+    `;
+
+    const bubbleContent = targetBubble.querySelector ? (targetBubble.querySelector('.chat-bubble-content') || targetBubble.querySelector('.stream-content') || targetBubble) : targetBubble;
+    if (bubbleContent) bubbleContent.innerHTML = contentHtml;
+    if (window.termLog) termLog(`[MODEL] Missing model guidance rendered for: ${modelTag}`, 'warn');
+    setChatRunningState(false);
+    if (chatMessages && currentSettings.autoScroll !== false) {
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+  }
+  window.renderMissingModelGuidanceCard = renderMissingModelGuidanceCard;
+
+  function quickSwitchModel(modelName) {
+    if (!modelName) return;
+    try {
+      if (typeof window.setSelectedModel === 'function') {
+        window.setSelectedModel(modelName);
+      } else {
+        const sel = document.getElementById('model-select') || document.querySelector('.model-selector');
+        if (sel) {
+          sel.value = modelName;
+          sel.dispatchEvent(new Event('change'));
+        }
+      }
+      currentSettings.model = modelName;
+      if (window.termLog) termLog(`[MODEL] Switched active model to: ${modelName}`, 'info');
+      const chatInput = document.getElementById('chat-input') || document.querySelector('.chat-input-textarea');
+      if (chatInput) {
+        chatInput.placeholder = `Ask anything using ${modelName}...`;
+        chatInput.focus();
+      }
+    } catch (e) {
+      console.warn('[MODEL] Failed to switch model:', e);
+    }
+  }
+  window.quickSwitchModel = quickSwitchModel;
+
+  function triggerModelPull(modelName) {
+    if (!modelName) return;
+    if (window.termLog) termLog(`[MODEL] Initiating pull for: ${modelName}...`, 'info');
+    fetch('/api/models/pull', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: modelName })
+    }).then(res => res.json()).then(data => {
+      if (window.termLog) termLog(`[MODEL] Pull started for ${modelName}: ${JSON.stringify(data)}`, 'info');
+    }).catch(() => {
+      fetch('http://127.0.0.1:11434/api/pull', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: modelName, stream: false })
+      }).catch(err => console.warn('Direct pull error:', err));
+    });
+  }
+  window.triggerModelPull = triggerModelPull;
+
   // ---------------------------------------------------------------------------
   // ---------------------------------------------------------------------------
   // JSON Wrapper Unwrapper & Prose Normalizer
@@ -11947,11 +12059,43 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
             options.continuationStatusEl.style.color = 'var(--error-color, #ef4444)';
           }
         } else {
-          let switchPrompt = '';
-          if (window.location.protocol === 'file:') {
-            switchPrompt = '<br><a href="http://localhost:5000/index.html" class="hero-chip" style="font-size: 11px; padding: 4px 10px; display: inline-block; margin-top: 6px; text-decoration: none; cursor: pointer;">Switch to http://localhost:5000</a>';
+          const isMissingModel = /404|not found/i.test(err.message || '');
+          if (isMissingModel) {
+            let installed = availableOllamaModels || [];
+            try {
+              let tagRes = await fetch(`${ollamaUrl}/api/tags`).catch(() => null);
+              if (!tagRes || !tagRes.ok) {
+                if (window.isIpcOnline && ipcUrl) {
+                  tagRes = await fetch(`${ipcUrl}/api/tags`).catch(() => null);
+                }
+              }
+              if (tagRes && tagRes.ok) {
+                const tagData = await tagRes.json();
+                installed = (tagData.models || []).map(m => typeof m === 'string' ? m : (m.name || m.model || '')).filter(Boolean);
+              }
+            } catch (_) {}
+            try {
+              if (window.isIpcOnline && ipcUrl) {
+                fetch(`${ipcUrl}/api/models/pull`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ model: resolvedOllamaModel })
+                }).catch(() => {});
+              }
+              fetch(`${ollamaUrl}/api/pull`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: resolvedOllamaModel, stream: false })
+              }).catch(() => {});
+            } catch (_) {}
+            renderMissingModelGuidanceCard(assistantBubble, resolvedOllamaModel, installed, true);
+          } else {
+            let switchPrompt = '';
+            if (window.location.protocol === 'file:') {
+              switchPrompt = '<br><a href="http://localhost:5000/index.html" class="hero-chip" style="font-size: 11px; padding: 4px 10px; display: inline-block; margin-top: 6px; text-decoration: none; cursor: pointer;">Switch to http://localhost:5000</a>';
+            }
+            renderErrorCard(assistantBubble, '⚠️ Local AI Engine Unreachable', `Connection Error: ${err.message}. Ensure Ollama is running at ${ollamaUrl} with an installed model (e.g. ${fallbackDisplayModel}). Check that 'ollama serve' is running or restart the application.${switchPrompt}`);
           }
-          renderErrorCard(assistantBubble, '⚠️ Local AI Engine Unreachable', `Connection Error: ${err.message}. Ensure Ollama is running at ${ollamaUrl} with an installed model (e.g. ${fallbackDisplayModel}). Check that 'ollama serve' is running or restart the application.${switchPrompt}`);
         }
       }
       responseLine.remove();
@@ -14567,9 +14711,13 @@ Respond with ONLY a valid JSON object matching this schema:
         if (lower === prefix || lower.startsWith(prefix + ' ')) {
           const target = cmd.slice(prefix.length).trim();
           if (!target && currentAttachments.length === 0) {
-            pendingAutoCommand = cmd;
-            if (filePicker) filePicker.click();
-            termLog(`📎 File required. Opening file picker to select file for ${cmd}...`, 'info');
+            termLog(`📎 Command "${cmd}" requires a target file or path. Use the attachment button to select a file or specify a path in your query.`, 'warn');
+            const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+              ? cliPromptInputPinned
+              : cliPromptInput;
+            if (activeInput) {
+              activeInput.placeholder = `Attach a file or specify path for ${cmd}...`;
+            }
             return;
           }
         }
@@ -22166,9 +22314,35 @@ If you are asked about real-world facts such as world leaders, heads of state, c
   }
 
   const sidebarImages = document.getElementById('sidebar-images');
-  if (sidebarImages && filePicker) {
+  if (sidebarImages) {
     sidebarImages.addEventListener('click', () => {
-      filePicker.click();
+      if (sidebarToolsAccordion && sidebarToolsAccordion.classList.contains('collapsed')) {
+        sidebarToolsAccordion.classList.remove('collapsed');
+        const chevron = document.getElementById('tools-accordion-chevron');
+        if (chevron) chevron.textContent = '▾';
+      }
+      const visionCatHeader = document.querySelector('.tool-category-header[data-cat="vision"]');
+      if (visionCatHeader) {
+        const content = visionCatHeader.nextElementSibling;
+        const chevron = visionCatHeader.querySelector('.cat-chevron');
+        if (content && content.classList.contains('collapsed')) {
+          content.classList.remove('collapsed');
+          if (chevron) chevron.textContent = '▾';
+          visionCatHeader.classList.add('open');
+        }
+        visionCatHeader.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+      const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+        ? cliPromptInputPinned
+        : cliPromptInput;
+      if (activeInput) {
+        activeInput.value = '@agent image ';
+        activeInput.focus();
+        activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
+        activeInput.placeholder = 'Describe image to generate or ask question about visual content...';
+        activeInput.style.height = 'auto';
+        activeInput.style.height = Math.min(activeInput.scrollHeight, 160) + 'px';
+      }
     });
   }
 
@@ -22992,6 +23166,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
         if (chevron) {
           chevron.textContent = isCollapsed ? '▸' : '▾';
         }
+        catHeader.classList.toggle('open', !isCollapsed);
       }
     });
   });
@@ -23067,14 +23242,8 @@ If you are asked about real-world facts such as world leaders, heads of state, c
       document.querySelectorAll('.tool-item-btn, .tool-command-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
 
-      if (isFileTool) {
-        pendingAutoCommand = cmd;
-        if (filePicker) filePicker.click();
-        termLog(`📎 Select a file to process with ${cmd}...`, 'info');
-      } else {
-        pendingAutoCommand = null;
-        termLog(`[COMMAND] Prepopulated: "${cmd}". Only one command active at a time.`, 'info');
-      }
+      pendingAutoCommand = null;
+      termLog(`[COMMAND] Prepopulated: "${cmd}". Type your query or attach a file when ready.`, 'info');
     });
   });
 
