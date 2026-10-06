@@ -1,0 +1,45 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 639 >>
+stream
+BT
+/F1 12 Tf
+72 720 Td
+18 TL
+(Jane Doe) '
+(jane.doe.systems@gmail.com | +1 \(555\) 432-8765 | San Francisco, CA) '
+(https://linkedin.com/in/janedoe-systems | https://github.com/janedoe-infra) '
+(Summary: Principal Systems and Infrastructure Engineer with 8+ years experience in distributed systems.) '
+(Education: Master of Science in Computer Science, Stanford University) '
+(Experience: 2018 - Present: Lead Systems Engineer at CloudTech in Rust, Python, Go.) '
+(Skills: Rust, Python, Go, Kubernetes, Docker, Distributed Systems, Systems Engineering, Linux, AWS, gRPC) '
+(Work Authorization: US Citizen \(No sponsorship required\)) '
+ET
+
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000931 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1001
+%%EOF
