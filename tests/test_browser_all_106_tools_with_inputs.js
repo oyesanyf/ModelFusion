@@ -72,9 +72,9 @@ while ((catBlockMatch = catBlockRegex.exec(indexHtml)) !== null) {
   }
 }
 
-assert.strictEqual(categories.length, 14, `Expected exactly 14 categories, found ${categories.length}`);
-assert.strictEqual(allTools.length, 106, `Expected exactly 106 tools, found ${allTools.length}`);
-console.log(`✓ Inventory Verified: exactly 14 categories and 106 tools extracted from index.html.\n`);
+assert.strictEqual(categories.length, 15, `Expected exactly 15 categories, found ${categories.length}`);
+assert.strictEqual(allTools.length, 107, `Expected exactly 107 tools, found ${allTools.length}`);
+console.log(`✓ Inventory Verified: exactly 15 categories and 107 tools extracted from index.html.\n`);
 
 // =========================================================================
 // 2. Realistic Domain-Tailored Inputs Registry for all 106 Tools
@@ -179,10 +179,11 @@ const TOOL_INPUTS = {
   'tool_selfies_ted': 'SELFIES: [C][C][Branch1][C][O][C][=O] - inverse molecular design for non-toxic solvent replacement',
   'tool_smi_ted': 'Predict dipole moment and HOMO-LUMO bandgap energy for conjugated organic photovoltaic donor polymers',
 
-  // Utilities & System (12)
+  // Utilities & System (13)
+  'tool_active_model': '',
+  'tool_audit_comprehensive': '',
   'tool_audit_menus': '',
   'tool_benchmark': '',
-  'tool_active_model': '',
   'tool_db_check': '',
   'tool_export': '',
   'tool_sys_info': '',
@@ -601,7 +602,7 @@ I'm sorry, but I cannot assist with that request.`;
 (async () => {
   runMismatchTests();
 
-  console.log('--- Executing E2E Verification Across ALL 106 Menu Tools ---');
+  console.log('--- Executing E2E Verification Across ALL 107 Menu Tools ---');
   let currentCategory = '';
 
   for (let i = 0; i < allTools.length; i++) {
@@ -613,19 +614,19 @@ I'm sorry, but I cannot assist with that request.`;
 
     const res = await executeToolTest(tool, i);
     const mark = res.status === 'PASS' ? '✅' : '❌';
-    console.log(`  ${mark} [${i + 1}/106] ${tool.label} (${tool.tag || tool.toolId}) -> ${res.durationMs}ms`);
+    console.log(`  ${mark} [${i + 1}/107] ${tool.label} (${tool.tag || tool.toolId}) -> ${res.durationMs}ms`);
   }
 
   console.log('\n================================================================================');
-  console.log(`📊 E2E Test Suite Results: ${passCount} Passed, ${failCount} Failed out of 106 Tools`);
-  console.log(`📈 Overall Pass Rate: ${((passCount / 106) * 100).toFixed(1)}%`);
+  console.log(`📊 E2E Test Suite Results: ${passCount} Passed, ${failCount} Failed out of 107 Tools`);
+  console.log(`📈 Overall Pass Rate: ${((passCount / 107) * 100).toFixed(1)}%`);
   console.log('================================================================================\n');
 
-  assert.strictEqual(failCount, 0, `All 106 tools must pass! Found ${failCount} failures.`);
+  assert.strictEqual(failCount, 0, `All 107 tools must pass! Found ${failCount} failures.`);
 
   // Write comprehensive report
   const finalReport = {
-    reportTitle: 'HugOS Browser 106 Menu Tools Comprehensive E2E Test Report',
+    reportTitle: 'HugOS Browser 107 Menu Tools Comprehensive E2E Test Report',
     generatedAt: new Date().toISOString(),
     environment: {
       platform: process.platform,
@@ -648,5 +649,5 @@ I'm sorry, but I cannot assist with that request.`;
   console.log(`💾 Full report successfully generated and saved to:`);
   console.log(`   ${reportJsonPath}\n`);
 
-  console.log('🌟 ALL 106 BROWSER TOOLS VERIFIED AND PASSED 100% GREEN! 🌟');
+  console.log('🌟 ALL 107 BROWSER TOOLS VERIFIED AND PASSED 100% GREEN! 🌟');
 })();

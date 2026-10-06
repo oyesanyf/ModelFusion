@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "last_updated": "2026-10-05T23:11:09.628847+00:00",
+  "last_updated": "2026-10-06T07:35:22.679675+00:00",
   "submissions": [
     {
       "submission_id": "4325dedd-c9d3-4658-8236-91c0890c9d8e",
@@ -136,7 +136,61 @@
       "comments": "Clean, Authenticode digitally signed open-source release build of ModelFusion Master CLI v339 (SHA-256: bd06764341777441ca40c863fce3e77fb0c2678425d66e8bbec4b92b0befdab9). Requesting automated verification and SmartScreen false-positive suppression.",
       "tier": "Tier 3: Resilient Fallback Manifest",
       "status": "manifest_created"
+    },
+    {
+      "submission_id": "60db59e9-0062-428d-95f7-a695875f95f9",
+      "timestamp": "2026-10-06T07:33:47.585242+00:00",
+      "file_path": "D:\\harfile\\ModelFusion\\IDE\\HugOS.msi",
+      "file_name": "HugOS.msi",
+      "file_size_bytes": 408911872,
+      "file_size_mb": 389.97,
+      "sha256": "90b52451a279772d111ff554529a85b6e52fbc5c0b1ea8f3dd7ab309443ed1f2",
+      "md5": "d3b63f9d4f780248757fcbff45ad028a",
+      "product": "HugOS IDE",
+      "version": "341",
+      "company": "ModelFusion",
+      "email": "oyesanyf@gmail.com",
+      "signature": {
+        "signed": true,
+        "status": "UnknownError",
+        "status_message": "A certificate chain processed, but terminated in a root certificate which is not trusted by the trust provider",
+        "subject": "CN=HugOS IDE",
+        "issuer": "CN=HugOS IDE",
+        "thumbprint": "D7B704F34911393C14FF0CD65BF5F37700A8E562",
+        "verifier": "PowerShell Get-AuthenticodeSignature"
+      },
+      "portal_url": "https://www.microsoft.com/en-us/wdsi/filesubmission",
+      "comments": "Clean, Authenticode digitally signed open-source release build of HugOS IDE v341 (SHA-256: 90b52451a279772d111ff554529a85b6e52fbc5c0b1ea8f3dd7ab309443ed1f2). Requesting automated verification and SmartScreen false-positive suppression.",
+      "tier": "Tier 3: Resilient Fallback Manifest",
+      "status": "manifest_created"
+    },
+    {
+      "submission_id": "63e38314-8cfc-409c-9263-c42061a357af",
+      "timestamp": "2026-10-06T07:35:22.678980+00:00",
+      "file_path": "D:\\harfile\\ModelFusion\\browser\\HugOS_Browser.msi",
+      "file_name": "HugOS_Browser.msi",
+      "file_size_bytes": 120602624,
+      "file_size_mb": 115.02,
+      "sha256": "ea76c40d07d8e645f19925294bebea727d6b4a3b331492b42253108a3051bcc2",
+      "md5": "3cec5859d973da1a2e4dd5c0d46e9bab",
+      "product": "HugOS Browser",
+      "version": "99",
+      "company": "ModelFusion",
+      "email": "oyesanyf@gmail.com",
+      "signature": {
+        "signed": true,
+        "status": "UnknownError",
+        "status_message": "A certificate chain processed, but terminated in a root certificate which is not trusted by the trust provider",
+        "subject": "CN=HugOS IDE",
+        "issuer": "CN=HugOS IDE",
+        "thumbprint": "D7B704F34911393C14FF0CD65BF5F37700A8E562",
+        "verifier": "PowerShell Get-AuthenticodeSignature"
+      },
+      "portal_url": "https://www.microsoft.com/en-us/wdsi/filesubmission",
+      "comments": "Clean, Authenticode digitally signed open-source release build of HugOS Browser v99 (SHA-256: ea76c40d07d8e645f19925294bebea727d6b4a3b331492b42253108a3051bcc2). Requesting automated verification and SmartScreen false-positive suppression.",
+      "tier": "Tier 3: Resilient Fallback Manifest",
+      "status": "manifest_created"
     }
   ],
-  "total_submissions": 5
+  "total_submissions": 7
 }

@@ -308,6 +308,111 @@ assert(!cleanedCommentary.includes('In summary, the key steps to continue genera
 assert(!cleanedCommentary.includes('aligns with best practices in web development'), 'Strips web development buzzword commentary');
 assert(cleanedCommentary.includes('Economy: $249'), 'Preserves actual ticket information');
 
+// --- Group 9: Same-Page Interactive HITL Cards Across All Applicable Tools ---
+console.log('\n--- Group 9: Same-Page Interactive HITL Cards Across Computer Use Submenu ---');
+
+// 9.1 Ticket Booking HITL Workspace
+const mockTickets = [
+  { id: 1, title: 'Economy Flight: NYC -> LON', price: '$350', isRecommended: true, dateTime: 'Oct 12, 08:00 AM' },
+  { id: 2, title: 'Premium Economy: NYC -> LON', price: '$620', isRecommended: false, dateTime: 'Oct 12, 08:00 AM' }
+];
+const hitlBookingExtract = appJsContent.match(/function buildHitlBookingWorkspaceHtml\(tickets[\s\S]*?\{([\s\S]*?)\n  \}/);
+assert(Boolean(hitlBookingExtract), 'buildHitlBookingWorkspaceHtml is defined in app.js');
+const buildHitlBookingWorkspaceHtml = new Function('tickets', 'eventTitle', hitlBookingExtract[1]);
+global.escapeHtml = str => String(str || '');
+const bookingHtml = buildHitlBookingWorkspaceHtml(mockTickets, 'Flight Reservation');
+assert(bookingHtml.includes('hitl-booking-workspace'), 'renders booking workspace container');
+assert(bookingHtml.includes('$350') && bookingHtml.includes('$620'), 'renders ticket prices');
+assert(bookingHtml.includes('Approve & Confirm Booking'), 'renders same-page confirm booking button');
+
+// 9.2 Map Directions HITL Workspace
+const mockDirections = {
+  origin: 'Empire State Building',
+  destination: 'Central Park',
+  routes: [
+    { id: 1, summary: 'Via 5th Ave', duration: '12 mins', distance: '2.1 miles', isFastest: true, steps: [{ stepNumber: 1, instruction: 'Head north on 5th Ave' }] }
+  ]
+};
+const hitlDirectionsExtract = appJsContent.match(/function buildHitlDirectionsWorkspaceHtml\(directions[\s\S]*?\{([\s\S]*?)\n  \}/);
+assert(Boolean(hitlDirectionsExtract), 'buildHitlDirectionsWorkspaceHtml is defined in app.js');
+const buildHitlDirectionsWorkspaceHtml = new Function('directions', 'title', hitlDirectionsExtract[1]);
+const directionsHtml = buildHitlDirectionsWorkspaceHtml(mockDirections, 'Route to Central Park');
+assert(directionsHtml.includes('hitl-directions-workspace'), 'renders directions workspace container');
+assert(directionsHtml.includes('12 mins') && directionsHtml.includes('2.1 miles'), 'renders route distance and duration');
+assert(directionsHtml.includes('Confirm & Start Navigation'), 'renders same-page confirm navigation button');
+
+// 9.3 Shopping & Price Discovery HITL Workspace
+const mockProducts = [
+  { id: 1, title: 'Wireless Noise-Canceling Headphones', price: '$129', rating: '4.8 ★', isBestDeal: true }
+];
+const hitlShoppingExtract = appJsContent.match(/function buildHitlShoppingWorkspaceHtml\(products[\s\S]*?\{([\s\S]*?)\n  \}/);
+assert(Boolean(hitlShoppingExtract), 'buildHitlShoppingWorkspaceHtml is defined in app.js');
+const buildHitlShoppingWorkspaceHtml = new Function('products', 'storeTitle', hitlShoppingExtract[1]);
+const shoppingHtml = buildHitlShoppingWorkspaceHtml(mockProducts, 'Product Comparison');
+assert(shoppingHtml.includes('hitl-shopping-workspace'), 'renders shopping workspace container');
+assert(shoppingHtml.includes('$129'), 'renders product price');
+assert(shoppingHtml.includes('Approve & Add to Cart'), 'renders same-page cart approval button');
+
+// 9.4 Tailored UI-TARS Action Sequences in Chat
+assert(appJsContent.includes('UI-TARS Grounding Action Sequence (Exam Solver Loop)'), 'Tailored action sequence for Exam Solver');
+assert(appJsContent.includes('UI-TARS Grounding Action Sequence (Ticket & Travel Booking Loop)'), 'Tailored action sequence for Ticket Booking');
+assert(appJsContent.includes('UI-TARS Grounding Action Sequence (Shopping & Deal Comparison Loop)'), 'Tailored action sequence for Shopping');
+assert(appJsContent.includes('UI-TARS Grounding Action Sequence (Map Directions & Navigation Loop)'), 'Tailored action sequence for Map Directions');
+assert(appJsContent.includes('UI-TARS Grounding Action Sequence (Screen Perception Loop)'), 'Tailored action sequence for Screen Grounding');
+
+// --- Group 10: Cross-Origin Proxy Fetch Fallback Across All Tools ---
+console.log('\n--- Group 10: Cross-Origin Proxy Fetch Fallback Across All Tools ---');
+assert(appJsContent.includes('fetchTargetHtmlViaProxy'), 'fetchTargetHtmlViaProxy helper is defined');
+assert(appJsContent.includes('detectedProducts = extractProducts(proxyDoc, proxyHtml)'), 'Proxy fallback extracts products for shopping');
+assert(appJsContent.includes('detectedTickets = extractTickets(proxyDoc, proxyHtml, goal)'), 'Proxy fallback extracts tickets for booking');
+assert(appJsContent.includes('detectedDirections = extractDirections(proxyDoc, proxyHtml)'), 'Proxy fallback extracts directions for maps');
+assert(appJsContent.includes('Live DOM Grounded via Proxy:'), 'General computer use falls back to proxy when DOM text is empty');
+
+// --- Group 11: Anti-Hallucination & Anti-Desktop-Coordinates Law ---
+console.log('\n--- Group 11: Anti-Hallucination & Anti-Desktop-Coordinates Law ---');
+assert(appJsContent.includes('function sanitizeComputerUseOutput'), 'sanitizeComputerUseOutput is defined');
+assert(appJsContent.includes('window.sanitizeComputerUseOutput = sanitizeComputerUseOutput'), 'sanitizeComputerUseOutput is exported to window');
+assert(appJsContent.includes('ANTI-HALLUCINATION & DIRECT SAME-PAGE PRESENTATION LAWS:'), 'Universal anti-hallucination law enforced in systemPrompt');
+assert(appJsContent.includes('NEVER output desktop mouse-click coordinates (X, Y)'), 'Strict prohibition of mouse-click coordinates');
+assert(appJsContent.includes('NEVER instruct the user to open Google Chrome or an external browser'), 'Strict prohibition of Chrome redirection');
+assert(appJsContent.includes('NEVER generate AutoHotkey, pyautogui, or desktop automation scripts'), 'Strict prohibition of desktop automation scripts');
+
+const sanitizeExtract = appJsContent.match(/function sanitizeComputerUseOutput\(text\) \{([\s\S]*?)\n  \}/);
+assert(Boolean(sanitizeExtract), 'sanitizeComputerUseOutput regex matches');
+const sanitizeComputerUseOutput = new Function('text', sanitizeExtract[1]);
+
+const coordSample = 'Target located. Click at (400, 300) coordinates: (500, 200) [X: 100, Y: 200] to purchase.';
+assert(!sanitizeComputerUseOutput(coordSample).includes('(400, 300)'), 'Strips (X, Y) coordinates');
+assert(!sanitizeComputerUseOutput(coordSample).includes('[X: 100, Y: 200]'), 'Strips [X: ..., Y: ...]');
+
+const chromeSample = 'Please open Google Chrome and navigate to https://booking.com to confirm flight.';
+assert(!sanitizeComputerUseOutput(chromeSample).toLowerCase().includes('google chrome'), 'Strips Google Chrome instructions');
+
+const ahkSample = '```autohotkey\nCoordMode, Mouse\nMouseMove, 100, 200\n```';
+assert(!sanitizeComputerUseOutput(ahkSample).includes('MouseMove'), 'Strips AutoHotkey script blocks');
+
+// --- Group 12: Universal File Acceptance for All 10 Computer Use Tools ---
+console.log('\n--- Group 12: Universal File Acceptance for ALL 10 Computer Use Tools ---');
+const isNonFileRegex = /^(?:@agent\s+)?(?:updatedb|update|sys[-_ ]?info|benchmark|export|db-check|db-prune|db-rebuild|db-vacuum|rest-rl|restrl|audit-menus|model|help)\b/i;
+const all10ComputerUseTools = [
+  '@agent computer-use',
+  '@agent exam-solver',
+  '@agent map-directions',
+  '@agent desktop-click',
+  '@agent desktop-type',
+  '@agent desktop-scroll',
+  '@agent screen-grounding',
+  '@agent shopping',
+  '@agent ticket-booking',
+  '@agent ui-tars'
+];
+
+all10ComputerUseTools.forEach(tool => {
+  const isFileTool = !isNonFileRegex.test(tool);
+  assert(isFileTool, `${tool} must evaluate to isFileTool = true for universal file acceptance`);
+});
+console.log(`  ✅ All 10 Computer Use tools verified with universal file acceptance!`);
+
 console.log('\n================================================================');
 console.log(`🎉 ALL 10 COMPUTER USE TOOLS VERIFIED: ${passedTests}/${totalTests} Passed (100% Green)`);
 console.log('================================================================');
