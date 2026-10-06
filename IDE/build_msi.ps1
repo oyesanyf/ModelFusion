@@ -1025,5 +1025,21 @@ if (Test-Path $wdsiScript) {
     }
 }
 
+# 11. Ensure ModelFusion Master Server daemon is online on port 5000
+Write-Host "[INFO] Verifying ModelFusion Master Server daemon on port 5000..." -ForegroundColor Cyan
+$serverRunning = $false
+try {
+    $h = Invoke-WebRequest -Uri "http://127.0.0.1:5000/health" -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue
+    if ($h -and $h.StatusCode -eq 200) { $serverRunning = $true }
+} catch {}
+if (-not $serverRunning) {
+    Write-Host "[INFO] Re-starting ModelFusion Master Server daemon on port 5000..." -ForegroundColor Yellow
+    $cliPath = Join-Path $repoRoot "target\release\cli.exe"
+    if (Test-Path $cliPath) {
+        $cliDir = Split-Path -Parent $cliPath
+        Start-Process -FilePath $cliPath -ArgumentList "--server", "--port", "5000" -WorkingDirectory $cliDir -WindowStyle Hidden
+    }
+}
+
 Write-Host "[SUCCESS] Process complete. MSI installer generated at: $msiPath" -ForegroundColor Green
 Exit 0
