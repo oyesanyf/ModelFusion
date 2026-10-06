@@ -2951,6 +2951,21 @@ where
                 } else if sub_clean == "ui" && next_tok == "tars" {
                     args.remove(3);
                     sub_clean = "ui-tars".to_string();
+                } else if (sub_clean == "apply" || sub_clean == "search") && (next_tok == "jobs" || next_tok == "job") {
+                    args.remove(3);
+                    sub_clean = "apply-jobs".to_string();
+                } else if sub_clean == "apply" && next_tok == "for" {
+                    args.remove(3);
+                    if args.len() > 3 && (args[3].to_lowercase() == "jobs" || args[3].to_lowercase() == "job" || args[3].to_lowercase() == "a") {
+                        if args[3].to_lowercase() == "a" && args.len() > 4 && (args[4].to_lowercase() == "job" || args[4].to_lowercase() == "jobs") {
+                            args.remove(3);
+                        }
+                        args.remove(3);
+                    }
+                    sub_clean = "apply-jobs".to_string();
+                } else if sub_clean == "job" && (next_tok == "application" || next_tok == "applications" || next_tok == "apply") {
+                    args.remove(3);
+                    sub_clean = "apply-jobs".to_string();
                 }
             }
             if (sub_clean == "markers" || sub_clean == "marker" || sub_clean == "som") && !has_combinator {
@@ -3045,7 +3060,11 @@ where
                 || sub_clean == "desktop-click" || sub_clean == "desktopclick" || sub_clean == "click"
                 || sub_clean == "desktop-type" || sub_clean == "desktoptype" || sub_clean == "type"
                 || sub_clean == "desktop-scroll" || sub_clean == "desktopscroll" || sub_clean == "scroll"
-                || sub_clean == "screen-grounding" || sub_clean == "screengrounding" || sub_clean == "screen";
+                || sub_clean == "screen-grounding" || sub_clean == "screengrounding" || sub_clean == "screen"
+                || sub_clean == "apply-jobs" || sub_clean == "applyjobs" || sub_clean == "apply-job" || sub_clean == "applyjob"
+                || sub_clean == "job-application" || sub_clean == "jobapplication"
+                || sub_clean == "job-apply" || sub_clean == "jobapply"
+                || sub_clean == "jobs" || sub_clean == "job";
 
             if is_computer_use_tool && !has_combinator {
                 let tool_kind = sub_clean.to_string();
@@ -3123,6 +3142,15 @@ where
                             "Inspect active page and solve exam questions with human-in-the-loop validation".to_string()
                         } else {
                             format!("Inspect and solve questions on {}", combined_raw)
+                        }
+                    }
+                    "apply-jobs" | "applyjobs" | "apply-job" | "applyjob" | "job-application" | "jobapplication" | "job-apply" | "jobapply" | "jobs" | "job" => {
+                        if combined_raw.is_empty() {
+                            "Search and apply for jobs matching candidate profile and resume".to_string()
+                        } else if !combined_raw.to_lowercase().starts_with("search") && !combined_raw.to_lowercase().starts_with("apply") {
+                            format!("Search and apply for jobs: {}", combined_raw)
+                        } else {
+                            combined_raw
                         }
                     }
                     _ => {
@@ -3211,6 +3239,21 @@ where
         } else if verb == "ui" && next_tok == "tars" {
             args.remove(2);
             verb = "ui-tars".to_string();
+        } else if (verb == "apply" || verb == "search") && (next_tok == "jobs" || next_tok == "job") {
+            args.remove(2);
+            verb = "apply-jobs".to_string();
+        } else if verb == "apply" && next_tok == "for" {
+            args.remove(2);
+            if args.len() > 2 && (args[2].to_lowercase() == "jobs" || args[2].to_lowercase() == "job" || args[2].to_lowercase() == "a") {
+                if args[2].to_lowercase() == "a" && args.len() > 3 && (args[3].to_lowercase() == "job" || args[3].to_lowercase() == "jobs") {
+                    args.remove(2);
+                }
+                args.remove(2);
+            }
+            verb = "apply-jobs".to_string();
+        } else if verb == "job" && (next_tok == "application" || next_tok == "applications" || next_tok == "apply") {
+            args.remove(2);
+            verb = "apply-jobs".to_string();
         }
     }
 
@@ -3377,7 +3420,11 @@ where
         | "desktop-click" | "desktopclick" | "click" | "/desktop-click" | "@desktop-click" | "@agent/desktop-click"
         | "desktop-type" | "desktoptype" | "type" | "/desktop-type" | "@desktop-type" | "@agent/desktop-type"
         | "desktop-scroll" | "desktopscroll" | "scroll" | "/desktop-scroll" | "@desktop-scroll" | "@agent/desktop-scroll"
-        | "screen-grounding" | "screengrounding" | "screen" | "/screen-grounding" | "@screen-grounding" | "@agent/screen-grounding" => {
+        | "screen-grounding" | "screengrounding" | "screen" | "/screen-grounding" | "@screen-grounding" | "@agent/screen-grounding"
+        | "apply-jobs" | "applyjobs" | "apply-job" | "applyjob" | "/apply-jobs" | "@apply-jobs" | "@agent/apply-jobs"
+        | "job-application" | "jobapplication" | "/job-application" | "@job-application" | "@agent/job-application"
+        | "job-apply" | "jobapply" | "/job-apply" | "@job-apply" | "@agent/job-apply"
+        | "jobs" | "job" | "/jobs" | "/job" | "@jobs" | "@job" | "@agent/jobs" | "@agent/job" => {
             let tool_kind = verb.trim_start_matches('/').trim_start_matches('@').trim_start_matches("agent/").trim_start_matches("agent:").to_lowercase();
             args[1] = "--computer-use".to_string();
             let combined_raw = if args.len() > 2 {
@@ -3452,6 +3499,15 @@ where
                         "Inspect active page and solve exam questions with human-in-the-loop validation".to_string()
                     } else {
                         format!("Inspect and solve questions on {}", combined_raw)
+                    }
+                }
+                "apply-jobs" | "applyjobs" | "apply-job" | "applyjob" | "job-application" | "jobapplication" | "job-apply" | "jobapply" | "jobs" | "job" => {
+                    if combined_raw.is_empty() {
+                        "Search and apply for jobs matching candidate profile and resume".to_string()
+                    } else if !combined_raw.to_lowercase().starts_with("search") && !combined_raw.to_lowercase().starts_with("apply") {
+                        format!("Search and apply for jobs: {}", combined_raw)
+                    } else {
+                        combined_raw
                     }
                 }
                 _ => {
@@ -18792,7 +18848,7 @@ public class Pr {
         assert!(parsed.timeseries);
         assert_eq!(parsed.datetime_col.as_deref(), Some("date"));
         assert_eq!(parsed.horizon, 14);
-        assert!(parsed.decision);
+        assert!(parsed.decision.is_some());
         assert_eq!(parsed.treatment.as_deref(), Some("group"));
         assert!(parsed.no_fusion);
 
@@ -19678,6 +19734,25 @@ public class Pr {
         assert_eq!(processed2[0], "cli.exe");
         assert_eq!(processed2[1], "--computer-use");
         assert_eq!(processed2[2], "click start menu");
+
+        // Job Application Agent directives
+        let raw_jobs1 = vec!["cli.exe".to_string(), "@agent".to_string(), "apply-jobs".to_string(), "Senior".to_string(), "Rust".to_string(), "Engineer".to_string(), "remote".to_string()];
+        let proc_jobs1 = preprocess_cli_args(raw_jobs1);
+        assert_eq!(proc_jobs1[0], "cli.exe");
+        assert_eq!(proc_jobs1[1], "--computer-use");
+        assert_eq!(proc_jobs1[2], "Search and apply for jobs: Senior Rust Engineer remote");
+
+        let raw_jobs2 = vec!["cli.exe".to_string(), "apply".to_string(), "for".to_string(), "jobs".to_string(), "Python".to_string(), "Developer".to_string(), "fulltime".to_string()];
+        let proc_jobs2 = preprocess_cli_args(raw_jobs2);
+        assert_eq!(proc_jobs2[0], "cli.exe");
+        assert_eq!(proc_jobs2[1], "--computer-use");
+        assert_eq!(proc_jobs2[2], "Search and apply for jobs: Python Developer fulltime");
+
+        let raw_jobs3 = vec!["cli.exe".to_string(), "@agent".to_string(), "job-application".to_string()];
+        let proc_jobs3 = preprocess_cli_args(raw_jobs3);
+        assert_eq!(proc_jobs3[0], "cli.exe");
+        assert_eq!(proc_jobs3[1], "--computer-use");
+        assert_eq!(proc_jobs3[2], "Search and apply for jobs matching candidate profile and resume");
     }
 
     #[test]

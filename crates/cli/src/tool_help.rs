@@ -70,6 +70,7 @@ pub fn is_known_tool_or_model(name: &str) -> bool {
         "computer-use", "computer_use", "ui-tars", "screen-grounding", "desktop-click",
         "desktop-type", "desktop-scroll", "shopping", "ticket-booking", "exam-solver",
         "map-directions", "som", "markers",
+        "apply-jobs", "apply_jobs", "job-application", "job_application", "apply-job", "jobs", "job",
         "acdso", "dataanalyst", "timeseries", "predict", "datascience", "decision",
         "finance", "finbert", "chronos", "fingpt", "llama-fin", "patchtst",
         "vision", "vqa", "object-detection", "image-classification", "video", "image",
@@ -214,10 +215,12 @@ pub static CATEGORIES: &[CategoryInfo] = &[
             ("@agent ticket-booking <details>", "Automate airline/train reservation forms and seat selection"),
             ("@agent exam-solver <question>", "Visual reasoning solver for complex multi-choice exam figures and diagrams"),
             ("@agent map-directions <route>", "Navigate GIS mapping web applications and compute optimal route waypoints"),
+            ("@agent apply-jobs <role/query>", "Autonomous job search, resume upload, and application completion with HITL review"),
         ],
         examples: &[
             "@agent computer-use Open Notepad and write a project status report",
             "@agent screen-grounding",
+            "@agent apply-jobs Senior Rust Engineer remote full-time",
             "@agent shopping Find best price for 32GB DDR5 SODIMM laptop RAM",
             "@agent ticket-booking Find one-way flight from JFK to LHR on November 15",
         ],
@@ -1212,6 +1215,32 @@ pub static TOOL_CARDS: &[ToolCard] = &[
         related: &["ticket-booking", "computer-use"],
     },
     ToolCard {
+        id: "apply-jobs",
+        name: "Autonomous Job Application Assistant",
+        category: "computer_use",
+        menu_index: 3,
+        icon: "💼",
+        architecture: "Recruiting Portal Grounding, Resume Binding & HITL Safety Gate",
+        purpose: "Automate job search across careers portals (Google Careers, Indeed, LinkedIn, Greenhouse, Lever, Workday), profile grounding, resume upload, and HITL application review.",
+        input_format: "Target role, search criteria, location, or careers portal URL.",
+        options: &[
+            ("--resume <path>", "Path to candidate resume file (PDF/DOCX/TXT)"),
+            ("--profile <json>", "Candidate profile JSON containing contact and experience data"),
+            ("--remote", "Filter for remote work opportunities"),
+        ],
+        directives: &[
+            ("@agent apply-jobs <role/query>", "Search and apply for jobs with profile grounding and HITL safety gate"),
+            ("cli.exe apply for jobs <role/query>", "Execute job search and application loop via CLI"),
+        ],
+        examples: &[
+            "@agent apply-jobs Senior Rust Engineer remote full-time",
+            "@agent apply-jobs https://www.google.com/about/careers/applications/ Software Engineer",
+            "@agent apply-jobs Python Machine Learning Engineer",
+            "cli.exe --tool-help apply-jobs",
+        ],
+        related: &["computer-use", "screen-grounding", "desktop-click"],
+    },
+    ToolCard {
         id: "acdso",
         name: "Adaptive Contextual Data Science Optimization (ACDSO)",
         category: "tabular",
@@ -1866,7 +1895,11 @@ pub fn format_tool_help_card(query: &str) -> String {
         }
     }
 
-    let lower = trimmed.to_lowercase();
+    let lower_raw = trimmed.to_lowercase();
+    let lower = match lower_raw.as_str() {
+        "apply for jobs" | "apply-job" | "apply_job" | "applyjobs" | "job-application" | "job_application" | "jobapplication" | "jobs" | "job" => "apply-jobs".to_string(),
+        _ => lower_raw,
+    };
     let tokens: Vec<&str> = lower.split_whitespace().collect();
 
     // 1. Check exact or alias match in Specific Model Cards
