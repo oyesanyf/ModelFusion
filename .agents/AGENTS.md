@@ -5,9 +5,14 @@ Whenever any task, code edit, bug fix, calibration, or enhancement is done:
 1. **Recompile Release Binaries**: `cargo build --release --bin cli`.
 2. **Mirror Parity**: Run `python scripts/mirror_all.py` to keep all 12 binary/asset locations in identical parity.
 3. **Rebuild & Sign MSI**: Run `powershell -ExecutionPolicy Bypass -File .\IDE\build_msi.ps1`.
-4. **Git Commit & Push**: Stage all changes (`git add -A`), commit with descriptive message, and push to `https://github.com/oyesanyf/ModelFusion.git`.
-5. **Update Remote GitHub Releases**: Upload the latest `HugOS.msi` and `cli.exe` to the versioned release tag (e.g. `v1.0.0-beta.219`) and clobber update the rolling release `v1.0.0-beta`.
-6. **Parity Check**: Verify 100% parity between local working directory, git remote `origin/main`, Git LFS, and GitHub release assets.
+4. **Submit to Microsoft Security Intelligence (WDSI) Every Build**:
+   - Command: `python scripts/submit_to_wdsi.py --all --no-launch`
+   - Every time code is recompiled, binaries mirrored, or MSIs packaged, submit all Authenticode-signed release targets (`cli.exe`, `clibrowser.exe`, `cliide.exe`, `climcp.exe`, `HugOS.msi`, `HugOS_Browser.msi`) to Microsoft Security Intelligence (`https://www.microsoft.com/en-us/wdsi/filesubmission?persona=SoftwareDeveloper`).
+   - Ensures SmartScreen whitelisting, Windows Defender reputation scoring, and false positive suppression.
+   - Automatically updates `IDE/reports/wdsi_submissions.json` with SHA-256 hashes, file sizes, and digital certificate thumbprints.
+5. **Git Commit & Push**: Stage all changes (`git add -A`), commit with descriptive message, and push to `https://github.com/oyesanyf/ModelFusion.git`.
+6. **Update Remote GitHub Releases**: Upload the latest `HugOS.msi` and `cli.exe` to the versioned release tag (e.g. `v1.0.0-beta.219`) and clobber update the rolling release `v1.0.0-beta`.
+7. **Parity Check**: Verify 100% parity between local working directory, git remote `origin/main`, Git LFS, and GitHub release assets.
 
 ## Git Push Guardrails
 - **Restricted Remotes:** NEVER run `git push` inside `IDE/vscode` or target any Microsoft/upstream third-party remote.

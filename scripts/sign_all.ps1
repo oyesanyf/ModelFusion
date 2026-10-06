@@ -74,3 +74,9 @@ foreach ($target in $targets) {
 }
 
 Write-Host "`n[DONE] Digital signature execution complete!" -ForegroundColor Green
+
+Write-Host "`n[INFO] Submitting all signed binaries to Microsoft Security Intelligence (WDSI)..." -ForegroundColor Yellow
+$wdsiScript = Join-Path $PSScriptRoot "submit_to_wdsi.py"
+if (Test-Path $wdsiScript) {
+    python $wdsiScript --all --no-launch
+}
