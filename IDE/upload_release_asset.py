@@ -346,6 +346,16 @@ def main():
             print("\n[ERROR] Remote release assets do not match local artifacts.")
             sys.exit(1)
     
+    # Ensure all signed release targets are submitted to Microsoft Security Intelligence (WDSI)
+    print("\n[INFO] Submitting all signed binaries to Microsoft Security Intelligence (WDSI)...")
+    repo_root = os.path.dirname(script_dir)
+    wdsi_script = os.path.join(repo_root, "scripts", "submit_to_wdsi.py")
+    if os.path.isfile(wdsi_script):
+        try:
+            subprocess.run([sys.executable, wdsi_script, "--all", "--no-launch"], check=False)
+        except Exception as e:
+            print(f"[WARN] Failed to trigger Microsoft WDSI submission: {e}")
+
     force = "--force" in sys.argv
     for tag_name, release_name, make_latest in targets:
         print(f"\n==========================================")
