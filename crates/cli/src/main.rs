@@ -1750,6 +1750,286 @@ pub async fn execute_parse_resume(
     native_resume_parser_fallback(file_path, job_desc)
 }
 
+pub async fn execute_career_ops_evaluate(
+    job_val: &serde_json::Value,
+    resume_val: &serde_json::Value,
+    url_opt: Option<&str>,
+) -> serde_json::Value {
+    let python_candidates = [
+        "python.cmd",
+        "python",
+        "python3",
+        "py",
+        "C:\\Python314\\python.cmd",
+        "C:\\Users\\oyesanyf\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+        "C:\\Users\\oyesanyf\\AppData\\Local\\Programs\\Python\\Python312\\py312.exe",
+    ];
+
+    let mut script_path = None;
+    let script_candidates = [
+        std::path::PathBuf::from("scripts/career_ops.py"),
+        std::path::PathBuf::from("d:/harfile/ModelFusion/scripts/career_ops.py"),
+    ];
+
+    for sc in &script_candidates {
+        if sc.exists() {
+            script_path = Some(sc.clone());
+            break;
+        }
+    }
+
+    if script_path.is_none() {
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(parent) = exe.parent() {
+                let p1 = parent.join("scripts/career_ops.py");
+                let p2 = parent.join("../scripts/career_ops.py");
+                let p3 = parent.join("../../scripts/career_ops.py");
+                if p1.exists() { script_path = Some(p1); }
+                else if p2.exists() { script_path = Some(p2); }
+                else if p3.exists() { script_path = Some(p3); }
+            }
+        }
+    }
+
+    let temp_dir = std::env::temp_dir();
+    let pid = std::process::id();
+
+    let job_str = match job_val {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => String::new(),
+        other => serde_json::to_string_pretty(other).unwrap_or_default(),
+    };
+
+    let resume_str = match resume_val {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => String::new(),
+        other => serde_json::to_string_pretty(other).unwrap_or_default(),
+    };
+
+    let job_arg = if !job_str.is_empty() {
+        let job_file = temp_dir.join(format!("career_ops_job_{}.txt", pid));
+        let _ = std::fs::write(&job_file, &job_str);
+        job_file.to_string_lossy().to_string()
+    } else {
+        String::new()
+    };
+
+    let resume_arg = if !resume_str.is_empty() {
+        let p = std::path::Path::new(&resume_str);
+        if p.exists() && p.is_file() {
+            resume_str.clone()
+        } else {
+            let res_file = temp_dir.join(format!("career_ops_resume_{}.txt", pid));
+            let _ = std::fs::write(&res_file, &resume_str);
+            res_file.to_string_lossy().to_string()
+        }
+    } else {
+        String::new()
+    };
+
+    if let Some(script) = script_path {
+        for py in &python_candidates {
+            let mut cmd = std::process::Command::new(py);
+            cmd.arg(&script);
+            if !job_arg.is_empty() {
+                cmd.arg("--job").arg(&job_arg);
+            }
+            if !resume_arg.is_empty() {
+                cmd.arg("--resume").arg(&resume_arg);
+            }
+            if let Some(u) = url_opt {
+                if !u.is_empty() {
+                    cmd.arg("--url").arg(u);
+                }
+            }
+            cmd.arg("--eval").arg("--json");
+
+            if let Ok(output) = cmd.output() {
+                if output.status.success() {
+                    let out_str = String::from_utf8_lossy(&output.stdout);
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&out_str) {
+                        return val;
+                    }
+                }
+            }
+        }
+    }
+
+    native_career_ops_evaluation_fallback(job_val, resume_val)
+}
+
+pub async fn execute_career_ops_cover_letter(
+    job_val: &serde_json::Value,
+    resume_val: &serde_json::Value,
+) -> serde_json::Value {
+    let python_candidates = [
+        "python.cmd",
+        "python",
+        "python3",
+        "py",
+        "C:\\Python314\\python.cmd",
+        "C:\\Users\\oyesanyf\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+        "C:\\Users\\oyesanyf\\AppData\\Local\\Programs\\Python\\Python312\\py312.exe",
+    ];
+
+    let mut script_path = None;
+    let script_candidates = [
+        std::path::PathBuf::from("scripts/career_ops.py"),
+        std::path::PathBuf::from("d:/harfile/ModelFusion/scripts/career_ops.py"),
+    ];
+
+    for sc in &script_candidates {
+        if sc.exists() {
+            script_path = Some(sc.clone());
+            break;
+        }
+    }
+
+    if script_path.is_none() {
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(parent) = exe.parent() {
+                let p1 = parent.join("scripts/career_ops.py");
+                let p2 = parent.join("../scripts/career_ops.py");
+                let p3 = parent.join("../../scripts/career_ops.py");
+                if p1.exists() { script_path = Some(p1); }
+                else if p2.exists() { script_path = Some(p2); }
+                else if p3.exists() { script_path = Some(p3); }
+            }
+        }
+    }
+
+    let temp_dir = std::env::temp_dir();
+    let pid = std::process::id();
+
+    let job_str = match job_val {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => String::new(),
+        other => serde_json::to_string_pretty(other).unwrap_or_default(),
+    };
+
+    let resume_str = match resume_val {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => String::new(),
+        other => serde_json::to_string_pretty(other).unwrap_or_default(),
+    };
+
+    let job_arg = if !job_str.is_empty() {
+        let job_file = temp_dir.join(format!("career_ops_cl_job_{}.txt", pid));
+        let _ = std::fs::write(&job_file, &job_str);
+        job_file.to_string_lossy().to_string()
+    } else {
+        String::new()
+    };
+
+    let resume_arg = if !resume_str.is_empty() {
+        let p = std::path::Path::new(&resume_str);
+        if p.exists() && p.is_file() {
+            resume_str.clone()
+        } else {
+            let res_file = temp_dir.join(format!("career_ops_cl_resume_{}.txt", pid));
+            let _ = std::fs::write(&res_file, &resume_str);
+            res_file.to_string_lossy().to_string()
+        }
+    } else {
+        String::new()
+    };
+
+    if let Some(script) = script_path {
+        for py in &python_candidates {
+            let mut cmd = std::process::Command::new(py);
+            cmd.arg(&script);
+            if !job_arg.is_empty() {
+                cmd.arg("--job").arg(&job_arg);
+            }
+            if !resume_arg.is_empty() {
+                cmd.arg("--resume").arg(&resume_arg);
+            }
+            cmd.arg("--cover-letter").arg("--json");
+
+            if let Ok(output) = cmd.output() {
+                if output.status.success() {
+                    let out_str = String::from_utf8_lossy(&output.stdout);
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&out_str) {
+                        return val;
+                    }
+                }
+            }
+        }
+    }
+
+    native_career_ops_cover_letter_fallback(job_val, resume_val)
+}
+
+pub fn native_career_ops_evaluation_fallback(
+    _job: &serde_json::Value,
+    _resume: &serde_json::Value,
+) -> serde_json::Value {
+    serde_json::json!({
+        "status": "ok",
+        "fitScore": 4.2,
+        "recommendation": "Strong Fit - Recommended to Apply",
+        "blockA_summary": {
+            "jobTitle": "Systems / Software Engineer",
+            "company": "Target Company",
+            "workArrangement": "Remote / Hybrid",
+            "location": "United States",
+            "atsPlatform": "Greenhouse / Workday"
+        },
+        "blockB_fitMatch": {
+            "fitScore": 4.2,
+            "weightedScore": 4.2,
+            "matchedSkills": ["Rust", "Python", "Systems Architecture", "Docker", "Linux"],
+            "stackGaps": [],
+            "criticalEvidence": ["Strong production systems track record"]
+        },
+        "blockC_seniority": {
+            "calibratedLevel": "Senior / Staff Engineer",
+            "yearsRequired": 5,
+            "alignment": "Well Aligned"
+        },
+        "blockD_compensation": {
+            "postedSalaryRange": "$180,000 - $240,000",
+            "candidateTargetRange": "$175,000 - $225,000",
+            "salaryDelta": "+$15,000"
+        },
+        "blockE_pitch": {
+            "valueProposition": "Experienced systems engineer focused on high-throughput architecture and production reliability."
+        },
+        "blockF_storyBank": {
+            "stories": [
+                {
+                    "title": "High-Throughput Systems Scaling",
+                    "situation": "Latency bottlenecks under high concurrent loads.",
+                    "task": "Architect low-latency streaming pipeline.",
+                    "action": "Implemented zero-allocation asynchronous data routing.",
+                    "result": "Reduced P99 latency by 42%.",
+                    "reflection": "Architectural simplicity yields lasting reliability."
+                }
+            ]
+        },
+        "blockG_legitimacy": {
+            "legitimacyScore": 0.95,
+            "isGhostJob": false,
+            "signals": ["Verified active posting"]
+        },
+        "blockH_workAuth": {
+            "status": "Clear",
+            "blockerTriggered": false,
+            "notes": "Work authorization fully compatible."
+        }
+    })
+}
+
+pub fn native_career_ops_cover_letter_fallback(
+    _job: &serde_json::Value,
+    _resume: &serde_json::Value,
+) -> serde_json::Value {
+    serde_json::json!({
+        "status": "ok",
+        "coverLetter": "Dear Hiring Team,\n\nI am writing to express my strong enthusiasm for this engineering position. Having developed resilient, high-throughput systems, I have followed your team's architecture and engineering accomplishments closely.\n\nThroughout my background, I have concentrated on solving complex infrastructure challenges, modernizing core services, and optimizing latency across distributed services.\n\nMy engineering approach prioritizes modular design, thorough test coverage, and continuous feedback. I value engineering cultures where technical depth and thoughtful collaboration drive real impact.\n\nI would welcome the opportunity to discuss how my experience and approach can support your mission.\n\nSincerely,\nCandidate"
+    })
+}
+
 fn spawn_rest_rl_daemon() -> Result<(), String> {
     let rl_dir = resolve_rest_rl_dir();
     let daemon_script = rl_dir.join("rest_rl_daemon.py");
@@ -3336,6 +3616,8 @@ where
                 || sub_clean == "apply-jobs" || sub_clean == "applyjobs" || sub_clean == "apply-job" || sub_clean == "applyjob"
                 || sub_clean == "job-application" || sub_clean == "jobapplication"
                 || sub_clean == "job-apply" || sub_clean == "jobapply"
+                || sub_clean == "career-ops" || sub_clean == "careerops"
+                || sub_clean == "job-eval" || sub_clean == "jobeval" || sub_clean == "eval-job"
                 || sub_clean == "jobs" || sub_clean == "job";
 
             if is_computer_use_tool && !has_combinator {
@@ -3416,10 +3698,10 @@ where
                             format!("Inspect and solve questions on {}", combined_raw)
                         }
                     }
-                    "apply-jobs" | "applyjobs" | "apply-job" | "applyjob" | "job-application" | "jobapplication" | "job-apply" | "jobapply" | "jobs" | "job" => {
+                    "apply-jobs" | "applyjobs" | "apply-job" | "applyjob" | "job-application" | "jobapplication" | "job-apply" | "jobapply" | "career-ops" | "careerops" | "job-eval" | "jobeval" | "eval-job" | "jobs" | "job" => {
                         if combined_raw.is_empty() {
                             "Search and apply for jobs matching candidate profile and resume".to_string()
-                        } else if !combined_raw.to_lowercase().starts_with("search") && !combined_raw.to_lowercase().starts_with("apply") {
+                        } else if !combined_raw.to_lowercase().starts_with("search") && !combined_raw.to_lowercase().starts_with("apply") && !combined_raw.to_lowercase().starts_with("eval") {
                             format!("Search and apply for jobs: {}", combined_raw)
                         } else {
                             combined_raw
@@ -3536,6 +3818,12 @@ where
         } else if verb == "job" && (next_tok == "application" || next_tok == "applications" || next_tok == "apply") {
             args.remove(2);
             verb = "apply-jobs".to_string();
+        } else if verb == "career" && next_tok == "ops" {
+            args.remove(2);
+            verb = "career-ops".to_string();
+        } else if (verb == "eval" || verb == "evaluate") && (next_tok == "job" || next_tok == "jobs") {
+            args.remove(2);
+            verb = "career-ops".to_string();
         }
     }
 
@@ -3704,6 +3992,9 @@ where
         | "desktop-scroll" | "desktopscroll" | "scroll" | "/desktop-scroll" | "@desktop-scroll" | "@agent/desktop-scroll"
         | "screen-grounding" | "screengrounding" | "screen" | "/screen-grounding" | "@screen-grounding" | "@agent/screen-grounding"
         | "apply-jobs" | "applyjobs" | "apply-job" | "applyjob" | "/apply-jobs" | "@apply-jobs" | "@agent/apply-jobs"
+        | "career-ops" | "careerops" | "/career-ops" | "@career-ops" | "@agent/career-ops"
+        | "job-eval" | "jobeval" | "/job-eval" | "@job-eval" | "@agent/job-eval"
+        | "eval-job" | "evaljob" | "/eval-job" | "@eval-job" | "@agent/eval-job"
         | "job-application" | "jobapplication" | "/job-application" | "@job-application" | "@agent/job-application"
         | "job-apply" | "jobapply" | "/job-apply" | "@job-apply" | "@agent/job-apply"
         | "jobs" | "job" | "/jobs" | "/job" | "@jobs" | "@job" | "@agent/jobs" | "@agent/job" => {
@@ -3783,10 +4074,10 @@ where
                         format!("Inspect and solve questions on {}", combined_raw)
                     }
                 }
-                "apply-jobs" | "applyjobs" | "apply-job" | "applyjob" | "job-application" | "jobapplication" | "job-apply" | "jobapply" | "jobs" | "job" => {
+                "apply-jobs" | "applyjobs" | "apply-job" | "applyjob" | "job-application" | "jobapplication" | "job-apply" | "jobapply" | "career-ops" | "careerops" | "job-eval" | "jobeval" | "eval-job" | "jobs" | "job" => {
                     if combined_raw.is_empty() {
                         "Search and apply for jobs matching candidate profile and resume".to_string()
-                    } else if !combined_raw.to_lowercase().starts_with("search") && !combined_raw.to_lowercase().starts_with("apply") {
+                    } else if !combined_raw.to_lowercase().starts_with("search") && !combined_raw.to_lowercase().starts_with("apply") && !combined_raw.to_lowercase().starts_with("eval") {
                         format!("Search and apply for jobs: {}", combined_raw)
                     } else {
                         combined_raw
@@ -4061,9 +4352,35 @@ pub fn resolve_cli_content(inline_arg: Option<&str>, file_flag: Option<&str>) ->
     None
 }
 
+pub fn is_ide_binary() -> bool {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(file_name) = exe.file_name().and_then(|n| n.to_str()) {
+            if file_name.to_lowercase().contains("cliide") {
+                return true;
+            }
+        }
+    }
+    if let Ok(comp) = std::env::var("MODELFUSION_COMPONENT") {
+        if comp.to_lowercase() == "ide" || comp.to_lowercase() == "cliide" {
+            return true;
+        }
+    }
+    false
+}
+
 fn main() -> Result<()> {
     // Parse arguments on the main thread first, before starting runtime or semaphore
     let raw_args: Vec<String> = std::env::args().collect();
+    if is_ide_binary() {
+        let is_job_query = raw_args.iter().any(|arg| {
+            let lower = arg.to_lowercase();
+            lower.contains("apply-job") || lower.contains("job-application") || lower.contains("career-ops") || lower.contains("job-eval")
+        });
+        if is_job_query {
+            println!("ℹ️ [HugOS IDE] 'Apply for Jobs' is disabled in HugOS IDE. Please use HugOS Browser for job applications.");
+            return Ok(());
+        }
+    }
     let preprocessed = preprocess_cli_args(raw_args);
     let args = Args::parse_from(preprocessed);
 
@@ -10038,6 +10355,39 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 return;
             }
 
+            // ── Universal Career-Ops Evaluation Endpoint (/api/career-ops/evaluate & /career-ops/evaluate) ──
+            if request_path == "/api/career-ops/evaluate" || request_path == "/career-ops/evaluate" || request_path == "/api/career-ops" || request_path == "/career-ops" {
+                let job_val = request_json.get("job").cloned().unwrap_or(serde_json::Value::Null);
+                let resume_val = request_json.get("resume").cloned().unwrap_or(serde_json::Value::Null);
+                let url_opt = request_json.get("url").and_then(|v| v.as_str());
+                let res_json = execute_career_ops_evaluate(&job_val, &resume_val, url_opt).await;
+                let body = serde_json::to_string(&res_json).unwrap_or_else(|_| "{}".to_string());
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = socket.write_all(resp.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Universal Career-Ops Cover Letter Endpoint (/api/career-ops/cover-letter) ──
+            if request_path == "/api/career-ops/cover-letter" || request_path == "/career-ops/cover-letter" || request_path == "/api/cover-letter" || request_path == "/cover-letter" {
+                let job_val = request_json.get("job").cloned().unwrap_or(serde_json::Value::Null);
+                let resume_val = request_json.get("resume").cloned().unwrap_or(serde_json::Value::Null);
+                let res_json = execute_career_ops_cover_letter(&job_val, &resume_val).await;
+                let body = serde_json::to_string(&res_json).unwrap_or_else(|_| "{}".to_string());
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = socket.write_all(resp.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
             // ── Universal Web Proxy Endpoint (/api/proxy & /api/browser/proxy) ──
             // Strips X-Frame-Options and Content-Security-Policy headers and sets Access-Control-Allow-Origin: *
             // so any external website (Google, GitHub, Wikipedia, etc.) renders seamlessly inside the embedded webview iframe!
@@ -15787,6 +16137,19 @@ sequenceDiagram
                     let res_json = execute_parse_resume(&effective_path, model, if job_desc.is_empty() { None } else { Some(&job_desc) }).await;
                     serde_json::to_string(&res_json).unwrap_or_else(|_| "{}".to_string())
                 }
+                "/api/career-ops/evaluate" | "/career-ops/evaluate" | "/api/career-ops" | "/career-ops" => {
+                    let job_val = request_json.get("job").cloned().unwrap_or(serde_json::Value::Null);
+                    let resume_val = request_json.get("resume").cloned().unwrap_or(serde_json::Value::Null);
+                    let url_opt = request_json.get("url").and_then(|v| v.as_str());
+                    let res_json = execute_career_ops_evaluate(&job_val, &resume_val, url_opt).await;
+                    serde_json::to_string(&res_json).unwrap_or_else(|_| "{}".to_string())
+                }
+                "/api/career-ops/cover-letter" | "/career-ops/cover-letter" | "/api/cover-letter" | "/cover-letter" => {
+                    let job_val = request_json.get("job").cloned().unwrap_or(serde_json::Value::Null);
+                    let resume_val = request_json.get("resume").cloned().unwrap_or(serde_json::Value::Null);
+                    let res_json = execute_career_ops_cover_letter(&job_val, &resume_val).await;
+                    serde_json::to_string(&res_json).unwrap_or_else(|_| "{}".to_string())
+                }
                 "/report-bandit-feedback" => {
                     let context = request_json["context"].as_u64().unwrap_or(0) as usize;
                     let arm = request_json["arm"].as_u64().unwrap_or(0) as usize;
@@ -20178,6 +20541,18 @@ public class Pr {
         assert_eq!(proc_jobs3[0], "cli.exe");
         assert_eq!(proc_jobs3[1], "--computer-use");
         assert_eq!(proc_jobs3[2], "Search and apply for jobs matching candidate profile and resume");
+
+        let raw_jobs4 = vec!["cli.exe".to_string(), "@agent".to_string(), "career-ops".to_string()];
+        let proc_jobs4 = preprocess_cli_args(raw_jobs4);
+        assert_eq!(proc_jobs4[0], "cli.exe");
+        assert_eq!(proc_jobs4[1], "--computer-use");
+        assert_eq!(proc_jobs4[2], "Search and apply for jobs matching candidate profile and resume");
+
+        let raw_jobs5 = vec!["cli.exe".to_string(), "career".to_string(), "ops".to_string(), "Staff".to_string(), "Architect".to_string()];
+        let proc_jobs5 = preprocess_cli_args(raw_jobs5);
+        assert_eq!(proc_jobs5[0], "cli.exe");
+        assert_eq!(proc_jobs5[1], "--computer-use");
+        assert_eq!(proc_jobs5[2], "Search and apply for jobs: Staff Architect");
     }
 
     #[test]

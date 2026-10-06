@@ -1,6 +1,7 @@
 import os
 import shutil
 import hashlib
+import re
 
 src = os.path.abspath("target/release/cli.exe")
 
@@ -72,6 +73,20 @@ for target_ui_dir in ui_destinations:
         dst_ui = os.path.join(target_ui_dir, f)
         if os.path.exists(src_ui):
             try:
+                is_ide_target = ("IDE" in target_ui_dir or "VSCode" in target_ui_dir)
+                if f == "index.html" and is_ide_target:
+                    with open(src_ui, "r", encoding="utf-8") as fin:
+                        html_content = fin.read()
+                    # Remove tool_apply_jobs from IDE's index.html
+                    html_content = re.sub(
+                        r'<button[^>]*data-tool-id="tool_apply_jobs"[^>]*>[\s\S]*?</button>\s*',
+                        '',
+                        html_content
+                    )
+                    with open(dst_ui, "w", encoding="utf-8") as fout:
+                        fout.write(html_content)
+                    print(f"[MIRRORED IDE UI (Stripped tool_apply_jobs)] {dst_ui}")
+                    continue
                 if os.path.exists(dst_ui) and get_sha256(dst_ui) == get_sha256(src_ui):
                     print(f"[MATCH UI (Already in Parity)] {dst_ui}")
                     continue
