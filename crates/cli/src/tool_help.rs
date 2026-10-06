@@ -71,6 +71,7 @@ pub fn is_known_tool_or_model(name: &str) -> bool {
         "desktop-type", "desktop-scroll", "shopping", "ticket-booking", "exam-solver",
         "map-directions", "som", "markers",
         "apply-jobs", "apply_jobs", "job-application", "job_application", "apply-job", "jobs", "job",
+        "parse-resume", "resume-parse", "parseresume", "resumeparse", "parse_resume", "resume_parse", "resume",
         "acdso", "dataanalyst", "timeseries", "predict", "datascience", "decision",
         "finance", "finbert", "chronos", "fingpt", "llama-fin", "patchtst",
         "vision", "vqa", "object-detection", "image-classification", "video", "image",
@@ -1241,6 +1242,33 @@ pub static TOOL_CARDS: &[ToolCard] = &[
         related: &["computer-use", "screen-grounding", "desktop-click"],
     },
     ToolCard {
+        id: "parse-resume",
+        name: "Resume Parsing & Profile Extraction Engine",
+        category: "computer_use",
+        menu_index: 2,
+        icon: "📄",
+        architecture: "Multi-Format Parser (PDF/DOCX/TXT/RTF) + Vision OCR + Local Ollama LLM Extraction",
+        purpose: "Extracts structured candidate profile (contact, education, skills, experience) from PDF or Word resume with model extraction, OCR, and screening question grounding.",
+        input_format: "Resume file (.pdf, .docx, .doc, .txt, .rtf) or inline text.",
+        options: &[
+            ("--parse-resume <file>", "Path to resume file (PDF, DOCX, TXT, RTF)"),
+            ("--job-description <desc>", "Optional job description to ground screening answers"),
+            ("--model <model>", "Local Ollama model override (default: auto-detected qwen2.5:7b)"),
+            ("--json", "Output structured candidate JSON"),
+        ],
+        directives: &[
+            ("@agent parse-resume <path>", "Parse resume file and extract structured candidate profile"),
+            ("cli.exe --parse-resume <path>", "Execute resume parser CLI directly"),
+        ],
+        examples: &[
+            "@agent parse-resume ./resume.pdf",
+            "@agent parse-resume ./resume.docx",
+            "cli.exe --parse-resume ./resume.pdf --job-description \"Senior Systems Engineer\"",
+            "cli.exe --tool-help parse-resume",
+        ],
+        related: &["apply-jobs", "computer-use", "screen-grounding"],
+    },
+    ToolCard {
         id: "acdso",
         name: "Adaptive Contextual Data Science Optimization (ACDSO)",
         category: "tabular",
@@ -1898,6 +1926,7 @@ pub fn format_tool_help_card(query: &str) -> String {
     let lower_raw = trimmed.to_lowercase();
     let lower = match lower_raw.as_str() {
         "apply for jobs" | "apply-job" | "apply_job" | "applyjobs" | "job-application" | "job_application" | "jobapplication" | "jobs" | "job" => "apply-jobs".to_string(),
+        "parse-resume" | "parseresume" | "resume-parse" | "resumeparse" | "parse_resume" | "resume_parse" | "resume" => "parse-resume".to_string(),
         _ => lower_raw,
     };
     let tokens: Vec<&str> = lower.split_whitespace().collect();

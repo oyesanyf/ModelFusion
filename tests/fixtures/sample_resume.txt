@@ -1,0 +1,24 @@
+Jane Doe
+jane.doe.systems@gmail.com | +1 (555) 432-8765 | San Francisco, CA
+LinkedIn: https://linkedin.com/in/janedoe-systems | GitHub: https://github.com/janedoe-infra
+
+Summary:
+Principal Systems & Infrastructure Engineer with 8+ years experience designing, deploying, and maintaining high-scale distributed systems and core cloud infrastructure at scale.
+
+Education:
+Master of Science in Computer Science, Stanford University (2018)
+Bachelor of Science in Computer Science, UC Berkeley (2016)
+
+Experience:
+2021 - Present: Senior Staff Systems Engineer, CloudScale Inc.
+- Architected distributed key-value store handling 5M QPS with sub-millisecond latencies using Rust, C++, and gRPC.
+- Managed Kubernetes clusters across 12 regions with Docker, Terraform, and Prometheus.
+
+2018 - 2021: Systems Software Engineer, DataCore Systems
+- Developed core storage engines in Rust and Go with Linux kernel eBPF monitoring.
+
+Skills:
+Rust, Python, Go, C++, Distributed Systems, Systems Engineering, Core Infrastructure, Kubernetes, Docker, Linux, Cloud Architecture, AWS, GCP, Terraform, CI/CD, SQL, PostgreSQL, REST API, gRPC
+
+Work Authorization:
+US Citizen (No sponsorship required)

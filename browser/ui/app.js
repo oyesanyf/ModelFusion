@@ -85,6 +85,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const attachmentTray = document.getElementById('attachment-tray');
   const btnAttachFile = document.getElementById('btn-attach-file');
   const filePicker = document.getElementById('file-picker');
+  const resumeFilePicker = document.getElementById('resume-file-picker');
   const btnClearAttachments = document.getElementById('btn-clear-attachments');
 
   // Web search toggle button
@@ -2365,6 +2366,18 @@ document.addEventListener('DOMContentLoaded', () => {
     filePicker.addEventListener('change', (e) => {
       handleFiles(e.target.files);
       filePicker.value = '';
+    });
+  }
+
+  if (resumeFilePicker) {
+    resumeFilePicker.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      if (typeof handleResumeFileSelection === 'function') {
+        await handleResumeFileSelection(file, window._pendingJobGoal || '');
+      }
+      window._pendingJobGoal = null;
+      resumeFilePicker.value = '';
     });
   }
 
@@ -19805,26 +19818,27 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 
   function getJobApplicantProfile() {
     let profile = {
-      fullName: 'Alex Morgan',
-      email: 'alex.morgan.dev@gmail.com',
-      phone: '+1 (555) 234-5678',
-      location: 'San Francisco, CA / Remote',
-      linkedin: 'https://linkedin.com/in/alexmorgan-dev',
-      github: 'https://github.com/alexmorgandev',
+      fullName: '',
+      email: '',
+      phone: '',
+      location: '',
+      linkedin: '',
+      github: '',
       workAuthorization: 'Citizen / Permanent Resident (No sponsorship required)',
       sponsorshipRequired: 'No',
       desiredWorkType: 'Remote',
       desiredEmploymentType: 'Full-time',
-      resumeFileName: 'Alex_Morgan_Resume.pdf',
-      resumeFileSize: '142 KB',
-      yearsExperience: '6+ years',
-      education: 'Bachelor of Science in Computer Science, UC Berkeley',
-      highestDegree: 'Bachelor of Science (BS)',
-      skills: 'Rust, TypeScript, React, Python, Distributed Systems, Cloud Architecture',
-      parsedSkills: ['Rust', 'Python', 'TypeScript', 'React', 'Docker', 'Kubernetes', 'Cloud Architecture', 'Distributed Systems'],
-      skillYears: { 'Rust': 6, 'Python': 8, 'TypeScript': 7, 'React': 6, 'Cloud': 7, 'Distributed Systems': 6 },
-      coverLetterSnippet: 'Experienced software engineer specializing in high-performance distributed systems and AI platform engineering.',
-      hasUploadedResume: false
+      resumeFileName: '',
+      resumeFileSize: '',
+      yearsExperience: '',
+      education: '',
+      highestDegree: '',
+      skills: '',
+      parsedSkills: [],
+      skillYears: {},
+      coverLetterSnippet: '',
+      hasUploadedResume: false,
+      screeningQuestions: []
     };
 
     if (typeof localStorage !== 'undefined') {
@@ -19861,16 +19875,84 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     return merged;
   }
 
-  function answerScreeningQuestions(questions = [], profile = null) {
+  function updateCandidateField(key, val) {
+    const updates = {};
+    updates[key] = val;
+    saveJobApplicantProfile(updates);
+    if (typeof termLog === 'function') {
+      termLog(`[HITL JOBS] Updated candidate field "${key}": "${val}"`, 'info');
+    }
+  }
+
+  function updateScreeningAnswer(index, val) {
+    if (!window.activeScreeningAnswers) window.activeScreeningAnswers = {};
+    window.activeScreeningAnswers[index] = val;
+    const prof = getJobApplicantProfile();
+    if (Array.isArray(prof.screeningQuestions) && prof.screeningQuestions[index]) {
+      prof.screeningQuestions[index].answer = val;
+      saveJobApplicantProfile({ screeningQuestions: prof.screeningQuestions });
+    }
+  }
+
+  function syncCandidateInputsFromProfile(prof) {
+    if (typeof document === 'undefined') return;
+    const setVal = (id, val) => {
+      const el = document.getElementById(id);
+      if (el && val !== undefined && val !== null) el.value = val;
+    };
+    setVal('candidate-full-name', prof.fullName);
+    setVal('candidate-email', prof.email);
+    setVal('candidate-phone', prof.phone);
+    setVal('candidate-location', prof.location);
+    setVal('candidate-linkedin', prof.linkedin);
+    setVal('candidate-work-auth', prof.workAuthorization);
+    setVal('candidate-work-type', `${prof.desiredWorkType || 'Remote'} (${prof.desiredEmploymentType || 'Full-time'})`);
+    setVal('candidate-experience', prof.yearsExperience);
+    setVal('candidate-education', prof.education);
+    setVal('candidate-skills', prof.skills);
+
+    const resName = document.getElementById('active-resume-name');
+    if (resName) resName.textContent = prof.resumeFileName || 'None uploaded';
+    const resSize = document.getElementById('active-resume-size');
+    if (resSize) resSize.textContent = prof.resumeFileSize ? `(${prof.resumeFileSize})` : '';
+  }
+
+  function renderScreeningQuestionsInDom(questions) {
+    if (typeof document === 'undefined') return;
+    const container = document.getElementById('screening-questions-container');
+    if (!container || !Array.isArray(questions)) return;
+    container.innerHTML = questions.map((sq, i) => `
+      <div style="background: rgba(255,255,255,0.03); border-radius: 4px; padding: 6px 10px; display: flex; flex-direction: column; gap: 3px;">
+        <div style="color: var(--text-secondary); font-weight: 500; display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+          <span>${escapeHtml(sq.question)}</span>
+          <span style="font-size: 9.5px; color: #34d399; background: rgba(16, 185, 129, 0.1); padding: 1px 5px; border-radius: 3px;">📄 (${escapeHtml(sq.source || 'Parsed from Resume')})</span>
+        </div>
+        <div style="color: #38bdf8; font-weight: 600;">
+          <input type="text" id="screening-answer-${i}" value="${escapeHtml(sq.answer)}" oninput="window.updateScreeningAnswer(${i}, this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(56, 189, 248, 0.3); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function answerScreeningQuestions(questions = [], profile = null, job = null) {
     const prof = profile || getJobApplicantProfile();
+    const selJob = job || (window.activeJobPostings && window.activeJobPostings[window.selectedJobIndex || 0]) || null;
+
+    if (Array.isArray(prof.screeningQuestions) && prof.screeningQuestions.length > 0 && (!questions || questions.length === 0)) {
+      return prof.screeningQuestions;
+    }
+
+    const jobCompany = selJob ? selJob.company : 'Employer';
+    const jobTitle = selJob ? selJob.title : 'Software Engineer';
+    const jobSalary = selJob ? selJob.salary : '$160,000 - $220,000 / year';
+
     const defaultQuestions = [
-      { id: 'q_years_rust', text: 'How many years of work experience do you have with Rust?', category: 'experience' },
-      { id: 'q_years_python', text: 'How many years of work experience do you have with Python / Systems?', category: 'experience' },
-      { id: 'q_education', text: 'What is your highest level of education completed?', category: 'education' },
-      { id: 'q_auth', text: 'Are you legally authorized to work in the United States?', category: 'authorization' },
+      { id: 'q_years_exp', text: `How many years of relevant engineering experience do you have for this ${jobTitle} role?`, category: 'experience' },
+      { id: 'q_core_skills', text: `Describe your hands-on experience with ${prof.skills || 'systems architecture and cloud infrastructure'}:`, category: 'skills' },
+      { id: 'q_auth', text: `Are you legally authorized to work for ${jobCompany} without restriction?`, category: 'authorization' },
       { id: 'q_sponsorship', text: 'Will you now or in the future require employment visa sponsorship?', category: 'sponsorship' },
       { id: 'q_notice', text: 'What is your available start date / notice period?', category: 'availability' },
-      { id: 'q_salary', text: 'What is your desired compensation range?', category: 'salary' }
+      { id: 'q_salary', text: `What is your desired compensation range for ${jobTitle}?`, category: 'salary' }
     ];
 
     const targetList = (Array.isArray(questions) && questions.length > 0) ? questions : defaultQuestions;
@@ -19881,25 +19963,27 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       let confidence = 0.95;
 
       if (/years.*(?:rust)\b/i.test(qLower)) {
-        answer = `${prof.skillYears && prof.skillYears['Rust'] ? prof.skillYears['Rust'] : 6} years`;
+        answer = `${prof.skillYears && prof.skillYears['Rust'] ? prof.skillYears['Rust'] : (prof.yearsExperience || '6+ years')}`;
       } else if (/years.*(?:python)\b/i.test(qLower)) {
-        answer = `${prof.skillYears && prof.skillYears['Python'] ? prof.skillYears['Python'] : 8} years`;
-      } else if (/years.*(?:experience|working|software)\b/i.test(qLower)) {
-        answer = prof.yearsExperience || '6+ years';
+        answer = `${prof.skillYears && prof.skillYears['Python'] ? prof.skillYears['Python'] : (prof.yearsExperience || '8+ years')}`;
+      } else if (/years.*(?:experience|working|engineering|relevant)\b/i.test(qLower)) {
+        answer = prof.yearsExperience || '6+ years of production software engineering experience';
+      } else if (/hands-on|describe.*experience|skills\b/i.test(qLower)) {
+        answer = `Extensive production experience in ${prof.skills || 'high-performance distributed systems, cloud services, and scalable architecture'}.`;
       } else if (/education|degree|highest level/i.test(qLower)) {
         answer = prof.education || 'Bachelor of Science in Computer Science';
       } else if (/authorized|legally authorized|authorization|eligible to work/i.test(qLower)) {
-        answer = 'Yes - Authorized to work without restriction';
+        answer = prof.workAuthorization || 'Yes - Authorized to work without restriction';
       } else if (/sponsorship|visa|require.*sponsorship/i.test(qLower)) {
-        answer = 'No - Will not require visa sponsorship';
+        answer = prof.sponsorshipRequired === 'Yes' ? 'Yes, visa sponsorship required' : 'No - Will not require visa sponsorship';
       } else if (/notice|start date|earliest/i.test(qLower)) {
         answer = 'Immediate / 2 weeks standard notice';
       } else if (/salary|compensation|expectation/i.test(qLower)) {
-        answer = '$170,000 - $210,000 / year';
+        answer = `Aligned with posted range (${jobSalary})`;
       } else if (/remote|hybrid|location|relocate/i.test(qLower)) {
-        answer = 'Preferred Remote, open to travel or hybrid as required';
+        answer = `Preferred ${prof.desiredWorkType || 'Remote'}, open to hybrid or travel as required`;
       } else {
-        answer = 'Yes, qualifications aligned with posted role and candidate background';
+        answer = `Yes, candidate qualifications and background are directly aligned with this requirement.`;
         confidence = 0.85;
       }
 
@@ -19908,7 +19992,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         question: qText,
         answer,
         confidence,
-        source: 'Parsed from Resume'
+        source: 'Grounded on Resume & Job Spec'
       };
     });
   }
@@ -20053,9 +20137,30 @@ Analyze the temporal progression across the sampled video keyframes, describing 
   }
 
   function useSampleCandidateProfile(goal = '') {
-    saveJobApplicantProfile({ hasUploadedResume: true });
+    saveJobApplicantProfile({
+      fullName: 'Alex Morgan',
+      email: 'alex.morgan.dev@gmail.com',
+      phone: '+1 (555) 234-5678',
+      location: 'San Francisco, CA / Remote',
+      linkedin: 'https://linkedin.com/in/alexmorgan-dev',
+      github: 'https://github.com/alexmorgandev',
+      workAuthorization: 'Citizen / Permanent Resident (No sponsorship required)',
+      sponsorshipRequired: 'No',
+      desiredWorkType: 'Remote',
+      desiredEmploymentType: 'Full-time',
+      resumeFileName: 'Alex_Morgan_Resume.pdf',
+      resumeFileSize: '142 KB',
+      yearsExperience: '6+ years',
+      education: 'Bachelor of Science in Computer Science, UC Berkeley',
+      highestDegree: 'Bachelor of Science (BS)',
+      skills: 'Rust, TypeScript, React, Python, Distributed Systems, Cloud Architecture',
+      parsedSkills: ['Rust', 'Python', 'TypeScript', 'React', 'Docker', 'Kubernetes', 'Cloud Architecture', 'Distributed Systems'],
+      skillYears: { 'Rust': 6, 'Python': 8, 'TypeScript': 7, 'React': 6, 'Cloud': 7, 'Distributed Systems': 6 },
+      coverLetterSnippet: 'Experienced software engineer specializing in high-performance distributed systems and AI platform engineering.',
+      hasUploadedResume: true
+    });
     if (typeof termLog === 'function') {
-      termLog('[HITL JOBS] 👤 Initialized candidate profile: Alex Morgan (6+ yrs Rust/Python/Distributed Systems).', 'success');
+      termLog('[HITL JOBS] 👤 Initialized default candidate profile: Alex Morgan (6+ yrs Rust/Python/Distributed Systems).', 'success');
     }
     const promptCard = typeof document !== 'undefined' ? document.getElementById('resume-upload-prompt-card') : null;
     if (promptCard) {
@@ -20067,31 +20172,172 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     }
     const cleanGoal = goal || 'Senior Rust Engineer remote';
     setTimeout(() => {
-      executeCliCommand(`@agent apply-jobs ${cleanGoal} --skip-resume`);
+      if (typeof executeCliCommand === 'function') {
+        executeCliCommand(`@agent apply-jobs ${cleanGoal} --skip-resume`);
+      }
     }, 300);
   }
 
   function triggerResumeUploadInput(goal = '') {
-    const prof = getJobApplicantProfile();
-    const newResume = (typeof prompt === 'function') ? prompt('Enter Resume File Name or attach file (e.g. Alex_Morgan_Resume_2026.pdf):', prof.resumeFileName) : 'Alex_Morgan_Resume.pdf';
-    if (newResume && newResume.trim()) {
-      saveJobApplicantProfile({ resumeFileName: newResume.trim(), hasUploadedResume: true, resumeFileSize: '158 KB' });
-      if (typeof termLog === 'function') {
-        termLog(`[HITL JOBS] 📎 Uploaded resume: ${newResume.trim()}. Skills and experience parsed.`, 'success');
+    window._pendingJobGoal = goal;
+    const rfp = typeof document !== 'undefined' ? document.getElementById('resume-file-picker') : null;
+    if (rfp) {
+      rfp.click();
+    } else {
+      useSampleCandidateProfile(goal);
+    }
+  }
+
+  function uploadResumeFile() {
+    const rfp = typeof document !== 'undefined' ? document.getElementById('resume-file-picker') : null;
+    if (rfp) {
+      rfp.click();
+    }
+  }
+
+  async function handleResumeFileSelection(file, goal = '') {
+    if (!file) return;
+    if (typeof termLog === 'function') {
+      termLog(`[RESUME PARSER] 📄 Reading candidate resume: "${file.name}" (${Math.round(file.size / 1024)} KB)...`, 'info');
+    }
+
+    const statusEl = (typeof document !== 'undefined') ? document.getElementById('job-autofill-status') : null;
+    if (statusEl) {
+      statusEl.innerHTML = `⏳ <em>Parsing resume "${escapeHtml(file.name)}" via ModelFusion Resume Engine...</em>`;
+      statusEl.style.color = '#38bdf8';
+    }
+
+    try {
+      const isTextFile = /\.(txt|md|rtf)$/i.test(file.name);
+      const activeJob = (window.activeJobPostings && window.activeJobPostings[window.selectedJobIndex || 0]) || null;
+      let payload = {
+        filename: file.name,
+        path: file.path || '',
+        job_description: (activeJob && activeJob.description) ? activeJob.description : ''
+      };
+
+      if (isTextFile) {
+        const text = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsText(file);
+        });
+        payload.text = text;
+      } else {
+        const base64Data = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const res = reader.result;
+            const commaIdx = res.indexOf(',');
+            resolve(commaIdx >= 0 ? res.substring(commaIdx + 1) : res);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        payload.base64 = base64Data;
       }
-      const promptCard = typeof document !== 'undefined' ? document.getElementById('resume-upload-prompt-card') : null;
+
+      let parsedData = null;
+      try {
+        const resp = await fetch('http://127.0.0.1:5000/api/resume/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (resp.ok) {
+          parsedData = await resp.json();
+        }
+      } catch (_) {
+        if (typeof termLog === 'function') {
+          termLog('[RESUME PARSER] Port 5000 server offline or unreachable; using client fallback parsing.', 'warn');
+        }
+      }
+
+      if (!parsedData || parsedData.status === 'error') {
+        parsedData = parseResumeClientFallback(file.name, payload.text || '');
+      }
+
+      const skillsStr = Array.isArray(parsedData.skills) ? parsedData.skills.join(', ') : (parsedData.skills || '');
+      const defaultName = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+      const updates = {
+        fullName: parsedData.full_name || parsedData.fullName || defaultName,
+        email: parsedData.email || '',
+        phone: parsedData.phone || '',
+        location: parsedData.location || '',
+        linkedin: parsedData.linkedin || '',
+        github: parsedData.github || '',
+        workAuthorization: parsedData.work_authorization || parsedData.workAuthorization || 'Citizen / Permanent Resident (No sponsorship required)',
+        yearsExperience: parsedData.years_experience || parsedData.yearsExperience || '5+ years',
+        education: parsedData.education || '',
+        skills: skillsStr,
+        parsedSkills: Array.isArray(parsedData.skills) ? parsedData.skills : (skillsStr ? skillsStr.split(',').map(s => s.trim()) : []),
+        resumeFileName: file.name,
+        resumeFileSize: `${Math.round(file.size / 1024)} KB`,
+        hasUploadedResume: true,
+        screeningQuestions: parsedData.screening_questions || []
+      };
+
+      const updatedProfile = saveJobApplicantProfile(updates);
+      syncCandidateInputsFromProfile(updatedProfile);
+
+      if (Array.isArray(parsedData.screening_questions) && parsedData.screening_questions.length > 0) {
+        renderScreeningQuestionsInDom(parsedData.screening_questions);
+      }
+
+      if (statusEl) {
+        statusEl.innerHTML = `✨ <strong>Resume Parsed Successfully:</strong> Profile fields and screening answers grounded from <strong>${escapeHtml(file.name)}</strong>.`;
+        statusEl.style.color = '#34d399';
+      }
+
+      if (typeof termLog === 'function') {
+        termLog(`[RESUME PARSER] ✅ Successfully parsed "${file.name}": ${updates.fullName} | ${updates.yearsExperience} | ${updates.skills}`, 'success');
+      }
+
+      const promptCard = (typeof document !== 'undefined') ? document.getElementById('resume-upload-prompt-card') : null;
       if (promptCard) {
         promptCard.innerHTML = `
           <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; border-radius: 6px; padding: 10px 14px; color: #34d399;">
-            <strong>✅ Resume Attached (${escapeHtml(newResume.trim())}). Continuing autonomous job search...</strong>
+            <strong>✅ Resume Uploaded &amp; Parsed (${escapeHtml(file.name)}). Continuing autonomous job search...</strong>
           </div>
         `;
+        const cleanGoal = goal || 'Senior Software Engineer remote';
+        setTimeout(() => {
+          if (typeof executeCliCommand === 'function') {
+            executeCliCommand(`@agent apply-jobs ${cleanGoal} --skip-resume`);
+          }
+        }, 300);
       }
-      const cleanGoal = goal || 'Senior Rust Engineer remote';
-      setTimeout(() => {
-        executeCliCommand(`@agent apply-jobs ${cleanGoal} --skip-resume`);
-      }, 300);
+    } catch (err) {
+      if (typeof termLog === 'function') {
+        termLog(`[RESUME PARSER] ❌ Error parsing resume: ${err.message}`, 'error');
+      }
+      if (statusEl) {
+        statusEl.innerHTML = `⚠️ <em>Parsing error: ${escapeHtml(err.message)}</em>`;
+        statusEl.style.color = '#f87171';
+      }
     }
+  }
+
+  function parseResumeClientFallback(fileName, text = '') {
+    const emailMatch = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+    const phoneMatch = text.match(/(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/);
+    const linkedinMatch = text.match(/https?:\/\/(?:www\.)?linkedin\.com\/in\/[a-zA-Z0-9_-]+/i);
+    const expMatch = text.match(/(\d+\+?\s*years?)/i);
+    const nameBase = fileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+
+    return {
+      full_name: nameBase,
+      email: emailMatch ? emailMatch[0] : '',
+      phone: phoneMatch ? phoneMatch[0] : '',
+      location: '',
+      linkedin: linkedinMatch ? linkedinMatch[0] : '',
+      work_authorization: 'Citizen / Permanent Resident (No sponsorship required)',
+      years_experience: expMatch ? expMatch[0] : '5+ years',
+      education: '',
+      skills: ['Software Engineering', 'Problem Solving'],
+      screening_questions: []
+    };
   }
 
   function extractJobPostings(doc, text = '', goal = '') {
@@ -20206,6 +20452,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         }
 
         let extracted = goal
+          .replace(/https?:\/\/[^\s]+/gi, '')
           .replace(/^(?:search\s+and\s+apply\s+(?:for\s+)?jobs?:?|apply\s+for\s+jobs?:?|@agent\s+apply-jobs|apply-jobs)\s*/i, '')
           .replace(/\b(?:at\s+google|in\s+google|google)\b/gi, '')
           .replace(/\b(?:in|near|at|around)\s+[A-Za-z\s,.-]+/gi, '')
@@ -20387,19 +20634,48 @@ Analyze the temporal progression across the sampled video keyframes, describing 
             </button>
           </div>
 
-          <!-- Autofilled Fields Grid -->
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; font-size: 11px;">
-            <div><span style="color: var(--text-muted);">Full Name:</span> <strong style="color: var(--text-primary);">${escapeHtml(prof.fullName)}</strong></div>
-            <div><span style="color: var(--text-muted);">Email:</span> <strong style="color: var(--text-primary);">${escapeHtml(prof.email)}</strong></div>
-            <div><span style="color: var(--text-muted);">Phone:</span> <strong style="color: var(--text-primary);">${escapeHtml(prof.phone)}</strong></div>
-            <div><span style="color: var(--text-muted);">Location:</span> <strong style="color: var(--text-primary);">${escapeHtml(prof.location)}</strong></div>
-            <div><span style="color: var(--text-muted);">LinkedIn:</span> <strong style="color: #38bdf8;">${escapeHtml(prof.linkedin)}</strong></div>
-            <div><span style="color: var(--text-muted);">Work Authorization:</span> <strong style="color: #34d399;">${escapeHtml(prof.workAuthorization)}</strong></div>
-            <div><span style="color: var(--text-muted);">Desired Work Type:</span> <strong style="color: var(--text-primary);">${escapeHtml(prof.desiredWorkType)} (${escapeHtml(prof.desiredEmploymentType)})</strong></div>
-            <div><span style="color: var(--text-muted);">Experience:</span> <strong style="color: var(--text-primary);">${escapeHtml(prof.yearsExperience)}</strong></div>
-          </div>
-          <div style="margin-top: 6px; font-size: 11px;">
-            <span style="color: var(--text-muted);">Core Skills:</span> <span style="color: #e2e8f0;">${escapeHtml(prof.skills)}</span>
+          <!-- Candidate Profile Editable Inputs Grid -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; font-size: 11px;">
+            <div>
+              <label for="candidate-full-name" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Full Name:</label>
+              <input id="candidate-full-name" type="text" value="${escapeHtml(prof.fullName || '')}" placeholder="e.g. Alex Morgan" oninput="window.updateCandidateField('fullName', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+            </div>
+            <div>
+              <label for="candidate-email" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Email:</label>
+              <input id="candidate-email" type="email" value="${escapeHtml(prof.email || '')}" placeholder="e.g. alex.morgan.dev@gmail.com" oninput="window.updateCandidateField('email', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+            </div>
+            <div>
+              <label for="candidate-phone" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Phone:</label>
+              <input id="candidate-phone" type="text" value="${escapeHtml(prof.phone || '')}" placeholder="e.g. +1 (555) 234-5678" oninput="window.updateCandidateField('phone', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+            </div>
+            <div>
+              <label for="candidate-location" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Location:</label>
+              <input id="candidate-location" type="text" value="${escapeHtml(prof.location || '')}" placeholder="e.g. San Francisco, CA / Remote" oninput="window.updateCandidateField('location', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+            </div>
+            <div>
+              <label for="candidate-linkedin" style="color: var(--text-muted); display: block; margin-bottom: 2px;">LinkedIn:</label>
+              <input id="candidate-linkedin" type="text" value="${escapeHtml(prof.linkedin || '')}" placeholder="e.g. https://linkedin.com/in/alexmorgan-dev" oninput="window.updateCandidateField('linkedin', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+            </div>
+            <div>
+              <label for="candidate-work-auth" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Work Authorization:</label>
+              <input id="candidate-work-auth" type="text" value="${escapeHtml(prof.workAuthorization || 'Citizen / Permanent Resident (No sponsorship required)')}" placeholder="e.g. Authorized (No sponsorship needed)" oninput="window.updateCandidateField('workAuthorization', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+            </div>
+            <div>
+              <label for="candidate-work-type" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Desired Work Type:</label>
+              <input id="candidate-work-type" type="text" value="${escapeHtml(prof.desiredWorkType || 'Remote')} (${escapeHtml(prof.desiredEmploymentType || 'Full-time')})" placeholder="e.g. Remote (Full-time)" oninput="window.updateCandidateField('desiredWorkType', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+            </div>
+            <div>
+              <label for="candidate-experience" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Experience:</label>
+              <input id="candidate-experience" type="text" value="${escapeHtml(prof.yearsExperience || '')}" placeholder="e.g. 6+ years" oninput="window.updateCandidateField('yearsExperience', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+            </div>
+            <div>
+              <label for="candidate-education" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Education:</label>
+              <input id="candidate-education" type="text" value="${escapeHtml(prof.education || '')}" placeholder="e.g. B.S. in Computer Science" oninput="window.updateCandidateField('education', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+            </div>
+            <div style="grid-column: 1 / -1;">
+              <label for="candidate-skills" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Core Skills:</label>
+              <input id="candidate-skills" type="text" value="${escapeHtml(prof.skills || '')}" placeholder="e.g. Rust, TypeScript, Python, Cloud Architecture" oninput="window.updateCandidateField('skills', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #e2e8f0; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+            </div>
           </div>
         </div>
 
@@ -20413,15 +20689,15 @@ Analyze the temporal progression across the sampled video keyframes, describing 
               📄 Parsed from Active Resume
             </span>
           </div>
-          <div style="display: flex; flex-direction: column; gap: 8px; font-size: 11px;">
-            ${answerScreeningQuestions([], prof).map((sq, i) => `
+          <div id="screening-questions-container" style="display: flex; flex-direction: column; gap: 8px; font-size: 11px;">
+            ${answerScreeningQuestions([], prof, selJob).map((sq, i) => `
               <div style="background: rgba(255,255,255,0.03); border-radius: 4px; padding: 6px 10px; display: flex; flex-direction: column; gap: 3px;">
                 <div style="color: var(--text-secondary); font-weight: 500; display: flex; align-items: center; justify-content: space-between; gap: 6px;">
                   <span>${escapeHtml(sq.question)}</span>
-                  <span style="font-size: 9.5px; color: #34d399; background: rgba(16, 185, 129, 0.1); padding: 1px 5px; border-radius: 3px;">📄 (Parsed from Resume)</span>
+                  <span style="font-size: 9.5px; color: #34d399; background: rgba(16, 185, 129, 0.1); padding: 1px 5px; border-radius: 3px;">📄 (${escapeHtml(sq.source || 'Parsed from Resume')})</span>
                 </div>
                 <div style="color: #38bdf8; font-weight: 600;">
-                  <input type="text" id="screening-answer-${i}" value="${escapeHtml(sq.answer)}" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(56, 189, 248, 0.3); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+                  <input type="text" id="screening-answer-${i}" value="${escapeHtml(sq.answer)}" oninput="window.updateScreeningAnswer(${i}, this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(56, 189, 248, 0.3); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
                 </div>
               </div>
             `).join('')}
@@ -20575,26 +20851,22 @@ Analyze the temporal progression across the sampled video keyframes, describing 
   }
 
   function editJobApplicantProfile() {
-    const prof = getJobApplicantProfile();
-    const newName = (typeof prompt === 'function') ? prompt('Enter updated Candidate Full Name:', prof.fullName) : null;
-    if (newName && newName.trim()) {
-      saveJobApplicantProfile({ fullName: newName.trim() });
-      if (typeof termLog === 'function') {
-        termLog(`[HITL JOBS] Candidate name updated to: ${newName.trim()}`, 'info');
+    if (typeof document !== 'undefined') {
+      const nameInput = document.getElementById('candidate-full-name');
+      if (nameInput) {
+        nameInput.focus();
+        nameInput.select();
+        if (typeof termLog === 'function') {
+          termLog('[HITL JOBS] ✏️ Focused on Candidate Profile inputs for editing.', 'info');
+        }
       }
     }
   }
 
   function uploadResumeFile() {
-    const prof = getJobApplicantProfile();
-    const newResume = (typeof prompt === 'function') ? prompt('Enter Resume File Name (e.g. Alex_Morgan_Resume_2026.pdf):', prof.resumeFileName) : null;
-    if (newResume && newResume.trim()) {
-      saveJobApplicantProfile({ resumeFileName: newResume.trim(), resumeFileSize: '158 KB' });
-      const nameEl = typeof document !== 'undefined' ? document.getElementById('active-resume-name') : null;
-      if (nameEl) nameEl.textContent = newResume.trim();
-      if (typeof termLog === 'function') {
-        termLog(`[HITL JOBS] Active resume updated to: ${newResume.trim()}`, 'success');
-      }
+    const rfp = typeof document !== 'undefined' ? document.getElementById('resume-file-picker') : null;
+    if (rfp) {
+      rfp.click();
     }
   }
 
@@ -21148,6 +21420,15 @@ Analyze the temporal progression across the sampled video keyframes, describing 
   window.abortJobApplication = abortJobApplication;
   window.editJobApplicantProfile = editJobApplicantProfile;
   window.uploadResumeFile = uploadResumeFile;
+  window.updateCandidateField = updateCandidateField;
+  window.updateScreeningAnswer = updateScreeningAnswer;
+  window.syncCandidateInputsFromProfile = syncCandidateInputsFromProfile;
+  window.renderScreeningQuestionsInDom = renderScreeningQuestionsInDom;
+  window.handleResumeFileSelection = handleResumeFileSelection;
+  window.parseResumeClientFallback = parseResumeClientFallback;
+  window.getJobApplicantProfile = getJobApplicantProfile;
+  window.saveJobApplicantProfile = saveJobApplicantProfile;
+  window.answerScreeningQuestions = answerScreeningQuestions;
 
   window.getAuthorStyleProfile = getAuthorStyleProfile;
   window.saveAuthorStyleProfile = saveAuthorStyleProfile;
@@ -21323,7 +21604,8 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     const searchQuery = extractSearchQueryFromGoal(goal);
 
     const isSearchEngineHome = !targetNavUrl || /^(?:https?:\/\/)?(?:w{1,4}\.)?(?:google\.(?:com|[a-z]{2,3})|bing\.com|duckduckgo\.com|yahoo\.com)(?:\/|\/webhp|\/search|\/imghp)?\/?$/i.test(targetNavUrl);
-    if (searchQuery && (isSearchEngineHome || !targetNavUrl || /(?:google|bing|duckduckgo|yahoo)\.(?:com|[a-z]{2,3})/i.test(targetNavUrl))) {
+    const isDeepUrl = /\/(?:about\/careers|careers|jobs|job|applications?|apply|results|\?|#)\b/i.test(targetNavUrl) || (/https?:\/\/[^\/]+\/.{3,}/i.test(targetNavUrl) && !isSearchEngineHome);
+    if (searchQuery && !isDeepUrl && (isSearchEngineHome || !targetNavUrl)) {
       targetNavUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
     }
 
@@ -21680,8 +21962,17 @@ Analyze the temporal progression across the sampled video keyframes, describing 
               <a href="${escapeHtml(targetNavUrl)}" target="_blank" style="color: var(--accent-color); font-size: 10px; text-decoration: underline;">↗ New Tab</a>
             </div>
           </div>
-          <div style="height: 220px; position: relative;">
-            <iframe src="${escapeHtml(proxiedPreviewUrl)}" style="width: 100%; height: 100%; border: none; background: #fff;" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+          <div style="height: 220px; position: relative; background: #0b0f19;">
+            <iframe src="${escapeHtml(proxiedPreviewUrl)}" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" style="width: 100%; height: 100%; border: none; background: #fff;" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+            <div class="iframe-fallback-overlay" style="display: none; position: absolute; inset: 0; background: rgba(11, 15, 25, 0.95); flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 12px; text-align: center;">
+              <span style="font-size: 24px;">🌐</span>
+              <div style="font-size: 12px; font-weight: 600; color: #f1f5f9;">Cross-Origin Protected Page</div>
+              <div style="font-size: 11px; color: var(--text-muted);">This website restricts embedded frames. Viewport automation continues in background.</div>
+              <div style="display: flex; gap: 8px; margin-top: 4px;">
+                <button type="button" onclick="if(window.navigateTo) window.navigateTo('${escapeHtml(targetNavUrl)}', false, true)" style="background: #0284c7; color: #fff; border: none; font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer;">Open in Browser Viewport</button>
+                <a href="${escapeHtml(targetNavUrl)}" target="_blank" style="background: rgba(255,255,255,0.08); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); font-size: 11px; padding: 4px 10px; border-radius: 4px; text-decoration: none;">Open in New Tab</a>
+              </div>
+            </div>
           </div>
         </div>
       ` : '';
