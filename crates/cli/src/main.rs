@@ -22,6 +22,8 @@ pub use decision_engine::{
     compute_bandit_telemetry, DecisionRequest, DecisionResponse, DecisionScore,
     HitlGateDecision, MismatchDecision, HUGOS_14_CATEGORIES,
 };
+pub mod tool_help;
+pub use tool_help::{format_tool_help_card, is_help_token, is_known_tool_or_model, is_conversational_prompt};
 
 use anyhow::Result;
 use clap::Parser;
@@ -1839,6 +1841,9 @@ struct Args {
     // ---------------------------------------------------------
     // Global Flags
     // ---------------------------------------------------------
+    #[arg(long = "tool-help", visible_alias = "cmd-help", num_args = 0..=1, default_missing_value = "all", help = "Display comprehensive sample usage and syntax for a specific agent tool or model")]
+    tool_help: Option<String>,
+
     #[arg(short = 'f', long, help = "Path to file for analysis or processing")]
     file: Option<String>,
 
@@ -2828,6 +2833,92 @@ where
         args[1] = "--cli".to_string();
     }
 
+    // Universal Command Help & Sample Usage Interceptor
+    // 1. Preserve standard clap top-level help (cli.exe --help or -h)
+    if !(args.len() == 2 && (args[1] == "--help" || args[1] == "-h")) {
+        // 2. Check if already invoking --tool-help or --cmd-help
+        let has_tool_help = args.iter().any(|a| {
+            a == "--tool-help" || a == "--cmd-help" || a.starts_with("--tool-help=") || a.starts_with("--cmd-help=")
+        });
+        if !has_tool_help {
+            // Check if conversational prompt like "help me write..."
+            if !is_conversational_prompt(&args[1..]) {
+                // Case A: cli.exe help / cli.exe /? / cli.exe ? / cli.exe @agent
+                if args.len() == 2 {
+                    let v = args[1].to_lowercase();
+                    if is_help_token(&v) || v == "@agent" || v == "agent" || v == "@" || v == "/help" {
+                        return vec![args[0].clone(), "--tool-help".to_string(), "all".to_string()];
+                    }
+                }
+
+                // Case B: cli.exe help <query...>
+                if args.len() > 2 && (args[1].to_lowercase() == "help" || args[1].to_lowercase() == "/help") {
+                    let query_tokens: Vec<String> = args[2..].iter()
+                        .filter(|a| !is_help_token(a))
+                        .map(|a| a.trim_start_matches('@').trim_start_matches('/').to_string())
+                        .collect();
+                    let q = if query_tokens.is_empty() { "all".to_string() } else { query_tokens.join(" ") };
+                    return vec![args[0].clone(), "--tool-help".to_string(), q];
+                }
+
+                // Case C: @agent with any help token
+                let starts_with_agent = args.len() > 2 && (args[1].to_lowercase() == "@agent" || args[1].to_lowercase() == "agent");
+                if starts_with_agent && args[2..].iter().any(|a| is_help_token(a)) {
+                    let clean_tokens: Vec<String> = args[2..].iter()
+                        .filter(|a| !is_help_token(a))
+                        .map(|a| {
+                            let s = a.trim_start_matches('@').trim_start_matches('/');
+                            if s.starts_with("--") {
+                                s.trim_start_matches('-')
+                            } else if s.starts_with('-') && s.len() > 2 {
+                                s.trim_start_matches('-')
+                            } else {
+                                s
+                            }.to_string()
+                        })
+                        .filter(|a| !a.is_empty() && a != "labels" && a != "threshold" && a != "multi-label")
+                        .collect();
+                    let q = if clean_tokens.is_empty() { "all".to_string() } else { clean_tokens.join(" ") };
+                    return vec![args[0].clone(), "--tool-help".to_string(), q];
+                }
+
+                // Case D: Direct tool command with help (e.g. cli.exe classify nli-deberta-v3-base help, cli.exe computer-use --help, cli.exe legal saul-7b help)
+                if args.len() > 2 && args.iter().skip(1).any(|a| is_help_token(a)) {
+                    let first = args[1].trim_start_matches('-').trim_start_matches('/').to_lowercase();
+                    let is_tool_cmd = is_known_tool_or_model(&first)
+                        || first == "som" || first == "update" || first == "updatedb"
+                        || first == "sys-info" || first == "sysinfo" || first == "system-info"
+                        || first == "active-model" || first == "active-models"
+                        || first == "db-check" || first == "db-vacuum" || first == "db-rebuild" || first == "db-prune"
+                        || first == "audit-menus" || first == "audit" || first == "benchmark"
+                        || first == "humanize" || first == "watermark" || first == "translate"
+                        || first == "decision" || first == "kv-bench" || first == "kv";
+
+                    let last_is_help = is_help_token(args.last().unwrap());
+
+                    if is_tool_cmd || last_is_help {
+                        let clean_tokens: Vec<String> = args[1..].iter()
+                            .filter(|a| !is_help_token(a))
+                            .map(|a| {
+                                let s = a.trim_start_matches('@').trim_start_matches('/');
+                                if s.starts_with("--") {
+                                    s.trim_start_matches('-')
+                                } else if s.starts_with('-') && s.len() > 2 {
+                                    s.trim_start_matches('-')
+                                } else {
+                                    s
+                                }.to_string()
+                            })
+                            .filter(|a| !a.is_empty() && a != "labels" && a != "threshold" && a != "multi-label")
+                            .collect();
+                        let q = if clean_tokens.is_empty() { "all".to_string() } else { clean_tokens.join(" ") };
+                        return vec![args[0].clone(), "--tool-help".to_string(), q];
+                    }
+                }
+            }
+        }
+    }
+
     let verb = args[1].to_lowercase();
     if !verb.starts_with('-') {
         if (verb == "@agent" || verb == "agent") && args.len() > 2 {
@@ -3627,6 +3718,11 @@ fn main() -> Result<()> {
     let raw_args: Vec<String> = std::env::args().collect();
     let preprocessed = preprocess_cli_args(raw_args);
     let args = Args::parse_from(preprocessed);
+
+    if let Some(ref tool_q) = args.tool_help {
+        println!("{}", format_tool_help_card(tool_q));
+        return Ok(());
+    }
 
     if let Some(ref _key) = args.gemini_key {
         println!("ℹ️ Google Gemini and paid cloud models have been disabled. HugOS operates entirely on 100% free, local open-weight hardware models.");
@@ -15258,8 +15354,7 @@ sequenceDiagram
                         let parts: Vec<String> = trimmed.split_whitespace().map(|s| s.to_string()).collect();
                         run_cli_subcommand(&parts, db_path_val).await
                     } else {
-                        let sys = query_system_resources();
-                        format!("🤖 **ModelFusion Command Router**\n\n- System: {} ({} Cores, {:.2} GB free RAM, GPU: {})\n- Active Endpoint: http://127.0.0.1:{}\n- Multi-Modal Catalog: {}\n\nUsage: Post JSON with `args`, `command`, or `prompt` to execute any ModelFusion CLI directive.", sys.cpu_name, sys.logical_cores, sys.free_ram_gb, sys.gpu_name, port, db_path_val.display())
+                        format_tool_help_card("all")
                     }
                 }
                 other => {
@@ -15326,14 +15421,26 @@ sequenceDiagram
                     }
                     parsed
                 } else {
+                    let is_help_card = result_content.contains("TOOL CARD")
+                        || result_content.contains("MODEL CARD")
+                        || result_content.contains("COMMAND HELP")
+                        || result_content.contains("MODELFUSION");
                     serde_json::json!({
+                        "status": "ok",
+                        "help": is_help_card,
                         "content": result_content,
                         "response": result_content,
                         "output": result_content
                     })
                 }
             } else {
+                let is_help_card = result_content.contains("TOOL CARD")
+                    || result_content.contains("MODEL CARD")
+                    || result_content.contains("COMMAND HELP")
+                    || result_content.contains("MODELFUSION");
                 serde_json::json!({
+                    "status": "ok",
+                    "help": is_help_card,
                     "content": result_content,
                     "response": result_content,
                     "output": result_content
@@ -15359,6 +15466,15 @@ fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 
 async fn run_cli_subcommand(cmd_args: &[String], db_path: &std::path::Path) -> String {
     let mut args = cmd_args.to_vec();
+
+    // Fast in-memory interception for universal tool & model help queries
+    let test_raw = std::iter::once("cli.exe".to_string()).chain(args.iter().cloned()).collect::<Vec<String>>();
+    let prep = preprocess_cli_args(test_raw);
+    if prep.len() >= 2 && prep[1] == "--tool-help" {
+        let q = if prep.len() > 2 { &prep[2] } else { "all" };
+        return format_tool_help_card(q);
+    }
+
     args.retain(|a| {
         let l = a.to_lowercase();
         let l_clean = l.trim_start_matches('-').trim_start_matches('/');

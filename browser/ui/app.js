@@ -3157,12 +3157,18 @@ const SPECIFIC_MODEL_CARDS = {
       { cmd: '@agent classify nli-deberta-v3-base <text>', desc: 'High-precision cross-encoder zero-shot classification' },
       { cmd: '@agent classify deberta-v3-base-mnli-fever-anli <text>', desc: 'Fact verification and adversarial NLI entailment scoring' }
     ],
+    options: [
+      { flag: '--labels <l1, l2, ...>', desc: 'Target candidate classification labels to evaluate against premise' },
+      { flag: '--threshold <0.0-1.0>', desc: 'Softmax/sigmoid entailment confidence cutoff threshold (default: 0.5)' },
+      { flag: '--multi-label', desc: 'Allow multiple candidate labels to be entailed simultaneously' }
+    ],
     useCases: [
       'Automated fact-checking and claim verification against scientific or news corpora.',
       'Complex legal or statutory contract clause entailment analysis.',
       'Disambiguating subtle negations in patient clinical feedback.'
     ],
     examples: [
+      '@agent classify nli-deberta-v3-base "The quarterly results beat expectations" candidate labels: earnings, tech, health',
       '@agent classify nli-deberta-v3-base The server never crashed despite the denial of service attempt candidate labels: resilient, vulnerable, crashed',
       '@agent classify deberta-v3-base-mnli-fever-anli Climate models predict warming trends across the Arctic candidate labels: climate change, fictional narrative'
     ],
@@ -4219,22 +4225,685 @@ function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
 
+const TOOL_SAMPLE_REGISTRY = {
+  // Classification (Menu 1)
+  'classify': {
+    id: 'classify',
+    name: 'Zero-Shot Cross-Encoder NLI Classifier',
+    category: 'classification',
+    icon: '🏷️',
+    architecture: 'DeBERTa-v3 / BART-Large MNLI Natural Language Inference',
+    purpose: 'Perform high-precision zero-shot classification and multi-label premise-hypothesis entailment scoring without requiring fine-tuning.',
+    inputFormat: 'Text passage followed by candidate labels (e.g. "Text" candidate labels: label1, label2, ... or --labels l1, l2).',
+    directives: [
+      { cmd: '@agent classify <model> "<text>" candidate labels: <l1, l2>', desc: 'Zero-shot classification ranking candidate labels' },
+      { cmd: '@agent classify nli-deberta-v3-base "<text>" candidate labels: <l1, l2>', desc: 'High-precision DeBERTa-v3 NLI zero-shot classification' }
+    ],
+    options: [
+      { flag: '--labels <l1, l2, ...>', desc: 'Comma-separated candidate labels to score against premise' },
+      { flag: '--multi-label', desc: 'Allow multiple labels to be true simultaneously (sigmoid scoring)' },
+      { flag: '--threshold <0.0-1.0>', desc: 'Confidence threshold cutoff (default: 0.5)' }
+    ],
+    examples: [
+      '@agent classify nli-deberta-v3-base "The quarterly results beat expectations" candidate labels: earnings, tech, health',
+      '@agent classify nli-deberta-v3-base "This product broke immediately" candidate labels: hardware, billing, support',
+      '@agent classify bart-large-mnli The central bank raised interest rates candidate labels: finance, weather, sports'
+    ]
+  },
+  'zero-shot': {
+    id: 'zero-shot',
+    name: 'Zero-Shot NLI Entailment Evaluator',
+    category: 'classification',
+    icon: '🎯',
+    architecture: 'Natural Language Inference Cross-Encoder',
+    purpose: 'Classify arbitrary passages into dynamic candidate classes using NLI entailment probabilities.',
+    inputFormat: 'Text passage with --labels <label1, label2, ...>',
+    directives: [
+      { cmd: '@agent zero-shot "<text>" --labels <l1, l2>', desc: 'Evaluate candidate hypotheses with multi-class inference' }
+    ],
+    options: [
+      { flag: '--labels <l1, l2>', desc: 'Candidate classes' }
+    ],
+    examples: [
+      '@agent zero-shot "This product broke after two days" --labels hardware, customer service, billing',
+      '@agent zero-shot "The server never crashed despite the DDoS attempt" --labels resilient, vulnerable, crashed'
+    ]
+  },
+  'topic': {
+    id: 'topic',
+    name: 'Longformer Document Topic Categorizer',
+    category: 'classification',
+    icon: '📜',
+    architecture: 'Longformer-Base-4096 (Local + Global Dilated Attention)',
+    purpose: 'Classify lengthy multi-page documents, PDFs, or RFCs up to 4,096 tokens into hierarchical subject taxonomies.',
+    inputFormat: 'Multi-page document text or file path.',
+    directives: [
+      { cmd: '@agent topic longformer-base-4096 <document_content>', desc: 'Classify full document without truncation' }
+    ],
+    options: [
+      { flag: '--file <path>', desc: 'Path to text or markdown document' }
+    ],
+    examples: [
+      '@agent topic longformer-base-4096 [Full text of research paper discussing quantum annealing algorithms]'
+    ]
+  },
+
+  // Code & Security (Menu 2)
+  'security': {
+    id: 'security',
+    name: 'Static Application Security Testing (SAST)',
+    category: 'code',
+    icon: '🛡️',
+    architecture: 'Tree-Sitter AST & OWASP Heuristic Engine',
+    purpose: 'Deep static vulnerability discovery auditing source code against OWASP Top 10 vulnerabilities (buffer overflows, SQL injection, use-after-free).',
+    inputFormat: 'Source code file path or inline code block.',
+    directives: [
+      { cmd: '@agent security <code/file>', desc: 'Comprehensive SAST security audit for buffer overflows and vulnerabilities' }
+    ],
+    options: [
+      { flag: '--file <path>', desc: 'Target source code file' },
+      { flag: '--level <info|warn|crit>', desc: 'Minimum severity reporting threshold' }
+    ],
+    examples: [
+      '@agent security fn authenticate(user: &str, pass: &str) -> bool { ... }',
+      '@agent security crates/cli/src/main.rs'
+    ]
+  },
+  'graph-index': {
+    id: 'graph-index',
+    name: 'Code Architecture Dependency Grapher',
+    category: 'code',
+    icon: '🕸️',
+    architecture: 'Tree-Sitter Polyglot AST Call-Graph Extractor',
+    purpose: 'Build complete abstract syntax tree call graphs and symbol dependency indexes across large code repositories.',
+    inputFormat: 'Repository folder or module path.',
+    directives: [
+      { cmd: '@agent graph-index <path>', desc: 'Index repository into interactive AST symbol dependency graph' }
+    ],
+    options: [],
+    examples: [
+      '@agent graph-index crates/cli/src',
+      '@agent graph-index browser/ui'
+    ]
+  },
+  'graph': {
+    id: 'graph',
+    name: 'Code Architecture Dependency Grapher',
+    category: 'code',
+    icon: '🕸️',
+    architecture: 'Tree-Sitter Polyglot AST Call-Graph Extractor',
+    purpose: 'Build complete abstract syntax tree call graphs and symbol dependency indexes across large code repositories.',
+    inputFormat: 'Repository folder or module path.',
+    directives: [
+      { cmd: '@agent graph <path>', desc: 'Index repository into interactive AST symbol dependency graph' }
+    ],
+    options: [],
+    examples: [
+      '@agent graph crates/cli/src'
+    ]
+  },
+  'vuln-scan': {
+    id: 'vuln-scan',
+    name: 'Deep Code Vulnerability Scanner',
+    category: 'code',
+    icon: '🔍',
+    architecture: 'AST Pattern Matching & Control Flow Taint Analysis',
+    purpose: 'Scan codebase for memory safety violations, unsafe blocks, use-after-free, and unchecked array indexing.',
+    inputFormat: 'Source file or folder path.',
+    directives: [
+      { cmd: '@agent vuln-scan <file>', desc: 'Deep scan targeting memory corruption and unsafe code' }
+    ],
+    options: [],
+    examples: [
+      '@agent vuln-scan src/network.c',
+      '@agent vuln-scan crates/cli/src'
+    ]
+  },
+  'secret-scan': {
+    id: 'secret-scan',
+    name: 'Secret & API Key Leak Scanner',
+    category: 'code',
+    icon: '🔑',
+    architecture: 'Shannon Entropy & Regex Credential Scanner',
+    purpose: 'Scan files or git repositories for committed API keys, JWT tokens, AWS secrets, and RSA private keys.',
+    inputFormat: 'Configuration file, source file, or repository root.',
+    directives: [
+      { cmd: '@agent secret-scan <file/repo>', desc: 'Discover leaked API keys, tokens, and private certificates' }
+    ],
+    options: [],
+    examples: [
+      '@agent secret-scan config/settings.json',
+      '@agent secret-scan .'
+    ]
+  },
+  'pii-scan': {
+    id: 'pii-scan',
+    name: 'PII Confidential Identity Scanner',
+    category: 'code',
+    icon: '🕵️',
+    architecture: 'Presidio & NER Heuristic Classifier',
+    purpose: 'Identify leaked Social Security numbers, credit card numbers, email addresses, and confidential PII.',
+    inputFormat: 'Text document, database dump, or log file.',
+    directives: [
+      { cmd: '@agent pii-scan <text/file>', desc: 'Discover leaked confidential identity data and PII' }
+    ],
+    options: [],
+    examples: [
+      '@agent pii-scan logs/audit.log',
+      '@agent pii-scan exports/users.csv'
+    ]
+  },
+  'code-translate': {
+    id: 'code-translate',
+    name: 'Polyglot AST-Preserving Code Transpiler',
+    category: 'code',
+    icon: '🔄',
+    architecture: 'Tree-Sitter Syntax Mapping & Qwen2.5-Coder Engine',
+    purpose: 'Transpile source code across programming languages (Rust, Python, TypeScript, Go, C++) while preserving AST semantics.',
+    inputFormat: 'Source code snippet and target language.',
+    directives: [
+      { cmd: '@agent code-translate to <lang>: <code>', desc: 'Transpile code to target language preserving types and semantics' }
+    ],
+    options: [],
+    examples: [
+      '@agent code-translate to Rust: function fib(n) { return n <= 1 ? n : fib(n-1) + fib(n-2); }',
+      '@agent code-translate to Python: fn add(a: i32, b: i32) -> i32 { a + b }'
+    ]
+  },
+  'dockerfile': {
+    id: 'dockerfile',
+    name: 'Hardened Dockerfile Generator',
+    category: 'code',
+    icon: '🐳',
+    architecture: 'CIS Benchmark & Minimal Attack Surface Rule Base',
+    purpose: 'Synthesize minimal attack-surface, multi-stage, non-root production Dockerfiles tailored to the project stack.',
+    inputFormat: 'Project folder or repository path.',
+    directives: [
+      { cmd: '@agent dockerfile <path>', desc: 'Synthesize multi-stage non-root production Dockerfile' }
+    ],
+    options: [],
+    examples: [
+      '@agent dockerfile .',
+      '@agent dockerfile crates/cli'
+    ]
+  },
+  'api-docs': {
+    id: 'api-docs',
+    name: 'OpenAPI 3.0 Documentation Synthesizer',
+    category: 'code',
+    icon: '📑',
+    architecture: 'AST Route Extractor & OpenAPI Schema Generator',
+    purpose: 'Inspect backend API route handlers and generate OpenAPI 3.0 specs and markdown API references.',
+    inputFormat: 'Backend server file or routes directory.',
+    directives: [
+      { cmd: '@agent api-docs <code>', desc: 'Generate OpenAPI 3.0 specs and documentation directly from routes' }
+    ],
+    options: [],
+    examples: [
+      '@agent api-docs crates/cli/src/main.rs',
+      '@agent api-docs server/routes.js'
+    ]
+  },
+
+  // Computer Use & OS Automation (Menu 3)
+  'computer-use': {
+    id: 'computer-use',
+    name: 'Autonomous OS Computer Use & Navigation Agent',
+    category: 'computer_use',
+    icon: '🖱️',
+    architecture: 'UI-TARS Vision-Language Desktop Agent + Win32 Native Dispatcher',
+    purpose: 'Autonomous end-to-end OS desktop control and web navigation. Executes multi-step GUI actions with sub-50ms preemption.',
+    inputFormat: 'Natural language desktop goal or web navigation instruction.',
+    directives: [
+      { cmd: '@agent computer-use <task>', desc: 'Launch end-to-end autonomous OS desktop agent to accomplish goal' }
+    ],
+    options: [
+      { flag: '--max-steps <N>', desc: 'Maximum perception-action execution steps (default: 30)' },
+      { flag: '--screenshot', desc: 'Capture visual verification screenshot after each step' }
+    ],
+    examples: [
+      '@agent computer-use Open Notepad and write a project status report',
+      '@agent computer-use Navigate to google.com and search for weather in Lagos Nigeria',
+      '@agent computer-use Open Calculator and compute 2048 * 4096'
+    ]
+  },
+  'ui-tars': {
+    id: 'ui-tars',
+    name: 'UI-TARS Vision-Language Desktop Agent',
+    category: 'computer_use',
+    icon: '🤖',
+    architecture: 'UI-TARS 7B/72B VLM Desktop Action Loop',
+    purpose: 'Dispatch native UI-TARS perception-action loop for complex GUI navigation and control.',
+    inputFormat: 'Goal instruction or desktop automation task.',
+    directives: [
+      { cmd: '@agent ui-tars <goal>', desc: 'Dispatch UI-TARS action loop with sub-50ms preemption' }
+    ],
+    options: [],
+    examples: [
+      '@agent ui-tars Inspect active browser viewport and click the Login button',
+      '@agent ui-tars Find search bar and submit query'
+    ]
+  },
+  'screen-grounding': {
+    id: 'screen-grounding',
+    name: 'Set-of-Mark (SoM) Screen Grounding',
+    category: 'computer_use',
+    icon: '🎯',
+    architecture: 'Visual Segmentation & Numbered Coordinate Marker Injection',
+    purpose: 'Capture active screen and assign numbered Set-of-Mark bounding badges to all interactive controls and inputs.',
+    inputFormat: 'None required (operates on active screen/viewport).',
+    directives: [
+      { cmd: '@agent screen-grounding', desc: 'Capture screen and assign numbered bounding boxes to all controls' }
+    ],
+    options: [],
+    examples: [
+      '@agent screen-grounding'
+    ]
+  },
+  'desktop-click': {
+    id: 'desktop-click',
+    name: 'OS Mouse Click Dispatcher',
+    category: 'computer_use',
+    icon: '🖱️',
+    architecture: 'Win32 SendInput Native Mouse Event Injector',
+    purpose: 'Simulate hardware mouse click at specified screen coordinate [x, y] with sub-millisecond precision.',
+    inputFormat: 'Coordinates x,y (e.g. 500,300).',
+    directives: [
+      { cmd: '@agent desktop-click <x,y>', desc: 'Simulate hardware mouse click at specified screen coordinate' }
+    ],
+    options: [
+      { flag: '--double-click', desc: 'Perform double click' },
+      { flag: '--right-click', desc: 'Perform right click' }
+    ],
+    examples: [
+      '@agent desktop-click 500,300',
+      '@agent desktop-click 1920,1080'
+    ]
+  },
+  'desktop-type': {
+    id: 'desktop-type',
+    name: 'OS Keyboard Typing & Hotkey Dispatcher',
+    category: 'computer_use',
+    icon: '⌨️',
+    architecture: 'Win32 SendInput Native Keyboard Event Injector',
+    purpose: 'Send verified keyboard keystrokes, text strings, or hotkey combinations to the currently focused window.',
+    inputFormat: 'Text string or hotkey sequence to type.',
+    directives: [
+      { cmd: '@agent desktop-type <text>', desc: 'Send keyboard strokes or hotkey sequences to active window' }
+    ],
+    options: [
+      { flag: '--press-enter', desc: 'Append Enter keypress after typing' }
+    ],
+    examples: [
+      '@agent desktop-type "Hello world from HugOS"',
+      '@agent desktop-type "Ctrl+S"'
+    ]
+  },
+  'desktop-scroll': {
+    id: 'desktop-scroll',
+    name: 'OS Window Scrolling Dispatcher',
+    category: 'computer_use',
+    icon: '📜',
+    architecture: 'Win32 Mouse Wheel Delta Event Injector',
+    purpose: 'Dispatch vertical or horizontal mouse wheel scroll events to scroll document or application viewports.',
+    inputFormat: 'Scroll delta (e.g. -5 for scroll down, 5 for scroll up).',
+    directives: [
+      { cmd: '@agent desktop-scroll <delta>', desc: 'Dispatch vertical or horizontal mouse wheel scroll event' }
+    ],
+    options: [],
+    examples: [
+      '@agent desktop-scroll -5',
+      '@agent desktop-scroll 10'
+    ]
+  },
+  'shopping': {
+    id: 'shopping',
+    name: 'Autonomous E-Commerce Price Comparison Assistant',
+    category: 'computer_use',
+    icon: '🛒',
+    architecture: 'Web Navigation Harness & Pricing Extraction Parser',
+    purpose: 'Automate product search, price comparison across retailers, cart addition, and checkout flows with safety gates.',
+    inputFormat: 'Product name or search query.',
+    directives: [
+      { cmd: '@agent shopping <item>', desc: 'Automate e-commerce navigation, price comparison, and checkout flow' }
+    ],
+    options: [],
+    examples: [
+      '@agent shopping Find best price for 32GB DDR5 SODIMM laptop RAM',
+      '@agent shopping Compare noise-cancelling headphones under $200'
+    ]
+  },
+  'ticket-booking': {
+    id: 'ticket-booking',
+    name: 'Autonomous Ticket & Travel Booking Assistant',
+    category: 'computer_use',
+    icon: '✈️',
+    architecture: 'Travel Form Navigation & Human-in-the-Loop Safety Gate',
+    purpose: 'Automate flight, train, or event ticket booking forms, seat selection, and reservation confirmation.',
+    inputFormat: 'Travel itinerary details (origin, destination, date).',
+    directives: [
+      { cmd: '@agent ticket-booking <details>', desc: 'Automate airline/train reservation forms and seat selection' }
+    ],
+    options: [],
+    examples: [
+      '@agent ticket-booking Find one-way flight from JFK to LHR on November 15',
+      '@agent ticket-booking Book train ticket from New York to Washington DC tomorrow morning'
+    ]
+  },
+  'exam-solver': {
+    id: 'exam-solver',
+    name: 'Autonomous Exam & Quiz Solver',
+    category: 'computer_use',
+    icon: '📝',
+    architecture: 'DOM Question Extractor & Multimodal Visual Reasoning Solver',
+    purpose: 'Extract exam questions, radio choices, and diagrams from active page and solve with human-in-the-loop review.',
+    inputFormat: 'Exam URL or active page question content.',
+    directives: [
+      { cmd: '@agent exam-solver <question/url>', desc: 'Visual reasoning solver for complex multi-choice exam questions' }
+    ],
+    options: [],
+    examples: [
+      '@agent exam-solver https://www.tests.com/practice/electrician-exam',
+      '@agent exam-solver Solve question 1 on active quiz page'
+    ]
+  },
+  'map-directions': {
+    id: 'map-directions',
+    name: 'Map Directions & Route Planning Assistant',
+    category: 'computer_use',
+    icon: '🗺️',
+    architecture: 'GIS Map Navigation & Route Optimization Harness',
+    purpose: 'Navigate map web applications, compute turn-by-turn routes, and calculate estimated transit travel times.',
+    inputFormat: 'Origin and destination route.',
+    directives: [
+      { cmd: '@agent map-directions <route>', desc: 'Navigate GIS mapping web applications and compute optimal route' }
+    ],
+    options: [],
+    examples: [
+      '@agent map-directions JFK Airport to Times Square Manhattan',
+      '@agent map-directions San Francisco to Lake Tahoe driving route'
+    ]
+  },
+
+  // Tabular Data & Spreadsheets (Menu 4)
+  'acdso': {
+    id: 'acdso',
+    name: 'Adaptive Contextual Data Science Optimization (ACDSO)',
+    category: 'tabular',
+    icon: '📊',
+    architecture: 'DuckDB + Polars In-Memory Vector Engine + AutoML Pipeline',
+    purpose: 'Run end-to-end automated machine learning pipeline on tabular data: automated cleaning, profiling, feature selection, and model training.',
+    inputFormat: 'CSV (.csv), TSV (.tsv), Excel (.xlsx), or Parquet (.parquet) file path.',
+    directives: [
+      { cmd: '@agent acdso <file.csv>', desc: 'Run end-to-end ACDSO AutoML pipeline: automated data cleaning, profiling, and model training' }
+    ],
+    options: [
+      { flag: '--target <column>', desc: 'Target column to predict' },
+      { flag: '--cv <folds>', desc: 'Cross-validation folds (default: 5)' }
+    ],
+    examples: [
+      '@agent acdso dataset.csv',
+      '@agent acdso exports/customer_churn.csv'
+    ]
+  },
+  'dataanalyst': {
+    id: 'dataanalyst',
+    name: 'Exploratory Data Analysis (EDA) Engine',
+    category: 'tabular',
+    icon: '📈',
+    architecture: 'Polars Fast Statistical Summarizer',
+    purpose: 'Compute comprehensive statistical profiles: distributions, Pearson correlations, skewness, kurtosis, and missingness.',
+    inputFormat: 'CSV or Excel spreadsheet file path.',
+    directives: [
+      { cmd: '@agent dataanalyst <file.csv>', desc: 'Compute exploratory data analysis (EDA), kurtosis, skewness, and correlations' }
+    ],
+    options: [],
+    examples: [
+      '@agent dataanalyst sales_data.csv',
+      '@agent dataanalyst customer_retention.csv'
+    ]
+  },
+  'timeseries': {
+    id: 'timeseries',
+    name: 'Multi-Horizon Time-Series Forecaster',
+    category: 'tabular',
+    icon: '⏱️',
+    architecture: 'PatchTST / Chronos-T5 Time-Series Transformers',
+    purpose: 'Generate multi-horizon probabilistic forecasts with confidence intervals on sequential and temporal tabular datasets.',
+    inputFormat: 'Time-series CSV with timestamp and numeric values.',
+    directives: [
+      { cmd: '@agent timeseries <file.csv>', desc: 'Multi-horizon time-series forecasting with confidence intervals' }
+    ],
+    options: [
+      { flag: '--horizon <steps>', desc: 'Number of forecast steps ahead (default: 12)' }
+    ],
+    examples: [
+      '@agent timeseries sales_history_2025.csv',
+      '@agent timeseries revenue_quarterly.csv'
+    ]
+  },
+  'predict': {
+    id: 'predict',
+    name: 'Tabular Supervised Predictor',
+    category: 'tabular',
+    icon: '🎯',
+    architecture: 'Gradient Boosted Trees & Tabular Neural Ensemble',
+    purpose: 'Train supervised classification or regression model to predict a designated target column from spreadsheet data.',
+    inputFormat: 'Target column and dataset file path.',
+    directives: [
+      { cmd: '@agent predict <target_col> on <file.csv>', desc: 'Train supervised model to predict target column' }
+    ],
+    options: [],
+    examples: [
+      '@agent predict churn_status on telecom_users.csv',
+      '@agent predict price on real_estate_listings.csv'
+    ]
+  },
+  'datascience': {
+    id: 'datascience',
+    name: 'End-to-End Data Science Flow',
+    category: 'tabular',
+    icon: '🔬',
+    architecture: 'DuckDB + Feature Extraction Pipeline',
+    purpose: 'Execute full data science workflow: imputation, scaling, outlier elimination, and feature importance ranking.',
+    inputFormat: 'Tabular dataset path.',
+    directives: [
+      { cmd: '@agent datascience <file.csv>', desc: 'Full pipeline: data imputation, cross-validation, and feature importance' }
+    ],
+    options: [],
+    examples: [
+      '@agent datascience clinical_trials.csv'
+    ]
+  },
+  'decision': {
+    id: 'decision',
+    name: 'Hybrid System 1 Decision Router',
+    category: 'tabular',
+    icon: '⚖️',
+    architecture: 'Strands Decider 2B + Cloudflare Clef-Flash Dual Attention Router',
+    purpose: 'Sub-15ms decision-making evaluating trade-offs across options with Bayesian probability calibration.',
+    inputFormat: 'Decision query and choices.',
+    directives: [
+      { cmd: '@agent decision "<query>" --choices "<c1, c2, ...>"', desc: 'Evaluate choices and return calibrated probability scores' }
+    ],
+    options: [
+      { flag: '--choices "<c1, c2>"', desc: 'Candidate options' },
+      { flag: '--decision-mode <hybrid|strands|clef|fast>', desc: 'Execution mode' }
+    ],
+    examples: [
+      '@agent decision "Choose database architecture" --choices "Postgres, ScyllaDB, SQLite"',
+      '@agent decision "Deploy strategy" --choices "Blue-Green, Canary, Rolling"'
+    ]
+  },
+
+  // Utilities & System (Menu 12)
+  'sys-info': {
+    id: 'sys-info',
+    name: 'System Hardware & Telemetry Monitor',
+    category: 'utilities',
+    icon: '🖥️',
+    architecture: 'sysinfo Native Hardware Prober',
+    purpose: 'Query CPU topology, GPU specifications, runtime free RAM, free VRAM, and certified hardware model tier.',
+    inputFormat: 'None required.',
+    directives: [
+      { cmd: '@agent sys-info', desc: 'Display live hardware telemetry and certified model tier' }
+    ],
+    options: [],
+    examples: [
+      '@agent sys-info'
+    ]
+  },
+  'update': {
+    id: 'update',
+    name: 'Fast Curated Model Catalog Updater',
+    category: 'utilities',
+    icon: '⚡',
+    architecture: 'Master CLI Fast Curated Ingestion Engine',
+    purpose: 'Ingest top ~6,500 production workhorse models across all 45 tasks and provision matching Ollama hardware tier.',
+    inputFormat: 'None required.',
+    directives: [
+      { cmd: '@agent update', desc: 'Ingest top ~6,500 models and provision optimal Ollama model' }
+    ],
+    options: [
+      { flag: '--db-path <path>', desc: 'Path to SQLite database' }
+    ],
+    examples: [
+      '@agent update'
+    ]
+  },
+  'updatedb': {
+    id: 'updatedb',
+    name: 'Full Hugging Face Registry Crawler (All 2M+ Models)',
+    category: 'utilities',
+    icon: '🌐',
+    architecture: 'Cursor-Paginated SQLite Hub Traverser (1,000 models/sec)',
+    purpose: 'Continuously crawl and index all 2M+ models from Hugging Face Hub directly into local SQLite database.',
+    inputFormat: 'Optional max model cap.',
+    directives: [
+      { cmd: '@agent updatedb', desc: 'Crawl all 2M+ models on Hugging Face Hub into local database' }
+    ],
+    options: [
+      { flag: '--max-models <N>', desc: 'Cap total models to ingest (e.g. 50000)' }
+    ],
+    examples: [
+      '@agent updatedb',
+      '@agent updatedb --max-models 50000'
+    ]
+  },
+  'active-model': {
+    id: 'active-model',
+    name: 'Active Loaded Model Inspector',
+    category: 'utilities',
+    icon: '🤖',
+    architecture: 'Ollama Live Daemon Inspector',
+    purpose: 'Inspect currently loaded Ollama model name, parameter count, quantization format, and context window length.',
+    inputFormat: 'None required.',
+    directives: [
+      { cmd: '@agent active-model', desc: 'Inspect active Ollama model status' }
+    ],
+    options: [],
+    examples: [
+      '@agent active-model'
+    ]
+  },
+  'audit-menus': {
+    id: 'audit-menus',
+    name: 'All 15 Menus & 107 Tools Automated Auditor',
+    category: 'utilities',
+    icon: '🧪',
+    architecture: 'Comprehensive Browser UI Subsystem Test Runner',
+    purpose: 'Programmatically click and audit all 107 tool buttons across all 15 categories, verifying prompts and bindings.',
+    inputFormat: 'None required.',
+    directives: [
+      { cmd: '@agent audit-menus', desc: 'Programmatically click and audit all 107 tools across all 15 categories' }
+    ],
+    options: [],
+    examples: [
+      '@agent audit-menus'
+    ]
+  },
+  'db-check': {
+    id: 'db-check',
+    name: 'SQLite Database Integrity Checker',
+    category: 'utilities',
+    icon: '🔍',
+    architecture: 'PRAGMA quick_check & FTS5 Index Validator',
+    purpose: 'Verify SQLite database integrity, check index coherence, and validate table schema.',
+    inputFormat: 'None required.',
+    directives: [
+      { cmd: '@agent db-check', desc: 'Run low-level SQLite PRAGMA integrity check and index verification' }
+    ],
+    options: [],
+    examples: [
+      '@agent db-check'
+    ]
+  },
+  'db-vacuum': {
+    id: 'db-vacuum',
+    name: 'SQLite Database Defragmentation & Vacuum',
+    category: 'utilities',
+    icon: '🧹',
+    architecture: 'SQLite Page Optimizer & VACUUM Engine',
+    purpose: 'Defragment SQLite database file storage pages and reclaim unused disk space.',
+    inputFormat: 'None required.',
+    directives: [
+      { cmd: '@agent db-vacuum', desc: 'Reclaim disk space and defragment database storage pages' }
+    ],
+    options: [],
+    examples: [
+      '@agent db-vacuum'
+    ]
+  },
+  'db-rebuild': {
+    id: 'db-rebuild',
+    name: 'SQLite Model Catalog Database Rebuilder',
+    category: 'utilities',
+    icon: '🔨',
+    architecture: 'SQLite Schema Initializer',
+    purpose: 'Drop and recreate the local model catalog database tables and full-text search indexes from scratch.',
+    inputFormat: 'None required.',
+    directives: [
+      { cmd: '@agent db-rebuild', desc: 'Drop and recreate local catalog database from scratch' }
+    ],
+    options: [],
+    examples: [
+      '@agent db-rebuild'
+    ]
+  },
+  'db-prune': {
+    id: 'db-prune',
+    name: 'Temporary Cache & Buffer Pruner',
+    category: 'utilities',
+    icon: '🗑️',
+    architecture: 'Orphaned Cache Cleanup Engine',
+    purpose: 'Safely clear orphaned cache files, temporary search buffers, and stale query results.',
+    inputFormat: 'None required.',
+    directives: [
+      { cmd: '@agent db-prune', desc: 'Safely clear orphaned caches and temporary query buffers' }
+    ],
+    options: [],
+    examples: [
+      '@agent db-prune'
+    ]
+  }
+};
+
 const CATEGORY_KEYWORDS = {
-  'classification': ['classification', 'taxonomy', 'nli', 'zeroshot', 'zero-shot', 'mnli', 'deberta', 'multilabel', 'topic'],
+  'classification': ['classification', 'taxonomy', 'nli', 'zeroshot', 'zero-shot', 'mnli', 'deberta', 'multilabel', 'topic', 'classify'],
   'sentiment': ['sentiment', 'emotion', 'emotions', 'goemotions', 'sst2', 'moderation', 'toxic', 'toxicity', 'safety', 'mood', 'feeling'],
-  'code': ['code', 'security', 'sast', 'vuln', 'vulnerability', 'vulnerabilities', 'ast', 'transpile', 'dockerfile', 'owasp', 'secret', 'secrets'],
-  'computer_use': ['computer_use', 'computer-use', 'computer', 'os', 'desktop', 'ui-tars', 'uitars', 'grounding', 'mouse', 'keyboard', 'screen-grounding'],
-  'tabular': ['tabular', 'data', 'spreadsheets', 'spreadsheet', 'csv', 'excel', 'xlsx', 'parquet', 'acdso', 'automl', 'timeseries', 'eda', 'dataanalyst'],
-  'finance': ['finance', 'markets', 'market', 'sec', '10-k', '10k', 'valuation', 'dcf', 'finbert', 'fingpt', 'stock', 'stocks', 'equity'],
-  'vision': ['vision', 'images', 'image', 'photo', 'photos', 'vqa', 'ocr', 'flux', 'yolo', 'florence', 'detection', 'classify', 'sdxl'],
+  'code': ['code', 'security', 'sast', 'vuln', 'vulnerability', 'vulnerabilities', 'ast', 'transpile', 'dockerfile', 'owasp', 'secret', 'secrets', 'graph-index', 'graph', 'pii-scan', 'vuln-scan', 'api-docs'],
+  'computer_use': ['computer_use', 'computer-use', 'computer', 'os', 'desktop', 'ui-tars', 'uitars', 'grounding', 'mouse', 'keyboard', 'screen-grounding', 'desktop-click', 'desktop-type', 'desktop-scroll', 'click', 'type', 'scroll', 'shopping', 'ticket-booking', 'exam-solver', 'map-directions'],
+  'tabular': ['tabular', 'data', 'spreadsheets', 'spreadsheet', 'csv', 'excel', 'xlsx', 'parquet', 'acdso', 'automl', 'timeseries', 'eda', 'dataanalyst', 'datascience', 'predict', 'decision'],
+  'finance': ['finance', 'markets', 'market', 'sec', '10-k', '10k', 'valuation', 'dcf', 'finbert', 'fingpt', 'stock', 'stocks', 'equity', 'chronos', 'patchtst', 'llama-fin', 'qwen-finance'],
+  'vision': ['vision', 'images', 'image', 'photo', 'photos', 'vqa', 'ocr', 'flux', 'yolo', 'florence', 'detection', 'object-detection', 'image-classification', 'video', 'sdxl'],
   'pe_binary': ['pe_binary', 'pe-binary', 'pe', 'pecoff', 'coff', 'exe', 'dll', 'binary', 'binaries', 'authenticode', 'entropy', 'strings', 'packer', 'packer-detect', 'inspect'],
-  'legal': ['legal', 'compliance', 'contract', 'contracts', 'law', 'statute', 'statutory', 'brief', 'briefs', 'cuad', 'saul', 'saul-7b', 'lawma'],
-  'agent': ['agent', 'planning', 'deep-thinking', 'deep_thinking', 'thinking', 'reasoning', 'boost', 'grill-me', 'grillme', 'cot', 'reflection', 'rest-rl', 'restrl'],
-  'science': ['science', 'discovery', 'biology', 'chemistry', 'genomic', 'genomics', 'protein', 'proteins', 'climate', 'scientific', 'biotech', 'pharma', 'earth'],
-  'utilities': ['utilities', 'utility', 'system', 'telemetry', 'sys-info', 'sysinfo', 'hardware', 'catalog', 'db', 'database', 'sqlite', 'vacuum', 'integrity'],
+  'legal': ['legal', 'compliance', 'contract', 'contracts', 'law', 'statute', 'statutory', 'brief', 'briefs', 'cuad', 'saul', 'saul-7b', 'lawma', 'pile-of-law', 'law-chat', 'law-llm'],
+  'agent': ['agent', 'planning', 'deep-thinking', 'deep_thinking', 'thinking', 'reasoning', 'boost', 'grill-me', 'grillme', 'cot', 'reflection', 'rest-rl', 'restrl', 'goal', 'plan', 'agentic-loop', 'decompose'],
+  'science': ['science', 'discovery', 'biology', 'chemistry', 'genomic', 'genomics', 'protein', 'proteins', 'climate', 'scientific', 'biotech', 'pharma', 'earth', 'esm', 'chemberta', 'galactica', 'aurora', 'prithvi', 'evo'],
+  'utilities': ['utilities', 'utility', 'system', 'telemetry', 'sys-info', 'sysinfo', 'hardware', 'catalog', 'db', 'database', 'sqlite', 'vacuum', 'integrity', 'db-check', 'db-vacuum', 'db-rebuild', 'db-prune', 'audit', 'audit-menus', 'benchmark', 'export', 'active-model'],
   'audio': ['audio', 'voice', 'sound', 'speech', 'asr', 'tts', 'transcription', 'whisper', 'piper', 'kokoro'],
-  'web': ['web', 'research', 'automation', 'search', 'arxiv', 'wiki', 'wikiskill', 'browser', 'citations', 'cdp'],
-  'writing': ['writing', 'editing', 'humanize', 'watermark', 'stylometry', 'translate', 'translation', 'outline', 'book', 'author', 'style-transfer']
+  'web': ['web', 'research', 'automation', 'search', 'arxiv', 'wiki', 'wikiskill', 'browser', 'citations', 'cdp', 'summarize', 'markers'],
+  'writing': ['writing', 'editing', 'humanize', 'watermark', 'stylometry', 'translate', 'translation', 'outline', 'book', 'author', 'style-transfer', 'style']
 };
 
 const STOP_WORDS_SET = new Set([
@@ -4252,22 +4921,36 @@ function parseHelpQuery(rawInput) {
 
   const lower = input.toLowerCase();
 
-  // If user says conversational "help me write a python script" without explicit directive prefix, do not hijack
-  if (CONVERSATIONAL_HELP_ACTIONS.test(lower) && !input.startsWith('@') && !input.startsWith('/')) {
+  // If user says conversational "help me write a python script" (with or without @agent), do not hijack
+  const inputWithoutAgent = lower.replace(/^@agent\s+/i, '');
+  if (CONVERSATIONAL_HELP_ACTIONS.test(lower) || CONVERSATIONAL_HELP_ACTIONS.test(inputWithoutAgent)) {
     return null;
   }
 
-  const isHelpRegex = /^(?:@agent\s+|@|\/|--|-)?(?:help|helo|hlp|halp|\?)(?:\b|$)/i;
-  const containsExplicitHelp = /(?:^|\s)(?:@|\/)(?:help|helo|hlp|halp)\b/i;
+  const hasTrailingHelp = /(?:^|\s)(?:--help|-h|\/?\?|help|helo|hlp|halp)\s*$/i.test(input);
+  const hasEmbeddedHelpFlag = /(?:^|\s)(?:--help|-h|\/\?)\b/i.test(input);
+  const startsWithHelp = /^(?:@agent\s+|@|\/|--|-)?(?:help|helo|hlp|halp|\?)(?:\b|$)/i.test(lower);
+  const hasHelpDirective = /(?:^|\s)(?:@|\/)(?:help|helo|hlp|halp)\b/i.test(input);
 
-  if (!isHelpRegex.test(lower) && !containsExplicitHelp.test(input)) {
+  if (!hasTrailingHelp && !hasEmbeddedHelpFlag && !startsWithHelp && !hasHelpDirective) {
     return null;
   }
 
-  let cleanArgs = input
-    .replace(/^(?:@agent\s+|@|\/|--|-)?(?:help|helo|hlp|halp|\?)\s*:?\s*/i, '')
-    .replace(/(?:of|or|and|with|on|in|for|about)?\s*(?:@agent\s+|@|\/|--|-)?(?:help|helo|hlp|halp|\?)\s*:?\s*/gi, ' ')
-    .trim();
+  // Clean arguments:
+  // 1. Strip leading @agent
+  let cleanArgs = input.replace(/^@agent\s+/i, '');
+
+  // 2. Strip trailing help flag or keyword
+  cleanArgs = cleanArgs.replace(/(?:^|\s)(?:--help|-h|\/?\?|help|helo|hlp|halp)\s*$/i, '');
+
+  // 3. Strip embedded flags
+  cleanArgs = cleanArgs.replace(/(?:^|\s)(?:--help|-h|\/\?)\b/gi, ' ');
+
+  // 4. Strip leading help tokens
+  cleanArgs = cleanArgs.replace(/^(?:@|\/|--|-)?(?:help|helo|hlp|halp|\?)\s*:?\s*/i, '');
+
+  // 5. Strip surrounding prepositions around help tokens
+  cleanArgs = cleanArgs.replace(/(?:of|or|and|with|on|in|for|about)?\s*(?:@|\/|--|-)?(?:help|helo|hlp|halp|\?)\s*:?\s*/gi, ' ').trim();
 
   const normalizedTokens = cleanArgs.toLowerCase().split(/\s+/).filter(Boolean);
   const subjectTokens = normalizedTokens.filter(t => !STOP_WORDS_SET.has(t));
@@ -4285,6 +4968,7 @@ function parseHelpQuery(rawInput) {
 function resolveHelpResolution(parsed) {
   if (!parsed || !parsed.isHelp) return null;
   const tokens = parsed.subjectTokens || parsed.tokens || [];
+  const cleanArgsLower = (parsed.cleanArgs || '').toLowerCase().trim();
 
   if (tokens.length === 0) {
     return { type: 'global_overview' };
@@ -4298,11 +4982,11 @@ function resolveHelpResolution(parsed) {
   const matchedModels = [];
   const modelTokens = new Set();
 
-  // 1. Check for menu index numbers (1 to 14)
+  // 1. Check for menu index numbers (1 to 15)
   for (const token of tokens) {
     const cleanToken = token.replace(/[^a-z0-9_-]/g, '');
     const num = parseInt(cleanToken, 10);
-    if (!isNaN(num) && num >= 1 && num <= 14) {
+    if (!isNaN(num) && num >= 1 && num <= 15) {
       const foundCat = Object.values(HELP_CATEGORIES).find(c => c.menuIndex === num);
       if (foundCat && !matchedCategories.includes(foundCat)) {
         matchedCategories.push(foundCat);
@@ -4310,7 +4994,14 @@ function resolveHelpResolution(parsed) {
     }
   }
 
-  // 2. Match Models
+  // 2. Match Models across SPECIFIC_MODELS
+  if (SPECIFIC_MODELS[cleanArgsLower]) {
+    const m = SPECIFIC_MODELS[cleanArgsLower];
+    const card = SPECIFIC_MODEL_CARDS[m.cardKey] || SPECIFIC_MODEL_CARDS[m.key] || null;
+    matchedModels.push({ model: m, modelCard: card });
+    modelTokens.add(cleanArgsLower);
+  }
+
   for (const token of tokens) {
     const rawClean = (token || '').toLowerCase().trim();
     const tokenNoSlash = rawClean.split('/').pop().replace(/[^a-z0-9_-]/g, '');
@@ -4353,6 +5044,21 @@ function resolveHelpResolution(parsed) {
     }
   }
 
+  // Prioritize model's actual category if a model is matched
+  if (matchedModels.length > 0) {
+    const modelCatId = matchedModels[0].model.category;
+    const modelCat = HELP_CATEGORIES[modelCatId];
+    if (modelCat) {
+      if (matchedCategories.length > 0) {
+        if (matchedCategories.some(c => c.id === modelCatId)) {
+          const others = matchedCategories.filter(c => c.id !== modelCatId);
+          matchedCategories.length = 0;
+          matchedCategories.push(modelCat, ...others);
+        }
+      }
+    }
+  }
+
   // Dual-Layer Combination: Model and Category
   if (matchedModels.length > 0 && matchedCategories.length > 0) {
     return {
@@ -4383,6 +5089,39 @@ function resolveHelpResolution(parsed) {
       modelCard: m.modelCard,
       category: cat
     };
+  }
+
+  // 4. Tool-Level Sample Usage Resolution (for commands without specific model cards)
+  if (matchedModels.length === 0) {
+    let matchedTool = null;
+    for (const token of tokens) {
+      const cleanToken = token.replace(/[^a-z0-9_-]/g, '').toLowerCase();
+      if (!cleanToken) continue;
+      if (TOOL_SAMPLE_REGISTRY[cleanToken]) {
+        matchedTool = TOOL_SAMPLE_REGISTRY[cleanToken];
+        break;
+      }
+    }
+    if (!matchedTool && TOOL_SAMPLE_REGISTRY[cleanArgsLower]) {
+      matchedTool = TOOL_SAMPLE_REGISTRY[cleanArgsLower];
+    }
+    if (!matchedTool) {
+      for (const [toolKey, toolObj] of Object.entries(TOOL_SAMPLE_REGISTRY)) {
+        if (tokens.includes(toolKey) || cleanArgsLower.startsWith(toolKey) || cleanArgsLower.includes(toolKey)) {
+          matchedTool = toolObj;
+          break;
+        }
+      }
+    }
+
+    if (matchedTool) {
+      const cat = HELP_CATEGORIES[matchedTool.category] || (matchedCategories.length > 0 ? matchedCategories[0] : null);
+      return {
+        type: 'tool_sample_usage',
+        tool: matchedTool,
+        category: cat
+      };
+    }
   }
 
   // Multi-category Guide
@@ -4563,7 +5302,22 @@ function renderDeepHelpHtml(res) {
     html += renderSingleCategorySection(cat);
     html += `
       <div style="display: flex; gap: 8px; margin-top: 6px;">
-        <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ Back to All 15 Menus</button>
+        <button type="button" class="action-pill suggested-cmd-pill help-action-btn" data-help-cmd="@help">⬅️ Back to All 15 Menus</button>
+      </div>
+    </div>`;
+    return html;
+  }
+
+  // Tool Sample Usage Deep Dive
+  if (res.type === 'tool_sample_usage') {
+    const tool = res.tool;
+    const cat = res.category;
+    let html = `<div class="help-container">`;
+    html += renderSingleToolSection(tool, cat);
+    html += `
+      <div style="display: flex; gap: 8px; margin-top: 10px;">
+        <button type="button" class="action-pill suggested-cmd-pill help-action-btn" data-help-cmd="@help">⬅️ Back to All 15 Menus</button>
+        ${cat ? `<button type="button" class="action-pill suggested-cmd-pill help-action-btn" data-help-cmd="@help ${cat.id}">📁 View All ${escapeHtml(cat.title)} Directives</button>` : ''}
       </div>
     </div>`;
     return html;
@@ -4665,11 +5419,14 @@ function renderSingleCategorySection(cat) {
   `;
 
   for (const ex of cat.examples) {
-    const shortLabel = ex.length > 45 ? ex.slice(0, 42) + '...' : ex;
+    const shortLabel = ex.length > 55 ? ex.slice(0, 52) + '...' : ex;
     html += `
-      <button type="button" class="help-action-btn" data-help-cmd="${escapeHtml(ex)}" title="Execute: ${escapeHtml(ex)}">
-        <span>▶️</span> <code>${escapeHtml(shortLabel)}</code>
-      </button>
+      <div style="display: inline-flex; align-items: center; gap: 4px; margin-bottom: 4px;">
+        <button type="button" class="action-pill suggested-cmd-pill help-action-btn" data-help-cmd="${escapeHtml(ex)}" title="Execute: ${escapeHtml(ex)}">
+          <span>▶️</span> <code>${escapeHtml(shortLabel)}</code>
+        </button>
+        <button type="button" class="copy-cmd-btn" data-copy-cmd="${escapeHtml(ex)}" title="Copy command" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; padding: 4px 8px; color: #cbd5e1; font-size: 11px; cursor: pointer;">📋</button>
+      </div>
     `;
   }
 
@@ -4677,6 +5434,134 @@ function renderSingleCategorySection(cat) {
       </div>
     </div>
   `;
+
+  return html;
+}
+
+function renderSingleToolSection(tool, cat) {
+  if (!tool) return '';
+  const title = tool.name || tool.title || tool.id;
+  const icon = tool.icon || (cat ? cat.icon : '🛠️');
+  const catTitle = cat ? cat.title : 'Agent Tool';
+  const menuIndex = cat ? cat.menuIndex : '';
+  const purpose = tool.purpose || tool.desc || tool.description || 'Specialized local agent automation tool.';
+  const architecture = tool.architecture || (cat && cat.engines && cat.engines[0] ? cat.engines[0].spec : 'Native Master CLI Engine');
+  const inputFormat = tool.inputFormat || tool.inputs || 'Command arguments or prompt string';
+  const sampleInput = tool.sampleInput || '';
+  const directives = tool.directives || [];
+  const options = tool.options || [];
+  const examples = tool.examples || [];
+
+  let html = `
+    <div class="help-hero-banner" style="border-color: rgba(59, 130, 246, 0.4); background: linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(16, 185, 129, 0.12)); margin-bottom: 12px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+        <div class="help-hero-title" style="color: #60a5fa; margin-bottom: 0;">
+          <span>${icon}</span> ${escapeHtml(title)}
+        </div>
+        <span class="help-badge">${menuIndex ? `Menu ${menuIndex}: ` : ''}${escapeHtml(catTitle)}</span>
+      </div>
+      <div style="font-size: 11px; font-family: var(--mono-font, monospace); color: #93c5fd; margin-bottom: 8px;">
+        Architecture: ${escapeHtml(architecture)}
+      </div>
+      <div style="font-size: 12px; line-height: 1.6; opacity: 0.95;">
+        ${escapeHtml(purpose)}
+      </div>
+    </div>
+
+    <!-- Required Input Format & Specifications -->
+    <div class="help-deep-section">
+      <div class="help-deep-title"><span>📥</span> Required Input Format &amp; Specifications</div>
+      <div style="font-size: 12px; line-height: 1.5; margin-bottom: 6px;">
+        ${escapeHtml(inputFormat)}
+      </div>
+      ${sampleInput ? `
+        <div style="font-size: 10.5px; color: var(--text-muted, #94a3b8); margin-top: 4px;">Sample Valid Input Sequence:</div>
+        <div class="help-code-snippet">${escapeHtml(sampleInput)}</div>
+      ` : ''}
+    </div>
+  `;
+
+  if (directives.length > 0) {
+    html += `
+      <!-- Directives & Syntax -->
+      <div class="help-deep-section">
+        <div class="help-deep-title"><span>📋</span> Command Directives &amp; Syntax</div>
+        <table class="help-table">
+          <thead>
+            <tr>
+              <th style="width: 45%;">Directive Syntax</th>
+              <th style="width: 55%;">Operation</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+    for (const dir of directives) {
+      html += `
+        <tr>
+          <td><code style="color: #60a5fa; font-weight: 600;">${escapeHtml(dir.cmd)}</code></td>
+          <td>${escapeHtml(dir.desc)}</td>
+        </tr>
+      `;
+    }
+    html += `
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  if (options.length > 0) {
+    html += `
+      <!-- Options & Flags -->
+      <div class="help-deep-section">
+        <div class="help-deep-title"><span>⚙️</span> Options &amp; Configuration Flags</div>
+        <table class="help-table">
+          <thead>
+            <tr>
+              <th style="width: 35%;">Option / Flag</th>
+              <th style="width: 65%;">Description &amp; Default</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+    for (const opt of options) {
+      html += `
+        <tr>
+          <td><code style="color: #38bdf8;">${escapeHtml(opt.flag)}</code></td>
+          <td>${escapeHtml(opt.desc)}</td>
+        </tr>
+      `;
+    }
+    html += `
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  if (examples.length > 0) {
+    html += `
+      <!-- Concrete Runnable Sample Usage -->
+      <div class="help-deep-section">
+        <div class="help-deep-title"><span>⚡</span> Concrete Runnable Sample Usage (Click To Run)</div>
+        <div class="help-pills-row">
+    `;
+    for (const ex of examples) {
+      const shortLabel = ex.length > 60 ? ex.slice(0, 57) + '...' : ex;
+      html += `
+        <div style="display: inline-flex; align-items: center; gap: 4px; margin-bottom: 4px;">
+          <button type="button" class="action-pill suggested-cmd-pill help-action-btn" data-help-cmd="${escapeHtml(ex)}" title="Click to run: ${escapeHtml(ex)}">
+            <span>▶️</span> <code>${escapeHtml(shortLabel)}</code>
+          </button>
+          <button type="button" class="copy-cmd-btn" data-copy-cmd="${escapeHtml(ex)}" title="Copy command to clipboard" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; padding: 4px 8px; color: #cbd5e1; font-size: 11px; cursor: pointer;">📋</button>
+        </div>
+      `;
+    }
+    html += `
+        </div>
+      </div>
+    `;
+  }
 
   return html;
 }
@@ -4693,7 +5578,7 @@ function renderSingleModelSection(card, cat, modelFallback) {
         </div>
         ${cat ? `
           <div class="help-pills-row" style="margin-top: 10px;">
-            <button type="button" class="help-action-btn" data-help-cmd="@help ${cat.id}">🔬 Explore Parent ${escapeHtml(cat.title)} Guide</button>
+            <button type="button" class="action-pill suggested-cmd-pill help-action-btn" data-help-cmd="@help ${cat.id}">🔬 Explore Parent ${escapeHtml(cat.title)} Guide</button>
           </div>
         ` : ''}
       </div>
@@ -4766,6 +5651,37 @@ function renderSingleModelSection(card, cat, modelFallback) {
     `;
   }
 
+  if (card.options && card.options.length > 0) {
+    html += `
+      <!-- Options & Configuration Flags -->
+      <div class="help-deep-section">
+        <div class="help-deep-title"><span>⚙️</span> Options &amp; Configuration Flags</div>
+        <table class="help-table">
+          <thead>
+            <tr>
+              <th style="width: 35%;">Option / Flag</th>
+              <th style="width: 65%;">Description &amp; Default</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    for (const opt of card.options) {
+      html += `
+        <tr>
+          <td><code style="color: #38bdf8;">${escapeHtml(opt.flag)}</code></td>
+          <td>${escapeHtml(opt.desc)}</td>
+        </tr>
+      `;
+    }
+
+    html += `
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
   if (card.useCases && card.useCases.length > 0) {
     html += `
       <!-- Real-World Applications -->
@@ -4795,9 +5711,12 @@ function renderSingleModelSection(card, cat, modelFallback) {
     for (const ex of card.examples) {
       const shortLabel = ex.length > 55 ? ex.slice(0, 52) + '...' : ex;
       html += `
-        <button type="button" class="help-action-btn" data-help-cmd="${escapeHtml(ex)}" title="Execute: ${escapeHtml(ex)}">
-          <span>▶️</span> <code>${escapeHtml(shortLabel)}</code>
-        </button>
+        <div style="display: inline-flex; align-items: center; gap: 4px; margin-bottom: 4px;">
+          <button type="button" class="action-pill suggested-cmd-pill help-action-btn" data-help-cmd="${escapeHtml(ex)}" title="Execute: ${escapeHtml(ex)}">
+            <span>▶️</span> <code>${escapeHtml(shortLabel)}</code>
+          </button>
+          <button type="button" class="copy-cmd-btn" data-copy-cmd="${escapeHtml(ex)}" title="Copy command" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 4px; padding: 4px 8px; color: #cbd5e1; font-size: 11px; cursor: pointer;">📋</button>
+        </div>
       `;
     }
 
@@ -4815,7 +5734,7 @@ function renderSingleModelSection(card, cat, modelFallback) {
     `;
     for (const rel of card.related) {
       html += `
-        <button type="button" class="help-action-btn" data-help-cmd="@help ${escapeHtml(rel)}">
+        <button type="button" class="action-pill suggested-cmd-pill help-action-btn" data-help-cmd="@help ${escapeHtml(rel)}">
           <span>🔍</span> @help ${escapeHtml(rel)}
         </button>
       `;
@@ -4838,6 +5757,7 @@ window.parseHelpQuery = parseHelpQuery;
 window.resolveHelpResolution = resolveHelpResolution;
 window.renderDeepHelpHtml = renderDeepHelpHtml;
 window.HELP_CATEGORIES = HELP_CATEGORIES;
+window.TOOL_SAMPLE_REGISTRY = TOOL_SAMPLE_REGISTRY;
 window.SPECIFIC_MODELS = SPECIFIC_MODELS;
 window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
 
