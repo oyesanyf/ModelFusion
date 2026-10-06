@@ -90,15 +90,19 @@ Whenever `cli.exe` is recompiled, it MUST be mirrored with identical SHA-256 has
   - Available RAM >= 6 GB OR Free VRAM >= 2 GB -> `qwen2.5:3b`
   - Available RAM < 6 GB OR Low-Budget Flag -> `qwen2.5:1.5b`
 
-### 4. Ollama Lifecycle & System PATH Persistence
+### 4. Ollama Lifecycle & In-Memory Process PATH Architecture
+- **ZERO TOUCH OF WINDOWS ENVIRONMENT VARIABLES LAW**:
+  *CRITICAL LAW: NEVER modify Windows User (`HKCU\Environment`) or System registry environment variables under ANY circumstances. All environment variables must strictly be process-scoped (`std::env::set_var`, `process.env`) or local `.env` configuration files. ModelFusion, HugOS IDE, and HugOS Browser must NEVER tamper with the user's personal Windows environment.*
+- **WIX INSTALLER ZERO-TOUCH PATH LAW**:
+  *CRITICAL LAW: NEVER use `<Environment Id="PATH" ...>` in WiX installers (`.wxs`). WiX's `Permanent="no"` translates into destructive MSI table flag `=-*PATH` which deletes the system or user PATH. HugOS IDE and HugOS Browser MUST strictly rely on application folder shortcuts, launcher scripts (`hugos-browser.bat`), and in-memory process PATH (`std::env::set_var`).*
 During `--update` or local engine startup (`ensure_ollama_running()`):
 1. **Live Health Probe**: Probes `http://127.0.0.1:11434/api/tags`. If responding, proceeds immediately.
 2. **Binary Discovery**: Resolves `ollama` via `PATH` and checks standard paths (`%LOCALAPPDATA%\Programs\Ollama`, `%PROGRAMFILES%\Ollama`, etc.).
 3. **Silent Auto-Installation**: If absent, silently downloads `https://ollama.com/download/OllamaSetup.exe` and installs with `/SILENT /NORESTART`.
-4. **Permanent PATH Persistence**:
-   - Immediately injects the Ollama directory into the current process `PATH`.
-   - Persists the directory into the Windows User Environment `Path` registry key via PowerShell `[Environment]::SetEnvironmentVariable('Path', ..., 'User')`.
-5. **Daemon Launch & Polling**: Launches `ollama serve` in the background and polls until healthy.
+4. **In-Memory Process PATH**:
+   - Immediately injects the Ollama directory into the current process `std::env::set_var("PATH", ...)`.
+   - Never writes to the registry or modifies Windows User environment variables.
+5. **Daemon Launch & Polling**: Launches `ollama serve` in the background with `OLLAMA_ORIGINS=*` process environment and polls until healthy.
 6. **Live Model Provisioning**: Executes `ollama pull <model>` for the dynamically selected model tier.
 
 ### 5. Incremental Background Watcher & Interactive Chat Flow

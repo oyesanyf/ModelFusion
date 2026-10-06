@@ -6,6 +6,10 @@ $rootDir = Split-Path $PSScriptRoot -Parent
 $browserDir = $PSScriptRoot
 $pfxPath = Join-Path $rootDir "IDE\hugos-signing-cert.pfx"
 $password = "HugOSPassword123!"
+$env:PYTHONUNBUFFERED = "1"
+if (Test-Path "C:\Python314\python.cmd") {
+    function global:python { & "C:\Python314\python.cmd" @args }
+}
 
 # Ensure common tools are available in PATH
 $toolDirs = @(

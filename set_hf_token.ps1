@@ -24,9 +24,9 @@ Write-Host "✅ Token set successfully for current session!" -ForegroundColor Gr
 Write-Host "💡 You can now run your ensemble commands." -ForegroundColor Green
 Write-Host ""
 
-Write-Host "To make this permanent, run these commands in PowerShell as Administrator:" -ForegroundColor Yellow
-Write-Host "[Environment]::SetEnvironmentVariable('HUGGINGFACE_API_KEY', '$HF_TOKEN', 'User')" -ForegroundColor Gray
-Write-Host "[Environment]::SetEnvironmentVariable('HF_TOKEN', '$HF_TOKEN', 'User')" -ForegroundColor Gray
+Write-Host "To persist this token across sessions, save it to your local .env file:" -ForegroundColor Yellow
+Write-Host "HF_TOKEN=$HF_TOKEN" -ForegroundColor Gray
+Write-Host "HUGGINGFACE_API_KEY=$HF_TOKEN" -ForegroundColor Gray
 Write-Host ""
 
 Read-Host "Press Enter to continue"

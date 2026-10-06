@@ -2682,16 +2682,6 @@ pub fn set_and_persist_gemini_key(key: &str) -> Result<()> {
     std::env::set_var("GEMINI_API_KEY", clean_key);
     std::env::set_var("GOOGLE_GEMINI_API_KEY", clean_key);
 
-    #[cfg(windows)]
-    {
-        use std::process::Command;
-        let escaped = clean_key.replace('\'', "''");
-        let ps_cmd = format!("[Environment]::SetEnvironmentVariable('GEMINI_API_KEY', '{}', 'User')", escaped);
-        let _ = Command::new("powershell")
-            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_cmd])
-            .output();
-    }
-
     let env_path = std::path::Path::new(".env");
     let mut lines: Vec<String> = if env_path.exists() {
         std::fs::read_to_string(env_path)
@@ -19585,6 +19575,18 @@ public class Pr {
         assert!(res.is_ok());
         assert_eq!(std::env::var("GEMINI_API_KEY").unwrap(), test_key);
         assert_eq!(std::env::var("GOOGLE_GEMINI_API_KEY").unwrap(), test_key);
+
+        #[cfg(windows)]
+        {
+            use std::process::Command;
+            let output = Command::new("powershell")
+                .args(["-NoProfile", "-Command", "(Get-ItemProperty -Path 'HKCU:\\Environment' -Name 'GEMINI_API_KEY' -ErrorAction SilentlyContinue).GEMINI_API_KEY"])
+                .output();
+            if let Ok(out) = output {
+                let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                assert_ne!(stdout, test_key, "HKCU:\\Environment must NEVER be modified by set_and_persist_gemini_key");
+            }
+        }
     }
 
     #[test]
