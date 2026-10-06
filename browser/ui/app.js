@@ -8725,7 +8725,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
       return;
     }
     try {
-      const res = await fetch(`${ipcUrl}/api/modelfusion/status`, { method: 'GET' });
+      const res = await fetchWithTimeout(`${ipcUrl}/api/modelfusion/status`, { method: 'GET', timeout: 800 });
       if (res.ok) {
         const data = await res.json();
         updateModelFusionUI(data);
@@ -8734,7 +8734,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
 
     // Fetch Sound RL Adaptive Controller Telemetry
     try {
-      const rlRes = await fetch(`${ipcUrl}/api/rl/status`, { method: 'GET' });
+      const rlRes = await fetchWithTimeout(`${ipcUrl}/api/rl/status`, { method: 'GET', timeout: 800 });
       if (rlRes.ok) {
         const rlData = await rlRes.json();
         updateRLTelemetryUI(rlData);
@@ -9779,7 +9779,6 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
         window.isIpcOnline = true;
         dotIpc.className = 'dot status-dot online';
         textIpc.textContent = 'IPC Connected';
-        refreshModelFusionStatus();
         return true;
       }
     } catch (e) {
@@ -9789,7 +9788,6 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
           window.isIpcOnline = true;
           dotIpc.className = 'dot status-dot online';
           textIpc.textContent = 'IPC Connected';
-          refreshModelFusionStatus();
           return true;
         }
       } catch (e2) {}
@@ -9798,7 +9796,6 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     window.isIpcOnline = false;
     dotIpc.className = 'dot status-dot online';
     textIpc.textContent = 'Master CLI';
-    refreshModelFusionStatus();
     return true;
   }
 
@@ -11517,16 +11514,17 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
 
           let renderScheduled = null;
           let lastRenderTime = 0;
-          const RENDER_INTERVAL_MS = 16; // ~60fps ultra-fast firehose spit-out
+          let lastRecommendationTime = 0;
+          const RENDER_INTERVAL_MS = 60;
 
           const renderStreamDom = (force = false) => {
             const now = performance.now();
-            if (force || now - lastRenderTime >= RENDER_INTERVAL_MS) {
-              if (renderScheduled) {
-                cancelAnimationFrame(renderScheduled);
-                renderScheduled = null;
-              }
-              lastRenderTime = now;
+            if (!force && renderScheduled) {
+              return; // Frame already queued, drop duplicate synchronous calls to prevent event loop starvation
+            }
+
+            const performRender = () => {
+              lastRenderTime = performance.now();
               const targetEl = getStreamTarget();
               if (targetEl) {
                 targetEl.style.color = '';
@@ -11547,51 +11545,49 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
               if (isAgenticLoop && agenticBadge) {
                 agenticBadge.innerHTML = `🔄 Agentic Loop: Turn ${turn + 1}/${maxLoops} • ~${Math.round(totalEstimatedTokens).toLocaleString()} / ${targetTokens.toLocaleString()} tokens`;
               }
-              if (typeof window !== 'undefined') {
-                if (window.activeExamQuestions && window.activeExamQuestions.length > 0 && typeof window.updateExamRecommendationsFromAiText === 'function') {
-                  window.updateExamRecommendationsFromAiText(fullResponse);
-                }
-                if (window.activeProducts && window.activeProducts.length > 0 && typeof window.updateShoppingRecommendationsFromAiText === 'function') {
-                  window.updateShoppingRecommendationsFromAiText(fullResponse);
-                }
-                if (window.activeTickets && window.activeTickets.length > 0 && typeof window.updateBookingRecommendationsFromAiText === 'function') {
-                  window.updateBookingRecommendationsFromAiText(fullResponse);
-                }
-                if (window.activeDirections && window.activeDirections.routes && window.activeDirections.routes.length > 0 && typeof window.updateDirectionsRecommendationsFromAiText === 'function') {
-                  window.updateDirectionsRecommendationsFromAiText(fullResponse);
-                }
-              }
-              if (currentSettings.autoScroll !== false && chatMessages) {
-                chatMessages.scrollTop = 99999999;
-              }
-            } else if (!renderScheduled) {
-              renderScheduled = requestAnimationFrame(() => {
-                renderScheduled = null;
-                lastRenderTime = performance.now();
-                const targetEl = getStreamTarget();
-                if (targetEl) {
-                  targetEl.style.color = '';
-                  targetEl.style.fontStyle = '';
-                  targetEl.style.fontWeight = '';
-                  targetEl.style.display = 'block';
-                  targetEl.style.alignItems = '';
-                  targetEl.style.gap = '';
-                  if (options && options.isContinuation) {
-                    targetEl.innerHTML = renderMarkdown(turnResponse);
-                    if (options.continuationStatusEl && options.continuationStatusEl.textContent !== '⚡ Streaming continuation output...') {
-                      options.continuationStatusEl.textContent = '⚡ Streaming continuation output...';
-                    }
-                  } else {
-                    targetEl.innerHTML = renderMarkdown(fullResponse);
+
+              // Only scan recommendations when forced (at completion) or throttled to at most once per 1200ms
+              if (force || lastRenderTime - lastRecommendationTime >= 1200) {
+                lastRecommendationTime = lastRenderTime;
+                if (typeof window !== 'undefined') {
+                  if (window.activeExamQuestions && window.activeExamQuestions.length > 0 && typeof window.updateExamRecommendationsFromAiText === 'function') {
+                    window.updateExamRecommendationsFromAiText(fullResponse);
+                  }
+                  if (window.activeProducts && window.activeProducts.length > 0 && typeof window.updateShoppingRecommendationsFromAiText === 'function') {
+                    window.updateShoppingRecommendationsFromAiText(fullResponse);
+                  }
+                  if (window.activeTickets && window.activeTickets.length > 0 && typeof window.updateBookingRecommendationsFromAiText === 'function') {
+                    window.updateBookingRecommendationsFromAiText(fullResponse);
+                  }
+                  if (window.activeDirections && window.activeDirections.routes && window.activeDirections.routes.length > 0 && typeof window.updateDirectionsRecommendationsFromAiText === 'function') {
+                    window.updateDirectionsRecommendationsFromAiText(fullResponse);
                   }
                 }
-                if (isAgenticLoop && agenticBadge) {
-                  agenticBadge.innerHTML = `🔄 Agentic Loop: Turn ${turn + 1}/${maxLoops} • ~${Math.round(totalEstimatedTokens).toLocaleString()} / ${targetTokens.toLocaleString()} tokens`;
-                }
-                if (currentSettings.autoScroll !== false && chatMessages) {
-                  chatMessages.scrollTop = 99999999;
-                }
+              }
+
+              if (currentSettings.autoScroll !== false && chatMessages) {
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+              }
+            };
+
+            if (force) {
+              if (renderScheduled) {
+                cancelAnimationFrame(renderScheduled);
+                renderScheduled = null;
+              }
+              performRender();
+            } else if (now - lastRenderTime >= RENDER_INTERVAL_MS) {
+              renderScheduled = requestAnimationFrame(() => {
+                renderScheduled = null;
+                performRender();
               });
+            } else {
+              renderScheduled = setTimeout(() => {
+                renderScheduled = requestAnimationFrame(() => {
+                  renderScheduled = null;
+                  performRender();
+                });
+              }, RENDER_INTERVAL_MS - (now - lastRenderTime));
             }
           };
 
@@ -22261,25 +22257,30 @@ If you are asked about real-world facts such as world leaders, heads of state, c
         document.body.style.cursor = 'col-resize';
         document.body.style.userSelect = 'none';
         e.preventDefault();
-      });
 
-      window.addEventListener('mousemove', (e) => {
-        if (!isDragging) return;
-        const deltaX = e.clientX - startX;
-        let newWidth = Math.round(startWidth + deltaX);
-        if (newWidth < MIN_WIDTH) newWidth = MIN_WIDTH;
-        if (newWidth > MAX_WIDTH) newWidth = MAX_WIDTH;
-        document.documentElement.style.setProperty('--sidebar-width', `${newWidth}px`);
-      });
+        const onMouseMove = (moveEvt) => {
+          if (!isDragging) return;
+          const deltaX = moveEvt.clientX - startX;
+          let newWidth = Math.round(startWidth + deltaX);
+          if (newWidth < MIN_WIDTH) newWidth = MIN_WIDTH;
+          if (newWidth > MAX_WIDTH) newWidth = MAX_WIDTH;
+          document.documentElement.style.setProperty('--sidebar-width', `${newWidth}px`);
+        };
 
-      window.addEventListener('mouseup', () => {
-        if (!isDragging) return;
-        isDragging = false;
-        resizer.classList.remove('is-dragging');
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        const finalW = Math.round(sidebar.getBoundingClientRect().width);
-        localStorage.setItem(SAVED_KEY, finalW);
+        const onMouseUp = () => {
+          if (!isDragging) return;
+          isDragging = false;
+          resizer.classList.remove('is-dragging');
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+          window.removeEventListener('mousemove', onMouseMove);
+          window.removeEventListener('mouseup', onMouseUp);
+          const finalW = Math.round(sidebar.getBoundingClientRect().width);
+          localStorage.setItem(SAVED_KEY, finalW);
+        };
+
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
       });
 
       // Double-click resizer to toggle wide/standard
@@ -23433,7 +23434,9 @@ If you are asked about real-world facts such as world leaders, heads of state, c
       }
     }
     if (triggerIndex < 0) {
-      dropdown.classList.add('hidden');
+      if (!dropdown.classList.contains('hidden')) {
+        dropdown.classList.add('hidden');
+      }
       acSelectedIndex = -1;
       return;
     }
@@ -23441,7 +23444,9 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     // If typing past a colon ':', close dropdown
     const remainder = val.slice(triggerIndex);
     if (remainder.includes(':')) {
-      dropdown.classList.add('hidden');
+      if (!dropdown.classList.contains('hidden')) {
+        dropdown.classList.add('hidden');
+      }
       acSelectedIndex = -1;
       return;
     }
@@ -23459,7 +23464,9 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     }
 
     if (filtered.length === 0) {
-      dropdown.classList.add('hidden');
+      if (!dropdown.classList.contains('hidden')) {
+        dropdown.classList.add('hidden');
+      }
       acSelectedIndex = -1;
       return;
     }
@@ -23540,6 +23547,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
 
   // Auto-expanding Hero Textarea & Send Button (btnSendPrompt defined at top)
   let heroInputRafId = null;
+  let heroAcTimer = null;
   if (cliPromptInput) {
     cliPromptInput.addEventListener('input', () => {
       if (heroInputRafId) cancelAnimationFrame(heroInputRafId);
@@ -23547,7 +23555,10 @@ If you are asked about real-world facts such as world leaders, heads of state, c
         cliPromptInput.style.height = 'auto';
         cliPromptInput.style.height = Math.min(cliPromptInput.scrollHeight, 160) + 'px';
       });
-      showAgentAutocomplete(cliPromptInput, 'agent-autocomplete-hero');
+      if (heroAcTimer) clearTimeout(heroAcTimer);
+      heroAcTimer = setTimeout(() => {
+        showAgentAutocomplete(cliPromptInput, 'agent-autocomplete-hero');
+      }, 35);
     });
 
     cliPromptInput.addEventListener('keydown', (e) => {
@@ -23604,6 +23615,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
   // Pinned Bottom Textarea & Send Button (btnSendPromptPinned defined at top)
 
   let pinnedInputRafId = null;
+  let pinnedAcTimer = null;
   if (cliPromptInputPinned) {
     cliPromptInputPinned.addEventListener('input', () => {
       if (pinnedInputRafId) cancelAnimationFrame(pinnedInputRafId);
@@ -23611,7 +23623,10 @@ If you are asked about real-world facts such as world leaders, heads of state, c
         cliPromptInputPinned.style.height = 'auto';
         cliPromptInputPinned.style.height = Math.min(cliPromptInputPinned.scrollHeight, 160) + 'px';
       });
-      showAgentAutocomplete(cliPromptInputPinned, 'agent-autocomplete-pinned');
+      if (pinnedAcTimer) clearTimeout(pinnedAcTimer);
+      pinnedAcTimer = setTimeout(() => {
+        showAgentAutocomplete(cliPromptInputPinned, 'agent-autocomplete-pinned');
+      }, 35);
     });
 
     cliPromptInputPinned.addEventListener('keydown', (e) => {
