@@ -362,7 +362,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Dynamic client-side evaluation matching Rust Master CLI matrix
     const vramMb = (window.hardwareGpuVramMb && window.hardwareGpuVramMb > 0) ? window.hardwareGpuVramMb : detectGpuVramMb();
-    const ramGb = (window.hardwareRamGb && window.hardwareRamGb > 0) ? window.hardwareRamGb : (navigator.deviceMemory || 16);
+    const ramGb = (window.hardwareRamGb && window.hardwareRamGb > 0) ? window.hardwareRamGb : ((typeof navigator !== 'undefined' && navigator.deviceMemory) ? navigator.deviceMemory : 16);
 
     if (vramMb >= 22000) return 'qwen2.5:32b';
     if (vramMb >= 12000) return 'qwen2.5:14b';
@@ -9030,7 +9030,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
   // PWA Service Worker Registration & Desktop Pinning
   // -----------------------------------------------------------------
   let deferredInstallPrompt = null;
-  if ('serviceWorker' in navigator) {
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('sw.js').catch(err => {
         console.warn('[PWA] Service worker registration warning:', err);
@@ -10267,9 +10267,14 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     if (url.includes('/api/proxy?url=') || url.includes('/api/browser/proxy?url=')) {
       return url;
     }
+    // If Master Server proxy is known to be offline, do not point iframe to dead localhost port!
+    if (window.isIpcOnline === false || window.isServerProxyOnline === false) {
+      return url;
+    }
     const ipc = (typeof currentSettings !== 'undefined' && currentSettings.ipcUrl ? currentSettings.ipcUrl : 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
     return `${ipc}/api/proxy?url=${encodeURIComponent(url)}`;
   }
+  window.resolveProxiedUrl = resolveProxiedUrl;
 
   // Unwraps an iframe-safe proxy URL envelope back to its original target destination URL
   function unwrapProxiedUrl(rawUrl) {
@@ -10345,11 +10350,40 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     const frameSrc = resolveProxiedUrl(currentNavUrl);
     if (frameSrc !== currentNavUrl) {
       termLog(`🛡️ Routing through ModelFusion proxy to bypass X-Frame-Options SAMEORIGIN for ${currentNavUrl}`, 'sys');
+      const ipc = (typeof currentSettings !== 'undefined' && currentSettings.ipcUrl ? currentSettings.ipcUrl : 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+      fetchWithTimeout(`${ipc}/health`, { method: 'GET', timeout: 400 })
+        .then(hRes => {
+          if (!hRes || !hRes.ok) {
+            window.isServerProxyOnline = false;
+            window.isIpcOnline = false;
+            termLog(`⚠️ ModelFusion proxy offline on port 5000. Failing over to direct URL: ${currentNavUrl}`, 'warn');
+            if (browserFrame.src === frameSrc) {
+              browserFrame.src = currentNavUrl;
+            }
+          } else {
+            window.isServerProxyOnline = true;
+            window.isIpcOnline = true;
+          }
+        })
+        .catch(() => {
+          window.isServerProxyOnline = false;
+          window.isIpcOnline = false;
+          termLog(`⚠️ ModelFusion proxy offline on port 5000. Failing over to direct URL: ${currentNavUrl}`, 'warn');
+          if (browserFrame.src === frameSrc) {
+            browserFrame.src = currentNavUrl;
+          }
+        });
     }
 
     // Attach iframe load error listener
     browserFrame.onerror = (e) => {
       termLog(`Iframe load error detected for ${currentNavUrl}: Connection refused or blocked by security policy.`, 'warn');
+      if (browserFrame.src && browserFrame.src.includes('/api/proxy')) {
+        window.isServerProxyOnline = false;
+        termLog(`⚠️ ModelFusion proxy load error. Failing over to direct URL: ${currentNavUrl}`, 'warn');
+        browserFrame.src = currentNavUrl;
+        return;
+      }
       frameFallback.classList.remove('hidden');
     };
 
@@ -10374,6 +10408,13 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
 
     browserFrame.onload = () => {
       clearTimeout(checkTimeout);
+      if (browserFrame.src && browserFrame.src.includes('/api/proxy')) {
+        if (window.isServerProxyOnline === false) {
+          termLog(`⚠️ ModelFusion proxy offline on load. Failing over to direct URL: ${currentNavUrl}`, 'warn');
+          browserFrame.src = currentNavUrl;
+          return;
+        }
+      }
       try {
         const doc = browserFrame.contentDocument;
         if (doc && (
@@ -10381,6 +10422,11 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
           (doc.body && doc.body.innerText && (doc.body.innerText.includes('refused to connect') || doc.body.innerText.includes('ERR_CONNECTION_REFUSED')))
         )) {
           termLog(`Detected connection refused in iframe for ${url}. Revealing fallback card.`, 'warn');
+          if (browserFrame.src && (browserFrame.src.includes('/api/proxy') || window.isServerProxyOnline === false)) {
+            termLog(`⚠️ ModelFusion proxy error detected in DOM. Failing over to direct URL: ${currentNavUrl}`, 'warn');
+            browserFrame.src = currentNavUrl;
+            return;
+          }
           frameFallback.classList.remove('hidden');
           return;
         }
@@ -10697,6 +10743,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
       const res = await fetchWithTimeout(`${url}/health`, { method: 'GET', timeout: 400 });
       if (res.ok) {
         window.isIpcOnline = true;
+        window.isServerProxyOnline = true;
         dotIpc.className = 'dot status-dot online';
         textIpc.textContent = 'IPC Connected';
         return true;
@@ -10706,6 +10753,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
         const res2 = await fetchWithTimeout(`${url}/api/health`, { method: 'GET', timeout: 400 });
         if (res2.ok) {
           window.isIpcOnline = true;
+          window.isServerProxyOnline = true;
           dotIpc.className = 'dot status-dot online';
           textIpc.textContent = 'IPC Connected';
           return true;
@@ -10714,6 +10762,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     }
 
     window.isIpcOnline = false;
+    window.isServerProxyOnline = false;
     dotIpc.className = 'dot status-dot online';
     textIpc.textContent = 'Master CLI';
     return true;
@@ -10769,7 +10818,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
 
     // Check browser runtime memory API
     let freeRamEstimate = '16.0 GB+';
-    if (navigator.deviceMemory) {
+    if (typeof navigator !== 'undefined' && navigator.deviceMemory) {
       freeRamEstimate = `${navigator.deviceMemory} GB+ Detected`;
     }
     statRam.textContent = freeRamEstimate;
