@@ -12,9 +12,24 @@ import shutil
 import struct
 import ctypes
 from ctypes import wintypes
-from PIL import Image
+try:
+    from PIL import Image
+    HAVE_PIL = True
+except Exception:
+    HAVE_PIL = False
 
 def generate_multi_layer_ico(src_image_path, out_ico_path):
+    if not HAVE_PIL:
+        if os.path.exists(out_ico_path):
+            return
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        master_ico = os.path.join(repo_root, "IDE", "hugos.ico")
+        if os.path.exists(master_ico):
+            os.makedirs(os.path.dirname(os.path.abspath(out_ico_path)), exist_ok=True)
+            shutil.copy2(master_ico, out_ico_path)
+            print(f"Copied existing multi-layer ICO -> {out_ico_path}")
+        return
+
     src = Image.open(src_image_path).convert('RGBA')
     sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
     
@@ -119,7 +134,7 @@ def main():
         print(f"ERROR: Master PNG not found at {master_png}", file=sys.stderr)
         sys.exit(1)
         
-    master_img = Image.open(master_png).convert('RGBA')
+    master_img = Image.open(master_png).convert('RGBA') if HAVE_PIL else None
     
     # 1. Target ICO locations
     ico_targets = [
@@ -193,13 +208,16 @@ def main():
     if local_app:
         ui_dirs.append(os.path.join(local_app, "HugOS Browser", "ui"))
         
-    for ui_dir in ui_dirs:
-        if os.path.exists(ui_dir):
-            for filename, dim in png_sizes.items():
-                dest = os.path.join(ui_dir, filename)
-                resized = master_img.resize((dim, dim), Image.Resampling.LANCZOS)
-                resized.save(dest, format="PNG")
-                print(f"Generated {dim}x{dim} PNG -> {dest}")
+    if HAVE_PIL and master_img:
+        for ui_dir in ui_dirs:
+            if os.path.exists(ui_dir):
+                for filename, dim in png_sizes.items():
+                    dest = os.path.join(ui_dir, filename)
+                    resized = master_img.resize((dim, dim), Image.Resampling.LANCZOS)
+                    resized.save(dest, format="PNG")
+                    print(f"Generated {dim}x{dim} PNG -> {dest}")
+    else:
+        print("[INFO] PIL not available; preserved existing high-res PNG assets.")
 
     # 3. Bake PE Icon Header into HugOS.exe
     primary_ico = os.path.join(repo_root, "IDE", "hugos.ico")

@@ -476,14 +476,8 @@ pub fn ensure_ollama_running() -> Result<(), String> {
     let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT")
         .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
 
-    // Always guarantee OLLAMA_ORIGINS=* is injected into current process and persisted into Windows User environment
+    // Always guarantee OLLAMA_ORIGINS=* is injected into current process environment
     std::env::set_var("OLLAMA_ORIGINS", "*");
-    #[cfg(windows)]
-    {
-        let _ = create_hidden_command("reg")
-            .args(["add", "HKCU\\Environment", "/v", "OLLAMA_ORIGINS", "/t", "REG_SZ", "/d", "*", "/f"])
-            .output();
-    }
 
     // First check: is it already running?
     if is_ollama_responding(&endpoint) {
@@ -614,38 +608,6 @@ pub fn ensure_ollama_running() -> Result<(), String> {
         if let Some(ollama_dir) = path.parent() {
             let current_path = std::env::var("PATH").unwrap_or_default();
             std::env::set_var("PATH", format!("{};{}", ollama_dir.display(), current_path));
-
-            #[cfg(windows)]
-            {
-                let dir_str = ollama_dir.to_string_lossy().to_string();
-                let query_out = create_hidden_command("reg")
-                    .args(["query", "HKCU\\Environment", "/v", "Path"])
-                    .output();
-                let mut existing_user_path = String::new();
-                if let Ok(out) = query_out {
-                    if out.status.success() {
-                        let text = String::from_utf8_lossy(&out.stdout);
-                        for line in text.lines() {
-                            let trimmed = line.trim();
-                            if trimmed.starts_with("Path") {
-                                if let Some(val) = trimmed.split_whitespace().last() {
-                                    existing_user_path = val.to_string();
-                                }
-                            }
-                        }
-                    }
-                }
-                if !existing_user_path.to_lowercase().contains(&dir_str.to_lowercase()) {
-                    let new_user_path = if existing_user_path.is_empty() {
-                        dir_str
-                    } else {
-                        format!("{};{}", existing_user_path.trim_end_matches(';'), dir_str)
-                    };
-                    let _ = create_hidden_command("reg")
-                        .args(["add", "HKCU\\Environment", "/v", "Path", "/t", "REG_EXPAND_SZ", "/d", &new_user_path, "/f"])
-                        .output();
-                }
-            }
         }
     }
 
@@ -660,12 +622,6 @@ pub fn ensure_ollama_running() -> Result<(), String> {
 
     // Ensure OLLAMA_ORIGINS=* is active so local browsers/file origins are never rejected with 403 Forbidden
     std::env::set_var("OLLAMA_ORIGINS", "*");
-    #[cfg(windows)]
-    {
-        let _ = create_hidden_command("reg")
-            .args(["add", "HKCU\\Environment", "/v", "OLLAMA_ORIGINS", "/t", "REG_SZ", "/d", "*", "/f"])
-            .output();
-    }
 
     // Launch ollama serve as a detached background process with OLLAMA_ORIGINS=* and CREATE_NO_WINDOW
     let mut direct_cmd = create_hidden_command(&ollama_exec);
@@ -1028,42 +984,10 @@ pub fn ensure_ffmpeg_available() -> Result<std::path::PathBuf, String> {
 
     for cand in &candidates {
         if cand.is_file() {
-            // Found existing binary! Inject directory into current process PATH and HKCU Environment
+            // Found existing binary! Inject directory into current process PATH
             if let Some(parent) = cand.parent() {
                 let current_path = std::env::var("PATH").unwrap_or_default();
                 std::env::set_var("PATH", format!("{};{}", parent.display(), current_path));
-
-                #[cfg(windows)]
-                {
-                    let dir_str = parent.to_string_lossy().to_string();
-                    let query_out = create_hidden_command("reg")
-                        .args(["query", "HKCU\\Environment", "/v", "Path"])
-                        .output();
-                    let mut existing_user_path = String::new();
-                    if let Ok(out) = query_out {
-                        if out.status.success() {
-                            let text = String::from_utf8_lossy(&out.stdout);
-                            for line in text.lines() {
-                                let trimmed = line.trim();
-                                if trimmed.starts_with("Path") {
-                                    if let Some(val) = trimmed.split_whitespace().last() {
-                                        existing_user_path = val.to_string();
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if !existing_user_path.to_lowercase().contains(&dir_str.to_lowercase()) {
-                        let new_user_path = if existing_user_path.is_empty() {
-                            dir_str
-                        } else {
-                            format!("{};{}", existing_user_path.trim_end_matches(';'), dir_str)
-                        };
-                        let _ = create_hidden_command("reg")
-                            .args(["add", "HKCU\\Environment", "/v", "Path", "/t", "REG_EXPAND_SZ", "/d", &new_user_path, "/f"])
-                            .output();
-                    }
-                }
             }
             return Ok(cand.clone());
         }
