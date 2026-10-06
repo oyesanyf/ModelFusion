@@ -23960,15 +23960,20 @@ If you are asked about real-world facts such as world leaders, heads of state, c
 
   // Scroll to bottom floating button
   const btnScrollBottom = document.getElementById('btn-scroll-bottom');
+  let chatScrollRafId = null;
   if (chatMessages && btnScrollBottom) {
     chatMessages.addEventListener('scroll', () => {
-      const distFromBottom = chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight;
-      if (distFromBottom > 160) {
-        btnScrollBottom.classList.remove('hidden');
-      } else {
-        btnScrollBottom.classList.add('hidden');
-      }
-    });
+      if (chatScrollRafId) return;
+      chatScrollRafId = requestAnimationFrame(() => {
+        chatScrollRafId = null;
+        const distFromBottom = chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight;
+        if (distFromBottom > 160) {
+          btnScrollBottom.classList.remove('hidden');
+        } else {
+          btnScrollBottom.classList.add('hidden');
+        }
+      });
+    }, { passive: true });
 
     btnScrollBottom.addEventListener('click', () => {
       chatMessages.scrollTo({ top: chatMessages.scrollHeight, behavior: 'smooth' });
