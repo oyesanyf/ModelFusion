@@ -200,6 +200,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let currentSettings = { ...DEFAULT_SETTINGS };
   let attachedFiles = []; // Staged attachment objects: [{ id, name, size, type, content, isDataset }]
+  const QUESTION_BASED_FILE_TOOLS = /^(?:@agent\s+|\/|@)?(?:vqa|vision|detect|dataanalyst|predict|cuad|law[-_ ]?chat|security|classify|translate|style|chemberta|esm2)\b/i;
+  if (typeof window !== 'undefined') window.QUESTION_BASED_FILE_TOOLS = QUESTION_BASED_FILE_TOOLS;
   let pendingAutoCommand = null;
   let activeDirectives = new Map(); // Staged tool directives: Map<toolId, { id, cmd, category, label, icon }>
 
@@ -1951,10 +1953,29 @@ document.addEventListener('DOMContentLoaded', () => {
           const toRun = pendingAutoCommand;
           pendingAutoCommand = null;
           const lastFile = fileList[fileList.length - 1];
-          termLog(`📎 Staged "${lastFile.name}". Auto-executing: ${toRun}`, 'success');
-          setTimeout(() => {
-            executeCliCommand(toRun);
-          }, 50);
+          const isQuestionTool = QUESTION_BASED_FILE_TOOLS.test(toRun.trim());
+
+          if (isQuestionTool) {
+            // Do NOT fire a blank execution! Prepopulate input, set placeholder, and focus for question entry
+            const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+              ? cliPromptInputPinned
+              : cliPromptInput;
+            if (activeInput) {
+              activeInput.value = toRun.trim() + ' ';
+              activeInput.placeholder = `Ask a question about ${lastFile.name}...`;
+              activeInput.focus();
+              activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
+              activeInput.style.height = 'auto';
+              activeInput.style.height = Math.min(activeInput.scrollHeight, 160) + 'px';
+            }
+            termLog(`📎 Staged "${lastFile.name}". Ask a question about it or press Enter for default analysis.`, 'info');
+          } else {
+            // Direct analysis tools (pe, asr, summarize, etc.) auto-execute on staged file
+            termLog(`📎 Staged "${lastFile.name}". Auto-executing: ${toRun}`, 'success');
+            setTimeout(() => {
+              executeCliCommand(toRun);
+            }, 50);
+          }
         }
       }
     }
@@ -2433,37 +2454,30 @@ const HELP_CATEGORIES = {
     menuIndex: 1,
     icon: '🏷️',
     title: 'Classification & Taxonomy',
-    subtitle: 'Zero-Shot NLI, Sentiment, Content Moderation & Document Categorization',
-    overview: 'High-throughput local text classification suite spanning zero-shot inference, multi-class sentiment, 28-emotion profiling, automated safety moderation, and 4096-token long-document categorization. Powered by Hugging Face foundation models fine-tuned on MultiNLI, GoEmotions, Toxic Comment Challenge, and financial disclosures.',
+    subtitle: 'Zero-Shot NLI, Logic Verification & Document Categorization',
+    overview: 'High-throughput local zero-shot classification, logic verification, and document taxonomy suite. Powered by Hugging Face foundation models fine-tuned on MultiNLI, FEVER, and financial disclosures.',
     engines: [
       { name: 'BART & DeBERTa NLI', spec: 'facebook/bart-large-mnli & cross-encoder/nli-deberta-v3-base', role: 'Zero-shot hypothesis entailment and custom candidate label ranking' },
-      { name: 'RoBERTa & DistilBERT Emotion', spec: 'SamLowe/roberta-base-go_emotions & bhadresh-psavani/distilbert-emotion', role: '28-class nuanced emotion and 6-class basic conversational sentiment' },
-      { name: 'Toxic-BERT & KoalaAI', spec: 'unitary/toxic-bert & KoalaAI/Text-Moderation', role: 'Automated moderation flagging toxicity, hate speech, threats, and self-harm' },
-      { name: 'Longformer & FinBERT', spec: 'allenai/longformer-base-4096 & ProsusAI/finbert', role: 'Long-form document taxonomy up to 4096 tokens and economic sentiment' }
+      { name: 'DeBERTa FEVER & DistilBART', spec: 'deberta-v3-base-mnli-fever-anli & distilbart-mnli-12-3', role: 'Adversarial fact verification and lightweight high-speed zero-shot labeling' },
+      { name: 'Longformer & FinBERT', spec: 'allenai/longformer-base-4096 & ProsusAI/finbert', role: 'Long-form document taxonomy up to 4096 tokens and financial disclosure classification' }
     ],
-    inputs: 'Raw text passages, candidate labels, customer reviews, social media posts, forum comments, or long-form PDF/article transcripts.',
+    inputs: 'Raw text passages, candidate labels, customer inquiries, financial transcripts, or multi-page documents.',
     directives: [
       { cmd: '@agent classify <model/labels> <text>', desc: 'Zero-shot classification assigning probabilities across candidate labels' },
       { cmd: '@agent zero-shot <text> --labels <l1,l2,...>', desc: 'Classify text into arbitrary candidate classes using NLI entailment' },
-      { cmd: '@agent sentiment <text>', desc: 'Evaluate positive, negative, and emotional intensity with calibrated probabilities' },
-      { cmd: '@agent moderation <text>', desc: 'Scan content for toxicity, harassment, obscenity, and safety violations' },
       { cmd: '@agent topic <text>', desc: 'Categorize long-form document into hierarchical subject themes' }
     ],
     useCases: [
       'Zero-shot routing of inbound customer support tickets to departments without retraining.',
-      'Real-time automated content moderation on community message boards and social posts.',
-      'Fine-grained emotion extraction across customer feedback to detect frustration or delight.',
+      'Automated fact-checking and logic verification against claim databases.',
       'Long-document classification across multi-page legal briefs and financial disclosures.'
     ],
     examples: [
       '@agent classify bart-large-mnli The quarterly results exceeded all expectations candidate labels: technology, earnings, healthcare',
       '@agent zero-shot "This product broke after two days" --labels hardware, customer service, billing',
-      '@agent sentiment roberta-base-go_emotions I am deeply grateful for your continuous encouragement!',
-      '@agent moderation toxic-bert Stop messaging me or you will regret it',
-      '@agent topic longformer-base-4096 [Full Article Text]'
+      '@agent topic longformer-base-4096 <document_content>'
     ]
   },
-
   'code': {
     id: 'code',
     menuIndex: 2,
@@ -2800,9 +2814,36 @@ const HELP_CATEGORIES = {
     ]
   },
 
+  'sentiment': {
+    id: 'sentiment',
+    menuIndex: 11,
+    icon: '💖',
+    title: 'Sentiment & Content Moderation',
+    subtitle: 'Sentiment Analysis, Emotion Detection & Automated Content Moderation',
+    overview: 'Production-grade sentiment classification and content moderation suite spanning multi-class sentiment, 28 fine-grained emotion categories, social media sentiment, and toxicity detection. Powered by RoBERTa, DistilBERT, Toxic-BERT, and KoalaAI.',
+    engines: [
+      { name: 'RoBERTa & DistilBERT Emotion', spec: 'SamLowe/roberta-base-go_emotions & bhadresh-psavani/distilbert-emotion', role: '28-class nuanced emotion and 6-class basic conversational sentiment' },
+      { name: 'DistilBERT SST-2 & Twitter-RoBERTa', spec: 'distilbert-base-uncased-finetuned-sst-2-english & twitter-roberta-base-sentiment-latest', role: 'High-speed binary and 3-class social sentiment' },
+      { name: 'Toxic-BERT & KoalaAI', spec: 'unitary/toxic-bert & KoalaAI/Text-Moderation', role: 'Automated moderation flagging toxicity, hate speech, threats, and self-harm' }
+    ],
+    inputs: 'Raw text passages, social media posts, comments, customer reviews, or chat messages.',
+    directives: [
+      { cmd: '@agent sentiment <text>', desc: 'Evaluate positive, negative, and emotional intensity with calibrated probabilities' },
+      { cmd: '@agent moderation <text>', desc: 'Scan content for toxicity, harassment, obscenity, and safety violations' }
+    ],
+    useCases: [
+      'Real-time automated content moderation on community boards, chats, and comments.',
+      'Fine-grained emotion extraction across customer feedback to detect frustration or delight.',
+      'Social media sentiment monitoring across brand mentions and product reviews.'
+    ],
+    examples: [
+      '@agent sentiment "I absolutely love the new interface design! Outstanding work."',
+      '@agent moderation "Violent threat and abusive harassment statement"'
+    ]
+  },
   'utilities': {
     id: 'utilities',
-    menuIndex: 11,
+    menuIndex: 12,
     icon: '⚙️',
     title: 'Utilities & System',
     subtitle: 'System Telemetry, Hardware Sizing & Database Maintenance',
@@ -2823,7 +2864,8 @@ const HELP_CATEGORIES = {
       { cmd: '@agent db-vacuum', desc: 'Reclaim disk space and defragment database storage pages' },
       { cmd: '@agent db-rebuild', desc: 'Drop and recreate the local model catalog database from scratch' },
       { cmd: '@agent db-prune', desc: 'Safely clear orphaned caches and temporary query buffers' },
-      { cmd: '@agent audit-menus', desc: 'Programmatically click and audit all tool items across all 14 categories' },
+      { cmd: '@agent audit', desc: 'Run comprehensive end-to-end audit across all links, buttons, prompts & resource logic' },
+      { cmd: '@agent audit-menus', desc: 'Programmatically click and audit all tool items across all 15 categories' },
       { cmd: '@agent benchmark', desc: 'Run local token-generation speed, latency, and TTFT benchmarks' },
       { cmd: '@agent export', desc: 'Export chat history and session artifacts to Markdown / JSON' },
       { cmd: '@agent help', desc: 'Display interactive help and command palette' }
@@ -2843,7 +2885,7 @@ const HELP_CATEGORIES = {
 
   'audio': {
     id: 'audio',
-    menuIndex: 12,
+    menuIndex: 13,
     icon: '🎙️',
     title: 'Voice & Audio',
     subtitle: 'Acoustic Transcription, Voice Synthesis & Sound Classification',
@@ -2873,7 +2915,7 @@ const HELP_CATEGORIES = {
 
   'web': {
     id: 'web',
-    menuIndex: 13,
+    menuIndex: 14,
     icon: '🌐',
     title: 'Web Research & Automation',
     subtitle: 'Grounded Live Search, arXiv Research & WikiSkill Distillation',
@@ -2909,7 +2951,7 @@ const HELP_CATEGORIES = {
 
   'writing': {
     id: 'writing',
-    menuIndex: 14,
+    menuIndex: 15,
     icon: '✍️',
     title: 'Writing & Editing',
     subtitle: 'Anti-AI Stylometry, Token Watermark Detection & Translation',
@@ -4178,7 +4220,8 @@ function escapeHtml(str) {
 }
 
 const CATEGORY_KEYWORDS = {
-  'classification': ['classification', 'taxonomy', 'nli', 'zeroshot', 'zero-shot', 'mnli', 'deberta', 'sst2', 'goemotions', 'moderation', 'toxic', 'multilabel', 'topic'],
+  'classification': ['classification', 'taxonomy', 'nli', 'zeroshot', 'zero-shot', 'mnli', 'deberta', 'multilabel', 'topic'],
+  'sentiment': ['sentiment', 'emotion', 'emotions', 'goemotions', 'sst2', 'moderation', 'toxic', 'toxicity', 'safety', 'mood', 'feeling'],
   'code': ['code', 'security', 'sast', 'vuln', 'vulnerability', 'vulnerabilities', 'ast', 'transpile', 'dockerfile', 'owasp', 'secret', 'secrets'],
   'computer_use': ['computer_use', 'computer-use', 'computer', 'os', 'desktop', 'ui-tars', 'uitars', 'grounding', 'mouse', 'keyboard', 'screen-grounding'],
   'tabular': ['tabular', 'data', 'spreadsheets', 'spreadsheet', 'csv', 'excel', 'xlsx', 'parquet', 'acdso', 'automl', 'timeseries', 'eda', 'dataanalyst'],
@@ -4422,7 +4465,7 @@ function renderDeepHelpHtml(res) {
             <button type="button" class="help-action-btn" data-help-cmd="@agent sys-info">🖥️ Check Hardware (sys-info)</button>
             <button type="button" class="help-action-btn" data-help-cmd="@agent update">⚡ Update Catalog (~6,500 models)</button>
             <button type="button" class="help-action-btn" data-help-cmd="@agent active-model">🤖 Active Loaded Model</button>
-            <button type="button" class="help-action-btn" data-help-cmd="@agent audit-menus">🧪 Audit All 14 Menus</button>
+            <button type="button" class="help-action-btn" data-help-cmd="@agent audit-menus">🧪 Audit All 15 Menus</button>
           </div>
         </div>
       </div>
@@ -4446,7 +4489,7 @@ function renderDeepHelpHtml(res) {
     }
     html += `
       <div style="display: flex; gap: 8px; margin-top: 10px;">
-        <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ Back to All 14 Menus</button>
+        <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ Back to All 15 Menus</button>
       </div>
     </div>`;
     return html;
@@ -4467,7 +4510,7 @@ function renderDeepHelpHtml(res) {
     }
     html += `
       <div style="display: flex; gap: 8px; margin-top: 10px;">
-        <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ Back to All 14 Menus</button>
+        <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ Back to All 15 Menus</button>
       </div>
     </div>`;
     return html;
@@ -4493,7 +4536,7 @@ function renderDeepHelpHtml(res) {
           </div>
           <div class="help-pills-row">
             <button type="button" class="help-action-btn" data-help-cmd="@help ${cat.id}">🔬 View Full ${escapeHtml(cat.title)} Guide</button>
-            <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ All 14 Menus</button>
+            <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ All 15 Menus</button>
           </div>
         </div>
       `;
@@ -4520,7 +4563,7 @@ function renderDeepHelpHtml(res) {
     html += renderSingleCategorySection(cat);
     html += `
       <div style="display: flex; gap: 8px; margin-top: 6px;">
-        <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ Back to All 14 Menus</button>
+        <button type="button" class="help-action-btn" data-help-cmd="@help">⬅️ Back to All 15 Menus</button>
       </div>
     </div>`;
     return html;
@@ -4815,6 +4858,7 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
         clean.startsWith('@agent db-vacuum') || clean.startsWith('/db-vacuum') ||
         clean.startsWith('@agent db-rebuild') || clean.startsWith('/db-rebuild') ||
         clean.startsWith('@agent benchmark') || clean.startsWith('/benchmark') ||
+        clean === '@agent audit' || clean === '/audit' || clean.startsWith('@agent audit ') || clean.startsWith('/audit ') ||
         clean.startsWith('@agent audit-menus') || clean.startsWith('/audit-menus') ||
         clean.startsWith('@agent test-menus') || clean.startsWith('/test-menus') ||
         clean.startsWith('@agent audit-all') || clean.startsWith('/audit-all') ||
@@ -5052,6 +5096,7 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
         clean.startsWith('@agent db-vacuum') || clean.startsWith('/db-vacuum') ||
         clean.startsWith('@agent db-rebuild') || clean.startsWith('/db-rebuild') ||
         clean.startsWith('@agent benchmark') || clean.startsWith('/benchmark') ||
+        clean === '@agent audit' || clean === '/audit' || clean.startsWith('@agent audit ') || clean.startsWith('/audit ') ||
         clean.startsWith('@agent audit-menus') || clean.startsWith('/audit-menus') ||
         clean.startsWith('@agent test-menus') || clean.startsWith('/test-menus') ||
         clean.startsWith('@agent audit-all') || clean.startsWith('/audit-all') ||
@@ -6121,7 +6166,7 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
         }
       });
 
-      observer.observe(target, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+      observer.observe(target, { childList: true, subtree: false });
       return observer;
     }
 
@@ -8048,11 +8093,54 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     renderChatHistoryList();
   }
 
-  function saveChatHistory() {
+  let saveHistoryDebounceTimer = null;
+
+  function pruneChatSessionsForStorage(sessions) {
+    if (!Array.isArray(sessions)) return [];
+    const limited = sessions.slice(0, 40);
+    return limited.map(session => {
+      if (!session || !Array.isArray(session.messages)) return session;
+      return {
+        ...session,
+        messages: session.messages.slice(-30).map(msg => {
+          if (!msg) return msg;
+          let pruned = { ...msg };
+          if (typeof pruned.content === 'string' && pruned.content.length > 20000) {
+            pruned.content = pruned.content.slice(0, 20000) + '... [truncated]';
+          }
+          if (Array.isArray(pruned.attachedFiles)) {
+            pruned.attachedFiles = pruned.attachedFiles.map(att => {
+              if (att && typeof att === 'object') {
+                const { dataUrl, base64, ...rest } = att;
+                return rest;
+              }
+              return att;
+            });
+          }
+          return pruned;
+        })
+      };
+    });
+  }
+
+  function flushSaveChatHistory() {
     try {
-      localStorage.setItem('hugos_chat_history', JSON.stringify(chatSessions));
+      const sanitized = pruneChatSessionsForStorage(chatSessions);
+      localStorage.setItem('hugos_chat_history', JSON.stringify(sanitized));
     } catch (e) {}
     renderChatHistoryList();
+  }
+
+  function saveChatHistory(immediate = false) {
+    if (immediate) {
+      if (saveHistoryDebounceTimer) clearTimeout(saveHistoryDebounceTimer);
+      flushSaveChatHistory();
+      return;
+    }
+    if (saveHistoryDebounceTimer) clearTimeout(saveHistoryDebounceTimer);
+    saveHistoryDebounceTimer = setTimeout(() => {
+      flushSaveChatHistory();
+    }, 250);
   }
 
   window.runPromptFromHistory = function(promptText) {
@@ -9059,6 +9147,14 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     wvCurrentUrl.textContent = 'about:blank';
     termLog('Switched to HugOS Browser Dashboard', 'sys');
     updateNavigationUiState();
+    try {
+      const activePrompt = (hasMessages && cliPromptInputPinned) ? cliPromptInputPinned : (cliPromptInput || cliPromptInputPinned);
+      if (activePrompt) {
+        activePrompt.focus();
+        const len = activePrompt.value.length;
+        activePrompt.setSelectionRange(len, len);
+      }
+    } catch (_) {}
   }
 
   // Helper to sanitize and deduplicate concatenated/repeated URLs
@@ -9307,8 +9403,11 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     }
 
     const trail = breadcrumbTrail || (typeof document !== 'undefined' ? document.getElementById('breadcrumb-trail') : null);
-    if (trail) {
-      if (isWebviewActive && currentNavUrl) {
+    const breadcrumbBar = document.getElementById('header-breadcrumb-bar');
+    if (isWebviewActive && currentNavUrl) {
+      if (breadcrumbBar) breadcrumbBar.style.display = 'flex';
+      if (trail) {
+        trail.style.display = 'flex';
         let domain = currentNavUrl;
         try {
           const parsed = new URL(currentNavUrl);
@@ -9321,11 +9420,13 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
           <span class="breadcrumb-sep">›</span>
           <span class="breadcrumb-active-site" title="${currentNavUrl.replace(/"/g, '&quot;')}">🌐 ${domain}</span>
         `;
-      } else {
-        trail.innerHTML = `
-          <span class="breadcrumb-item active" id="breadcrumb-view-label" onclick="showDashboard()" title="Active View: AI Chat & Dashboard">🏠 AI Chat & Dashboard</span>
-        `;
       }
+    } else {
+      if (trail) {
+        trail.innerHTML = '';
+        trail.style.display = 'none';
+      }
+      if (breadcrumbBar) breadcrumbBar.style.display = 'none';
     }
   }
 
@@ -9358,6 +9459,20 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
   });
 
   navHome.addEventListener('click', () => {
+    const isWvActive = (typeof webviewView !== 'undefined' && webviewView && !webviewView.classList.contains('hidden'));
+    if (!isWvActive) {
+      const convView = document.getElementById('chat-conversation-view') || chatConversationView;
+      const isConvVisible = convView && !convView.classList.contains('hidden');
+      const targetInput = (isConvVisible && cliPromptInputPinned) ? cliPromptInputPinned : (cliPromptInput || cliPromptInputPinned);
+      if (targetInput) {
+        targetInput.focus();
+        try {
+          const len = targetInput.value.length;
+          targetInput.setSelectionRange(len, len);
+        } catch (_) {}
+      }
+      return;
+    }
     if (currentSettings.homepageUrl && currentSettings.homepageUrl.trim()) {
       navigateTo(currentSettings.homepageUrl.trim());
     } else {
@@ -9387,15 +9502,31 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
   // -----------------------------------------------------------------
   // 3. Engine Health Probing & Dynamic Hardware Sizing
   // -----------------------------------------------------------------
+  async function fetchWithTimeout(resource, options = {}) {
+    const { timeout = 400, ...fetchOptions } = options;
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+    try {
+      const response = await fetch(resource, {
+        ...fetchOptions,
+        signal: controller.signal
+      });
+      return response;
+    } finally {
+      clearTimeout(id);
+    }
+  }
+  window.fetchWithTimeout = fetchWithTimeout;
+
   async function probeOllama(autoWake = true) {
     const url = (currentSettings.ollamaUrl || 'http://127.0.0.1:11434').trim().replace(/\/+$/, '');
     const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
     let models = [];
     let isHealthy = false;
 
-    // 1. First probe direct Ollama endpoint
+    // 1. First probe direct Ollama endpoint with 400ms timeout
     try {
-      const res = await fetch(`${url}/api/tags`, { method: 'GET' });
+      const res = await fetchWithTimeout(`${url}/api/tags`, { method: 'GET', timeout: 400 });
       if (res.ok) {
         const data = await res.json();
         models = data.models || [];
@@ -9405,10 +9536,10 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
       // Direct connection failed (CORS or offline)
     }
 
-    // 2. If direct probe failed, try Master CLI proxy at :5000
+    // 2. If direct probe failed, try Master CLI proxy at :5000 with 400ms timeout
     if (!isHealthy) {
       try {
-        const res = await fetch(`${ipcUrl}/api/tags`, { method: 'GET' });
+        const res = await fetchWithTimeout(`${ipcUrl}/api/tags`, { method: 'GET', timeout: 400 });
         if (res.ok) {
           const data = await res.json();
           models = data.models || [];
@@ -9531,7 +9662,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
   async function probeIpc() {
     const url = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
     try {
-      const res = await fetch(`${url}/health`, { method: 'GET' });
+      const res = await fetchWithTimeout(`${url}/health`, { method: 'GET', timeout: 400 });
       if (res.ok) {
         window.isIpcOnline = true;
         dotIpc.className = 'dot status-dot online';
@@ -9541,7 +9672,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
       }
     } catch (e) {
       try {
-        const res2 = await fetch(`${url}/api/health`, { method: 'GET' });
+        const res2 = await fetchWithTimeout(`${url}/api/health`, { method: 'GET', timeout: 400 });
         if (res2.ok) {
           window.isIpcOnline = true;
           dotIpc.className = 'dot status-dot online';
@@ -9565,7 +9696,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     // 1. First probe via ModelFusion backend CDP proxy (which has open CORS headers)
     try {
       const proxyUrl = `http://127.0.0.1:5000/api/cdp/version?port=${port}`;
-      const res = await fetch(proxyUrl, { method: 'GET' });
+      const res = await fetchWithTimeout(proxyUrl, { method: 'GET', timeout: 400 });
       if (res.ok) {
         dotCdp.className = 'dot status-dot online';
         textCdp.textContent = `CDP :${port} Ready`;
@@ -9577,7 +9708,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
 
     // 2. Direct probe fallback with mode: 'no-cors'
     try {
-      const res = await fetch('http://localhost:' + port + '/json/version', { method: 'GET', mode: 'no-cors' });
+      const res = await fetchWithTimeout('http://localhost:' + port + '/json/version', { method: 'GET', mode: 'no-cors', timeout: 400 });
       if (res.ok || res.type === 'opaque') {
         dotCdp.className = 'dot status-dot online';
         textCdp.textContent = `CDP :${port} Ready`;
@@ -9591,6 +9722,8 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     textCdp.textContent = `CDP Port ${port}`;
     return true;
   }
+
+  let cachedWebGlGpuString = null;
 
   function detectHardware() {
     if (cachedHardwareStats) {
@@ -9612,6 +9745,11 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     }
     statRam.textContent = freeRamEstimate;
 
+    if (cachedWebGlGpuString !== null) {
+      statVram.textContent = cachedWebGlGpuString;
+      return;
+    }
+
     // Detect GPU if WebGL available
     try {
       const canvas = document.createElement('canvas');
@@ -9621,17 +9759,20 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
         if (debugInfo) {
           const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
           if (renderer.includes('NVIDIA') || renderer.includes('GeForce') || renderer.includes('RTX')) {
-            statVram.textContent = 'NVIDIA CUDA Accelerable';
+            cachedWebGlGpuString = 'NVIDIA CUDA Accelerable';
           } else {
-            statVram.textContent = 'DirectX / Vulkan GPU';
+            cachedWebGlGpuString = 'DirectX / Vulkan GPU';
           }
         } else {
-          statVram.textContent = 'DirectCompute Available';
+          cachedWebGlGpuString = 'DirectCompute Available';
         }
+      } else {
+        cachedWebGlGpuString = 'Available';
       }
     } catch (e) {
-      statVram.textContent = 'Available';
+      cachedWebGlGpuString = 'Available';
     }
+    statVram.textContent = cachedWebGlGpuString;
   }
 
   async function checkAllEngines() {
@@ -10204,11 +10345,14 @@ MANDATORY STYLOMETRIC LAWS:
     const isPureUtilityCmd = /^(?:@agent\s+|@|\/)?(?:help|clear|cls|reset|settings|status|models|sys[-_ ]?info(?:rmation)?|system[-_ ]?info(?:rmation)?|info|watermark|humanize|translate|translation|translate-humanize)(?:\s|$)/i.test(text);
     const isPureImageCmd = regexResult.taskType === 'image' && /^[@\/]/.test(text);
     const isPureContinuation = CONTINUATION_CMD_REGEX.test(text) && text.length < 35;
+    const isToolOrDirective = /^[@\/]/.test(text) ||
+      /^(?:@agent\s+|@|\/)?(?:classify|sentiment|moderation|topic|finance|legal|science|exam-solver|computer-use|ui-tars|screen-grounding|desktop-click|desktop-type|desktop-scroll|shopping|ticket-booking|map-directions|summarize|audit|pe|security|watermark|humanize|translate|rest-rl|restrl|benchmark|sys[-_ ]?info|help|clear|cls|reset)\b/i.test(text);
     const hasExplicitSizing = regexResult.targetPages > 0 || regexResult.targetChapters > 0 || regexResult.targetWords > 0;
     const hasAmbiguousKeywords = /\b(page|pages|chapter|chapters|book|novel|essay|continue|keep\s*going|next\s*part|more|boost|deep|length|section|parts|thinking|reasoning)\b/i.test(text);
 
     if (
       options.skipLlm ||
+      isToolOrDirective ||
       isPureUtilityCmd ||
       isPureImageCmd ||
       isPureContinuation ||
@@ -13679,6 +13823,60 @@ Respond with ONLY a valid JSON object matching this schema:
       }
     }
 
+    // Intelligent Default Fallback for Interactive Question-Based File Tools
+    if (attachedFiles.length > 0) {
+      const bareCmd = cmd.trim();
+      const questionDefaults = {
+        '@agent vqa': 'Describe this image in detail and identify key objects, text, and context.',
+        '/vqa': 'Describe this image in detail and identify key objects, text, and context.',
+        '@vqa': 'Describe this image in detail and identify key objects, text, and context.',
+        '@agent vision': 'Inspect and provide a comprehensive description of this visual content.',
+        '/vision': 'Inspect and provide a comprehensive description of this visual content.',
+        '@vision': 'Inspect and provide a comprehensive description of this visual content.',
+        '@agent detect': 'Detect all primary objects, bounding boxes, and elements in this image.',
+        '/detect': 'Detect all primary objects, bounding boxes, and elements in this image.',
+        '@detect': 'Detect all primary objects, bounding boxes, and elements in this image.',
+        '@agent dataanalyst': 'Provide a complete statistical profile, key trends, and insights for this dataset.',
+        '/dataanalyst': 'Provide a complete statistical profile, key trends, and insights for this dataset.',
+        '@dataanalyst': 'Provide a complete statistical profile, key trends, and insights for this dataset.',
+        '@agent predict': 'Analyze this tabular dataset and predict primary trends and outcome targets.',
+        '/predict': 'Analyze this tabular dataset and predict primary trends and outcome targets.',
+        '@predict': 'Analyze this tabular dataset and predict primary trends and outcome targets.',
+        '@agent cuad': 'Analyze this contract and summarize key clauses, liabilities, and obligations.',
+        '/cuad': 'Analyze this contract and summarize key clauses, liabilities, and obligations.',
+        '@cuad': 'Analyze this contract and summarize key clauses, liabilities, and obligations.',
+        '@agent law-chat': 'Analyze this legal document and answer any questions regarding terms and compliance.',
+        '/law-chat': 'Analyze this legal document and answer any questions regarding terms and compliance.',
+        '@law-chat': 'Analyze this legal document and answer any questions regarding terms and compliance.',
+        '@agent security': 'Perform a comprehensive security audit on this code.',
+        '/security': 'Perform a comprehensive security audit on this code.',
+        '@security': 'Perform a comprehensive security audit on this code.',
+        '@agent classify': 'Classify the content of this file across relevant domain categories.',
+        '/classify': 'Classify the content of this file across relevant domain categories.',
+        '@classify': 'Classify the content of this file across relevant domain categories.',
+        '@agent translate': 'to English: Translate the attached text content.',
+        '/translate': 'to English: Translate the attached text content.',
+        '@translate': 'to English: Translate the attached text content.',
+        '@agent style': 'Analyze the author style, tone, and cadence of this document.',
+        '/style': 'Analyze the author style, tone, and cadence of this document.',
+        '@style': 'Analyze the author style, tone, and cadence of this document.',
+        '@agent chemberta': 'Analyze chemical molecular representations and properties.',
+        '/chemberta': 'Analyze chemical molecular representations and properties.',
+        '@chemberta': 'Analyze chemical molecular representations and properties.',
+        '@agent esm2': 'Analyze protein sequences, structural folds, and binding affinity.',
+        '/esm2': 'Analyze protein sequences, structural folds, and binding affinity.',
+        '@esm2': 'Analyze protein sequences, structural folds, and binding affinity.'
+      };
+
+      for (const [prefix, defaultPrompt] of Object.entries(questionDefaults)) {
+        if (bareCmd.toLowerCase() === prefix.toLowerCase()) {
+          cmd = `${prefix} ${defaultPrompt}`;
+          termLog(`💡 Default prompt applied: "${defaultPrompt}"`, 'info');
+          break;
+        }
+      }
+    }
+
     // Guard against unintended execution of internal proxy URLs as CLI subcommands
     if (/^(?:@agent\s+)?(?:--|\/|@)?(?:api\/proxy|browser\/proxy|proxy|api-proxy)\b/i.test(cmd) || cmd.includes('/api/proxy?url=')) {
       const targetMatch = cmd.match(/(?:url=|\s+)(https?:\/\/[^\s]+)/i);
@@ -13805,7 +14003,7 @@ Respond with ONLY a valid JSON object matching this schema:
 
       let bubbleTitle = 'HugOS Interactive Help & Navigation Hub';
       let bubbleIcon = '💡';
-      let bubbleTag = 'All 14 Menus';
+      let bubbleTag = 'All 15 Menus';
       if (resolution.type === 'category_deep_dive' && resolution.category) {
         bubbleTitle = `Help: ${resolution.category.title}`;
         bubbleIcon = resolution.category.icon;
@@ -14152,8 +14350,9 @@ Respond with ONLY a valid JSON object matching this schema:
       return;
     }
 
-    // Automated Comprehensive Browser Audit Command (@agent audit-all, /audit-all, @agent test-all, /test-all, @agent audit-browser)
+    // Automated Comprehensive Browser Audit Command (@agent audit, /audit, @agent audit-all, /audit-all, @agent test-all, /test-all, @agent audit-browser)
     if (
+      lower === '@agent audit' || lower === '/audit' || lower.startsWith('@agent audit ') || lower.startsWith('/audit ') ||
       lower === '@agent audit-all' || lower === '@agent test-all' ||
       lower === '/audit-all' || lower === '/test-all' ||
       lower === '@agent audit-browser' || lower === '/audit-browser' ||
@@ -16299,6 +16498,32 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     }
     return questions;
   }
+
+  function sanitizeComputerUseOutput(text) {
+    if (typeof text !== 'string') return text;
+    let cleaned = text;
+
+    // 1. Strip desktop coordinates
+    cleaned = cleaned.replace(/(?:Click|Mouse(?:Click)?|tap)\s*(?:at\s*)?(?:coordinates?|coords?)?[:\s]*\(?\s*\d{1,4}\s*,\s*\d{1,4}\s*\)?/gi, '');
+    cleaned = cleaned.replace(/\[\s*X\s*:\s*\d{1,4}\s*,\s*Y\s*:\s*\d{1,4}\s*\]/gi, '');
+    cleaned = cleaned.replace(/Coordinates?:\s*\(\s*\d{1,4}\s*,\s*\d{1,4}\s*\)/gi, '');
+    cleaned = cleaned.replace(/\b(?:click|move)\s*\(\s*\d{1,4}\s*,\s*\d{1,4}\s*\)/gi, '');
+
+    // 2. Strip external browser / Chrome redirection instructions
+    cleaned = cleaned.replace(/(?:Please\s+)?(?:open|launch|switch to)\s+(?:Google\s+Chrome|Chrome|Firefox|Edge|external\s+browser)[^\n.]*[.\n]?/gi, '');
+    cleaned = cleaned.replace(/navigate to\s+https?:\/\/[^\s]+(?:\s+in\s+(?:Google\s+Chrome|Chrome|an\s+external\s+browser))/gi, 'navigated in this viewport');
+
+    // 3. Strip AutoHotkey / PyAutoGUI desktop automation scripts
+    cleaned = cleaned.replace(/```(?:autohotkey|ahk|python|pyautogui)[\s\S]*?(?:MouseMove|MouseClick|SendInput|CoordMode|pyautogui\.)[\s\S]*?```/gi, '');
+    cleaned = cleaned.replace(/(?:^|\n)\s*(?:CoordMode|MouseMove|MouseClick|Run,\s*chrome\.exe|pyautogui\.(?:click|moveTo))[^\n]*/gi, '');
+
+    // 4. Strip leaked web development commentary
+    cleaned = cleaned.replace(/(?:^|\n)[^\n]*(?:aligns with best practices in web development|In summary, the key steps to continue generating the response would be:)[^\n]*(?:\n|$)/gi, '\n');
+    cleaned = cleaned.replace(/\b(?:aligns with best practices in web development|In summary, the key steps to continue generating the response would be:)\b/gi, '');
+
+    return cleaned.trim();
+  }
+  if (typeof window !== 'undefined') window.sanitizeComputerUseOutput = sanitizeComputerUseOutput;
 
   function buildHitlExamWorkspaceHtml(questions, examTitle = 'Autonomous Exam & Assessment Workspace') {
     if (!questions || !questions.length) return '';
@@ -19164,8 +19389,20 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           groundedDoc = null;
         }
 
-        if (detectedExamQuestions.length === 0 && livePageText) {
-          detectedExamQuestions = extractExamQuestions(groundedDoc, livePageText);
+        if (detectedExamQuestions.length === 0 && (htmlContent || livePageText)) {
+          detectedExamQuestions = extractExamQuestions(null, htmlContent || livePageText);
+        }
+        if (detectedExamQuestions.length === 0 && (isExamGoal || /exam[- ]?solver/i.test(goal) || /exam[- ]?solver/i.test(cmd)) && targetNavUrl) {
+          try {
+            const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+            const proxyResp = await fetch(`${ipcUrl}/api/proxy?url=${encodeURIComponent(targetNavUrl)}`);
+            if (proxyResp.ok) {
+              const fetchedHtml = await proxyResp.text();
+              if (fetchedHtml) {
+                detectedExamQuestions = extractExamQuestions(null, fetchedHtml);
+              }
+            }
+          } catch (_) {}
         }
         if (detectedExamQuestions.length > 0) {
           termLog(`📝 [HITL EXAM] Grounded ${detectedExamQuestions.length} exam/quiz questions on page`, 'success');
@@ -19175,6 +19412,19 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       }
     }
 
+    // Universal Proxy Fetch Helper for Cross-Origin Viewport Inspection
+    const fetchTargetHtmlViaProxy = async (url) => {
+      if (!url) return null;
+      try {
+        const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+        const proxyResp = await fetch(`${ipcUrl}/api/proxy?url=${encodeURIComponent(url)}`);
+        if (proxyResp.ok) {
+          return await proxyResp.text();
+        }
+      } catch (_) {}
+      return null;
+    };
+
     // 2b) Universal Page Archetype Classification & Multi-Modal Entity Extraction
     const pageArchetype = classifyPageArchetype(groundedDoc, livePageText, targetNavUrl, goal);
     let detectedProducts = [];
@@ -19183,13 +19433,31 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 
     if (pageArchetype === 'shopping' || /(?:shop|price|product|buy|cart|order|deal)/i.test(goal)) {
       detectedProducts = extractProducts(groundedDoc, livePageText);
+      if (detectedProducts.length === 0 && targetNavUrl) {
+        try {
+          const proxyHtml = await fetchTargetHtmlViaProxy(targetNavUrl);
+          if (proxyHtml) {
+            const proxyDoc = new DOMParser().parseFromString(proxyHtml, 'text/html');
+            detectedProducts = extractProducts(proxyDoc, proxyHtml);
+          }
+        } catch (_) {}
+      }
       if (detectedProducts.length > 0) {
         termLog(`🛒 [HITL SHOPPING] Grounded ${detectedProducts.length} products / deals on page`, 'success');
       }
     }
 
     if (pageArchetype === 'booking' || /(?:book|ticket|flight|seat|hotel|reservation)/i.test(goal)) {
-      detectedTickets = extractTickets(groundedDoc, livePageText);
+      detectedTickets = extractTickets(groundedDoc, livePageText, goal);
+      if (detectedTickets.length === 0 && targetNavUrl) {
+        try {
+          const proxyHtml = await fetchTargetHtmlViaProxy(targetNavUrl);
+          if (proxyHtml) {
+            const proxyDoc = new DOMParser().parseFromString(proxyHtml, 'text/html');
+            detectedTickets = extractTickets(proxyDoc, proxyHtml, goal);
+          }
+        } catch (_) {}
+      }
       if (detectedTickets.length > 0) {
         termLog(`🎟️ [HITL BOOKING] Grounded ${detectedTickets.length} ticket / travel options on page`, 'success');
       }
@@ -19197,9 +19465,38 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 
     if (pageArchetype === 'directions' || /(?:map|maps|direction|directions|route|navigate|distance|drive|transit|walk)/i.test(goal)) {
       detectedDirections = extractDirections(groundedDoc, livePageText);
+      if ((!detectedDirections || !detectedDirections.routes || detectedDirections.routes.length === 0) && targetNavUrl) {
+        try {
+          const proxyHtml = await fetchTargetHtmlViaProxy(targetNavUrl);
+          if (proxyHtml) {
+            const proxyDoc = new DOMParser().parseFromString(proxyHtml, 'text/html');
+            detectedDirections = extractDirections(proxyDoc, proxyHtml);
+          }
+        } catch (_) {}
+      }
       if (detectedDirections && detectedDirections.routes && detectedDirections.routes.length > 0) {
         termLog(`🧭 [HITL DIRECTIONS] Grounded ${detectedDirections.routes.length} navigation route(s) on page`, 'success');
       }
+    }
+
+    // General Computer Use / UI-TARS / Screen Grounding Proxy Fallback
+    if ((!livePageText || livePageElementsCount === 0) && targetNavUrl) {
+      try {
+        const proxyHtml = await fetchTargetHtmlViaProxy(targetNavUrl);
+        if (proxyHtml) {
+          const proxyDoc = new DOMParser().parseFromString(proxyHtml, 'text/html');
+          groundedDoc = proxyDoc;
+          livePageTitle = proxyDoc.title ? proxyDoc.title.trim() : livePageTitle;
+          proxyDoc.querySelectorAll('script, style, noscript, svg, link, meta, iframe').forEach(el => el.remove());
+          proxyDoc.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]').forEach(h => {
+            const t = (h.textContent || '').trim();
+            if (t && !livePageHeadings.includes(t)) livePageHeadings.push(t);
+          });
+          livePageElementsCount = proxyDoc.querySelectorAll('button, a, input, select, textarea, [data-action], [role="button"], form, table, [data-view]').length;
+          livePageText = (proxyDoc.body ? (proxyDoc.body.innerText || proxyDoc.body.textContent || '') : '').replace(/\s+/g, ' ').trim();
+          termLog(`✅ [COMPUTER USE] Live DOM Grounded via Proxy: "${livePageTitle || targetNavUrl}" (${livePageText.length.toLocaleString()} chars text, ${livePageElementsCount} elements)`, 'success');
+        }
+      } catch (_) {}
     }
 
     // Extract explicit security matches from page text
@@ -19277,30 +19574,90 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     // Build Step-by-Step UI-TARS Grounding Actions HTML
     const groundingTargetUrl = targetNavUrl || 'https://www.google.com';
     const isExamGoal = /exam-solver\b|exam|quiz|test|questions?/i.test(goal);
-    const uitarsGroundingHtml = isExamGoal ? `
-      <div style="background: var(--bg-secondary, rgba(0,0,0,0.1)); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 11.5px; line-height: 1.6; margin-bottom: 10px; border: 1px solid rgba(56, 189, 248, 0.2);">
-        <div style="color: #38bdf8; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
-          <span>🎯</span> <span>UI-TARS Grounding Action Sequence (Exam Solver Loop)</span>
-        </div>
-        <div>• <strong>Step 1:</strong> <span style="color:#38bdf8;">NAVIGATE_VIEWPORT</span> ➔ <code style="word-break:break-all;">${escapeHtml(groundingTargetUrl)}</code> (ModelFusion Proxy active: X-Frame-Options SAMEORIGIN bypassed)</div>
-        <div>• <strong>Step 2:</strong> <span style="color:#38bdf8;">SCREEN_PERCEPTION</span> ➔ Grounded DOM tree (${livePageElementsCount || 1} interactive elements, ${detectedExamQuestions.length} exam question nodes identified)</div>
-        <div>• <strong>Step 3:</strong> <span style="color:#38bdf8;">MULTI_CHOICE_REASONING</span> ➔ Synthesizing questions, stems, and diagrams into high-confidence recommendations</div>
-        <div>• <strong>Step 4:</strong> <span style="color:#38bdf8;">HITL_SAFETY_GATE</span> ➔ Human review active: AI recommendations staged for interactive confirmation</div>
-        <div>• <strong>Step 5:</strong> <span style="color:#38bdf8;">ADVANCE_PAGINATION</span> ➔ Automated "Next Question" detector and URL query incrementation (q=1..total) ready</div>
-      </div>
-    ` : `
-      <div style="background: var(--bg-secondary, rgba(0,0,0,0.1)); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 11.5px; line-height: 1.6; margin-bottom: 10px; border: 1px solid rgba(56, 189, 248, 0.2);">
-        <div style="color: #38bdf8; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
-          <span>🎯</span> <span>UI-TARS Grounding Action Sequence</span>
-        </div>
-        <div>• <strong>Step 1:</strong> <span style="color:#38bdf8;">NAVIGATE_VIEWPORT</span> ➔ <code style="word-break:break-all;">${escapeHtml(groundingTargetUrl)}</code> (ModelFusion Proxy active: X-Frame-Options SAMEORIGIN bypassed)</div>
-        <div>• <strong>Step 2:</strong> <span style="color:#38bdf8;">SCREEN_PERCEPTION</span> ➔ Grounded DOM tree (${livePageElementsCount || 1} interactive elements, ${livePageText.length ? livePageText.length.toLocaleString() + ' chars text' : 'active viewport'})</div>
-        <div>• <strong>Step 3:</strong> <span style="color:#38bdf8;">ANALYZE_VIEWPORT</span> ➔ Synthesizing live UI state & page content into autonomous reasoning context</div>
-        ${searchQuery ? `<div>• <strong>Step 4:</strong> <span style="color:#38bdf8;">SEARCH_QUERY</span> ➔ Dispatched live search: <code>"${escapeHtml(searchQuery)}"</code></div>` : ''}
-        <div>• <strong>Step ${searchQuery ? 5 : 4}:</strong> <span style="color:#38bdf8;">GROUND_RESPONSE</span> ➔ Formulating factual findings directly from grounded live page content on this page</div>
-      </div>
-    `;
+    const isBookingGoal = /(?:ticket[- ]?booking|flight[- ]?booking|book[- ]?ticket|book[- ]?flight|booking|ticket|flight|hotel|reservation)/i.test(goal);
+    const isShoppingGoal = /(?:shopping|price|product|buy|cart|order|deal)/i.test(goal);
+    const isDirectionsGoal = /(?:map[- ]?directions|maps?|directions?|route|navigate|distance|drive|transit|walk)/i.test(goal);
+    const isGroundingGoal = /(?:screen[- ]?grounding|grounding|ground)/i.test(goal);
 
+    let uitarsGroundingHtml = '';
+    if (isExamGoal) {
+      uitarsGroundingHtml = `
+        <div style="background: var(--bg-secondary, rgba(0,0,0,0.1)); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 11.5px; line-height: 1.6; margin-bottom: 10px; border: 1px solid rgba(56, 189, 248, 0.2);">
+          <div style="color: #38bdf8; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+            <span>🎯</span> <span>UI-TARS Grounding Action Sequence (Exam Solver Loop)</span>
+          </div>
+          <div>• <strong>Step 1:</strong> <span style="color:#38bdf8;">NAVIGATE_VIEWPORT</span> ➔ <code style="word-break:break-all;">${escapeHtml(groundingTargetUrl)}</code> (ModelFusion Proxy active: X-Frame-Options SAMEORIGIN bypassed)</div>
+          <div>• <strong>Step 2:</strong> <span style="color:#38bdf8;">SCREEN_PERCEPTION</span> ➔ Grounded DOM tree (${livePageElementsCount || 1} interactive elements, ${detectedExamQuestions.length} exam question nodes identified)</div>
+          <div>• <strong>Step 3:</strong> <span style="color:#38bdf8;">MULTI_CHOICE_REASONING</span> ➔ Synthesizing questions, stems, and diagrams into high-confidence recommendations</div>
+          <div>• <strong>Step 4:</strong> <span style="color:#38bdf8;">HITL_SAFETY_GATE</span> ➔ Human review active: AI recommendations staged for interactive confirmation</div>
+          <div>• <strong>Step 5:</strong> <span style="color:#38bdf8;">ADVANCE_PAGINATION</span> ➔ Automated "Next Question" detector and URL query incrementation (q=1..total) ready</div>
+        </div>
+      `;
+    } else if (isBookingGoal || detectedTickets.length > 0) {
+      uitarsGroundingHtml = `
+        <div style="background: var(--bg-secondary, rgba(0,0,0,0.1)); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 11.5px; line-height: 1.6; margin-bottom: 10px; border: 1px solid rgba(139, 92, 246, 0.25);">
+          <div style="color: #a78bfa; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+            <span>🎟️</span> <span>UI-TARS Grounding Action Sequence (Ticket & Travel Booking Loop)</span>
+          </div>
+          <div>• <strong>Step 1:</strong> <span style="color:#a78bfa;">NAVIGATE_VIEWPORT</span> ➔ <code style="word-break:break-all;">${escapeHtml(groundingTargetUrl)}</code> (ModelFusion Proxy active)</div>
+          <div>• <strong>Step 2:</strong> <span style="color:#a78bfa;">SCREEN_PERCEPTION</span> ➔ Grounded DOM tree (${livePageElementsCount || 1} interactive elements, ${detectedTickets.length} ticket/fare tiers identified)</div>
+          <div>• <strong>Step 3:</strong> <span style="color:#a78bfa;">FARE_&_SCHEDULE_ANALYSIS</span> ➔ Comparing flight/seat pricing, classes, and departure schedules</div>
+          <div>• <strong>Step 4:</strong> <span style="color:#a78bfa;">HITL_SAFETY_GATE</span> ➔ Human review active: Selected ticket staged for interactive approval</div>
+          <div>• <strong>Step 5:</strong> <span style="color:#a78bfa;">CONFIRM_RESERVATION</span> ➔ Direct same-page booking confirmation ready</div>
+        </div>
+      `;
+    } else if (isShoppingGoal || detectedProducts.length > 0) {
+      uitarsGroundingHtml = `
+        <div style="background: var(--bg-secondary, rgba(0,0,0,0.1)); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 11.5px; line-height: 1.6; margin-bottom: 10px; border: 1px solid rgba(16, 185, 129, 0.25);">
+          <div style="color: #34d399; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+            <span>🛒</span> <span>UI-TARS Grounding Action Sequence (Shopping & Deal Comparison Loop)</span>
+          </div>
+          <div>• <strong>Step 1:</strong> <span style="color:#34d399;">NAVIGATE_VIEWPORT</span> ➔ <code style="word-break:break-all;">${escapeHtml(groundingTargetUrl)}</code> (ModelFusion Proxy active)</div>
+          <div>• <strong>Step 2:</strong> <span style="color:#34d399;">SCREEN_PERCEPTION</span> ➔ Grounded DOM tree (${livePageElementsCount || 1} interactive elements, ${detectedProducts.length} products / deals grounded)</div>
+          <div>• <strong>Step 3:</strong> <span style="color:#34d399;">PRICE_&_DEAL_ANALYSIS</span> ➔ Evaluating value, specifications, and merchant reputation</div>
+          <div>• <strong>Step 4:</strong> <span style="color:#34d399;">HITL_SAFETY_GATE</span> ➔ Human review active: Items staged for cart approval</div>
+          <div>• <strong>Step 5:</strong> <span style="color:#34d399;">CART_CHECKOUT</span> ➔ Direct same-page cart action ready</div>
+        </div>
+      `;
+    } else if (isDirectionsGoal || (detectedDirections && detectedDirections.routes && detectedDirections.routes.length > 0)) {
+      uitarsGroundingHtml = `
+        <div style="background: var(--bg-secondary, rgba(0,0,0,0.1)); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 11.5px; line-height: 1.6; margin-bottom: 10px; border: 1px solid rgba(56, 189, 248, 0.25);">
+          <div style="color: #38bdf8; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+            <span>🧭</span> <span>UI-TARS Grounding Action Sequence (Map Directions & Navigation Loop)</span>
+          </div>
+          <div>• <strong>Step 1:</strong> <span style="color:#38bdf8;">NAVIGATE_VIEWPORT</span> ➔ <code style="word-break:break-all;">${escapeHtml(groundingTargetUrl)}</code> (ModelFusion Proxy active)</div>
+          <div>• <strong>Step 2:</strong> <span style="color:#38bdf8;">SCREEN_PERCEPTION</span> ➔ Grounded DOM tree (${livePageElementsCount || 1} interactive elements, ${detectedDirections?.routes?.length || 1} navigation route(s) grounded)</div>
+          <div>• <strong>Step 3:</strong> <span style="color:#38bdf8;">ROUTE_OPTIMIZATION</span> ➔ Evaluating transit mode, distance, and estimated travel time</div>
+          <div>• <strong>Step 4:</strong> <span style="color:#38bdf8;">HITL_SAFETY_GATE</span> ➔ Human review active: Route staged for interactive confirmation</div>
+          <div>• <strong>Step 5:</strong> <span style="color:#38bdf8;">START_NAVIGATION</span> ➔ Turn-by-turn guidance ready on same page</div>
+        </div>
+      `;
+    } else if (isGroundingGoal) {
+      uitarsGroundingHtml = `
+        <div style="background: var(--bg-secondary, rgba(0,0,0,0.1)); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 11.5px; line-height: 1.6; margin-bottom: 10px; border: 1px solid rgba(245, 158, 11, 0.25);">
+          <div style="color: #fbbf24; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+            <span>🔍</span> <span>UI-TARS Grounding Action Sequence (Screen Perception Loop)</span>
+          </div>
+          <div>• <strong>Step 1:</strong> <span style="color:#fbbf24;">SCREEN_PERCEPTION</span> ➔ Grounded DOM tree (${livePageElementsCount || 1} interactive elements, ${livePageHeadings.length} headings)</div>
+          <div>• <strong>Step 2:</strong> <span style="color:#fbbf24;">ELEMENT_INDEXING</span> ➔ Assigned stable visual perception nodes to active viewport</div>
+          <div>• <strong>Step 3:</strong> <span style="color:#fbbf24;">ACTION_SYNTHESIS</span> ➔ Formulating direct interaction targets without raw desktop coordinates</div>
+          <div>• <strong>Step 4:</strong> <span style="color:#fbbf24;">HITL_SAFETY_GATE</span> ➔ Direct same-page presentation active</div>
+        </div>
+      `;
+    } else {
+      uitarsGroundingHtml = `
+        <div style="background: var(--bg-secondary, rgba(0,0,0,0.1)); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 11.5px; line-height: 1.6; margin-bottom: 10px; border: 1px solid rgba(56, 189, 248, 0.2);">
+          <div style="color: #38bdf8; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+            <span>🎯</span> <span>UI-TARS Grounding Action Sequence</span>
+          </div>
+          <div>• <strong>Step 1:</strong> <span style="color:#38bdf8;">NAVIGATE_VIEWPORT</span> ➔ <code style="word-break:break-all;">${escapeHtml(groundingTargetUrl)}</code> (ModelFusion Proxy active: X-Frame-Options SAMEORIGIN bypassed)</div>
+          <div>• <strong>Step 2:</strong> <span style="color:#38bdf8;">SCREEN_PERCEPTION</span> ➔ Grounded DOM tree (${livePageElementsCount || 1} interactive elements, ${livePageText.length ? livePageText.length.toLocaleString() + ' chars text' : 'active viewport'})</div>
+          <div>• <strong>Step 3:</strong> <span style="color:#38bdf8;">ANALYZE_VIEWPORT</span> ➔ Synthesizing live UI state & page content into autonomous reasoning context</div>
+          ${searchQuery ? `<div>• <strong>Step 4:</strong> <span style="color:#38bdf8;">SEARCH_QUERY</span> ➔ Dispatched live search: <code>"${escapeHtml(searchQuery)}"</code></div>` : ''}
+          <div>• <strong>Step ${searchQuery ? 5 : 4}:</strong> <span style="color:#38bdf8;">GROUND_RESPONSE</span> ➔ Formulating factual findings directly from grounded live page content on this page</div>
+        </div>
+      `;
+    }
     // Build Universal Human-in-the-Loop (HITL) Workspace Cards
     let hitlExamCardHtml = '';
     if (detectedExamQuestions.length > 0) {
@@ -19355,33 +19712,42 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 ${hasGroundedFindings ? `You have directly inspected and grounded the live webpage and verified web search findings (${targetNavUrl || searchQuery}).
 CRITICAL INSTRUCTION: Base your entire response on the actual live findings and search results grounded below.
 Directly list, explain, and summarize the specific findings, metrics, and information requested in the user's goal.
-Do NOT give generic instructions, do NOT tell the user to use curl or external command lines, and do NOT speculate. Answer factually based on what is actually retrieved.` : 'You are UI-TARS Computer Use Assistant. Generate precise GUI action coordinates and step-by-step OS automation plan.'}`;
+Do NOT give generic instructions, do NOT tell the user to use curl or external command lines, and do NOT speculate. Answer factually based on what is actually retrieved.` : 'You are the HugOS UI-TARS Computer Use Assistant. Perceive screen state and formulate direct actions and findings on this page.'}
 
-    if (detectedExamQuestions.length > 0) {
-      systemPrompt += `\n\nEXAM SOLVER & HUMAN-IN-THE-LOOP (HITL) INSTRUCTIONS:
+ANTI-HALLUCINATION & DIRECT SAME-PAGE PRESENTATION LAWS:
+1. Always display all findings, options, and recommendations directly in this chat view.
+2. NEVER output desktop mouse-click coordinates (X, Y) or raw screen pixel values.
+3. NEVER instruct the user to open Google Chrome or an external browser. All navigation is integrated into this viewport.
+4. NEVER generate AutoHotkey, pyautogui, or desktop automation scripts.
+5. Provide a direct, factual, and concise summary based strictly on grounded page content.`;
+
+    if (detectedExamQuestions.length > 0 || isExamGoal) {
+      systemPrompt += `\n\nEXAM SOLVER SAFETY & SAME-PAGE ANSWERING INSTRUCTIONS:
+1. Always display the questions, candidate options, and recommended answers directly in this chat view.
+2. Provide a direct, concise summary of the questions and answers on this page.
 The live webpage contains ${detectedExamQuestions.length} structured multiple-choice exam/test questions.
 For EACH detected question:
 1. Clearly state the Question Number and Question Stem.
 2. State the Recommended Answer Option (e.g. Option A, B, C, or D).
 3. Provide a clear, factual Rationale explaining WHY this option is the correct answer based on domain knowledge and grounded page content.
 4. Conclude with a clear Human-in-the-Loop review advisory: "Review answers above and click 'Confirm & Submit Answers' in the HITL workspace when satisfied."`;
-    } else if (detectedProducts.length > 0) {
+    } else if (detectedProducts.length > 0 || isShoppingGoal) {
       systemPrompt += `\n\nE-COMMERCE & PRICE COMPARISON INSTRUCTIONS:
 The live webpage contains ${detectedProducts.length} grounded products or deals.
-1. Provide an itemized price comparison with product names, prices, and specifications.
+1. Provide an itemized price comparison with product names, prices, and specifications directly on this page.
 2. Clearly identify the BEST VALUE DEAL and explain why it offers optimal quality/cost.
 3. Conclude with: "Review selected products above and click 'Approve & Add to Cart' in the HITL workspace to confirm."`;
-    } else if (detectedTickets.length > 0) {
+    } else if (detectedTickets.length > 0 || isBookingGoal) {
       systemPrompt += `\n\nTICKET & TRAVEL BOOKING INSTRUCTIONS:
 The live webpage contains ${detectedTickets.length} ticket or fare options.
-1. Summarize available ticket tiers, prices, dates, and seat categories.
+1. Summarize available ticket tiers, prices, dates, and seat categories directly on this page.
 2. Provide a clear booking recommendation based on value and availability.
 3. Conclude with: "Review your chosen tier above and click 'Approve & Confirm Booking' in the HITL workspace when ready."
 Strictly provide direct, concise booking advice without monologue, editorial musing, meta-commentary, or echoing prompt instructions.`;
-    } else if (detectedDirections && detectedDirections.routes && detectedDirections.routes.length > 0) {
+    } else if ((detectedDirections && detectedDirections.routes && detectedDirections.routes.length > 0) || isDirectionsGoal) {
       systemPrompt += `\n\nMAP DIRECTIONS & NAVIGATION INSTRUCTIONS:
-The live webpage contains ${detectedDirections.routes.length} navigation route options.
-1. Summarize available routes with distance, estimated travel time, transit mode, and key highways.
+The live webpage contains ${detectedDirections?.routes?.length || 1} navigation route options.
+1. Summarize available routes with distance, estimated travel time, transit mode, and key highways directly on this page.
 2. Clearly highlight the FASTEST or RECOMMENDED route.
 3. Detail step-by-step turn guidance for the optimal route.
 4. Conclude with: "Review route options above and click 'Confirm & Start Navigation' in the HITL workspace to begin guidance."`;
@@ -19491,7 +19857,8 @@ The live webpage contains ${detectedDirections.routes.length} navigation route o
                 taskType: 'computer_use',
                 isolateContext: true,
                 existingBubble: bubble,
-                streamContentTarget: streamEl ? streamEl.querySelector('.stream-content-planner') : null
+                streamContentTarget: streamEl ? streamEl.querySelector('.stream-content-planner') : null,
+                transformFinalText: sanitizeComputerUseOutput
               }
             );
             return;
@@ -19555,7 +19922,8 @@ The live webpage contains ${detectedDirections.routes.length} navigation route o
             {
               taskType: 'computer_use',
               existingBubble: bubble,
-              streamContentTarget: streamEl ? streamEl.querySelector('.stream-content-planner') : null
+              streamContentTarget: streamEl ? streamEl.querySelector('.stream-content-planner') : null,
+              transformFinalText: sanitizeComputerUseOutput
             }
           );
           return;
@@ -19600,7 +19968,8 @@ The live webpage contains ${detectedDirections.routes.length} navigation route o
           {
             taskType: 'computer_use',
             existingBubble: bubble,
-            streamContentTarget: streamEl ? streamEl.querySelector('.stream-content-planner') : null
+            streamContentTarget: streamEl ? streamEl.querySelector('.stream-content-planner') : null,
+            transformFinalText: sanitizeComputerUseOutput
           }
         );
         return;
@@ -21250,7 +21619,7 @@ ${sourceCount > 10
         searchContext = searchResults.map((r, idx) => `[${idx + 1}] Title: ${r.title}\nURL: ${r.url}\nSummary: ${r.snippet}`).join('\n\n');
         termLog(`🌐 [COMPUTER INTERACTION] Target destination resolved: ${targetNavUrl}`, 'success');
       } else {
-        targetNavUrl = `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(task)}`;
+        targetNavUrl = `https://www.google.com/search?q=${encodeURIComponent(task)}`;
         termLog(`🌐 [COMPUTER INTERACTION] Web search fallback target: ${targetNavUrl}`, 'sys');
       }
 
@@ -22540,7 +22909,7 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     { cmd: '@agent backtrack ', icon: '↩️', label: 'Backtrack Rollback', desc: 'Rollback erroneous reasoning branches to previous valid state' },
     { cmd: '@agent reflection ', icon: '🪞', label: 'Error Reflection', desc: 'Analyze execution failure traces and synthesize self-corrections' },
     { cmd: '@agent adversarial ', icon: '⚔️', label: 'Adversarial Test', desc: 'Subject assumptions and architecture to worst-case stresses' },
-    { cmd: '@help ', icon: '💡', label: 'Help Hub (All 14 Menus)', desc: 'Explore all 14 sidebar menus and foundation models' },
+    { cmd: '@help ', icon: '💡', label: 'Help Hub (All 15 Menus)', desc: 'Explore all 14 sidebar menus and foundation models' },
     { cmd: '@help classification', icon: '🏷️', label: 'Help: Classification & Taxonomy', desc: 'Guide to 12 models (BART, DeBERTa, GoEmotions, Toxic-BERT...)' },
     { cmd: '@help science', icon: '🔬', label: 'Help: Science & Discovery', desc: 'Guide to 20 scientific models (ESM2, ChemBERTa, ClimaX...)' },
     { cmd: '@help esm', icon: '🧬', label: 'Help: ESM Protein Suite', desc: 'Architecture, FASTA input format & 3D folding prompts' },
@@ -22646,19 +23015,38 @@ If you are asked about real-world facts such as world leaders, heads of state, c
       // Clear any prior directive trays completely
       clearAllActiveDirectives();
 
-      const isFileTool = !cmd.includes('rest-rl') && !cmd.includes('restrl') && (
-        ['tabular', 'vision', 'audio', 'pe_binary', 'code'].includes(cat) ||
-        cmd.includes('summarize') || cmd.includes('acdso') || cmd.includes('pe') || cmd.includes('security') ||
-        cmd.trim() === '@agent humanize' || cmd.trim() === '@agent watermark'
-      );
+      const isNonFileTool = /^(?:@agent\s+)?(?:updatedb|update|sys[-_ ]?info|benchmark|export|db-check|db-prune|db-rebuild|db-vacuum|rest-rl|restrl|audit-menus|audit|model|help)\b/i.test(cmd.trim());
+      const isFileTool = !isNonFileTool;
+      const isQuestionTool = QUESTION_BASED_FILE_TOOLS.test(cmd.trim());
 
-      // If attachedFiles.length > 0: Immediately execute on staged file(s)!
+      // If attachedFiles.length > 0:
       if (isFileTool && attachedFiles.length > 0) {
         document.querySelectorAll('.tool-item-btn, .tool-command-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        termLog(`[ACTION] Executing ${cmd} on ${attachedFiles.length} attached file(s)...`, 'info');
-        executeCliCommand(cmd);
-        return;
+
+        if (isQuestionTool) {
+          // Prepopulate input, set placeholder, and focus to allow user to ask custom questions
+          const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
+            ? cliPromptInputPinned
+            : cliPromptInput;
+          if (activeInput) {
+            const prepopVal = cmd.trim() + ' ';
+            activeInput.value = prepopVal;
+            const lastFileName = attachedFiles[attachedFiles.length - 1]?.name || 'file';
+            activeInput.placeholder = `Ask a question about ${lastFileName}...`;
+            activeInput.focus();
+            activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
+            activeInput.style.height = 'auto';
+            activeInput.style.height = Math.min(activeInput.scrollHeight, 160) + 'px';
+          }
+          termLog(`📎 ${attachedFiles.length} file(s) attached. Type your question or press Enter for default analysis...`, 'info');
+          return;
+        } else {
+          // Direct analysis tools (pe, asr, etc.) can execute directly on staged file(s)
+          termLog(`[ACTION] Executing ${cmd} on ${attachedFiles.length} attached file(s)...`, 'info');
+          executeCliCommand(cmd);
+          return;
+        }
       }
 
       // If attachedFiles.length === 0: Prepopulate active input with @agent command
@@ -22911,7 +23299,10 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     dropdown.classList.remove('hidden');
     acSelectedIndex = -1;
 
-    filtered.forEach((item, idx) => {
+    const displayItems = filtered.slice(0, 8);
+    const fragment = document.createDocumentFragment();
+
+    displayItems.forEach((item, idx) => {
       const div = document.createElement('div');
       div.className = 'agent-autocomplete-item';
       div.setAttribute('data-index', idx);
@@ -22933,8 +23324,9 @@ If you are asked about real-world facts such as world leaders, heads of state, c
         inputEl.style.height = 'auto';
         inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + 'px';
       });
-      dropdown.appendChild(div);
+      fragment.appendChild(div);
     });
+    dropdown.appendChild(fragment);
   }
 
   function handleAcKeydown(e, inputEl, dropdownId) {
@@ -22978,10 +23370,14 @@ If you are asked about real-world facts such as world leaders, heads of state, c
   }
 
   // Auto-expanding Hero Textarea & Send Button (btnSendPrompt defined at top)
+  let heroInputRafId = null;
   if (cliPromptInput) {
     cliPromptInput.addEventListener('input', () => {
-      cliPromptInput.style.height = 'auto';
-      cliPromptInput.style.height = Math.min(cliPromptInput.scrollHeight, 160) + 'px';
+      if (heroInputRafId) cancelAnimationFrame(heroInputRafId);
+      heroInputRafId = requestAnimationFrame(() => {
+        cliPromptInput.style.height = 'auto';
+        cliPromptInput.style.height = Math.min(cliPromptInput.scrollHeight, 160) + 'px';
+      });
       showAgentAutocomplete(cliPromptInput, 'agent-autocomplete-hero');
     });
 
@@ -23038,10 +23434,14 @@ If you are asked about real-world facts such as world leaders, heads of state, c
 
   // Pinned Bottom Textarea & Send Button (btnSendPromptPinned defined at top)
 
+  let pinnedInputRafId = null;
   if (cliPromptInputPinned) {
     cliPromptInputPinned.addEventListener('input', () => {
-      cliPromptInputPinned.style.height = 'auto';
-      cliPromptInputPinned.style.height = Math.min(cliPromptInputPinned.scrollHeight, 160) + 'px';
+      if (pinnedInputRafId) cancelAnimationFrame(pinnedInputRafId);
+      pinnedInputRafId = requestAnimationFrame(() => {
+        cliPromptInputPinned.style.height = 'auto';
+        cliPromptInputPinned.style.height = Math.min(cliPromptInputPinned.scrollHeight, 160) + 'px';
+      });
       showAgentAutocomplete(cliPromptInputPinned, 'agent-autocomplete-pinned');
     });
 
