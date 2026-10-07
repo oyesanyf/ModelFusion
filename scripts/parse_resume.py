@@ -359,7 +359,7 @@ def extract_candidate_profile_heuristics(text: str, file_name: str = "Resume.pdf
             continue
         words = clean.split()
         if 2 <= len(words) <= 4 and all(re.match(r"^[A-Z][a-zA-Z.'-]*$", w) for w in words):
-            candidate_name = clean
+            candidate_name = re.sub(r'\s+', ' ', clean).strip()
             break
 
     # If not found, check filename (e.g. John_Doe_Resume.pdf)
@@ -372,7 +372,7 @@ def extract_candidate_profile_heuristics(text: str, file_name: str = "Resume.pdf
 
     # 5. Location
     loc_match = re.search(r"\b([A-Z][a-zA-Z\s]+,\s*[A-Z]{2}(?:\s+\d{5})?|\bRemote\b|[A-Za-z\s]+,\s*(?:USA|United States|UK|Canada|Germany|Nigeria|India|Australia))\b", text)
-    location = loc_match.group(0).strip() if loc_match else "Remote, US"
+    location = re.sub(r'\s+', ' ', loc_match.group(0)).strip() if loc_match else "Remote, US"
     if re.search(r"remote", text, re.IGNORECASE) and "Remote" not in location:
         location = f"{location} / Remote"
 
@@ -607,6 +607,11 @@ def parse_resume(file_path: Optional[str] = None, text_content: Optional[str] = 
     final_profile["resumeFileName"] = file_name
     final_profile["resumeFileSize"] = file_size_str or "128 KB"
     final_profile["hasUploadedResume"] = True
+
+    if "fullName" in final_profile and final_profile["fullName"]:
+        final_profile["fullName"] = re.sub(r'\s+', ' ', str(final_profile["fullName"])).strip()
+    if "location" in final_profile and final_profile["location"]:
+        final_profile["location"] = re.sub(r'\s+', ' ', str(final_profile["location"])).strip()
 
     # 4. Generate grounded screening answers
     screening_questions = ground_screening_questions(final_profile, job_description=job_description)

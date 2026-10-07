@@ -28,6 +28,44 @@ if (typeof window !== 'undefined') {
   window.isIdeEnvironment = isIdeEnvironment;
 }
 
+function stripAnsi(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/[\u001b\x1b](?:\[[0-9;?]*[ -/]*[@-~]|\([B0-9A-Z]|[\]][^\x07\x1b]*[\x07\x1b\\])/g, '')
+    .replace(/[\u001b\x1b]\[[0-9;?]*[a-zA-Z]/g, '')
+    .replace(/\r/g, '')
+    .trim();
+}
+if (typeof window !== 'undefined') {
+  window.stripAnsi = stripAnsi;
+}
+
+function normalizeModelTag(modelName) {
+  if (!modelName) return '';
+  const trimmed = String(modelName).trim();
+  if (trimmed.toLowerCase() === 'embeddinggemma:2b' || trimmed.toLowerCase() === 'embeddinggemma') {
+    return 'embeddinggemma:latest';
+  }
+  return trimmed;
+}
+if (typeof window !== 'undefined') {
+  window.normalizeModelTag = normalizeModelTag;
+}
+
+function isModelMatch(candidate, target) {
+  if (!candidate || !target) return false;
+  const c = normalizeModelTag(typeof candidate === 'string' ? candidate : (candidate.name || candidate.model || '')).toLowerCase().trim();
+  const t = normalizeModelTag(typeof target === 'string' ? target : (target.name || target.model || '')).toLowerCase().trim();
+  if (c === t) return true;
+  if ((c === 'embeddinggemma' || c === 'embeddinggemma:latest') && (t === 'embeddinggemma' || t === 'embeddinggemma:latest')) {
+    return true;
+  }
+  return c.startsWith(t + ':') || t.startsWith(c + ':');
+}
+if (typeof window !== 'undefined') {
+  window.isModelMatch = isModelMatch;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   // If running inside HugOS IDE, disable/hide the Job Application tool from sidebar
   if (isIdeEnvironment()) {
@@ -435,6 +473,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function termLog(message, type = 'info') {
+    message = stripAnsi(message);
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     // Transition view from hero section to conversation stream
@@ -620,11 +659,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function isModelProvisioned(tag) {
     if (!tag) return false;
-    const cleanTag = tag.toLowerCase().trim();
-    return availableOllamaModels.some(m => {
-      const lowerM = m.toLowerCase().trim();
-      return lowerM === cleanTag || lowerM.startsWith(cleanTag + ':') || cleanTag.startsWith(lowerM + ':');
-    });
+    return availableOllamaModels.some(m => isModelMatch(m, tag));
   }
 
   function loadCustomModelsAndFusions() {
@@ -7256,8 +7291,10 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
     const contentEl = bubbleElement.querySelector('.bubble-content') || bubbleElement;
     contentEl.style.color = '';
     contentEl.style.fontStyle = '';
-    const safeTitle = escapeHtml(errorTitle || '⚠️ Error Occurred');
-    const safeMsg = escapeHtml(errorMsg || 'An unexpected error occurred during execution.');
+    if (details.reason) details.reason = stripAnsi(details.reason);
+    if (details.attempted) details.attempted = stripAnsi(details.attempted);
+    const safeTitle = escapeHtml(stripAnsi(errorTitle || '⚠️ Error Occurred'));
+    const safeMsg = escapeHtml(stripAnsi(errorMsg || 'An unexpected error occurred during execution.'));
 
     let extraHtml = '';
     if (details.attempted) {
@@ -7402,6 +7439,7 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
 
   function triggerModelPull(modelName) {
     if (!modelName) return;
+    modelName = normalizeModelTag(modelName);
     if (window.termLog) termLog(`[MODEL] Initiating pull for: ${modelName}...`, 'info');
     fetch('/api/models/pull', {
       method: 'POST',
@@ -16681,7 +16719,7 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
         primary: primaryWorkhorse,
         verifier: verifierGate,
         vision: 'moondream',
-        embedding: 'embeddinggemma'
+        embedding: 'embeddinggemma:latest'
       };
 
       const cardId = 'calibrated-models-card-' + Date.now();
@@ -16732,10 +16770,10 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
             </div>
             <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); padding: 8px 12px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center;">
               <div>
-                <span style="font-weight: 600; color: #f59e0b;">4. Multimodal Embeddings:</span> <code>${escapeHtml(calModels.embedding)}</code>
-                <div style="font-size: 11px; color: var(--text-secondary, #94a3b8);">Semantic search, RAG retrieval, vector database indexing</div>
+                <span style="font-weight: 600; color: #f59e0b;">4. Multimodal Embeddings:</span> <code>${escapeHtml(calModels.embedding || 'embeddinggemma:latest')}</code>
+                <div style="font-size: 11px; color: var(--text-secondary, #94a3b8);">Semantic search, RAG retrieval, 300M parameters (~0.6 GB)</div>
               </div>
-              <span style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">Embeddings</span>
+              <span style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">Embeddings (~0.6 GB)</span>
             </div>
           </div>
 
@@ -20440,89 +20478,215 @@ Analyze the temporal progression across the sampled video keyframes, describing 
   }
 
   function promptForResumeUploadFirst(goal = '') {
-    const cardHtml = `
+    const prof = getJobApplicantProfile();
+    const hasExisting = prof && prof.hasUploadedResume && prof.resumeFileName;
+
+    let resumeStatusHtml = '';
+    let buttonsHtml = '';
+
+    if (hasExisting) {
+      resumeStatusHtml = `
+        <div style="background: rgba(16, 185, 129, 0.1); border: 1px dashed rgba(16, 185, 129, 0.4); border-radius: 6px; padding: 10px 14px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px; font-size: 12px;">
+            <span style="font-size: 18px;">📎</span>
+            <div>
+              <span style="font-weight: 600; color: #34d399;">Active Resume:</span>
+              <strong style="color: var(--text-primary, #f1f5f9); margin-left: 4px; font-family: var(--mono-font);">${escapeHtml(prof.resumeFileName)}</strong>
+              <span style="color: var(--text-muted, #94a3b8); font-size: 11px; margin-left: 4px;">(${escapeHtml(prof.resumeFileSize || '')})</span>
+            </div>
+          </div>
+          <span style="background: rgba(16, 185, 129, 0.2); color: #34d399; font-size: 10.5px; padding: 2px 8px; border-radius: 4px; font-weight: 600;">Active</span>
+        </div>
+      `;
+      buttonsHtml = `
+        <button type="button" class="btn-hitl-upload-resume" onclick="window.triggerResumeUploadInput('${escapeHtml(goal)}')" style="background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2); color: #f1f5f9; padding: 7px 16px; border-radius: 5px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+          <span>📎</span> <span>Upload / Replace Resume</span>
+        </button>
+        <button type="button" class="btn-hitl-continue-resume" onclick="window.continueWithCurrentResume('${escapeHtml(goal)}')" style="background: #10b981; border: none; color: #fff; padding: 7px 16px; border-radius: 5px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
+          <span>✅</span> <span>Use Current Resume &amp; Continue</span>
+        </button>
+      `;
+    } else {
+      resumeStatusHtml = `
+        <p style="font-size: 11.5px; color: var(--text-secondary, #cbd5e1); margin: 0 0 12px 0; line-height: 1.5;">
+          Please upload your resume (PDF, DOCX, TXT, or RTF) so ModelFusion can parse your skills, calculate your years of experience, and accurately autofill employer screening questions.
+        </p>
+      `;
+      buttonsHtml = `
+        <button type="button" class="btn-hitl-upload-resume" onclick="window.triggerResumeUploadInput('${escapeHtml(goal)}')" style="background: #0284c7; color: #fff; border: none; padding: 7px 16px; border-radius: 5px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
+          <span>📎</span> <span>Upload Resume</span>
+        </button>
+      `;
+    }
+
+    return `
       <div id="resume-upload-prompt-card" class="resume-upload-prompt-card" style="background: rgba(15, 23, 42, 0.95); border: 1px solid #38bdf8; border-radius: 8px; padding: 14px; margin: 10px 0; font-family: var(--font-family, system-ui, sans-serif);">
+        <input type="file" id="resume-file-picker" accept=".pdf,.docx,.doc,.txt,.rtf" style="display: none;" onchange="if(this.files &amp;&amp; this.files[0]){window.handleResumeFileSelection(this.files[0], '${escapeHtml(goal)}');}">
         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
           <span style="font-size: 20px;">📄</span>
           <div>
-            <div style="color: #38bdf8; font-weight: 700; font-size: 13.5px;">Resume Upload Required for Job Application</div>
+            <div style="color: #38bdf8; font-weight: 700; font-size: 13.5px;">Resume Required for Job Application</div>
             <div style="font-size: 11px; color: var(--text-muted, #94a3b8);">ModelFusion Candidate Screening Engine</div>
           </div>
         </div>
-        <p style="font-size: 11.5px; color: var(--text-secondary, #cbd5e1); margin: 0 0 12px 0; line-height: 1.5;">
-          Please upload your resume (PDF, DOCX, or TXT) first so I can parse your skills, calculate your years of experience, and accurately autofill employer screening questions.
-        </p>
+        ${resumeStatusHtml}
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-          <button type="button" class="btn-hitl-upload-resume" onclick="window.triggerResumeUploadInput('${escapeHtml(goal)}')" style="background: #0284c7; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;">
-            <span>📎</span> <span>Upload Resume</span>
-          </button>
-          <button type="button" class="btn-hitl-sample-profile" onclick="window.useSampleCandidateProfile('${escapeHtml(goal)}')" style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; padding: 6px 14px; border-radius: 4px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;">
-            <span>👤</span> <span>Use Default Candidate Profile (Alex Morgan)</span>
-          </button>
+          ${buttonsHtml}
         </div>
       </div>
     `;
-    return cardHtml;
   }
 
-  function useSampleCandidateProfile(goal = '') {
-    saveJobApplicantProfile({
-      fullName: 'Alex Morgan',
-      email: 'alex.morgan.dev@gmail.com',
-      phone: '+1 (555) 234-5678',
-      location: 'San Francisco, CA / Remote',
-      linkedin: 'https://linkedin.com/in/alexmorgan-dev',
-      github: 'https://github.com/alexmorgandev',
-      workAuthorization: 'Citizen / Permanent Resident (No sponsorship required)',
-      sponsorshipRequired: 'No',
-      desiredWorkType: 'Remote',
-      desiredEmploymentType: 'Full-time',
-      resumeFileName: 'Alex_Morgan_Resume.pdf',
-      resumeFileSize: '142 KB',
-      yearsExperience: '6+ years',
-      education: 'Bachelor of Science in Computer Science, UC Berkeley',
-      highestDegree: 'Bachelor of Science (BS)',
-      skills: 'Rust, TypeScript, React, Python, Distributed Systems, Cloud Architecture',
-      parsedSkills: ['Rust', 'Python', 'TypeScript', 'React', 'Docker', 'Kubernetes', 'Cloud Architecture', 'Distributed Systems'],
-      skillYears: { 'Rust': 6, 'Python': 8, 'TypeScript': 7, 'React': 6, 'Cloud': 7, 'Distributed Systems': 6 },
-      coverLetterSnippet: 'Experienced software engineer specializing in high-performance distributed systems and AI platform engineering.',
-      hasUploadedResume: true
-    });
+  function continueWithCurrentResume(goal = '') {
+    const prof = getJobApplicantProfile();
     if (typeof termLog === 'function') {
-      termLog('[HITL JOBS] 👤 Initialized default candidate profile: Alex Morgan (6+ yrs Rust/Python/Distributed Systems).', 'success');
+      termLog(`[HITL JOBS] 📄 Continuing with active resume: ${prof.resumeFileName || 'Candidate Resume'}`, 'info');
     }
     const promptCard = typeof document !== 'undefined' ? document.getElementById('resume-upload-prompt-card') : null;
     if (promptCard) {
       promptCard.innerHTML = `
         <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; border-radius: 6px; padding: 10px 14px; color: #34d399;">
-          <strong>✅ Default Profile Loaded (Alex Morgan). Continuing autonomous job search...</strong>
+          <strong>✅ Active Resume Confirmed (${escapeHtml(prof.resumeFileName || '')}). Continuing autonomous job search...</strong>
         </div>
       `;
     }
-    const cleanGoal = goal || 'Senior Rust Engineer remote';
+    const cleanGoal = goal || 'Senior Software Engineer remote';
     setTimeout(() => {
       if (typeof executeCliCommand === 'function') {
         executeCliCommand(`@agent apply-jobs ${cleanGoal} --skip-resume`);
       }
     }, 300);
   }
+  window.continueWithCurrentResume = continueWithCurrentResume;
+
+  function useSampleCandidateProfile(goal = '') {
+    // Under RULE[no_mocks_write_actual_code.md], dummy mock personas are prohibited.
+    // Trigger real resume file picker directly.
+    triggerResumeUploadInput(goal);
+  }
 
   function triggerResumeUploadInput(goal = '') {
     window._pendingJobGoal = goal;
-    const rfp = typeof document !== 'undefined' ? document.getElementById('resume-file-picker') : null;
+    let rfp = typeof document !== 'undefined' ? document.getElementById('resume-file-picker') : null;
+    if (!rfp && typeof document !== 'undefined') {
+      rfp = document.createElement('input');
+      rfp.type = 'file';
+      rfp.id = 'resume-file-picker';
+      rfp.accept = '.pdf,.docx,.doc,.txt,.rtf';
+      rfp.style.display = 'none';
+      rfp.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          handleResumeFileSelection(e.target.files[0], goal);
+        }
+      });
+      document.body.appendChild(rfp);
+    }
     if (rfp) {
       rfp.click();
-    } else {
-      useSampleCandidateProfile(goal);
     }
   }
 
   function uploadResumeFile() {
-    const rfp = typeof document !== 'undefined' ? document.getElementById('resume-file-picker') : null;
-    if (rfp) {
-      rfp.click();
-    }
+    triggerResumeUploadInput(window._pendingJobGoal || '');
   }
+
+  function buildCandidateProfileCardHtml(prof = {}, goal = '') {
+    const p = prof || getJobApplicantProfile();
+    const selJob = (window.activeJobPostings && window.activeJobPostings[window.selectedJobIndex || 0]) || null;
+    const questions = answerScreeningQuestions([], p, selJob);
+    
+    return `
+      <div class="candidate-profile-card" style="background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 8px; padding: 14px; margin: 10px 0; font-family: var(--font-family, system-ui, sans-serif);">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+          <div style="font-weight: 700; color: #38bdf8; font-size: 13px; display: flex; align-items: center; gap: 6px;">
+            <span>👤</span> <span>Candidate Profile &amp; Verification (Prefilled from Resume)</span>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <button type="button" class="btn-upload-resume" onclick="window.triggerResumeUploadInput('${escapeHtml(goal)}')" style="background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.2); color: #f1f5f9; font-size: 11px; padding: 3px 10px; border-radius: 4px; cursor: pointer;">
+              📎 Replace Resume
+            </button>
+          </div>
+        </div>
+
+        ${p.resumeFileName ? `
+          <div style="background: rgba(16, 185, 129, 0.1); border: 1px dashed rgba(16, 185, 129, 0.4); border-radius: 5px; padding: 6px 10px; margin-bottom: 10px; font-size: 11.5px; display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <span style="color: #34d399; font-weight: 600;">Active Resume:</span>
+              <strong style="color: #f1f5f9; margin-left: 4px; font-family: var(--mono-font);">${escapeHtml(p.resumeFileName)}</strong>
+              <span style="color: var(--text-muted, #94a3b8); font-size: 10.5px; margin-left: 4px;">(${escapeHtml(p.resumeFileSize || '')})</span>
+            </div>
+            <span style="background: rgba(16, 185, 129, 0.2); color: #34d399; font-size: 10px; padding: 2px 6px; border-radius: 3px; font-weight: 600;">Parsed</span>
+          </div>
+        ` : ''}
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; font-size: 11px; margin-bottom: 10px;">
+          <div>
+            <label for="candidate-full-name" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Full Name:</label>
+            <input id="candidate-full-name" type="text" value="${escapeHtml(p.fullName || '')}" placeholder="e.g. Full Name" oninput="window.updateCandidateField('fullName', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+          </div>
+          <div>
+            <label for="candidate-email" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Email:</label>
+            <input id="candidate-email" type="email" value="${escapeHtml(p.email || '')}" placeholder="e.g. name@example.com" oninput="window.updateCandidateField('email', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+          </div>
+          <div>
+            <label for="candidate-phone" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Phone:</label>
+            <input id="candidate-phone" type="text" value="${escapeHtml(p.phone || '')}" placeholder="e.g. +1 (555) 000-0000" oninput="window.updateCandidateField('phone', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+          </div>
+          <div>
+            <label for="candidate-location" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Location:</label>
+            <input id="candidate-location" type="text" value="${escapeHtml(p.location || '')}" placeholder="e.g. City, State / Remote" oninput="window.updateCandidateField('location', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+          </div>
+          <div>
+            <label for="candidate-linkedin" style="color: var(--text-muted); display: block; margin-bottom: 2px;">LinkedIn:</label>
+            <input id="candidate-linkedin" type="text" value="${escapeHtml(p.linkedin || '')}" placeholder="e.g. https://linkedin.com/in/username" oninput="window.updateCandidateField('linkedin', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+          </div>
+          <div>
+            <label for="candidate-work-auth" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Work Authorization:</label>
+            <input id="candidate-work-auth" type="text" value="${escapeHtml(p.workAuthorization || 'Citizen / Permanent Resident (No sponsorship required)')}" placeholder="e.g. Authorized (No sponsorship needed)" oninput="window.updateCandidateField('workAuthorization', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+          </div>
+          <div>
+            <label for="candidate-work-type" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Desired Work Type:</label>
+            <input id="candidate-work-type" type="text" value="${escapeHtml(p.desiredWorkType || 'Remote')} (${escapeHtml(p.desiredEmploymentType || 'Full-time')})" placeholder="e.g. Remote (Full-time)" oninput="window.updateCandidateField('desiredWorkType', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+          </div>
+          <div>
+            <label for="candidate-experience" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Experience:</label>
+            <input id="candidate-experience" type="text" value="${escapeHtml(p.yearsExperience || '')}" placeholder="e.g. 5+ years" oninput="window.updateCandidateField('yearsExperience', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+          </div>
+          <div>
+            <label for="candidate-education" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Education:</label>
+            <input id="candidate-education" type="text" value="${escapeHtml(p.education || '')}" placeholder="e.g. B.S. in Computer Science" oninput="window.updateCandidateField('education', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+          </div>
+          <div style="grid-column: 1 / -1;">
+            <label for="candidate-skills" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Core Skills:</label>
+            <input id="candidate-skills" type="text" value="${escapeHtml(p.skills || '')}" placeholder="e.g. Rust, Python, TypeScript, Distributed Systems" oninput="window.updateCandidateField('skills', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #e2e8f0; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+          </div>
+        </div>
+
+        ${questions.length > 0 ? `
+          <div style="background: rgba(0,0,0,0.25); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px; padding: 10px; margin-bottom: 12px;">
+            <div style="font-weight: 600; color: #38bdf8; font-size: 11.5px; margin-bottom: 6px;">
+              Employer Screening Questions (Resume Grounded)
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              ${questions.map((sq, i) => `
+                <div style="background: rgba(255,255,255,0.03); border-radius: 4px; padding: 5px 8px; display: flex; flex-direction: column; gap: 2px;">
+                  <div style="color: var(--text-secondary); font-size: 10.5px;">${escapeHtml(sq.question)}</div>
+                  <input type="text" id="screening-answer-${i}" value="${escapeHtml(sq.answer)}" oninput="window.updateScreeningAnswer(${i}, this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(56, 189, 248, 0.3); color: #f1f5f9; padding: 3px 6px; border-radius: 4px; font-size: 10.5px;">
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+          <button type="button" class="btn-continue-job-app" onclick="window.continueWithCurrentResume('${escapeHtml(goal)}')" style="background: #10b981; border: none; color: #fff; font-size: 11.5px; font-weight: 600; padding: 7px 16px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
+            <span>🚀</span> <span>Confirm Profile &amp; Continue Autonomous Job Search</span>
+          </button>
+        </div>
+      </div>
+    `;
+  }
+  window.buildCandidateProfileCardHtml = buildCandidateProfileCardHtml;
 
   async function handleResumeFileSelection(file, goal = '') {
     if (!file) return;
@@ -20588,7 +20752,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       }
 
       const skillsStr = Array.isArray(parsedData.skills) ? parsedData.skills.join(', ') : (parsedData.skills || '');
-      const defaultName = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+      const defaultName = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ').replace(/\b(?:resume|cv|portfolio|202\d|v\d+)\b/gi, '').trim();
       const updates = {
         fullName: parsedData.full_name || parsedData.fullName || defaultName,
         email: parsedData.email || '',
@@ -20597,7 +20761,9 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         linkedin: parsedData.linkedin || '',
         github: parsedData.github || '',
         workAuthorization: parsedData.work_authorization || parsedData.workAuthorization || 'Citizen / Permanent Resident (No sponsorship required)',
-        yearsExperience: parsedData.years_experience || parsedData.yearsExperience || '5+ years',
+        desiredWorkType: parsedData.desired_work_type || 'Remote',
+        desiredEmploymentType: parsedData.desired_employment_type || 'Full-time',
+        yearsExperience: parsedData.years_experience || parsedData.yearsExperience || '',
         education: parsedData.education || '',
         skills: skillsStr,
         parsedSkills: Array.isArray(parsedData.skills) ? parsedData.skills : (skillsStr ? skillsStr.split(',').map(s => s.trim()) : []),
@@ -20626,16 +20792,11 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       const promptCard = (typeof document !== 'undefined') ? document.getElementById('resume-upload-prompt-card') : null;
       if (promptCard) {
         promptCard.innerHTML = `
-          <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; border-radius: 6px; padding: 10px 14px; color: #34d399;">
-            <strong>✅ Resume Uploaded &amp; Parsed (${escapeHtml(file.name)}). Continuing autonomous job search...</strong>
+          <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; border-radius: 6px; padding: 10px 14px; margin-bottom: 12px; color: #34d399;">
+            <strong>✅ Resume Uploaded &amp; Parsed (${escapeHtml(file.name)}). Review or edit your candidate details below:</strong>
           </div>
+          ${buildCandidateProfileCardHtml(updatedProfile, goal)}
         `;
-        const cleanGoal = goal || 'Senior Software Engineer remote';
-        setTimeout(() => {
-          if (typeof executeCliCommand === 'function') {
-            executeCliCommand(`@agent apply-jobs ${cleanGoal} --skip-resume`);
-          }
-        }, 300);
       }
     } catch (err) {
       if (typeof termLog === 'function') {
@@ -21514,23 +21675,23 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; font-size: 11px;">
             <div>
               <label for="candidate-full-name" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Full Name:</label>
-              <input id="candidate-full-name" type="text" value="${escapeHtml(prof.fullName || '')}" placeholder="e.g. Alex Morgan" oninput="window.updateCandidateField('fullName', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+              <input id="candidate-full-name" type="text" value="${escapeHtml(prof.fullName || '')}" placeholder="e.g. Full Name" oninput="window.updateCandidateField('fullName', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
             </div>
             <div>
               <label for="candidate-email" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Email:</label>
-              <input id="candidate-email" type="email" value="${escapeHtml(prof.email || '')}" placeholder="e.g. alex.morgan.dev@gmail.com" oninput="window.updateCandidateField('email', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+              <input id="candidate-email" type="email" value="${escapeHtml(prof.email || '')}" placeholder="e.g. name@example.com" oninput="window.updateCandidateField('email', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
             </div>
             <div>
               <label for="candidate-phone" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Phone:</label>
-              <input id="candidate-phone" type="text" value="${escapeHtml(prof.phone || '')}" placeholder="e.g. +1 (555) 234-5678" oninput="window.updateCandidateField('phone', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+              <input id="candidate-phone" type="text" value="${escapeHtml(prof.phone || '')}" placeholder="e.g. +1 (555) 000-0000" oninput="window.updateCandidateField('phone', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
             </div>
             <div>
               <label for="candidate-location" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Location:</label>
-              <input id="candidate-location" type="text" value="${escapeHtml(prof.location || '')}" placeholder="e.g. San Francisco, CA / Remote" oninput="window.updateCandidateField('location', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+              <input id="candidate-location" type="text" value="${escapeHtml(prof.location || '')}" placeholder="e.g. City, State / Remote" oninput="window.updateCandidateField('location', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
             </div>
             <div>
               <label for="candidate-linkedin" style="color: var(--text-muted); display: block; margin-bottom: 2px;">LinkedIn:</label>
-              <input id="candidate-linkedin" type="text" value="${escapeHtml(prof.linkedin || '')}" placeholder="e.g. https://linkedin.com/in/alexmorgan-dev" oninput="window.updateCandidateField('linkedin', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
+              <input id="candidate-linkedin" type="text" value="${escapeHtml(prof.linkedin || '')}" placeholder="e.g. https://linkedin.com/in/username" oninput="window.updateCandidateField('linkedin', this.value)" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8; padding: 4px 8px; border-radius: 4px; font-size: 11px;">
             </div>
             <div>
               <label for="candidate-work-auth" style="color: var(--text-muted); display: block; margin-bottom: 2px;">Work Authorization:</label>
@@ -22497,19 +22658,16 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       }
     }
 
-    // Resume Upload First Gate
+    // Mandatory Resume Gate: Always prompt for resume upload or confirm active resume
     if (isJobApplicationCmd) {
-      const applicantProf = getJobApplicantProfile();
-      const hasResumeAttached = (typeof attachedFiles !== 'undefined' && Array.isArray(attachedFiles) && attachedFiles.some(f => /\.(pdf|docx?|txt|rtf)$/i.test(f.name || f.path || ''))) ||
-                                (applicantProf && applicantProf.hasUploadedResume);
-      if (!hasResumeAttached && !cmd.includes('--skip-resume') && !cmd.includes('--force') && !(options && options.resumeApproved)) {
+      if (!cmd.includes('--skip-resume') && !cmd.includes('--force') && !(options && options.resumeApproved)) {
         if (typeof termLog === 'function') {
-          termLog('📄 Please upload your resume first so I can parse your skills, calculate your years of experience, and accurately autofill employer screening questions.', 'info');
+          termLog('📄 Please verify or upload your candidate resume so I can parse your skills, calculate your years of experience, and accurately autofill employer screening questions.', 'info');
         }
         const cardBubble = createAiBubble({
           icon: '💼',
-          title: 'Job Application Agent · Resume Upload Required',
-          modelTag: 'Resume Required',
+          title: 'Job Application Agent · Candidate Resume Gate',
+          modelTag: 'Resume Gate',
           isTool: true,
           streaming: false
         });
@@ -24092,7 +24250,7 @@ Instructions:
       <span style="background: #2b6cb0; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">🎙️ Audio</span>
       <span style="background: #2b6cb0; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">🎬 Video</span>
       <span style="background: #2c7a7b; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">⚖️ Apache 2.0</span>
-      <span style="background: #4a5568; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">🦙 Ollama: embeddinggemma</span>
+      <span style="background: #4a5568; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">🦙 Ollama: embeddinggemma:latest</span>
     </div>
   </div>
 
