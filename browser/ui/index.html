@@ -898,7 +898,7 @@
         <!-- 3. Webview View (Visible when navigating URLs) -->
         <div class="view-panel hidden" id="webview-view">
           <!-- Persistent Floating "Return to Chat" HUD in Webview -->
-          <div class="floating-return-chat-container">
+          <div class="floating-return-chat-container" style="display: none !important;">
             <button id="btn-floating-return-chat" class="floating-return-chat-btn" onclick="showDashboard()" title="Return to AI Chat &amp; Results">
               <span class="floating-return-icon">💬</span>
               <span>⬅ Return to AI Chat &amp; Results</span>
@@ -907,7 +907,6 @@
 
           <div class="webview-toolbar">
             <div class="wv-info">
-              <button type="button" class="wv-btn-return-chat" onclick="showDashboard()" title="Return to AI Chat">⬅ Back to Chat</button>
               <span class="wv-indicator">Browsing:</span>
               <span class="wv-current-url" id="wv-current-url">about:blank</span>
             </div>
@@ -916,7 +915,6 @@
               <button class="wv-btn" id="btn-wv-tables">📊 Extract Tables to ACDSO</button>
               <button class="wv-btn" id="btn-wv-summarize">📝 Summarize Page</button>
               <button class="wv-btn" id="btn-wv-newtab" title="Open in Top-Level Tab">↗️ Open Direct</button>
-              <button class="wv-btn" id="btn-wv-home" title="Return to Chat">🏠 Chat</button>
             </div>
           </div>
 
@@ -925,11 +923,15 @@
             <div class="frame-fallback hidden" id="frame-fallback">
               <div class="fallback-card">
                 <span class="fallback-icon">🛡️</span>
-                <h3>Cross-Origin Site Restriction</h3>
-                <p>This website prevents embedded iframe rendering via <code>X-Frame-Options: SAMEORIGIN</code> or Content Security Policy.</p>
-                <div class="fallback-buttons">
-                  <button class="cli-run-btn" id="btn-open-toplevel">Open Directly in HugOS Browser</button>
-                  <button class="cli-btn-secondary" id="btn-fallback-home">Return to Chat</button>
+                <h3>External Website Security Policy</h3>
+                <p id="fallback-card-desc">This website restricts embedded iframe rendering via <code>X-Frame-Options: SAMEORIGIN</code> or Content Security Policy.</p>
+                <div class="fallback-status" id="fallback-proxy-status" style="font-size: 11.5px; color: var(--text-secondary); margin-bottom: 14px;">
+                  ModelFusion Proxy (Port 5000): <span id="fallback-proxy-state" style="color: #f59e0b;">Checking / Offline</span>
+                </div>
+                <div class="fallback-buttons" style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+                  <button class="cli-run-btn" id="btn-open-toplevel">↗️ Open in Top-Level Tab</button>
+                  <button class="cli-btn-secondary" id="btn-fallback-retry" style="background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.4); color: #818cf8;">🔄 Retry / Connect Proxy</button>
+                  <button class="cli-btn-secondary" id="btn-fallback-home">💬 Back to Chat</button>
                 </div>
               </div>
             </div>

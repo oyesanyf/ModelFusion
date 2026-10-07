@@ -10330,7 +10330,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
 
     return s;
   }
-  window.sanitizeAndDeduplicateUrl = sanitizeAndDeduplicateUrl;
+  if (typeof window !== 'undefined') window.sanitizeAndDeduplicateUrl = sanitizeAndDeduplicateUrl;
 
   // Helper to detect sites that block iframe embedding via X-Frame-Options or CSP frame-ancestors
   function isCrossOriginBlockingUrl(url) {
@@ -10362,13 +10362,13 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
       return url;
     }
     // If Master Server proxy is known to be offline, do not point iframe to dead localhost port!
-    if (window.isIpcOnline === false || window.isServerProxyOnline === false) {
+    if (typeof window !== 'undefined' && (window.isIpcOnline === false || window.isServerProxyOnline === false)) {
       return url;
     }
     const ipc = (typeof currentSettings !== 'undefined' && currentSettings.ipcUrl ? currentSettings.ipcUrl : 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
     return `${ipc}/api/proxy?url=${encodeURIComponent(url)}`;
   }
-  window.resolveProxiedUrl = resolveProxiedUrl;
+  if (typeof window !== 'undefined') window.resolveProxiedUrl = resolveProxiedUrl;
 
   // Unwraps an iframe-safe proxy URL envelope back to its original target destination URL
   function unwrapProxiedUrl(rawUrl) {
@@ -10441,6 +10441,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
 
     updateNavigationUiState();
 
+    const isBlocking = isCrossOriginBlockingUrl(currentNavUrl);
     const frameSrc = resolveProxiedUrl(currentNavUrl);
     if (frameSrc !== currentNavUrl) {
       termLog(`🛡️ Routing through ModelFusion proxy to bypass X-Frame-Options SAMEORIGIN for ${currentNavUrl}`, 'sys');
@@ -10450,41 +10451,75 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
           if (!hRes || !hRes.ok) {
             window.isServerProxyOnline = false;
             window.isIpcOnline = false;
-            termLog(`⚠️ ModelFusion proxy offline on port 5000. Failing over to direct URL: ${currentNavUrl}`, 'warn');
-            if (browserFrame.src === frameSrc) {
+            const stateEl = document.getElementById('fallback-proxy-state');
+            if (stateEl) { stateEl.textContent = 'Offline (Port 5000)'; stateEl.style.color = '#ef4444'; }
+            termLog(`⚠️ ModelFusion proxy offline on port 5000. Fallback protection active for: ${currentNavUrl}`, 'warn');
+            if (isBlocking) {
+              browserFrame.src = 'about:blank';
+              frameFallback.classList.remove('hidden');
+            } else {
               browserFrame.src = currentNavUrl;
             }
           } else {
             window.isServerProxyOnline = true;
             window.isIpcOnline = true;
+            frameFallback.classList.add('hidden');
+            browserFrame.src = frameSrc;
           }
         })
         .catch(() => {
           window.isServerProxyOnline = false;
           window.isIpcOnline = false;
-          termLog(`⚠️ ModelFusion proxy offline on port 5000. Failing over to direct URL: ${currentNavUrl}`, 'warn');
-          if (browserFrame.src === frameSrc) {
+          const stateEl = document.getElementById('fallback-proxy-state');
+          if (stateEl) { stateEl.textContent = 'Offline (Port 5000)'; stateEl.style.color = '#ef4444'; }
+          termLog(`⚠️ ModelFusion proxy offline on port 5000. Fallback protection active for: ${currentNavUrl}`, 'warn');
+          if (isBlocking) {
+            browserFrame.src = 'about:blank';
+            frameFallback.classList.remove('hidden');
+          } else {
             browserFrame.src = currentNavUrl;
           }
         });
+    } else {
+      if (isBlocking && (window.isIpcOnline === false || window.isServerProxyOnline === false)) {
+        browserFrame.src = 'about:blank';
+        frameFallback.classList.remove('hidden');
+      } else {
+        frameFallback.classList.add('hidden');
+        browserFrame.src = frameSrc;
+      }
     }
 
     // Attach iframe load error listener
     browserFrame.onerror = (e) => {
       termLog(`Iframe load error detected for ${currentNavUrl}: Connection refused or blocked by security policy.`, 'warn');
-      if (browserFrame.src && browserFrame.src.includes('/api/proxy')) {
-        window.isServerProxyOnline = false;
-        termLog(`⚠️ ModelFusion proxy load error. Failing over to direct URL: ${currentNavUrl}`, 'warn');
-        browserFrame.src = currentNavUrl;
-        return;
-      }
+      browserFrame.src = 'about:blank';
       frameFallback.classList.remove('hidden');
     };
 
     try {
-      browserFrame.src = frameSrc;
+      if (frameSrc !== currentNavUrl) {
+        if (window.isIpcOnline === false || window.isServerProxyOnline === false) {
+          if (isBlocking) {
+            browserFrame.src = 'about:blank';
+            frameFallback.classList.remove('hidden');
+          } else {
+            browserFrame.src = currentNavUrl;
+          }
+        } else {
+          browserFrame.src = frameSrc;
+        }
+      } else {
+        if (isBlocking && (window.isIpcOnline === false || window.isServerProxyOnline === false)) {
+          browserFrame.src = 'about:blank';
+          frameFallback.classList.remove('hidden');
+        } else {
+          browserFrame.src = frameSrc;
+        }
+      }
     } catch (e) {
       termLog(`Direct iframe error: ${e.message}`, 'warn');
+      browserFrame.src = 'about:blank';
       frameFallback.classList.remove('hidden');
     }
 
@@ -10493,7 +10528,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
       try {
         if (!browserFrame.contentDocument || !browserFrame.contentDocument.body) {
           // Cross-origin restriction triggered
-          termLog(`Cross-origin frame policy active for ${url}. Providing direct launch.`, 'sys');
+          termLog(`Cross-origin frame policy active for ${currentNavUrl}. Providing direct launch.`, 'sys');
         }
       } catch (err) {
         // Normal for cross-origin iframes
@@ -10504,8 +10539,9 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
       clearTimeout(checkTimeout);
       if (browserFrame.src && browserFrame.src.includes('/api/proxy')) {
         if (window.isServerProxyOnline === false) {
-          termLog(`⚠️ ModelFusion proxy offline on load. Failing over to direct URL: ${currentNavUrl}`, 'warn');
-          browserFrame.src = currentNavUrl;
+          termLog(`⚠️ ModelFusion proxy offline on load. Failing over to direct fallback for ${currentNavUrl}`, 'warn');
+          browserFrame.src = 'about:blank';
+          frameFallback.classList.remove('hidden');
           return;
         }
       }
@@ -10515,12 +10551,8 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
           (doc.title && (doc.title.includes('refused to connect') || doc.title.includes('Error'))) ||
           (doc.body && doc.body.innerText && (doc.body.innerText.includes('refused to connect') || doc.body.innerText.includes('ERR_CONNECTION_REFUSED')))
         )) {
-          termLog(`Detected connection refused in iframe for ${url}. Revealing fallback card.`, 'warn');
-          if (browserFrame.src && (browserFrame.src.includes('/api/proxy') || window.isServerProxyOnline === false)) {
-            termLog(`⚠️ ModelFusion proxy error detected in DOM. Failing over to direct URL: ${currentNavUrl}`, 'warn');
-            browserFrame.src = currentNavUrl;
-            return;
-          }
+          termLog(`Detected connection refused in iframe for ${currentNavUrl}. Revealing fallback card.`, 'warn');
+          browserFrame.src = 'about:blank';
           frameFallback.classList.remove('hidden');
           return;
         }
@@ -10528,7 +10560,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
         // Normal cross-origin restriction
       }
 
-      termLog(`Page loaded: ${url}`, 'success');
+      termLog(`Page loaded: ${currentNavUrl}`, 'success');
       frameFallback.classList.add('hidden');
       if (currentSettings.somAuto) {
         setTimeout(() => {
@@ -10652,7 +10684,9 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     }
   });
   brandHome.addEventListener('click', showDashboard);
-  btnWvHome.addEventListener('click', showDashboard);
+  if (btnWvHome) {
+    btnWvHome.addEventListener('click', showDashboard);
+  }
   btnFallbackHome.addEventListener('click', showDashboard);
   if (btnFloatingReturnChat) {
     btnFloatingReturnChat.addEventListener('click', showDashboard);
@@ -10663,8 +10697,28 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
   });
 
   btnOpenTopLevel.addEventListener('click', () => {
-    if (currentNavUrl) window.location.href = currentNavUrl;
+    if (currentNavUrl) window.open(currentNavUrl, '_blank');
   });
+
+  const btnFallbackRetry = document.getElementById('btn-fallback-retry');
+  if (btnFallbackRetry) {
+    btnFallbackRetry.addEventListener('click', async () => {
+      const stateEl = document.getElementById('fallback-proxy-state');
+      if (stateEl) { stateEl.textContent = 'Probing port 5000...'; stateEl.style.color = '#38bdf8'; }
+      const ipc = (typeof currentSettings !== 'undefined' && currentSettings.ipcUrl ? currentSettings.ipcUrl : 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+      try {
+        const h = await fetchWithTimeout(`${ipc}/health`, { method: 'GET', timeout: 800 });
+        if (h && h.ok) {
+          window.isServerProxyOnline = true;
+          window.isIpcOnline = true;
+          if (stateEl) { stateEl.textContent = 'Online'; stateEl.style.color = '#10b981'; }
+          navigateTo(currentNavUrl, false);
+          return;
+        }
+      } catch (_) {}
+      if (stateEl) { stateEl.textContent = 'Offline (Port 5000 not responding)'; stateEl.style.color = '#ef4444'; }
+    });
+  }
 
   window.navigateTo = navigateTo;
   window.navigateToUrl = navigateTo;
@@ -22804,7 +22858,7 @@ The user wants to search and apply for jobs matching their criteria.
 4. Conclude with: "Review your application details in the workspace above and click 'Approve & Submit Application' when ready."
 Do NOT output meta-commentary, monologues, or code guidelines. Directly present the job opportunities.`;
     } else if (detectedExamQuestions.length > 0 || isExamGoal) {
-      systemPrompt += `\n\nEXAM SOLVER SAFETY & SAME-PAGE ANSWERING INSTRUCTIONS:
+      systemPrompt += `\n\nEXAM SOLVER & HUMAN-IN-THE-LOOP (HITL) INSTRUCTIONS:\nEXAM SOLVER SAFETY & SAME-PAGE ANSWERING INSTRUCTIONS:
 1. Always display the questions, candidate options, and recommended answers directly in this chat view.
 2. Provide a direct, concise summary of the questions and answers on this page.
 The live webpage contains ${detectedExamQuestions.length} structured multiple-choice exam/test questions.
