@@ -59,6 +59,15 @@ pub fn hidden_tokio_command(program: impl AsRef<std::ffi::OsStr>) -> tokio::proc
     cmd
 }
 
+/// Strips raw ANSI terminal escape sequences (\x1b[?2026h, \x1b[?25l, color codes, cursor sequences).
+pub fn strip_ansi_escapes(s: &str) -> String {
+    if !s.contains('\x1b') && !s.contains('\u{001b}') {
+        return s.to_string();
+    }
+    let re = regex::Regex::new(r"[\x1b\u{001b}](?:\[[0-9;?]*[ -/]*[@-~]|\([B0-9A-Z]|[\]][^\x07\x1b]*[\x07\x1b\\])").unwrap();
+    re.replace_all(s, "").to_string()
+}
+
 // ---------------------------------------------------------------------------
 // Global inference semaphore
 // ---------------------------------------------------------------------------
@@ -365,25 +374,34 @@ pub fn select_verifier_model_for_hardware() -> &'static str {
 pub fn provision_multi_model_fusion_for_hardware() {
     let primary = select_ollama_model_for_hardware(false);
     let verifier = select_verifier_model_for_hardware();
-    eprintln!("📦 [PROVISIONING] Multi-model fusion configuration: Primary='{}', Verifier='{}', Vision='moondream', Embedding='embeddinggemma'", primary, verifier);
+    eprintln!("📦 [PROVISIONING] Multi-model fusion configuration: Primary='{}', Verifier='{}', Vision='moondream', Embedding='embeddinggemma:latest' (~0.6 GB, 300M params)", primary, verifier);
 
-    for m in [primary, verifier, "moondream", "embeddinggemma"] {
+    for m in [primary, verifier, "moondream", "embeddinggemma:latest"] {
         eprintln!("🦙 [PROVISIONING] Pulling model: {}...", m);
         let mut cmd = hidden_std_command("ollama");
         cmd.args(["pull", m]);
-        let _ = cmd.status().or_else(|_| {
+        let output = cmd.output().or_else(|_| {
             let mut fb = std::path::PathBuf::from("ollama");
             if let Ok(appdata) = std::env::var("LOCALAPPDATA") {
                 let cand = std::path::PathBuf::from(appdata).join("Programs").join("Ollama").join("ollama.exe");
                 if cand.exists() { fb = cand; }
             }
-            hidden_std_command(fb).args(["pull", m]).status()
+            hidden_std_command(fb).args(["pull", m]).output()
         });
+        if let Ok(out) = output {
+            if !out.status.success() {
+                let raw_err = String::from_utf8_lossy(&out.stderr);
+                let clean_err = strip_ansi_escapes(&raw_err);
+                if !clean_err.trim().is_empty() {
+                    eprintln!("⚠️ [PROVISIONING] Pull warning for {}: {}", m, clean_err.trim());
+                }
+            }
+        }
     }
 
     // Configure multi-model fusion settings
     configure_ide_multi_model_fusion(primary, verifier);
-    eprintln!("✅ [PROVISIONING] Multi-model fusion configured with 4 models: '{}' + '{}' + 'moondream' + 'embeddinggemma'", primary, verifier);
+    eprintln!("✅ [PROVISIONING] Multi-model fusion configured with 4 models: '{}' + '{}' + 'moondream' + 'embeddinggemma:latest'", primary, verifier);
 }
 
 /// Seeds Google EmbeddingGemma 2 into SQLite database as authoritative top-ranking model for sentence-similarity & embeddings.
@@ -5662,7 +5680,7 @@ async fn run(args: Args) -> Result<()> {
         println!("  1. Primary Workhorse:    '{}'", primary);
         println!("  2. Verifier / Gate:       '{}'", verifier);
         println!("  3. Multimodal Vision:     'moondream'");
-        println!("  4. Sentence Embeddings:   'embeddinggemma'");
+        println!("  4. Sentence Embeddings:   'embeddinggemma:latest' (~0.6 GB, 300M params)");
         println!("============================================================");
 
         println!("\n🦙 Ensuring Ollama daemon is running...");
@@ -11084,7 +11102,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         "primary": primary,
                         "verifier": verifier,
                         "vision": "moondream",
-                        "embedding": "embeddinggemma"
+                        "embedding": "embeddinggemma:latest"
                     }
                 });
                 let res_body = serde_json::to_string(&res_json).unwrap_or_default();
@@ -11100,12 +11118,17 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
             // ── Custom Models Provisioning (/api/models/provision & /api/models/pull) ──
             if request_path == "/api/models/provision" || request_path == "/api/models/pull" {
-                let model_name = request_json.get("model")
+                let mut model_name = request_json.get("model")
                     .and_then(|v| v.as_str())
                     .or_else(|| request_json.get("name").and_then(|v| v.as_str()))
                     .unwrap_or("")
                     .trim()
                     .to_string();
+
+                // Prevent invalid :2b or unqualified tag errors for EmbeddingGemma
+                if model_name == "embeddinggemma:2b" || model_name == "embeddinggemma" {
+                    model_name = "embeddinggemma:latest".to_string();
+                }
 
                 if model_name.is_empty() {
                     let err_json = serde_json::json!({
@@ -11150,14 +11173,14 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     Ok(res) if res.status().is_success() => {
                         let body_json: serde_json::Value = res.json().await.unwrap_or_default();
                         if let Some(err) = body_json.get("error").and_then(|v| v.as_str()) {
-                            ("error", format!("Ollama pull error: {}", err))
+                            ("error", format!("Ollama pull error: {}", strip_ansi_escapes(err)))
                         } else {
                             ("ok", "Model successfully provisioned and ready.".to_string())
                         }
                     }
                     Ok(res) => {
                         let err_txt = res.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                        ("error", format!("Ollama server returned error: {}", err_txt))
+                        ("error", format!("Ollama server returned error: {}", strip_ansi_escapes(&err_txt)))
                     }
                     Err(e) => {
                         ("error", format!("Failed to connect to Ollama daemon: {}", e))
@@ -11921,10 +11944,10 @@ public class ShortcutHelper {
                     .unwrap_or("embeddinggemma");
 
                 // Priority: preferred -> embeddinggemma -> nomic-embed-text -> all-minilm
-                let candidate_models = if preferred_model == "embeddinggemma" {
-                    vec!["embeddinggemma", "nomic-embed-text", "all-minilm"]
+                let candidate_models = if preferred_model == "embeddinggemma" || preferred_model == "embeddinggemma:latest" || preferred_model == "embeddinggemma:2b" {
+                    vec!["embeddinggemma:latest", "embeddinggemma", "nomic-embed-text", "all-minilm"]
                 } else {
-                    vec![preferred_model, "embeddinggemma", "nomic-embed-text", "all-minilm"]
+                    vec![preferred_model, "embeddinggemma:latest", "embeddinggemma", "nomic-embed-text", "all-minilm"]
                 };
 
                 let mut embed_res: Option<serde_json::Value> = None;
@@ -16342,10 +16365,10 @@ sequenceDiagram
                         .and_then(|v| v.as_str())
                         .unwrap_or("embeddinggemma");
 
-                    let candidate_models = if preferred_model == "embeddinggemma" {
-                        vec!["embeddinggemma", "nomic-embed-text", "all-minilm"]
+                    let candidate_models = if preferred_model == "embeddinggemma" || preferred_model == "embeddinggemma:latest" || preferred_model == "embeddinggemma:2b" {
+                        vec!["embeddinggemma:latest", "embeddinggemma", "nomic-embed-text", "all-minilm"]
                     } else {
-                        vec![preferred_model, "embeddinggemma", "nomic-embed-text", "all-minilm"]
+                        vec![preferred_model, "embeddinggemma:latest", "embeddinggemma", "nomic-embed-text", "all-minilm"]
                     };
 
                     let mut embed_res: Option<serde_json::Value> = None;

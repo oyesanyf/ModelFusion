@@ -197,14 +197,32 @@ console.log('✅ Test 5 Passed: Candidate profile state persists and updates cor
 // =========================================================================
 console.log('--- Test 6: Resume Upload First Gate ---');
 
-const promptCardHtml = sandbox.promptForResumeUploadFirst('Senior Rust Engineer remote');
-assert(promptCardHtml.includes('Resume Upload Required for Job Application'), 'Card must have title');
-assert(promptCardHtml.includes('Please upload your resume (PDF, DOCX, or TXT) first'), 'Card must have explanatory text');
-assert(promptCardHtml.includes('btn-hitl-upload-resume'), 'Card must have upload button');
-assert(promptCardHtml.includes('btn-hitl-sample-profile'), 'Card must have default candidate profile button');
-assert(promptCardHtml.includes('Alex Morgan'), 'Card must offer default profile option');
+// Clear profile to test initial prompt without active resume
+mockWindow.localStorage.clear();
 
-console.log('✅ Test 6 Passed: Resume upload first prompt card renders cleanly.\n');
+const promptCardInitial = sandbox.promptForResumeUploadFirst('Senior Rust Engineer remote');
+assert(promptCardInitial.includes('Resume Required for Job Application'), 'Card must have title');
+assert(promptCardInitial.includes('resume-file-picker'), 'Card must have native file picker input');
+assert(promptCardInitial.includes('btn-hitl-upload-resume'), 'Card must have upload button');
+assert(!promptCardInitial.includes('Alex Morgan'), 'Card must not contain mock persona Alex Morgan');
+
+// Now test with active resume present in profile
+sandbox.saveJobApplicantProfile({
+  fullName: 'Jordan Taylor',
+  email: 'jordan.taylor@example.com',
+  resumeFileName: 'Jordan_Taylor_CV.pdf',
+  resumeFileSize: '142 KB',
+  hasUploadedResume: true
+});
+
+const promptCardWithResume = sandbox.promptForResumeUploadFirst('Senior Rust Engineer remote');
+assert(promptCardWithResume.includes('Active Resume:'), 'Card must show active resume badge');
+assert(promptCardWithResume.includes('Jordan_Taylor_CV.pdf'), 'Card must display resume file name');
+assert(promptCardWithResume.includes('btn-hitl-upload-resume'), 'Card must have upload/replace button');
+assert(promptCardWithResume.includes('btn-hitl-continue-resume'), 'Card must have continue with current resume button');
+assert(!promptCardWithResume.includes('Alex Morgan'), 'Card must not contain mock persona Alex Morgan');
+
+console.log('✅ Test 6 Passed: Resume upload gate renders real file picker and active resume options cleanly.\n');
 
 // =========================================================================
 // 7. Resume-Grounded Screening Question Answers
