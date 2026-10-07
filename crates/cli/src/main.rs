@@ -13122,7 +13122,7 @@ public class ShortcutHelper {
                     }
                 }
                 "/orchestrate" => {
-                    let mut prompt = request_json["prompt"].as_str().unwrap_or("").to_string();
+                    let mut prompt = request_json["prompt"].as_str().or_else(|| request_json["task"].as_str()).unwrap_or("").to_string();
                     let images_opt = request_json.get("images").and_then(|v| v.as_array());
                     let mut strategy = request_json["selection_strategy"].as_str().unwrap_or("multi_objective").to_string();
                     let res = query_system_resources();
@@ -13199,6 +13199,7 @@ public class ShortcutHelper {
                     let mut fusion = request_json.get("fusion").and_then(|v| v.as_bool()).unwrap_or(true);
                     let model_override = request_json["model"]
                         .as_str()
+                        .or_else(|| request_json["model_override"].as_str())
                         .map(|s| s.trim())
                         .filter(|s| !s.is_empty() && *s != "modelfusion-local" && *s != "modelfusion" && *s != "default" && *s != "auto")
                         .map(|s| s.to_string());
@@ -15930,7 +15931,8 @@ sequenceDiagram
                     } else {
                         serde_json::json!({
                             "content": cleaned_content,
-                            "response": cleaned_content
+                            "response": cleaned_content,
+                            "result": cleaned_content
                         })
                     };
                     let response_str = response_json.to_string();
