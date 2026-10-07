@@ -19,6 +19,52 @@ pub fn create_hidden_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
     cmd
 }
 
+/// RAII Guard that temporarily suspends IPv6 on the primary active network adapter during model downloads
+/// to prevent Ollama IPv6 DNS / routing stalls, and automatically re-enables IPv6 upon Drop (exit/cancellation/panic).
+#[derive(Debug)]
+pub struct Ipv6SuspensionGuard {
+    pub adapter_name: Option<String>,
+    pub active: bool,
+}
+
+impl Ipv6SuspensionGuard {
+    pub fn acquire() -> Self {
+        #[cfg(windows)]
+        {
+            let output = create_hidden_command("powershell")
+                .args(["-NoProfile", "-Command", "Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -ExpandProperty Name -First 1"])
+                .output();
+            if let Ok(out) = output {
+                let adapter = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if !adapter.is_empty() {
+                    let _ = create_hidden_command("powershell")
+                        .args(["-NoProfile", "-Command", &format!("Disable-NetAdapterBinding -Name '{}' -ComponentID ms_tcpip6 -ErrorAction SilentlyContinue", adapter)])
+                        .output();
+                    eprintln!("[NET] 🌐 Temporarily suspended IPv6 on adapter '{}' for reliable model download...", adapter);
+                    return Self { adapter_name: Some(adapter), active: true };
+                }
+            }
+        }
+        Self { adapter_name: None, active: false }
+    }
+}
+
+impl Drop for Ipv6SuspensionGuard {
+    fn drop(&mut self) {
+        if self.active {
+            if let Some(ref adapter) = self.adapter_name {
+                #[cfg(windows)]
+                {
+                    let _ = create_hidden_command("powershell")
+                        .args(["-NoProfile", "-Command", &format!("Enable-NetAdapterBinding -Name '{}' -ComponentID ms_tcpip6 -ErrorAction SilentlyContinue", adapter)])
+                        .output();
+                    eprintln!("[NET] 🔄 Restored IPv6 binding on adapter '{}'.", adapter);
+                }
+            }
+        }
+    }
+}
+
 /// Process-level cache so hardware probes only run once per CLI invocation.
 static SYSTEM_MEMORY_CACHE: OnceLock<SystemMemory> = OnceLock::new();
 

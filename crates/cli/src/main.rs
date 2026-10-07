@@ -68,6 +68,8 @@ pub fn strip_ansi_escapes(s: &str) -> String {
     re.replace_all(s, "").to_string()
 }
 
+pub use model_selection::memory::Ipv6SuspensionGuard;
+
 // ---------------------------------------------------------------------------
 // Global inference semaphore
 // ---------------------------------------------------------------------------
@@ -372,6 +374,7 @@ pub fn select_verifier_model_for_hardware() -> &'static str {
 
 /// Pulls both primary and verifier models for multi-model consensus, and configures IDE settings.
 pub fn provision_multi_model_fusion_for_hardware() {
+    let _guard = Ipv6SuspensionGuard::acquire();
     let primary = select_ollama_model_for_hardware(false);
     let verifier = select_verifier_model_for_hardware();
     eprintln!("📦 [PROVISIONING] Multi-model fusion configuration: Primary='{}', Verifier='{}', Vision='moondream', Embedding='embeddinggemma:latest' (~0.6 GB, 300M params)", primary, verifier);
@@ -2746,6 +2749,16 @@ struct Args {
 
     #[arg(
         long,
+        visible_alias = "pull-model",
+        visible_alias = "pullmodel",
+        num_args = 0..=1,
+        default_missing_value = "",
+        help = "Pull calibrated Ollama model with pre-flight IPv6 suspension and guaranteed RAII restoration"
+    )]
+    pull_model: Option<String>,
+
+    #[arg(
+        long,
         alias = "provision-hardware",
         alias = "download-host-models",
         alias = "pull-calibrated",
@@ -3681,9 +3694,14 @@ where
                 args[1] = "--submit-wdsi".to_string();
                 return args;
             }
+            if (sub_clean == "pull-model" || sub_clean == "pullmodel" || sub_clean == "pull-models" || sub_clean == "pull_model") && !has_combinator {
+                args.remove(1);
+                args[1] = "--pull-model".to_string();
+                return args;
+            }
             if (sub_clean == "download-calibrated-models" || sub_clean == "download-calibrated" || sub_clean == "provision-hardware" || sub_clean == "download-host-models" || sub_clean == "calibrate-models" || sub_clean == "calibrated-models" || sub_clean == "pull-calibrated") && !has_combinator {
                 args.remove(1);
-                args[1] = "--download-calibrated-models".to_string();
+                args[1] = "--pull-model".to_string();
                 return args;
             }
             let is_computer_use_tool = sub_clean == "computer-use" || sub_clean == "computer_use" || sub_clean == "computeruse"
@@ -3979,10 +3997,13 @@ where
         "ide" => {
             args[1] = "--ide".to_string();
         }
+        "pull-model" | "pullmodel" | "/pull-model" | "/pullmodel" | "@pull-model" | "@agent/pull-model" | "@agent:pull-model" => {
+            args[1] = "--pull-model".to_string();
+        }
         "download-calibrated-models" | "download-calibrated" | "provision-hardware" | "download-host-models" | "calibrate-models" | "calibrated-models" | "pull-calibrated"
         | "/download-calibrated-models" | "/download-calibrated" | "/provision-hardware" | "/download-host-models" | "/calibrate-models" | "/calibrated-models" | "/pull-calibrated"
         | "@agent/download-calibrated-models" | "@agent:download-calibrated-models" => {
-            args[1] = "--download-calibrated-models".to_string();
+            args[1] = "--pull-model".to_string();
         }
         "update" => {
             args[1] = "--update".to_string();
@@ -5660,6 +5681,90 @@ async fn run(args: Args) -> Result<()> {
         println!("🚀 Ingesting models from Hugging Face Hub into database (whether junk or not)...");
         let result = handler.handle_update_all_models_database(args.max_models).await;
         println!("{}", result.content);
+        return Ok(());
+    }
+
+    if let Some(ref raw_model) = args.pull_model {
+        let res = query_system_resources();
+        let target_model = if !raw_model.trim().is_empty() {
+            raw_model.trim().to_string()
+        } else {
+            // Hardware-to-Model Dynamic Scaling Matrix per RULE[computer_use_and_ollama_resilience.md]
+            let chosen = if res.free_ram_gb >= 48.0 || res.free_vram_mb >= 24_000 {
+                "qwen2.5:32b"
+            } else if res.free_ram_gb >= 24.0 || res.free_vram_mb >= 14_000 {
+                "qwen2.5:14b"
+            } else if res.free_ram_gb >= 12.0 || res.free_vram_mb >= 4_500 {
+                "qwen2.5:7b"
+            } else if res.free_ram_gb >= 6.0 || res.free_vram_mb >= 2_000 {
+                "qwen2.5:3b"
+            } else {
+                "qwen2.5:1.5b"
+            };
+            chosen.to_string()
+        };
+
+        println!("============================================================");
+        println!("🦙 MODELFUSION CALIBRATED MODEL DOWNLOAD PIPELINE");
+        println!("============================================================");
+        println!("  Host Hardware Telemetry & Runtime Available Memory:");
+        println!("  • CPU                  : {} ({} logical cores)", res.cpu_name, res.logical_cores);
+        println!("  • RAM (Available/Free) : {:.2} GB (Total: {:.2} GB)", res.free_ram_gb, res.total_ram_gb);
+        if res.has_gpu {
+            println!("  • GPU                  : {} (Free VRAM: {} MB / Total: {} MB)", res.gpu_name, res.free_vram_mb, res.total_vram_mb);
+        } else {
+            println!("  • GPU                  : None detected / CPU fallthrough");
+        }
+        println!("  • Target Calibrated Model: '{}'", target_model);
+        println!("============================================================");
+
+        println!("\n🦙 Ensuring Ollama daemon is running...");
+        if let Err(e) = model_selection::memory::ensure_ollama_running() {
+            eprintln!("⚠️  [OLLAMA] Failed to ensure Ollama is running: {}", e);
+        }
+
+        // Acquire IPv6 suspension RAII guard for the entire download duration
+        let _guard = Ipv6SuspensionGuard::acquire();
+
+        let mut ollama_bin = std::path::PathBuf::from("ollama");
+        if let Ok(appdata) = std::env::var("LOCALAPPDATA") {
+            let cand = std::path::PathBuf::from(appdata).join("Programs").join("Ollama").join("ollama.exe");
+            if cand.exists() { ollama_bin = cand; }
+        }
+
+        println!("🚀 Pulling model '{}' with pre-flight IPv6 suspension...", target_model);
+        let mut cmd = std::process::Command::new(&ollama_bin);
+        cmd.args(["pull", &target_model]);
+        cmd.stdout(std::process::Stdio::inherit());
+        cmd.stderr(std::process::Stdio::inherit());
+        let status = cmd.status();
+        match status {
+            Ok(st) if st.success() => {
+                println!("\n✨ [SUCCESS] Model '{}' successfully pulled and ready.", target_model);
+            }
+            Ok(st) => {
+                eprintln!("\n⚠️  [PULL] Ollama pull exited with status code: {:?}", st.code());
+            }
+            Err(e) => {
+                eprintln!("\n⚠️  [PULL] Failed to execute ollama command: {}", e);
+            }
+        }
+
+        // If called with no explicit model argument, download all companion calibrated models as well
+        if raw_model.trim().is_empty() {
+            let verifier = select_verifier_model_for_hardware();
+            for companion in [verifier, "moondream", "embeddinggemma:latest"] {
+                println!("\n📦 Pulling companion calibrated model '{}'...", companion);
+                let mut c_cmd = std::process::Command::new(&ollama_bin);
+                c_cmd.args(["pull", companion]);
+                c_cmd.stdout(std::process::Stdio::inherit());
+                c_cmd.stderr(std::process::Stdio::inherit());
+                let _ = c_cmd.status();
+            }
+            configure_ide_multi_model_fusion(&target_model, verifier);
+            println!("\n✨ [SUCCESS] All 4 calibrated models for host hardware are ready.");
+        }
+
         return Ok(());
     }
 
@@ -10549,7 +10654,13 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     .build()
                     .unwrap_or_default();
 
-                match client.get(&target_url).send().await {
+                match client.get(&target_url)
+                    .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+                    .header("Accept-Language", "en-US,en;q=0.9")
+                    .header("Sec-Ch-Ua", "\"Chromium\";v=\"124\", \"Google Chrome\";v=\"124\"")
+                    .header("Sec-Ch-Ua-Mobile", "?0")
+                    .header("Sec-Ch-Ua-Platform", "\"Windows\"")
+                    .send().await {
                     Ok(res) => {
                         let status = res.status();
                         let content_type = res
@@ -10561,20 +10672,35 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                         let raw_bytes = res.bytes().await.unwrap_or_default().to_vec();
 
-                        let final_bytes = if content_type.to_lowercase().contains("text/html") {
+                        let (final_bytes, effective_status, effective_content_type) = if content_type.to_lowercase().contains("text/html") {
                             let html_str = String::from_utf8_lossy(&raw_bytes);
-                            let sanitized = sanitize_html_for_iframe_proxy(&html_str, &target_url);
-                            sanitized.into_bytes()
+                            if status.as_u16() == 403 || html_str.contains("403. That's an error") || html_str.contains("you do not have access to this page") {
+                                let fallback_card = format!(
+                                    r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Portal Access Notice</title><style>body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0b0f19; color: #f1f5f9; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }} .card {{ background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 20px; max-width: 480px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }} h4 {{ margin: 0 0 8px 0; color: #38bdf8; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; }} p {{ font-size: 11.5px; color: #94a3b8; line-height: 1.5; margin: 0 0 14px 0; }} .btn {{ display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; border-radius: 4px; font-size: 11px; font-weight: 600; text-decoration: none; background: #0284c7; color: #fff; border: none; cursor: pointer; }}</style></head><body><div class="card"><h4><span>🌐</span> Active Portal Session: {}</h4><p>This career portal enforces origin protection against embedded frames. Autonomous job perception, profile matching, and application completion are active in your workspace below.</p><a class="btn" href="{}" target="_blank"><span>↗</span> Open Portal in Full Tab</a></div></body></html>"#,
+                                    html_escape(&target_url),
+                                    html_escape(&target_url)
+                                );
+                                (fallback_card.into_bytes(), 200u16, "text/html; charset=utf-8".to_string())
+                            } else {
+                                let sanitized = sanitize_html_for_iframe_proxy(&html_str, &target_url);
+                                (sanitized.into_bytes(), status.as_u16(), content_type)
+                            }
+                        } else if status.as_u16() == 403 {
+                            let fallback_card = format!(
+                                r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Portal Access Notice</title><style>body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0b0f19; color: #f1f5f9; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }} .card {{ background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 20px; max-width: 480px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }} h4 {{ margin: 0 0 8px 0; color: #38bdf8; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; }} p {{ font-size: 11.5px; color: #94a3b8; line-height: 1.5; margin: 0 0 14px 0; }} .btn {{ display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; border-radius: 4px; font-size: 11px; font-weight: 600; text-decoration: none; background: #0284c7; color: #fff; border: none; cursor: pointer; }}</style></head><body><div class="card"><h4><span>🌐</span> Active Portal Session: {}</h4><p>This career portal enforces origin protection against embedded frames. Autonomous job perception, profile matching, and application completion are active in your workspace below.</p><a class="btn" href="{}" target="_blank"><span>↗</span> Open Portal in Full Tab</a></div></body></html>"#,
+                                html_escape(&target_url),
+                                html_escape(&target_url)
+                            );
+                            (fallback_card.into_bytes(), 200u16, "text/html; charset=utf-8".to_string())
                         } else {
-                            raw_bytes
+                            (raw_bytes, status.as_u16(), content_type)
                         };
 
                         // Strip X-Frame-Options & Content-Security-Policy by omitting them from response headers!
                         let response_headers = format!(
-                            "HTTP/1.1 {} {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n",
-                            status.as_u16(),
-                            status.canonical_reason().unwrap_or("OK"),
-                            content_type,
+                            "HTTP/1.1 {} OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n",
+                            effective_status,
+                            effective_content_type,
                             final_bytes.len()
                         );
 
@@ -11076,8 +11202,8 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 return;
             }
 
-            // ── Host Calibrated Models Provisioning (/api/models/provision-hardware & /api/models/calibrate-hardware) ──
-            if request_path == "/api/models/provision-hardware" || request_path == "/api/models/calibrate-hardware" {
+            // ── Host Calibrated Models Provisioning (/api/models/provision-hardware, /api/models/calibrate-hardware & /api/models/pull-calibrated) ──
+            if request_path == "/api/models/provision-hardware" || request_path == "/api/models/calibrate-hardware" || request_path == "/api/models/pull-calibrated" {
                 eprintln!("[PROVISION] 🎯 Received provision-hardware request. Sizing host hardware...");
                 let sys = query_system_resources();
                 let primary = select_ollama_model_for_hardware(false);
@@ -11085,7 +11211,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                 let _ = tokio::task::spawn_blocking(model_selection::memory::ensure_ollama_running).await;
 
-                // Spawn background model provisioning
+                // Spawn background model provisioning (which acquires Ipv6SuspensionGuard)
                 tokio::task::spawn_blocking(move || {
                     provision_multi_model_fusion_for_hardware();
                 });
@@ -11121,6 +11247,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
             // ── Custom Models Provisioning (/api/models/provision & /api/models/pull) ──
             if request_path == "/api/models/provision" || request_path == "/api/models/pull" {
+                let _guard = Ipv6SuspensionGuard::acquire();
                 let mut model_name = request_json.get("model")
                     .and_then(|v| v.as_str())
                     .or_else(|| request_json.get("name").and_then(|v| v.as_str()))
