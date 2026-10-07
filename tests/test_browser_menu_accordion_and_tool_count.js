@@ -383,8 +383,8 @@ for (let i = 0; i < env.categoryHeaders.length; i++) {
 }
 console.log(`  ✅ All 15 category accordion panels expand and collapse cleanly`);
 
-assert.strictEqual(env.toolButtons.length, 108, `Expected exactly 108 tool items, found ${env.toolButtons.length}`);
-console.log(`  ✅ All 108 tool items confirmed present in DOM`);
+assert.strictEqual(env.toolButtons.length, 109, `Expected exactly 109 tool items, found ${env.toolButtons.length}`);
+console.log(`  ✅ All 109 tool items confirmed present in DOM`);
 
 // ============================================================================
 // PART 5: Origin Resilience (file:// vs http://)
