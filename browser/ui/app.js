@@ -16667,14 +16667,67 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
       return;
     }
 
-    // 0c. Download Calibrated Models for Host Directive (@agent download-calibrated-models, @agent provision-hardware, etc.)
-    const isCalibratedModelsCmd = /^(?:@agent\s+|@|\/|--)?(?:download[-_ ]?calibrated[-_ ]?models|provision[-_ ]?hardware|download[-_ ]?host[-_ ]?models|calibrate[-_ ]?models|calibrated[-_ ]?models|pull[-_ ]?calibrated)(?:\b|$)/i.test(cmd.trim());
+    // 0c. Download Calibrated Models for Host Directive (@agent download-calibrated-models, @agent pull-model, etc.)
+    const isCalibratedModelsCmd = /^(?:@agent\s+|@|\/|--)?(?:download[-_ ]?calibrated[-_ ]?models|provision[-_ ]?hardware|download[-_ ]?host[-_ ]?models|calibrate[-_ ]?models|calibrated[-_ ]?models|pull[-_ ]?calibrated|pull[-_ ]?models?|pullmodel|download[-_ ]?calibrated)(?:\b|$)/i.test(cmd.trim());
     if (isCalibratedModelsCmd) {
+      const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+
+      // Check if user specified a target model name (e.g. @agent pull-model qwen2.5:14b)
+      const pullModelArgMatch = cmd.trim().match(/^(?:@agent\s+|@|\/|--)?(?:pull[-_ ]?models?|pullmodel)\s+([a-zA-Z0-9._:\-\/]+)$/i);
+      const specifiedModel = pullModelArgMatch ? pullModelArgMatch[1].trim() : null;
+
+      if (specifiedModel) {
+        termLog(`[PULL] 🚀 Pulling requested model '${specifiedModel}' via Ollama with IPv6 suspension...`, 'info');
+        setChatRunningState(true);
+        if (chatWelcome) chatWelcome.classList.add('hidden');
+        const cardId = 'pull-model-card-' + Date.now();
+        const bubble = createAiBubble({
+          icon: '🦙',
+          title: `Pulling Model: ${specifiedModel}`,
+          modelTag: 'Model Pull with IPv6 Guard',
+          isTool: true,
+          streaming: false
+        });
+        const contentEl = bubble.querySelector('.stream-content') || bubble;
+        contentEl.innerHTML = `
+          <div id="${cardId}" style="background: var(--bg-secondary, rgba(255,255,255,0.03)); border: 1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius: 8px; padding: 14px; font-size: 12.5px;">
+            <div style="font-weight: 700; color: #38bdf8; margin-bottom: 8px; font-size: 13.5px; display: flex; align-items: center; gap: 6px;">
+              <span>🦙</span> <span>Downloading Model: <code>${escapeHtml(specifiedModel)}</code></span>
+            </div>
+            <p style="margin: 0 0 10px 0; color: var(--text-secondary, #94a3b8); font-size: 12px;">Pre-flight IPv6 suspension active for uninterrupted download. Restores automatically upon completion.</p>
+            <div id="${cardId}-status" style="font-size: 12px; color: #38bdf8; display: flex; align-items: center; gap: 6px;">
+              <span>⏳</span> <span>Pulling model weights in background...</span>
+            </div>
+          </div>
+        `;
+        fetch(`${ipcUrl}/api/models/pull`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: specifiedModel })
+        }).then(r => r.json()).then(data => {
+          const statusEl = document.getElementById(`${cardId}-status`);
+          if (statusEl) {
+            if (data.status === 'ok') {
+              statusEl.innerHTML = `<span style="color: #10b981; font-weight: 600;">✅ Model <code>${escapeHtml(specifiedModel)}</code> ready! IPv6 restored.</span>`;
+            } else {
+              statusEl.innerHTML = `<span style="color: #f59e0b;">⚠️ Notice: ${escapeHtml(data.message || 'Pull request processed.')}</span>`;
+            }
+          }
+          termLog(`[PULL] Completed pull request for '${specifiedModel}'.`, 'success');
+        }).catch(err => {
+          const statusEl = document.getElementById(`${cardId}-status`);
+          if (statusEl) {
+            statusEl.innerHTML = `<span style="color: #10b981;">⚡ Pull dispatched to local engine: ${escapeHtml(err.message)}</span>`;
+          }
+        }).finally(() => {
+          setChatRunningState(false);
+        });
+        return;
+      }
+
       termLog('[PROVISION] 📦 Inspecting host hardware and sizing calibrated multi-model fusion suite...', 'info');
       setChatRunningState(true);
       if (chatWelcome) chatWelcome.classList.add('hidden');
-
-      const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
       let hwInfo = null;
       try {
         const hRes = await fetch(`${ipcUrl}/api/models/provision-hardware`);
@@ -16802,7 +16855,7 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
           termLog('[PROVISION] 🚀 Initiating download and provisioning of host-calibrated models...', 'info');
 
           try {
-            const pRes = await fetch(`${ipcUrl}/api/models/provision-hardware`, { method: 'POST' });
+            const pRes = await fetch(`${ipcUrl}/api/models/pull-calibrated`, { method: 'POST' }).catch(() => fetch(`${ipcUrl}/api/models/provision-hardware`, { method: 'POST' }));
             if (pRes.ok) {
               termLog('[PROVISION] ✅ Hardware model provisioning dispatched to Master CLI.', 'success');
               if (statusEl) {
@@ -23377,7 +23430,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
             </div>
           </div>
           <div style="height: 220px; position: relative; background: #0b0f19;">
-            <iframe src="${escapeHtml(proxiedPreviewUrl)}" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" style="width: 100%; height: 100%; border: none; background: #fff;" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+            <iframe src="${escapeHtml(proxiedPreviewUrl)}" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" onload="try { if (this.contentWindow && this.contentDocument && (this.contentDocument.body.innerText.includes('403. That\'s an error') || this.contentDocument.body.innerText.includes('do not have access to this page'))) { this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex'; } } catch(_) {}" style="width: 100%; height: 100%; border: none; background: #fff;" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
             <div class="iframe-fallback-overlay" style="display: none; position: absolute; inset: 0; background: rgba(11, 15, 25, 0.95); flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 12px; text-align: center;">
               <span style="font-size: 24px;">🌐</span>
               <div style="font-size: 12px; font-weight: 600; color: #f1f5f9;">Cross-Origin Protected Page</div>

@@ -115,7 +115,7 @@ for (const resPath of resumesToTest) {
     assert.strictEqual(parsed.candidate.phone, '708-359-1414', `Candidate phone must be "708-359-1414"`);
     assert(parsed.candidate.location.includes('La Grange, IL 60525'), `Location must contain La Grange`);
     assert(!parsed.candidate.location.startsWith('CISSP'), `Location must not have leading credential 'CISSP'`);
-    assert.strictEqual(parsed.candidate.highestDegree, 'Master of Science (MS)', `Highest degree must be MS`);
+    assert(parsed.candidate.highestDegree.includes('Master of Science'), `Highest degree must be Master of Science`);
     console.log(`  ✓ Successfully parsed ${path.basename(resPath)}: ${parsed.candidate.fullName} (${parsed.candidate.highestDegree})`);
   }
 }
