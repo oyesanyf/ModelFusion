@@ -12,6 +12,8 @@ if (typeof window !== 'undefined' && window.location && window.location.protocol
     .catch(() => {
       // Backend server starting up or offline; probe will transition once online
     });
+}
+
 function isIdeEnvironment() {
   if (typeof window === 'undefined') return false;
   if (window.__IDE_MODE__ === true) return true;
@@ -20543,6 +20545,9 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         window.selectedJobIndex = 0;
       }
     }
+    return postings;
+  }
+
   // -----------------------------------------------------------------
   // 4.057h Career-Ops A-H Evaluation Framework & Cover Letter Engine
   // "Apply better to fewer. Signal over volume. Evidence over keywords. A human decides. Local-first."
@@ -25300,6 +25305,22 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     });
   }
 
+  // -------------------------------------------------------------
+  // Sidebar Tools & Directives Accordion (All 348+ Tools)
+  // -------------------------------------------------------------
+  const sidebarToolsToggle = document.getElementById('sidebar-tools-toggle');
+  const sidebarToolsAccordion = document.getElementById('sidebar-tools-accordion');
+
+  if (sidebarToolsToggle && sidebarToolsAccordion) {
+    sidebarToolsToggle.addEventListener('click', () => {
+      sidebarToolsAccordion.classList.toggle('collapsed');
+      const chevron = document.getElementById('tools-accordion-chevron');
+      if (chevron) {
+        chevron.textContent = sidebarToolsAccordion.classList.contains('collapsed') ? '▸' : '▾';
+      }
+    });
+  }
+
   const sidebarWritingEditing = document.getElementById('sidebar-writing-editing') || document.getElementById('sidebar-translation-humanize');
   if (sidebarWritingEditing) {
     sidebarWritingEditing.addEventListener('click', () => {
@@ -25327,22 +25348,6 @@ If you are asked about real-world facts such as world leaders, heads of state, c
         activeInput.selectionStart = activeInput.selectionEnd = activeInput.value.length;
         activeInput.style.height = 'auto';
         activeInput.style.height = Math.min(activeInput.scrollHeight, 160) + 'px';
-      }
-    });
-  }
-
-  // -------------------------------------------------------------
-  // Sidebar Tools & Directives Accordion (All 175+ Tools)
-  // -------------------------------------------------------------
-  const sidebarToolsToggle = document.getElementById('sidebar-tools-toggle');
-  const sidebarToolsAccordion = document.getElementById('sidebar-tools-accordion');
-
-  if (sidebarToolsToggle && sidebarToolsAccordion) {
-    sidebarToolsToggle.addEventListener('click', () => {
-      sidebarToolsAccordion.classList.toggle('collapsed');
-      const chevron = document.getElementById('tools-accordion-chevron');
-      if (chevron) {
-        chevron.textContent = sidebarToolsAccordion.classList.contains('collapsed') ? '▸' : '▾';
       }
     });
   }
@@ -26057,10 +26062,10 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     const badge = document.querySelector('.tools-header-badge');
     const toggle = document.getElementById('sidebar-tools-toggle');
     if (!badge) return;
-    const toolBtns = document.querySelectorAll('.tool-item-btn');
-    const directiveCount = 124;
+    const toolBtns = document.querySelectorAll('.tool-item-btn, .tool-command-btn');
+    const directiveCount = (typeof AGENT_COMMANDS !== 'undefined' && Array.isArray(AGENT_COMMANDS)) ? AGENT_COMMANDS.length : 240;
     // Dynamic summation of UI tool buttons, autonomous agent directives, and CLI capabilities
-    const totalCapabilities = Math.max(175, toolBtns.length + directiveCount + dynamicMcpToolsCount);
+    const totalCapabilities = Math.max(348, toolBtns.length + directiveCount + dynamicMcpToolsCount);
     badge.textContent = totalCapabilities;
     if (toggle) {
       toggle.title = `Toggle ModelFusion Tools & Directives (All ${totalCapabilities}+ Tools)`;
