@@ -2726,6 +2726,17 @@ struct Args {
     )]
     tasks: Option<String>,
 
+    #[arg(
+        long,
+        alias = "provision-hardware",
+        alias = "download-host-models",
+        alias = "pull-calibrated",
+        alias = "calibrate-models",
+        alias = "calibrated-models",
+        help = "Download and provision AI models calibrated specifically for host hardware (dynamic RAM/VRAM sizing)"
+    )]
+    download_calibrated_models: bool,
+
     #[arg(long, help = "Fast curated update: indexes top ~6,500 production workhorses across all 45 tasks and provisions local Ollama hardware model")]
     update: bool,
 
@@ -3652,6 +3663,11 @@ where
                 args[1] = "--submit-wdsi".to_string();
                 return args;
             }
+            if (sub_clean == "download-calibrated-models" || sub_clean == "download-calibrated" || sub_clean == "provision-hardware" || sub_clean == "download-host-models" || sub_clean == "calibrate-models" || sub_clean == "calibrated-models" || sub_clean == "pull-calibrated") && !has_combinator {
+                args.remove(1);
+                args[1] = "--download-calibrated-models".to_string();
+                return args;
+            }
             let is_computer_use_tool = sub_clean == "computer-use" || sub_clean == "computer_use" || sub_clean == "computeruse"
                 || sub_clean == "ui-tars" || sub_clean == "uitars"
                 || sub_clean == "exam-solver" || sub_clean == "examsolver"
@@ -3944,6 +3960,11 @@ where
         }
         "ide" => {
             args[1] = "--ide".to_string();
+        }
+        "download-calibrated-models" | "download-calibrated" | "provision-hardware" | "download-host-models" | "calibrate-models" | "calibrated-models" | "pull-calibrated"
+        | "/download-calibrated-models" | "/download-calibrated" | "/provision-hardware" | "/download-host-models" | "/calibrate-models" | "/calibrated-models" | "/pull-calibrated"
+        | "@agent/download-calibrated-models" | "@agent:download-calibrated-models" => {
+            args[1] = "--download-calibrated-models".to_string();
         }
         "update" => {
             args[1] = "--update".to_string();
@@ -5621,6 +5642,37 @@ async fn run(args: Args) -> Result<()> {
         println!("🚀 Ingesting models from Hugging Face Hub into database (whether junk or not)...");
         let result = handler.handle_update_all_models_database(args.max_models).await;
         println!("{}", result.content);
+        return Ok(());
+    }
+
+    if args.download_calibrated_models {
+        println!("💻 Detecting host hardware profile & available runtime resources...");
+        let sys = query_system_resources();
+        let primary = select_ollama_model_for_hardware(false);
+        let verifier = select_verifier_model_for_hardware();
+        println!("============================================================");
+        println!("🎯 Host Hardware Profile & Model Calibration");
+        println!("============================================================");
+        println!("  • CPU: {}", sys.cpu_name);
+        println!("  • Total RAM: {:.2} GB | Free/Available RAM: {:.2} GB", sys.total_ram_gb, sys.free_ram_gb);
+        println!("  • GPU: {}", sys.gpu_name);
+        println!("  • Dedicated VRAM: {} MB | Free VRAM: {} MB", sys.total_vram_mb, sys.free_vram_mb);
+        println!("------------------------------------------------------------");
+        println!("📦 Calibrated Multi-Model Fusion Tier for this Host:");
+        println!("  1. Primary Workhorse:    '{}'", primary);
+        println!("  2. Verifier / Gate:       '{}'", verifier);
+        println!("  3. Multimodal Vision:     'moondream'");
+        println!("  4. Sentence Embeddings:   'embeddinggemma'");
+        println!("============================================================");
+
+        println!("\n🦙 Ensuring Ollama daemon is running...");
+        if let Err(e) = model_selection::memory::ensure_ollama_running() {
+            eprintln!("⚠️  [OLLAMA] Failed to ensure Ollama is running: {}", e);
+        } else {
+            println!("🚀 Downloading and provisioning all 4 calibrated host models...");
+            provision_multi_model_fusion_for_hardware();
+            println!("\n✨ [SUCCESS] All 4 models calibrated for host hardware are ready.");
+        }
         return Ok(());
     }
 
@@ -10997,6 +11049,49 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                     resp_body.len(),
                     resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Host Calibrated Models Provisioning (/api/models/provision-hardware & /api/models/calibrate-hardware) ──
+            if request_path == "/api/models/provision-hardware" || request_path == "/api/models/calibrate-hardware" {
+                eprintln!("[PROVISION] 🎯 Received provision-hardware request. Sizing host hardware...");
+                let sys = query_system_resources();
+                let primary = select_ollama_model_for_hardware(false);
+                let verifier = select_verifier_model_for_hardware();
+
+                let _ = tokio::task::spawn_blocking(model_selection::memory::ensure_ollama_running).await;
+
+                // Spawn background model provisioning
+                tokio::task::spawn_blocking(move || {
+                    provision_multi_model_fusion_for_hardware();
+                });
+
+                let res_json = serde_json::json!({
+                    "status": "ok",
+                    "message": "Hardware-calibrated model provisioning initiated in background.",
+                    "hardware": {
+                        "cpu": sys.cpu_name,
+                        "total_ram_gb": sys.total_ram_gb,
+                        "free_ram_gb": sys.free_ram_gb,
+                        "gpu": sys.gpu_name,
+                        "total_vram_mb": sys.total_vram_mb,
+                        "free_vram_mb": sys.free_vram_mb
+                    },
+                    "calibrated_models": {
+                        "primary": primary,
+                        "verifier": verifier,
+                        "vision": "moondream",
+                        "embedding": "embeddinggemma"
+                    }
+                });
+                let res_body = serde_json::to_string(&res_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    res_body.len(),
+                    res_body
                 );
                 let _ = socket.write_all(response.as_bytes()).await;
                 let _ = socket.flush().await;

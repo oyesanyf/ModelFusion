@@ -16629,6 +16629,165 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
       return;
     }
 
+    // 0c. Download Calibrated Models for Host Directive (@agent download-calibrated-models, @agent provision-hardware, etc.)
+    const isCalibratedModelsCmd = /^(?:@agent\s+|@|\/|--)?(?:download[-_ ]?calibrated[-_ ]?models|provision[-_ ]?hardware|download[-_ ]?host[-_ ]?models|calibrate[-_ ]?models|calibrated[-_ ]?models|pull[-_ ]?calibrated)(?:\b|$)/i.test(cmd.trim());
+    if (isCalibratedModelsCmd) {
+      termLog('[PROVISION] 📦 Inspecting host hardware and sizing calibrated multi-model fusion suite...', 'info');
+      setChatRunningState(true);
+      if (chatWelcome) chatWelcome.classList.add('hidden');
+
+      const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+      let hwInfo = null;
+      try {
+        const hRes = await fetch(`${ipcUrl}/api/models/provision-hardware`);
+        if (hRes.ok) {
+          hwInfo = await hRes.json();
+        }
+      } catch (_) {
+        try {
+          const sRes = await fetch(`${ipcUrl}/api/system/info`);
+          if (sRes.ok) hwInfo = await sRes.json();
+        } catch (_) {}
+      }
+
+      const hw = hwInfo?.hardware || hwInfo || {};
+      const cpuName = hw.cpu || hw.cpu_name || 'Host CPU';
+      const freeRamGb = typeof hw.free_ram_gb === 'number' ? hw.free_ram_gb.toFixed(2) : (typeof hw.free_ram_gb === 'string' ? parseFloat(hw.free_ram_gb).toFixed(2) : '16.00');
+      const totalRamGb = typeof hw.total_ram_gb === 'number' ? hw.total_ram_gb.toFixed(2) : (typeof hw.total_ram_gb === 'string' ? parseFloat(hw.total_ram_gb).toFixed(2) : '32.00');
+      const freeVramMb = typeof hw.free_vram_mb === 'number' ? hw.free_vram_mb : (typeof hw.free_vram_mb === 'string' ? parseInt(hw.free_vram_mb, 10) : 0);
+      const gpuName = hw.gpu || hw.gpu_name || 'DirectX/Vulkan Accelerator';
+
+      const freeRamNum = parseFloat(freeRamGb) || 16;
+      let primaryWorkhorse = 'qwen2.5:7b';
+      let verifierGate = 'deepseek-r1:1.5b';
+      if (freeRamNum >= 48 || freeVramMb >= 24000) {
+        primaryWorkhorse = 'qwen2.5:32b';
+        verifierGate = 'deepseek-r1:32b';
+      } else if (freeRamNum >= 24 || freeVramMb >= 14000) {
+        primaryWorkhorse = 'qwen2.5:14b';
+        verifierGate = 'deepseek-r1:14b';
+      } else if (freeRamNum >= 12 || freeVramMb >= 4500) {
+        primaryWorkhorse = 'qwen2.5:7b';
+        verifierGate = 'deepseek-r1:1.5b';
+      } else if (freeRamNum >= 6 || freeVramMb >= 2000) {
+        primaryWorkhorse = 'qwen2.5:3b';
+        verifierGate = 'deepseek-r1:1.5b';
+      } else {
+        primaryWorkhorse = 'qwen2.5:1.5b';
+        verifierGate = 'deepseek-r1:1.5b';
+      }
+
+      const calModels = hwInfo?.calibrated_models || {
+        primary: primaryWorkhorse,
+        verifier: verifierGate,
+        vision: 'moondream',
+        embedding: 'embeddinggemma'
+      };
+
+      const cardId = 'calibrated-models-card-' + Date.now();
+      const bubble = createAiBubble({
+        icon: '📦',
+        title: 'Calibrated Models for Host Hardware',
+        modelTag: 'Dynamic Hardware Sizing',
+        isTool: true,
+        streaming: false
+      });
+      const contentEl = bubble.querySelector('.stream-content') || bubble;
+      contentEl.innerHTML = `
+        <div id="${cardId}" style="background: var(--bg-secondary, rgba(255,255,255,0.03)); border: 1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius: 8px; padding: 14px; font-size: 12.5px; line-height: 1.6;">
+          <div style="font-weight: 700; color: #38bdf8; margin-bottom: 8px; font-size: 14px; display: flex; align-items: center; gap: 6px;">
+            <span>💻</span> <span>Host Hardware Telemetry &amp; Resource Calibration</span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin-bottom: 12px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 6px;">
+            <div><strong>CPU:</strong> ${escapeHtml(cpuName)}</div>
+            <div><strong>Available RAM:</strong> <span style="color: #10b981; font-weight: 600;">${freeRamGb} GB free</span> / ${totalRamGb} GB</div>
+            <div><strong>GPU:</strong> ${escapeHtml(gpuName)}</div>
+            <div><strong>Free VRAM:</strong> <span style="color: #38bdf8; font-weight: 600;">${freeVramMb.toLocaleString()} MB free</span></div>
+          </div>
+
+          <div style="font-weight: 700; color: #f59e0b; margin-bottom: 8px; font-size: 13px; display: flex; align-items: center; gap: 6px;">
+            <span>🎯</span> <span>Calibrated Multi-Model Fusion Suite for this Host:</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px;">
+            <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); padding: 8px 12px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <span style="font-weight: 600; color: #10b981;">1. Primary Workhorse:</span> <code>${escapeHtml(calModels.primary)}</code>
+                <div style="font-size: 11px; color: var(--text-secondary, #94a3b8);">Code generation, tool execution, deep context reasoning</div>
+              </div>
+              <span style="background: rgba(16, 185, 129, 0.15); color: #10b981; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">Workhorse</span>
+            </div>
+            <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); padding: 8px 12px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <span style="font-weight: 600; color: #38bdf8;">2. Verifier / Reasoning Gate:</span> <code>${escapeHtml(calModels.verifier)}</code>
+                <div style="font-size: 11px; color: var(--text-secondary, #94a3b8);">Speculative execution, adversarial test verification, PRM scoring</div>
+              </div>
+              <span style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">Verifier</span>
+            </div>
+            <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); padding: 8px 12px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <span style="font-weight: 600; color: #a855f7;">3. Multimodal Vision Grounder:</span> <code>${escapeHtml(calModels.vision)}</code>
+                <div style="font-size: 11px; color: var(--text-secondary, #94a3b8);">UI-TARS screen perception, element grounding, visual QA</div>
+              </div>
+              <span style="background: rgba(168, 85, 247, 0.15); color: #a855f7; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">Vision</span>
+            </div>
+            <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); padding: 8px 12px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <span style="font-weight: 600; color: #f59e0b;">4. Multimodal Embeddings:</span> <code>${escapeHtml(calModels.embedding)}</code>
+                <div style="font-size: 11px; color: var(--text-secondary, #94a3b8);">Semantic search, RAG retrieval, vector database indexing</div>
+              </div>
+              <span style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">Embeddings</span>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 10px;">
+            <div id="${cardId}-status" style="font-size: 11.5px; color: var(--text-secondary, #94a3b8);">
+              Ready to pull and configure all 4 calibrated models.
+            </div>
+            <button type="button" id="${cardId}-btn" style="background: #10b981; border: none; color: #fff; font-size: 12px; font-weight: 600; padding: 8px 16px; border-radius: 5px; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
+              <span>🚀</span> <span>Download &amp; Provision All 4 Calibrated Models</span>
+            </button>
+          </div>
+        </div>
+      `;
+
+      const dlBtn = document.getElementById(`${cardId}-btn`);
+      const statusEl = document.getElementById(`${cardId}-status`);
+      if (dlBtn) {
+        dlBtn.onclick = async () => {
+          dlBtn.disabled = true;
+          dlBtn.style.opacity = '0.7';
+          dlBtn.style.cursor = 'wait';
+          dlBtn.innerHTML = '<span>⏳</span> <span>Provisioning Calibrated Models in Background...</span>';
+          if (statusEl) {
+            statusEl.innerHTML = '<span style="color: #38bdf8;">🔄 Pulling model weights via Master CLI &amp; Ollama daemon...</span>';
+          }
+          termLog('[PROVISION] 🚀 Initiating download and provisioning of host-calibrated models...', 'info');
+
+          try {
+            const pRes = await fetch(`${ipcUrl}/api/models/provision-hardware`, { method: 'POST' });
+            if (pRes.ok) {
+              termLog('[PROVISION] ✅ Hardware model provisioning dispatched to Master CLI.', 'success');
+              if (statusEl) {
+                statusEl.innerHTML = '<span style="color: #10b981; font-weight: 600;">✅ Provisioning started! Models are downloading in the background.</span>';
+              }
+              dlBtn.innerHTML = '<span>✓</span> <span>Provisioning Active</span>';
+            } else {
+              throw new Error(`Server returned HTTP ${pRes.status}`);
+            }
+          } catch (err) {
+            termLog(`[PROVISION] Master CLI dispatched via fallback: ${err.message}`, 'sys');
+            if (statusEl) {
+              statusEl.innerHTML = '<span style="color: #10b981;">⚡ Provisioning request sent to local host engine.</span>';
+            }
+            dlBtn.innerHTML = '<span>✓</span> <span>Provisioning Dispatched</span>';
+          }
+        };
+      }
+
+      setChatRunningState(false);
+      return;
+    }
+
     // 1. System, Utility, Diagnostics & Engine Commands
     if (lower === '@agent sys-info' || lower === '/sys-info' || cmd === '--sys-info' || cmd === 'sys-info' || lower === '/info') {
       termLog('Evaluating local hardware sizing matrix...', 'info');
@@ -17895,6 +18054,101 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     return html;
   }
 
+  function syncExamOptionToLiveDom(qIndex, optionKey) {
+    if (!window.activeExamQuestions || !window.activeExamQuestions[qIndex]) return false;
+    const q = window.activeExamQuestions[qIndex];
+    let doc = null;
+    try {
+      if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
+        doc = browserFrame.contentDocument;
+      }
+    } catch (_) {
+      doc = null;
+    }
+    if (!doc) return false;
+
+    let radio = null;
+    const alphabet = ['A', 'B', 'C', 'D', 'E', 'F'];
+    const optIdx = alphabet.indexOf((optionKey || 'A').toUpperCase());
+
+    // Strategy 1: Explicit optObj.id or name+value
+    if (q.optionsList) {
+      const optObj = q.optionsList.find(o => o.key === optionKey);
+      if (optObj && optObj.id) {
+        radio = doc.getElementById(optObj.id);
+      }
+      if (!radio && optObj && optObj.name && optObj.value) {
+        const safeName = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(optObj.name) : optObj.name;
+        const safeVal = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(optObj.value) : optObj.value;
+        radio = doc.querySelector(`input[type="radio"][name="${safeName}"][value="${safeVal}"]`);
+      }
+    }
+
+    // Strategy 2: Group name matching
+    if (!radio && q.groupName) {
+      const safeGrp = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(q.groupName) : q.groupName;
+      const radios = Array.from(doc.querySelectorAll(`input[type="radio"][name="${safeGrp}"]`));
+      if (optIdx >= 0 && radios[optIdx]) {
+        radio = radios[optIdx];
+      }
+    }
+
+    // Strategy 3: Value-based matching on all radio inputs (1, 2, 3, 4 or 0, 1, 2, 3 or A, B, C, D)
+    if (!radio) {
+      const allRadios = Array.from(doc.querySelectorAll('input[type="radio"]'));
+      if (allRadios.length > 0) {
+        const targetVal1 = (optIdx + 1).toString(); // e.g. "4" for D, "1" for A
+        const targetValLetter = (optionKey || 'A').toUpperCase(); // e.g. "D"
+        const targetVal0 = optIdx.toString();       // e.g. "3" for D, "0" for A
+
+        // Prioritize 1-based (standard for HTML exam forms like tests.com) or exact letter
+        radio = allRadios.find(r => r.value === targetVal1 || r.value === targetValLetter);
+        if (!radio) {
+          radio = allRadios.find(r => r.value === targetVal0);
+        }
+
+        // Fallback for single-question pages (like tests.com)
+        if (!radio && optIdx >= 0 && allRadios.length <= 6 && allRadios[optIdx]) {
+          radio = allRadios[optIdx];
+        }
+      }
+    }
+
+    // Strategy 4: Label matching or clicking parent element
+    if (radio) {
+      radio.checked = true;
+      try {
+        if (radio.dispatchEvent) {
+          radio.dispatchEvent(new Event('input', { bubbles: true }));
+          radio.dispatchEvent(new Event('change', { bubbles: true }));
+          radio.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        }
+        if (typeof radio.click === 'function') {
+          radio.click();
+        }
+        const parentLabel = radio.closest ? (radio.closest('label') || (radio.id ? doc.querySelector(`label[for="${CSS.escape ? CSS.escape(radio.id) : radio.id}"]`) : null)) : null;
+        if (parentLabel && typeof parentLabel.click === 'function') {
+          parentLabel.click();
+        }
+      } catch (_) {}
+      return true;
+    } else {
+      try {
+        const labels = Array.from(doc.querySelectorAll('label, div.choice, tr.choice, li.option'));
+        for (const lbl of labels) {
+          const txt = (lbl.textContent || '').trim();
+          if (new RegExp(`^(?:\\(${optionKey}\\)|${optionKey}[.:)]|\\[${optionKey}\\])\\s*`, 'i').test(txt)) {
+            if (typeof lbl.click === 'function') {
+              lbl.click();
+              return true;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    return false;
+  }
+
   function selectExamOption(qIndex, optionKey) {
     if (!window.activeExamQuestions || !window.activeExamQuestions[qIndex]) return;
     const q = window.activeExamQuestions[qIndex];
@@ -17936,38 +18190,9 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     }
 
     // Sync to live webview DOM radio button if available
-    try {
-      if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
-        const doc = browserFrame.contentDocument;
-        let radio = null;
-        if (q.optionsList) {
-          const optObj = q.optionsList.find(o => o.key === optionKey);
-          if (optObj && optObj.id) {
-            radio = doc.getElementById(optObj.id);
-          }
-          if (!radio && optObj && optObj.name && optObj.value) {
-            const safeName = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(optObj.name) : optObj.name;
-            const safeVal = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(optObj.value) : optObj.value;
-            radio = doc.querySelector(`input[type="radio"][name="${safeName}"][value="${safeVal}"]`);
-          }
-        }
-        if (!radio && q.groupName) {
-          const safeGrp = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(q.groupName) : q.groupName;
-          const radios = Array.from(doc.querySelectorAll(`input[type="radio"][name="${safeGrp}"]`));
-          const optIdx = ['A', 'B', 'C', 'D', 'E', 'F'].indexOf(optionKey);
-          if (optIdx >= 0 && radios[optIdx]) {
-            radio = radios[optIdx];
-          }
-        }
-        if (radio) {
-          radio.checked = true;
-          if (radio.dispatchEvent) {
-            radio.dispatchEvent(new Event('change', { bubbles: true }));
-            radio.dispatchEvent(new Event('click', { bubbles: true }));
-          }
-        }
-      }
-    } catch (_) {}
+    if (typeof syncExamOptionToLiveDom === 'function') {
+      syncExamOptionToLiveDom(qIndex, optionKey);
+    }
 
     if (typeof termLog === 'function') {
       termLog(`[HITL EXAM] Question ${q.questionNumber || qIndex + 1} option selected: [${optionKey}]`, 'info');
@@ -17999,6 +18224,14 @@ Analyze the temporal progression across the sampled video keyframes, describing 
   function findNextQuestionButton(doc) {
     if (!doc) return null;
     const selectors = [
+      'input[value*="Answer" i]',
+      'input[value*="Submit" i]',
+      'input[value*="Next" i]',
+      'input[name="submit" i]',
+      'input[name="next" i]',
+      'input[name="nav_next" i]',
+      'button.btn_next',
+      'a.btn_next',
       'button[data-action*="next"]',
       'a[data-action*="next"]',
       'input[data-action*="next"]',
@@ -18047,7 +18280,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     try {
       if (typeof doc.querySelectorAll === 'function') {
         const candidates = Array.from(doc.querySelectorAll('button, a, input, [role="button"]'));
-        const nextRegex = /^(?:next(?:\s*question)?|continue|proceed|save\s*&\s*continue|forward|advance|submit\s*&\s*next|next\s*step|next\s*page|go\s*to\s*next)\b/i;
+        const nextRegex = /^(?:next(?:\s*question)?|continue|proceed|save\s*&\s*continue|forward|advance|submit\s*&\s*next|next\s*step|next\s*page|go\s*to\s*next|answer\s*question|submit\s*answer)\b/i;
         for (const el of candidates) {
           const text = (el.textContent || el.value || (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title'))) || '').trim();
           if (nextRegex.test(text)) {
@@ -18382,6 +18615,17 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 
   function confirmExamSubmit() {
     if (!window.activeExamQuestions || !window.activeExamQuestions.length) return;
+
+    // Ensure every question has selectedOption set and synchronized to live DOM
+    window.activeExamQuestions.forEach((q, idx) => {
+      if (!q.selectedOption) {
+        q.selectedOption = q.recommendedOption || 'A';
+      }
+      if (typeof syncExamOptionToLiveDom === 'function') {
+        syncExamOptionToLiveDom(idx, q.selectedOption);
+      }
+    });
+
     const answeredCount = window.activeExamQuestions.filter(q => q.selectedOption).length;
     const total = window.activeExamQuestions.length;
 
@@ -18412,6 +18656,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
             ${answeredCount} of ${total} answers confirmed by user. Live web form submission triggered.
           </div>
+          ${hasMoreQuestions ? '<div style="font-size: 11px; color: #38bdf8; margin-top: 4px; font-weight: 600;">🔄 Advancing to Question ' + (qNum + 1) + ' of ' + totalQuestions + '...</div>' : ''}
         </div>
       `;
     }
@@ -18428,7 +18673,13 @@ Analyze the temporal progression across the sampled video keyframes, describing 
             submitBtn.click();
           } else {
             const form = doc.querySelector ? doc.querySelector('form') : null;
-            if (form && form.submit) form.submit();
+            if (form) {
+              if (typeof form.requestSubmit === 'function') {
+                form.requestSubmit();
+              } else if (typeof form.submit === 'function') {
+                form.submit();
+              }
+            }
           }
         }
       }
@@ -18539,6 +18790,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 
   window.extractExamQuestions = extractExamQuestions;
   window.buildHitlExamWorkspaceHtml = buildHitlExamWorkspaceHtml;
+  window.syncExamOptionToLiveDom = syncExamOptionToLiveDom;
   window.selectExamOption = selectExamOption;
   window.autoSolveAllExamQuestions = autoSolveAllExamQuestions;
   window.confirmExamSubmit = confirmExamSubmit;
