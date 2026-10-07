@@ -9846,6 +9846,9 @@ pub fn sanitize_html_for_iframe_proxy(html: &str, target_url: &str) -> String {
     if let Ok(re_busting) = regex::Regex::new(r#"(?i)\b(?:window\.)?(?:top|parent)\.location\s*="#) {
         modified = re_busting.replace_all(&modified, "// stripped frame-busting: location=").to_string();
     }
+    if let Ok(re_replace) = regex::Regex::new(r#"(?i)\b(?:window\.)?location\.(?:replace|assign)\s*\("#) {
+        modified = re_replace.replace_all(&modified, "// stripped frame-busting: location.replace(").to_string();
+    }
 
     // 3. Inject <base href="..."> if not already present, ensuring relative links resolve against the target host
     if !modified.to_lowercase().contains("<base ") && !modified.to_lowercase().contains("<base>") {
@@ -21117,7 +21120,7 @@ public class Pr {
     fn test_sanitize_html_for_iframe_proxy() {
         use super::sanitize_html_for_iframe_proxy;
 
-        let sample_html = r#"<!DOCTYPE html><html><head><meta http-equiv="Content-Security-Policy" content="frame-ancestors 'none';"><meta http-equiv="X-Frame-Options" content="DENY"><title>Target Site</title></head><body><script>if (top.location != self.location) top.location = self.location;</script><h1>Hello World</h1></body></html>"#;
+        let sample_html = r#"<!DOCTYPE html><html><head><meta http-equiv="Content-Security-Policy" content="frame-ancestors 'none';"><meta http-equiv="X-Frame-Options" content="DENY"><title>Target Site</title></head><body><script>if (top.location != self.location) top.location = self.location; window.location.replace('https://login.target.com');</script><h1>Hello World</h1></body></html>"#;
         let sanitized = sanitize_html_for_iframe_proxy(sample_html, "https://www.google.com");
 
         // 1. Meta CSP & X-Frame-Options stripped
@@ -21131,6 +21134,8 @@ public class Pr {
         // 3. Frame-busting stripped
         assert!(!sanitized.contains("top.location ="));
         assert!(sanitized.contains("// stripped frame-busting: location="));
+        assert!(!sanitized.contains("window.location.replace("));
+        assert!(sanitized.contains("// stripped frame-busting: location.replace("));
     }
 }
 
