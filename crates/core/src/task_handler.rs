@@ -317,12 +317,14 @@ impl ComprehensiveTaskHandler {
         {
             cap_base = (cap_base + 0.10).min(1.0);
         }
-        // Boost for proven workhorse architectures (Qwen, sentence-transformers, Llama, DeepSeek)
+        // Boost for proven workhorse architectures (Qwen, sentence-transformers, Llama, DeepSeek, EmbeddingGemma)
         if name_lower.contains("qwen")
             || name_lower.contains("minilm")
             || name_lower.contains("bge")
             || name_lower.contains("llama-3")
             || name_lower.contains("deepseek")
+            || name_lower.contains("embeddinggemma")
+            || name_lower.contains("embedding-gemma")
         {
             cap_base = (cap_base + 0.08).min(1.0);
         }
@@ -347,6 +349,11 @@ impl ComprehensiveTaskHandler {
     /// Estimate parameter count in Billions from model ID, tags, or pipeline tag.
     fn estimate_params_from_id(model_id: &str, tags: &[String], pipeline_tag: &str) -> f64 {
         let name_lower = model_id.to_lowercase();
+
+        // Check for Google EmbeddingGemma 2 (270M text/code, 740M multimodal)
+        if name_lower.contains("embeddinggemma") || name_lower.contains("embedding-gemma") {
+            return 0.35; // 270M text/code, 740M multimodal
+        }
 
         // Check for embeddings / sentence-transformers
         if pipeline_tag == "sentence-similarity"

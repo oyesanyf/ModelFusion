@@ -768,5 +768,20 @@
     "cost_per_1k_tokens": 0.0,
     "rate_limit_per_minute": 60,
     "timeout_seconds": 60
+  },
+  "google/embeddinggemma-2": {
+    "name": "google/embeddinggemma-2",
+    "model_id": "google/embeddinggemma-2",
+    "pipeline_tag": "sentence-similarity",
+    "author": "google",
+    "architecture": "Gemma4Embedding",
+    "parameters": "740M (Multimodal) / 270M (Text/Code)",
+    "dimensions": 768,
+    "mrl_dimensions": [128, 256, 512, 768],
+    "max_position_embeddings": 8192,
+    "modalities": ["text", "code", "image", "audio", "video"],
+    "license": "apache-2.0",
+    "tags": ["sentence-similarity", "feature-extraction", "embeddings", "multimodal", "code", "mrl", "pytorch", "safetensors", "ollama"],
+    "description": "Google EmbeddingGemma 2: Natively multimodal on-device embeddings mapping text, code, images, video, and audio into a unified 768d vector space with Matryoshka Representation Learning (MRL)."
   }
 }

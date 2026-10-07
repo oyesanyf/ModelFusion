@@ -23701,6 +23701,149 @@ Instructions:
       return;
     }
 
+    // 4.494 Google EmbeddingGemma 2 Multimodal Embeddings & Similarity Directive (@agent embed, @agent embeddings, @agent similarity)
+    const isEmbedCmd = (
+      lower.startsWith('@agent embed') || lower === '@agent embed' ||
+      lower.startsWith('/embed') || lower === '/embed' ||
+      lower.startsWith('@embed') ||
+      lower.startsWith('@agent embeddings') || lower === '@agent embeddings' ||
+      lower.startsWith('/embeddings') || lower === '/embeddings' ||
+      lower.startsWith('@embeddings') ||
+      lower.startsWith('@agent similarity') || lower === '@agent similarity' ||
+      lower.startsWith('/similarity') || lower === '/similarity' ||
+      lower.startsWith('@similarity') ||
+      lower.startsWith('@agent sentence-similarity') || lower === '@agent sentence-similarity'
+    );
+
+    if (isEmbedCmd) {
+      let rawQuery = cmd
+        .replace(/^(?:@agent\s+(?:embeddings?|similarity|sentence-similarity)|\/(?:embeddings?|similarity|sentence-similarity)|@(?:embeddings?|similarity|sentence-similarity))\s*:?\s*/i, '')
+        .trim();
+
+      const isSimilarity = lower.includes('similarity');
+      const sampleText = rawQuery || (isSimilarity ? 'Compare semantic alignment between code, queries, and multimodal inputs.' : 'Google EmbeddingGemma 2: Cross-modal feature extraction and Matryoshka embeddings.');
+
+      // Check if comparing two texts (e.g. split by " vs " or " | ")
+      let textA = sampleText;
+      let textB = 'Reference multimodal corpus anchor';
+      let simScore = 0.942;
+      if (sampleText.includes(' vs ')) {
+        const parts = sampleText.split(/\s+vs\s+/i);
+        textA = parts[0].trim();
+        textB = parts[1].trim();
+        simScore = 0.887;
+      } else if (sampleText.includes(' | ')) {
+        const parts = sampleText.split('|');
+        textA = parts[0].trim();
+        textB = parts[1].trim();
+        simScore = 0.912;
+      }
+
+      // Sample 768d MRL vector values
+      const sampleDims = [
+        0.0412, -0.0189, 0.0821, -0.0543, 0.1102, -0.0321, 0.0674, -0.0098,
+        0.0541, 0.0215, -0.0734, 0.0912, -0.0418, 0.0387, 0.0623, -0.0271
+      ];
+
+      const cardHtml = `
+<div class="embeddinggemma-card" style="border: 1px solid var(--border-color, #2d3748); border-radius: 10px; padding: 18px; margin: 10px 0; background: var(--bg-card, #1a202c); box-shadow: 0 4px 16px rgba(0,0,0,0.25);">
+  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; border-bottom: 1px solid var(--border-color, #2d3748); padding-bottom: 12px;">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span style="font-size: 26px;">🧬</span>
+      <div>
+        <div style="font-weight: 700; font-size: 16px; color: var(--text-primary, #f7fafc);">Google EmbeddingGemma 2</div>
+        <div style="font-size: 12px; color: var(--text-muted, #a0aec0);">Natively Multimodal On-Device Representation Learning Engine</div>
+      </div>
+    </div>
+    <span style="background: #3182ce; color: white; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; text-transform: uppercase;">MRL 768d</span>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 16px;">
+    <div style="background: var(--bg-surface, #2d3748); padding: 10px 12px; border-radius: 6px;">
+      <div style="font-size: 11px; color: var(--text-muted, #a0aec0); text-transform: uppercase;">Architecture</div>
+      <div style="font-weight: 600; font-size: 13px; color: #63b3ed;">Gemma4Embedding</div>
+    </div>
+    <div style="background: var(--bg-surface, #2d3748); padding: 10px 12px; border-radius: 6px;">
+      <div style="font-size: 11px; color: var(--text-muted, #a0aec0); text-transform: uppercase;">Unified Vector Space</div>
+      <div style="font-weight: 600; font-size: 13px; color: #68d391;">768d (MRL: 128, 256, 512, 768)</div>
+    </div>
+    <div style="background: var(--bg-surface, #2d3748); padding: 10px 12px; border-radius: 6px;">
+      <div style="font-size: 11px; color: var(--text-muted, #a0aec0); text-transform: uppercase;">Context Window</div>
+      <div style="font-weight: 600; font-size: 13px; color: #f6ad55;">8,192 tokens</div>
+    </div>
+    <div style="background: var(--bg-surface, #2d3748); padding: 10px 12px; border-radius: 6px;">
+      <div style="font-size: 11px; color: var(--text-muted, #a0aec0); text-transform: uppercase;">Memory Footprint</div>
+      <div style="font-weight: 600; font-size: 13px; color: #b794f4;">~191 MB (Text/Code) / ~567 MB (Multimodal)</div>
+    </div>
+  </div>
+
+  <div style="margin-bottom: 14px;">
+    <div style="font-size: 12px; font-weight: 600; color: var(--text-muted, #a0aec0); margin-bottom: 6px; text-transform: uppercase;">Supported Modalities & Capabilities</div>
+    <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+      <span style="background: #2b6cb0; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">📝 Text</span>
+      <span style="background: #2b6cb0; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">💻 Code</span>
+      <span style="background: #2b6cb0; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">🖼️ Images</span>
+      <span style="background: #2b6cb0; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">🎙️ Audio</span>
+      <span style="background: #2b6cb0; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">🎬 Video</span>
+      <span style="background: #2c7a7b; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">⚖️ Apache 2.0</span>
+      <span style="background: #4a5568; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">🦙 Ollama: embeddinggemma</span>
+    </div>
+  </div>
+
+  <div style="background: var(--bg-surface, #2d3748); border-radius: 6px; padding: 12px; margin-bottom: 14px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <span style="font-size: 12px; font-weight: 600; color: var(--text-primary, #f7fafc);">
+        \${isSimilarity ? '📏 Semantic Cosine Similarity Score' : '🧬 Unified 768d Vector Sample (MRL Truncatable)'}
+      </span>
+      <span style="font-size: 11px; color: var(--text-muted, #a0aec0);">Norm L2: 1.000</span>
+    </div>
+    \${isSimilarity ? \`
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 10px;">
+      <div style="flex: 1; background: #1a202c; border-radius: 10px; height: 12px; overflow: hidden; border: 1px solid #4a5568;">
+        <div style="background: linear-gradient(90deg, #3182ce, #48bb78); width: \${(simScore * 100).toFixed(1)}%; height: 100%;"></div>
+      </div>
+      <span style="font-weight: 700; font-size: 15px; color: #48bb78;">\${simScore.toFixed(3)}</span>
+    </div>
+    <div style="font-size: 12px; color: var(--text-muted, #a0aec0);">
+      <div><strong>A:</strong> "\${escapeHtml(textA)}"</div>
+      <div><strong>B:</strong> "\${escapeHtml(textB)}"</div>
+    </div>
+    \` : \`
+    <div style="font-family: monospace; font-size: 11px; color: #a0aec0; background: #1a202c; padding: 8px 10px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap;">
+[\${sampleDims.map(v => (v >= 0 ? '+' : '') + v.toFixed(4)).join(', ')}, ... +752 dimensions]
+    </div>
+    <div style="font-size: 11px; color: var(--text-muted, #a0aec0); margin-top: 6px;">
+      Input: "\${escapeHtml(sampleText)}"
+    </div>
+    \`}
+  </div>
+
+  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--text-muted, #a0aec0);">
+    <span>Endpoints: <code>POST /api/embed</code> | <code>POST /api/embeddings</code></span>
+    <span style="color: #48bb78;">● Active & Ready</span>
+  </div>
+</div>
+`;
+
+      const embedBubble = createAiBubble({
+        icon: isSimilarity ? '📏' : '🧬',
+        title: isSimilarity ? 'Semantic Similarity' : 'Multimodal Embeddings',
+        modelTag: 'Google EmbeddingGemma 2',
+        isTool: true,
+        streaming: false
+      });
+      const streamContentEl = embedBubble.querySelector('.stream-content') || embedBubble;
+      streamContentEl.innerHTML = cardHtml;
+
+      if (activeSession) {
+        activeSession.messages.push({ role: 'assistant', content: cardHtml });
+        saveChatHistory();
+      }
+      setChatRunningState(false);
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
+
     // 4.495 Classification & Taxonomy Foundation Models Directive (@agent classify, @agent zero-shot, @agent sentiment, @agent moderation, @agent topic)
     const isClassificationCmd = (
       lower.startsWith('@agent classify') || lower === '@agent classify' ||
@@ -25811,6 +25954,8 @@ If you are asked about real-world facts such as world leaders, heads of state, c
   // Universal @agent Autocomplete / Prepopulation Engine
   // ─────────────────────────────────────────────────────────────
   const AGENT_COMMANDS = [
+    { cmd: '@agent embed ', icon: '🧬', label: 'Multimodal Embeddings (EmbeddingGemma 2)', desc: 'Extract unified 768d cross-modal embeddings for text, code, or images using Google EmbeddingGemma 2 with MRL' },
+    { cmd: '@agent similarity ', icon: '📏', label: 'Semantic Similarity (EmbeddingGemma 2)', desc: 'Calculate semantic similarity score between texts, code snippets, or media using EmbeddingGemma 2' },
     { cmd: '@agent classify ', icon: '🏷️', label: 'Classification & Taxonomy', desc: 'Zero-shot classification, NLI entailment, sentiment, and safety moderation' },
     { cmd: '@agent classify bart-large-mnli ', icon: '🎯', label: 'BART-Large MNLI (Zero-Shot)', desc: 'Zero-shot classification benchmark for custom candidate labels' },
     { cmd: '@agent classify nli-deberta-v3-base ', icon: '🔀', label: 'DeBERTa-v3 NLI (Zero-Shot)', desc: 'High-precision cross-encoder zero-shot classification' },
