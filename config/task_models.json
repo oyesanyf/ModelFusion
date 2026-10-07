@@ -69,16 +69,22 @@
   "text_processing": {
     "feature-extraction": {
       "pipeline": "feature-extraction",
-      "description": "Extract feature embeddings from text",
+      "description": "Google EmbeddingGemma 2: High-throughput feature extraction and representation learning across text, code, and multimodal inputs.",
       "supports_file": true,
       "example_text": "def add(a,b): return a+b",
-      "best_model": "BAAI/bge-large-en-v1.5",
-      "model_author": "BAAI",
+      "best_model": "google/embeddinggemma-2",
+      "model_author": "google",
       "downloads": 5470967,
       "likes": 551,
       "score": 0.5,
       "last_updated": null,
       "alternative_models": [
+        {
+          "model_id": "BAAI/bge-large-en-v1.5",
+          "author": "BAAI",
+          "score": 0.5,
+          "downloads": 5470967
+        },
         {
           "model_id": "jinaai/jina-embeddings-v3",
           "author": "jinaai",
@@ -1276,16 +1282,22 @@
     },
     "sentence-similarity": {
       "pipeline": "sentence-similarity",
-      "description": "Perform sentence similarity analysis",
+      "description": "Google EmbeddingGemma 2: Natively multimodal on-device embeddings mapping text, code, images, video, and audio to a unified 768d space with Matryoshka Representation Learning (MRL).",
       "supports_file": true,
       "example_text": "Sample text for analysis",
-      "best_model": "sentence-transformers/all-MiniLM-L6-v2",
-      "model_author": "sentence-transformers",
+      "best_model": "google/embeddinggemma-2",
+      "model_author": "google",
       "downloads": 86273245,
       "likes": 3725,
       "score": 0.5,
       "last_updated": null,
       "alternative_models": [
+        {
+          "model_id": "sentence-transformers/all-MiniLM-L6-v2",
+          "author": "sentence-transformers",
+          "score": 0.5,
+          "downloads": 86273245
+        },
         {
           "model_id": "sentence-transformers/all-mpnet-base-v2",
           "author": "sentence-transformers",
