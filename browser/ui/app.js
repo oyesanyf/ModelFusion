@@ -17330,8 +17330,8 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     }
 
     // 3. ACDSO AutoML Table Extraction (Supports URLs and Attached Datasets)
-    if (lower.startsWith('/acdso') || lower.startsWith('@agent acdso')) {
-      const explicitUrl = cmd.replace(/\/acdso|@agent acdso/i, '').trim();
+    if (lower.startsWith('/acdso') || lower.startsWith('@agent acdso') || lower.startsWith('@acdso') || /^(?:@agent\s+|@|\/)?acdso\b/i.test(cmd.trim())) {
+      const explicitUrl = cmd.replace(/^(?:@agent\s+|@|\/)?acdso\s*/i, '').trim();
       if (!explicitUrl) {
         const datasetFile = currentAttachments.find(f => f.isDataset || f.name.endsWith('.csv') || f.name.endsWith('.tsv'));
         if (datasetFile && datasetFile.content) {
