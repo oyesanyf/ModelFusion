@@ -1,4 +1,4 @@
-// Rigorous Automated Test Harness for ALL 108 Tools across ALL 15 Categories
+// Rigorous Automated Test Harness for ALL 109 Tools across ALL 15 Categories
 // Tests Alphabetical Ordering, Button Attributes, Command Parsing, Intent Routing,
 // Question-Crafter Mismatch Detection, Emotion Formatting, and Universal Help System.
 
@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 
-console.log('⚡ Starting Comprehensive Test Suite for ALL 108 Tools across 15 Categories...\n');
+console.log('⚡ Starting Comprehensive Test Suite for ALL 109 Tools across 15 Categories...\n');
 
 const rootDir = path.resolve(__dirname, '..');
 const indexHtmlPath = path.join(rootDir, 'browser', 'ui', 'index.html');
@@ -95,13 +95,13 @@ while ((catBlockMatch = catBlockRegex.exec(indexHtml)) !== null) {
   catIdx++;
 }
 
-assert.strictEqual(totalToolsCount, 108, `Expected exactly 108 tools, found ${totalToolsCount}`);
-console.log(`  ✅ Exactly 108 tool buttons verified with non-empty labels, tags, and actions across all 15 categories!`);
+assert.strictEqual(totalToolsCount, 109, `Expected exactly 109 tools, found ${totalToolsCount}`);
+console.log(`  ✅ Exactly 109 tool buttons verified with non-empty labels, tags, and actions across all 15 categories!`);
 
 // =========================================================================
 // TEST 3: Intent Routing & Non-Falling-Through to Default Web Search
 // =========================================================================
-console.log('\n--- Test 3: Command Routing & Intent Protection for All 108 Tools ---');
+console.log('\n--- Test 3: Command Routing & Intent Protection for All 109 Tools ---');
 
 // Extract shouldRouteToWeb from app.js to verify tools are never accidentally sent to web search
 const fnStart = appJs.indexOf('function shouldRouteToWeb(query, mode) {');
@@ -277,5 +277,5 @@ for (const cat of helpCategories) {
 console.log(`  ✅ All 15 category help entries verified in HELP_CATEGORIES registry`);
 
 console.log('\n=================================================================');
-console.log('🎉 ALL 108 TOOLS & CAPABILITIES RIGOROUSLY TESTED AND PASSED 100%');
+console.log('🎉 ALL 109 TOOLS & CAPABILITIES RIGOROUSLY TESTED AND PASSED 100%');
 console.log('=================================================================\n');

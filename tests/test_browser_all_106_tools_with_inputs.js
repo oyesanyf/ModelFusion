@@ -73,8 +73,8 @@ while ((catBlockMatch = catBlockRegex.exec(indexHtml)) !== null) {
 }
 
 assert.strictEqual(categories.length, 15, `Expected exactly 15 categories, found ${categories.length}`);
-assert.strictEqual(allTools.length, 108, `Expected exactly 108 tools, found ${allTools.length}`);
-console.log(`✓ Inventory Verified: exactly 15 categories and 108 tools extracted from index.html.\n`);
+assert.strictEqual(allTools.length, 109, `Expected exactly 109 tools, found ${allTools.length}`);
+console.log(`✓ Inventory Verified: exactly 15 categories and 109 tools extracted from index.html.\n`);
 
 // =========================================================================
 // 2. Realistic Domain-Tailored Inputs Registry for all 106 Tools
@@ -180,12 +180,13 @@ const TOOL_INPUTS = {
   'tool_selfies_ted': 'SELFIES: [C][C][Branch1][C][O][C][=O] - inverse molecular design for non-toxic solvent replacement',
   'tool_smi_ted': 'Predict dipole moment and HOMO-LUMO bandgap energy for conjugated organic photovoltaic donor polymers',
 
-  // Utilities & System (13)
+  // Utilities & System (14)
   'tool_active_model': '',
   'tool_audit_comprehensive': '',
   'tool_audit_menus': '',
   'tool_benchmark': '',
   'tool_db_check': '',
+  'tool_pull_model': '',
   'tool_export': '',
   'tool_sys_info': '',
   'tool_help': '',
@@ -627,7 +628,7 @@ I'm sorry, but I cannot assist with that request.`;
 
   // Write comprehensive report
   const finalReport = {
-    reportTitle: 'HugOS Browser 108 Menu Tools Comprehensive E2E Test Report',
+    reportTitle: 'HugOS Browser 109 Menu Tools Comprehensive E2E Test Report',
     generatedAt: new Date().toISOString(),
     environment: {
       platform: process.platform,
@@ -650,5 +651,5 @@ I'm sorry, but I cannot assist with that request.`;
   console.log(`💾 Full report successfully generated and saved to:`);
   console.log(`   ${reportJsonPath}\n`);
 
-  console.log('🌟 ALL 108 BROWSER TOOLS VERIFIED AND PASSED 100% GREEN! 🌟');
+  console.log('🌟 ALL 109 BROWSER TOOLS VERIFIED AND PASSED 100% GREEN! 🌟');
 })();

@@ -30,7 +30,7 @@ compact_menu = {
         ("Window Scroll", "@agent desktop-scroll ", "tool_desktop_scroll", "📜", "@scroll"),
     ],
     "Data & Spreadsheets (CSV/Excel)": [
-        ("Automated ML", "@agent acdso ", "tool_acdso", "📊", "@acdso"),
+        ("ACDSO AutoML", "@agent acdso ", "tool_acdso", "📊", "@acdso"),
         ("Data Insights", "@agent dataanalyst ", "tool_dataanalyst", "🔬", "@dataanalyst"),
         ("Data Science Flow", "@agent datascience ", "tool_datascience", "📈", "@datascience"),
         ("Decision Optimizer", "@agent decision ", "tool_decision", "⚖️", "@decision"),
