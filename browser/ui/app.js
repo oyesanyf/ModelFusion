@@ -15196,19 +15196,23 @@ Respond with ONLY a valid JSON object matching this schema:
       return;
     }
 
-    // Fast clear/reset/new chat intercept
-    if (/^(?:@agent\s+|@|\/)?(?:clear|new|reset)\b/i.test(cmd)) {
-      startNewChat();
+    // Direct routing for clearing or removing saved candidate resume
+    if (/^(?:@agent\s+|@|\/)?(?:apply[- ]?jobs?|jobs?)\s+(?:--clear-resume|--remove-resume)\b/i.test(cmd) || /^(?:@agent\s+|@|\/)?(?:clear-resume|remove-resume)\b/i.test(cmd)) {
+      if (typeof removeSavedResume === 'function') {
+        removeSavedResume();
+      } else if (typeof window !== 'undefined' && typeof window.removeSavedResume === 'function') {
+        window.removeSavedResume();
+      }
+      if (typeof termLog === 'function') {
+        termLog('[HITL JOBS] 🗑️ Saved resume removed successfully. You can upload a new resume anytime.', 'info');
+      }
       setChatRunningState(false);
       return;
     }
 
-    // Direct routing for clearing or removing saved candidate resume
-    if (/^(?:@agent\s+|@|\/)?(?:apply[- ]?jobs?|jobs?)\s+(?:--clear-resume|--remove-resume)\b/i.test(cmd) || /^(?:@agent\s+|@|\/)?(?:clear-resume|remove-resume)\b/i.test(cmd)) {
-      removeSavedResume();
-      if (typeof termLog === 'function') {
-        termLog('[HITL JOBS] 🗑️ Saved resume removed successfully. You can upload a new resume anytime.', 'info');
-      }
+    // Fast clear/reset/new chat intercept
+    if (/^(?:@agent\s+|@|\/)?(?:clear(?!-resume)|new|reset)\b/i.test(cmd)) {
+      startNewChat();
       setChatRunningState(false);
       return;
     }
@@ -20275,6 +20279,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       skillYears: {},
       coverLetterSnippet: '',
       hasUploadedResume: false,
+      resumeRemoved: false,
       screeningQuestions: []
     };
 
@@ -20287,7 +20292,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       } catch (_) {}
     }
 
-    if (typeof attachedFiles !== 'undefined' && Array.isArray(attachedFiles) && attachedFiles.length > 0) {
+    if (!profile.resumeRemoved && typeof attachedFiles !== 'undefined' && Array.isArray(attachedFiles) && attachedFiles.length > 0) {
       const docFile = attachedFiles.find(f => /\.(pdf|docx?|txt|rtf)$/i.test(f.name || f.path || ''));
       if (docFile) {
         profile.resumeFileName = docFile.name || (typeof pathBasename === 'function' ? pathBasename(docFile.path) : docFile.path);
@@ -20314,7 +20319,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       profile.workAuthorization = profile.workAuthorization || 'Citizen / Permanent Resident (No sponsorship required)';
       profile.desiredWorkType = profile.desiredWorkType || 'Remote';
       profile.desiredEmploymentType = profile.desiredEmploymentType || 'Full-time';
-      if (!profile.resumeFileName) {
+      if (!profile.resumeFileName && !profile.resumeRemoved) {
         profile.resumeFileName = 'AI-Security-quantum-resume-2026B.pdf';
         profile.resumeFileSize = '199 KB';
         profile.hasUploadedResume = true;
@@ -20339,6 +20344,64 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     }
     return merged;
   }
+
+  function removeSavedResume() {
+    let prof = getJobApplicantProfile();
+    prof.resumeFileName = '';
+    prof.resumeFileSize = '';
+    prof.hasUploadedResume = false;
+    prof.resumeRemoved = true;
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem('modelfusion_job_applicant_profile', JSON.stringify(prof));
+      } catch (_) {}
+    }
+
+    if (typeof attachedFiles !== 'undefined' && Array.isArray(attachedFiles)) {
+      const remaining = attachedFiles.filter(f => !/\.(pdf|docx?|txt|rtf)$/i.test(f.name || f.path || ''));
+      attachedFiles.length = 0;
+      remaining.forEach(f => attachedFiles.push(f));
+      attachedFiles = remaining;
+      if (typeof renderAttachmentTray === 'function') {
+        renderAttachmentTray();
+      }
+      if (typeof updateToolMenuRelevance === 'function') {
+        updateToolMenuRelevance();
+      }
+    }
+
+    if (typeof window !== 'undefined' && Array.isArray(window.attachedFiles) && window.attachedFiles !== attachedFiles) {
+      const remWin = window.attachedFiles.filter(f => !/\.(pdf|docx?|txt|rtf)$/i.test(f.name || f.path || ''));
+      window.attachedFiles.length = 0;
+      remWin.forEach(f => window.attachedFiles.push(f));
+      window.attachedFiles = remWin;
+    }
+
+    if (typeof document !== 'undefined') {
+      const rfp = document.getElementById('resume-file-picker');
+      if (rfp) rfp.value = '';
+      const activeName = document.getElementById('active-resume-name');
+      if (activeName) activeName.textContent = 'None uploaded';
+      const activeSize = document.getElementById('active-resume-size');
+      if (activeSize) activeSize.textContent = '';
+      const statusEl = document.getElementById('job-autofill-status');
+      if (statusEl) {
+        statusEl.innerHTML = '🗑️ <em>Saved resume removed. Upload a new resume anytime.</em>';
+        statusEl.style.color = '#fbbf24';
+      }
+      const promptCard = document.getElementById('resume-upload-prompt-card');
+      if (promptCard && typeof promptForResumeUploadFirst === 'function') {
+        promptCard.outerHTML = promptForResumeUploadFirst(window._pendingJobGoal || '');
+      }
+    }
+
+    if (typeof termLog === 'function') {
+      termLog('[HITL JOBS] 🗑️ Removed saved resume from active session and local storage.', 'info');
+    }
+
+    return prof;
+  }
+  window.removeSavedResume = removeSavedResume;
 
   function updateCandidateField(key, val) {
     const updates = {};
@@ -20577,7 +20640,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 
   function promptForResumeUploadFirst(goal = '') {
     const prof = getJobApplicantProfile();
-    const hasExisting = prof && prof.hasUploadedResume && prof.resumeFileName;
+    const hasExisting = prof && prof.hasUploadedResume && prof.resumeFileName && !prof.resumeRemoved;
 
     let resumeStatusHtml = '';
     let buttonsHtml = '';
@@ -20602,6 +20665,9 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         </button>
         <button type="button" class="btn-hitl-continue-resume" onclick="window.continueWithCurrentResume('${escapeHtml(goal)}')" style="background: #10b981; border: none; color: #fff; padding: 7px 16px; border-radius: 5px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
           <span>✅</span> <span>Use Current Resume &amp; Continue</span>
+        </button>
+        <button type="button" class="btn-hitl-remove-resume" onclick="window.removeSavedResume()" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; padding: 7px 14px; border-radius: 5px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+          <span>🗑️</span> <span>Remove Saved Resume</span>
         </button>
       `;
     } else {
@@ -20702,6 +20768,9 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           <div style="display: flex; gap: 6px;">
             <button type="button" class="btn-upload-resume" onclick="window.triggerResumeUploadInput('${escapeHtml(goal)}')" style="background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.2); color: #f1f5f9; font-size: 11px; padding: 3px 10px; border-radius: 4px; cursor: pointer;">
               📎 Replace Resume
+            </button>
+            <button type="button" class="btn-remove-resume" onclick="window.removeSavedResume()" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 11px; padding: 3px 8px; border-radius: 4px; cursor: pointer;">
+              🗑️ Remove Saved Resume
             </button>
           </div>
         </div>
@@ -20868,6 +20937,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         resumeFileName: file.name,
         resumeFileSize: `${Math.round(file.size / 1024)} KB`,
         hasUploadedResume: true,
+        resumeRemoved: false,
         screeningQuestions: parsedData.screening_questions || []
       };
 
@@ -21791,9 +21861,14 @@ Analyze the temporal progression across the sampled video keyframes, describing 
                 <span id="active-resume-size" style="color: var(--text-muted); font-size: 10.5px; margin-left: 4px;">(${escapeHtml(prof.resumeFileSize)})</span>
               </div>
             </div>
-            <button type="button" class="btn-upload-resume" onclick="window.uploadResumeFile()" style="background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.4); color: #34d399; font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">
-              Upload / Replace Resume
-            </button>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" class="btn-upload-resume" onclick="window.uploadResumeFile()" style="background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.4); color: #34d399; font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">
+                Upload / Replace Resume
+              </button>
+              <button type="button" class="btn-remove-resume" onclick="window.removeSavedResume()" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.35); color: #f87171; font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">
+                🗑️ Remove Saved Resume
+              </button>
+            </div>
           </div>
 
           <!-- Candidate Profile Editable Inputs Grid -->

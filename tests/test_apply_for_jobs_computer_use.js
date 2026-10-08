@@ -251,13 +251,13 @@ answeredQuestions.forEach((sq, i) => {
 // Verify specific answers against candidate profile dynamically
 const expectedRustYears = (defaultProfile.skillYears && defaultProfile.skillYears['Rust']) || defaultProfile.yearsExperience || '6';
 assert(
-  answeredQuestions[0].answer.includes(expectedRustYears) || answeredQuestions[0].answer.includes('6') || answeredQuestions[0].answer.includes('20+'),
+  answeredQuestions[0].answer.includes(expectedRustYears),
   'Rust experience should match candidate profile skillYears or yearsExperience'
 );
 
 const expectedPythonYears = (defaultProfile.skillYears && defaultProfile.skillYears['Python']) || defaultProfile.yearsExperience || '8';
 assert(
-  answeredQuestions[1].answer.includes(expectedPythonYears) || answeredQuestions[1].answer.includes('8') || answeredQuestions[1].answer.includes('20+'),
+  answeredQuestions[1].answer.includes(expectedPythonYears),
   'Python experience should match candidate profile skillYears or yearsExperience'
 );
 
@@ -384,6 +384,206 @@ assert(workspaceHtml.includes('btn-job-abort'), 'Workspace must have abort butto
 
 console.log('✅ Test 10 Passed: Full HITL Job Application Workspace HTML rendered and validated.\n');
 
+// =========================================================================
+// 11. Saved Resume Removal & State Clearing Guarantee
+// =========================================================================
+console.log('--- Test 11: Saved Resume Removal & State Clearing Guarantee ---');
+
+// 11.1 Static audit: Verify removeSavedResume is declared and exported to window in app.js
+assert(
+  appJs.includes('function removeSavedResume('),
+  'app.js must declare function removeSavedResume()'
+);
+assert(
+  appJs.includes('window.removeSavedResume = removeSavedResume'),
+  'removeSavedResume must be exported to window in app.js'
+);
+
+// 11.2 Verify function is executable in sandbox environment
+assert.strictEqual(
+  typeof sandbox.removeSavedResume === 'function' || typeof sandbox.window.removeSavedResume === 'function',
+  true,
+  'removeSavedResume must be available as a callable function in sandbox or window'
+);
+const removeSavedResumeFn = sandbox.removeSavedResume || sandbox.window.removeSavedResume;
+
+// 11.3 Direct routing command regex parity audit
+const clearResumeDispatchRegex = /^(?:@agent\s+|@|\/)?(?:apply[- ]?jobs?|jobs?)\s+(?:--clear-resume|--remove-resume)\b/i;
+const bareClearResumeDispatchRegex = /^(?:@agent\s+|@|\/)?(?:clear-resume|remove-resume)\b/i;
+
+const commandVectors = [
+  '@agent apply-jobs --clear-resume',
+  '@agent apply-jobs --remove-resume',
+  '@agent jobs --clear-resume',
+  '/apply-jobs --clear-resume',
+  'apply-jobs --clear-resume',
+  '@agent clear-resume',
+  '@agent remove-resume',
+  '/clear-resume',
+  '@clear-resume',
+  'clear-resume'
+];
+
+commandVectors.forEach(cmd => {
+  const matches = clearResumeDispatchRegex.test(cmd) || bareClearResumeDispatchRegex.test(cmd);
+  assert.strictEqual(matches, true, `Command routing regex must match directive: "${cmd}"`);
+});
+
+// 11.3.1 Static AST / ordering audit: resume removal handler must precede chat clear intercept
+const clearResumeHandlerIdx = appJs.indexOf('Direct routing for clearing or removing saved candidate resume');
+const chatClearHandlerIdx = appJs.indexOf('Fast clear/reset/new chat intercept');
+assert(clearResumeHandlerIdx !== -1, 'app.js must contain Direct routing for clearing or removing saved candidate resume');
+assert(chatClearHandlerIdx !== -1, 'app.js must contain Fast clear/reset/new chat intercept');
+assert(
+  clearResumeHandlerIdx < chatClearHandlerIdx,
+  'removeSavedResume() routing handler must be ordered BEFORE chat clear/reset handler in executeCliCommand'
+);
+
+// 11.3.2 Regex hardening audit: Chat clear regex must use negative lookahead to prevent collision with clear-resume
+assert(
+  /if\s*\(\/\^\(\?:@agent.*?clear\(\?!-resume\)\|new\|reset.*?\/i\.test\(cmd\)\)/.test(appJs),
+  'Chat clear regex in app.js must include negative lookahead (?!-resume) to prevent collision with clear-resume'
+);
+
+// 11.3.3 End-to-end command router dispatch simulation (executeCliCommand flow)
+function simulateCliRouter(rawCmd) {
+  let cmd = (rawCmd || '').trim();
+  if (!cmd) return 'noop';
+
+  // Normalize slash command to @agent directive (app.js lines 15112-15119)
+  if (cmd.startsWith('/') && !cmd.startsWith('//')) {
+    const stripped = cmd.slice(1).trim();
+    if (stripped.toLowerCase().startsWith('agent ')) {
+      cmd = '@' + stripped;
+    } else {
+      cmd = '@agent ' + stripped;
+    }
+  }
+
+  // Resume removal intercept (ordered first in app.js lines 15199-15211)
+  if (/^(?:@agent\s+|@|\/)?(?:apply[- ]?jobs?|jobs?)\s+(?:--clear-resume|--remove-resume)\b/i.test(cmd) || /^(?:@agent\s+|@|\/)?(?:clear-resume|remove-resume)\b/i.test(cmd)) {
+    return 'removeSavedResume';
+  }
+
+  // Fast clear/reset/new chat intercept (ordered second in app.js lines 15213-15218)
+  if (/^(?:@agent\s+|@|\/)?(?:clear(?!-resume)|new|reset)\b/i.test(cmd)) {
+    return 'startNewChat';
+  }
+
+  return 'other';
+}
+
+const explicitResumeRemovalVectors = [
+  '@agent clear-resume',
+  '/clear-resume',
+  '@clear-resume',
+  'clear-resume',
+  '@agent apply-jobs --clear-resume',
+  '@agent apply-jobs --remove-resume',
+  '@agent jobs --clear-resume',
+  '/apply-jobs --clear-resume',
+  'apply-jobs --clear-resume',
+  '@agent remove-resume',
+  '/remove-resume',
+  '@remove-resume',
+  'remove-resume'
+];
+
+explicitResumeRemovalVectors.forEach(cmd => {
+  const target = simulateCliRouter(cmd);
+  assert.strictEqual(
+    target,
+    'removeSavedResume',
+    `Directive "${cmd}" must cleanly route to removeSavedResume() and NOT trigger startNewChat()`
+  );
+  assert.notStrictEqual(
+    target,
+    'startNewChat',
+    `Directive "${cmd}" must NEVER trigger startNewChat()`
+  );
+});
+
+const chatResetVectors = [
+  '@agent clear',
+  '/clear',
+  '@clear',
+  'clear',
+  '@agent new',
+  '/new',
+  'new',
+  '@agent reset',
+  '/reset',
+  'reset'
+];
+
+chatResetVectors.forEach(cmd => {
+  const target = simulateCliRouter(cmd);
+  assert.strictEqual(target, 'startNewChat', `Chat clear directive "${cmd}" must route to startNewChat()`);
+});
+
+// 11.4 Seed active candidate profile and staged document attachments
+sandbox.saveJobApplicantProfile({
+  fullName: 'Jordan Taylor',
+  email: 'jordan.taylor@example.com',
+  phone: '555-0199',
+  resumeFileName: 'Jordan_Taylor_CV.pdf',
+  resumeFileSize: '142 KB',
+  hasUploadedResume: true,
+  resumeRemoved: false
+});
+
+const profBeforeRemoval = sandbox.getJobApplicantProfile();
+assert.strictEqual(profBeforeRemoval.resumeFileName, 'Jordan_Taylor_CV.pdf');
+assert.strictEqual(profBeforeRemoval.hasUploadedResume, true);
+
+// Staged files: 1 resume document + 1 dataset file
+sandbox.attachedFiles = [
+  { id: 'att-doc-1', name: 'Jordan_Taylor_CV.pdf', path: '/resumes/Jordan_Taylor_CV.pdf' },
+  { id: 'att-data-2', name: 'telemetry.csv', path: '/data/telemetry.csv' }
+];
+
+// 11.5 Execute removeSavedResume()
+const resultProf = removeSavedResumeFn();
+
+// 11.6 Assert profile fields cleared and persistent in localStorage
+assert.strictEqual(resultProf.resumeFileName, '', 'resumeFileName must be cleared to empty string');
+assert.strictEqual(resultProf.resumeFileSize, '', 'resumeFileSize must be cleared to empty string');
+assert.strictEqual(resultProf.hasUploadedResume, false, 'hasUploadedResume must be false');
+assert.strictEqual(resultProf.resumeRemoved, true, 'resumeRemoved must be marked true');
+
+// Verify that candidate identity & contact info are preserved (only resume is removed)
+assert.strictEqual(resultProf.fullName, 'Jordan Taylor', 'Candidate fullName must be preserved');
+assert.strictEqual(resultProf.email, 'jordan.taylor@example.com', 'Candidate email must be preserved');
+
+// 11.7 Anti-Re-injection Guarantee: getJobApplicantProfile() must NOT re-inject quantum resume
+const profAfterRemoval = sandbox.getJobApplicantProfile();
+assert.strictEqual(profAfterRemoval.resumeFileName, '', 'getJobApplicantProfile must NOT re-inject default resume when resumeRemoved is true');
+assert.strictEqual(profAfterRemoval.hasUploadedResume, false, 'hasUploadedResume must remain false in getJobApplicantProfile');
+assert.strictEqual(profAfterRemoval.resumeRemoved, true, 'resumeRemoved flag must persist in storage');
+
+// 11.8 Staged attachment filtering: resume documents removed, other attachments preserved
+assert.strictEqual(sandbox.attachedFiles.length, 1, 'Resume attachment must be filtered from attachedFiles');
+assert.strictEqual(sandbox.attachedFiles[0].name, 'telemetry.csv', 'Non-resume attachment must be preserved');
+
+// 11.9 Upload prompt gate: UI must return to "Upload Resume" state without active badge
+const promptCardAfterRemoval = sandbox.promptForResumeUploadFirst('Senior Rust Engineer remote');
+assert(!promptCardAfterRemoval.includes('Active Resume:'), 'Prompt card must not display active resume badge after removal');
+assert(promptCardAfterRemoval.includes('Please upload your resume'), 'Prompt card must show resume upload instructions');
+
+// 11.10 Re-upload resilience: subsequent resume upload clears resumeRemoved flag
+sandbox.saveJobApplicantProfile({
+  resumeFileName: 'New_Candidate_Resume.pdf',
+  resumeFileSize: '180 KB',
+  hasUploadedResume: true,
+  resumeRemoved: false
+});
+const restoredProf = sandbox.getJobApplicantProfile();
+assert.strictEqual(restoredProf.resumeFileName, 'New_Candidate_Resume.pdf', 'New resume must be active');
+assert.strictEqual(restoredProf.hasUploadedResume, true, 'hasUploadedResume must be true after new upload');
+assert.strictEqual(restoredProf.resumeRemoved, false, 'resumeRemoved flag must be false after new upload');
+
+console.log('✅ Test 11 Passed: removeSavedResume() successfully clears resume state, attached files, and prevents re-injection.\n');
+
 console.log('========================================================================');
-console.log('🎉 ALL 10 AUTONOMOUS JOB APPLICATION TEST SUITES PASSED WITH 100% SUCCESS!');
+console.log('🎉 ALL 11 AUTONOMOUS JOB APPLICATION TEST SUITES PASSED WITH 100% SUCCESS!');
 console.log('========================================================================\n');
