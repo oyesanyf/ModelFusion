@@ -5021,7 +5021,7 @@ const CATEGORY_KEYWORDS = {
   'classification': ['classification', 'taxonomy', 'nli', 'zeroshot', 'zero-shot', 'mnli', 'deberta', 'multilabel', 'topic', 'classify'],
   'sentiment': ['sentiment', 'emotion', 'emotions', 'goemotions', 'sst2', 'moderation', 'toxic', 'toxicity', 'safety', 'mood', 'feeling'],
   'code': ['code', 'security', 'sast', 'vuln', 'vulnerability', 'vulnerabilities', 'ast', 'transpile', 'dockerfile', 'owasp', 'secret', 'secrets', 'graph-index', 'graph', 'pii-scan', 'vuln-scan', 'api-docs'],
-  'computer_use': ['computer_use', 'computer-use', 'computer', 'os', 'desktop', 'ui-tars', 'uitars', 'grounding', 'mouse', 'keyboard', 'screen-grounding', 'desktop-click', 'desktop-type', 'desktop-scroll', 'click', 'type', 'scroll', 'shopping', 'ticket-booking', 'exam-solver', 'map-directions'],
+  'computer_use': ['computer_use', 'computer-use', 'computer', 'os', 'desktop', 'ui-tars', 'uitars', 'grounding', 'mouse', 'keyboard', 'screen-grounding', 'desktop-click', 'desktop-type', 'desktop-scroll', 'click', 'type', 'scroll', 'shopping', 'ticket-booking', 'exam-solver', 'map-directions', 'apply-jobs', 'apply_jobs', 'apply-job', 'jobs', 'job-application'],
   'tabular': ['tabular', 'data', 'spreadsheets', 'spreadsheet', 'csv', 'excel', 'xlsx', 'parquet', 'acdso', 'automl', 'timeseries', 'eda', 'dataanalyst', 'datascience', 'predict', 'decision'],
   'finance': ['finance', 'markets', 'market', 'sec', '10-k', '10k', 'valuation', 'dcf', 'finbert', 'fingpt', 'stock', 'stocks', 'equity', 'chronos', 'patchtst', 'llama-fin', 'qwen-finance'],
   'vision': ['vision', 'images', 'image', 'photo', 'photos', 'vqa', 'ocr', 'flux', 'yolo', 'florence', 'detection', 'object-detection', 'image-classification', 'video', 'sdxl'],
@@ -11610,7 +11610,7 @@ MANDATORY STYLOMETRIC LAWS:
     const isPureImageCmd = regexResult.taskType === 'image' && /^[@\/]/.test(text);
     const isPureContinuation = CONTINUATION_CMD_REGEX.test(text) && text.length < 35;
     const isToolOrDirective = /^[@\/]/.test(text) ||
-      /^(?:@agent\s+|@|\/)?(?:classify|sentiment|moderation|topic|finance|legal|science|exam-solver|computer-use|ui-tars|screen-grounding|desktop-click|desktop-type|desktop-scroll|shopping|ticket-booking|map-directions|summarize|audit|pe|security|watermark|humanize|translate|rest-rl|restrl|benchmark|sys[-_ ]?info|help|clear|cls|reset)\b/i.test(text);
+      /^(?:@agent\s+|@|\/)?(?:classify|sentiment|moderation|topic|finance|legal|science|exam-solver|computer-use|ui-tars|screen-grounding|desktop-click|desktop-type|desktop-scroll|shopping|ticket-booking|map-directions|apply-jobs|applyjobs|apply-job|job-application|jobapplication|jobs|career-ops|summarize|audit|pe|security|watermark|humanize|translate|rest-rl|restrl|benchmark|sys[-_ ]?info|help|clear|cls|reset)\b/i.test(text);
     const hasExplicitSizing = regexResult.targetPages > 0 || regexResult.targetChapters > 0 || regexResult.targetWords > 0;
     const hasAmbiguousKeywords = /\b(page|pages|chapter|chapters|book|novel|essay|continue|keep\s*going|next\s*part|more|boost|deep|length|section|parts|thinking|reasoning)\b/i.test(text);
 
@@ -15196,6 +15196,23 @@ Respond with ONLY a valid JSON object matching this schema:
       return;
     }
 
+    // Fast clear/reset/new chat intercept
+    if (/^(?:@agent\s+|@|\/)?(?:clear|new|reset)\b/i.test(cmd)) {
+      startNewChat();
+      setChatRunningState(false);
+      return;
+    }
+
+    // Direct routing for clearing or removing saved candidate resume
+    if (/^(?:@agent\s+|@|\/)?(?:apply[- ]?jobs?|jobs?)\s+(?:--clear-resume|--remove-resume)\b/i.test(cmd) || /^(?:@agent\s+|@|\/)?(?:clear-resume|remove-resume)\b/i.test(cmd)) {
+      removeSavedResume();
+      if (typeof termLog === 'function') {
+        termLog('[HITL JOBS] 🗑️ Saved resume removed successfully. You can upload a new resume anytime.', 'info');
+      }
+      setChatRunningState(false);
+      return;
+    }
+
     const lower = cmd.toLowerCase();
     const parsedMulti = parseMultiAgentDirectives(cmd);
 
@@ -16186,8 +16203,8 @@ ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
         return;
       }
       // Check if cleanGoal targets ticket booking, travel, or any autonomous computer use tool
-      if (/^(?:@agent\s+)?(?:ticket-booking|ticket|tickets|flight-booking|flight|flights|book-ticket|book-flight|book\s+(?:tickets?|flights?|a\s+flight|a\s+ticket|me\s+(?:a\s+)?(?:ticket|flight))|exam-solver|map-directions|shopping|computer-use|ui-tars|screen-grounding|desktop-click|desktop-type|desktop-scroll)\b/i.test(cleanGoal) ||
-          /^(?:computer\s+use|ui\s+tars|exam\s+solver|map\s+directions|screen\s+grounding|desktop\s+(?:click|type|scroll))\b/i.test(cleanGoal) ||
+      if (/^(?:@agent\s+)?(?:ticket-booking|ticket|tickets|flight-booking|flight|flights|book-ticket|book-flight|book\s+(?:tickets?|flights?|a\s+flight|a\s+ticket|me\s+(?:a\s+)?(?:ticket|flight))|exam-solver|map-directions|shopping|computer-use|ui-tars|screen-grounding|desktop-click|desktop-type|desktop-scroll|apply-jobs|applyjobs|apply-job|job-application|jobapplication|jobs|career-ops)\b/i.test(cleanGoal) ||
+          /^(?:computer\s+use|ui\s+tars|exam\s+solver|map\s+directions|screen\s+grounding|desktop\s+(?:click|type|scroll)|apply\s+(?:for\s+)?(?:a\s+)?jobs?)\b/i.test(cleanGoal) ||
           /^(?:book|reserve)\s+(?:me\s+)?(?:a\s+)?(?:tickets?|flights?|seats?|trips?|passes?|cabs?|rooms?|hotels?)\b/i.test(cleanGoal) ||
           /\b(?:book|reserve)\s+(?:me\s+)?(?:a\s+)?(?:tickets?|flights?)\b/i.test(cleanGoal)) {
         if (!cleanGoal.startsWith('@agent ') && !cleanGoal.startsWith('/') && !cleanGoal.startsWith('@')) {
@@ -22365,7 +22382,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     if (!text) return { isLongFormWriting: false };
 
     // Explicit exclusion guard: ticket booking, travel, computer use, and direct requests are NEVER long-form writing!
-    if (/^(?:@agent\s+)?(?:ticket-booking|ticket|tickets|flight-booking|flight|flights|book-ticket|book-flight|exam-solver|map-directions|shopping|computer-use|ui-tars|screen-grounding|desktop-click|desktop-type|desktop-scroll)\b/i.test(text) ||
+    if (/^(?:@agent\s+)?(?:ticket-booking|ticket|tickets|flight-booking|flight|flights|book-ticket|book-flight|exam-solver|map-directions|shopping|computer-use|ui-tars|screen-grounding|desktop-click|desktop-type|desktop-scroll|apply-jobs|applyjobs|apply-job|job-application|jobs|career-ops)\b/i.test(text) ||
         /\b(?:book|reserve)\s+(?:me\s+)?(?:a\s+)?(?:tickets?|flights?|hotels?|seats?|trips?|passes?|cabs?|rooms?|tables?)\b/i.test(text) ||
         /\b(?:from\s+[A-Za-z0-9\s,.-]+?\s+to\s+[A-Za-z0-9\s,.-]+)\b/i.test(text)) {
       return { isLongFormWriting: false };

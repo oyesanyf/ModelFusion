@@ -1,6 +1,6 @@
 /**
  * tests/test_all_computer_use_tools.js
- * Comprehensive Verification & Validation Suite for ALL 10 Computer Use Tools
+ * Comprehensive Verification & Validation Suite for ALL 11 Computer Use Tools
  * Across ModelFusion Master CLI, HugOS Browser, and UI-TARS Autonomous Engine.
  *
  * Verifies:
@@ -14,11 +14,12 @@
  * 8. Shopping & Price Discovery (@agent shopping)
  * 9. Ticket & Travel Booking (@agent ticket-booking)
  * 10. UI-TARS Agent Loop (@agent ui-tars)
- * 11. Subdomain & Domain Typo Normalization (ww.google.com -> www.google.com)
- * 12. Search Query Extraction & Target URL Rewriting
- * 13. Stale CLI Error Detection & Discarding
- * 14. Universal HITL Workspaces (Exam, Shopping, Booking, Directions, Generic)
- * 15. Clean Execution Badge Display (Suppressing misleading CLI error diagnostics)
+ * 11. Apply for Jobs (@agent apply-jobs)
+ * 12. Subdomain & Domain Typo Normalization (ww.google.com -> www.google.com)
+ * 13. Search Query Extraction & Target URL Rewriting
+ * 14. Stale CLI Error Detection & Discarding
+ * 15. Universal HITL Workspaces (Exam, Shopping, Booking, Directions, Generic)
+ * 16. Clean Execution Badge Display (Suppressing misleading CLI error diagnostics)
  */
 
 const fs = require('fs');
@@ -39,7 +40,7 @@ function assert(condition, message) {
 }
 
 console.log('================================================================');
-console.log('🖥️ Running Comprehensive 10-Tool Computer Use Verification Suite');
+console.log('🖥️ Running Comprehensive 11-Tool Computer Use Verification Suite');
 console.log('================================================================\n');
 
 // Load browser/ui/app.js
@@ -79,12 +80,12 @@ assert(
   'Extracts "machine learning algorithms"'
 );
 
-// --- Group 3: Goal Formatting Across All 10 Computer Use Tools ---
-console.log('\n--- Group 3: Goal Resolution for All 10 Computer Use Tools ---');
+// --- Group 3: Goal Formatting Across All 11 Computer Use Tools ---
+console.log('\n--- Group 3: Goal Resolution for All 11 Computer Use Tools ---');
 
 function resolveComputerUseGoal(cmd) {
   const isComputerUseToolCmd =
-    /^(?:@agent\s+|\/|@)?(?:computer[- ]?use|ui[- ]?tars|screen[- ]?grounding|desktop[- ]?(?:click|type|scroll)|exam[- ]?solver|map[- ]?directions|shopping|shop)\b/i.test(cmd);
+    /^(?:@agent\s+|\/|@)?(?:computer[- ]?use|ui[- ]?tars|screen[- ]?grounding|desktop[- ]?(?:click|type|scroll)|exam[- ]?solver|map[- ]?directions|shopping|shop|apply[- ]?jobs?)\b/i.test(cmd);
 
   const isTicketBookingCmd =
     /^(?:@agent\s+|\/|@)?(?:ticket[- ]?booking|flight[- ]?booking|book[- ]?ticket|book[- ]?flight|tickets?|flights?)\b/i.test(cmd) ||
@@ -95,7 +96,7 @@ function resolveComputerUseGoal(cmd) {
   if (!isComputerUseToolCmd && !isTicketBookingCmd) return null;
 
   let goal = cmd.replace(
-    /^(?:@agent\s+|\/|@)?(?:computer[- ]?use|ui[- ]?tars|screen[- ]?grounding|desktop[- ]?(?:click|type|scroll)|exam[- ]?solver|map[- ]?directions|shopping|shop|ticket[- ]?booking|flight[- ]?booking|book[- ]?ticket|book[- ]?flight|tickets?|flights?|book)(?:\s*[:]\s*|\s+|$)/i,
+    /^(?:@agent\s+|\/|@)?(?:computer[- ]?use|ui[- ]?tars|screen[- ]?grounding|desktop[- ]?(?:click|type|scroll)|exam[- ]?solver|map[- ]?directions|shopping|shop|apply[- ]?jobs?|ticket[- ]?booking|flight[- ]?booking|book[- ]?ticket|book[- ]?flight|tickets?|flights?|book)(?:\s*[:]\s*|\s+|$)/i,
     ''
   ).trim();
 
@@ -118,6 +119,8 @@ function resolveComputerUseGoal(cmd) {
       goal = 'Scroll active window viewport';
     } else if (/ui[- ]?tars\b/i.test(cmd)) {
       goal = 'Inspect active viewport, perceive interactive controls, and execute autonomous OS action plan';
+    } else if (/apply[- ]?jobs?\b/i.test(cmd)) {
+      goal = 'Search and apply for jobs matching candidate profile and resume';
     } else {
       goal = null; // Triggers Goal Required card with interactive pills
     }
@@ -139,6 +142,8 @@ function resolveComputerUseGoal(cmd) {
       goal = `Get map directions for ${goal}`;
     } else if (/exam[- ]?solver\b/i.test(cmd) && !/^(inspect|solve)\b/i.test(goal)) {
       goal = `Inspect active page and solve exam questions: ${goal}`;
+    } else if (/apply[- ]?jobs?\b/i.test(cmd) && !/^(search|apply)\b/i.test(goal)) {
+      goal = `Search and apply for jobs: ${goal}`;
     }
   }
   return goal;
@@ -185,6 +190,10 @@ assert(resolveComputerUseGoal('@agent flight from SFO to JFK') === 'Search and b
 
 // 10. UI-TARS Agent Loop
 assert(resolveComputerUseGoal('@agent ui-tars').includes('perceive interactive controls'), 'Bare @agent ui-tars sets default agent goal');
+
+// 11. Apply for Jobs
+assert(resolveComputerUseGoal('@agent apply-jobs').includes('Search and apply for jobs matching candidate profile'), 'Bare @agent apply-jobs sets default jobs goal');
+assert(resolveComputerUseGoal('@agent apply-jobs Senior Rust Engineer remote') === 'Search and apply for jobs: Senior Rust Engineer remote', 'Formats job search goal');
 
 // --- Group 4: Navigation URL Rewriting for Search Engines ---
 console.log('\n--- Group 4: Target Navigation URL Rewriting ---');
@@ -247,6 +256,8 @@ assert(appJsContent.includes('function buildHitlShoppingWorkspaceHtml'), 'buildH
 assert(appJsContent.includes('function buildHitlBookingWorkspaceHtml'), 'buildHitlBookingWorkspaceHtml is defined in app.js');
 // Check buildHitlDirectionsWorkspaceHtml
 assert(appJsContent.includes('function buildHitlDirectionsWorkspaceHtml'), 'buildHitlDirectionsWorkspaceHtml is defined in app.js');
+// Check buildHitlJobApplicationWorkspaceHtml
+assert(appJsContent.includes('function buildHitlJobApplicationWorkspaceHtml'), 'buildHitlJobApplicationWorkspaceHtml is defined in app.js');
 // Check buildHitlGenericActionWorkspaceHtml
 assert(appJsContent.includes('function buildHitlGenericActionWorkspaceHtml'), 'buildHitlGenericActionWorkspaceHtml is defined in app.js');
 
@@ -263,6 +274,8 @@ assert(mainRsContent.includes('shopping'), 'main.rs supports shopping');
 assert(mainRsContent.includes('ticket-booking'), 'main.rs supports ticket-booking');
 assert(mainRsContent.includes('map-directions'), 'main.rs supports map-directions');
 assert(mainRsContent.includes('exam-solver'), 'main.rs supports exam-solver');
+assert(mainRsContent.includes('apply-jobs'), 'main.rs supports apply-jobs');
+assert(mainRsContent.includes('Search and apply for jobs'), 'main.rs formats apply-jobs goal');
 assert(mainRsContent.includes('Click screen coordinate'), 'main.rs formats click screen coordinate goal');
 assert(mainRsContent.includes('Type text'), 'main.rs formats type text goal');
 assert(mainRsContent.includes('Scroll window'), 'main.rs formats scroll window goal');
@@ -360,6 +373,24 @@ assert(appJsContent.includes('UI-TARS Grounding Action Sequence (Shopping & Deal
 assert(appJsContent.includes('UI-TARS Grounding Action Sequence (Map Directions & Navigation Loop)'), 'Tailored action sequence for Map Directions');
 assert(appJsContent.includes('UI-TARS Grounding Action Sequence (Screen Perception Loop)'), 'Tailored action sequence for Screen Grounding');
 
+// 9.5 Job Application HITL Workspace
+global.buildCareerOpsEvaluationHtml = (job, prof) => '<div class="career-ops-evaluation">Career-Ops Fit Evaluation</div>';
+global.answerScreeningQuestions = () => [
+  { question: 'Years of Rust experience?', answer: '6+ years', source: 'Parsed from Resume' }
+];
+global.getJobApplicantProfile = () => ({ fullName: 'Test Candidate', resumeFileName: 'test.pdf' });
+
+const mockJobs = [
+  { id: 1, title: 'Senior Rust Engineer', company: 'ModelFusion Core', location: 'Remote', salary: '$180,000 - $240,000', matchScore: 98, isRecommended: true }
+];
+const hitlJobExtract = appJsContent.match(/function buildHitlJobApplicationWorkspaceHtml\(postings[\s\S]*?\{([\s\S]*?)\n  \}/);
+assert(Boolean(hitlJobExtract), 'buildHitlJobApplicationWorkspaceHtml is defined in app.js');
+const buildHitlJobApplicationWorkspaceHtml = new Function('postings', 'selectedIdx', 'profile', hitlJobExtract[1]);
+const jobHtml = buildHitlJobApplicationWorkspaceHtml(mockJobs, 0, { fullName: 'Test Candidate', resumeFileName: 'test.pdf' });
+assert(jobHtml.includes('hitl-job-workspace') || jobHtml.includes('Autonomous Job Application'), 'renders job application workspace container');
+assert(jobHtml.includes('Senior Rust Engineer'), 'renders job title');
+assert(jobHtml.includes('btn-job-confirm') || jobHtml.includes('Approve &amp; Submit Application') || jobHtml.includes('Confirm &amp; Submit'), 'renders same-page approve and submit button');
+
 // --- Group 10: Cross-Origin Proxy Fetch Fallback Across All Tools ---
 console.log('\n--- Group 10: Cross-Origin Proxy Fetch Fallback Across All Tools ---');
 assert(appJsContent.includes('fetchTargetHtmlViaProxy'), 'fetchTargetHtmlViaProxy helper is defined');
@@ -391,10 +422,10 @@ assert(!sanitizeComputerUseOutput(chromeSample).toLowerCase().includes('google c
 const ahkSample = '```autohotkey\nCoordMode, Mouse\nMouseMove, 100, 200\n```';
 assert(!sanitizeComputerUseOutput(ahkSample).includes('MouseMove'), 'Strips AutoHotkey script blocks');
 
-// --- Group 12: Universal File Acceptance for All 10 Computer Use Tools ---
-console.log('\n--- Group 12: Universal File Acceptance for ALL 10 Computer Use Tools ---');
+// --- Group 12: Universal File Acceptance for All 11 Computer Use Tools ---
+console.log('\n--- Group 12: Universal File Acceptance for ALL 11 Computer Use Tools ---');
 const isNonFileRegex = /^(?:@agent\s+)?(?:updatedb|update|sys[-_ ]?info|benchmark|export|db-check|db-prune|db-rebuild|db-vacuum|rest-rl|restrl|audit-menus|model|help)\b/i;
-const all10ComputerUseTools = [
+const all11ComputerUseTools = [
   '@agent computer-use',
   '@agent exam-solver',
   '@agent map-directions',
@@ -404,15 +435,16 @@ const all10ComputerUseTools = [
   '@agent screen-grounding',
   '@agent shopping',
   '@agent ticket-booking',
-  '@agent ui-tars'
+  '@agent ui-tars',
+  '@agent apply-jobs'
 ];
 
-all10ComputerUseTools.forEach(tool => {
+all11ComputerUseTools.forEach(tool => {
   const isFileTool = !isNonFileRegex.test(tool);
   assert(isFileTool, `${tool} must evaluate to isFileTool = true for universal file acceptance`);
 });
-console.log(`  ✅ All 10 Computer Use tools verified with universal file acceptance!`);
+console.log(`  ✅ All 11 Computer Use tools verified with universal file acceptance!`);
 
 console.log('\n================================================================');
-console.log(`🎉 ALL 10 COMPUTER USE TOOLS VERIFIED: ${passedTests}/${totalTests} Passed (100% Green)`);
+console.log(`🎉 ALL 11 COMPUTER USE TOOLS VERIFIED: ${passedTests}/${totalTests} Passed (100% Green)`);
 console.log('================================================================');

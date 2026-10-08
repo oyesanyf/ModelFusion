@@ -805,6 +805,10 @@
               <span class="nav-btn-icon">🏠</span>
               <span class="nav-btn-label">Chat</span>
             </button>
+            <button type="button" class="header-nav-btn nav-btn-new-chat" id="btn-header-new-chat" title="New Chat (Clear current page &amp; start fresh)" onclick="startNewChat()">
+              <span class="nav-btn-icon">➕</span>
+              <span class="nav-btn-label">New Chat</span>
+            </button>
           </div>
 
           <!-- Navigation Breadcrumb Bar & View Mode Indicator -->
@@ -872,6 +876,16 @@
 
         <!-- 2. Clean ChatGPT Conversation Stream View -->
         <div class="chatgpt-conversation-view hidden" id="chat-conversation-view">
+          <div class="conversation-header-actions" id="conversation-header-actions" style="display: flex; align-items: center; justify-content: space-between; padding: 6px 14px; border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.08)); background: var(--bg-secondary, rgba(0,0,0,0.2));">
+            <span style="font-size: 11.5px; font-weight: 500; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
+              <span>💬</span> <span id="current-chat-title-badge">Active Conversation</span>
+            </span>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <button type="button" class="action-pill-btn" id="btn-conv-new-chat" onclick="startNewChat()" title="Start New Chat &amp; Clear Current Page" style="cursor: pointer; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8; font-size: 11px; padding: 4px 10px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px;">
+                <span>➕</span> <span>New Chat</span>
+              </button>
+            </div>
+          </div>
           <div class="chat-messages" id="chat-messages">
             <!-- Dynamic conversation messages stream here -->
           </div>
@@ -883,6 +897,7 @@
               <div class="attachment-tray hidden" id="attachment-tray-pinned"></div>
               <div class="floating-input-capsule">
                 <button type="button" class="capsule-btn attach-btn" id="btn-attach-pinned" title="Attach file or dataset (CSV, Excel, Images, Code, Audio, PE Binaries)">📎</button>
+                <button type="button" class="capsule-btn new-chat-btn" id="btn-capsule-new-chat" title="New Chat (Clear current page &amp; start fresh)" onclick="startNewChat()">➕</button>
                 <textarea id="cli-prompt-input-pinned" rows="1" placeholder="Ask HugOS... (Type @agent for tools)" spellcheck="false"></textarea>
                 <div class="agent-autocomplete-dropdown hidden" id="agent-autocomplete-pinned"></div>
                 <button type="button" class="capsule-pill" id="btn-web-mode-pinned" title="Toggle Web Search Mode">
