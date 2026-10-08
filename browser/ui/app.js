@@ -9870,6 +9870,18 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
         temporal.style.color = '#94a3b8';
       }
     }
+
+    if (data.distributional_rl_enabled) {
+      window.distributionalRlEnabled = true;
+      window.distributionalSupportedProfiles = data.supported_risk_profiles || [
+        'Optimistic', 'Neutral', 'WorstCase', 'CVaR', 'AdaptiveCritical'
+      ];
+      const distBadge = document.getElementById('rl-distributional-badge');
+      if (distBadge) {
+        distBadge.textContent = '🛡️ Distributional CVaR';
+        distBadge.style.display = 'inline-block';
+      }
+    }
   }
 
   function updateModelFusionUI(data) {
@@ -14870,6 +14882,17 @@ Respond with ONLY a valid JSON object matching this schema:
     let engine = options.engine || (options.image ? 'clef-flash' : (mode === 'cloud' ? 'clef-flash' : 'strands-decider-2b'));
     const speculativeTarget = typeof window !== 'undefined' ? window.speculativeDomainTarget : null;
 
+    // Mission-critical workflows (Computer Use, Legal, Security, Exam Solver) require worst-case risk protection
+    const isMissionCritical = Boolean(
+      options.taskType === 'computer_use' ||
+      options.taskType === 'legal' ||
+      options.taskType === 'security' ||
+      options.taskType === 'exam_solver' ||
+      /\b(?:computer[-_ ]?use|ui[-_ ]?tars|exam|legal|security|sast)\b/i.test(q)
+    );
+    const riskProfile = options.risk_profile || options.riskProfile || (isMissionCritical ? 'adaptive' : 'optimistic');
+    const cvarAlpha = options.cvar_alpha || options.cvarAlpha || (isMissionCritical ? 0.05 : 0.10);
+
     const ipcUrl = (typeof currentSettings !== 'undefined' && currentSettings.ipcUrl ? currentSettings.ipcUrl : 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
     if (window.isIpcOnline && ipcUrl) {
       try {
@@ -14886,7 +14909,9 @@ Respond with ONLY a valid JSON object matching this schema:
             engine: engine,
             model: options.model || engine,
             task_type: options.taskType || 'intent_routing',
-            temperature: options.temperature || 0.8
+            temperature: options.temperature || 0.8,
+            risk_profile: riskProfile,
+            cvar_alpha: cvarAlpha
           })
         });
         clearTimeout(timeoutId);
@@ -14926,8 +14951,43 @@ Respond with ONLY a valid JSON object matching this schema:
       }
     }
 
-    return evaluateClientSideDecision(q, candidateChoices, { ...options, mode, engine });
+    return evaluateClientSideDecision(q, candidateChoices, { ...options, mode, engine, risk_profile: riskProfile, cvar_alpha: cvarAlpha });
   }
+
+  async function routeDistributionalRL(options = {}) {
+    const ipcUrl = (typeof currentSettings !== 'undefined' && currentSettings.ipcUrl ? currentSettings.ipcUrl : 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+    const complexity = options.complexity !== undefined ? options.complexity : 0.5;
+    const isCode = !!options.is_code;
+    const isTabular = !!options.is_tabular;
+    const isWeb = !!options.is_web;
+    const isMultimodal = !!options.is_multimodal;
+    const promptLen = options.prompt_len || 100;
+    const riskProfile = options.risk_profile || 'adaptive';
+    const cvarAlpha = options.cvar_alpha || 0.10;
+
+    try {
+      const res = await fetchWithTimeout(`${ipcUrl}/api/rl/route`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          complexity,
+          is_code: isCode,
+          is_tabular: isTabular,
+          is_web: isWeb,
+          is_multimodal: isMultimodal,
+          prompt_len: promptLen,
+          risk_profile: riskProfile,
+          cvar_alpha: cvarAlpha
+        }),
+        timeout: 800
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {}
+    return null;
+  }
+  window.routeDistributionalRL = routeDistributionalRL;
 
   function generateDecisionModelCardHtml(decisionRes) {
     if (!decisionRes) return '';

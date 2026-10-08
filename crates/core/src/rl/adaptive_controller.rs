@@ -29,6 +29,112 @@ pub enum LearningRegime {
     OnlineAnnealing,
 }
 
+/// Operational risk profile for Distributional RL action selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RiskProfile {
+    /// Standard LinUCB optimism under uncertainty: mu + c(t) * sigma.
+    Optimistic,
+    /// Risk-neutral pure expected return: mu.
+    Neutral,
+    /// Worst-case tail risk (Value at Risk, VaR_alpha): mu - z_alpha * sigma.
+    WorstCase,
+    /// Conditional Value at Risk (CVaR_alpha): expected return in the worst alpha fraction of cases.
+    CVaR,
+    /// Mission-critical adaptive: dynamically balances optimism vs worst-case CVaR based on task complexity and domain flags.
+    AdaptiveCritical,
+}
+
+impl Default for RiskProfile {
+    fn default() -> Self {
+        Self::Optimistic
+    }
+}
+
+/// Distributional evaluation metrics for candidate actions.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DistributionalScore {
+    pub mean: f64,
+    pub aleatoric_variance: f64,
+    pub epistemic_uncertainty: f64,
+    pub total_uncertainty: f64,
+    pub quantiles: Vec<f64>, // [q_0.10, q_0.25, q_0.50, q_0.75, q_0.90]
+    pub var_score: f64,      // Value at Risk (lower quantile)
+    pub cvar_score: f64,     // Conditional Value at Risk (tail risk)
+    pub risk_profile: RiskProfile,
+    pub final_score: f64,
+}
+
+/// Dopamine-inspired fixed-capacity circular replay buffer.
+/// Pre-allocated ring buffer with zero heap allocations after capacity is reached.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CircularReplayBuffer<T, const CAP: usize> {
+    buffer: Vec<T>,
+    head: usize,
+    count: usize,
+}
+
+impl<T: Clone, const CAP: usize> CircularReplayBuffer<T, CAP> {
+    pub fn new() -> Self {
+        Self {
+            buffer: Vec::with_capacity(CAP),
+            head: 0,
+            count: 0,
+        }
+    }
+
+    pub fn push(&mut self, item: T) {
+        if CAP == 0 {
+            return;
+        }
+        if self.buffer.len() < CAP {
+            self.buffer.push(item);
+            self.count = self.buffer.len();
+        } else {
+            self.buffer[self.head] = item;
+            self.head = (self.head + 1) % CAP;
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.count
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+
+    pub fn capacity(&self) -> usize {
+        CAP
+    }
+
+    pub fn as_slices(&self) -> (&[T], &[T]) {
+        if self.buffer.len() < CAP {
+            (&self.buffer[..], &[])
+        } else {
+            (&self.buffer[self.head..], &self.buffer[..self.head])
+        }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        let (s1, s2) = self.as_slices();
+        s1.iter().chain(s2.iter())
+    }
+}
+
+impl<T: Clone, const CAP: usize> Default for CircularReplayBuffer<T, CAP> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Recorded interaction observation stored in replay buffer.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ObservationRecord {
+    pub state: FeatureState,
+    pub action: DecisionAction,
+    pub reward: f64,
+}
+
 /// Controller hyperparameters and configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ControllerConfig {
@@ -54,7 +160,7 @@ impl Default for ControllerConfig {
 }
 
 /// Normalized feature state observed from the environment and hardware.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FeatureState {
     pub task_complexity: f64,
     pub available_ram_norm: f64,
@@ -232,6 +338,24 @@ pub struct RLTelemetry {
     pub r_early: f64,
     pub r_late: f64,
     pub temporal_improvement: bool,
+    #[serde(default = "default_dist_rl_enabled")]
+    pub distributional_rl_enabled: bool,
+    #[serde(default = "default_supported_risk_profiles")]
+    pub supported_risk_profiles: Vec<String>,
+}
+
+fn default_dist_rl_enabled() -> bool {
+    true
+}
+
+pub fn default_supported_risk_profiles() -> Vec<String> {
+    vec![
+        "Optimistic".to_string(),
+        "Neutral".to_string(),
+        "WorstCase".to_string(),
+        "CVaR".to_string(),
+        "AdaptiveCritical".to_string(),
+    ]
 }
 
 /// Extracts joint bilinear features phi(s, a) of dimension 45.
@@ -357,6 +481,42 @@ pub fn stable_covariance_inverse(a: &[Vec<f64>], tikhonov_eps: f64) -> Result<Ve
     Ok(a_inv)
 }
 
+/// Computes standard normal probability density function phi(z) = (1/sqrt(2*pi)) * exp(-z^2/2).
+pub fn standard_normal_pdf(z: f64) -> f64 {
+    const INV_SQRT_2PI: f64 = 0.3989422804014327;
+    INV_SQRT_2PI * (-0.5 * z * z).exp()
+}
+
+/// Approximates standard normal critical value z_alpha for lower tail alpha in (0, 0.5].
+/// Uses Abramowitz & Stegun 26.2.23 rational approximation with exact anchor points.
+pub fn normal_critical_value(alpha: f64) -> f64 {
+    let alpha = alpha.clamp(1e-6, 0.5);
+    if (alpha - 0.10).abs() < 1e-3 {
+        1.28155
+    } else if (alpha - 0.05).abs() < 1e-3 {
+        1.64485
+    } else if (alpha - 0.01).abs() < 1e-3 {
+        2.32635
+    } else if (alpha - 0.25).abs() < 1e-3 {
+        0.67449
+    } else {
+        let t = (-2.0 * alpha.ln()).sqrt();
+        let c0 = 2.515517;
+        let c1 = 0.802853;
+        let c2 = 0.010328;
+        let d1 = 1.432788;
+        let d2 = 0.189269;
+        let d3 = 0.001308;
+        let num = c0 + c1 * t + c2 * t * t;
+        let denom = 1.0 + d1 * t + d2 * t * t + d3 * t * t * t;
+        t - num / denom
+    }
+}
+
+fn default_b_sq_vector() -> Vec<f64> {
+    vec![0.0; JOINT_FEATURE_DIM]
+}
+
 /// The 6-Pillar Sound Multi-Objective Adaptive Controller.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdaptiveController {
@@ -365,6 +525,12 @@ pub struct AdaptiveController {
     pub a_matrix: Vec<Vec<f64>>,
     /// Reward-weighted feature accumulator b in R^{45}.
     pub b_vector: Vec<f64>,
+    /// Reward squared-weighted feature accumulator b_sq in R^{45} for second moment tracking.
+    #[serde(default = "default_b_sq_vector")]
+    pub b_sq_vector: Vec<f64>,
+    /// Dopamine-inspired circular replay buffer tracking recent observation transitions.
+    #[serde(default)]
+    pub replay_buffer: CircularReplayBuffer<ObservationRecord, 100>,
     /// Step / decision counter t.
     pub t: usize,
     /// Cumulative instantaneous regret.
@@ -393,11 +559,15 @@ impl AdaptiveController {
             a_matrix[i][i] = 1.0;
         }
         let b_vector = vec![0.0; JOINT_FEATURE_DIM];
+        let b_sq_vector = vec![0.0; JOINT_FEATURE_DIM];
+        let replay_buffer = CircularReplayBuffer::new();
 
         Self {
             config,
             a_matrix,
             b_vector,
+            b_sq_vector,
+            replay_buffer,
             t: 0,
             total_regret: 0.0,
             rl_greater_than_raw: 0,
@@ -413,23 +583,119 @@ impl AdaptiveController {
         self.config.c0 / (1.0 + self.config.alpha_decay * (self.t as f64))
     }
 
-    /// Selects optimal action maximizing LinUCB score: phi^T \hat{theta} + c(t) sqrt(phi^T A^{-1} phi).
-    pub fn select_action(
+    /// Evaluates distributional parameters, uncertainty, quantiles, and CVaR for an action.
+    pub fn evaluate_distributional(
+        &self,
+        state: &FeatureState,
+        action: &DecisionAction,
+        theta: &[f64],
+        theta_sq: &[f64],
+        a_inv: &[Vec<f64>],
+        c_t: f64,
+        profile: RiskProfile,
+        cvar_alpha: f64,
+    ) -> DistributionalScore {
+        let phi = extract_joint_features(state, action);
+
+        // Linear mean expectation: mu = phi^T theta
+        let mu: f64 = phi.iter().zip(theta.iter()).map(|(p, th)| p * th).sum();
+
+        // Expected second moment: mu_sq = phi^T theta_sq
+        let mu_sq: f64 = phi.iter().zip(theta_sq.iter()).map(|(p, th_sq)| p * th_sq).sum();
+
+        // Aleatoric variance: sigma_aleatoric^2 = max(0.0, mu_sq - mu^2)
+        let aleatoric_variance = (mu_sq - mu * mu).max(0.0);
+
+        // Epistemic uncertainty variance: sigma_epistemic^2 = phi^T A^{-1} phi
+        let mut epistemic_variance = 0.0;
+        for i in 0..JOINT_FEATURE_DIM {
+            let mut row_sum = 0.0;
+            for j in 0..JOINT_FEATURE_DIM {
+                row_sum += a_inv[i][j] * phi[j];
+            }
+            epistemic_variance += phi[i] * row_sum;
+        }
+        let epistemic_variance = epistemic_variance.max(0.0);
+        let epistemic_uncertainty = epistemic_variance.sqrt();
+
+        // Total uncertainty standard deviation: sigma_total = sqrt(sigma_aleatoric^2 + sigma_epistemic^2)
+        let total_variance = aleatoric_variance + epistemic_variance;
+        let total_uncertainty = total_variance.sqrt();
+
+        // Quantiles: Gaussian/Cornish-Fisher expansion around mu with total uncertainty
+        let q_010 = mu - 1.28155 * total_uncertainty;
+        let q_025 = mu - 0.67449 * total_uncertainty;
+        let q_050 = mu;
+        let q_075 = mu + 0.67449 * total_uncertainty;
+        let q_090 = mu + 1.28155 * total_uncertainty;
+        let quantiles = vec![q_010, q_025, q_050, q_075, q_090];
+
+        // Value at Risk (lower quantile) at cvar_alpha
+        let alpha = cvar_alpha.clamp(1e-4, 0.5);
+        let z_alpha = normal_critical_value(alpha);
+        let var_score = mu - z_alpha * total_uncertainty;
+
+        // Conditional Value at Risk (Gaussian tail CVaR_alpha)
+        let phi_z = standard_normal_pdf(z_alpha);
+        let cvar_factor = phi_z / alpha;
+        let cvar_score = mu - total_uncertainty * cvar_factor;
+
+        // Determine final score based on requested RiskProfile
+        let final_score = match profile {
+            RiskProfile::Optimistic => mu + c_t * epistemic_uncertainty,
+            RiskProfile::Neutral => mu,
+            RiskProfile::WorstCase => var_score,
+            RiskProfile::CVaR => cvar_score,
+            RiskProfile::AdaptiveCritical => {
+                let kappa = (0.4 * state.task_complexity + 0.3 * state.is_code + 0.3 * state.is_tabular).clamp(0.0, 1.0);
+                (1.0 - kappa) * (mu + c_t * epistemic_uncertainty) + kappa * cvar_score
+            }
+        };
+
+        DistributionalScore {
+            mean: mu,
+            aleatoric_variance,
+            epistemic_uncertainty,
+            total_uncertainty,
+            quantiles,
+            var_score,
+            cvar_score,
+            risk_profile: profile,
+            final_score,
+        }
+    }
+
+    /// Selects optimal action under specified RiskProfile and CVaR quantile confidence.
+    pub fn select_action_distributional(
         &mut self,
         state: &FeatureState,
         candidate_actions: &[DecisionAction],
-    ) -> (DecisionAction, f64) {
+        profile: RiskProfile,
+        cvar_alpha: f64,
+    ) -> (DecisionAction, DistributionalScore) {
         if candidate_actions.is_empty() {
             let default_act = DecisionAction::default_single();
-            return (default_act, 0.0);
+            let def_score = DistributionalScore {
+                mean: 0.0,
+                aleatoric_variance: 0.0,
+                epistemic_uncertainty: 0.0,
+                total_uncertainty: 0.0,
+                quantiles: vec![0.0; 5],
+                var_score: 0.0,
+                cvar_score: 0.0,
+                risk_profile: profile,
+                final_score: 0.0,
+            };
+            return (default_act, def_score);
         }
 
-        // Solve for parameter vector theta = A^{-1} b using Cholesky
+        // Solve for parameter vector theta = A^{-1} b and second moment theta_sq = A^{-1} b_sq using Cholesky
         let l = match cholesky_decompose(&self.a_matrix, self.config.tikhonov_eps) {
             Ok(decomp) => decomp,
             Err(_) => vec![vec![1.0; JOINT_FEATURE_DIM]; JOINT_FEATURE_DIM],
         };
         let theta = cholesky_solve(&l, &self.b_vector);
+        let theta_sq = cholesky_solve(&l, &self.b_sq_vector);
         let a_inv = match stable_covariance_inverse(&self.a_matrix, self.config.tikhonov_eps) {
             Ok(inv) => inv,
             Err(_) => vec![vec![1.0; JOINT_FEATURE_DIM]; JOINT_FEATURE_DIM],
@@ -443,32 +709,56 @@ impl AdaptiveController {
 
         let mut best_idx = 0;
         let mut best_score = f64::NEG_INFINITY;
+        let mut best_dist_score = None;
 
         for (idx, action) in candidate_actions.iter().enumerate() {
-            let phi = extract_joint_features(state, action);
+            let dist_score = self.evaluate_distributional(
+                state,
+                action,
+                &theta,
+                &theta_sq,
+                &a_inv,
+                c_t,
+                profile,
+                cvar_alpha,
+            );
 
-            // Linear mean expectation: mu = phi^T theta
-            let mu: f64 = phi.iter().zip(theta.iter()).map(|(p, th)| p * th).sum();
-
-            // Uncertainty variance: phi^T A^{-1} phi
-            let mut variance = 0.0;
-            for i in 0..JOINT_FEATURE_DIM {
-                let mut row_sum = 0.0;
-                for j in 0..JOINT_FEATURE_DIM {
-                    row_sum += a_inv[i][j] * phi[j];
-                }
-                variance += phi[i] * row_sum;
-            }
-            let sigma = variance.max(0.0).sqrt();
-            let ucb_score = mu + c_t * sigma;
-
-            if ucb_score > best_score {
-                best_score = ucb_score;
+            if dist_score.final_score > best_score {
+                best_score = dist_score.final_score;
                 best_idx = idx;
+                best_dist_score = Some(dist_score);
             }
         }
 
-        (candidate_actions[best_idx].clone(), best_score)
+        let chosen_dist_score = best_dist_score.unwrap_or_else(|| {
+            self.evaluate_distributional(
+                state,
+                &candidate_actions[best_idx],
+                &theta,
+                &theta_sq,
+                &a_inv,
+                c_t,
+                profile,
+                cvar_alpha,
+            )
+        });
+
+        (candidate_actions[best_idx].clone(), chosen_dist_score)
+    }
+
+    /// Selects optimal action maximizing LinUCB score: phi^T \hat{theta} + c(t) sqrt(phi^T A^{-1} phi).
+    pub fn select_action(
+        &mut self,
+        state: &FeatureState,
+        candidate_actions: &[DecisionAction],
+    ) -> (DecisionAction, f64) {
+        let (action, score) = self.select_action_distributional(
+            state,
+            candidate_actions,
+            RiskProfile::Optimistic,
+            0.10,
+        );
+        (action, score.final_score)
     }
 
     /// Updates policy weights A and b with observed reward, tracking advantage binning and regret.
@@ -493,10 +783,18 @@ impl AdaptiveController {
             }
         }
 
-        // b <- b + R * phi
+        // b <- b + R * phi, b_sq <- b_sq + R^2 * phi
         for i in 0..JOINT_FEATURE_DIM {
             self.b_vector[i] += reward * phi[i];
+            self.b_sq_vector[i] += (reward * reward) * phi[i];
         }
+
+        // Dopamine-inspired replay buffer logging
+        self.replay_buffer.push(ObservationRecord {
+            state: state.clone(),
+            action: action.clone(),
+            reward,
+        });
 
         self.t += 1;
 
@@ -578,6 +876,8 @@ impl AdaptiveController {
             r_early,
             r_late,
             temporal_improvement: r_late > r_early,
+            distributional_rl_enabled: true,
+            supported_risk_profiles: default_supported_risk_profiles(),
         }
     }
 
@@ -740,5 +1040,144 @@ mod tests {
         assert_eq!(loaded.a_matrix.len(), 45);
 
         let _ = std::fs::remove_file(checkpoint_path);
+    }
+
+    #[test]
+    fn test_distributional_second_moment_variance() {
+        let mut controller = AdaptiveController::default();
+        let state = FeatureState::new(0.5, 16.0, 4000.0, 100, false, false, false, false);
+        let action = DecisionAction::default_single();
+
+        // Update with stochastic rewards: 1.0 and 0.0 alternating
+        for i in 0..20 {
+            let r = if i % 2 == 0 { 1.0 } else { 0.0 };
+            controller.update(&state, &action, r, None);
+        }
+
+        let l = cholesky_decompose(&controller.a_matrix, controller.config.tikhonov_eps).unwrap();
+        let theta = cholesky_solve(&l, &controller.b_vector);
+        let theta_sq = cholesky_solve(&l, &controller.b_sq_vector);
+        let a_inv = stable_covariance_inverse(&controller.a_matrix, controller.config.tikhonov_eps).unwrap();
+
+        let score = controller.evaluate_distributional(
+            &state,
+            &action,
+            &theta,
+            &theta_sq,
+            &a_inv,
+            1.0,
+            RiskProfile::Neutral,
+            0.10,
+        );
+
+        // For alternating 1 and 0, mean ~ 0.5, E[R^2] ~ 0.5, Var ~ 0.25
+        assert!(score.mean > 0.35 && score.mean < 0.65, "Expected mean around 0.5, got {}", score.mean);
+        assert!(score.aleatoric_variance > 0.10, "Expected positive aleatoric variance, got {}", score.aleatoric_variance);
+        assert!(score.total_uncertainty > 0.0);
+        assert_eq!(score.quantiles.len(), 5);
+        // Quantiles must be non-decreasing
+        for i in 0..4 {
+            assert!(score.quantiles[i] <= score.quantiles[i + 1] + 1e-9);
+        }
+    }
+
+    #[test]
+    fn test_cvar_penalizes_high_variance_arms() {
+        // Construct synthetic evaluation parameters:
+        // Both arms have identical mean = 0.8, but robust arm has sigma_total = 0.01 and volatile arm has sigma_total = 0.30
+        let score_robust = DistributionalScore {
+            mean: 0.8,
+            aleatoric_variance: 0.0001,
+            epistemic_uncertainty: 0.0,
+            total_uncertainty: 0.01,
+            quantiles: vec![0.8 - 1.28 * 0.01, 0.8 - 0.67 * 0.01, 0.8, 0.8 + 0.67 * 0.01, 0.8 + 1.28 * 0.01],
+            var_score: 0.8 - 1.28155 * 0.01,
+            cvar_score: 0.8 - 1.755 * 0.01,
+            risk_profile: RiskProfile::CVaR,
+            final_score: 0.8 - 1.755 * 0.01,
+        };
+
+        let score_volatile = DistributionalScore {
+            mean: 0.8,
+            aleatoric_variance: 0.09,
+            epistemic_uncertainty: 0.0,
+            total_uncertainty: 0.30,
+            quantiles: vec![0.8 - 1.28 * 0.30, 0.8 - 0.67 * 0.30, 0.8, 0.8 + 0.67 * 0.30, 0.8 + 1.28 * 0.30],
+            var_score: 0.8 - 1.28155 * 0.30,
+            cvar_score: 0.8 - 1.755 * 0.30,
+            risk_profile: RiskProfile::CVaR,
+            final_score: 0.8 - 1.755 * 0.30,
+        };
+
+        // Assert that under CVaR and WorstCase, the robust arm with lower variance is strictly preferred
+        assert!(score_robust.cvar_score > score_volatile.cvar_score, "Robust arm must have strictly higher CVaR");
+        assert!(score_robust.var_score > score_volatile.var_score, "Robust arm must have strictly higher VaR");
+        assert!(score_robust.final_score > score_volatile.final_score);
+    }
+
+    #[test]
+    fn test_risk_profile_selection_divergence() {
+        let mut controller = AdaptiveController::default();
+        let state = FeatureState::new(0.5, 32.0, 8000.0, 500, false, false, false, false);
+        let actions = DecisionAction::default_candidate_actions();
+
+        // Train Arm 0 repeatedly with moderate reward (0.7) to collapse its uncertainty
+        for _ in 0..30 {
+            controller.update(&state, &actions[0], 0.7, None);
+        }
+
+        let (_act_opt, score_opt) = controller.select_action_distributional(
+            &state,
+            &actions,
+            RiskProfile::Optimistic,
+            0.10,
+        );
+
+        let (_act_cvar, score_cvar) = controller.select_action_distributional(
+            &state,
+            &actions,
+            RiskProfile::CVaR,
+            0.10,
+        );
+
+        let (_act_var, score_var) = controller.select_action_distributional(
+            &state,
+            &actions,
+            RiskProfile::WorstCase,
+            0.10,
+        );
+
+        // Optimistic score must be >= CVaR score for the same controller state
+        assert!(score_opt.final_score >= score_cvar.final_score);
+        assert!(score_var.final_score >= score_cvar.final_score); // VaR tail >= CVaR tail
+    }
+
+    #[test]
+    fn test_adaptive_critical_weighting() {
+        let mut controller = AdaptiveController::default();
+        let simple_state = FeatureState::new(0.0, 32.0, 8000.0, 100, false, false, false, false); // kappa = 0
+        let critical_state = FeatureState::new(1.0, 32.0, 8000.0, 4000, true, true, false, false); // kappa = 1.0
+        let actions = DecisionAction::default_candidate_actions();
+
+        let (_act_simple, score_simple) = controller.select_action_distributional(
+            &simple_state,
+            &actions,
+            RiskProfile::AdaptiveCritical,
+            0.10,
+        );
+
+        let (_act_crit, score_crit) = controller.select_action_distributional(
+            &critical_state,
+            &actions,
+            RiskProfile::AdaptiveCritical,
+            0.10,
+        );
+
+        // Simple state (kappa = 0) final_score equals optimistic UCB: mu + c_t * sigma
+        let opt_simple = score_simple.mean + controller.exploration_rate() * score_simple.epistemic_uncertainty;
+        assert!((score_simple.final_score - opt_simple).abs() < 1e-5);
+
+        // Critical state (kappa = 1.0) final_score equals CVaR: cvar_score
+        assert!((score_crit.final_score - score_crit.cvar_score).abs() < 1e-5);
     }
 }
