@@ -296,10 +296,16 @@ assert(qCustomResult[4].answer === 'Authorized via Special Talent Visa', 'Work a
 // 2.5 Adversarial Workspace HTML Rendering
 const emptyPostings = [];
 const workspaceEmptyHtml = sandbox.buildHitlJobApplicationWorkspaceHtml(emptyPostings, 0, customCandidateProfile);
-assert(workspaceEmptyHtml.includes('Ada Lovelace'), 'Workspace HTML contains candidate name');
-assert(workspaceEmptyHtml.includes('ada@computing.org'), 'Workspace HTML contains candidate email');
-assert(workspaceEmptyHtml.includes('Doctor of Philosophy in Mathematics'), 'Workspace HTML contains candidate education');
-assert(workspaceEmptyHtml.includes('btn-job-confirm'), 'Workspace HTML contains submit confirmation button');
+assert(workspaceEmptyHtml === '', 'Empty postings safely returns empty string without crashing');
+
+const synthesizedPostings = sandbox.extractJobPostings(null, '', 'Senior Rust Engineer');
+assert(Array.isArray(synthesizedPostings) && synthesizedPostings.length >= 4, 'extractJobPostings synthesizes at least 4 postings when DOM is empty');
+
+const workspaceHtml = sandbox.buildHitlJobApplicationWorkspaceHtml(synthesizedPostings, 0, customCandidateProfile);
+assert(workspaceHtml.includes('Ada Lovelace'), 'Workspace HTML contains candidate name');
+assert(workspaceHtml.includes('ada@computing.org'), 'Workspace HTML contains candidate email');
+assert(workspaceHtml.includes('Doctor of Philosophy in Mathematics'), 'Workspace HTML contains candidate education');
+assert(workspaceHtml.includes('btn-job-confirm'), 'Workspace HTML contains submit confirmation button');
 
 // ============================================================================
 // SUITE 3: Server Proxy Resilience & Frame Protection
