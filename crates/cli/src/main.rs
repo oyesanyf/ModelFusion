@@ -29,7 +29,7 @@ use anyhow::Result;
 use clap::Parser;
 use modelfusion_core::{
     ComprehensiveTaskHandler, HuggingFaceOrchestrator, MemoryRepository,
-    rl::{AdaptiveController, DecisionAction, FeatureState, LearningRegime},
+    rl::{AdaptiveController, DecisionAction, FeatureState, LearningRegime, RiskProfile},
 };
 use model_selection::SelectionStrategy;
 use std::collections::HashMap;
@@ -2977,6 +2977,15 @@ struct Args {
     #[arg(long, help = "Treatment column for ACDSO decision intelligence")]
     treatment: Option<String>,
 
+    #[arg(long, help = "Route dynamic model fusion action using Distributional RL")]
+    rl_route: bool,
+
+    #[arg(long, default_value = "adaptive", help = "Risk profile for Distributional RL: optimistic, neutral, worst_case, cvar, or adaptive")]
+    risk_profile: String,
+
+    #[arg(long, default_value = "0.10", help = "Alpha quantile threshold for Value at Risk and CVaR tail scoring (default: 0.10)")]
+    cvar_alpha: f64,
+
     // ---------------------------------------------------------
     // Evaluation / Scoring Flags
     // ---------------------------------------------------------
@@ -3865,6 +3874,11 @@ where
                 }
                 return args;
             }
+            if (sub_clean == "rl-route" || sub_clean == "rl_route" || sub_clean == "rlroute") && !has_combinator {
+                args.remove(1);
+                args[1] = "--rl-route".to_string();
+                return args;
+            }
         if (sub_clean == "key" || sub_clean == "keys") && args.len() > 3 && args[3].to_lowercase() == "gemini" {
             let key = if args.len() > 4 { args[4].clone() } else { String::new() };
             args.remove(1);
@@ -4069,6 +4083,9 @@ where
         }
         "rl" | "restrl" | "rest-rl" => {
             args[1] = "--rl".to_string();
+        }
+        "rl-route" | "rl_route" | "rlroute" | "/rl-route" | "@agent/rl-route" | "@agent:rl-route" => {
+            args[1] = "--rl-route".to_string();
         }
         "humanize" | "/humanize" | "@agent/humanize" | "@agent:humanize" | "@humanize" => {
             args[1] = "--humanize".to_string();
@@ -5487,6 +5504,102 @@ async fn run(args: Args) -> Result<()> {
         }
 
         println!("🚀 **Reasoning Boost (`/boost`)**\n\n{}", result.trim());
+        return Ok(());
+    }
+
+    // Distributional RL Route Action Selection CLI Dispatch
+    if args.rl_route {
+        let risk_profile_str = args.risk_profile.to_lowercase();
+        let risk_profile = match risk_profile_str.as_str() {
+            "optimistic" => RiskProfile::Optimistic,
+            "neutral" => RiskProfile::Neutral,
+            "worst_case" | "worstcase" | "var" | "pessimistic" => RiskProfile::WorstCase,
+            "cvar" => RiskProfile::CVaR,
+            "adaptive" | "adaptivecritical" | "adaptive_critical" | _ => RiskProfile::AdaptiveCritical,
+        };
+        let cvar_alpha = args.cvar_alpha.clamp(0.001, 0.999);
+
+        let sys = query_system_resources();
+        let query_text = args.prompt.as_deref()
+            .or(args.query.as_deref())
+            .or(args.text.as_deref())
+            .unwrap_or("");
+        let prompt_len = query_text.len().max(50);
+        let is_code = query_text.contains("fn ") || query_text.contains("def ") || query_text.contains("class ") || query_text.contains("```");
+        let is_tabular = query_text.contains("csv") || query_text.contains("excel") || query_text.contains("dataframe");
+        let is_multimodal = query_text.contains("image") || query_text.contains("photo") || query_text.contains("audio");
+        let is_web = query_text.contains("search") || query_text.contains("browse") || query_text.contains("http");
+        let complexity = if is_code || is_tabular { 0.7 } else if prompt_len > 200 { 0.5 } else { 0.3 };
+
+        let state = FeatureState::new(
+            complexity,
+            sys.free_ram_gb,
+            sys.free_vram_mb as f64,
+            prompt_len,
+            is_code,
+            is_tabular,
+            is_multimodal,
+            is_web,
+        );
+        let candidate_actions = DecisionAction::default_candidate_actions();
+
+        let resolved_db = resolve_db_path(args.db_path.as_deref());
+        let db_dir = resolved_db.parent().unwrap_or_else(|| std::path::Path::new("IDE/db"));
+        let (action, dist_score, c_t, regime_str) = {
+            let mut ctrl = get_adaptive_controller(db_dir).lock().unwrap();
+            let (act, score) = ctrl.select_action_distributional(&state, &candidate_actions, risk_profile, cvar_alpha);
+            let c_t = ctrl.exploration_rate();
+            let reg = ctrl.telemetry().regime;
+            (act, score, c_t, reg)
+        };
+
+        if args.reporttype == "json" {
+            let resp_json = serde_json::json!({
+                "status": "ok",
+                "action": action,
+                "ucb_score": dist_score.final_score,
+                "distributional": dist_score,
+                "exploration_rate": c_t,
+                "regime": regime_str
+            });
+            println!("{}", serde_json::to_string_pretty(&resp_json)?);
+            return Ok(());
+        }
+
+        println!("⚡ **Distributional RL Adaptive Controller Action Selection**\n\n\
+                 | Metric | Value |\n\
+                 |---|---|\n\
+                 | **Selected Model Tier** | `{}` (Arm {}) |\n\
+                 | **Consensus Panel Size** | `{}` models |\n\
+                 | **Verification Depth** | Level `{}` |\n\
+                 | **Search Mode** | `{}` |\n\
+                 | **Risk Profile** | `{:?}` |\n\
+                 | **Final Quantile Score** | `{:.4}` |\n\
+                 | **Expected Mean (μ)** | `{:.4}` |\n\
+                 | **Aleatoric Variance (σ²_aleatoric)** | `{:.4}` |\n\
+                 | **Epistemic Uncertainty (σ_epistemic)** | `{:.4}` |\n\
+                 | **Total Uncertainty (σ_total)** | `{:.4}` |\n\
+                 | **Value at Risk (VaR_{:.2})** | `{:.4}` |\n\
+                 | **Conditional Value at Risk (CVaR_{:.2})** | `{:.4}` |\n\
+                 | **Quantiles [10%, 25%, 50%, 75%, 90%]** | `[{:.3}, {:.3}, {:.3}, {:.3}, {:.3}]` |\n\
+                 | **Operational Regime** | `{}` |\n\
+                 | **Exploration Factor c(t)** | `{:.4}` |\n",
+            action.model_tier, action.arm_id,
+            action.consensus_panel_size,
+            action.verification_depth,
+            action.search_mode,
+            dist_score.risk_profile,
+            dist_score.final_score,
+            dist_score.mean,
+            dist_score.aleatoric_variance,
+            dist_score.epistemic_uncertainty,
+            dist_score.total_uncertainty,
+            cvar_alpha, dist_score.var_score,
+            cvar_alpha, dist_score.cvar_score,
+            dist_score.quantiles[0], dist_score.quantiles[1], dist_score.quantiles[2], dist_score.quantiles[3], dist_score.quantiles[4],
+            regime_str,
+            c_t
+        );
         return Ok(());
     }
 
@@ -11652,7 +11765,17 @@ public class ShortcutHelper {
                     let ctrl = get_adaptive_controller(db_dir).lock().unwrap();
                     ctrl.telemetry()
                 };
-                let telem_json = serde_json::to_value(&telem).unwrap_or_else(|_| serde_json::json!({}));
+                let mut telem_json = serde_json::to_value(&telem).unwrap_or_else(|_| serde_json::json!({}));
+                if let Some(obj) = telem_json.as_object_mut() {
+                    obj.insert("distributional_rl_enabled".to_string(), serde_json::json!(true));
+                    obj.insert("supported_risk_profiles".to_string(), serde_json::json!([
+                        "Optimistic",
+                        "Neutral",
+                        "WorstCase",
+                        "CVaR",
+                        "AdaptiveCritical"
+                    ]));
+                }
                 let resp_body = serde_json::to_string(&telem_json).unwrap_or_default();
                 let response = format!(
                     "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -11675,6 +11798,22 @@ public class ShortcutHelper {
                 let is_multimodal = request_json.get("is_multimodal").and_then(|v| v.as_bool()).unwrap_or(false);
                 let is_web = request_json.get("is_web").and_then(|v| v.as_bool()).unwrap_or(false);
 
+                let risk_profile_str = request_json.get("risk_profile")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("adaptive")
+                    .to_lowercase();
+                let risk_profile = match risk_profile_str.as_str() {
+                    "optimistic" => RiskProfile::Optimistic,
+                    "neutral" => RiskProfile::Neutral,
+                    "worst_case" | "worstcase" | "var" | "pessimistic" => RiskProfile::WorstCase,
+                    "cvar" => RiskProfile::CVaR,
+                    "adaptive" | "adaptivecritical" | "adaptive_critical" | _ => RiskProfile::AdaptiveCritical,
+                };
+                let cvar_alpha = request_json.get("cvar_alpha")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.10)
+                    .clamp(0.001, 0.999);
+
                 let state = FeatureState::new(
                     complexity,
                     free_ram_gb,
@@ -11689,9 +11828,9 @@ public class ShortcutHelper {
 
                 let resolved_db = resolve_db_path(Some(&db_path_str));
                 let db_dir = resolved_db.parent().unwrap_or_else(|| std::path::Path::new("IDE/db"));
-                let (action, ucb_score, c_t, regime_str) = {
+                let (action, dist_score, c_t, regime_str) = {
                     let mut ctrl = get_adaptive_controller(db_dir).lock().unwrap();
-                    let (act, score) = ctrl.select_action(&state, &candidate_actions);
+                    let (act, score) = ctrl.select_action_distributional(&state, &candidate_actions, risk_profile, cvar_alpha);
                     let c_t = ctrl.exploration_rate();
                     let reg = ctrl.telemetry().regime;
                     (act, score, c_t, reg)
@@ -11700,7 +11839,8 @@ public class ShortcutHelper {
                 let resp_json = serde_json::json!({
                     "status": "ok",
                     "action": action,
-                    "ucb_score": ucb_score,
+                    "ucb_score": dist_score.final_score,
+                    "distributional": dist_score,
                     "exploration_rate": c_t,
                     "regime": regime_str
                 });
@@ -21263,6 +21403,31 @@ public class Pr {
         assert!(sanitized.contains("// stripped frame-busting: location="));
         assert!(!sanitized.contains("window.location.replace("));
         assert!(sanitized.contains("// stripped frame-busting: location.replace("));
+    }
+
+    #[test]
+    fn test_rl_route_args_preprocessing() {
+        let raw1 = vec!["cli.exe".to_string(), "@agent".to_string(), "rl-route".to_string(), "--risk-profile".to_string(), "cvar".to_string(), "--cvar-alpha".to_string(), "0.05".to_string()];
+        let proc1 = preprocess_cli_args(raw1);
+        assert_eq!(proc1[0], "cli.exe");
+        assert_eq!(proc1[1], "--rl-route");
+        assert_eq!(proc1[2], "--risk-profile");
+        assert_eq!(proc1[3], "cvar");
+        assert_eq!(proc1[4], "--cvar-alpha");
+        assert_eq!(proc1[5], "0.05");
+
+        let args1 = Args::try_parse_from(proc1).unwrap();
+        assert!(args1.rl_route);
+        assert_eq!(args1.risk_profile, "cvar");
+        assert_eq!(args1.cvar_alpha, 0.05);
+
+        let raw2 = vec!["cli.exe".to_string(), "/rl-route".to_string()];
+        let proc2 = preprocess_cli_args(raw2);
+        assert_eq!(proc2[1], "--rl-route");
+        let args2 = Args::try_parse_from(proc2).unwrap();
+        assert!(args2.rl_route);
+        assert_eq!(args2.risk_profile, "adaptive");
+        assert_eq!(args2.cvar_alpha, 0.10);
     }
 }
 

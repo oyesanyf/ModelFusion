@@ -10,4 +10,5 @@ pub use adaptive_controller::{
     AdaptiveController, ControllerConfig, DecisionAction, FeatureState, LearningRegime,
     RLTelemetry, AdvantageStats, extract_joint_features, stable_covariance_inverse,
     cholesky_decompose, cholesky_solve, ACTION_DIM, JOINT_FEATURE_DIM, STATE_DIM,
+    RiskProfile, DistributionalScore, CircularReplayBuffer, ObservationRecord,
 };
