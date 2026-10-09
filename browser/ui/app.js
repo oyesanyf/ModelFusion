@@ -1,18 +1,6 @@
 // HugOS Browser Portal Application Logic
 // Dedicated ModelFusion AI Web Environment Engine
-
-// Automatic client-side transition: if launched under file:// origin, transition to Master Server HTTP origin if online
-if (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') {
-  fetch('http://127.0.0.1:5000/health', { method: 'GET' })
-    .then((res) => {
-      if (res.ok) {
-        window.location.replace('http://localhost:5000/index.html');
-      }
-    })
-    .catch(() => {
-      // Backend server starting up or offline; probe will transition once online
-    });
-}
+// Runs under native file:// protocol and connects to ModelFusion Master CLI / Ollama via HTTP APIs
 
 function isIdeEnvironment() {
   if (typeof window === 'undefined') return false;
@@ -10944,27 +10932,42 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
   }
 
   async function probeIpc() {
-    const url = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
-    try {
-      const res = await fetchWithTimeout(`${url}/health`, { method: 'GET', timeout: 400 });
-      if (res.ok) {
-        window.isIpcOnline = true;
-        window.isServerProxyOnline = true;
-        dotIpc.className = 'dot status-dot online';
-        textIpc.textContent = 'IPC Connected';
-        return true;
-      }
-    } catch (e) {
+    const defaultUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+    const candidateUrls = [defaultUrl];
+    if (!candidateUrls.includes('http://127.0.0.1:5005') && !candidateUrls.includes('http://localhost:5005')) {
+      candidateUrls.push('http://127.0.0.1:5005');
+    }
+
+    for (const url of candidateUrls) {
       try {
-        const res2 = await fetchWithTimeout(`${url}/api/health`, { method: 'GET', timeout: 400 });
-        if (res2.ok) {
-          window.isIpcOnline = true;
-          window.isServerProxyOnline = true;
-          dotIpc.className = 'dot status-dot online';
-          textIpc.textContent = 'IPC Connected';
-          return true;
+        const res = await fetchWithTimeout(`${url}/health`, { method: 'GET', timeout: 400 });
+        if (res.ok) {
+          const data = await res.json().catch(() => ({}));
+          if (data && (data.service === 'modelfusion' || data.status === 'ok')) {
+            window.isIpcOnline = true;
+            window.isServerProxyOnline = true;
+            currentSettings.ipcUrl = url;
+            dotIpc.className = 'dot status-dot online';
+            textIpc.textContent = 'IPC Connected';
+            return true;
+          }
         }
-      } catch (e2) {}
+      } catch (e) {
+        try {
+          const res2 = await fetchWithTimeout(`${url}/api/health`, { method: 'GET', timeout: 400 });
+          if (res2.ok) {
+            const data = await res2.json().catch(() => ({}));
+            if (data && (data.service === 'modelfusion' || data.status === 'ok')) {
+              window.isIpcOnline = true;
+              window.isServerProxyOnline = true;
+              currentSettings.ipcUrl = url;
+              dotIpc.className = 'dot status-dot online';
+              textIpc.textContent = 'IPC Connected';
+              return true;
+            }
+          }
+        } catch (e2) {}
+      }
     }
 
     window.isIpcOnline = false;
