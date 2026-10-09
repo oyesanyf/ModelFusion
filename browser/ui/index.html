@@ -892,6 +892,26 @@
           <button type="button" class="scroll-bottom-btn hidden" id="btn-scroll-bottom" title="Scroll to bottom">↓</button>
 
           <div class="pinned-bottom-wrapper">
+            <!-- Floating Quick Action Bar (Continue, Regenerate, Copy, Stop) -->
+            <div class="chat-floating-actions hidden" id="chat-floating-actions">
+              <button type="button" class="floating-action-pill btn-floating-continue" id="btn-floating-continue" onclick="continueLastAssistantMessage()" title="Continue generating response directly from where it stopped">
+                <span class="pill-icon">⚡</span>
+                <span class="pill-label">Continue</span>
+              </button>
+              <button type="button" class="floating-action-pill btn-floating-regenerate" id="btn-floating-regenerate" onclick="regenerateLastAssistantMessage()" title="Regenerate response from the last prompt">
+                <span class="pill-icon">🔄</span>
+                <span class="pill-label">Regenerate</span>
+              </button>
+              <button type="button" class="floating-action-pill btn-floating-copy" id="btn-floating-copy" onclick="copyLastAssistantMessage()" title="Copy last response to clipboard">
+                <span class="pill-icon">📋</span>
+                <span class="pill-label">Copy</span>
+              </button>
+              <button type="button" class="floating-action-pill btn-floating-stop hidden" id="btn-floating-stop" onclick="stopGeneratingChat()" title="Stop generating current response">
+                <span class="pill-icon">⏹</span>
+                <span class="pill-label">Stop Generating</span>
+              </button>
+            </div>
+
             <div class="hero-capsule-container pinned-capsule">
               <div class="active-directives-tray hidden" id="active-directives-tray-pinned"></div>
               <div class="attachment-tray hidden" id="attachment-tray-pinned"></div>
