@@ -584,6 +584,35 @@ assert.strictEqual(restoredProf.resumeRemoved, false, 'resumeRemoved flag must b
 
 console.log('✅ Test 11 Passed: removeSavedResume() successfully clears resume state, attached files, and prevents re-injection.\n');
 
+// =========================================================================
+// 12. Load Page Header Button & Career-Ops Agent Branding (No Sad-Face Iframe)
+// =========================================================================
+console.log('--- Test 12: Load Page Header Button & Career-Ops Agent Branding ---');
+
+// 12.1 Assert header button uses 'Load Page' with btn-load-page
+assert(appJs.includes('btn-load-page'), 'app.js must include btn-load-page class');
+assert(appJs.includes('<span>Load Page</span>'), 'app.js must render "Load Page" button text');
+assert(!appJs.includes('⤢ Full View'), 'app.js must not retain old "Full View" button');
+assert(!appJs.includes('↗ New Tab'), 'app.js must not retain old "New Tab" button');
+
+// 12.2 Assert Live Web Session card is rendered for cross-origin / career portals
+assert(appJs.includes('Live Web Session:'), 'app.js must render "Live Web Session:" portal card');
+assert(appJs.includes('This website restricts embedded frames. Click below to load the live page directly into your browser viewport.'), 'app.js must render frame restriction advisory');
+assert(appJs.includes('btn-load-page-primary'), 'app.js must include primary Load Page button on card');
+
+// 12.3 Assert Career-Ops Agent branding for jobs instead of UI-TARS mouse agent
+assert(appJs.includes('ModelFusion Career-Ops & Candidate Application Agent'), 'app.js must brand jobs with Career-Ops agent');
+assert(appJs.includes('PORTAL_NAVIGATION'), 'Action sequence must include PORTAL_NAVIGATION');
+assert(appJs.includes('ATS_REQUIREMENTS_PARSING'), 'Action sequence must include ATS_REQUIREMENTS_PARSING');
+assert(appJs.includes('CV_FIT_&_CAREER_OPS_MATCHING'), 'Action sequence must include CV_FIT_&_CAREER_OPS_MATCHING');
+assert(appJs.includes('HITL_ACCOUNT_&_LOGIN_GATE'), 'Action sequence must include HITL_ACCOUNT_&_LOGIN_GATE');
+assert(appJs.includes('APPLICATION_SUBMISSION'), 'Action sequence must include APPLICATION_SUBMISSION');
+
+// 12.4 Assert specialized Career-Ops system prompt
+assert(appJs.includes('ModelFusion Career-Ops & Autonomous Job Application Specialist'), 'app.js must include Career-Ops system prompt');
+
+console.log('✅ Test 12 Passed: Load Page button and Career-Ops agent branding verified.\n');
+
 console.log('========================================================================');
-console.log('🎉 ALL 11 AUTONOMOUS JOB APPLICATION TEST SUITES PASSED WITH 100% SUCCESS!');
+console.log('🎉 ALL 12 AUTONOMOUS JOB APPLICATION TEST SUITES PASSED WITH 100% SUCCESS!');
 console.log('========================================================================\n');
