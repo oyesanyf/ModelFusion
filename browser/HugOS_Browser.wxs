@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="HugOS Browser" Manufacturer="HugOS Team" Version="1.0.119" UpgradeCode="e98c7d08-91cb-4248-bfa5-765c96ddeca6" Scope="perUser">
+  <Package Name="HugOS Browser" Manufacturer="HugOS Team" Version="1.0.121" UpgradeCode="e98c7d08-91cb-4248-bfa5-765c96ddeca6" Scope="perUser">
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." Schedule="afterInstallInitialize" AllowSameVersionUpgrades="yes" />
 
     <MediaTemplate EmbedCab="yes" />
@@ -68,121 +68,124 @@
 
     <ComponentGroup Id="BrowserFilesComponents">
       <Component Id="cmp_1" Guid="*" Directory="dir_1">
-        <File Id="fil_1" Source="bin\cli.exe" KeyPath="yes" />
+        <File Id="fil_1" Source="bin\cli (1).exe" KeyPath="yes" />
       </Component>
       <Component Id="cmp_2" Guid="*" Directory="dir_1">
-        <File Id="fil_2" Source="bin\clibrowser (1).exe" KeyPath="yes" />
+        <File Id="fil_2" Source="bin\cli.exe" KeyPath="yes" />
       </Component>
       <Component Id="cmp_3" Guid="*" Directory="dir_1">
-        <File Id="fil_3" Source="bin\clibrowser.exe" KeyPath="yes" />
+        <File Id="fil_3" Source="bin\clibrowser (1).exe" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_4" Guid="*" Directory="dir_2">
-        <File Id="fil_4" Source="bin\db\hf_models.db" KeyPath="yes" />
+      <Component Id="cmp_4" Guid="*" Directory="dir_1">
+        <File Id="fil_4" Source="bin\clibrowser.exe" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_5" Guid="*" Directory="dir_1">
-        <File Id="fil_5" Source="bin\ffmpeg.exe" KeyPath="yes" />
+      <Component Id="cmp_5" Guid="*" Directory="dir_2">
+        <File Id="fil_5" Source="bin\db\hf_models.db" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_6" Guid="*" Directory="dir_3">
-        <File Id="fil_6" Source="Chromium-win32-x64\hugos-browser.bat" KeyPath="yes" />
+      <Component Id="cmp_6" Guid="*" Directory="dir_1">
+        <File Id="fil_6" Source="bin\ffmpeg.exe" KeyPath="yes" />
       </Component>
       <Component Id="cmp_7" Guid="*" Directory="dir_3">
-        <File Id="fil_7" Source="Chromium-win32-x64\hugos-browser.vbs" KeyPath="yes" />
+        <File Id="fil_7" Source="Chromium-win32-x64\hugos-browser.bat" KeyPath="yes" />
       </Component>
       <Component Id="cmp_8" Guid="*" Directory="dir_3">
-        <File Id="fil_8" Source="Chromium-win32-x64\hugos_browser.ico" KeyPath="yes" />
+        <File Id="fil_8" Source="Chromium-win32-x64\hugos-browser.vbs" KeyPath="yes" />
       </Component>
       <Component Id="cmp_9" Guid="*" Directory="dir_3">
-        <File Id="fil_9" Source="Chromium-win32-x64\run_hidden.vbs" KeyPath="yes" />
+        <File Id="fil_9" Source="Chromium-win32-x64\hugos_browser.ico" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_10" Guid="*" Directory="dir_4">
-        <File Id="fil_10" Source="config\default_preferences.json" KeyPath="yes" />
+      <Component Id="cmp_10" Guid="*" Directory="dir_3">
+        <File Id="fil_10" Source="Chromium-win32-x64\run_hidden.vbs" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_11" Guid="*" Directory="dir_5">
-        <File Id="fil_11" Source="db\hf_models.db" KeyPath="yes" />
+      <Component Id="cmp_11" Guid="*" Directory="dir_4">
+        <File Id="fil_11" Source="config\default_preferences.json" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_12" Guid="*" Directory="dir_9">
-        <File Id="fil_12" Source="dist\win-unpacked\resources\bin\cli.exe" KeyPath="yes" />
+      <Component Id="cmp_12" Guid="*" Directory="dir_5">
+        <File Id="fil_12" Source="db\hf_models.db" KeyPath="yes" />
       </Component>
       <Component Id="cmp_13" Guid="*" Directory="dir_9">
-        <File Id="fil_13" Source="dist\win-unpacked\resources\bin\clibrowser.exe" KeyPath="yes" />
+        <File Id="fil_13" Source="dist\win-unpacked\resources\bin\cli.exe" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_14" Guid="*" Directory="dir_10">
-        <File Id="fil_14" Source="extension\background.js" KeyPath="yes" />
+      <Component Id="cmp_14" Guid="*" Directory="dir_9">
+        <File Id="fil_14" Source="dist\win-unpacked\resources\bin\clibrowser.exe" KeyPath="yes" />
       </Component>
       <Component Id="cmp_15" Guid="*" Directory="dir_10">
-        <File Id="fil_15" Source="extension\content.js" KeyPath="yes" />
+        <File Id="fil_15" Source="extension\background.js" KeyPath="yes" />
       </Component>
       <Component Id="cmp_16" Guid="*" Directory="dir_10">
-        <File Id="fil_16" Source="extension\manifest.json" KeyPath="yes" />
+        <File Id="fil_16" Source="extension\content.js" KeyPath="yes" />
       </Component>
       <Component Id="cmp_17" Guid="*" Directory="dir_10">
-        <File Id="fil_17" Source="extension\sidepanel.html" KeyPath="yes" />
+        <File Id="fil_17" Source="extension\manifest.json" KeyPath="yes" />
       </Component>
       <Component Id="cmp_18" Guid="*" Directory="dir_10">
-        <File Id="fil_18" Source="extension\sidepanel.js" KeyPath="yes" />
+        <File Id="fil_18" Source="extension\sidepanel.html" KeyPath="yes" />
       </Component>
       <Component Id="cmp_19" Guid="*" Directory="dir_10">
-        <File Id="fil_19" Source="extension\styles.css" KeyPath="yes" />
+        <File Id="fil_19" Source="extension\sidepanel.js" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_20" Guid="*" Directory="INSTALLFOLDER">
-        <File Id="fil_20" Source="hugos_browser.ico" KeyPath="yes" />
+      <Component Id="cmp_20" Guid="*" Directory="dir_10">
+        <File Id="fil_20" Source="extension\styles.css" KeyPath="yes" />
       </Component>
-      <Component Id="cmp_21" Guid="*" Directory="dir_11">
-        <File Id="fil_21" Source="ui\app.js" KeyPath="yes" />
+      <Component Id="cmp_21" Guid="*" Directory="INSTALLFOLDER">
+        <File Id="fil_21" Source="hugos_browser.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_22" Guid="*" Directory="dir_11">
-        <File Id="fil_22" Source="ui\favicon-16x16.png" KeyPath="yes" />
+        <File Id="fil_22" Source="ui\app.js" KeyPath="yes" />
       </Component>
       <Component Id="cmp_23" Guid="*" Directory="dir_11">
-        <File Id="fil_23" Source="ui\favicon-24x24.png" KeyPath="yes" />
+        <File Id="fil_23" Source="ui\favicon-16x16.png" KeyPath="yes" />
       </Component>
       <Component Id="cmp_24" Guid="*" Directory="dir_11">
-        <File Id="fil_24" Source="ui\favicon-32x32.png" KeyPath="yes" />
+        <File Id="fil_24" Source="ui\favicon-24x24.png" KeyPath="yes" />
       </Component>
       <Component Id="cmp_25" Guid="*" Directory="dir_11">
-        <File Id="fil_25" Source="ui\favicon.ico" KeyPath="yes" />
+        <File Id="fil_25" Source="ui\favicon-32x32.png" KeyPath="yes" />
       </Component>
       <Component Id="cmp_26" Guid="*" Directory="dir_11">
-        <File Id="fil_26" Source="ui\favicon.svg" KeyPath="yes" />
+        <File Id="fil_26" Source="ui\favicon.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_27" Guid="*" Directory="dir_11">
-        <File Id="fil_27" Source="ui\hugos_browser.ico" KeyPath="yes" />
+        <File Id="fil_27" Source="ui\favicon.svg" KeyPath="yes" />
       </Component>
       <Component Id="cmp_28" Guid="*" Directory="dir_11">
-        <File Id="fil_28" Source="ui\icon-128.png" KeyPath="yes" />
+        <File Id="fil_28" Source="ui\hugos_browser.ico" KeyPath="yes" />
       </Component>
       <Component Id="cmp_29" Guid="*" Directory="dir_11">
-        <File Id="fil_29" Source="ui\icon-192.png" KeyPath="yes" />
+        <File Id="fil_29" Source="ui\icon-128.png" KeyPath="yes" />
       </Component>
       <Component Id="cmp_30" Guid="*" Directory="dir_11">
-        <File Id="fil_30" Source="ui\icon-256.png" KeyPath="yes" />
+        <File Id="fil_30" Source="ui\icon-192.png" KeyPath="yes" />
       </Component>
       <Component Id="cmp_31" Guid="*" Directory="dir_11">
-        <File Id="fil_31" Source="ui\icon-48.png" KeyPath="yes" />
+        <File Id="fil_31" Source="ui\icon-256.png" KeyPath="yes" />
       </Component>
       <Component Id="cmp_32" Guid="*" Directory="dir_11">
-        <File Id="fil_32" Source="ui\icon-512.png" KeyPath="yes" />
+        <File Id="fil_32" Source="ui\icon-48.png" KeyPath="yes" />
       </Component>
       <Component Id="cmp_33" Guid="*" Directory="dir_11">
-        <File Id="fil_33" Source="ui\icon-64.png" KeyPath="yes" />
+        <File Id="fil_33" Source="ui\icon-512.png" KeyPath="yes" />
       </Component>
       <Component Id="cmp_34" Guid="*" Directory="dir_11">
-        <File Id="fil_34" Source="ui\index.html" KeyPath="yes" />
+        <File Id="fil_34" Source="ui\icon-64.png" KeyPath="yes" />
       </Component>
       <Component Id="cmp_35" Guid="*" Directory="dir_11">
-        <File Id="fil_35" Source="ui\manifest.json" KeyPath="yes" />
+        <File Id="fil_35" Source="ui\index.html" KeyPath="yes" />
       </Component>
       <Component Id="cmp_36" Guid="*" Directory="dir_11">
-        <File Id="fil_36" Source="ui\manifest.webmanifest" KeyPath="yes" />
+        <File Id="fil_36" Source="ui\manifest.json" KeyPath="yes" />
       </Component>
       <Component Id="cmp_37" Guid="*" Directory="dir_11">
-        <File Id="fil_37" Source="ui\stress_test_virtualizer.html" KeyPath="yes" />
+        <File Id="fil_37" Source="ui\manifest.webmanifest" KeyPath="yes" />
       </Component>
       <Component Id="cmp_38" Guid="*" Directory="dir_11">
-        <File Id="fil_38" Source="ui\styles.css" KeyPath="yes" />
+        <File Id="fil_38" Source="ui\stress_test_virtualizer.html" KeyPath="yes" />
       </Component>
       <Component Id="cmp_39" Guid="*" Directory="dir_11">
-        <File Id="fil_39" Source="ui\sw.js" KeyPath="yes" />
+        <File Id="fil_39" Source="ui\styles.css" KeyPath="yes" />
+      </Component>
+      <Component Id="cmp_40" Guid="*" Directory="dir_11">
+        <File Id="fil_40" Source="ui\sw.js" KeyPath="yes" />
       </Component>
     </ComponentGroup>
   </Package>

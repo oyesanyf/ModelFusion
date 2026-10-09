@@ -10430,17 +10430,22 @@ fn prepend_note_to_user_message(val: &mut serde_json::Value, note: &str) {
 }
 
 async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: bool) -> Result<()> {
+    let host = "127.0.0.1";
     // 0. Pre-bind health probe: If another instance (cliide, clibrowser, or cli) is already serving port, reuse it gracefully
     let probe_client = reqwest::Client::builder()
         .no_proxy()
         .timeout(std::time::Duration::from_millis(600))
         .build()
         .unwrap_or_default();
-    let health_url = format!("http://127.0.0.1:{}/health", port);
+    let health_url = format!("http://{}:{}/health", host, port);
     if let Ok(res) = probe_client.get(&health_url).send().await {
         if res.status().is_success() {
-            println!("🚀 [SERVER] ModelFusion Master Server already active on port {}. Reusing existing instance.", port);
-            return Ok(());
+            if let Ok(text) = res.text().await {
+                if text.contains("modelfusion") {
+                    println!("🚀 [SERVER] ModelFusion Master Server already active on port {}. Reusing existing instance.", port);
+                    return Ok(());
+                }
+            }
         }
     }
 
@@ -10448,21 +10453,38 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
     std::env::set_var("MODELFUSION_USE_OLLAMA", "true");
     std::env::set_var("MODELFUSION_FORCE_GPU", "true");
 
-    let listener = match tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await {
-        Ok(l) => l,
+    let addr = format!("{}:{}", host, port);
+    let (listener, active_port) = match tokio::net::TcpListener::bind(&addr).await {
+        Ok(l) => (l, port),
         Err(e) => {
             // If binding fails due to address already in use, verify if /health is now responding
             if let Ok(res) = probe_client.get(&health_url).send().await {
                 if res.status().is_success() {
-                    println!("🚀 [SERVER] ModelFusion Master Server active on port {}. Reusing existing instance.", port);
-                    return Ok(());
+                    if let Ok(text) = res.text().await {
+                        if text.contains("modelfusion") {
+                            println!("🚀 [SERVER] ModelFusion Master Server active on port {}. Reusing existing instance.", port);
+                            return Ok(());
+                        }
+                    }
                 }
             }
-            eprintln!("❌ [SERVER ERROR] Failed to bind to port {}: {}", port, e);
-            return Err(e.into());
+            if port == 5000 {
+                eprintln!("⚠️ [SERVER] Port 5000 is occupied ({}). Attempting fallback port 5005...", e);
+                let fallback_addr = format!("{}:{}", host, 5005);
+                match tokio::net::TcpListener::bind(&fallback_addr).await {
+                    Ok(l) => {
+                        eprintln!("✅ [SERVER] ModelFusion Master Server successfully bound to fallback port 5005");
+                        (l, 5005)
+                    }
+                    Err(_) => return Err(e.into()),
+                }
+            } else {
+                eprintln!("❌ [SERVER ERROR] Failed to bind to port {}: {}", port, e);
+                return Err(e.into());
+            }
         }
     };
-    println!("ModelFusion API server running on http://127.0.0.1:{}", port);
+    println!("ModelFusion API server running on http://127.0.0.1:{}", active_port);
     
     let db_path_opt = db_path.clone();
 
@@ -10565,7 +10587,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             request_path = parsed_path;
                         }
                         if request_path == "/health" || request_path == "/api/health" {
-                            let response = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"status\":\"ok\"}";
+                            let response = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"status\":\"ok\",\"service\":\"modelfusion\",\"version\":\"1.0.0\"}";
                             let _ = socket.write_all(response.as_bytes()).await;
                             return;
                         }
