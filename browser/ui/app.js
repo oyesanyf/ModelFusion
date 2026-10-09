@@ -12130,7 +12130,7 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
         });
       } else {
         // Add multi-turn context from current active session (isolated during computer use / structured perception)
-        if (!options?.isolateContext && options?.taskType !== 'computer_use' && activeSession && Array.isArray(activeSession.messages)) {
+        if (!options?.isolateContext && options?.taskType !== 'computer_use' && options?.taskType !== 'job_application' && activeSession && Array.isArray(activeSession.messages)) {
           const lastMsg = activeSession.messages[activeSession.messages.length - 1];
           const isLastMsgCurrentUser = Boolean(lastMsg && lastMsg.role === 'user');
           const history = isLastMsgCurrentUser ? activeSession.messages.slice(0, -1) : activeSession.messages;
@@ -13209,7 +13209,7 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
       statusLine.textContent = `[${time}] Error connecting to local AI engine (${err.message}). Ensure Ollama is running at ${ollamaUrl} with an installed model (e.g. ${fallbackDisplayModel}).`;
       if (assistantBubble) {
         assistantBubble.classList.remove('streaming');
-        if (options && (options.taskType === 'computer_use' || options.streamContentTarget)) {
+        if (options && (options.taskType === 'computer_use' || options.taskType === 'job_application' || options.streamContentTarget)) {
           const target = options.streamContentTarget || assistantBubble.querySelector('.stream-content-planner');
           if (target) {
             target.innerHTML = `<div style="padding: 10px; border-radius: 6px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
@@ -14882,13 +14882,14 @@ Respond with ONLY a valid JSON object matching this schema:
     let engine = options.engine || (options.image ? 'clef-flash' : (mode === 'cloud' ? 'clef-flash' : 'strands-decider-2b'));
     const speculativeTarget = typeof window !== 'undefined' ? window.speculativeDomainTarget : null;
 
-    // Mission-critical workflows (Computer Use, Legal, Security, Exam Solver) require worst-case risk protection
+    // Mission-critical workflows (Computer Use, Legal, Security, Exam Solver, Job Application) require worst-case risk protection
     const isMissionCritical = Boolean(
       options.taskType === 'computer_use' ||
+      options.taskType === 'job_application' ||
       options.taskType === 'legal' ||
       options.taskType === 'security' ||
       options.taskType === 'exam_solver' ||
-      /\b(?:computer[-_ ]?use|ui[-_ ]?tars|exam|legal|security|sast)\b/i.test(q)
+      /\b(?:computer[-_ ]?use|ui[-_ ]?tars|exam|legal|security|sast|job|career)\b/i.test(q)
     );
     const riskProfile = options.risk_profile || options.riskProfile || (isMissionCritical ? 'adaptive' : 'optimistic');
     const cvarAlpha = options.cvar_alpha || options.cvarAlpha || (isMissionCritical ? 0.05 : 0.10);
@@ -23571,28 +23572,48 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     // Build Live Page Perception Card HTML with Inline Webview Preview (rendered directly on the same page!)
     let livePageCardHtml = '';
     if (livePageText || livePageTitle || targetNavUrl) {
+      const isKnownBlocking = !targetNavUrl ? false : (
+        isCrossOriginBlockingUrl(targetNavUrl) ||
+        /(?:indeed\.com|google\.com|linkedin\.com|myworkdayjobs|greenhouse\.io|lever\.co|smartrecruiters|ashbyhq|ziprecruiter|dice)/i.test(targetNavUrl)
+      );
       const proxiedPreviewUrl = resolveProxiedUrl(targetNavUrl);
+
+      const loadPageBtnHtml = `<button type="button" class="wv-btn-mini btn-load-page" onclick="if(window.navigateTo) window.navigateTo('${escapeHtml(targetNavUrl)}', false, true)" style="background: #0284c7; border: none; color: #fff; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Load this page in primary browser viewport"><span>🌐</span> <span>Load Page</span></button>`;
+
+      const livePagePortalCardHtml = `
+        <div style="height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: rgba(11, 15, 25, 0.95); text-align: center; padding: 16px; border-top: 1px solid rgba(56, 189, 248, 0.15);">
+          <div style="font-size: 26px;">🌐</div>
+          <div style="font-size: 13px; font-weight: 600; color: #38bdf8;">Live Web Session: ${escapeHtml(targetNavUrl)}</div>
+          <div style="font-size: 11px; color: var(--text-muted); max-width: 440px;">This website restricts embedded frames. Click below to load the live page directly into your browser viewport.</div>
+          <button type="button" class="btn-load-page-primary" onclick="if(window.navigateTo) window.navigateTo('${escapeHtml(targetNavUrl)}', false, true)" style="background: #0284c7; color: #fff; border: none; font-size: 11.5px; font-weight: 600; padding: 6px 16px; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.3);">
+            <span>🌐</span> <span>Load Page</span>
+          </button>
+        </div>
+      `;
+
+      const frameContentHtml = isKnownBlocking ? livePagePortalCardHtml : `
+        <div style="height: 220px; position: relative; background: #0b0f19;">
+          <iframe src="${escapeHtml(proxiedPreviewUrl)}" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" onload="try { if (this.contentWindow && this.contentDocument && (this.contentDocument.body.innerText.includes('403. That\'s an error') || this.contentDocument.body.innerText.includes('do not have access to this page'))) { this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex'; } } catch(_) {}" style="width: 100%; height: 100%; border: none; background: #fff;" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+          <div class="iframe-fallback-overlay" style="display: none; position: absolute; inset: 0; background: rgba(11, 15, 25, 0.95); flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 16px; text-align: center;">
+            <div style="font-size: 26px;">🌐</div>
+            <div style="font-size: 13px; font-weight: 600; color: #38bdf8;">Live Web Session: ${escapeHtml(targetNavUrl)}</div>
+            <div style="font-size: 11px; color: var(--text-muted); max-width: 440px;">This website restricts embedded frames. Click below to load the live page directly into your browser viewport.</div>
+            <button type="button" class="btn-load-page-primary" onclick="if(window.navigateTo) window.navigateTo('${escapeHtml(targetNavUrl)}', false, true)" style="background: #0284c7; color: #fff; border: none; font-size: 11.5px; font-weight: 600; padding: 6px 16px; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.3);">
+              <span>🌐</span> <span>Load Page</span>
+            </button>
+          </div>
+        </div>
+      `;
+
       const inlinePreviewHtml = targetNavUrl ? `
         <div class="inline-webview-card" style="margin: 8px 0; border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 6px; overflow: hidden; background: #0b0f19;">
           <div style="background: rgba(56, 189, 248, 0.1); padding: 4px 8px; display: flex; align-items: center; justify-content: space-between; font-size: 11px; border-bottom: 1px solid rgba(56, 189, 248, 0.15);">
             <span style="color: #38bdf8; font-weight: 500;">🖥️ Live Web Page View (Active Viewport on Same Page)</span>
             <div style="display: flex; gap: 6px; align-items: center;">
-              <button type="button" class="wv-btn-mini" onclick="if(window.navigateTo) window.navigateTo('${escapeHtml(targetNavUrl)}', false, true)" style="background: rgba(56, 189, 248, 0.2); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; font-size: 10px; padding: 2px 6px; border-radius: 4px; cursor: pointer;" title="Open in Full Webview Panel">⤢ Full View</button>
-              <a href="${escapeHtml(targetNavUrl)}" target="_blank" style="color: var(--accent-color); font-size: 10px; text-decoration: underline;">↗ New Tab</a>
+              ${loadPageBtnHtml}
             </div>
           </div>
-          <div style="height: 220px; position: relative; background: #0b0f19;">
-            <iframe src="${escapeHtml(proxiedPreviewUrl)}" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" onload="try { if (this.contentWindow && this.contentDocument && (this.contentDocument.body.innerText.includes('403. That\'s an error') || this.contentDocument.body.innerText.includes('do not have access to this page'))) { this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex'; } } catch(_) {}" style="width: 100%; height: 100%; border: none; background: #fff;" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
-            <div class="iframe-fallback-overlay" style="display: none; position: absolute; inset: 0; background: rgba(11, 15, 25, 0.95); flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 12px; text-align: center;">
-              <span style="font-size: 24px;">🌐</span>
-              <div style="font-size: 12px; font-weight: 600; color: #f1f5f9;">Cross-Origin Protected Page</div>
-              <div style="font-size: 11px; color: var(--text-muted);">This website restricts embedded frames. Viewport automation continues in background.</div>
-              <div style="display: flex; gap: 8px; margin-top: 4px;">
-                <button type="button" onclick="if(window.navigateTo) window.navigateTo('${escapeHtml(targetNavUrl)}', false, true)" style="background: #0284c7; color: #fff; border: none; font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer;">Open in Browser Viewport</button>
-                <a href="${escapeHtml(targetNavUrl)}" target="_blank" style="background: rgba(255,255,255,0.08); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); font-size: 11px; padding: 4px 10px; border-radius: 4px; text-decoration: none;">Open in New Tab</a>
-              </div>
-            </div>
-          </div>
+          ${frameContentHtml}
         </div>
       ` : '';
 
@@ -23636,13 +23657,13 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       uitarsGroundingHtml = `
         <div style="background: var(--bg-secondary, rgba(0,0,0,0.1)); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 11.5px; line-height: 1.6; margin-bottom: 10px; border: 1px solid rgba(56, 189, 248, 0.25);">
           <div style="color: #38bdf8; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
-            <span>💼</span> <span>UI-TARS Grounding Action Sequence (Job Application Loop)</span>
+            <span>💼</span> <span>ModelFusion Career-Ops & Candidate Application Agent</span>
           </div>
-          <div>• <strong>Step 1:</strong> <span style="color:#38bdf8;">NAVIGATE_JOB_PORTAL</span> ➔ <code style="word-break:break-all;">${escapeHtml(groundingTargetUrl)}</code> (ModelFusion Proxy active)</div>
-          <div>• <strong>Step 2:</strong> <span style="color:#38bdf8;">SCREEN_PERCEPTION</span> ➔ Grounded DOM tree (${livePageElementsCount || 1} interactive elements, ${detectedJobs.length} job postings grounded)</div>
-          <div>• <strong>Step 3:</strong> <span style="color:#38bdf8;">RESUME_&_PROFILE_MATCHING</span> ➔ Match score evaluated against candidate profile &amp; skills</div>
-          <div>• <strong>Step 4:</strong> <span style="color:#38bdf8;">FORM_AUTOFILL_&_ACCOUNT_GATE</span> ➔ Auto-populating application form, contact details &amp; screening answers</div>
-          <div>• <strong>Step 5:</strong> <span style="color:#38bdf8;">HITL_SAFETY_GATE</span> ➔ Human review active: Application staged for interactive approval</div>
+          <div>• <strong>Step 1:</strong> <span style="color:#38bdf8;">PORTAL_NAVIGATION</span> ➔ <code style="word-break:break-all;">${escapeHtml(groundingTargetUrl)}</code> (Live Web Session)</div>
+          <div>• <strong>Step 2:</strong> <span style="color:#38bdf8;">ATS_REQUIREMENTS_PARSING</span> ➔ Extracted job spec &amp; candidate criteria</div>
+          <div>• <strong>Step 3:</strong> <span style="color:#38bdf8;">CV_FIT_&_CAREER_OPS_MATCHING</span> ➔ Evaluated experience vs job description</div>
+          <div>• <strong>Step 4:</strong> <span style="color:#38bdf8;">HITL_ACCOUNT_&_LOGIN_GATE</span> ➔ Staged credentials and screening questions</div>
+          <div>• <strong>Step 5:</strong> <span style="color:#38bdf8;">APPLICATION_SUBMISSION</span> ➔ Ready for user confirmation in workspace below</div>
         </div>
       `;
     } else if (isExamGoal) {
@@ -23778,7 +23799,22 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 
     const hasGroundedFindings = Boolean(livePageText || (liveSearchResults && liveSearchResults.length > 0));
 
-    let systemPrompt = `You are the HugOS UI-TARS Computer Use & Screen Perception Agent.
+    let systemPrompt = '';
+    if (detectedJobs.length > 0 || isJobGoal) {
+      systemPrompt = `You are the ModelFusion Career-Ops & Autonomous Job Application Specialist. You evaluate candidate qualifications against job requirements, ground applications to the candidate's verified resume, and present structured job matches directly in the HITL workspace.
+${hasGroundedFindings ? `You have directly inspected and grounded the live webpage and verified web search findings (${targetNavUrl || searchQuery}).
+CRITICAL INSTRUCTION: Base your entire response on the actual live findings and search results grounded below.
+Directly list, explain, and summarize the specific findings, metrics, and information requested in the user's goal.
+Do NOT give generic instructions, do NOT tell the user to use curl or external command lines, and do NOT speculate. Answer factually based on what is actually retrieved.` : 'Evaluate candidate qualifications against job requirements, ground applications to the candidate\'s verified resume, and present structured job matches directly in the HITL workspace.'}
+
+ANTI-HALLUCINATION & DIRECT SAME-PAGE PRESENTATION LAWS:
+1. Always display all findings, options, and recommendations directly in this chat view.
+2. NEVER output desktop mouse-click coordinates (X, Y) or raw screen pixel values.
+3. NEVER instruct the user to open Google Chrome or an external browser. All navigation is integrated into this viewport.
+4. NEVER generate AutoHotkey, pyautogui, or desktop automation scripts.
+5. Provide a direct, factual, and concise summary based strictly on grounded page content.`;
+    } else {
+      systemPrompt = `You are the HugOS UI-TARS Computer Use & Screen Perception Agent.
 ${hasGroundedFindings ? `You have directly inspected and grounded the live webpage and verified web search findings (${targetNavUrl || searchQuery}).
 CRITICAL INSTRUCTION: Base your entire response on the actual live findings and search results grounded below.
 Directly list, explain, and summarize the specific findings, metrics, and information requested in the user's goal.
@@ -23790,6 +23826,7 @@ ANTI-HALLUCINATION & DIRECT SAME-PAGE PRESENTATION LAWS:
 3. NEVER instruct the user to open Google Chrome or an external browser. All navigation is integrated into this viewport.
 4. NEVER generate AutoHotkey, pyautogui, or desktop automation scripts.
 5. Provide a direct, factual, and concise summary based strictly on grounded page content.`;
+    }
 
     if (detectedJobs.length > 0 || isJobGoal) {
       systemPrompt += `\n\nJOB APPLICATION & RECRUITING INSTRUCTIONS:
@@ -23938,7 +23975,7 @@ The live webpage contains ${detectedDirections?.routes?.length || 1} navigation 
               userAiPrompt,
               systemPrompt,
               {
-                taskType: 'computer_use',
+                taskType: (isJobGoal || detectedJobs.length > 0) ? 'job_application' : 'computer_use',
                 isolateContext: true,
                 existingBubble: bubble,
                 streamContentTarget: streamEl ? streamEl.querySelector('.stream-content-planner') : null,
@@ -23979,9 +24016,9 @@ The live webpage contains ${detectedDirections?.routes?.length || 1} navigation 
                 ${hasGroundedFindings ? `
                   <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
                     <div style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #10b981; font-weight: 600;">
-                      <span>⚡</span> <span>UI-TARS Autonomous Action Execution</span>
+                      <span>⚡</span> <span>${(isJobGoal || detectedJobs.length > 0) ? 'ModelFusion Career-Ops Execution' : 'UI-TARS Autonomous Action Execution'}</span>
                     </div>
-                    <span style="font-size: 10.5px; opacity: 0.85; color: var(--text-secondary);">Active Perception Grounded</span>
+                    <span style="font-size: 10.5px; opacity: 0.85; color: var(--text-secondary);">${(isJobGoal || detectedJobs.length > 0) ? 'Candidate Fit Grounded' : 'Active Perception Grounded'}</span>
                   </div>
                 ` : `
                   <div class="agent-error-card" style="margin-bottom: 8px; background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.35);">
@@ -24004,7 +24041,7 @@ The live webpage contains ${detectedDirections?.routes?.length || 1} navigation 
             userAiPrompt,
             systemPrompt,
             {
-              taskType: 'computer_use',
+              taskType: (isJobGoal || detectedJobs.length > 0) ? 'job_application' : 'computer_use',
               existingBubble: bubble,
               streamContentTarget: streamEl ? streamEl.querySelector('.stream-content-planner') : null,
               transformFinalText: sanitizeComputerUseOutput
@@ -24026,9 +24063,9 @@ The live webpage contains ${detectedDirections?.routes?.length || 1} navigation 
               ${hasGroundedFindings ? `
                 <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
                   <div style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #10b981; font-weight: 600;">
-                    <span>⚡</span> <span>UI-TARS Autonomous Action Execution</span>
+                    <span>⚡</span> <span>${(isJobGoal || detectedJobs.length > 0) ? 'ModelFusion Career-Ops Execution' : 'UI-TARS Autonomous Action Execution'}</span>
                   </div>
-                  <span style="font-size: 10.5px; opacity: 0.85; color: var(--text-secondary);">Live Grounding Active</span>
+                  <span style="font-size: 10.5px; opacity: 0.85; color: var(--text-secondary);">${(isJobGoal || detectedJobs.length > 0) ? 'Candidate Fit Grounded' : 'Live Grounding Active'}</span>
                 </div>
               ` : `
                 <div class="agent-error-card" style="margin-bottom: 8px; background: rgba(234, 179, 8, 0.08); border-color: rgba(234, 179, 8, 0.35);">
@@ -24050,7 +24087,7 @@ The live webpage contains ${detectedDirections?.routes?.length || 1} navigation 
           userAiPrompt,
           systemPrompt,
           {
-            taskType: 'computer_use',
+            taskType: (isJobGoal || detectedJobs.length > 0) ? 'job_application' : 'computer_use',
             existingBubble: bubble,
             streamContentTarget: streamEl ? streamEl.querySelector('.stream-content-planner') : null,
             transformFinalText: sanitizeComputerUseOutput

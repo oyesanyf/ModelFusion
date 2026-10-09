@@ -16596,8 +16596,59 @@ sequenceDiagram
                         .unwrap_or("Inspect desktop screen and identify interactive UI elements").trim();
                     let max_steps = request_json.get("max_steps").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
                     let dry_run = request_json.get("dry_run").and_then(|v| v.as_bool()).unwrap_or(false);
-                    let model = request_json.get("model").and_then(|v| v.as_str()).unwrap_or("ui-tars").to_string();
                     let endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+
+                    // Dynamically resolve optimal model for computer use & vision
+                    let requested_model = request_json.get("model").and_then(|v| v.as_str()).map(|s| s.trim());
+
+                    // Probe installed Ollama models
+                    let client = reqwest::Client::builder()
+                        .timeout(std::time::Duration::from_millis(1500))
+                        .build()
+                        .unwrap_or_default();
+                    let tags_url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
+                    let mut installed: Vec<String> = Vec::new();
+                    if let Ok(resp) = client.get(&tags_url).send().await {
+                        if resp.status().is_success() {
+                            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                                if let Some(models) = json.get("models").and_then(|m| m.as_array()) {
+                                    for m in models {
+                                        if let Some(name) = m.get("name").and_then(|n| n.as_str()) {
+                                            installed.push(name.trim().to_string());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    let is_installed = |cand: &str| -> bool {
+                        let cand_base = cand.strip_suffix(":latest").unwrap_or(cand);
+                        installed.iter().any(|m| {
+                            let m_base = m.strip_suffix(":latest").unwrap_or(m);
+                            m == cand || m_base == cand_base || m.contains(cand_base)
+                        })
+                    };
+
+                    let vision_candidates = ["ui-tars", "moondream", "llava", "qwen2.5-vl", "bakllava", "minicpm-v"];
+
+                    let model = if let Some(req) = requested_model {
+                        if req != "ui-tars" && is_installed(req) {
+                            req.to_string()
+                        } else if is_installed("ui-tars") {
+                            "ui-tars".to_string()
+                        } else if let Some(vm) = vision_candidates.iter().find(|&&m| is_installed(m)) {
+                            vm.to_string()
+                        } else {
+                            resolve_dynamic_ollama_model(None, false, &endpoint).await
+                        }
+                    } else if is_installed("ui-tars") {
+                        "ui-tars".to_string()
+                    } else if let Some(vm) = vision_candidates.iter().find(|&&m| is_installed(m)) {
+                        vm.to_string()
+                    } else {
+                        resolve_dynamic_ollama_model(None, false, &endpoint).await
+                    };
 
                     let agent = modelfusion_core::browser::computer_use::ComputerUseAgent::new(endpoint, model, max_steps, dry_run);
                     match agent.run(goal).await {

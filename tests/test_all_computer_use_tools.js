@@ -366,12 +366,26 @@ assert(shoppingHtml.includes('hitl-shopping-workspace'), 'renders shopping works
 assert(shoppingHtml.includes('$129'), 'renders product price');
 assert(shoppingHtml.includes('Approve & Add to Cart'), 'renders same-page cart approval button');
 
-// 9.4 Tailored UI-TARS Action Sequences in Chat
+// 9.4 Tailored UI-TARS & Career-Ops Action Sequences in Chat
 assert(appJsContent.includes('UI-TARS Grounding Action Sequence (Exam Solver Loop)'), 'Tailored action sequence for Exam Solver');
 assert(appJsContent.includes('UI-TARS Grounding Action Sequence (Ticket & Travel Booking Loop)'), 'Tailored action sequence for Ticket Booking');
 assert(appJsContent.includes('UI-TARS Grounding Action Sequence (Shopping & Deal Comparison Loop)'), 'Tailored action sequence for Shopping');
 assert(appJsContent.includes('UI-TARS Grounding Action Sequence (Map Directions & Navigation Loop)'), 'Tailored action sequence for Map Directions');
 assert(appJsContent.includes('UI-TARS Grounding Action Sequence (Screen Perception Loop)'), 'Tailored action sequence for Screen Grounding');
+assert(appJsContent.includes('ModelFusion Career-Ops & Candidate Application Agent'), 'Specialized Career-Ops branding for Job Application Loop');
+assert(appJsContent.includes('PORTAL_NAVIGATION'), 'Recruitment step 1: PORTAL_NAVIGATION');
+assert(appJsContent.includes('ATS_REQUIREMENTS_PARSING'), 'Recruitment step 2: ATS_REQUIREMENTS_PARSING');
+assert(appJsContent.includes('CV_FIT_&_CAREER_OPS_MATCHING'), 'Recruitment step 3: CV_FIT_&_CAREER_OPS_MATCHING');
+assert(appJsContent.includes('HITL_ACCOUNT_&_LOGIN_GATE'), 'Recruitment step 4: HITL_ACCOUNT_&_LOGIN_GATE');
+assert(appJsContent.includes('APPLICATION_SUBMISSION'), 'Recruitment step 5: APPLICATION_SUBMISSION');
+
+// 9.4b Load Page Header Button & Elimination of Sad-Face Iframe
+assert(appJsContent.includes('btn-load-page'), 'app.js contains btn-load-page header button');
+assert(appJsContent.includes('<span>Load Page</span>'), 'app.js displays Load Page button');
+assert(!appJsContent.includes('⤢ Full View'), 'Old Full View button is eliminated');
+assert(appJsContent.includes('Live Web Session:'), 'Live Web Session portal card is present');
+assert(appJsContent.includes('btn-load-page-primary'), 'Primary Load Page action button is present');
+assert(appJsContent.includes('ModelFusion Career-Ops & Autonomous Job Application Specialist'), 'Specialized Career-Ops system prompt is present');
 
 // 9.5 Job Application HITL Workspace
 global.buildCareerOpsEvaluationHtml = (job, prof) => '<div class="career-ops-evaluation">Career-Ops Fit Evaluation</div>';
