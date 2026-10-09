@@ -52,9 +52,18 @@ function isModelMatch(candidate, target) {
 }
 if (typeof window !== 'undefined') {
   window.isModelMatch = isModelMatch;
+  window.activeOutline = null;
+  window.activeShellAction = null;
+  window.activeExamQuestions = [];
+  window.activeProducts = [];
+  window.activeDirections = null;
+  window.activeJobPostings = [];
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  var activeOutline = null;
+  var activeShellAction = null;
+
   // If running inside HugOS IDE, disable/hide the Job Application tool from sidebar
   if (isIdeEnvironment()) {
     const jobBtn = document.querySelector('[data-tool-id="tool_apply_jobs"]');
@@ -17935,8 +17944,8 @@ Analyze the temporal progression across the sampled video keyframes, describing 
   // -----------------------------------------------------------------
   // 4.057 Human-in-the-Loop (HITL) Exam & Assessment Architecture
   // -----------------------------------------------------------------
-  let activeExamQuestions = [];
-  window.activeExamQuestions = activeExamQuestions;
+  var activeExamQuestions = [];
+  if (typeof window !== 'undefined') window.activeExamQuestions = activeExamQuestions;
 
   function extractExamQuestions(doc, text) {
     const questions = [];
@@ -19175,10 +19184,10 @@ Analyze the temporal progression across the sampled video keyframes, describing 
   // -----------------------------------------------------------------
   // 4.057c Human-in-the-Loop (HITL) Shopping, E-Commerce & Deals
   // -----------------------------------------------------------------
-  let activeProducts = [];
-  window.activeProducts = activeProducts;
-  let selectedProductId = null;
-  window.selectedProductId = selectedProductId;
+  var activeProducts = [];
+  if (typeof window !== 'undefined') window.activeProducts = activeProducts;
+  var selectedProductId = null;
+  if (typeof window !== 'undefined') window.selectedProductId = selectedProductId;
 
   function extractProducts(doc, text) {
     const products = [];
@@ -19889,10 +19898,10 @@ Analyze the temporal progression across the sampled video keyframes, describing 
   // -----------------------------------------------------------------
   // 4.057e Map Directions & Navigation Workspace
   // -----------------------------------------------------------------
-  let activeDirections = null;
-  window.activeDirections = activeDirections;
-  let selectedRouteId = null;
-  window.selectedRouteId = selectedRouteId;
+  var activeDirections = null;
+  if (typeof window !== 'undefined') window.activeDirections = activeDirections;
+  var selectedRouteId = null;
+  if (typeof window !== 'undefined') window.selectedRouteId = selectedRouteId;
 
   function resolveNaturalLanguageNavUrl(goal, targetNavUrl = '') {
     if (!goal || typeof goal !== 'string') return '';
@@ -20454,10 +20463,10 @@ Analyze the temporal progression across the sampled video keyframes, describing 
   // -----------------------------------------------------------------
   // 4.057e2 Autonomous Job Application & Safety Gate Workspace
   // -----------------------------------------------------------------
-  let activeJobPostings = [];
-  window.activeJobPostings = activeJobPostings;
-  let selectedJobIndex = 0;
-  window.selectedJobIndex = selectedJobIndex;
+  var activeJobPostings = [];
+  if (typeof window !== 'undefined') window.activeJobPostings = activeJobPostings;
+  var selectedJobIndex = 0;
+  if (typeof window !== 'undefined') window.selectedJobIndex = selectedJobIndex;
 
   function getJobApplicantProfile() {
     let profile = {
@@ -22837,12 +22846,12 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     };
   }
 
-  let activeOutline = null;
-
   function buildHitlOutlineWorkspaceHtml(outlinePlan) {
     if (!outlinePlan || !Array.isArray(outlinePlan.chapters)) return '';
     activeOutline = outlinePlan;
-    window.activeOutline = outlinePlan;
+    if (typeof window !== 'undefined') {
+      window.activeOutline = outlinePlan;
+    }
 
     const chaptersHtml = outlinePlan.chapters.map((ch, idx) => `
       <div class="outline-chapter-card" style="margin-bottom: 8px;">
@@ -23035,11 +23044,11 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     return { isDestructive: false };
   }
 
-  let activeShellAction = null;
-
   function buildHitlShellWorkspaceHtml(command, reason = '', diffOrDetails = '') {
     activeShellAction = { command, reason, diffOrDetails };
-    window.activeShellAction = activeShellAction;
+    if (typeof window !== 'undefined') {
+      window.activeShellAction = activeShellAction;
+    }
 
     return `
       <div class="hitl-shell-workspace">
