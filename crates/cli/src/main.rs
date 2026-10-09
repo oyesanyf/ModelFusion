@@ -9986,7 +9986,7 @@ pub fn sanitize_and_deduplicate_url(raw: &str) -> String {
         format!("https://{}", s)
     };
 
-    // 5. Correct common search engine subdomain and domain typos
+    // 5. Correct common search engine and portal subdomain and domain typos
     let lower_final = final_url.to_lowercase();
     if lower_final.contains("://ww.google.") || lower_final.contains("://w.google.") || lower_final.contains("://wwww.google.") {
         final_url = final_url.replacen("://ww.google.", "://www.google.", 1)
@@ -9999,6 +9999,47 @@ pub fn sanitize_and_deduplicate_url(raw: &str) -> String {
         final_url = final_url.replacen("://ww.bing.", "://www.bing.", 1)
             .replacen("://w.bing.", "://www.bing.", 1);
     }
+
+    let lower2 = final_url.to_lowercase();
+    for typo in &["linkdln.com", "linkdin.com", "likedin.com", "linkin.com", "linkeldn.com", "linked-in.com"] {
+        if lower2.contains(typo) {
+            final_url = final_url.replacen(typo, "linkedin.com", 1);
+            break;
+        }
+    }
+    let lower3 = final_url.to_lowercase();
+    for typo in &["indeeed.com", "inded.com", "inddeed.com"] {
+        if lower3.contains(typo) {
+            final_url = final_url.replacen(typo, "indeed.com", 1);
+            break;
+        }
+    }
+    for typo in &["glassdor.com", "glassdorr.com"] {
+        if lower3.contains(typo) {
+            final_url = final_url.replacen(typo, "glassdoor.com", 1);
+            break;
+        }
+    }
+
+    if final_url.contains("://linkedin.com") {
+        final_url = final_url.replacen("://linkedin.com", "://www.linkedin.com", 1);
+    }
+    if final_url.starts_with("http://www.linkedin.com") {
+        final_url = final_url.replacen("http://www.linkedin.com", "https://www.linkedin.com", 1);
+    }
+    if final_url.contains("://indeed.com") {
+        final_url = final_url.replacen("://indeed.com", "://www.indeed.com", 1);
+    }
+    if final_url.starts_with("http://www.indeed.com") {
+        final_url = final_url.replacen("http://www.indeed.com", "https://www.indeed.com", 1);
+    }
+    if final_url.contains("://glassdoor.com") {
+        final_url = final_url.replacen("://glassdoor.com", "://www.glassdoor.com", 1);
+    }
+    if final_url.starts_with("http://www.glassdoor.com") {
+        final_url = final_url.replacen("http://www.glassdoor.com", "https://www.glassdoor.com", 1);
+    }
+
     final_url
 }
 
