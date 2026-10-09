@@ -3640,6 +3640,110 @@ body.theme-light .chat-messages .user-bubble {
   padding: 4px 0 0;
 }
 
+/* -------------------------------------------------------------
+   7b. Floating Chat Action Bar (Continue, Regenerate, Copy, Stop)
+------------------------------------------------------------- */
+.chat-floating-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  width: 100%;
+  animation: fadeInUp 0.18s ease-out;
+  z-index: 30;
+  pointer-events: auto;
+}
+
+.chat-floating-actions.hidden {
+  display: none !important;
+}
+
+.floating-action-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  background: var(--bg-capsule, rgba(30, 30, 30, 0.88));
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+  color: var(--text-primary, #ffffff);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.floating-action-pill:hover {
+  background: var(--hover-bg, rgba(255, 255, 255, 0.14));
+  border-color: var(--accent-color, #6366f1);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+}
+
+.floating-action-pill:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.floating-action-pill.btn-floating-continue {
+  border-color: rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.1);
+  color: #38bdf8;
+}
+.floating-action-pill.btn-floating-continue:hover {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: #38bdf8;
+  color: #7dd3fc;
+}
+
+.floating-action-pill.btn-floating-regenerate {
+  border-color: rgba(168, 85, 247, 0.4);
+  background: rgba(168, 85, 247, 0.1);
+  color: #c084fc;
+}
+.floating-action-pill.btn-floating-regenerate:hover {
+  background: rgba(168, 85, 247, 0.2);
+  border-color: #a855f7;
+  color: #e9d5ff;
+}
+
+.floating-action-pill.btn-floating-copy {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.08);
+  color: #34d399;
+}
+.floating-action-pill.btn-floating-copy:hover {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: #10b981;
+  color: #6ee7b7;
+}
+
+.floating-action-pill.btn-floating-stop {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.14);
+  color: #fca5a5;
+}
+.floating-action-pill.btn-floating-stop:hover {
+  background: rgba(239, 68, 68, 0.24);
+  border-color: #ef4444;
+  color: #ffffff;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* 6. Five Pristine ChatGPT Themes */
 
 /* A. theme-white (Pristine ChatGPT White: #ffffff canvas, #f9f9f9 sidebar, #ececec borders, #0d0d0d text, #0d0d0d send button) */
@@ -3971,6 +4075,29 @@ body.theme-warm {
 .msg-action-btn.btn-continue-msg {
   min-width: 90px;
   justify-content: center;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+  font-weight: 500;
+}
+.msg-action-btn.btn-continue-msg:hover {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: #38bdf8;
+  color: #7dd3fc;
+}
+
+.msg-action-btn.btn-regenerate-msg {
+  min-width: 98px;
+  justify-content: center;
+  background: rgba(168, 85, 247, 0.08);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  color: #c084fc;
+  font-weight: 500;
+}
+.msg-action-btn.btn-regenerate-msg:hover {
+  background: rgba(168, 85, 247, 0.18);
+  border-color: #a855f7;
+  color: #e9d5ff;
 }
 
 .msg-action-btn .action-icon {

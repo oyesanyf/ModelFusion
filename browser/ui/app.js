@@ -458,6 +458,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (convView) convView.classList.remove('hidden');
     if (webView) webView.classList.add('hidden');
     if (chatWelcome) chatWelcome.classList.add('hidden');
+    if (typeof updateFloatingActionButtons === 'function') {
+      updateFloatingActionButtons();
+    }
   }
 
   function termLog(message, type = 'info') {
@@ -538,6 +541,9 @@ document.addEventListener('DOMContentLoaded', () => {
       chatMessages.appendChild(bubble);
       if (currentSettings.autoScroll !== false) {
         chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+      if (type === 'model-response' && typeof updateFloatingActionButtons === 'function') {
+        updateFloatingActionButtons();
       }
     } else {
       // Diagnostic, router, and debug logs to browser console, never polluting chat conversation
@@ -8006,8 +8012,15 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
   };
 
   window.regenerateAssistantMessage = function(btn) {
-    const bubble = btn.closest('.assistant-bubble');
-    const prompt = bubble?.dataset?.prompt || lastUserPrompt;
+    let bubble = null;
+    if (btn && typeof btn.closest === 'function') {
+      bubble = btn.closest('.assistant-bubble');
+    }
+    if (!bubble) {
+      const allBubbles = Array.from(document.querySelectorAll('.assistant-bubble, .msg-bubble.assistant-bubble'));
+      if (allBubbles.length > 0) bubble = allBubbles[allBubbles.length - 1];
+    }
+    const prompt = bubble?.dataset?.prompt || window.lastUserPrompt || (typeof lastUserPrompt !== 'undefined' ? lastUserPrompt : '');
     if (prompt && window.executeCliCommand) {
       window.executeCliCommand(prompt);
     }
@@ -8283,6 +8296,106 @@ MANDATORY CONTINUATION DIRECTIVES:
     }
   };
   window.continuingAssistantMessage = window.continueAssistantMessage;
+
+  // ---------------------------------------------------------------------------
+  // Floating Chat Action Bar (Continue, Regenerate, Copy, Stop)
+  // ---------------------------------------------------------------------------
+  function updateFloatingActionButtons() {
+    const floatingBar = document.getElementById('chat-floating-actions');
+    if (!floatingBar) return;
+
+    const btnContinue = document.getElementById('btn-floating-continue');
+    const btnRegenerate = document.getElementById('btn-floating-regenerate');
+    const btnCopy = document.getElementById('btn-floating-copy');
+    const btnStop = document.getElementById('btn-floating-stop');
+
+    // Check if chat conversation view is active
+    const convView = document.getElementById('chat-conversation-view');
+    if (convView && convView.classList.contains('hidden')) {
+      floatingBar.classList.add('hidden');
+      return;
+    }
+
+    if (window.isGenerating || (typeof isGenerating !== 'undefined' && isGenerating)) {
+      floatingBar.classList.remove('hidden');
+      if (btnContinue) btnContinue.classList.add('hidden');
+      if (btnRegenerate) btnRegenerate.classList.add('hidden');
+      if (btnCopy) btnCopy.classList.add('hidden');
+      if (btnStop) btnStop.classList.remove('hidden');
+      return;
+    }
+
+    // Not generating: check if any assistant bubbles exist
+    const bubbles = Array.from(document.querySelectorAll('.assistant-bubble, .msg-bubble.assistant-bubble'));
+    if (bubbles.length > 0) {
+      floatingBar.classList.remove('hidden');
+      if (btnContinue) btnContinue.classList.remove('hidden');
+      if (btnRegenerate) btnRegenerate.classList.remove('hidden');
+      if (btnCopy) btnCopy.classList.remove('hidden');
+      if (btnStop) btnStop.classList.add('hidden');
+    } else {
+      floatingBar.classList.add('hidden');
+    }
+  }
+  window.updateFloatingActionButtons = updateFloatingActionButtons;
+
+  window.continueLastAssistantMessage = async function() {
+    const bubbles = Array.from(document.querySelectorAll('.assistant-bubble, .msg-bubble.assistant-bubble'));
+    if (bubbles.length === 0) {
+      if (typeof termLog === 'function') {
+        termLog('⚠️ No assistant response found to continue.', 'warn');
+      }
+      return;
+    }
+    const lastBubble = bubbles[bubbles.length - 1];
+    await window.continueAssistantMessage(lastBubble);
+  };
+
+  window.regenerateLastAssistantMessage = function() {
+    const bubbles = Array.from(document.querySelectorAll('.assistant-bubble, .msg-bubble.assistant-bubble'));
+    const lastBubble = bubbles.length > 0 ? bubbles[bubbles.length - 1] : null;
+    const prompt = lastBubble?.dataset?.prompt || window.lastUserPrompt || (typeof lastUserPrompt !== 'undefined' ? lastUserPrompt : '');
+    if (prompt && window.executeCliCommand) {
+      window.executeCliCommand(prompt);
+    } else {
+      if (typeof termLog === 'function') {
+        termLog('⚠️ No prior prompt found to regenerate.', 'warn');
+      }
+    }
+  };
+
+  window.copyLastAssistantMessage = function() {
+    const bubbles = Array.from(document.querySelectorAll('.assistant-bubble, .msg-bubble.assistant-bubble'));
+    if (bubbles.length === 0) return;
+    const lastBubble = bubbles[bubbles.length - 1];
+    const clone = lastBubble.cloneNode(true);
+    clone.querySelectorAll('.msg-action-bar, .research-status-bar, .research-sources-card, .model-thinking-box, .continuation-section, .canvas-card-header, .bubble-author, .humanizer-verification-badge, .humanizer-verification-badge-container, .word-count-badge, .token-count-badge, .agentic-loop-badge').forEach(el => el.remove());
+    const text = lastBubble.dataset?.rawText || clone.innerText.trim();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('btn-floating-copy');
+        if (btn) {
+          const origHtml = btn.innerHTML;
+          btn.innerHTML = '<span class="pill-icon">✅</span><span class="pill-label">Copied!</span>';
+          setTimeout(() => { btn.innerHTML = origHtml; }, 1800);
+        }
+        if (typeof termLog === 'function') {
+          termLog('📋 Last response copied to clipboard.', 'info');
+        }
+      });
+    }
+  };
+
+  window.stopGeneratingChat = function() {
+    if (currentAbortController) {
+      try { currentAbortController.abort(); } catch (_) {}
+    }
+    setChatRunningState(false);
+    if (typeof termLog === 'function') {
+      termLog('⏹️ Generation stopped by user.', 'warn');
+    }
+    updateFloatingActionButtons();
+  };
 
   window.toggleMoreMenu = function(btn) {
     if (typeof window.openShareModal === 'function') {
@@ -9567,6 +9680,9 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
       cliPromptInput.focus();
     }
     renderChatHistoryList();
+    if (typeof updateFloatingActionButtons === 'function') {
+      updateFloatingActionButtons();
+    }
   }
   if (typeof window !== 'undefined') {
     window.startNewChatSession = startNewChatSession;
@@ -9741,6 +9857,9 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     }
     renderChatHistoryList();
     if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+    if (typeof updateFloatingActionButtons === 'function') {
+      updateFloatingActionButtons();
+    }
   }
 
   // -----------------------------------------------------------------
@@ -11219,6 +11338,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
         try { targetInput.focus(); } catch (e) {}
       }
     }
+    updateFloatingActionButtons();
   }
 
   function abortActiveGeneration() {
@@ -26560,6 +26680,9 @@ If you are asked about real-world facts such as world leaders, heads of state, c
     if (typeof termLog === 'function') {
       termLog('[SYSTEM] Started new conversation session.', 'sys');
     }
+    if (typeof updateFloatingActionButtons === 'function') {
+      updateFloatingActionButtons();
+    }
   }
   if (typeof window !== 'undefined') {
     window.startNewChat = startNewChat;
@@ -29205,4 +29328,9 @@ If you are asked about real-world facts such as world leaders, heads of state, c
 
   // Initialize Header Navigation UI and Breadcrumb state
   updateNavigationUiState();
+
+  // Initialize floating chat action bar (Continue, Regenerate, Copy, Stop)
+  if (typeof updateFloatingActionButtons === 'function') {
+    updateFloatingActionButtons();
+  }
 });
