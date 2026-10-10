@@ -693,6 +693,7 @@ def main():
     parser.add_argument("--job-description", "--jd", default="", help="Job description to ground screening answers")
     parser.add_argument("--no-ocr", action="store_true", help="Disable vision OCR for scanned pages")
     parser.add_argument("--json", action="store_true", help="Output raw JSON (default)")
+    parser.add_argument("--extract-text", action="store_true", help="Extract raw plain text from file without LLM/JSON processing")
 
     args = parser.parse_args()
 
@@ -700,6 +701,15 @@ def main():
     if not target_file and not args.text:
         parser.print_help()
         sys.exit(1)
+
+    if args.extract_text:
+        try:
+            txt = extract_text_from_file(target_file, enable_ocr=not args.no_ocr)
+            print(txt)
+            sys.exit(0)
+        except Exception as e:
+            sys.stderr.write(f"Error extracting text: {e}\n")
+            sys.exit(1)
 
     try:
         res = parse_resume(

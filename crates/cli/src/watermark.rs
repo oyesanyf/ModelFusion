@@ -310,6 +310,79 @@ impl WatermarkReport {
     }
 }
 
+/// Extracts readable text from plain text, PDF, Word DOCX, or RTF files.
+pub fn extract_document_text(target_path: &Path) -> Result<String, String> {
+    let ext = target_path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    if ext == "pdf" || ext == "docx" || ext == "doc" || ext == "rtf" {
+        // 1. Try python scripts/parse_resume.py --extract-text
+        let script_candidates = [
+            std::path::PathBuf::from("scripts").join("parse_resume.py"),
+            std::path::PathBuf::from("..").join("scripts").join("parse_resume.py"),
+            std::path::PathBuf::from("../..").join("scripts").join("parse_resume.py"),
+        ];
+        for sc in &script_candidates {
+            if sc.is_file() {
+                if let Ok(out) = std::process::Command::new("python")
+                    .args([sc.to_str().unwrap(), "--extract-text", target_path.to_str().unwrap()])
+                    .output()
+                {
+                    if out.status.success() {
+                        let txt = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                        if !txt.is_empty() {
+                            return Ok(txt);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Direct python inline snippet using pypdf
+        if ext == "pdf" {
+            let py_cmd = format!(
+                "import pypdf, sys; reader = pypdf.PdfReader(r'{}'); print(' '.join(p.extract_text() or '' for p in reader.pages))",
+                target_path.display()
+            );
+            if let Ok(out) = std::process::Command::new("python").args(["-c", &py_cmd]).output() {
+                if out.status.success() {
+                    let txt = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    if !txt.is_empty() {
+                        return Ok(txt);
+                    }
+                }
+            }
+        }
+
+        // 3. Binary stream fallback: scan for printable ASCII character runs (length >= 3)
+        if let Ok(bytes) = std::fs::read(target_path) {
+            let mut words = Vec::new();
+            let mut current = Vec::new();
+            for &b in &bytes {
+                if b.is_ascii_graphic() || b == b' ' {
+                    current.push(b);
+                } else if !current.is_empty() {
+                    if current.len() >= 3 {
+                        if let Ok(s) = std::str::from_utf8(&current) {
+                            let trimmed = s.trim();
+                            if trimmed.len() >= 3 && !trimmed.starts_with('/') && !trimmed.starts_with('%') {
+                                words.push(trimmed.to_string());
+                            }
+                        }
+                    }
+                    current.clear();
+                }
+            }
+            if !words.is_empty() {
+                return Ok(words.join(" "));
+            }
+        }
+
+        Err(format!("Could not extract text from document: '{}'", target_path.display()))
+    } else {
+        // Plain text file
+        std::fs::read_to_string(target_path).map_err(|e| format!("Failed to read file '{}': {}", target_path.display(), e))
+    }
+}
+
 /// Detect watermark across arbitrary input: image path, text file path, or inline text.
 pub fn detect_watermark_input(input: &str) -> Result<WatermarkReport, String> {
     let trimmed = input.trim();
@@ -355,8 +428,8 @@ pub fn detect_watermark_input(input: &str) -> Result<WatermarkReport, String> {
                 Err(e) => Err(format!("Failed to analyze image '{}': {}", unquoted, e)),
             }
         } else {
-            // Read as text file
-            match std::fs::read_to_string(&target_path) {
+            // Read as text or extract from document (PDF, Word, RTF)
+            match extract_document_text(&target_path) {
                 Ok(content) => {
                     let detector = TokenWatermarkDetector::default();
                     match detector.detect_text(&content) {
@@ -367,7 +440,7 @@ pub fn detect_watermark_input(input: &str) -> Result<WatermarkReport, String> {
                         None => Err(format!("File '{}' has insufficient tokens (< 2) for statistical watermark evaluation.", unquoted)),
                     }
                 }
-                Err(e) => Err(format!("Failed to read file '{}': {}", unquoted, e)),
+                Err(e) => Err(format!("Failed to read/extract text from file '{}': {}", unquoted, e)),
             }
         }
     } else {

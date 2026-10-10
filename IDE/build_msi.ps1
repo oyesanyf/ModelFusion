@@ -1042,6 +1042,7 @@ if (-not $serverRunning) {
     Write-Host "[INFO] Re-starting ModelFusion Master Server daemon on port 5000..." -ForegroundColor Yellow
     $cliPath = Join-Path $repoRoot "target\release\cli.exe"
     if (Test-Path $cliPath) {
+        Sign-FileWithCert $cliPath
         $cliDir = Split-Path -Parent $cliPath
         Start-Process -FilePath $cliPath -ArgumentList "--server", "--port", "5000" -WorkingDirectory $cliDir -WindowStyle Hidden
         for ($i = 0; $i -lt 10; $i++) {
