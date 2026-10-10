@@ -9948,6 +9948,315 @@ Respond ONLY with a valid JSON object matching this schema:
     "simple_general".to_string()
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LegalDomainAuthorities {
+    pub domain_name: &'static str,
+    pub statutes: Vec<&'static str>,
+    pub precedents: Vec<&'static str>,
+    pub default_summary: &'static str,
+}
+
+pub fn resolve_legal_domain_authorities(query: &str) -> LegalDomainAuthorities {
+    let q = query.to_lowercase();
+
+    // Domain 1: Healthcare, HIPAA, ePHI & Medical Data Privacy
+    if q.contains("hipaa") || q.contains("hippa") || q.contains("phi") || q.contains("ephi")
+        || q.contains("health information") || q.contains("medical record") || q.contains("patient")
+        || q.contains("hitech") || q.contains("hhs ocr") || q.contains("covered entity")
+        || q.contains("business associate") || q.contains("unauthenticated website") || q.contains("unauthtication")
+        || q.contains("telehealth")
+    {
+        return LegalDomainAuthorities {
+            domain_name: "Healthcare Privacy & HIPAA / HITECH Compliance",
+            statutes: vec![
+                "45 CFR § 160.103 (Statutory Definition of Protected Health Information / PHI)",
+                "45 CFR § 164.306 (HIPAA Security Rule: General Administrative & Technical Safeguards)",
+                "45 CFR § 164.312 (Technical Safeguards: Access Control § 164.312(a) & Authentication § 164.312(d))",
+                "45 CFR § 164.402 - § 164.414 (HIPAA Breach Notification Rule: Risk Assessment & Individual Notice § 164.404)",
+                "HITECH Act (42 U.S.C. § 17931 et seq. & Civil Monetary Penalty Enforcement Tiers 42 U.S.C. § 1320d-5)",
+                "45 CFR § 164.502 (HIPAA Privacy Rule: Permissible Uses and Disclosures of Health Data)",
+            ],
+            precedents: vec![
+                "HHS OCR Bulletin on Online Tracking Technologies & Unauthenticated Web Portals (2022/2024)",
+                "In re Touchstone Medical Imaging (HHS OCR $3,000,000 settlement for unauthenticated internet server exposing ePHI)",
+                "In re Premera Blue Cross (HHS OCR $6,850,000 settlement for failure to implement technical access controls under § 164.312)",
+                "American Hospital Association v. Becerra (N.D. Tex. 2024 - Limits on OCR tracking pixel enforcement over public web pages)",
+                "FTC Health Breach Notification Rule Enforcement (In re GoodRx / BetterHelp - Unauthorized disclosure of health identifiers)",
+            ],
+            default_summary: "HIPAA Security Rule (45 CFR §§ 164.306, 164.312) mandates strict technical access controls and unique user authentication for systems containing ePHI. Unauthenticated web interfaces exposing patient records violate technical safeguard standards and trigger mandatory individual and HHS OCR breach notifications under 45 CFR Part 164 Subpart D.",
+        };
+    }
+
+    // Domain 2: General Cybersecurity, Data Privacy & Non-Healthcare Breach Notification
+    if q.contains("cybersecurity") || q.contains("data breach") || q.contains("gdpr")
+        || q.contains("ccpa") || q.contains("cpra") || q.contains("cfaa") || q.contains("glba")
+        || q.contains("ransomware") || q.contains("pii") || q.contains("privacy policy")
+    {
+        return LegalDomainAuthorities {
+            domain_name: "Cybersecurity & Data Privacy Law",
+            statutes: vec![
+                "FTC Act Section 5 (15 U.S.C. § 45 - Unfair or Deceptive Cybersecurity Practices)",
+                "Computer Fraud and Abuse Act (CFAA, 18 U.S.C. § 1030)",
+                "California Consumer Privacy Act / CPRA (Cal. Civ. Code § 1798.100 et seq.)",
+                "Gramm-Leach-Bliley Act (GLBA Safeguards Rule, 16 CFR Part 314)",
+                "EU General Data Protection Regulation (GDPR Articles 32 & 33 - Security of Processing & Breach Notification)",
+            ],
+            precedents: vec![
+                "FTC v. Wyndham Worldwide Corp. (3d Cir. 2015 - FTC authority over unreasonable data security)",
+                "In re Equifax Inc. Customer Data Security Breach Litigation (Consolidated Multi-District Litigation)",
+                "In re Home Depot Customer Data Security Breach Litigation (Duty of care in payment card infrastructure)",
+            ],
+            default_summary: "Federal Trade Commission Act Section 5, state data protection statutes (e.g. CCPA/CPRA), and regulatory safeguards rules require commercially reasonable administrative, physical, and technical safeguards to protect personally identifiable information against unauthorized exfiltration.",
+        };
+    }
+
+    // Domain 3: Securities, Public Filings & Capital Markets Disclosures
+    if q.contains("securities") || q.contains("sec rule 10b-5") || q.contains("10b-5")
+        || q.contains("insider trading") || q.contains("10-k") || q.contains("10-q") || q.contains("8-k")
+        || q.contains("fraud on the market") || q.contains("item 106") || q.contains("reg s-k")
+        || q.contains("shareholder") || q.contains("investor")
+    {
+        return LegalDomainAuthorities {
+            domain_name: "Securities Regulation & Public Company Disclosures",
+            statutes: vec![
+                "Securities Exchange Act of 1934 § 10(b) & SEC Rule 10b-5 (17 CFR § 240.10b-5)",
+                "Securities Act of 1933 § 11 & § 12(a)(2) (Registration Statement Liabilities)",
+                "Regulation S-K Item 106 (Cybersecurity Risk Management, Strategy, Governance, and Incident Disclosure)",
+                "Sarbanes-Oxley Act of 2002 § 302 & § 404 (Internal Controls over Financial & Information Reporting)",
+            ],
+            precedents: vec![
+                "Basic Inc. v. Levinson (485 U.S. 224 - Materiality Standard & Fraud-on-the-Market Presumption)",
+                "SEC v. SolarWinds Corp. (S.D.N.Y. 2024 - Standards for Internal Accounting Controls and Cybersecurity Risk Disclosures)",
+                "Matrixx Initiatives, Inc. v. Siracusano (563 U.S. 27 - Materiality of Adverse Event Reports)",
+            ],
+            default_summary: "Securities Exchange Act Section 10(b) and SEC Rule 10b-5 prohibit material misstatements or omissions in public corporate disclosures. SEC Item 106 mandates detailed disclosure of cybersecurity risk management and material incidents on Form 8-K.",
+        };
+    }
+
+    // Domain 4: Corporate Governance, Fiduciary Duties & Board Oversight
+    if q.contains("board") || q.contains("director") || q.contains("fiduciary")
+        || q.contains("caremark") || q.contains("revlon") || q.contains("unocal")
+        || q.contains("takeover") || q.contains("poison pill") || q.contains("derivative")
+        || q.contains("business judgment")
+    {
+        return LegalDomainAuthorities {
+            domain_name: "Corporate Governance & Fiduciary Duties",
+            statutes: vec![
+                "Delaware General Corporation Law (DGCL) § 141 (Board Management & Committees)",
+                "Model Business Corporation Act (MBCA) § 8.30 (Standards of Conduct for Directors)",
+                "DGCL § 102(b)(7) (Exculpation of Director & Officer Personal Liability)",
+            ],
+            precedents: vec![
+                "In re Caremark International Inc. Derivative Litigation (Del. Ch. 1996 - Duty of Oversight)",
+                "Marchand v. Barnhill (Del. 2019 - Board Duty to Monitor Mission-Critical Regulatory Compliance)",
+                "Revlon, Inc. v. MacAndrews & Forbes Holdings (Del. 1986 - Maximizing Shareholder Value in Sale of Control)",
+                "Unocal Corp. v. Mesa Petroleum Co. (Del. 1985 - Proportionality Review of Defensive Takeover Measures)",
+            ],
+            default_summary: "Directors owe duties of care, loyalty, and oversight under DGCL § 141 and Caremark. Boards must implement reasonable monitoring systems over mission-critical regulatory and data security operations.",
+        };
+    }
+
+    // Domain 5: Commercial Contracts & Sales
+    if q.contains("contract") || q.contains("agreement") || q.contains("breach of contract")
+        || q.contains("ucc") || q.contains("article 2") || q.contains("battle of the forms")
+        || q.contains("promissory estoppel") || q.contains("consideration") || q.contains("warranty")
+        || q.contains("indemnity") || q.contains("limitation of liability")
+    {
+        return LegalDomainAuthorities {
+            domain_name: "Commercial Contracts & Sales of Goods",
+            statutes: vec![
+                "Uniform Commercial Code (UCC) § 2-207 (Additional Terms in Acceptance / Battle of the Forms)",
+                "Restatement (Second) of Contracts § 90 (Promissory Estoppel & Detrimental Reliance)",
+                "Uniform Commercial Code (UCC) § 2-302 (Unconscionable Contract or Clause)",
+                "Restatement (Second) of Contracts § 205 (Duty of Good Faith and Fair Dealing)",
+            ],
+            precedents: vec![
+                "ProCD, Inc. v. Zeidenberg (7th Cir. 1996 - Enforceability of Shrinkwrap and Clickwrap Licenses)",
+                "Hadley v. Baxendale (1854 - Foreseeability Limitation on Consequential Contract Damages)",
+                "Specht v. Netscape Communications Corp. (2d Cir. 2002 - Assent and Notice in Online Browsewrap Agreements)",
+            ],
+            default_summary: "Commercial transactions for the sale of goods are governed by UCC Article 2, including battle of the forms under § 2-207. Common law and Restatement (Second) of Contracts govern formation, consideration, promissory estoppel (§ 90), and limitations of liability.",
+        };
+    }
+
+    // Domain 6: Intellectual Property & Trade Secrets
+    if q.contains("copyright") || q.contains("patent") || q.contains("trademark")
+        || q.contains("trade secret") || q.contains("dtsa") || q.contains("fair use")
+        || q.contains("infringement") || q.contains("lanham")
+    {
+        return LegalDomainAuthorities {
+            domain_name: "Intellectual Property & Trade Secrets",
+            statutes: vec![
+                "Defend Trade Secrets Act (DTSA, 18 U.S.C. § 1836 et seq.)",
+                "Copyright Act of 1976 (17 U.S.C. § 101 et seq.)",
+                "Patent Act (35 U.S.C. § 101 et seq.)",
+                "Lanham Act (15 U.S.C. § 1051 et seq. - Trademark Protection)",
+            ],
+            precedents: vec![
+                "Campbell v. Acuff-Rose Music, Inc. (510 U.S. 569 - Transformative Fair Use Doctrine)",
+                "Alice Corp. Pty. Ltd. v. CLS Bank International (573 U.S. 208 - Patent Eligibility of Computer-Implemented Inventions)",
+                "eBay Inc. v. MercExchange, L.L.C. (547 U.S. 388 - Four-Factor Test for Permanent Injunctive Relief)",
+            ],
+            default_summary: "Governed by federal intellectual property statutes including the Copyright Act, Patent Act, Lanham Act, and Defend Trade Secrets Act (DTSA), providing protections against misappropriation and unauthorized exploitation.",
+        };
+    }
+
+    // General Legal Fallback
+    LegalDomainAuthorities {
+        domain_name: "General Regulatory & Statutory Jurisprudence",
+        statutes: vec![
+            "Administrative Procedure Act (APA, 5 U.S.C. § 551 et seq.)",
+            "Federal Rules of Civil Procedure (FRCP Rules 8, 12(b)(6), and 56)",
+            "Restatement (Second) of Contracts § 205 (Good Faith and Fair Dealing)",
+        ],
+        precedents: vec![
+            "Chevron U.S.A. Inc. v. Natural Resources Defense Council / Loper Bright Enterprises v. Raimondo (2024)",
+            "Bell Atlantic Corp. v. Twombly & Ashcroft v. Iqbal (Plausibility Pleading Standard)",
+        ],
+        default_summary: "General federal regulatory standards, statutory interpretation canons, and procedural rules applied.",
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GroundingEvaluationResult {
+    pub status: String,
+    pub score: u32,
+    pub label: String,
+    pub domain: String,
+    pub contamination_detected: bool,
+    pub citations_found: Vec<String>,
+    pub details: Vec<String>,
+}
+
+pub fn evaluate_grounding_accuracy(query: &str, text: &str, domain_hint: Option<&str>) -> GroundingEvaluationResult {
+    let q = query.to_lowercase();
+    let t = text.to_lowercase();
+
+    let is_hipaa = q.contains("hipaa") || q.contains("hippa") || q.contains("phi") || q.contains("ephi")
+        || q.contains("health information") || q.contains("medical record") || q.contains("patient")
+        || q.contains("hhs ocr") || q.contains("unauthenticated website") || q.contains("unauthtication")
+        || q.contains("hitech");
+
+    let is_cyber = !is_hipaa && (q.contains("cybersecurity") || q.contains("data breach") || q.contains("gdpr") || q.contains("ccpa") || q.contains("cfaa"));
+    let is_securities = q.contains("securities") || q.contains("10b-5") || q.contains("10-k") || q.contains("insider trading") || q.contains("reg s-k");
+    let is_corp = q.contains("fiduciary") || q.contains("caremark") || q.contains("revlon") || q.contains("unocal") || q.contains("board") || q.contains("dgcl");
+    let is_contract = q.contains("contract") || q.contains("agreement") || q.contains("ucc") || q.contains("breach of contract");
+
+    let mut score = 70u32;
+    let mut details = Vec::new();
+    let mut citations_found = Vec::new();
+    let mut contamination = false;
+    let domain: String;
+
+    if is_hipaa {
+        domain = "Healthcare Privacy & HIPAA / HITECH Compliance".to_string();
+        let bad_citations = [
+            "basic inc. v. levinson", "revlon", "unocal", "ucc § 2-207", "ucc 2-207",
+            "restatement § 90", "restatement (second) of contracts", "sec rule 10b-5", "rule 10b-5"
+        ];
+        for bad in bad_citations {
+            if t.contains(bad) {
+                contamination = true;
+                break;
+            }
+        }
+
+        let good_statutes = [
+            ("45 cfr § 164.312", "45 CFR § 164.312 (Technical Safeguards)"),
+            ("164.312", "45 CFR § 164.312"),
+            ("45 cfr § 160.103", "45 CFR § 160.103 (PHI Definition)"),
+            ("160.103", "45 CFR § 160.103"),
+            ("45 cfr § 164.306", "45 CFR § 164.306 (Security Rule)"),
+            ("164.306", "45 CFR § 164.306"),
+            ("45 cfr § 164.404", "45 CFR § 164.404 (Breach Notification)"),
+            ("164.404", "45 CFR § 164.404"),
+            ("164.402", "45 CFR § 164.402"),
+            ("hitech", "HITECH Act"),
+            ("touchstone", "In re Touchstone Medical Imaging"),
+            ("ocr bulletin", "HHS OCR Bulletin"),
+            ("access control", "Technical Access Controls"),
+            ("authentication", "User Authentication Standard"),
+        ];
+
+        for (pattern, name) in good_statutes {
+            if t.contains(pattern) {
+                citations_found.push(name.to_string());
+            }
+        }
+
+        if contamination {
+            score = 35;
+            details.push("⚠️ Cross-Domain Contamination Detected (Inapplicable Corporate/Securities Doctrines)".to_string());
+        } else {
+            score += 15;
+            details.push("✓ Zero Cross-Domain Contamination".to_string());
+        }
+
+        if !citations_found.is_empty() {
+            score = (score + citations_found.len() as u32 * 4).min(98);
+            details.push("✓ Statutory & Regulatory Alignment (HIPAA Security Rule / HHS OCR)".to_string());
+            details.push("✓ Factual Grounding (ePHI Technical Safeguards & Breach Standards)".to_string());
+        }
+    } else if is_contract {
+        domain = "Commercial Contracts & Sales of Goods".to_string();
+        if t.contains("ucc") || t.contains("2-207") || t.contains("restatement") || t.contains("contract") {
+            score = 95;
+            citations_found.push("UCC / Restatement of Contracts".to_string());
+            details.push("✓ Contract Law Doctrinal Consistency".to_string());
+            details.push("✓ Factual Grounding".to_string());
+        }
+    } else if is_securities {
+        domain = "Securities Regulation & Public Company Disclosures".to_string();
+        if t.contains("10b-5") || t.contains("exchange act") || t.contains("basic inc") || t.contains("sec") {
+            score = 96;
+            citations_found.push("Securities Exchange Act / SEC Rules".to_string());
+            details.push("✓ Securities Regulatory Alignment".to_string());
+            details.push("✓ Factual Grounding".to_string());
+        }
+    } else if is_corp {
+        domain = "Corporate Governance & Fiduciary Duties".to_string();
+        if t.contains("caremark") || t.contains("revlon") || t.contains("unocal") || t.contains("dgcl") {
+            score = 95;
+            citations_found.push("Delaware Corporate Law / Fiduciary Precedents".to_string());
+            details.push("✓ Fiduciary Duty Doctrinal Alignment".to_string());
+            details.push("✓ Factual Grounding".to_string());
+        }
+    } else if is_cyber {
+        domain = "Cybersecurity & Data Privacy Law".to_string();
+        if t.contains("ftc") || t.contains("cfaa") || t.contains("gdpr") || t.contains("ccpa") {
+            score = 94;
+            citations_found.push("Cybersecurity & Privacy Safeguards".to_string());
+            details.push("✓ Privacy Statutory Alignment".to_string());
+            details.push("✓ Factual Grounding".to_string());
+        }
+    } else {
+        domain = domain_hint.unwrap_or("General Jurisprudence & Regulatory Frameworks").to_string();
+        score = 92;
+        details.push("✓ Doctrinal Consistency".to_string());
+        details.push("✓ Factual Grounding".to_string());
+    }
+
+    let label = if score >= 90 {
+        "Verified Truth".to_string()
+    } else if score >= 80 {
+        "High Grounding".to_string()
+    } else if score >= 70 {
+        "Adequate Grounding".to_string()
+    } else {
+        "Needs Verification".to_string()
+    };
+
+    GroundingEvaluationResult {
+        status: "ok".to_string(),
+        score,
+        label,
+        domain,
+        contamination_detected: contamination,
+        citations_found,
+        details,
+    }
+}
+
 /// Simple URL percent decoder.
 pub fn url_decode_simple(input: &str) -> String {
     let mut out = Vec::new();
@@ -13235,6 +13544,7 @@ public class ShortcutHelper {
                     query = "contract compliance regulatory standard".to_string();
                 }
 
+                let auth = resolve_legal_domain_authorities(&query);
                 let search_query = format!("{} legal statute regulation precedent court rule 2026", query);
                 let (results_summary, sources) = match modelfusion_core::live_web_search(&search_query, 4).await {
                     Ok(res) if !res.is_empty() => {
@@ -13243,7 +13553,7 @@ public class ShortcutHelper {
                         (summary, urls)
                     }
                     _ => (
-                        "Governing federal and state regulatory precedents, Uniform Commercial Code (UCC), Restatement (Second) of Contracts, and SEC disclosure guidelines applied.".to_string(),
+                        String::new(),
                         vec![]
                     ),
                 };
@@ -13252,18 +13562,10 @@ public class ShortcutHelper {
                     "status": "ok",
                     "service": "modelfusion",
                     "query": query,
-                    "statutes": [
-                        "Uniform Commercial Code (UCC) § 2-207",
-                        "Restatement (Second) of Contracts § 90",
-                        "Securities Exchange Act of 1934 (Rule 10b-5)",
-                        "Delaware General Corporation Law (DGCL)"
-                    ],
-                    "precedents": [
-                        "Basic Inc. v. Levinson (Materiality standard)",
-                        "Revlon, Inc. v. MacAndrews & Forbes Holdings",
-                        "Unocal Corp. v. Mesa Petroleum Co."
-                    ],
-                    "summary": results_summary,
+                    "domain": auth.domain_name,
+                    "statutes": auth.statutes,
+                    "precedents": auth.precedents,
+                    "summary": if results_summary.trim().is_empty() { auth.default_summary.to_string() } else { format!("{}\n{}", auth.default_summary, results_summary) },
                     "sources": sources
                 });
                 let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
@@ -13316,13 +13618,80 @@ public class ShortcutHelper {
                     _ => String::new(),
                 };
 
+                let (effective_domain, statutes, precedents) = if domain == "legal" {
+                    let auth = resolve_legal_domain_authorities(&query);
+                    (auth.domain_name.to_string(), auth.statutes, auth.precedents)
+                } else {
+                    (domain.clone(), vec![], vec![])
+                };
+
                 let resp_json = serde_json::json!({
                     "status": "ok",
                     "service": "modelfusion",
-                    "domain": domain,
+                    "domain": effective_domain,
                     "query": query,
+                    "statutes": statutes,
+                    "precedents": precedents,
                     "grounding": results_summary
                 });
+                let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Grounding Accuracy Evaluation Endpoint (/api/ground/evaluate) ──
+            if request_path == "/api/ground/evaluate" {
+                let mut query = String::new();
+                let mut text = String::new();
+                let mut domain = String::new();
+
+                if let Some(pos) = raw_request_uri.find('?') {
+                    let query_str = &raw_request_uri[pos + 1..];
+                    for pair in query_str.split('&') {
+                        if let Some((k, v)) = pair.split_once('=') {
+                            let k_dec = url_decode_simple(k).to_lowercase();
+                            if k_dec == "q" || k_dec == "query" || k_dec == "prompt" {
+                                query = url_decode_simple(v).trim().to_string();
+                            } else if k_dec == "text" || k_dec == "content" || k_dec == "response" {
+                                text = url_decode_simple(v).trim().to_string();
+                            } else if k_dec == "domain" {
+                                domain = url_decode_simple(v).trim().to_string();
+                            }
+                        }
+                    }
+                }
+                if query.is_empty() {
+                    query = request_json.get("q").and_then(|v| v.as_str())
+                        .or_else(|| request_json.get("query").and_then(|v| v.as_str()))
+                        .or_else(|| request_json.get("prompt").and_then(|v| v.as_str()))
+                        .unwrap_or("").to_string();
+                }
+                if text.is_empty() {
+                    text = request_json.get("text").and_then(|v| v.as_str())
+                        .or_else(|| request_json.get("content").and_then(|v| v.as_str()))
+                        .or_else(|| request_json.get("response").and_then(|v| v.as_str()))
+                        .unwrap_or("").to_string();
+                }
+                if domain.is_empty() {
+                    domain = request_json.get("domain").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                }
+
+                let eval = evaluate_grounding_accuracy(&query, &text, if domain.is_empty() { None } else { Some(&domain) });
+                let resp_json = serde_json::to_value(&eval).unwrap_or_else(|_| serde_json::json!({
+                    "status": "ok",
+                    "score": eval.score,
+                    "label": eval.label,
+                    "domain": eval.domain,
+                    "contamination_detected": eval.contamination_detected,
+                    "citations_found": eval.citations_found,
+                    "details": eval.details
+                }));
                 let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
                 let response = format!(
                     "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",

@@ -99,11 +99,15 @@ function createElementStub() {
 }
 
 let domListeners = {};
+let windowListeners = {};
 const elements = {};
 
 const mockSandboxWindow = {
   location: { protocol: 'http:', href: 'http://localhost/', replace: () => {} },
-  addEventListener: (evt, cb) => {},
+  addEventListener: (evt, cb) => {
+    if (!windowListeners[evt]) windowListeners[evt] = [];
+    windowListeners[evt].push(cb);
+  },
   isGenerating: false,
   activeOutline: null
 };
@@ -208,6 +212,7 @@ console.log('  ✅ Step 5: Gate bypass verified when outlineApproved: true.');
 if (domListeners['click']) {
   let preventDefaultCalled = false;
   let approveCalled = false;
+  const originalConfirm = mockSandboxWindow.confirmOutlineAction;
   mockSandboxWindow.confirmOutlineAction = () => { approveCalled = true; };
   const clickListeners = Array.isArray(domListeners['click']) ? domListeners['click'] : [domListeners['click']];
   const clickEvt = {
@@ -219,8 +224,148 @@ if (domListeners['click']) {
   clickListeners.forEach(listener => listener(clickEvt));
   assert.ok(approveCalled, 'Delegated click listener must invoke confirmOutlineAction');
   assert.ok(preventDefaultCalled, 'Delegated click listener must preventDefault');
+  mockSandboxWindow.confirmOutlineAction = originalConfirm;
   console.log('  ✅ Step 6: Delegated click on .btn-hitl-approve triggers confirmOutlineAction.');
 }
 
-console.log('\n🎉 ALL 6 COMPREHENSIVE OUTLINE HITL & PORT CONFLICT TESTS PASSED! 🛡️🚀\n');
+// Test 7: Static Verification of Defensive Error Boundaries & Crash Resilience
+console.log('\nTest 7: Static Verification of Defensive Error Boundaries across HITL Handlers...');
+
+function assertFunctionHasTryCatch(fnName) {
+  const regex = new RegExp(`function\\s+${fnName}\\s*\\([^)]*\\)\\s*\\{([\\s\\S]*?)(?:\\n  \\}|\\n\\s*function)`);
+  const match = appJs.match(regex);
+  assert.ok(match, `${fnName} definition must be found`);
+  const body = match[1];
+  assert.ok(body.includes('try {'), `${fnName} must contain try block`);
+  assert.ok(body.includes('catch ('), `${fnName} must contain catch block`);
+}
+
+assertFunctionHasTryCatch('confirmOutlineAction');
+assertFunctionHasTryCatch('abortOutlineAction');
+assertFunctionHasTryCatch('customizeOutlineAction');
+assertFunctionHasTryCatch('editOutlineChapter');
+assertFunctionHasTryCatch('confirmShellAction');
+assertFunctionHasTryCatch('abortShellAction');
+assertFunctionHasTryCatch('confirmExamSubmit');
+assertFunctionHasTryCatch('abortExamSubmit');
+
+// Verify Global Error Listeners and termLog Export
+assert.ok(appJs.includes('window.onerror = function('), 'window.onerror listener must be registered in app.js');
+assert.ok(appJs.includes("window.addEventListener('unhandledrejection'"), 'unhandledrejection listener must be registered in app.js');
+assert.ok(appJs.includes('window.termLog = termLog'), 'window.termLog must be exported');
+assert.ok(appJs.includes('function renderHitlErrorBanner('), 'renderHitlErrorBanner must be defined');
+assert.ok(appJs.includes('window.renderHitlErrorBanner = renderHitlErrorBanner'), 'renderHitlErrorBanner must be exported on window');
+
+// Verify Background Pollers Resilience
+assert.ok(appJs.includes('probeOllama().catch(() => false)'), 'probeOllama must be guarded with .catch(() => false)');
+assert.ok(appJs.includes('probeIpc().catch(() => false)'), 'probeIpc must be guarded with .catch(() => false)');
+assert.ok(appJs.includes('probeCdp().catch(() => false)'), 'probeCdp must be guarded with .catch(() => false)');
+console.log('  ✅ Test 7 Passed: All HITL handlers, global listeners, and pollers contain strict error boundaries.');
+
+// Test 8: Sandbox Execution of Fault Injection & Global Error Handlers
+console.log('\nTest 8: Sandbox Simulation of Fault Injection & Global Error Boundaries...');
+
+// Step 7: Normal Outline Abort
+mockSandboxWindow.isGenerating = true;
+mockSandboxWindow.abortOutlineAction();
+assert.strictEqual(mockSandboxWindow.isGenerating, false, 'abortOutlineAction must unlock isGenerating to false');
+assert.ok(elements['outline-hitl-safety-gate'].innerHTML.includes('Outline Generation Cancelled by User'), 'Gate must display cancellation banner');
+console.log('  ✅ Step 7: abortOutlineAction displays cancellation banner and unlocks state.');
+
+// Step 8: Normal Outline Customization
+mockSandboxWindow.confirm = () => true;
+mockSandboxWindow.customizeOutlineAction();
+assert.ok(mockSandboxWindow.activeOutline.chapters.length >= 3, 'customizeOutlineAction must add a chapter');
+console.log('  ✅ Step 8: customizeOutlineAction successfully adds chapter when confirmed.');
+
+// Step 9: Fault-Injected confirmOutlineAction
+let throwConfirmOnce = true;
+const gateConfirmRef = elements['outline-hitl-safety-gate'];
+Object.defineProperty(gateConfirmRef, 'innerHTML', {
+  get() { return this._innerHtmlConfirm || ''; },
+  set(val) {
+    if (throwConfirmOnce) {
+      throwConfirmOnce = false;
+      throw new Error('Simulated confirm gate failure');
+    }
+    this._innerHtmlConfirm = val;
+  },
+  configurable: true
+});
+
+// Calling confirmOutlineAction must NOT throw unhandled error
+assert.doesNotThrow(() => {
+  mockSandboxWindow.confirmOutlineAction();
+}, 'confirmOutlineAction must catch DOM exceptions gracefully');
+
+// Reset gateConfirmRef property definition
+Object.defineProperty(gateConfirmRef, 'innerHTML', {
+  value: gateConfirmRef._innerHtmlConfirm || '',
+  writable: true,
+  configurable: true
+});
+
+assert.ok(elements['outline-hitl-safety-gate'].innerHTML.includes('hitl-error-banner'), 'Gate must render .hitl-error-banner upon exception');
+assert.ok(elements['outline-hitl-safety-gate'].innerHTML.includes('Simulated confirm gate failure'), 'Error banner must contain fault reason');
+console.log('  ✅ Step 9: Fault-injected confirmOutlineAction caught cleanly and rendered .hitl-error-banner.');
+
+// Step 10: Fault-Injected abortOutlineAction
+let throwOnce = true;
+const gateElRef = elements['outline-hitl-safety-gate'];
+Object.defineProperty(gateElRef, 'innerHTML', {
+  get() { return this._innerHtml || ''; },
+  set(val) {
+    if (throwOnce) {
+      throwOnce = false;
+      throw new Error('Simulated gate write failure');
+    }
+    this._innerHtml = val;
+  },
+  configurable: true
+});
+
+assert.doesNotThrow(() => {
+  mockSandboxWindow.abortOutlineAction();
+}, 'abortOutlineAction must catch exceptions gracefully');
+
+// Reset gateElRef property definition
+Object.defineProperty(gateElRef, 'innerHTML', {
+  value: gateElRef._innerHtml || '',
+  writable: true,
+  configurable: true
+});
+assert.ok(elements['outline-hitl-safety-gate'].innerHTML.includes('hitl-error-banner'), 'Gate must render .hitl-error-banner on abort failure');
+console.log('  ✅ Step 10: Fault-injected abortOutlineAction caught cleanly and rendered .hitl-error-banner.');
+
+// Step 11: Fault-Injected customizeOutlineAction
+mockSandboxWindow.confirm = () => { throw new Error('Simulated confirm dialog crash'); };
+assert.doesNotThrow(() => {
+  mockSandboxWindow.customizeOutlineAction();
+}, 'customizeOutlineAction must catch dialog crashes gracefully');
+console.log('  ✅ Step 11: Fault-injected customizeOutlineAction caught cleanly.');
+
+// Step 12: Global Window Error Listener
+let capturedLogs = [];
+const originalTermLog = mockSandboxWindow.termLog;
+mockSandboxWindow.termLog = (msg, type) => {
+  capturedLogs.push({ msg, type });
+  if (typeof originalTermLog === 'function') originalTermLog(msg, type);
+};
+
+assert.strictEqual(typeof mockSandboxWindow.onerror, 'function', 'window.onerror must be a registered function');
+mockSandboxWindow.onerror('Simulated background exception', 'app.js', 142, 8, new Error('Simulated background exception'));
+const globalErrFound = capturedLogs.some(log => log.type === 'error' && log.msg.includes('Simulated background exception'));
+assert.ok(globalErrFound, 'window.onerror must route formatted error to termLog with type error');
+console.log('  ✅ Step 12: window.onerror successfully captures errors and routes to termLog.');
+
+// Step 13: Global Unhandled Rejection Listener
+assert.ok(windowListeners['unhandledrejection'] && windowListeners['unhandledrejection'].length > 0, 'unhandledrejection listener must be registered');
+windowListeners['unhandledrejection'].forEach(handler => {
+  handler({ reason: new Error('Simulated unhandled promise fault') });
+});
+const unhandledFound = capturedLogs.some(log => log.type === 'error' && log.msg.includes('Simulated unhandled promise fault'));
+assert.ok(unhandledFound, 'unhandledrejection listener must route formatted error to termLog with type error');
+console.log('  ✅ Step 13: unhandledrejection listener successfully captures rejections and routes to termLog.');
+
+console.log('\n🎉 ALL 8 COMPREHENSIVE OUTLINE HITL, ERROR BOUNDARIES & PORT CONFLICT TESTS PASSED! 🛡️🚀\n');
 process.exit(0);
