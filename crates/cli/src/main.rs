@@ -10261,25 +10261,53 @@ fn find_browser_ui_dir() -> Option<std::path::PathBuf> {
     None
 }
 
-fn reclaim_port_5000() {
+fn reclaim_port(port: u16) -> Option<(u32, String, String)> {
     #[cfg(windows)]
     {
         use std::process::Command;
+        let ps_cmd = format!(
+            r#"Get-NetTCPConnection -LocalPort {} -State Listen -ErrorAction SilentlyContinue | ForEach-Object {{ $p = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue; "$($_.OwningProcess)|$($p.ProcessName)|$($p.Path)" }}"#,
+            port
+        );
         if let Ok(output) = Command::new("powershell")
-            .args(["-NoProfile", "-Command", "Get-NetTCPConnection -LocalPort 5000 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess"])
+            .args(["-NoProfile", "-Command", &ps_cmd])
             .output()
         {
-            let pid_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            for line in pid_str.lines() {
-                if let Ok(pid) = line.trim().parse::<u32>() {
-                    if pid > 0 && pid != std::process::id() {
-                        eprintln!("⚠️ [SERVER] Port 5000 is occupied by foreign PID {}. Terminating rogue process to reclaim port 5000...", pid);
-                        let _ = Command::new("taskkill").args(["/F", "/PID", &pid.to_string()]).output();
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let mut last_conflict = None;
+            for line in stdout.lines() {
+                let parts: Vec<&str> = line.trim().split('|').collect();
+                if !parts.is_empty() {
+                    if let Ok(pid) = parts[0].trim().parse::<u32>() {
+                        if pid > 0 && pid != std::process::id() {
+                            let proc_name = if parts.len() > 1 && !parts[1].trim().is_empty() {
+                                parts[1].trim().to_string()
+                            } else {
+                                "Unknown".to_string()
+                            };
+                            let proc_path = if parts.len() > 2 && !parts[2].trim().is_empty() {
+                                parts[2].trim().to_string()
+                            } else {
+                                "Unknown".to_string()
+                            };
+                            eprintln!(
+                                "❌ [PORT CONFLICT ERROR] Another tool is currently using port {}: PID {} (Process: '{}', Path: '{}'). Terminating conflicting process to reclaim port for ModelFusion Master Server...",
+                                port, pid, proc_name, proc_path
+                            );
+                            let _ = Command::new("taskkill").args(["/F", "/PID", &pid.to_string()]).output();
+                            last_conflict = Some((pid, proc_name, proc_path));
+                        }
                     }
                 }
             }
+            return last_conflict;
         }
     }
+    None
+}
+
+fn reclaim_port_5000() -> Option<(u32, String, String)> {
+    reclaim_port(5000)
 }
 
 pub fn save_active_port_info(port: u16) {
@@ -10632,7 +10660,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
             }
             if port == 5000 {
                 eprintln!("⚠️ [SERVER] Port 5000 is occupied ({}). Reclaiming port 5000 for ModelFusion Master Server...", e);
-                reclaim_port_5000();
+                let conflict_info = reclaim_port_5000();
                 let mut bound = None;
                 for attempt in 1..=5 {
                     tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
@@ -10648,11 +10676,28 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 if let Some(l) = bound {
                     (l, 5000)
                 } else {
-                    eprintln!("❌ [SERVER ERROR] Failed to bind to port 5000 after reclaiming attempts: {}", e);
+                    let (proc_name, pid) = if let Some((pid, name, _)) = conflict_info {
+                        (name, pid.to_string())
+                    } else {
+                        ("Unknown".to_string(), "Unknown".to_string())
+                    };
+                    eprintln!(
+                        "❌ [FATAL PORT ERROR] Port {} remains occupied by another tool after reclaim attempt. Another process ('{}' PID {}) is holding the port. Please stop this tool or specify --port <PORT>.",
+                        port, proc_name, pid
+                    );
                     return Err(e.into());
                 }
             } else {
-                eprintln!("❌ [SERVER ERROR] Failed to bind to port {}: {}", port, e);
+                let conflict_info = reclaim_port(port);
+                let (proc_name, pid) = if let Some((pid, name, _)) = conflict_info {
+                    (name, pid.to_string())
+                } else {
+                    ("Unknown".to_string(), "Unknown".to_string())
+                };
+                eprintln!(
+                    "❌ [FATAL PORT ERROR] Port {} remains occupied by another tool after reclaim attempt. Another process ('{}' PID {}) is holding the port. Please stop this tool or specify --port <PORT>.",
+                    port, proc_name, pid
+                );
                 return Err(e.into());
             }
         }

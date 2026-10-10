@@ -58,6 +58,46 @@ if (typeof window !== 'undefined') {
   window.activeProducts = [];
   window.activeDirections = null;
   window.activeJobPostings = [];
+
+  // Fallback termLog definition prior to DOMContentLoaded initialization
+  if (!window.termLog) {
+    window.termLog = function(msg, type = 'info') {
+      if (type === 'error') console.error(`[${type.toUpperCase()}] ${msg}`);
+      else console.log(`[${type.toUpperCase()}] ${msg}`);
+    };
+  }
+
+  // Top-level global window error and unhandled rejection listeners
+  window.onerror = function(msg, url, lineNo, columnNo, error) {
+    const errorStr = `[GLOBAL ERROR] ${msg} (${url || 'app.js'}:${lineNo || 0}:${columnNo || 0})` + (error && error.stack ? `\nStack: ${error.stack}` : '');
+    if (typeof window.termLog === 'function') {
+      window.termLog(errorStr, 'error');
+    } else {
+      console.error(errorStr);
+    }
+    if (typeof window.renderErrorCard === 'function') {
+      try {
+        window.renderErrorCard(null, `Runtime Error: ${msg}`, 'Check the developer terminal for stack trace.');
+      } catch (_) {}
+    }
+    return false;
+  };
+
+  window.addEventListener('unhandledrejection', function(event) {
+    const reason = event && event.reason;
+    const reasonMsg = reason ? (reason.message || String(reason)) : 'Unknown Promise Rejection';
+    const errorStr = `[UNHANDLED REJECTION] ${reasonMsg}` + (reason && reason.stack ? `\nStack: ${reason.stack}` : '');
+    if (typeof window.termLog === 'function') {
+      window.termLog(errorStr, 'error');
+    } else {
+      console.error(errorStr);
+    }
+    if (typeof window.renderErrorCard === 'function') {
+      try {
+        window.renderErrorCard(null, `Unhandled Promise Rejection: ${reasonMsg}`, 'Check network connectivity or background service.');
+      } catch (_) {}
+    }
+  });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -71,6 +111,36 @@ document.addEventListener('DOMContentLoaded', () => {
       jobBtn.style.display = 'none';
       jobBtn.remove();
     }
+  }
+
+  // Delegated click handler for HITL Writing Outline buttons
+  if (typeof document !== 'undefined') {
+    document.addEventListener('click', (e) => {
+      const approveBtn = e.target && e.target.closest && e.target.closest('.btn-outline-confirm, .btn-hitl-approve');
+      if (approveBtn) {
+        e.preventDefault();
+        if (typeof window !== 'undefined' && typeof window.confirmOutlineAction === 'function') {
+          window.confirmOutlineAction();
+        }
+        return;
+      }
+      const abortBtn = e.target && e.target.closest && e.target.closest('.btn-outline-abort, .btn-hitl-abort');
+      if (abortBtn) {
+        e.preventDefault();
+        if (typeof window !== 'undefined' && typeof window.abortOutlineAction === 'function') {
+          window.abortOutlineAction();
+        }
+        return;
+      }
+      const custBtn = e.target && e.target.closest && e.target.closest('.btn-outline-customize, .btn-hitl-customize');
+      if (custBtn) {
+        e.preventDefault();
+        if (typeof window !== 'undefined' && typeof window.customizeOutlineAction === 'function') {
+          window.customizeOutlineAction();
+        }
+        return;
+      }
+    });
   }
 
   // DOM Elements
@@ -230,7 +300,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // 4.057g Persistent Author Style Memory & Formatting (Initialized early to prevent temporal dead zone ReferenceErrors)
-  var DEFAULT_AUTHOR_STYLE_PROFILE = {
+  const DEFAULT_AUTHOR_STYLE_PROFILE = {
     tone: 'engaging, authentic, vivid',
     targetSentenceLength: '12-25 words, varied burstiness',
     bannedBuzzwords: [
@@ -695,6 +765,10 @@ document.addEventListener('DOMContentLoaded', () => {
         terminalScreen.scrollTop = terminalScreen.scrollHeight;
       }
     }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.termLog = termLog;
   }
 
   // -----------------------------------------------------------------
@@ -8475,6 +8549,14 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
       if (allBubbles.length > 0) bubble = allBubbles[allBubbles.length - 1];
     }
     const prompt = bubble?.dataset?.prompt || window.lastUserPrompt || (typeof lastUserPrompt !== 'undefined' ? lastUserPrompt : '');
+    if (chatMessages) {
+      chatMessages.innerHTML = '';
+    }
+    const activeSession = chatSessions.find(s => s.id === currentSessionId);
+    if (activeSession) {
+      activeSession.messages = [];
+      saveChatHistory();
+    }
     if (prompt && window.executeCliCommand) {
       window.executeCliCommand(prompt);
     }
@@ -8809,6 +8891,14 @@ MANDATORY CONTINUATION DIRECTIVES:
     const bubbles = Array.from(document.querySelectorAll('.assistant-bubble, .msg-bubble.assistant-bubble'));
     const lastBubble = bubbles.length > 0 ? bubbles[bubbles.length - 1] : null;
     const prompt = lastBubble?.dataset?.prompt || window.lastUserPrompt || (typeof lastUserPrompt !== 'undefined' ? lastUserPrompt : '');
+    if (chatMessages) {
+      chatMessages.innerHTML = '';
+    }
+    const activeSession = chatSessions.find(s => s.id === currentSessionId);
+    if (activeSession) {
+      activeSession.messages = [];
+      saveChatHistory();
+    }
     if (prompt && window.executeCliCommand) {
       window.executeCliCommand(prompt);
     } else {
@@ -11491,30 +11581,71 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
 
     try {
       const res = await fetchWithTimeout(`${url}/health`, { method: 'GET', timeout: 500 });
-      if (res.ok) {
-        const data = await res.json().catch(() => ({}));
-        if (data && (data.service === 'modelfusion' || data.service === 'ModelFusion' || data.status === 'ok')) {
+      let text = '';
+      let data = {};
+      try {
+        text = await res.text();
+        try { data = JSON.parse(text); } catch (_) {}
+      } catch (_) {}
+
+      const isModelFusion = (data && (data.service === 'modelfusion' || data.service === 'ModelFusion')) || text.toLowerCase().includes('modelfusion');
+
+      if (res.ok && isModelFusion) {
+        window.isIpcOnline = true;
+        window.isServerProxyOnline = true;
+        window.activeServerPort = 5000;
+        dotIpc.className = 'dot status-dot online';
+        textIpc.textContent = 'IPC Connected (:5000)';
+        return true;
+      } else {
+        // Port 5000 responded but did NOT identify as ModelFusion Master Server
+        window.isIpcOnline = false;
+        window.isServerProxyOnline = false;
+        dotIpc.className = 'dot status-dot error';
+        textIpc.textContent = 'Port 5000 Conflict';
+        if (typeof termLog === 'function') {
+          termLog('❌ [PORT CONFLICT ERROR] Port 5000 is in use by another tool or service (Did not respond as ModelFusion Master Server). Please close the conflicting tool or restart ModelFusion Master Server.', 'error');
+        }
+        const stateEl = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('fallback-proxy-state') : null;
+        if (stateEl) {
+          stateEl.textContent = 'Conflict: Another tool using Port 5000';
+          stateEl.style.color = '#ef4444';
+        }
+        return false;
+      }
+    } catch (e) {
+      try {
+        const res2 = await fetchWithTimeout(`${url}/api/health`, { method: 'GET', timeout: 500 });
+        let text2 = '';
+        let data2 = {};
+        try {
+          text2 = await res2.text();
+          try { data2 = JSON.parse(text2); } catch (_) {}
+        } catch (_) {}
+
+        const isModelFusion2 = (data2 && (data2.service === 'modelfusion' || data2.service === 'ModelFusion')) || text2.toLowerCase().includes('modelfusion');
+
+        if (res2.ok && isModelFusion2) {
           window.isIpcOnline = true;
           window.isServerProxyOnline = true;
           window.activeServerPort = 5000;
           dotIpc.className = 'dot status-dot online';
           textIpc.textContent = 'IPC Connected (:5000)';
           return true;
-        }
-      }
-    } catch (e) {
-      try {
-        const res2 = await fetchWithTimeout(`${url}/api/health`, { method: 'GET', timeout: 500 });
-        if (res2.ok) {
-          const data = await res2.json().catch(() => ({}));
-          if (data && (data.service === 'modelfusion' || data.service === 'ModelFusion' || data.status === 'ok')) {
-            window.isIpcOnline = true;
-            window.isServerProxyOnline = true;
-            window.activeServerPort = 5000;
-            dotIpc.className = 'dot status-dot online';
-            textIpc.textContent = 'IPC Connected (:5000)';
-            return true;
+        } else {
+          window.isIpcOnline = false;
+          window.isServerProxyOnline = false;
+          dotIpc.className = 'dot status-dot error';
+          textIpc.textContent = 'Port 5000 Conflict';
+          if (typeof termLog === 'function') {
+            termLog('❌ [PORT CONFLICT ERROR] Port 5000 is in use by another tool or service (Did not respond as ModelFusion Master Server). Please close the conflicting tool or restart ModelFusion Master Server.', 'error');
           }
+          const stateEl = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('fallback-proxy-state') : null;
+          if (stateEl) {
+            stateEl.textContent = 'Conflict: Another tool using Port 5000';
+            stateEl.style.color = '#ef4444';
+          }
+          return false;
         }
       } catch (e2) {}
     }
@@ -11525,6 +11656,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     textIpc.textContent = 'Master CLI';
     return false;
   }
+  window.probeIpc = probeIpc;
 
   async function probeCdp() {
     const port = currentSettings.cdpPort || 9222;
@@ -11612,8 +11744,18 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
   }
 
   async function checkAllEngines() {
-    detectHardware();
-    await Promise.all([probeOllama(), probeIpc(), probeCdp()]);
+    try {
+      detectHardware();
+      await Promise.all([
+        probeOllama().catch(() => false),
+        probeIpc().catch(() => false),
+        probeCdp().catch(() => false)
+      ]);
+    } catch (err) {
+      if (typeof termLog === 'function') {
+        termLog(`[POLLER ERROR] Background engine probe fault: ${err.message}`, 'error');
+      }
+    }
   }
 
   checkAllEngines();
@@ -12182,6 +12324,22 @@ MANDATORY STYLOMETRIC LAWS:
       }
     }
 
+    // 2b. Deep Research Invariant: Deep Research must always be at least 10 pages (>= 5,000 words) by default!
+    const isDeepResearch = /\b(?:deep[-_ ]?research|browser\s+deep\s+research)\b/i.test(text) ||
+      /^(@agent\s+(?:browser\s+deep\s+research\s+on|deep\s+research)|\/research)\b/i.test(text);
+
+    if (isDeepResearch) {
+      if (targetPages < 10) {
+        targetPages = 10;
+      }
+      if (targetWords < 5000) {
+        targetWords = Math.max(5000, targetPages * 500);
+      }
+      if (targetChapters < 5) {
+        targetChapters = Math.max(5, Math.min(10, targetPages));
+      }
+    }
+
     // Standard Publication Page Law: 1 standard page is strictly 500 words.
     // If targetPages is specified and no targetWords was explicitly given, targetWords must match targetPages * 500.
     if (targetPages > 0 && targetWords === 0) {
@@ -12202,8 +12360,10 @@ MANDATORY STYLOMETRIC LAWS:
     const isBookingOrShopping = /\b(book|reserve)\s+(?:me\s+)?(?:a\s+)?(flight|hotel|ticket|room|table|ride|cab|airbnb|seats?|trips?|passes?)\b/i.test(text) ||
       /^(?:@agent\s+)?(?:ticket-booking|ticket|tickets|flight-booking|flight|flights|book-ticket|book-flight|shopping|computer-use)\b/i.test(text) ||
       /\b(?:from\s+[A-Za-z0-9\s,.-]+?\s+to\s+[A-Za-z0-9\s,.-]+)\b/i.test(text);
-    const hasLongFormKeywords = !isBookingOrShopping && /\b(book|novel|long[- ]form|multi[- ]page|in[- ]depth essay|comprehensive guide|complete thesis|entire story|epic story|dissertation)\b/i.test(text);
-    const isLongForm = targetPages >= 2 || targetChapters >= 2 || targetWords >= 1500 || hasLongFormKeywords;
+    const hasLongFormKeywords = !isBookingOrShopping && (
+      /\b(book|novel|long[- ]form|multi[- ]page|in[- ]depth essay|comprehensive guide|complete thesis|entire story|epic story|dissertation)\b/i.test(text) || isDeepResearch
+    );
+    const isLongForm = targetPages >= 2 || targetChapters >= 2 || targetWords >= 1500 || hasLongFormKeywords || isDeepResearch;
 
     // 6. Detect task type
     let taskType = 'qa';
@@ -12219,7 +12379,7 @@ MANDATORY STYLOMETRIC LAWS:
       taskType = 'watermark';
     } else if (isCodeOrMathTask(text, '', options)) {
       taskType = 'code';
-    } else if (/^(@agent\s+(search|web-agent|search-index|arxiv|deep research)|\/(search|arxiv|research))\b/i.test(text) || /\b(search the (?:web|internet)|latest news|arXiv paper|pre-?print)\b/i.test(text)) {
+    } else if (/^(@agent\s+(search|web-agent|search-index|arxiv|deep research)|\/(search|arxiv|research))\b/i.test(text) || /\b(search the (?:web|internet)|latest news|arXiv paper|pre-?print)\b/i.test(text) || isDeepResearch) {
       taskType = 'research';
     } else if (isLongForm || targetPages > 0 || targetChapters > 0 || /\b(write|draft|compose|author|essay|eaast|esssay|esay|story|storee|novel|poem|chapter|article|artcle|artical|blog post|script|dialogue|prose|fiction)\b/i.test(text)) {
       taskType = 'writing';
@@ -12232,6 +12392,7 @@ MANDATORY STYLOMETRIC LAWS:
       isLongForm,
       isContinuation,
       isBoost,
+      isDeepResearch,
       taskType
     };
   }
@@ -15884,6 +16045,604 @@ Respond with ONLY a valid JSON object matching this schema:
   window.sendRlDecisionFeedback = sendRlDecisionFeedback;
   window.speculativePreWarmDomain = speculativePreWarmDomain;
 
+  // -----------------------------------------------------------------
+  // 4.057g Persistent Author Style Memory & Formatting
+  // -----------------------------------------------------------------
+  // Note: DEFAULT_AUTHOR_STYLE_PROFILE is initialized early at the top of the file
+
+  function getAuthorStyleProfile() {
+    const fallbackProfile = (typeof DEFAULT_AUTHOR_STYLE_PROFILE !== 'undefined')
+      ? DEFAULT_AUTHOR_STYLE_PROFILE
+      : (typeof window !== 'undefined' && window.DEFAULT_AUTHOR_STYLE_PROFILE)
+        ? window.DEFAULT_AUTHOR_STYLE_PROFILE
+        : {
+            tone: 'engaging, authentic, vivid',
+            targetSentenceLength: '12-25 words, varied burstiness',
+            bannedBuzzwords: [
+              'delve', 'tapestry', 'testament', 'beacon', 'unleash', 'crucial',
+              'pivotal', 'moreover', 'furthermore', 'interconnected', 'revolutionize',
+              'multifaceted', 'paramount', 'dynamic landscape'
+            ],
+            pacing: 'sensory grounding, show-don\'t-tell',
+            groundingEnabled: true
+          };
+    try {
+      const raw = (typeof localStorage !== 'undefined' && localStorage.getItem) ? localStorage.getItem('modelfusion_author_style_profile') : null;
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return { ...fallbackProfile, ...parsed };
+      }
+    } catch (e) {
+      console.warn('Error reading author style profile:', e);
+    }
+    return { ...fallbackProfile };
+  }
+
+  function saveAuthorStyleProfile(profile) {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage.setItem) {
+        localStorage.setItem('modelfusion_author_style_profile', JSON.stringify(profile));
+      }
+    } catch (e) {
+      console.warn('Error saving author style profile:', e);
+    }
+    return profile;
+  }
+
+  function resetAuthorStyleProfile() {
+    const fresh = { ...DEFAULT_AUTHOR_STYLE_PROFILE };
+    saveAuthorStyleProfile(fresh);
+    return fresh;
+  }
+
+  function updateAuthorStyleProperty(key, value) {
+    const prof = getAuthorStyleProfile();
+    prof[key] = value;
+    saveAuthorStyleProfile(prof);
+    return prof;
+  }
+
+  function formatAuthorStylePrompt(profile = getAuthorStyleProfile()) {
+    const banned = Array.isArray(profile.bannedBuzzwords) ? profile.bannedBuzzwords.join(', ') : '';
+    return `AUTHOR STYLE & VOICE DIRECTIVE:
+1. Tone: ${profile.tone || 'engaging, authentic'}
+2. Sentence Cadence: ${profile.targetSentenceLength || 'varied rhythm'}. Strictly vary sentence lengths to produce natural human cadence and burstiness. Mix short, impactful 4-to-8-word sentences with longer, flowing descriptive clauses.
+3. Strictly Banned AI Buzzwords: Never use any of the following cliché AI filler words: ${banned}. If any of these words appear in draft thinking, immediately replace them with concrete, grounded vocabulary.
+4. Narrative Pacing: ${profile.pacing || 'sensory grounding'}. Favor concrete physical details, dialogue, and authentic sensory observations over generic conceptual summaries.`;
+  }
+
+  // -----------------------------------------------------------------
+  // 4.057h Writing Outline & Pacing Workspace (HITL)
+  // -----------------------------------------------------------------
+  function detectLongFormWritingRequest(prompt = '', options = {}) {
+    if (options && (options.outlineApproved || options.skipHitlOutline)) return { isLongFormWriting: false };
+    const text = (typeof prompt === 'string') ? prompt.trim() : '';
+    if (!text) return { isLongFormWriting: false };
+
+    // Explicit exclusion guard: ticket booking, travel, computer use, and direct requests are NEVER long-form writing!
+    if (/^(?:@agent\s+)?(?:ticket-booking|ticket|tickets|flight-booking|flight|flights|book-ticket|book-flight|exam-solver|map-directions|shopping|computer-use|ui-tars|screen-grounding|desktop-click|desktop-type|desktop-scroll|apply-jobs|applyjobs|apply-job|job-application|jobs|career-ops)\b/i.test(text) ||
+        /\b(?:book|reserve)\s+(?:me\s+)?(?:a\s+)?(?:tickets?|flights?|hotels?|seats?|trips?|passes?|cabs?|rooms?|tables?)\b/i.test(text) ||
+        /\b(?:from\s+[A-Za-z0-9\s,.-]+?\s+to\s+[A-Za-z0-9\s,.-]+)\b/i.test(text)) {
+      return { isLongFormWriting: false };
+    }
+
+    // Check intention parsed properties if available
+    const int = (options && options.intention) ? options.intention : parseRegexIntention(text, options);
+
+    const isDeepResearch = Boolean(int.isDeepResearch) ||
+      /\b(?:deep[-_ ]?research|browser\s+deep\s+research)\b/i.test(text) ||
+      /^(@agent\s+(?:browser\s+deep\s+research\s+on|deep\s+research)|\/research)\b/i.test(text);
+
+    const isExplicitMultiPage = int.targetPages >= 3;
+    const isExplicitMultiChapter = int.targetChapters >= 2;
+    const isBookOrNovelPrompt = /\b(?:write\s+(?:a\s+|me\s+a\s+)?(?:book|novel|long[- ]form\s+essay|dissertation|complete\s+guide|memoir|biography)|multi[- ]chapter\s+story|epic\s+novel)\b/i.test(text);
+    const hasLongFormKeywords = (int.targetPages >= 2 || int.targetWords >= 1500 || int.isLongForm) && /\b(?:chapter|novel|book|essay|story|biography|memoir|chronicle)\b/i.test(text);
+
+    const isLongForm = isExplicitMultiPage || isExplicitMultiChapter || isBookOrNovelPrompt || hasLongFormKeywords || isDeepResearch;
+    if (!isLongForm) return { isLongFormWriting: false };
+
+    let estimatedPages = int.targetPages > 0 ? int.targetPages : (int.targetChapters > 0 ? Math.ceil(int.targetChapters * 1.5) : (int.targetWords > 0 ? Math.ceil(int.targetWords / 500) : 3));
+    if (isDeepResearch && estimatedPages < 10) {
+      estimatedPages = 10;
+    }
+    let estimatedChapters = int.targetChapters > 0 ? int.targetChapters : Math.max(3, estimatedPages);
+    if (isDeepResearch && estimatedChapters < 5) {
+      estimatedChapters = Math.min(10, Math.max(5, estimatedPages));
+    }
+    const isFiction = !isDeepResearch && !/\b(?:research|history|biography|academic|technical|scientific|non[- ]fiction|guide|tutorial|analysis|essay\s+on)\b/i.test(text);
+
+    let topic = text.replace(/^(?:write\s+(?:a\s+|me\s+a\s+)?(?:book|novel|long[- ]form\s+essay|story|essay|guide)?\s*(?:about|on|titled|called)?\s*|@agent\s+(?:browser\s+deep\s+research\s+on|deep\s+research|research)\s*|\/(?:research)\s*|deep[-_ ]?research\s+(?:on|about)?\s*)/i, '').trim();
+    if (topic.length > 60) {
+      topic = topic.slice(0, 57) + '...';
+    }
+
+    return {
+      isLongFormWriting: true,
+      estimatedPages,
+      estimatedChapters,
+      targetWords: int.targetWords > 0 ? Math.max(isDeepResearch ? 5000 : 0, int.targetWords) : (estimatedPages * 500),
+      topic: topic || (isDeepResearch ? 'Deep Technical & Academic Research Treatise' : 'Untitled Work'),
+      isFiction,
+      isDeepResearch
+    };
+  }
+
+  function extractWritingOutline(prompt = '', docText = '', options = {}) {
+    const det = detectLongFormWritingRequest(prompt, options);
+    const numChapters = det.estimatedChapters || 3;
+    const wordsPerChapter = Math.round((det.targetWords || 1500) / numChapters);
+    const styleProf = getAuthorStyleProfile();
+
+    const title = det.topic && det.topic !== 'Untitled Work'
+      ? (det.topic.charAt(0).toUpperCase() + det.topic.slice(1))
+      : (det.isDeepResearch ? 'Deep Technical & Empirical Research Treatise' : (det.isFiction ? 'Echoes of the Horizon' : 'Comprehensive Exploration & Critical Analysis'));
+
+    const defaultChapterThemes = det.isDeepResearch ? [
+      { stem: 'Executive Summary & Theoretical Foundations', plot: 'Problem definition, foundational principles, theoretical genesis, and seminal prior art.' },
+      { stem: 'Literature Review & State-of-the-Art Survey', plot: 'Exhaustive analysis of academic preprints, empirical studies, and existing frameworks.' },
+      { stem: 'Architectural Framework & Technical Mechanics', plot: 'Structural topology, internal component interactions, and formal specifications.' },
+      { stem: 'Empirical Evaluation & Performance Benchmarks', plot: 'Experimental data, methodology, quantitative benchmarks, and comparative metrics.' },
+      { stem: 'System Dynamics & Practical Engineering Considerations', plot: 'Real-world deployment dynamics, edge case handling, and throughput behaviors.' },
+      { stem: 'Vulnerabilities, Threat Vectors & Safety Auditing', plot: 'Critical failure modes, stress testing, safety barriers, and security posture.' },
+      { stem: 'Cross-Disciplinary Synthesis & Industry Convergence', plot: 'Cross-domain integrations, economic implications, and ecosystem impacts.' },
+      { stem: 'Comparative Paradigm Analysis & Trade-offs', plot: 'Rigorous trade-off evaluation against competing models and architectural alternatives.' },
+      { stem: 'Open Research Questions & Future Trajectories', plot: 'Unresolved edge cases, theoretical frontiers, and roadmap for future iterations.' },
+      { stem: 'Definitive Conclusions & Grounded Bibliography', plot: 'Holistic synthesis of findings, actionable recommendations, and cited literature.' }
+    ] : (det.isFiction ? [
+      { stem: 'Inciting Incident & World Genesis', plot: 'Establish protagonist baseline, sensory environment, and initial disruptive tension.' },
+      { stem: 'Rising Conflict & Hidden Stakes', plot: 'Escalation of internal doubts, unexpected obstacles, and shifting loyalties.' },
+      { stem: 'The Pivot & Deep Discovery', plot: 'Critical revelation altering perception of the core dilemma.' },
+      { stem: 'Climax & Confrontation', plot: 'Decisive confrontation testing conviction and ultimate stakes.' },
+      { stem: 'Resolution & Resonant Aftermath', plot: 'Meaningful denouement, transformed equilibrium, and reflective closure.' }
+    ] : [
+      { stem: 'Foundations & Historical Context', plot: 'Core problem formulation, evolutionary origins, and fundamental principles.' },
+      { stem: 'Architectural Analysis & Mechanics', plot: 'Technical decomposition, operational characteristics, and empirical behaviors.' },
+      { stem: 'Case Studies & Practical Dynamics', plot: 'Real-world deployments, failure modes, and observed anomalies.' },
+      { stem: 'Comparative Synthesis & Trade-offs', plot: 'Critical evaluation of alternative paradigms and edge cases.' },
+      { stem: 'Future Trajectories & Conclusions', plot: 'Open research horizons, systemic implications, and synthesis of findings.' }
+    ]);
+
+    const chapters = [];
+    for (let i = 0; i < numChapters; i++) {
+      const theme = defaultChapterThemes[i % defaultChapterThemes.length];
+      chapters.push({
+        number: i + 1,
+        title: `Chapter ${i + 1}: ${theme.stem}`,
+        targetWords: wordsPerChapter,
+        pacing: (i === 0) ? 'Hook & Immersive Pacing' : (i === numChapters - 1 ? 'Climactic & Reflective' : 'Sustained Momentum'),
+        plotBreakdown: theme.plot
+      });
+    }
+
+    return {
+      title,
+      prompt,
+      totalEstimatedWords: numChapters * wordsPerChapter,
+      targetPages: det.estimatedPages || 3,
+      chapters,
+      styleProfile: styleProf,
+      isFiction: det.isFiction,
+      grounding: options.grounding || null
+    };
+  }
+
+  function buildHitlOutlineWorkspaceHtml(outlinePlan) {
+    if (!outlinePlan || !Array.isArray(outlinePlan.chapters)) return '';
+    activeOutline = outlinePlan;
+    if (typeof window !== 'undefined') {
+      window.activeOutline = outlinePlan;
+      window.confirmOutlineAction = confirmOutlineAction;
+      window.abortOutlineAction = abortOutlineAction;
+      window.editOutlineChapter = editOutlineChapter;
+      window.customizeOutlineAction = customizeOutlineAction;
+    }
+
+    const chaptersHtml = outlinePlan.chapters.map((ch, idx) => `
+      <div class="outline-chapter-card" style="margin-bottom: 8px;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <div class="outline-stem-title">
+            <span>📑</span>
+            <span id="outline-ch-title-${idx}">${escapeHtml(ch.title)}</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="outline-tier-badge">~${ch.targetWords} words</span>
+            <button type="button" class="btn-outline-edit-chapter" onclick="window.editOutlineChapter(${idx})" style="font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer;">
+              ✏️ Edit Stem
+            </button>
+          </div>
+        </div>
+        <div class="outline-stem-meta">Pacing: <em>${escapeHtml(ch.pacing)}</em></div>
+        <div class="outline-stem-plot" id="outline-ch-plot-${idx}">${escapeHtml(ch.plotBreakdown)}</div>
+      </div>
+    `).join('');
+
+    const groundingBadge = outlinePlan.grounding ? `
+      <span style="font-size: 11px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 2px 8px; border-radius: 4px;">
+        💡 Wiki Grounded: ${escapeHtml(outlinePlan.grounding.topic || 'Factual Reference')}
+      </span>
+    ` : '';
+
+    return `
+      <div class="hitl-outline-workspace" data-prompt="${escapeHtml(outlinePlan.prompt || '')}" data-topic="${escapeHtml(outlinePlan.topic || outlinePlan.title || '')}">
+        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px; margin-bottom: 10px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 20px;">🖋️</span>
+            <div>
+              <div style="font-weight: 700; color: #fbbf24; font-size: 14px;">Writing Outline &amp; Pacing Workspace (HITL)</div>
+              <div style="font-size: 11px; color: var(--text-muted, #94a3b8);">Human-in-the-Loop review: Confirm chapter stems, pacing, and word allocations before writing starts</div>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            ${groundingBadge}
+            <span style="font-size: 11px; background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.35); padding: 2px 8px; border-radius: 4px;">
+              Tone: ${escapeHtml(outlinePlan.styleProfile ? outlinePlan.styleProfile.tone : 'Authentic')}
+            </span>
+          </div>
+        </div>
+
+        <div style="background: rgba(0,0,0,0.2); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; font-size: 12px;">
+          <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">
+            📖 Proposed Work: <em>"${escapeHtml(outlinePlan.title)}"</em>
+          </div>
+          <div style="font-size: 11px; color: var(--text-secondary); display: flex; gap: 16px;">
+            <span>📊 Total Target: <strong>~${outlinePlan.totalEstimatedWords} words</strong> (${outlinePlan.targetPages} Pages)</span>
+            <span>📑 Chapters: <strong>${outlinePlan.chapters.length}</strong></span>
+            <span>🛡️ AI Clichés: <strong>0 Banned Buzzwords</strong></span>
+          </div>
+        </div>
+
+        <div class="outline-chapters-container" style="max-height: 280px; overflow-y: auto; padding-right: 4px;">
+          ${chaptersHtml}
+        </div>
+
+        <div id="outline-hitl-safety-gate" class="outline-safety-gate-bar" style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+          <div style="font-size: 11px; color: #eab308; display: flex; align-items: center; gap: 6px;">
+            <span>⏳</span>
+            <span>Human approval required to commence chapter-by-chapter generation</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button type="button" class="btn-outline-abort btn-hitl-abort" onclick="window.abortOutlineAction()">
+              🛑 Abort
+            </button>
+            <button type="button" class="btn-outline-customize btn-hitl-customize" onclick="window.customizeOutlineAction()">
+              ✏️ Customize Outline
+            </button>
+            <button type="button" class="btn-outline-confirm btn-hitl-approve" onclick="window.confirmOutlineAction()">
+              ✅ Approve Outline &amp; Begin Writing
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderHitlErrorBanner(gateElementOrId, errorMessage, recoveryHint = 'Please check the developer console or try again.') {
+    const gate = typeof gateElementOrId === 'string'
+      ? ((typeof document !== 'undefined' && document.getElementById) ? document.getElementById(gateElementOrId) : null)
+      : gateElementOrId;
+    if (!gate) return;
+    const safeMsg = (typeof escapeHtml === 'function') ? escapeHtml(errorMessage || '') : String(errorMessage || '');
+    const safeHint = (typeof escapeHtml === 'function') ? escapeHtml(recoveryHint || '') : String(recoveryHint || '');
+    const bannerHtml = `
+      <div class="hitl-error-banner" style="background: #451a1a; border: 1px solid #ef4444; color: #fca5a5; padding: 10px 14px; border-radius: 6px; margin: 8px 0; font-size: 12px; width: 100%;">
+        <div style="font-weight: 700; display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+          <span>⚠️</span> <span>Action Failed</span>
+        </div>
+        <div style="font-size: 11.5px; color: #fecaca;">${safeMsg || 'An unexpected error occurred during HITL action execution.'}</div>
+        ${safeHint ? `<div style="font-size: 10.5px; opacity: 0.8; margin-top: 4px;">${safeHint}</div>` : ''}
+      </div>
+    `;
+    gate.innerHTML = bannerHtml;
+  }
+  if (typeof window !== 'undefined') {
+    window.renderHitlErrorBanner = renderHitlErrorBanner;
+  }
+
+  function confirmOutlineAction() {
+    try {
+      const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('outline-hitl-safety-gate') : null;
+      if (gate) {
+        gate.innerHTML = `
+          <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; border-radius: 6px; padding: 10px 14px; color: #10b981; width: 100%; display: flex; align-items: center; gap: 8px;">
+            <span>✅</span>
+            <strong>Outline Approved! Launching deep agentic generation loop...</strong>
+          </div>
+        `;
+      }
+      if (typeof termLog === 'function') {
+        termLog('[OUTLINE HITL] ✅ Outline approved by human user. Launching narrative generation...', 'success');
+      }
+      if (typeof setChatRunningState === 'function') {
+        setChatRunningState(false);
+      }
+      isGenerating = false;
+      if (typeof window !== 'undefined') {
+        window.isGenerating = false;
+      }
+
+      const plan = (typeof window !== 'undefined' && window.activeOutline) ? window.activeOutline : (typeof activeOutline !== 'undefined' ? activeOutline : null);
+      let promptToRun = (plan && plan.prompt) ? plan.prompt : '';
+      if (!promptToRun && typeof document !== 'undefined') {
+        const ws = document.querySelector('.hitl-outline-workspace');
+        if (ws) {
+          promptToRun = ws.getAttribute('data-prompt') || ws.getAttribute('data-topic') || '';
+        }
+      }
+      if (!promptToRun) {
+        promptToRun = 'write the approved outline document in full';
+      }
+
+      setTimeout(() => {
+        try {
+          executeCliCommand(promptToRun, { outlineApproved: true, outlinePlan: plan });
+        } catch (execErr) {
+          if (typeof termLog === 'function') {
+            termLog(`[OUTLINE HITL ERROR] Command dispatch failed: ${execErr.message}`, 'error');
+          }
+          renderHitlErrorBanner('outline-hitl-safety-gate', `Command dispatch failed: ${execErr.message}`);
+        }
+      }, 150);
+    } catch (err) {
+      if (typeof termLog === 'function') {
+        termLog(`[OUTLINE HITL ERROR] Outline approval failed: ${err.message}`, 'error');
+      }
+      renderHitlErrorBanner('outline-hitl-safety-gate', `Outline approval failed: ${err.message}`);
+    }
+  }
+
+  function abortOutlineAction() {
+    try {
+      const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('outline-hitl-safety-gate') : null;
+      if (gate) {
+        gate.innerHTML = `
+          <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 10px 14px; color: #f87171; width: 100%;">
+            <strong>🛑 Outline Generation Cancelled by User.</strong>
+          </div>
+        `;
+      }
+      if (typeof termLog === 'function') {
+        termLog('[OUTLINE HITL] 🛑 Writing outline aborted by user.', 'warn');
+      }
+      if (typeof setChatRunningState === 'function') {
+        setChatRunningState(false);
+      }
+      isGenerating = false;
+      if (typeof window !== 'undefined') {
+        window.isGenerating = false;
+      }
+    } catch (err) {
+      if (typeof termLog === 'function') {
+        termLog(`[OUTLINE HITL ERROR] Outline abort failed: ${err.message}`, 'error');
+      }
+      renderHitlErrorBanner('outline-hitl-safety-gate', `Outline abort failed: ${err.message}`);
+    }
+  }
+
+  function editOutlineChapter(idx) {
+    try {
+      if (!window.activeOutline || !window.activeOutline.chapters || !window.activeOutline.chapters[idx]) return;
+      const ch = window.activeOutline.chapters[idx];
+      const newTitle = (typeof window !== 'undefined' && window.prompt) ? window.prompt(`Edit Title for Chapter ${ch.number}:`, ch.title) : null;
+      if (newTitle && newTitle.trim()) {
+        ch.title = newTitle.trim();
+        const titleEl = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById(`outline-ch-title-${idx}`) : null;
+        if (titleEl) titleEl.textContent = ch.title;
+      }
+      const newPlot = (typeof window !== 'undefined' && window.prompt) ? window.prompt(`Edit Narrative Plot for Chapter ${ch.number}:`, ch.plotBreakdown) : null;
+      if (newPlot && newPlot.trim()) {
+        ch.plotBreakdown = newPlot.trim();
+        const plotEl = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById(`outline-ch-plot-${idx}`) : null;
+        if (plotEl) plotEl.textContent = ch.plotBreakdown;
+      }
+      if (typeof termLog === 'function') {
+        termLog(`[OUTLINE HITL] ✏️ Chapter ${ch.number} updated.`, 'info');
+      }
+    } catch (err) {
+      if (typeof termLog === 'function') {
+        termLog(`[OUTLINE HITL ERROR] Edit outline chapter failed: ${err.message}`, 'error');
+      }
+      renderHitlErrorBanner('outline-hitl-safety-gate', `Edit outline chapter failed: ${err.message}`);
+    }
+  }
+
+  function customizeOutlineAction() {
+    try {
+      if (!window.activeOutline) return;
+      const addCh = (typeof window !== 'undefined' && window.confirm) ? window.confirm('Add an additional chapter to the outline?') : false;
+      if (addCh) {
+        if (!window.activeOutline.chapters) window.activeOutline.chapters = [];
+        const nextNum = window.activeOutline.chapters.length + 1;
+        window.activeOutline.chapters.push({
+          number: nextNum,
+          title: `Chapter ${nextNum}: Climax & Resolution`,
+          targetWords: 600,
+          pacing: 'Dynamic & Reflective',
+          plotBreakdown: 'Critical final turning point, resolving secondary threads and solidifying transformation.'
+        });
+        window.activeOutline.totalEstimatedWords = (window.activeOutline.totalEstimatedWords || 0) + 600;
+        window.activeOutline.targetPages = (window.activeOutline.targetPages || 0) + 1;
+        const workspaceContainer = (typeof document !== 'undefined' && document.querySelector) ? document.querySelector('.hitl-outline-workspace') : null;
+        if (workspaceContainer && workspaceContainer.parentElement) {
+          workspaceContainer.outerHTML = buildHitlOutlineWorkspaceHtml(window.activeOutline);
+        }
+        if (typeof termLog === 'function') {
+          termLog(`[OUTLINE HITL] ✏️ Outline customized: Added Chapter ${nextNum}.`, 'info');
+        }
+      }
+    } catch (err) {
+      if (typeof termLog === 'function') {
+        termLog(`[OUTLINE HITL ERROR] Customizing outline failed: ${err.message}`, 'error');
+      }
+      renderHitlErrorBanner('outline-hitl-safety-gate', `Customize outline failed: ${err.message}`);
+    }
+  }
+
+  // -----------------------------------------------------------------
+  // 4.057i Terminal Shell & File Safety Gate (HITL)
+  // -----------------------------------------------------------------
+  function detectPotentiallyDestructiveCommand(cmd = '') {
+    if (typeof cmd !== 'string') return { isDestructive: false };
+    const clean = cmd.trim();
+    if (!clean) return { isDestructive: false };
+
+    const destructivePatterns = [
+      { regex: /\brm\s+-(?:r[fv]|f[rv]|[rv]f)\b/i, reason: 'Recursive, forced directory/file deletion (rm -rf)' },
+      { regex: /\brmdir\s+\/[sq]\b/i, reason: 'Recursive Windows directory tree removal (rmdir /s)' },
+      { regex: /\bdel\s+(?:\/[sqf]|\*|\/f)\b/i, reason: 'Unrestricted or forced Windows file deletion (del /f)' },
+      { regex: /\bRemove-Item\b.*-(?:Recurse|Force)\b/i, reason: 'Recursive forced PowerShell item deletion' },
+      { regex: /\bformat\s+[a-z]:/i, reason: 'Disk volume formatting' },
+      { regex: /\b(?:mkfs|fdisk|parted|diskpart)\b/i, reason: 'Disk partition table modification or formatting' },
+      { regex: /\bDROP\s+(?:DATABASE|TABLE|SCHEMA)\b/i, reason: 'Irreversible database drop statement' },
+      { regex: /\bTRUNCATE\s+TABLE\b/i, reason: 'Unrecoverable table truncation' },
+      { regex: /\bgit\s+reset\s+--hard\b/i, reason: 'Destructive git hard reset discarding uncommitted working changes' },
+      { regex: /\bgit\s+clean\s+-(?:[xfd]{2,})\b/i, reason: 'Permanent deletion of untracked files and directories' },
+      { regex: /\bchmod\s+-R\s+(?:777|000)\b/i, reason: 'Global recursive permission modification' },
+      { regex: /\b(?:kill\s+-9|Stop-Process\b.*-Force)\b/i, reason: 'Forced process termination' }
+    ];
+
+    for (const dp of destructivePatterns) {
+      if (dp.regex.test(clean)) {
+        return {
+          isDestructive: true,
+          riskLevel: 'CRITICAL',
+          reason: dp.reason,
+          command: clean
+        };
+      }
+    }
+
+    return { isDestructive: false };
+  }
+
+  function buildHitlShellWorkspaceHtml(command, reason = '', diffOrDetails = '') {
+    activeShellAction = { command, reason, diffOrDetails };
+    if (typeof window !== 'undefined') {
+      window.activeShellAction = activeShellAction;
+    }
+
+    return `
+      <div class="hitl-shell-workspace">
+        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px; margin-bottom: 10px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 20px;">🛡️</span>
+            <div>
+              <div style="font-weight: 700; color: #ef4444; font-size: 14px;">Terminal Shell &amp; File Safety Gate (HITL)</div>
+              <div style="font-size: 11px; color: var(--text-muted, #94a3b8);">Potentially destructive system command or batch modification intercepted</div>
+            </div>
+          </div>
+          <span class="shell-risk-badge">⚠️ RISK: CRITICAL</span>
+        </div>
+
+        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">
+          <strong>Target Command / Operation:</strong>
+        </div>
+        <div class="shell-command-box"><code>${escapeHtml(command)}</code></div>
+
+        ${reason ? `
+          <div style="font-size: 11.5px; color: #fca5a5; margin-bottom: 6px;">
+            <strong>Safety Concern:</strong> ${escapeHtml(reason)}
+          </div>
+        ` : ''}
+
+        ${diffOrDetails ? `
+          <div class="shell-diff-box">
+            <div style="font-size: 10.5px; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase;">Operation Details / Impact Analysis:</div>
+            <code>${escapeHtml(diffOrDetails)}</code>
+          </div>
+        ` : ''}
+
+        <div id="shell-hitl-safety-gate" class="shell-safety-gate-bar" style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+          <div style="font-size: 11px; color: #f87171; display: flex; align-items: center; gap: 6px;">
+            <span>✋</span>
+            <span>Human authorization required prior to OS execution</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button type="button" class="btn-shell-abort btn-hitl-abort" onclick="window.abortShellAction()">
+              🛑 Block &amp; Cancel
+            </button>
+            <button type="button" class="btn-shell-confirm btn-hitl-approve" onclick="window.confirmShellAction()">
+              ⚠️ Authorize &amp; Execute
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function confirmShellAction() {
+    try {
+      const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('shell-hitl-safety-gate') : null;
+      if (gate) {
+        gate.innerHTML = `
+          <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; border-radius: 6px; padding: 10px 14px; color: #10b981; width: 100%; display: flex; align-items: center; gap: 8px;">
+            <span>✅</span>
+            <strong>Command Authorized by User. Proceeding with OS execution...</strong>
+          </div>
+        `;
+      }
+      if (typeof termLog === 'function') {
+        termLog('[SHELL HITL] ⚠️ Destructive command authorized by human user.', 'warn');
+      }
+      if (window.activeShellAction && window.activeShellAction.command) {
+        setTimeout(() => {
+          try {
+            executeCliCommand(window.activeShellAction.command, { shellApproved: true });
+          } catch (execErr) {
+            if (typeof termLog === 'function') {
+              termLog(`[SHELL HITL ERROR] Command dispatch failed: ${execErr.message}`, 'error');
+            }
+            renderHitlErrorBanner('shell-hitl-safety-gate', `Command dispatch failed: ${execErr.message}`);
+          }
+        }, 250);
+      }
+    } catch (err) {
+      if (typeof termLog === 'function') {
+        termLog(`[SHELL HITL ERROR] Authorizing shell action failed: ${err.message}`, 'error');
+      }
+      renderHitlErrorBanner('shell-hitl-safety-gate', `Authorize shell action failed: ${err.message}`);
+    }
+  }
+
+  function abortShellAction() {
+    try {
+      const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('shell-hitl-safety-gate') : null;
+      if (gate) {
+        gate.innerHTML = `
+          <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 10px 14px; color: #f87171; width: 100%;">
+            <strong>🛑 Command Execution Blocked by User. System state preserved.</strong>
+          </div>
+        `;
+      }
+      if (typeof termLog === 'function') {
+        termLog('[SHELL HITL] 🛑 Destructive command blocked by user.', 'success');
+      }
+    } catch (err) {
+      if (typeof termLog === 'function') {
+        termLog(`[SHELL HITL ERROR] Aborting shell action failed: ${err.message}`, 'error');
+      }
+      renderHitlErrorBanner('shell-hitl-safety-gate', `Abort shell action failed: ${err.message}`);
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.confirmOutlineAction = confirmOutlineAction;
+    window.abortOutlineAction = abortOutlineAction;
+    window.editOutlineChapter = editOutlineChapter;
+    window.customizeOutlineAction = customizeOutlineAction;
+    window.buildHitlOutlineWorkspaceHtml = buildHitlOutlineWorkspaceHtml;
+    window.detectLongFormWritingRequest = detectLongFormWritingRequest;
+    window.extractWritingOutline = extractWritingOutline;
+    window.getAuthorStyleProfile = getAuthorStyleProfile;
+    window.saveAuthorStyleProfile = saveAuthorStyleProfile;
+    window.resetAuthorStyleProfile = resetAuthorStyleProfile;
+    window.updateAuthorStyleProperty = updateAuthorStyleProperty;
+    window.formatAuthorStylePrompt = formatAuthorStylePrompt;
+    window.detectPotentiallyDestructiveCommand = detectPotentiallyDestructiveCommand;
+    window.buildHitlShellWorkspaceHtml = buildHitlShellWorkspaceHtml;
+    window.confirmShellAction = confirmShellAction;
+    window.abortShellAction = abortShellAction;
+  }
+
   let pendingPromptDirective = null;
 
   async function executeCliCommand(rawCmd, options = {}) {
@@ -16193,6 +16952,7 @@ Respond with ONLY a valid JSON object matching this schema:
       const streamContentEl = shellBubble.querySelector('.stream-content') || shellBubble;
       streamContentEl.innerHTML = buildHitlShellWorkspaceHtml(cmd, shellSafety.reason);
       if (currentAttachments.length > 0) clearAllAttachments();
+      setChatRunningState(false);
       return;
     }
 
@@ -16242,6 +17002,7 @@ Respond with ONLY a valid JSON object matching this schema:
       const streamContentEl = outlineBubble.querySelector('.stream-content') || outlineBubble;
       streamContentEl.innerHTML = buildHitlOutlineWorkspaceHtml(outlinePlan);
       if (currentAttachments.length > 0) clearAllAttachments();
+      setChatRunningState(false);
       return;
     }
 
@@ -19532,86 +20293,93 @@ Analyze the temporal progression across the sampled video keyframes, describing 
   }
 
   function confirmExamSubmit() {
-    if (!window.activeExamQuestions || !window.activeExamQuestions.length) return;
-
-    // Ensure every question has selectedOption set and synchronized to live DOM
-    window.activeExamQuestions.forEach((q, idx) => {
-      if (!q.selectedOption) {
-        q.selectedOption = q.recommendedOption || 'A';
-      }
-      if (typeof syncExamOptionToLiveDom === 'function') {
-        syncExamOptionToLiveDom(idx, q.selectedOption);
-      }
-    });
-
-    const answeredCount = window.activeExamQuestions.filter(q => q.selectedOption).length;
-    const total = window.activeExamQuestions.length;
-
-    const currentQ = window.activeExamQuestions[0];
-    const pagination = typeof parseExamPagination === 'function' ? parseExamPagination(typeof currentNavUrl === 'string' ? currentNavUrl : '') : null;
-    const qNum = currentQ ? (currentQ.questionNumber || (pagination ? pagination.current : 1)) : 1;
-    const totalQuestions = currentQ && currentQ.totalQuestions ? currentQ.totalQuestions : (pagination ? pagination.total : (total > 1 ? total : 38));
-
-    let frameDoc = null;
     try {
-      if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
-        frameDoc = browserFrame.contentDocument;
+      if (!window.activeExamQuestions || !window.activeExamQuestions.length) return;
+
+      // Ensure every question has selectedOption set and synchronized to live DOM
+      window.activeExamQuestions.forEach((q, idx) => {
+        if (!q.selectedOption) {
+          q.selectedOption = q.recommendedOption || 'A';
+        }
+        if (typeof syncExamOptionToLiveDom === 'function') {
+          syncExamOptionToLiveDom(idx, q.selectedOption);
+        }
+      });
+
+      const answeredCount = window.activeExamQuestions.filter(q => q.selectedOption).length;
+      const total = window.activeExamQuestions.length;
+
+      const currentQ = window.activeExamQuestions[0];
+      const pagination = typeof parseExamPagination === 'function' ? parseExamPagination(typeof currentNavUrl === 'string' ? currentNavUrl : '') : null;
+      const qNum = currentQ ? (currentQ.questionNumber || (pagination ? pagination.current : 1)) : 1;
+      const totalQuestions = currentQ && currentQ.totalQuestions ? currentQ.totalQuestions : (pagination ? pagination.total : (total > 1 ? total : 38));
+
+      let frameDoc = null;
+      try {
+        if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
+          frameDoc = browserFrame.contentDocument;
+        }
+      } catch (_) {
+        frameDoc = null;
       }
-    } catch (_) {
-      frameDoc = null;
-    }
-    const hasNextBtn = typeof findNextQuestionButton === 'function' ? Boolean(findNextQuestionButton(frameDoc)) : false;
-    const hasNextUrl = typeof getNextExamUrl === 'function' ? Boolean(getNextExamUrl(typeof currentNavUrl === 'string' ? currentNavUrl : '')) : false;
-    const hasMoreQuestions = qNum < totalQuestions || hasNextBtn || hasNextUrl;
+      const hasNextBtn = typeof findNextQuestionButton === 'function' ? Boolean(findNextQuestionButton(frameDoc)) : false;
+      const hasNextUrl = typeof getNextExamUrl === 'function' ? Boolean(getNextExamUrl(typeof currentNavUrl === 'string' ? currentNavUrl : '')) : false;
+      const hasMoreQuestions = qNum < totalQuestions || hasNextBtn || hasNextUrl;
 
-    const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('exam-hitl-safety-gate') : null;
-    if (gate) {
-      gate.innerHTML = `
-        <div class="exam-submitted-banner" style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; border-radius: 6px; padding: 10px 14px; color: #10b981;">
-          <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
-            <span>✅</span> <span>Human Verification Granted: Exam Submitted Successfully!</span>
+      const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('exam-hitl-safety-gate') : null;
+      if (gate) {
+        gate.innerHTML = `
+          <div class="exam-submitted-banner" style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; border-radius: 6px; padding: 10px 14px; color: #10b981;">
+            <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+              <span>✅</span> <span>Human Verification Granted: Exam Submitted Successfully!</span>
+            </div>
+            <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
+              ${answeredCount} of ${total} answers confirmed by user. Live web form submission triggered.
+            </div>
+            ${hasMoreQuestions ? '<div style="font-size: 11px; color: #38bdf8; margin-top: 4px; font-weight: 600;">🔄 Advancing to Question ' + (qNum + 1) + ' of ' + totalQuestions + '...</div>' : ''}
           </div>
-          <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
-            ${answeredCount} of ${total} answers confirmed by user. Live web form submission triggered.
-          </div>
-          ${hasMoreQuestions ? '<div style="font-size: 11px; color: #38bdf8; margin-top: 4px; font-weight: 600;">🔄 Advancing to Question ' + (qNum + 1) + ' of ' + totalQuestions + '...</div>' : ''}
-        </div>
-      `;
-    }
+        `;
+      }
 
-    try {
-      if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
-        const doc = browserFrame.contentDocument;
-        const nextBtn = typeof findNextQuestionButton === 'function' ? findNextQuestionButton(doc) : null;
-        if (nextBtn && nextBtn.click) {
-          nextBtn.click();
-        } else {
-          const submitBtn = doc.querySelector ? doc.querySelector('button[type="submit"], input[type="submit"], button.submit, button#submit, form button:last-of-type') : null;
-          if (submitBtn && submitBtn.click) {
-            submitBtn.click();
+      try {
+        if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
+          const doc = browserFrame.contentDocument;
+          const nextBtn = typeof findNextQuestionButton === 'function' ? findNextQuestionButton(doc) : null;
+          if (nextBtn && nextBtn.click) {
+            nextBtn.click();
           } else {
-            const form = doc.querySelector ? doc.querySelector('form') : null;
-            if (form) {
-              if (typeof form.requestSubmit === 'function') {
-                form.requestSubmit();
-              } else if (typeof form.submit === 'function') {
-                form.submit();
+            const submitBtn = doc.querySelector ? doc.querySelector('button[type="submit"], input[type="submit"], button.submit, button#submit, form button:last-of-type') : null;
+            if (submitBtn && submitBtn.click) {
+              submitBtn.click();
+            } else {
+              const form = doc.querySelector ? doc.querySelector('form') : null;
+              if (form) {
+                if (typeof form.requestSubmit === 'function') {
+                  form.requestSubmit();
+                } else if (typeof form.submit === 'function') {
+                  form.submit();
+                }
               }
             }
           }
         }
+      } catch (_) {}
+
+      if (typeof termLog === 'function') {
+        termLog(`[HITL EXAM] ✅ Human-in-the-Loop approval confirmed. Exam answers submitted (${answeredCount}/${total}).`, 'success');
       }
-    } catch (_) {}
 
-    if (typeof termLog === 'function') {
-      termLog(`[HITL EXAM] ✅ Human-in-the-Loop approval confirmed. Exam answers submitted (${answeredCount}/${total}).`, 'success');
-    }
-
-    // If there are subsequent questions, automatically advance perception and workspace
-    if (hasMoreQuestions && (qNum < totalQuestions || hasNextBtn || hasNextUrl) && typeof advanceExamToNextQuestion === 'function') {
-      setTimeout(() => {
-        advanceExamToNextQuestion();
-      }, 500);
+      // If there are subsequent questions, automatically advance perception and workspace
+      if (hasMoreQuestions && (qNum < totalQuestions || hasNextBtn || hasNextUrl) && typeof advanceExamToNextQuestion === 'function') {
+        setTimeout(() => {
+          advanceExamToNextQuestion();
+        }, 500);
+      }
+    } catch (err) {
+      if (typeof termLog === 'function') {
+        termLog(`[HITL EXAM ERROR] Confirm exam submit failed: ${err.message}`, 'error');
+      }
+      renderHitlErrorBanner('exam-hitl-safety-gate', `Exam submission failed: ${err.message}`);
     }
   }
 
@@ -19656,23 +20424,30 @@ Analyze the temporal progression across the sampled video keyframes, describing 
   }
 
   function abortExamSubmit() {
-    window.isAutonomousExamSolverRunning = false;
-    const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('exam-hitl-safety-gate') : null;
-    if (gate) {
-      gate.innerHTML = `
-        <div class="exam-aborted-banner" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 10px 14px; color: #f87171;">
-          <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
-            <span>🛑</span> <span>Exam Submission Aborted by User</span>
+    try {
+      window.isAutonomousExamSolverRunning = false;
+      const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('exam-hitl-safety-gate') : null;
+      if (gate) {
+        gate.innerHTML = `
+          <div class="exam-aborted-banner" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 10px 14px; color: #f87171;">
+            <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+              <span>🛑</span> <span>Exam Submission Aborted by User</span>
+            </div>
+            <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
+              No answers were submitted to the live webpage. You may continue reviewing or editing selections.
+            </div>
           </div>
-          <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
-            No answers were submitted to the live webpage. You may continue reviewing or editing selections.
-          </div>
-        </div>
-      `;
-    }
+        `;
+      }
 
-    if (typeof termLog === 'function') {
-      termLog('[HITL EXAM] 🛑 Submission aborted by user. Answers kept in workspace for review.', 'warn');
+      if (typeof termLog === 'function') {
+        termLog('[HITL EXAM] 🛑 Submission aborted by user. Answers kept in workspace for review.', 'warn');
+      }
+    } catch (err) {
+      if (typeof termLog === 'function') {
+        termLog(`[HITL EXAM ERROR] Abort exam submit failed: ${err.message}`, 'error');
+      }
+      renderHitlErrorBanner('exam-hitl-safety-gate', `Abort exam submit failed: ${err.message}`);
     }
   }
 
@@ -20038,56 +20813,70 @@ Analyze the temporal progression across the sampled video keyframes, describing 
   }
 
   function confirmShoppingAction() {
-    if (!window.activeProducts || !window.activeProducts.length) return;
-    const p = window.activeProducts.find(item => item.id === window.selectedProductId) || window.activeProducts[0];
-    const qty = p.quantity || 1;
-
-    const gate = typeof document !== 'undefined' ? document.getElementById('shopping-hitl-safety-gate') : null;
-    if (gate) {
-      gate.innerHTML = `
-        <div class="shopping-approved-banner" style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; border-radius: 6px; padding: 10px 14px; color: #10b981;">
-          <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
-            <span>✅</span> <span>Human Approval Granted: Item Added to Cart</span>
-          </div>
-          <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
-            "${escapeHtml(p.title)}" (Qty: ${qty}, Total: ${p.currency || '$'}${(p.numericPrice * qty).toFixed(2)}) approved by user. Cart operation executed.
-          </div>
-        </div>
-      `;
-    }
-
     try {
-      if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
-        const doc = browserFrame.contentDocument;
-        let btn = null;
-        if (p.buttonId) btn = doc.getElementById(p.buttonId);
-        if (!btn && p.buttonSelector) btn = doc.querySelector(p.buttonSelector);
-        if (!btn) btn = doc.querySelector('button.add-to-cart, input[value*="Add to Cart"], button[name*="add-to-cart"], a.btn-buy');
-        if (btn && btn.click) btn.click();
-      }
-    } catch (_) {}
+      if (!window.activeProducts || !window.activeProducts.length) return;
+      const p = window.activeProducts.find(item => item.id === window.selectedProductId) || window.activeProducts[0];
+      const qty = p.quantity || 1;
 
-    if (typeof termLog === 'function') {
-      termLog(`[HITL SHOPPING] ✅ Human approval granted. Added to cart: "${p.title}" x ${qty}`, 'success');
+      const gate = typeof document !== 'undefined' ? document.getElementById('shopping-hitl-safety-gate') : null;
+      if (gate) {
+        gate.innerHTML = `
+          <div class="shopping-approved-banner" style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; border-radius: 6px; padding: 10px 14px; color: #10b981;">
+            <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+              <span>✅</span> <span>Human Approval Granted: Item Added to Cart</span>
+            </div>
+            <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
+              "${escapeHtml(p.title)}" (Qty: ${qty}, Total: ${p.currency || '$'}${(p.numericPrice * qty).toFixed(2)}) approved by user. Cart operation executed.
+            </div>
+          </div>
+        `;
+      }
+
+      try {
+        if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
+          const doc = browserFrame.contentDocument;
+          let btn = null;
+          if (p.buttonId) btn = doc.getElementById(p.buttonId);
+          if (!btn && p.buttonSelector) btn = doc.querySelector(p.buttonSelector);
+          if (!btn) btn = doc.querySelector('button.add-to-cart, input[value*="Add to Cart"], button[name*="add-to-cart"], a.btn-buy');
+          if (btn && btn.click) btn.click();
+        }
+      } catch (_) {}
+
+      if (typeof termLog === 'function') {
+        termLog(`[HITL SHOPPING] ✅ Human approval granted. Added to cart: "${p.title}" x ${qty}`, 'success');
+      }
+    } catch (err) {
+      if (typeof termLog === 'function') {
+        termLog(`[HITL SHOPPING ERROR] Confirm shopping action failed: ${err.message}`, 'error');
+      }
+      renderHitlErrorBanner('shopping-hitl-safety-gate', `Shopping action failed: ${err.message}`);
     }
   }
 
   function abortShoppingAction() {
-    const gate = typeof document !== 'undefined' ? document.getElementById('shopping-hitl-safety-gate') : null;
-    if (gate) {
-      gate.innerHTML = `
-        <div class="shopping-aborted-banner" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 10px 14px; color: #f87171;">
-          <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
-            <span>🛑</span> <span>Shopping Action Aborted by User</span>
+    try {
+      const gate = typeof document !== 'undefined' ? document.getElementById('shopping-hitl-safety-gate') : null;
+      if (gate) {
+        gate.innerHTML = `
+          <div class="shopping-aborted-banner" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 10px 14px; color: #f87171;">
+            <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+              <span>🛑</span> <span>Shopping Action Aborted by User</span>
+            </div>
+            <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
+              No items were added to cart and no charges were made. You may continue comparing items.
+            </div>
           </div>
-          <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
-            No items were added to cart and no charges were made. You may continue comparing items.
-          </div>
-        </div>
-      `;
-    }
-    if (typeof termLog === 'function') {
-      termLog('[HITL SHOPPING] 🛑 Shopping action aborted by user.', 'warn');
+        `;
+      }
+      if (typeof termLog === 'function') {
+        termLog('[HITL SHOPPING] 🛑 Shopping action aborted by user.', 'warn');
+      }
+    } catch (err) {
+      if (typeof termLog === 'function') {
+        termLog(`[HITL SHOPPING ERROR] Abort shopping action failed: ${err.message}`, 'error');
+      }
+      renderHitlErrorBanner('shopping-hitl-safety-gate', `Abort shopping failed: ${err.message}`);
     }
   }
 
@@ -20435,56 +21224,70 @@ Analyze the temporal progression across the sampled video keyframes, describing 
   }
 
   function confirmBookingAction() {
-    if (!window.activeTickets || !window.activeTickets.length) return;
-    const t = window.activeTickets.find(item => item.id === window.selectedTicketId) || window.activeTickets[0];
-    const qty = t.quantity || 1;
-
-    const gate = typeof document !== 'undefined' ? document.getElementById('booking-hitl-safety-gate') : null;
-    if (gate) {
-      gate.innerHTML = `
-        <div class="booking-approved-banner" style="background: rgba(139, 92, 246, 0.15); border: 1px solid #8b5cf6; border-radius: 6px; padding: 10px 14px; color: #a78bfa;">
-          <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
-            <span>✅</span> <span>Human Verification Granted: Ticket Reservation Confirmed!</span>
-          </div>
-          <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
-            "${escapeHtml(t.title)}" (${qty} seat(s), Total: ${t.currency || '$'}${(t.numericPrice * qty).toFixed(2)}) approved by user. Reservation dispatched.
-          </div>
-        </div>
-      `;
-    }
-
     try {
-      if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
-        const doc = browserFrame.contentDocument;
-        let btn = null;
-        if (t.buttonId) btn = doc.getElementById(t.buttonId);
-        if (!btn && t.buttonSelector) btn = doc.querySelector(t.buttonSelector);
-        if (!btn) btn = doc.querySelector('button.book, button.reserve, input[value*="Book"], button[type="submit"]');
-        if (btn && btn.click) btn.click();
-      }
-    } catch (_) {}
+      if (!window.activeTickets || !window.activeTickets.length) return;
+      const t = window.activeTickets.find(item => item.id === window.selectedTicketId) || window.activeTickets[0];
+      const qty = t.quantity || 1;
 
-    if (typeof termLog === 'function') {
-      termLog(`[HITL BOOKING] ✅ Human verification confirmed. Reserved: "${t.title}" x ${qty}`, 'success');
+      const gate = typeof document !== 'undefined' ? document.getElementById('booking-hitl-safety-gate') : null;
+      if (gate) {
+        gate.innerHTML = `
+          <div class="booking-approved-banner" style="background: rgba(139, 92, 246, 0.15); border: 1px solid #8b5cf6; border-radius: 6px; padding: 10px 14px; color: #a78bfa;">
+            <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+              <span>✅</span> <span>Human Verification Granted: Ticket Reservation Confirmed!</span>
+            </div>
+            <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
+              "${escapeHtml(t.title)}" (${qty} seat(s), Total: ${t.currency || '$'}${(t.numericPrice * qty).toFixed(2)}) approved by user. Reservation dispatched.
+            </div>
+          </div>
+        `;
+      }
+
+      try {
+        if (typeof browserFrame !== 'undefined' && browserFrame && browserFrame.contentDocument) {
+          const doc = browserFrame.contentDocument;
+          let btn = null;
+          if (t.buttonId) btn = doc.getElementById(t.buttonId);
+          if (!btn && t.buttonSelector) btn = doc.querySelector(t.buttonSelector);
+          if (!btn) btn = doc.querySelector('button.book, button.reserve, input[value*="Book"], button[type="submit"]');
+          if (btn && btn.click) btn.click();
+        }
+      } catch (_) {}
+
+      if (typeof termLog === 'function') {
+        termLog(`[HITL BOOKING] ✅ Human verification confirmed. Reserved: "${t.title}" x ${qty}`, 'success');
+      }
+    } catch (err) {
+      if (typeof termLog === 'function') {
+        termLog(`[HITL BOOKING ERROR] Confirm booking action failed: ${err.message}`, 'error');
+      }
+      renderHitlErrorBanner('booking-hitl-safety-gate', `Booking reservation failed: ${err.message}`);
     }
   }
 
   function abortBookingAction() {
-    const gate = typeof document !== 'undefined' ? document.getElementById('booking-hitl-safety-gate') : null;
-    if (gate) {
-      gate.innerHTML = `
-        <div class="booking-aborted-banner" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 10px 14px; color: #f87171;">
-          <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
-            <span>🛑</span> <span>Booking Reservation Aborted by User</span>
+    try {
+      const gate = typeof document !== 'undefined' ? document.getElementById('booking-hitl-safety-gate') : null;
+      if (gate) {
+        gate.innerHTML = `
+          <div class="booking-aborted-banner" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 10px 14px; color: #f87171;">
+            <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+              <span>🛑</span> <span>Booking Reservation Aborted by User</span>
+            </div>
+            <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
+              No seats or tickets were booked and no charges were made.
+            </div>
           </div>
-          <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
-            No seats or tickets were booked and no charges were made.
-          </div>
-        </div>
-      `;
-    }
-    if (typeof termLog === 'function') {
-      termLog('[HITL BOOKING] 🛑 Booking reservation aborted by user.', 'warn');
+        `;
+      }
+      if (typeof termLog === 'function') {
+        termLog('[HITL BOOKING] 🛑 Booking reservation aborted by user.', 'warn');
+      }
+    } catch (err) {
+      if (typeof termLog === 'function') {
+        termLog(`[HITL BOOKING ERROR] Abort booking action failed: ${err.message}`, 'error');
+      }
+      renderHitlErrorBanner('booking-hitl-safety-gate', `Abort booking failed: ${err.message}`);
     }
   }
 
@@ -21012,44 +21815,58 @@ Analyze the temporal progression across the sampled video keyframes, describing 
   }
 
   function confirmDirectionsAction() {
-    if (!window.activeDirections || !window.activeDirections.routes || !window.activeDirections.routes.length) return;
-    const r = window.activeDirections.routes.find(item => item.id === window.selectedRouteId) || window.activeDirections.routes[0];
+    try {
+      if (!window.activeDirections || !window.activeDirections.routes || !window.activeDirections.routes.length) return;
+      const r = window.activeDirections.routes.find(item => item.id === window.selectedRouteId) || window.activeDirections.routes[0];
 
-    const gate = typeof document !== 'undefined' ? document.getElementById('directions-hitl-safety-gate') : null;
-    if (gate) {
-      gate.innerHTML = `
-        <div class="directions-approved-banner" style="background: rgba(56, 189, 248, 0.15); border: 1px solid #38bdf8; border-radius: 6px; padding: 10px 14px; color: #38bdf8;">
-          <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
-            <span>✅</span> <span>Human Verification Granted: Navigation Started!</span>
+      const gate = typeof document !== 'undefined' ? document.getElementById('directions-hitl-safety-gate') : null;
+      if (gate) {
+        gate.innerHTML = `
+          <div class="directions-approved-banner" style="background: rgba(56, 189, 248, 0.15); border: 1px solid #38bdf8; border-radius: 6px; padding: 10px 14px; color: #38bdf8;">
+            <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+              <span>✅</span> <span>Human Verification Granted: Navigation Started!</span>
+            </div>
+            <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
+              Route "${escapeHtml(r.title || r.summary)}" (${r.duration}, ${r.distance}) confirmed by user. Live turn-by-turn guidance dispatched.
+            </div>
           </div>
-          <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
-            Route "${escapeHtml(r.title || r.summary)}" (${r.duration}, ${r.distance}) confirmed by user. Live turn-by-turn guidance dispatched.
-          </div>
-        </div>
-      `;
-    }
+        `;
+      }
 
-    if (typeof termLog === 'function') {
-      termLog(`[HITL DIRECTIONS] ✅ Human verification confirmed. Navigating: "${r.title || r.summary}" (${r.duration}, ${r.distance})`, 'success');
+      if (typeof termLog === 'function') {
+        termLog(`[HITL DIRECTIONS] ✅ Human verification confirmed. Navigating: "${r.title || r.summary}" (${r.duration}, ${r.distance})`, 'success');
+      }
+    } catch (err) {
+      if (typeof termLog === 'function') {
+        termLog(`[HITL DIRECTIONS ERROR] Confirm directions failed: ${err.message}`, 'error');
+      }
+      renderHitlErrorBanner('directions-hitl-safety-gate', `Navigation route dispatch failed: ${err.message}`);
     }
   }
 
   function abortDirectionsAction() {
-    const gate = typeof document !== 'undefined' ? document.getElementById('directions-hitl-safety-gate') : null;
-    if (gate) {
-      gate.innerHTML = `
-        <div class="directions-aborted-banner" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 10px 14px; color: #f87171;">
-          <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
-            <span>🛑</span> <span>Navigation Canceled by User</span>
+    try {
+      const gate = typeof document !== 'undefined' ? document.getElementById('directions-hitl-safety-gate') : null;
+      if (gate) {
+        gate.innerHTML = `
+          <div class="directions-aborted-banner" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 10px 14px; color: #f87171;">
+            <div style="font-weight: 700; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
+              <span>🛑</span> <span>Navigation Canceled by User</span>
+            </div>
+            <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
+              No route was dispatched. You may select another route or recalculate.
+            </div>
           </div>
-          <div style="font-size: 11px; margin-top: 4px; color: var(--text-primary, #e2e8f0);">
-            No route was dispatched. You may select another route or recalculate.
-          </div>
-        </div>
-      `;
-    }
-    if (typeof termLog === 'function') {
-      termLog('[HITL DIRECTIONS] 🛑 Navigation route canceled by user.', 'warn');
+        `;
+      }
+      if (typeof termLog === 'function') {
+        termLog('[HITL DIRECTIONS] 🛑 Navigation route canceled by user.', 'warn');
+      }
+    } catch (err) {
+      if (typeof termLog === 'function') {
+        termLog(`[HITL DIRECTIONS ERROR] Abort directions failed: ${err.message}`, 'error');
+      }
+      renderHitlErrorBanner('directions-hitl-safety-gate', `Cancel route failed: ${err.message}`);
     }
   }
 
@@ -23292,451 +24109,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     }
   }
 
-  // -----------------------------------------------------------------
-  // 4.057g Persistent Author Style Memory & Formatting
-  // -----------------------------------------------------------------
-  // Note: DEFAULT_AUTHOR_STYLE_PROFILE is initialized early at the top of the file
 
-  function getAuthorStyleProfile() {
-    const fallbackProfile = (typeof DEFAULT_AUTHOR_STYLE_PROFILE !== 'undefined')
-      ? DEFAULT_AUTHOR_STYLE_PROFILE
-      : (typeof window !== 'undefined' && window.DEFAULT_AUTHOR_STYLE_PROFILE)
-        ? window.DEFAULT_AUTHOR_STYLE_PROFILE
-        : {
-            tone: 'engaging, authentic, vivid',
-            targetSentenceLength: '12-25 words, varied burstiness',
-            bannedBuzzwords: [
-              'delve', 'tapestry', 'testament', 'beacon', 'unleash', 'crucial',
-              'pivotal', 'moreover', 'furthermore', 'interconnected', 'revolutionize',
-              'multifaceted', 'paramount', 'dynamic landscape'
-            ],
-            pacing: 'sensory grounding, show-don\'t-tell',
-            groundingEnabled: true
-          };
-    try {
-      const raw = (typeof localStorage !== 'undefined' && localStorage.getItem) ? localStorage.getItem('modelfusion_author_style_profile') : null;
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        return { ...fallbackProfile, ...parsed };
-      }
-    } catch (e) {
-      console.warn('Error reading author style profile:', e);
-    }
-    return { ...fallbackProfile };
-  }
-
-  function saveAuthorStyleProfile(profile) {
-    try {
-      if (typeof localStorage !== 'undefined' && localStorage.setItem) {
-        localStorage.setItem('modelfusion_author_style_profile', JSON.stringify(profile));
-      }
-    } catch (e) {
-      console.warn('Error saving author style profile:', e);
-    }
-    return profile;
-  }
-
-  function resetAuthorStyleProfile() {
-    const fresh = { ...DEFAULT_AUTHOR_STYLE_PROFILE };
-    saveAuthorStyleProfile(fresh);
-    return fresh;
-  }
-
-  function updateAuthorStyleProperty(key, value) {
-    const prof = getAuthorStyleProfile();
-    prof[key] = value;
-    saveAuthorStyleProfile(prof);
-    return prof;
-  }
-
-  function formatAuthorStylePrompt(profile = getAuthorStyleProfile()) {
-    const banned = Array.isArray(profile.bannedBuzzwords) ? profile.bannedBuzzwords.join(', ') : '';
-    return `AUTHOR STYLE & VOICE DIRECTIVE:
-1. Tone: ${profile.tone || 'engaging, authentic'}
-2. Sentence Cadence: ${profile.targetSentenceLength || 'varied rhythm'}. Strictly vary sentence lengths to produce natural human cadence and burstiness. Mix short, impactful 4-to-8-word sentences with longer, flowing descriptive clauses.
-3. Strictly Banned AI Buzzwords: Never use any of the following cliché AI filler words: ${banned}. If any of these words appear in draft thinking, immediately replace them with concrete, grounded vocabulary.
-4. Narrative Pacing: ${profile.pacing || 'sensory grounding'}. Favor concrete physical details, dialogue, and authentic sensory observations over generic conceptual summaries.`;
-  }
-
-  // -----------------------------------------------------------------
-  // 4.057h Writing Outline & Pacing Workspace (HITL)
-  // -----------------------------------------------------------------
-  function detectLongFormWritingRequest(prompt = '', options = {}) {
-    if (options && (options.outlineApproved || options.skipHitlOutline)) return { isLongFormWriting: false };
-    const text = (typeof prompt === 'string') ? prompt.trim() : '';
-    if (!text) return { isLongFormWriting: false };
-
-    // Explicit exclusion guard: ticket booking, travel, computer use, and direct requests are NEVER long-form writing!
-    if (/^(?:@agent\s+)?(?:ticket-booking|ticket|tickets|flight-booking|flight|flights|book-ticket|book-flight|exam-solver|map-directions|shopping|computer-use|ui-tars|screen-grounding|desktop-click|desktop-type|desktop-scroll|apply-jobs|applyjobs|apply-job|job-application|jobs|career-ops)\b/i.test(text) ||
-        /\b(?:book|reserve)\s+(?:me\s+)?(?:a\s+)?(?:tickets?|flights?|hotels?|seats?|trips?|passes?|cabs?|rooms?|tables?)\b/i.test(text) ||
-        /\b(?:from\s+[A-Za-z0-9\s,.-]+?\s+to\s+[A-Za-z0-9\s,.-]+)\b/i.test(text)) {
-      return { isLongFormWriting: false };
-    }
-
-    // Check intention parsed properties if available
-    const int = (options && options.intention) ? options.intention : parseRegexIntention(text, options);
-
-    const isExplicitMultiPage = int.targetPages >= 3;
-    const isExplicitMultiChapter = int.targetChapters >= 2;
-    const isBookOrNovelPrompt = /\b(?:write\s+(?:a\s+|me\s+a\s+)?(?:book|novel|long[- ]form\s+essay|dissertation|complete\s+guide|memoir|biography)|multi[- ]chapter\s+story|epic\s+novel)\b/i.test(text);
-    const hasLongFormKeywords = (int.targetPages >= 2 || int.targetWords >= 1500 || int.isLongForm) && /\b(?:chapter|novel|book|essay|story|biography|memoir|chronicle)\b/i.test(text);
-
-    const isLongForm = isExplicitMultiPage || isExplicitMultiChapter || isBookOrNovelPrompt || hasLongFormKeywords;
-    if (!isLongForm) return { isLongFormWriting: false };
-
-    const estimatedPages = int.targetPages > 0 ? int.targetPages : (int.targetChapters > 0 ? Math.ceil(int.targetChapters * 1.5) : (int.targetWords > 0 ? Math.ceil(int.targetWords / 500) : 3));
-    const estimatedChapters = int.targetChapters > 0 ? int.targetChapters : Math.max(3, estimatedPages);
-    const isFiction = !/\b(?:research|history|biography|academic|technical|scientific|non[- ]fiction|guide|tutorial|analysis|essay\s+on)\b/i.test(text);
-
-    let topic = text.replace(/^(?:write\s+(?:a\s+|me\s+a\s+)?(?:book|novel|long[- ]form\s+essay|story|essay|guide)?\s*(?:about|on|titled|called)?\s*)/i, '').trim();
-    if (topic.length > 60) {
-      topic = topic.slice(0, 57) + '...';
-    }
-
-    return {
-      isLongFormWriting: true,
-      estimatedPages,
-      estimatedChapters,
-      targetWords: int.targetWords > 0 ? int.targetWords : (estimatedPages * 500),
-      topic: topic || 'Untitled Work',
-      isFiction
-    };
-  }
-
-  function extractWritingOutline(prompt = '', docText = '', options = {}) {
-    const det = detectLongFormWritingRequest(prompt, options);
-    const numChapters = det.estimatedChapters || 3;
-    const wordsPerChapter = Math.round((det.targetWords || 1500) / numChapters);
-    const styleProf = getAuthorStyleProfile();
-
-    const title = det.topic && det.topic !== 'Untitled Work'
-      ? (det.topic.charAt(0).toUpperCase() + det.topic.slice(1))
-      : (det.isFiction ? 'Echoes of the Horizon' : 'Comprehensive Exploration & Critical Analysis');
-
-    const defaultChapterThemes = det.isFiction ? [
-      { stem: 'Inciting Incident & World Genesis', plot: 'Establish protagonist baseline, sensory environment, and initial disruptive tension.' },
-      { stem: 'Rising Conflict & Hidden Stakes', plot: 'Escalation of internal doubts, unexpected obstacles, and shifting loyalties.' },
-      { stem: 'The Pivot & Deep Discovery', plot: 'Critical revelation altering perception of the core dilemma.' },
-      { stem: 'Climax & Confrontation', plot: 'Decisive confrontation testing conviction and ultimate stakes.' },
-      { stem: 'Resolution & Resonant Aftermath', plot: 'Meaningful denouement, transformed equilibrium, and reflective closure.' }
-    ] : [
-      { stem: 'Foundations & Historical Context', plot: 'Core problem formulation, evolutionary origins, and fundamental principles.' },
-      { stem: 'Architectural Analysis & Mechanics', plot: 'Technical decomposition, operational characteristics, and empirical behaviors.' },
-      { stem: 'Case Studies & Practical Dynamics', plot: 'Real-world deployments, failure modes, and observed anomalies.' },
-      { stem: 'Comparative Synthesis & Trade-offs', plot: 'Critical evaluation of alternative paradigms and edge cases.' },
-      { stem: 'Future Trajectories & Conclusions', plot: 'Open research horizons, systemic implications, and synthesis of findings.' }
-    ];
-
-    const chapters = [];
-    for (let i = 0; i < numChapters; i++) {
-      const theme = defaultChapterThemes[i % defaultChapterThemes.length];
-      chapters.push({
-        number: i + 1,
-        title: `Chapter ${i + 1}: ${theme.stem}`,
-        targetWords: wordsPerChapter,
-        pacing: (i === 0) ? 'Hook & Immersive Pacing' : (i === numChapters - 1 ? 'Climactic & Reflective' : 'Sustained Momentum'),
-        plotBreakdown: theme.plot
-      });
-    }
-
-    return {
-      title,
-      prompt,
-      totalEstimatedWords: numChapters * wordsPerChapter,
-      targetPages: det.estimatedPages || 3,
-      chapters,
-      styleProfile: styleProf,
-      isFiction: det.isFiction,
-      grounding: options.grounding || null
-    };
-  }
-
-  function buildHitlOutlineWorkspaceHtml(outlinePlan) {
-    if (!outlinePlan || !Array.isArray(outlinePlan.chapters)) return '';
-    activeOutline = outlinePlan;
-    if (typeof window !== 'undefined') {
-      window.activeOutline = outlinePlan;
-    }
-
-    const chaptersHtml = outlinePlan.chapters.map((ch, idx) => `
-      <div class="outline-chapter-card" style="margin-bottom: 8px;">
-        <div style="display: flex; align-items: center; justify-content: space-between;">
-          <div class="outline-stem-title">
-            <span>📑</span>
-            <span id="outline-ch-title-${idx}">${escapeHtml(ch.title)}</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span class="outline-tier-badge">~${ch.targetWords} words</span>
-            <button type="button" class="btn-outline-edit-chapter" onclick="window.editOutlineChapter(${idx})" style="font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer;">
-              ✏️ Edit Stem
-            </button>
-          </div>
-        </div>
-        <div class="outline-stem-meta">Pacing: <em>${escapeHtml(ch.pacing)}</em></div>
-        <div class="outline-stem-plot" id="outline-ch-plot-${idx}">${escapeHtml(ch.plotBreakdown)}</div>
-      </div>
-    `).join('');
-
-    const groundingBadge = outlinePlan.grounding ? `
-      <span style="font-size: 11px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 2px 8px; border-radius: 4px;">
-        💡 Wiki Grounded: ${escapeHtml(outlinePlan.grounding.topic || 'Factual Reference')}
-      </span>
-    ` : '';
-
-    return `
-      <div class="hitl-outline-workspace">
-        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px; margin-bottom: 10px;">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 20px;">🖋️</span>
-            <div>
-              <div style="font-weight: 700; color: #fbbf24; font-size: 14px;">Writing Outline &amp; Pacing Workspace (HITL)</div>
-              <div style="font-size: 11px; color: var(--text-muted, #94a3b8);">Human-in-the-Loop review: Confirm chapter stems, pacing, and word allocations before writing starts</div>
-            </div>
-          </div>
-          <div style="display: flex; align-items: center; gap: 6px;">
-            ${groundingBadge}
-            <span style="font-size: 11px; background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.35); padding: 2px 8px; border-radius: 4px;">
-              Tone: ${escapeHtml(outlinePlan.styleProfile ? outlinePlan.styleProfile.tone : 'Authentic')}
-            </span>
-          </div>
-        </div>
-
-        <div style="background: rgba(0,0,0,0.2); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; font-size: 12px;">
-          <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">
-            📖 Proposed Work: <em>"${escapeHtml(outlinePlan.title)}"</em>
-          </div>
-          <div style="font-size: 11px; color: var(--text-secondary); display: flex; gap: 16px;">
-            <span>📊 Total Target: <strong>~${outlinePlan.totalEstimatedWords} words</strong> (${outlinePlan.targetPages} Pages)</span>
-            <span>📑 Chapters: <strong>${outlinePlan.chapters.length}</strong></span>
-            <span>🛡️ AI Clichés: <strong>0 Banned Buzzwords</strong></span>
-          </div>
-        </div>
-
-        <div class="outline-chapters-container" style="max-height: 280px; overflow-y: auto; padding-right: 4px;">
-          ${chaptersHtml}
-        </div>
-
-        <div id="outline-hitl-safety-gate" class="outline-safety-gate-bar" style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
-          <div style="font-size: 11px; color: #eab308; display: flex; align-items: center; gap: 6px;">
-            <span>⏳</span>
-            <span>Human approval required to commence chapter-by-chapter generation</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <button type="button" class="btn-outline-abort btn-hitl-abort" onclick="window.abortOutlineAction()">
-              🛑 Abort
-            </button>
-            <button type="button" class="btn-outline-customize btn-hitl-customize" onclick="window.customizeOutlineAction()">
-              ✏️ Customize Outline
-            </button>
-            <button type="button" class="btn-outline-confirm btn-hitl-approve" onclick="window.confirmOutlineAction()">
-              ✅ Approve Outline &amp; Begin Writing
-            </button>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  function confirmOutlineAction() {
-    const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('outline-hitl-safety-gate') : null;
-    if (gate) {
-      gate.innerHTML = `
-        <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; border-radius: 6px; padding: 10px 14px; color: #10b981; width: 100%; display: flex; align-items: center; gap: 8px;">
-          <span>✅</span>
-          <strong>Outline Approved! Launching deep agentic generation loop...</strong>
-        </div>
-      `;
-    }
-    if (typeof termLog === 'function') {
-      termLog('[OUTLINE HITL] ✅ Outline approved by human user. Launching narrative generation...', 'success');
-    }
-    if (window.activeOutline && window.activeOutline.prompt) {
-      setTimeout(() => {
-        executeCliCommand(window.activeOutline.prompt, { outlineApproved: true, outlinePlan: window.activeOutline });
-      }, 250);
-    }
-  }
-
-  function abortOutlineAction() {
-    const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('outline-hitl-safety-gate') : null;
-    if (gate) {
-      gate.innerHTML = `
-        <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 10px 14px; color: #f87171; width: 100%;">
-          <strong>🛑 Outline Generation Cancelled by User.</strong>
-        </div>
-      `;
-    }
-    if (typeof termLog === 'function') {
-      termLog('[OUTLINE HITL] 🛑 Writing outline aborted by user.', 'warn');
-    }
-  }
-
-  function editOutlineChapter(idx) {
-    if (!window.activeOutline || !window.activeOutline.chapters || !window.activeOutline.chapters[idx]) return;
-    const ch = window.activeOutline.chapters[idx];
-    const newTitle = (typeof window !== 'undefined' && window.prompt) ? window.prompt(`Edit Title for Chapter ${ch.number}:`, ch.title) : null;
-    if (newTitle && newTitle.trim()) {
-      ch.title = newTitle.trim();
-      const titleEl = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById(`outline-ch-title-${idx}`) : null;
-      if (titleEl) titleEl.textContent = ch.title;
-    }
-    const newPlot = (typeof window !== 'undefined' && window.prompt) ? window.prompt(`Edit Narrative Plot for Chapter ${ch.number}:`, ch.plotBreakdown) : null;
-    if (newPlot && newPlot.trim()) {
-      ch.plotBreakdown = newPlot.trim();
-      const plotEl = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById(`outline-ch-plot-${idx}`) : null;
-      if (plotEl) plotEl.textContent = ch.plotBreakdown;
-    }
-    if (typeof termLog === 'function') {
-      termLog(`[OUTLINE HITL] ✏️ Chapter ${ch.number} updated.`, 'info');
-    }
-  }
-
-  function customizeOutlineAction() {
-    if (!window.activeOutline) return;
-    const addCh = (typeof window !== 'undefined' && window.confirm) ? window.confirm('Add an additional chapter to the outline?') : false;
-    if (addCh) {
-      const nextNum = window.activeOutline.chapters.length + 1;
-      window.activeOutline.chapters.push({
-        number: nextNum,
-        title: `Chapter ${nextNum}: Climax & Resolution`,
-        targetWords: 600,
-        pacing: 'Dynamic & Reflective',
-        plotBreakdown: 'Critical final turning point, resolving secondary threads and solidifying transformation.'
-      });
-      window.activeOutline.totalEstimatedWords += 600;
-      window.activeOutline.targetPages += 1;
-      const workspaceContainer = (typeof document !== 'undefined' && document.querySelector) ? document.querySelector('.hitl-outline-workspace') : null;
-      if (workspaceContainer && workspaceContainer.parentElement) {
-        workspaceContainer.outerHTML = buildHitlOutlineWorkspaceHtml(window.activeOutline);
-      }
-    }
-  }
-
-  // -----------------------------------------------------------------
-  // 4.057i Terminal Shell & File Safety Gate (HITL)
-  // -----------------------------------------------------------------
-  function detectPotentiallyDestructiveCommand(cmd = '') {
-    if (typeof cmd !== 'string') return { isDestructive: false };
-    const clean = cmd.trim();
-    if (!clean) return { isDestructive: false };
-
-    const destructivePatterns = [
-      { regex: /\brm\s+-(?:r[fv]|f[rv]|[rv]f)\b/i, reason: 'Recursive, forced directory/file deletion (rm -rf)' },
-      { regex: /\brmdir\s+\/[sq]\b/i, reason: 'Recursive Windows directory tree removal (rmdir /s)' },
-      { regex: /\bdel\s+(?:\/[sqf]|\*|\/f)\b/i, reason: 'Unrestricted or forced Windows file deletion (del /f)' },
-      { regex: /\bRemove-Item\b.*-(?:Recurse|Force)\b/i, reason: 'Recursive forced PowerShell item deletion' },
-      { regex: /\bformat\s+[a-z]:/i, reason: 'Disk volume formatting' },
-      { regex: /\b(?:mkfs|fdisk|parted|diskpart)\b/i, reason: 'Disk partition table modification or formatting' },
-      { regex: /\bDROP\s+(?:DATABASE|TABLE|SCHEMA)\b/i, reason: 'Irreversible database drop statement' },
-      { regex: /\bTRUNCATE\s+TABLE\b/i, reason: 'Unrecoverable table truncation' },
-      { regex: /\bgit\s+reset\s+--hard\b/i, reason: 'Destructive git hard reset discarding uncommitted working changes' },
-      { regex: /\bgit\s+clean\s+-(?:[xfd]{2,})\b/i, reason: 'Permanent deletion of untracked files and directories' },
-      { regex: /\bchmod\s+-R\s+(?:777|000)\b/i, reason: 'Global recursive permission modification' },
-      { regex: /\b(?:kill\s+-9|Stop-Process\b.*-Force)\b/i, reason: 'Forced process termination' }
-    ];
-
-    for (const dp of destructivePatterns) {
-      if (dp.regex.test(clean)) {
-        return {
-          isDestructive: true,
-          riskLevel: 'CRITICAL',
-          reason: dp.reason,
-          command: clean
-        };
-      }
-    }
-
-    return { isDestructive: false };
-  }
-
-  function buildHitlShellWorkspaceHtml(command, reason = '', diffOrDetails = '') {
-    activeShellAction = { command, reason, diffOrDetails };
-    if (typeof window !== 'undefined') {
-      window.activeShellAction = activeShellAction;
-    }
-
-    return `
-      <div class="hitl-shell-workspace">
-        <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px; margin-bottom: 10px;">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 20px;">🛡️</span>
-            <div>
-              <div style="font-weight: 700; color: #ef4444; font-size: 14px;">Terminal Shell &amp; File Safety Gate (HITL)</div>
-              <div style="font-size: 11px; color: var(--text-muted, #94a3b8);">Potentially destructive system command or batch modification intercepted</div>
-            </div>
-          </div>
-          <span class="shell-risk-badge">⚠️ RISK: CRITICAL</span>
-        </div>
-
-        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">
-          <strong>Target Command / Operation:</strong>
-        </div>
-        <div class="shell-command-box"><code>${escapeHtml(command)}</code></div>
-
-        ${reason ? `
-          <div style="font-size: 11.5px; color: #fca5a5; margin-bottom: 6px;">
-            <strong>Safety Concern:</strong> ${escapeHtml(reason)}
-          </div>
-        ` : ''}
-
-        ${diffOrDetails ? `
-          <div class="shell-diff-box">
-            <div style="font-size: 10.5px; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase;">Operation Details / Impact Analysis:</div>
-            <code>${escapeHtml(diffOrDetails)}</code>
-          </div>
-        ` : ''}
-
-        <div id="shell-hitl-safety-gate" class="shell-safety-gate-bar" style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
-          <div style="font-size: 11px; color: #f87171; display: flex; align-items: center; gap: 6px;">
-            <span>✋</span>
-            <span>Human authorization required prior to OS execution</span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <button type="button" class="btn-shell-abort btn-hitl-abort" onclick="window.abortShellAction()">
-              🛑 Block &amp; Cancel
-            </button>
-            <button type="button" class="btn-shell-confirm btn-hitl-approve" onclick="window.confirmShellAction()">
-              ⚠️ Authorize &amp; Execute
-            </button>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  function confirmShellAction() {
-    const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('shell-hitl-safety-gate') : null;
-    if (gate) {
-      gate.innerHTML = `
-        <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; border-radius: 6px; padding: 10px 14px; color: #10b981; width: 100%; display: flex; align-items: center; gap: 8px;">
-          <span>✅</span>
-          <strong>Command Authorized by User. Proceeding with OS execution...</strong>
-        </div>
-      `;
-    }
-    if (typeof termLog === 'function') {
-      termLog('[SHELL HITL] ⚠️ Destructive command authorized by human user.', 'warn');
-    }
-    if (window.activeShellAction && window.activeShellAction.command) {
-      setTimeout(() => {
-        executeCliCommand(window.activeShellAction.command, { shellApproved: true });
-      }, 250);
-    }
-  }
-
-  function abortShellAction() {
-    const gate = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('shell-hitl-safety-gate') : null;
-    if (gate) {
-      gate.innerHTML = `
-        <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 10px 14px; color: #f87171; width: 100%;">
-          <strong>🛑 Command Execution Blocked by User. System state preserved.</strong>
-        </div>
-      `;
-    }
-    if (typeof termLog === 'function') {
-      termLog('[SHELL HITL] 🛑 Destructive command blocked by user.', 'success');
-    }
-  }
 
   window.classifyPageArchetype = classifyPageArchetype;
   window.resolveNaturalLanguageNavUrl = resolveNaturalLanguageNavUrl;
@@ -26901,22 +27274,31 @@ Verified Grounding Context (${sourceCount} Verified Sources):
 ${searchContext}
 
 ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
-${sourceCount > 10
-  ? `- You have been provided with ${sourceCount} verified research sources. A comprehensive query with this many sources requires an expansive, deeply thorough, multi-section research report — NOT a brief 2-3 paragraph summary.
+${isDeepResearch
+  ? `- MANDATORY DEEP RESEARCH SPECIFICATION: Deep Research must ALWAYS produce an exhaustive, publication-grade academic and empirical treatise spanning AT LEAST 10 PAGES (>= 5,000 words across 5 to 10 comprehensive sections/chapters) by default.
+- Structure your treatise using descriptive markdown section headings ('### Section 1: Executive Summary & Theoretical Foundations', '### Section 2: Literature Review & State-of-the-Art Survey', '### Section 3: Architectural Framework & Technical Mechanics', '### Section 4: Empirical Evaluation & Performance Benchmarks', '### Section 5: System Dynamics & Practical Engineering Considerations', '### Section 6: Vulnerabilities, Threat Vectors & Safety Auditing', '### Section 7: Cross-Disciplinary Synthesis & Industry Convergence', '### Section 8: Comparative Paradigm Analysis & Trade-offs', '### Section 9: Open Research Questions & Future Trajectories', '### Section 10: Definitive Conclusions & Grounded Bibliography').
+- Deliver rigorous, in-depth prose exploring theoretical proofs, mathematical formulations, concrete data tables, comparative analysis, edge cases, and future directions.
+- Ground every section with verified sources and inline citations [1], [2], etc., linking to verified sources.
+- Never write a short or high-level summary. Treat this as an authoritative, publication-ready multi-page report.`
+  : (sourceCount > 10
+    ? `- You have been provided with ${sourceCount} verified research sources. A comprehensive query with this many sources requires an expansive, deeply thorough, multi-section research report — NOT a brief 2-3 paragraph summary.
 - Provide an in-depth, publication-quality synthesis exploring key findings, technical nuances, varied perspectives, methodologies, and implications across the sources.
 - Structure your response with natural, descriptive markdown headings (###).
 - Extensively ground your analysis and cite verified sources inline using [1], [2], etc., with markdown links to the sources.
 - Deliver detailed paragraphs explaining the 'why' and 'how', thoroughly examining the evidence.`
-  : `- Provide an engaging, deeply detailed, comprehensive, and well-structured response directly answering the user query. Organize your response with natural, descriptive markdown headings (###). Write in rich, fluid, natural prose (avoid corporate clichés, formulaic transitions, or robotic summaries). Ground your analysis in the verified facts and cite sources inline where relevant.`}`;
+    : `- Provide an engaging, deeply detailed, comprehensive, and well-structured response directly answering the user query. Organize your response with natural, descriptive markdown headings (###). Write in rich, fluid, natural prose (avoid corporate clichés, formulaic transitions, or robotic summaries). Ground your analysis in the verified facts and cite sources inline where relevant.`)}`;
 
         const sysPrompt = isArxivOnly
           ? 'You are HugOS Browser AI, an expert academic and scientific research assistant. Correlate arXiv preprints and research papers, synthesize key findings, methodologies, and citations accurately with markdown links.'
-          : 'You are HugOS Browser AI, an intelligent assistant with live internet search and deep research capabilities. Correlate search evidence with internal reasoning, provide factual and up-to-date answers, and cite sources accurately with [1], [2] badges and markdown links.';
+          : (isDeepResearch
+            ? 'You are HugOS Browser AI, an expert academic research scholar and deep scientific investigator. By default, write exhaustive, publication-grade research monographs and multi-page treatises exceeding 10 pages (>= 5,000 words), with thorough technical depth, rigorous analysis, and inline verified citations.'
+            : 'You are HugOS Browser AI, an intelligent assistant with live internet search and deep research capabilities. Correlate search evidence with internal reasoning, provide factual and up-to-date answers, and cite sources accurately with [1], [2] badges and markdown links.');
 
         await streamAiChat(promptWithSearch, sysPrompt, {
           images: attachedImages,
           panel,
-          maxTokens: Math.max(8192, currentSettings.maxTokens || 8192),
+          maxTokens: isDeepResearch ? Math.max(16384, (currentSettings.maxTokens || 8192) * 2) : Math.max(8192, currentSettings.maxTokens || 8192),
+          taskType: isDeepResearch ? 'writing' : (isArxivOnly ? 'research' : 'qa'),
           existingBubble: assistantBubble,
           bubbleContent: streamContentEl,
           statusCtrl: statusCtrl
@@ -30340,21 +30722,4 @@ The current calendar year is 2026. If you are asked about real-world facts such 
   updateToolMenuRelevance();
 
   // Universal event delegation for interactive @help action buttons and pills
-  document.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-help-cmd]');
-    if (btn) {
-      const cmdToRun = btn.getAttribute('data-help-cmd');
-      if (cmdToRun) {
-        executeCliCommand(cmdToRun);
-      }
-    }
-  });
-
-  // Initialize Header Navigation UI and Breadcrumb state
-  updateNavigationUiState();
-
-  // Initialize floating chat action bar (Continue, Regenerate, Copy, Stop)
-  if (typeof updateFloatingActionButtons === 'function') {
-    updateFloatingActionButtons();
-  }
-});
+  document.addEventListener('

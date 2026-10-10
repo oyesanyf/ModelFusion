@@ -19,6 +19,26 @@
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#e11d48">
   <link rel="stylesheet" href="styles.css">
+  <script>
+    // Early defensive global error listener
+    window.onerror = function(msg, url, lineNo, columnNo, error) {
+      var errStr = '[EARLY GLOBAL ERROR] ' + msg + ' at ' + (url || 'inline') + ':' + (lineNo || 0) + ':' + (columnNo || 0);
+      if (typeof window.termLog === 'function') {
+        window.termLog(errStr, 'error');
+      } else {
+        console.error(errStr, error);
+      }
+    };
+    window.addEventListener('unhandledrejection', function(e) {
+      var reason = e && e.reason ? (e.reason.message || String(e.reason)) : 'Unknown rejection';
+      var errStr = '[EARLY UNHANDLED REJECTION] ' + reason;
+      if (typeof window.termLog === 'function') {
+        window.termLog(errStr, 'error');
+      } else {
+        console.error(errStr, e && e.reason);
+      }
+    });
+  </script>
 </head>
 <body class="theme-white">
   <div class="chatgpt-app">
