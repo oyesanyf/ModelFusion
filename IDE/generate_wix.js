@@ -106,7 +106,15 @@ function generateWix(srcDir, outputFile) {
     buildNumber++;
     fs.writeFileSync(buildNumPath, buildNumber.toString(), 'utf-8');
 
-    const version = `1.126.${buildNumber}`;
+    let browserBuild = 127;
+    try {
+        const bPath = path.join(path.dirname(__dirname), 'browser', 'build_number.txt');
+        if (fs.existsSync(bPath)) {
+            const bVal = parseInt(fs.readFileSync(bPath, 'utf-8').trim(), 10);
+            if (!isNaN(bVal) && bVal > 0) { browserBuild = bVal; }
+        }
+    } catch (e) {}
+    const version = `1.${browserBuild}.${buildNumber}`;
     const iconPath = path.join(__dirname, 'hugos.ico');
 
     const wxsContent = `<?xml version="1.0" encoding="UTF-8"?>

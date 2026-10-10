@@ -2574,7 +2574,8 @@ const HELP_CATEGORIES = {
       { cmd: '@agent pii-scan <text/file>', desc: 'Discover leaked SSNs, credit cards, emails, and confidential identity data', example: '@agent pii-scan "Contact security admin at admin@example.com or phone 555-0199 for credential rotation"' },
       { cmd: '@agent code-translate to <lang>: <code>', desc: 'Polyglot AST-preserving code transpile across Rust, Python, Go, TypeScript, C++', example: '@agent code-translate to Rust: function fibonacci(n) { return n <= 1 ? n : fibonacci(n - 1) + fibonacci(n - 2); }' },
       { cmd: '@agent dockerfile <path>', desc: 'Synthesize minimal attack-surface multi-stage production Dockerfiles', example: '@agent dockerfile crates/cli' },
-      { cmd: '@agent api-docs <code>', desc: 'Generate OpenAPI 3.0 / Swagger specs and markdown documentation directly from code', example: '@agent api-docs pub async fn get_system_health() -> Result<Json<HealthStatus>> { Ok(Json(HealthStatus::ok())) }' }
+      { cmd: '@agent api-docs <code>', desc: 'Generate OpenAPI 3.0 / Swagger specs and markdown documentation directly from code', example: '@agent api-docs pub async fn get_system_health() -> Result<Json<HealthStatus>> { Ok(Json(HealthStatus::ok())) }' },
+      { cmd: '@agent code-helper <query/problem>', desc: 'Interactive coding assistant, polyglot algorithm generator, and computational code runner', example: '@agent code-helper Calculate the compound interest on $10,000 at 7% annual interest compounded monthly over 25 years in Python' }
     ],
     useCases: [
       'Pre-commit verification of zero-day buffer overflows or unescaped queries before merging code.',
@@ -2582,10 +2583,11 @@ const HELP_CATEGORIES = {
       'Polyglot migration of performance-critical Python or Node microservices to memory-safe Rust.'
     ],
     examples: [
-      '@agent security fn authenticate(user: &str, pass: &str) -> bool { if user == "admin" && pass == "secret" { true } else { false } }',
+      '@agent security crates/cli/src/main.rs',
       '@agent graph-index crates/cli/src',
       '@agent secret-scan config/settings.json',
-      '@agent code-translate to Rust: function fib(n) { return n <= 1 ? n : fib(n-1) + fib(n-2); }'
+      '@agent code-translate to Rust: function fib(n) { return n <= 1 ? n : fib(n-1) + fib(n-2); }',
+      '@agent code-helper Calculate the compound interest on $10,000 at 7% annual interest compounded monthly over 25 years in Python'
     ]
   },
 
@@ -6156,6 +6158,186 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
   }
 
   // -----------------------------------------------------------------
+  // Intelligent Coding Helper & Universal Code Interpreter Engine
+  // -----------------------------------------------------------------
+  function detectCodeLanguage(text) {
+    const l = (text || '').toLowerCase();
+    if (/\b(?:javascript|js|node|nodejs|web|frontend)\b/i.test(l)) return 'javascript';
+    if (/\b(?:rust|rs)\b/i.test(l)) return 'rust';
+    return 'python'; // Default to Python for mathematical, computational & general scripts
+  }
+
+  function shouldRouteToCodeHelper(query) {
+    if (!query || typeof query !== 'string') return { isCodeHelper: false, cleanQuery: '' };
+    const raw = query.trim();
+    const lower = raw.toLowerCase();
+    if (!lower) return { isCodeHelper: false, cleanQuery: '' };
+
+    // a) Directives: @agent code-helper, @agent code, @agent python, /code-helper, /code, /python, @code-helper
+    const directiveMatch = lower.match(/^(?:@agent\s+(?:code-helper|code|python)|\/(?:code-helper|code|python)|@(?:code-helper|code|python))\b(?:\s+|$)/i);
+    if (directiveMatch) {
+      const clean = raw.slice(directiveMatch[0].length).trim();
+      return { isCodeHelper: true, cleanQuery: clean || raw, directive: true, language: /python/i.test(directiveMatch[0]) ? 'python' : detectCodeLanguage(clean || raw) };
+    }
+
+    // b) Explicit coding requests
+    const codingPatterns = [
+      /^(?:write|generate|create|provide|show me)\s+(?:a\s+)?(?:code|program|script|function|algorithm|snippet)\s+(?:to|for|that)\b/i,
+      /^how\s+to\s+code\b/i,
+      /^implement\s+(?:a\s+)?(?:function|method|class|algorithm|solution)\b/i,
+      /^(?:write|create|implement)\s+(?:a\s+)?(?:python|javascript|js|node|rust|c\+\+|java|go|bash)\s+(?:script|program|code|function)\b/i,
+      /^(?:debug|fix|refactor|optimize)\s+(?:this\s+)?code\b/i,
+      /^(?:write|create)\s+(?:a\s+)?regex\s+(?:to|for|matching)\b/i,
+      /\b(?:write|code)\s+a\s+function\s+in\s+[a-z#+]+\s+to\b/i
+    ];
+    for (const pat of codingPatterns) {
+      if (pat.test(lower)) {
+        return { isCodeHelper: true, cleanQuery: raw, language: detectCodeLanguage(raw) };
+      }
+    }
+
+    // c) Computational & Mathematical Problem Solving (ChatGPT Code Interpreter Style)
+    const computationalPatterns = [
+      /\bcalculate\s+(?:using|with|via)\s+code\b/i,
+      /\bwrite\s+(?:a\s+)?(?:script|program|code)\s+to\s+calculate\b/i,
+      /\bcompute\s+(?:the\s+)?probability\b/i,
+      /\bfind\s+(?:all\s+)?(?:primes|prime\s+numbers)\b/i,
+      /\bcompound\s+interest\b/i,
+      /\bstandard\s+deviation\b/i,
+      /\bmonte\s+carlo\s+simulation\b/i,
+      /\bsimulate\s+\d+\s+times\b/i,
+      /\bsolve\s+(?:the\s+)?equation\s+(?:using|with)\s+code\b/i,
+      /\bfibonacci\s+sequence\s+(?:up\s+to|of)\b/i,
+      /\bpermutations?\s+of\b/i,
+      /\bcombinations?\s+of\b/i
+    ];
+    for (const pat of computationalPatterns) {
+      if (pat.test(lower)) {
+        return { isCodeHelper: true, cleanQuery: raw, language: detectCodeLanguage(raw) };
+      }
+    }
+
+    // d) Data parsing & manipulation
+    const dataPatterns = [
+      /\bparse\s+(?:this\s+)?json\b/i,
+      /\bextract\s+fields?\s+from\b/i,
+      /\bconvert\s+(?:this\s+)?csv\b/i,
+      /\bcount\s+occurrences?\s+of\b/i,
+      /\bsort\s+these\s+elements\b/i
+    ];
+    for (const pat of dataPatterns) {
+      if (pat.test(lower)) {
+        return { isCodeHelper: true, cleanQuery: raw, language: detectCodeLanguage(raw) };
+      }
+    }
+
+    return { isCodeHelper: false, cleanQuery: raw };
+  }
+
+  async function executeCodeRun(code, language = 'python') {
+    if (!code || typeof code !== 'string') {
+      return { status: 'error', error: 'No code provided', stdout: '', stderr: 'Empty code', exit_code: 1, execution_ms: 0 };
+    }
+    const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+    try {
+      const resp = await fetch(`${ipcUrl}/api/code/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language, code })
+      });
+      if (!resp.ok) {
+        throw new Error(`Execution service returned HTTP ${resp.status}`);
+      }
+      return await resp.json();
+    } catch (e) {
+      return {
+        status: 'error',
+        error: e.message,
+        stdout: '',
+        stderr: `Failed to connect to execution sandbox at ${ipcUrl}: ${e.message}`,
+        exit_code: 1,
+        execution_ms: 0
+      };
+    }
+  }
+
+  function renderCodeInterpreterDrawer(code, result, language = 'python') {
+    const langNorm = (language || 'python').toLowerCase();
+    const langLabel = langNorm.includes('js') || langNorm.includes('node') ? 'JavaScript' : 'Python';
+    const langIcon = langNorm.includes('js') || langNorm.includes('node') ? '⚡' : '🐍';
+    const isOk = result && result.status === 'ok';
+    const statusText = isOk ? '✓ Executed' : (result && result.status === 'timeout' ? '⏱ Timed out' : '⚠️ Error');
+    const statusBg = isOk ? 'rgba(16, 185, 129, 0.2)' : 'rgba(244, 63, 94, 0.2)';
+    const statusColor = isOk ? '#34d399' : '#fb7185';
+    const execMs = result ? (result.execution_ms || 0) : 0;
+    const stdout = result && result.stdout ? result.stdout : '';
+    const stderr = result && result.stderr ? result.stderr : '';
+    const escapedCode = escapeHtml(code || '');
+    const drawerId = 'drawer_' + Math.random().toString(36).slice(2, 9);
+
+    return `
+      <details class="code-interpreter-drawer bubble-code-block" id="${drawerId}" data-lang="${escapeHtml(langNorm)}" style="margin: 8px 0; border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 8px; background: rgba(15, 23, 42, 0.7); overflow: hidden;">
+        <summary style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; cursor: pointer; user-select: none; background: rgba(30, 41, 59, 0.5); font-size: 11.5px; font-weight: 600; color: #a5b4fc;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span>💻</span> <span>Analyzed with ${langLabel} Code Interpreter</span>
+            <span class="code-status-pill" style="font-size: 10px; background: ${statusBg}; color: ${statusColor}; padding: 1px 6px; border-radius: 4px; font-weight: 500;">${statusText}</span>
+            <span style="font-size: 10px; color: #64748b; font-family: var(--mono-font, monospace);">(${execMs}ms)</span>
+          </div>
+          <span class="code-drawer-toggle" style="font-size: 11px; opacity: 0.7;">View code ▾</span>
+        </summary>
+        <div class="code-drawer-body" style="padding: 10px 12px; border-top: 1px solid rgba(255, 255, 255, 0.05); font-size: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 11px; color: #94a3b8; font-family: var(--mono-font, monospace);">${langIcon} ${langLabel} Script</span>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" class="tool-chip-btn code-run-btn" style="font-size: 10.5px; padding: 2px 8px; cursor: pointer;" onclick="runCodeBlock(this)">▶️ Re-run</button>
+              <button type="button" class="tool-chip-btn code-copy-btn" style="font-size: 10.5px; padding: 2px 8px; cursor: pointer;" onclick="copyCodeBlock(this)">📋 Copy</button>
+            </div>
+          </div>
+          <pre style="margin: 0 0 10px 0; padding: 10px; border-radius: 6px; background: #090d16; font-size: 11.5px; line-height: 1.45; overflow-x: auto; max-height: 280px;"><code class="language-${escapeHtml(langNorm)}">${escapedCode}</code></pre>
+          <div class="code-output-container" style="border-left: 3px solid ${isOk ? '#10b981' : '#f43f5e'}; padding: 6px 10px; background: #060913; border-radius: 0 6px 6px 0; font-family: var(--mono-font, monospace); font-size: 11px;">
+            <div style="color: #94a3b8; font-weight: 600; margin-bottom: 2px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;">Output:</div>
+            ${stdout ? `<div style="color: #f8fafc; white-space: pre-wrap;">${escapeHtml(stdout.trim())}</div>` : ''}
+            ${stderr ? `<div style="color: #fb7185; white-space: pre-wrap; margin-top: 2px;">${escapeHtml(stderr.trim())}</div>` : ''}
+            ${!stdout && !stderr ? `<div style="color: #64748b; font-style: italic;">(Process exited with code ${result ? result.exit_code : 0} and no output)</div>` : ''}
+          </div>
+          <div class="code-output-console" style="display: none;"></div>
+        </div>
+      </details>
+    `;
+  }
+
+  function buildCodeRunnerCardHtml(language, code, id) {
+    const cardId = id || ('code_runner_' + Math.random().toString(36).slice(2, 9));
+    const langNorm = (language || 'python').toLowerCase();
+    const langPill = langNorm.includes('js') || langNorm.includes('node') ? '⚡ JavaScript' : '🐍 Python';
+    const escaped = escapeHtml(code || '');
+    return `
+      <div class="code-runner-card bubble-code-block" id="${cardId}" data-lang="${escapeHtml(langNorm)}" style="margin: 8px 0; border: 1px solid rgba(56,189,248,0.25); border-radius: 8px; background: #0f172a; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.25);">
+        <div class="code-runner-card-header" style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: rgba(30,41,59,0.8); border-bottom: 1px solid rgba(56,189,248,0.15);">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 11px; font-weight: 700; color: #38bdf8; background: rgba(56,189,248,0.15); padding: 2px 8px; border-radius: 4px;">${langPill}</span>
+            <span style="font-size: 10px; color: #94a3b8; font-family: var(--mono-font, monospace);">ModelFusion Sandbox • 10s Timeout</span>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <button type="button" class="tool-chip-btn code-run-btn" style="font-size: 11px; padding: 3px 10px; background: #0284c7; color: #ffffff; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;" onclick="runCodeBlock(this)">▶️ Run Code</button>
+            <button type="button" class="tool-chip-btn code-copy-btn" style="font-size: 11px; padding: 3px 8px; cursor: pointer;" onclick="copyCodeBlock(this)">📋 Copy Code</button>
+          </div>
+        </div>
+        <pre style="margin: 0; padding: 12px; max-height: 350px; overflow-y: auto; background: #090d16; font-size: 12px; line-height: 1.5;"><code class="language-${escapeHtml(langNorm)}">${escaped}</code></pre>
+        <div class="code-output-console" style="display: none; padding: 8px 12px; background: #040711; border-top: 1px solid rgba(255,255,255,0.08); font-family: var(--mono-font, monospace); font-size: 11.5px; white-space: pre-wrap;"></div>
+      </div>
+    `;
+  }
+
+  if (typeof window !== 'undefined') {
+    window.shouldRouteToCodeHelper = shouldRouteToCodeHelper;
+    window.detectCodeLanguage = detectCodeLanguage;
+    window.executeCodeRun = executeCodeRun;
+    window.renderCodeInterpreterDrawer = renderCodeInterpreterDrawer;
+    window.buildCodeRunnerCardHtml = buildCodeRunnerCardHtml;
+  }
+
+  // -----------------------------------------------------------------
   // Intelligent Query Router & Live Web Search Engine
   // -----------------------------------------------------------------
   function shouldRouteToWeb(query, mode) {
@@ -7691,12 +7873,16 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
         .replace(/>/g, '&gt;');
       
       const blockHtml = `
-        <div class="bubble-code-block">
-          <div class="code-block-header">
+        <div class="bubble-code-block" data-lang="${cleanLang}">
+          <div class="code-block-header" style="display: flex; justify-content: space-between; align-items: center;">
             <span>${cleanLang}</span>
-            <button type="button" class="code-copy-btn" onclick="copyCodeBlock(this)">📋 Copy code</button>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" class="code-run-btn hero-chip" style="font-size: 11px; padding: 2px 8px; cursor: pointer;" onclick="runCodeBlock(this)">▶️ Run</button>
+              <button type="button" class="code-copy-btn" onclick="copyCodeBlock(this)">📋 Copy code</button>
+            </div>
           </div>
           <pre><code class="language-${cleanLang}">${escapedCode}</code></pre>
+          <div class="code-output-console" style="display: none; padding: 8px 12px; background: #0b0f19; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; font-family: var(--mono-font, monospace); font-size: 11px; white-space: pre-wrap; margin-top: 6px;"></div>
         </div>`;
       codeBlocks.push(blockHtml);
       return token;
@@ -7976,6 +8162,54 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
       btn.innerText = '✓ Copied!';
       setTimeout(() => { btn.innerText = orig; }, 2000);
     });
+  };
+
+  window.runCodeBlock = async function(btn) {
+    const block = btn.closest('.bubble-code-block');
+    if (!block) return;
+    const codeElem = block.querySelector('code');
+    if (!codeElem) return;
+    let consoleEl = block.querySelector('.code-output-console');
+    if (!consoleEl) {
+      consoleEl = document.createElement('div');
+      consoleEl.className = 'code-output-console';
+      consoleEl.style.cssText = 'padding: 8px 12px; background: #0b0f19; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; font-family: var(--mono-font, monospace); font-size: 11px; white-space: pre-wrap; margin-top: 6px;';
+      block.appendChild(consoleEl);
+    }
+    const codeText = codeElem.innerText;
+    const langAttr = (block.getAttribute('data-lang') || codeElem.className || '').toLowerCase();
+    const lang = langAttr.includes('js') || langAttr.includes('node') ? 'javascript' : 'python';
+
+    const origText = btn.innerHTML;
+    btn.innerHTML = '⏳ Running...';
+    btn.disabled = true;
+    consoleEl.style.display = 'block';
+    consoleEl.innerHTML = `<span style="color: #94a3b8;">[ModelFusion Sandbox] Executing ${lang} script...</span>`;
+
+    try {
+      const data = await executeCodeRun(codeText, lang);
+      btn.innerHTML = '▶️ Re-run';
+      btn.disabled = false;
+
+      let outHtml = `<div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 4px; margin-bottom: 6px; color: #94a3b8; font-size: 10.5px;">` +
+        `<span>Status: <b style="color: ${data.status === 'ok' ? '#10b981' : '#f43f5e'};">${(data.status || 'unknown').toUpperCase()}</b> (exit: ${data.exit_code})</span>` +
+        `<span>⚡ ${data.execution_ms || 0}ms</span>` +
+        `</div>`;
+      if (data.stdout && data.stdout.trim()) {
+        outHtml += `<div style="color: #f8fafc;">${escapeHtml(data.stdout)}</div>`;
+      }
+      if (data.stderr && data.stderr.trim()) {
+        outHtml += `<div style="color: #f43f5e; margin-top: 4px;">${escapeHtml(data.stderr)}</div>`;
+      }
+      if (!data.stdout && !data.stderr) {
+        outHtml += `<div style="color: #64748b; font-style: italic;">(Process completed with no console output)</div>`;
+      }
+      consoleEl.innerHTML = outHtml;
+    } catch (e) {
+      btn.innerHTML = '▶️ Run';
+      btn.disabled = false;
+      consoleEl.innerHTML = `<span style="color: #f43f5e;">Execution failed: ${escapeHtml(e.message)}</span>`;
+    }
   };
 
   window.copyCardContent = function(btn) {
@@ -26482,6 +26716,89 @@ Instructions:
 
       const sysPrompt = 'You are HugOS Browser AI, executing real computer and browser navigation. Deliver clear, accurate, and comprehensive factual answers directly synthesized from the live web.';
       await streamAiChat(browserPrompt, sysPrompt);
+      return;
+    }
+
+    // Coding Specialist & Code Interpreter Branch (Multi-Model Fusion + Sandbox Execution)
+    const codeHelperCheck = shouldRouteToCodeHelper(cmd);
+    if (codeHelperCheck.isCodeHelper) {
+      if (currentSettings.multimodalAuto !== false) {
+        termLogFusion(panel);
+      }
+      termLog('[FUSION] 🔮 Multi-Model Code Fusion Active: Primary Coder (Code Synthesis) + DeepSeek-R1 / Verifier Specialist (AST & Edge Case Gate) + Local Execution Sandbox', 'success');
+
+      setChatRunningState(true);
+      currentAbortController = new AbortController();
+      if (chatWelcome) chatWelcome.classList.add('hidden');
+
+      let assistantBubble = document.createElement('div');
+      assistantBubble.className = 'msg-bubble assistant-bubble streaming';
+      assistantBubble.innerHTML = `
+        <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: #38bdf8; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+          <span>💻</span> <span>ModelFusion Coding Specialist</span>
+          <span style="font-size: 9.5px; opacity: 0.8; font-family: var(--mono-font);">(Multi-Model Code Fusion • Primary Coder + Verifier Gate)</span>
+        </div>
+        <div class="bubble-content">
+          <div class="research-status-bar">
+            <div class="dynamic-status-pill">
+              <span class="status-pulse-dot" style="background: #38bdf8;"></span>
+              <span class="status-text">Synthesizing code & preparing verification sandbox...</span>
+            </div>
+          </div>
+          <div class="code-interpreter-drawer-placeholder"></div>
+          <div class="stream-content" style="margin-top: 6px; font-size: 12.5px; line-height: 1.5;"></div>
+        </div>
+      `;
+      if (chatMessages) {
+        chatMessages.appendChild(assistantBubble);
+        if (currentSettings.autoScroll !== false) chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+
+      const streamContent = assistantBubble.querySelector('.stream-content');
+      const statusCtrl = startDynamicStatus(assistantBubble, 'code', codeHelperCheck.cleanQuery);
+
+      const codePrompt = `${codeHelperCheck.cleanQuery || cmd}
+
+[MULTI-MODEL CODE FUSION INSTRUCTIONS]:
+1. PRIMARY CODER OBJECTIVE: Formulate clean, production-grade, idiomatic, fully-runnable code. Wrap the primary executable script in a markdown code block (\`\`\`python or \`\`\`javascript).
+2. COMPANION VERIFIER GATE: Guard against edge cases, boundary conditions, off-by-one errors, division by zero, and numerical overflow.
+3. COMPUTATIONAL ACCURACY: For calculations, probabilities, math, compound interest, or data processing, ensure the script computes and prints the exact numbers to stdout.
+4. EXPLANATION: After the code block, deliver a clear, publication-quality explanation detailing the approach, time/space complexity, and the verified results.`;
+
+      const codeSysPrompt = 'You are ModelFusion Coding Specialist, powered by Multi-Model Code Fusion. Provide clean, runnable, bug-free code with rigorous verification of mathematical calculations and edge cases.';
+
+      await streamAiChat(codePrompt, codeSysPrompt, {
+        images: attachedImages,
+        panel,
+        maxTokens: Math.max(8192, currentSettings.maxTokens || 8192),
+        existingBubble: assistantBubble,
+        bubbleContent: streamContent,
+        statusCtrl: statusCtrl
+      });
+
+      // Extract code block and execute in background via sandbox
+      try {
+        const streamText = (streamContent && streamContent.innerText) ? streamContent.innerText : '';
+        const codeMatch = streamText.match(/```([a-zA-Z0-9_\-+]*)\n([\s\S]*?)```/);
+        if (codeMatch) {
+          const lang = (codeMatch[1] || codeHelperCheck.language || 'python').trim().toLowerCase();
+          const codeSnippet = codeMatch[2].trim();
+          if (codeSnippet && (lang.includes('py') || lang.includes('js') || lang.includes('node'))) {
+            termLog(`[CODE-INTERPRETER] ⚡ Executing ${lang} script in background sandbox...`, 'info');
+            const execResult = await executeCodeRun(codeSnippet, lang);
+            termLog(`[CODE-INTERPRETER] ✅ Execution completed in ${execResult.execution_ms || 0}ms with status: ${execResult.status}`, 'success');
+            const drawerHtml = renderCodeInterpreterDrawer(codeSnippet, execResult, lang);
+            const placeholder = assistantBubble.querySelector('.code-interpreter-drawer-placeholder');
+            if (placeholder) {
+              placeholder.innerHTML = drawerHtml;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Background code execution failed:', err);
+      }
+
+      if (currentAttachments.length > 0) clearAllAttachments();
       return;
     }
 
