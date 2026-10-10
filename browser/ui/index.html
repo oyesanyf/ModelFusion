@@ -119,7 +119,34 @@
               </div>
             </div>
 
-            <!-- 2. Computer Use & OS Automation -->
+            <!-- 3. Compliance -->
+            <div class="tool-category">
+              <button type="button" class="tool-category-header" data-cat="compliance" title="Regulatory Compliance, Agreement Parsing &amp; Contract Analysis">
+                <span class="cat-icon">📑</span>
+                <span class="cat-title">Compliance</span>
+                <span class="cat-chevron">▸</span>
+              </button>
+              <div class="tool-category-content collapsed">
+                <button type="button" class="tool-item-btn tool-command-btn compliance-tool-item" data-tool-id="tool_cuad_bert" data-category="compliance" data-cmd="@agent legal cuad-bert " data-original-title="CUAD-BERT: Clause-level contract understanding and agreement analysis" title="CUAD-BERT: Clause-level contract understanding and agreement analysis">
+                  <span class="tool-btn-left"><span class="tool-icon">📜</span><span class="tool-label">Contract Review</span></span>
+                  <span class="tool-tag">@cuad</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn compliance-tool-item" data-tool-id="tool_legal_bert" data-category="compliance" data-cmd="@agent legal legal-bert " data-original-title="Legal-BERT: Pretrained on European and US court rulings, contracts, and LexGLUE" title="Legal-BERT: Pretrained on European and US court rulings, contracts, and LexGLUE">
+                  <span class="tool-btn-left"><span class="tool-icon">⚖️</span><span class="tool-label">Document Classifier</span></span>
+                  <span class="tool-tag">@legal-bert</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn compliance-tool-item" data-tool-id="tool_legal_longformer" data-category="compliance" data-cmd="@agent legal legal-longformer " data-original-title="Legal-Longformer: Long document attention for thousands of tokens in judicial briefs" title="Legal-Longformer: Long document attention for thousands of tokens in judicial briefs">
+                  <span class="tool-btn-left"><span class="tool-icon">📑</span><span class="tool-label">Multi-Page Contracts</span></span>
+                  <span class="tool-tag">@longformer</span>
+                </button>
+                <button type="button" class="tool-item-btn tool-command-btn compliance-tool-item" data-tool-id="tool_pile_of_law" data-category="compliance" data-cmd="@agent legal pile-of-law " data-original-title="Pile-of-Law LegalBERT: Pretrained on federal filings, court opinions, and administrative law" title="Pile-of-Law LegalBERT: Pretrained on federal filings, court opinions, and administrative law">
+                  <span class="tool-btn-left"><span class="tool-icon">🏛️</span><span class="tool-label">Regulatory Search</span></span>
+                  <span class="tool-tag">@pile-of-law</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 4. Computer Use & OS Automation -->
             <div class="tool-category">
               <button type="button" class="tool-category-header" data-cat="computer_use" title="Computer Use &amp; OS Automation (UI-TARS Multimodal Grounding)">
                 <span class="cat-icon">🖥️</span>
@@ -217,14 +244,6 @@
                 <span class="cat-chevron">▸</span>
               </button>
               <div class="tool-category-content collapsed">
-                <!-- Domain Filter Tabs -->
-                <div class="finance-domain-tabs domain-filter-tabs">
-                  <button type="button" class="finance-domain-tab domain-filter-tab active" data-domain="all" onclick="filterFinanceDomain('all', this)">All (9)</button>
-                  <button type="button" class="finance-domain-tab domain-filter-tab" data-domain="forecasting" onclick="filterFinanceDomain('forecasting', this)">📈 Forecasting (3)</button>
-                  <button type="button" class="finance-domain-tab domain-filter-tab" data-domain="generative" onclick="filterFinanceDomain('generative', this)">💼 Generative (3)</button>
-                  <button type="button" class="finance-domain-tab domain-filter-tab" data-domain="sentiment" onclick="filterFinanceDomain('sentiment', this)">📊 Sentiment &amp; ESG (3)</button>
-                </div>
-
                 <!-- 9 Financial Models in Strict Alphabetical Order A-Z for test_alphabetical_menu.py -->
                 <button type="button" class="tool-item-btn tool-command-btn finance-tool-item" data-tool-id="tool_finbert_esg" data-category="finance" data-domain="sentiment" data-cmd="@agent finance finbert-esg " data-original-title="FinBERT-ESG: Categorize Environmental, Social, and Governance signals in corporate reports" title="FinBERT-ESG: Categorize Environmental, Social, and Governance signals in corporate reports">
                   <span class="tool-btn-left"><span class="tool-icon">🌱</span><span class="tool-label">Corporate ESG</span></span>
@@ -315,51 +334,27 @@
               </div>
             </div>
 
-            <!-- 7. Legal & Compliance -->
+            <!-- 9. Legal -->
             <div class="tool-category">
-              <button type="button" class="tool-category-header" data-cat="legal" title="Legal Reasoning, Statutory Analysis &amp; Contract Understanding">
+              <button type="button" class="tool-category-header" data-cat="legal" title="Legal Reasoning, Judicial Briefs &amp; Case Precedent">
                 <span class="cat-icon">⚖️</span>
-                <span class="cat-title">Legal &amp; Compliance</span>
+                <span class="cat-title">Legal</span>
                 <span class="cat-chevron">▸</span>
               </button>
               <div class="tool-category-content collapsed">
-                <!-- Domain Filter Tabs -->
-                <div class="legal-domain-tabs domain-filter-tabs">
-                  <button type="button" class="legal-domain-tab domain-filter-tab active" data-domain="all" onclick="filterLegalDomain('all', this)">All (8)</button>
-                  <button type="button" class="legal-domain-tab domain-filter-tab" data-domain="encoder" onclick="filterLegalDomain('encoder', this)">📑 Extraction (4)</button>
-                  <button type="button" class="legal-domain-tab domain-filter-tab" data-domain="generative" onclick="filterLegalDomain('generative', this)">⚖️ Reasoning (4)</button>
-                </div>
-
-                <!-- 8 Legal Models in Strict Alphabetical Order A-Z for test_alphabetical_menu.py -->
-                <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_lawma" data-category="legal" data-domain="generative" data-cmd="@agent legal lawma " data-original-title="Lawma-8B: Llama-based legal reasoning and automated contract drafting" title="Lawma-8B: Llama-based legal reasoning and automated contract drafting">
+                <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_lawma" data-category="legal" data-cmd="@agent legal lawma " data-original-title="Lawma-8B: Llama-based legal reasoning and automated contract drafting" title="Lawma-8B: Llama-based legal reasoning and automated contract drafting">
                   <span class="tool-btn-left"><span class="tool-icon">🦙</span><span class="tool-label">Case Law & Precedent</span></span>
                   <span class="tool-tag">@lawma</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_cuad_bert" data-category="legal" data-domain="encoder" data-cmd="@agent legal cuad-bert " data-original-title="CUAD-BERT: Clause-level contract understanding and agreement analysis" title="CUAD-BERT: Clause-level contract understanding and agreement analysis">
-                  <span class="tool-btn-left"><span class="tool-icon">📜</span><span class="tool-label">Contract Review</span></span>
-                  <span class="tool-tag">@cuad</span>
-                </button>
-                <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_legal_bert" data-category="legal" data-domain="encoder" data-cmd="@agent legal legal-bert " data-original-title="Legal-BERT: Pretrained on European and US court rulings, contracts, and LexGLUE" title="Legal-BERT: Pretrained on European and US court rulings, contracts, and LexGLUE">
-                  <span class="tool-btn-left"><span class="tool-icon">⚖️</span><span class="tool-label">Document Classifier</span></span>
-                  <span class="tool-tag">@legal-bert</span>
-                </button>
-                <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_law_chat" data-category="legal" data-domain="generative" data-cmd="@agent legal law-chat " data-original-title="Law-Chat: Instruction-tuned model for interactive statutory analysis and document Q&amp;A" title="Law-Chat: Instruction-tuned model for interactive statutory analysis and document Q&amp;A">
+                <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_law_chat" data-category="legal" data-cmd="@agent legal law-chat " data-original-title="Law-Chat: Instruction-tuned model for interactive statutory analysis and document Q&amp;A" title="Law-Chat: Instruction-tuned model for interactive statutory analysis and document Q&amp;A">
                   <span class="tool-btn-left"><span class="tool-icon">💬</span><span class="tool-label">Interactive Legal</span></span>
                   <span class="tool-tag">@law-chat</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_saul_7b" data-category="legal" data-domain="generative" data-cmd="@agent legal saul-7b " data-original-title="Saul-7B: Mistral legal reasoning, statutory summarization, and LegalBench benchmarks" title="Saul-7B: Mistral legal reasoning, statutory summarization, and LegalBench benchmarks">
+                <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_saul_7b" data-category="legal" data-cmd="@agent legal saul-7b " data-original-title="Saul-7B: Mistral legal reasoning, statutory summarization, and LegalBench benchmarks" title="Saul-7B: Mistral legal reasoning, statutory summarization, and LegalBench benchmarks">
                   <span class="tool-btn-left"><span class="tool-icon">⚡</span><span class="tool-label">Legal Counsel</span></span>
                   <span class="tool-tag">@saul</span>
                 </button>
-                <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_legal_longformer" data-category="legal" data-domain="encoder" data-cmd="@agent legal legal-longformer " data-original-title="Legal-Longformer: Long document attention for thousands of tokens in judicial briefs" title="Legal-Longformer: Long document attention for thousands of tokens in judicial briefs">
-                  <span class="tool-btn-left"><span class="tool-icon">📑</span><span class="tool-label">Multi-Page Contracts</span></span>
-                  <span class="tool-tag">@longformer</span>
-                </button>
-                <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_pile_of_law" data-category="legal" data-domain="encoder" data-cmd="@agent legal pile-of-law " data-original-title="Pile-of-Law LegalBERT: Pretrained on federal filings, court opinions, and administrative law" title="Pile-of-Law LegalBERT: Pretrained on federal filings, court opinions, and administrative law">
-                  <span class="tool-btn-left"><span class="tool-icon">🏛️</span><span class="tool-label">Regulatory Search</span></span>
-                  <span class="tool-tag">@pile-of-law</span>
-                </button>
-                <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_law_llm" data-category="legal" data-domain="generative" data-cmd="@agent legal law-llm " data-original-title="Law-LLM: Pretrained base model on legal scholarship and case law comprehension" title="Law-LLM: Pretrained base model on legal scholarship and case law comprehension">
+                <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_law_llm" data-category="legal" data-cmd="@agent legal law-llm " data-original-title="Law-LLM: Pretrained base model on legal scholarship and case law comprehension" title="Law-LLM: Pretrained base model on legal scholarship and case law comprehension">
                   <span class="tool-btn-left"><span class="tool-icon">📚</span><span class="tool-label">Statutory Briefs</span></span>
                   <span class="tool-tag">@law-llm</span>
                 </button>
@@ -405,15 +400,6 @@
                 <span class="cat-chevron">▸</span>
               </button>
               <div class="tool-category-content collapsed">
-                <!-- Domain Filter Tabs -->
-                <div class="science-domain-tabs domain-filter-tabs">
-                  <button type="button" class="science-domain-tab domain-filter-tab active" data-domain="all" onclick="filterScienceDomain('all', this)">All (20)</button>
-                  <button type="button" class="science-domain-tab domain-filter-tab" data-domain="biology" onclick="filterScienceDomain('biology', this)">🧬 Biology (6)</button>
-                  <button type="button" class="science-domain-tab domain-filter-tab" data-domain="chemistry" onclick="filterScienceDomain('chemistry', this)">🧪 Chemistry (6)</button>
-                  <button type="button" class="science-domain-tab domain-filter-tab" data-domain="earth" onclick="filterScienceDomain('earth', this)">🌍 Earth (4)</button>
-                  <button type="button" class="science-domain-tab domain-filter-tab" data-domain="literature" onclick="filterScienceDomain('literature', this)">📚 Reasoning (4)</button>
-                </div>
-
                 <!-- 20 Scientific Models in Strict Alphabetical Order A-Z for test_alphabetical_menu.py -->
                 <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_aurora" data-category="science" data-domain="earth" data-cmd="@agent science aurora " data-original-title="Aurora: High-resolution atmospheric and operational weather forecasting" title="Aurora: High-resolution atmospheric and operational weather forecasting">
                   <span class="tool-btn-left"><span class="tool-icon">🌦️</span><span class="tool-label">Atmospheric Weather</span></span>
@@ -947,10 +933,10 @@
                 <div class="fallback-status" id="fallback-proxy-status" style="font-size: 11.5px; color: var(--text-secondary); margin-bottom: 14px;">
                   ModelFusion Proxy (Port 5000): <span id="fallback-proxy-state" style="color: #f59e0b;">Checking / Offline</span>
                 </div>
-                <div class="fallback-buttons" style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
-                  <button class="cli-run-btn" id="btn-open-toplevel">↗️ Open in Top-Level Tab</button>
-                  <button class="cli-btn-secondary" id="btn-fallback-retry" style="background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.4); color: #818cf8;">🔄 Retry / Connect Proxy</button>
-                  <button class="cli-btn-secondary" id="btn-fallback-home">💬 Back to Chat</button>
+                <div class="fallback-buttons" style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                  <button type="button" class="cli-run-btn" id="btn-open-toplevel">↗️ Open Direct in Browser</button>
+                  <button type="button" class="cli-btn-secondary" id="btn-fallback-retry" style="background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.5); color: #a5b4fc;">🔄 Retry / Connect Proxy</button>
+                  <button type="button" class="cli-btn-secondary" id="btn-fallback-home">💬 Back to Chat</button>
                 </div>
               </div>
             </div>
