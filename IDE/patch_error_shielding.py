@@ -283,6 +283,224 @@ def patch_extension_js(file_path, node_path, force_validate=False):
                 return False, False
         return True, False
 
+def generate_methods_block(vsc, cfg, path_mod, fs_mod, os_mod, lmt):
+    """Generate clean, robust, and fully shielded implementations of _runDatabaseUpdate and _spawnCliFallback."""
+    return f"""      async _runDatabaseUpdate() {{
+        if (this._isUpdateRunning) {{
+          this._logService.info("ModelFusionProvider: Database update is already running. Skipping this tick.");
+          return;
+        }}
+        const {cfg} = {vsc}.workspace.getConfiguration("hugos.modelfusion");
+        const enabled = {cfg}.get("watcher.enabled", true);
+        if (!enabled) {{
+          this._stopWatcher();
+          return;
+        }}
+        this._isUpdateRunning = true;
+        this._logService.info("ModelFusionProvider: Background watcher starting database update...");
+        try {{
+          const cliPath = this._findCliBinary();
+          const spawnCwd = {path_mod}.dirname({path_mod}.dirname(cliPath));
+          const configDbPath = {cfg}.get("dbPath", "");
+          const ideDbPath = {path_mod}.join(spawnCwd, "db", "hf_models.db");
+          const dbPath = configDbPath ? configDbPath : ideDbPath;
+          try {{
+            {fs_mod}.mkdirSync({path_mod}.dirname(dbPath), {{ recursive: true }});
+          }} catch (e4) {{
+            this._logService.error(`ModelFusionProvider: Failed to create database directory: ${{e4.message}}`);
+          }}
+          const args2 = ["--update", "--db-path", dbPath];
+          this._logService.info(`ModelFusionProvider: Spawning background update process: ${{cliPath}} ${{args2.join(" ")}}`);
+          const child = child_process2.spawn(cliPath, args2, {{ cwd: spawnCwd }});
+          try {{
+            if (child.pid) {{
+              try {{
+                require("os").setPriority(child.pid, 19);
+              }} catch (_) {{
+                {os_mod}.setPriority(child.pid, 19);
+              }}
+              this._logService.info(`ModelFusionProvider: Set watcher process priority to Idle (19) for PID ${{child.pid}}`);
+            }}
+          }} catch (e4) {{
+            this._logService.warn(`ModelFusionProvider: Failed to set low process priority: ${{e4.message}}`);
+          }}
+          child.stdout?.on("data", (data) => {{
+            const lines = data.toString().split("\\n");
+            for (const line of lines) {{
+              if (line.trim()) {{
+                this._logService.info(`ModelFusionProvider [Watcher stdout]: ${{line.trim()}}`);
+                this._outputChannel.appendLine(`[Watcher] ${{line.trim()}}`);
+              }}
+            }}
+          }});
+          child.stderr?.on("data", (data) => {{
+            const lines = data.toString().split("\\n");
+            for (const line of lines) {{
+              if (line.trim()) {{
+                this._logService.warn(`ModelFusionProvider [Watcher stderr]: ${{line.trim()}}`);
+                this._outputChannel.appendLine(`[Watcher] [stderr] ${{line.trim()}}`);
+              }}
+            }}
+          }});
+          child.on("close", (code) => {{
+            this._isUpdateRunning = false;
+            if (code === 0) {{
+              this._logService.info("ModelFusionProvider: Background database update completed successfully.");
+              this._outputChannel.appendLine("[Watcher] Background model & database update completed successfully.");
+            }} else {{
+              this._logService.error(`ModelFusionProvider: Background database update failed with exit code ${{code}}.`);
+              this._outputChannel.appendLine(`[Watcher] [ERROR] Background database update failed with exit code ${{code}}.`);
+              notifyModelFusionError(`Background database update failed with exit code ${{code}}.`, ["Retry", "View Logs"], (choice) => {{
+                if (choice === "Retry") {{
+                  this._runDatabaseUpdate();
+                }}
+              }});
+            }}
+          }});
+          child.on("error", (err2) => {{
+            this._isUpdateRunning = false;
+            const errMsg = `Failed to launch background database update process: ${{err2.message}}`;
+            this._logService.error(`ModelFusionProvider: ${{errMsg}}`);
+            this._outputChannel.appendLine(`[Watcher] [ERROR] ${{errMsg}}`);
+            notifyModelFusionError(`Watcher process error: ${{err2.message}}`, ["Retry", "View Logs"], (choice) => {{
+              if (choice === "Retry") {{
+                this._runDatabaseUpdate();
+              }}
+            }});
+          }});
+        }} catch (e4) {{
+          this._isUpdateRunning = false;
+          this._logService.error(`ModelFusionProvider: Error in database update watcher: ${{e4.message}}`);
+          this._outputChannel.appendLine(`[Watcher] [ERROR] Error in database update watcher: ${{e4.message}}`);
+        }}
+      }}
+      _spawnCliFallback(promptText, budget, selectionStrategy, fusionMode, fusionModels, openvino, gpu, cpu, fusion, progress, token) {{
+        const cliPath = this._findCliBinary();
+        const spawnCwd = {path_mod}.dirname({path_mod}.dirname(cliPath));
+        const {cfg} = {vsc}.workspace.getConfiguration("hugos.modelfusion");
+        const configDbPath = {cfg}.get("dbPath", "");
+        const ideDbPath = {path_mod}.join(spawnCwd, "db", "hf_models.db");
+        const dbPath = configDbPath ? configDbPath : ideDbPath;
+        try {{
+          {fs_mod}.mkdirSync({path_mod}.dirname(dbPath), {{ recursive: true }});
+        }} catch (e4) {{
+          this._logService.error(`ModelFusionProvider: Failed to create database directory: ${{e4.message}}`);
+        }}
+        const ovModelDir = {cfg}.get("ovModelDir", "") || {path_mod}.join({os_mod}.homedir(), ".hugos-ide", "ov_models");
+        const tmpPromptFile = {path_mod}.join({os_mod}.tmpdir(), `modelfusion_prompt_${{Date.now()}}.txt`);
+        try {{
+          {fs_mod}.writeFileSync(tmpPromptFile, promptText, "utf8");
+        }} catch (e4) {{
+          this._logService.error(`ModelFusionProvider: Failed to write temp prompt file: ${{e4.message}}`);
+        }}
+        return new Promise((resolve7, reject7) => {{
+          const inlinePrompt = promptText.length <= 4e3 ? promptText : promptText.slice(0, 4e3) + "\\n[... truncated for CLI fallback ...]";
+          const args2 = ["--prompt", inlinePrompt, "--budget", budget.toString(), "--selection-strategy", selectionStrategy, "--fusion-mode", fusionMode, "--fusion-models", fusionModels.toString(), "--db-path", dbPath, "--ov-model-dir", ovModelDir];
+          if (openvino) {{
+            args2.push("--openvino");
+          }}
+          if (gpu) {{
+            args2.push("--gpu");
+          }}
+          if (cpu) {{
+            args2.push("--cpu");
+          }}
+          if (fusion) {{
+            args2.push("--fusion");
+          }}
+          this._logService.info(`ModelFusionProvider: Spawning fallback process ${{cliPath}} (prompt length: ${{promptText.length}}, inline: ${{inlinePrompt.length}})`);
+          const spawnEnv = {{ ...process.env, ...this._getWorkspaceEnv() }};
+          let child;
+          try {{
+            child = child_process2.spawn(cliPath, args2, {{ cwd: spawnCwd, env: spawnEnv }});
+          }} catch (spawnErr) {{
+            try {{
+              {fs_mod}.unlinkSync(tmpPromptFile);
+            }} catch (_) {{}}
+            const errMsg = `Failed to spawn CLI process synchronously: ${{spawnErr.message}}`;
+            this._logService.error(`ModelFusionProvider: ${{errMsg}}`);
+            this._outputChannel.appendLine(`[CLI ERROR] ${{errMsg}}`);
+            notifyModelFusionError(errMsg, ["Retry", "View Logs", "Reconnect"], (choice) => {{
+              if (choice === "Retry" || choice === "Reconnect") {{
+                this._spawnCliFallback(promptText, budget, selectionStrategy, fusionMode, fusionModels, openvino, gpu, cpu, fusion, progress, token);
+              }}
+            }});
+            progress.report(new {lmt}(`Error: Failed to launch ModelFusion CLI.\\n${{spawnErr.message}}`));
+            resolve7();
+            return;
+          }}
+          let reportedSomething = false;
+          const cancelReg = token?.onCancellationRequested(() => {{
+            child.kill();
+            if (!reportedSomething) {{
+              progress.report(new {lmt}("\\u2026"));
+              reportedSomething = true;
+            }}
+            resolve7();
+          }});
+          let buffer = "";
+          child.stdout.on("data", (data) => {{
+            buffer += data.toString();
+            const lines = buffer.split("\\n");
+            buffer = lines.pop() || "";
+            let output = "";
+            for (const line of lines) {{
+              const trimmed = line.trim();
+              if (trimmed.startsWith("[SEMAPHORE]") || trimmed.startsWith("[MODEL]") || trimmed.startsWith("[FUSION]") || trimmed.includes("Checking OpenVINO") || trimmed.includes("OpenVINO GenAI is") || trimmed.includes("Using OpenVINO") || trimmed.startsWith("\\u{{1F537}}") || trimmed.startsWith("\\u2705") || trimmed.startsWith("\\u{{1F4CB}}") || trimmed.startsWith("\\u{{1F50D}}") || trimmed.startsWith("\\u2714") || trimmed.startsWith("\\u25BA")) {{
+                continue;
+              }}
+              output += line + "\\n";
+            }}
+            if (output) {{
+              progress.report(new {lmt}(output));
+              reportedSomething = true;
+            }}
+          }});
+          child.stderr?.on("data", (data) => {{
+            const lines = data.toString().split("\\n");
+            for (const line of lines) {{
+              if (line.trim()) {{
+                this._outputChannel.appendLine(`[CLI stderr] ${{line.trimEnd()}}`);
+              }}
+            }}
+          }});
+          child.on("close", (code) => {{
+            cancelReg?.dispose();
+            try {{
+              {fs_mod}.unlinkSync(tmpPromptFile);
+            }} catch (_11) {{}}
+            if (buffer) {{
+              const trimmed = buffer.trim();
+              if (!(trimmed.startsWith("[SEMAPHORE]") || trimmed.startsWith("[MODEL]") || trimmed.startsWith("[FUSION]") || trimmed.includes("Checking OpenVINO") || trimmed.includes("OpenVINO GenAI is") || trimmed.includes("Using OpenVINO") || trimmed.startsWith("\\u{{1F537}}") || trimmed.startsWith("\\u2705") || trimmed.startsWith("\\u{{1F4CB}}") || trimmed.startsWith("\\u{{1F50D}}") || trimmed.startsWith("\\u2714") || trimmed.startsWith("\\u25BA"))) {{
+                progress.report(new {lmt}(buffer));
+                reportedSomething = true;
+              }}
+            }}
+            if (!reportedSomething) {{
+              const msg = code === 0 ? "\\u2026" : `Error: ModelFusion CLI exited with code ${{code}}.`;
+              progress.report(new {lmt}(msg));
+            }}
+            resolve7();
+          }});
+          child.on("error", (err2) => {{
+            cancelReg?.dispose();
+            try {{
+              {fs_mod}.unlinkSync(tmpPromptFile);
+            }} catch (_11) {{}}
+            const errMsg = `CLI execution error: ${{err2.message}}`;
+            this._logService.error(`ModelFusionProvider: ${{errMsg}}`);
+            this._outputChannel.appendLine(`[CLI ERROR] ${{errMsg}}`);
+            notifyModelFusionError(errMsg, ["Retry", "View Logs", "Reconnect"], (choice) => {{
+              if (choice === "Retry" || choice === "Reconnect") {{
+                this._spawnCliFallback(promptText, budget, selectionStrategy, fusionMode, fusionModels, openvino, gpu, cpu, fusion, progress, token);
+              }}
+            }});
+            progress.report(new {lmt}(`Error: Failed to launch ModelFusion CLI.\\n${{err2.message}}`));
+            resolve7();
+          }});
+        }});
+      }}"""
+
 def patch_test_bundle_js(file_path, node_path, force_validate=False):
     """Patch test-extension.js / sanity-test-extension.js: helpers, respawn fix, watcher & CLI shielding."""
     if not os.path.isfile(file_path):
@@ -323,7 +541,7 @@ def patch_test_bundle_js(file_path, node_path, force_validate=False):
     elif "this.startServer();" in content and "Respawning in 3 seconds" in content:
         print("  [OK] Server auto-respawn already calls this.startServer().")
 
-    # Add structured diagnostics and notifyModelFusionError to serverProcess error and exit
+    # Add structured diagnostics and notifyModelFusionError to serverProcess error handler
     old_srv_err_re = re.compile(
         r'this\._serverProcess\.on\("error",\s*\(err2\)\s*=>\s*\{[\s\S]*?this\._outputChannel\.appendLine\(`\[ERROR\] \$\{msg\}`\);\s*\}\);',
         re.MULTILINE
@@ -348,175 +566,39 @@ def patch_test_bundle_js(file_path, node_path, force_validate=False):
     else:
         print("  [WARN] Could not match startServer error handler pattern.")
 
-    # 4. Shield Background Watcher (_runDatabaseUpdate)
-    # 4a: Watcher stdout forwarding
-    old_watcher_stdout = '''              if (line.trim()) {
-                this._logService.info(`ModelFusionProvider [Watcher stdout]: ${line.trim()}`);
-              }'''
-    new_watcher_stdout = '''              if (line.trim()) {
-                this._logService.info(`ModelFusionProvider [Watcher stdout]: ${line.trim()}`);
-                this._outputChannel.appendLine(`[Watcher] ${line.trim()}`);
-              }'''
-    if "this._outputChannel.appendLine(`[Watcher] ${line.trim()}`);" in content:
-        print("  [OK] Watcher stdout forwarding already present.")
-    elif old_watcher_stdout in content:
-        content = content.replace(old_watcher_stdout, new_watcher_stdout, 1)
-        changed = True
-        print("  [APPLIED] Added [Watcher] prefix output channel forwarding for watcher stdout.")
+    # 4. Shield Watcher (_runDatabaseUpdate) and CLI Fallback (_spawnCliFallback)
+    idx1 = content.find("async _runDatabaseUpdate()")
+    idx2 = content.find("async provideTokenCount(", idx1) if idx1 != -1 else -1
 
-    # 4b: Watcher stderr forwarding
-    old_watcher_stderr = '''              if (line.trim()) {
-                this._logService.warn(`ModelFusionProvider [Watcher stderr]: ${line.trim()}`);
-              }'''
-    new_watcher_stderr = '''              if (line.trim()) {
-                this._logService.warn(`ModelFusionProvider [Watcher stderr]: ${line.trim()}`);
-                this._outputChannel.appendLine(`[Watcher] [stderr] ${line.trim()}`);
-              }'''
-    if "this._outputChannel.appendLine(`[Watcher] [stderr] ${line.trim()}`);" in content:
-        print("  [OK] Watcher stderr forwarding already present.")
-    elif old_watcher_stderr in content:
-        content = content.replace(old_watcher_stderr, new_watcher_stderr, 1)
-        changed = True
-        print("  [APPLIED] Added [Watcher] [stderr] forwarding for watcher stderr.")
+    if idx1 != -1 and idx2 != -1:
+        # Detect environment variable names from context surrounding _runDatabaseUpdate
+        window_ctx = content[max(0, idx1 - 2000):idx1 + 500]
+        if "vscode15" in window_ctx:
+            vsc = "vscode15"
+            cfg = "config3"
+            path_mod = "path3"
+            fs_mod = "fs3"
+            os_mod = "os"
+            lmt = "LanguageModelTextPart3"
+        else:
+            vsc = "vscode32"
+            cfg = "config2"
+            path_mod = "path5"
+            fs_mod = "fs7"
+            os_mod = "os2"
+            lmt = "LanguageModelTextPart3"
 
-    # 4c: Watcher close non-zero error reporting
-    old_watcher_close_re = re.compile(
-        r'child\.on\("close",\s*\(code\)\s*=>\s*\{[\s\S]*?if\s*\(code === 0\)\s*\{[\s\S]*?\}\s*else\s*\{[\s\S]*?\}\s*\}\);',
-        re.MULTILINE
-    )
-    new_watcher_close = '''child.on("close", (code) => {
-            this._isUpdateRunning = false;
-            if (code === 0) {
-              this._logService.info("ModelFusionProvider: Background database update completed successfully.");
-              this._outputChannel.appendLine("[Watcher] Background model & database update completed successfully.");
-            } else {
-              this._logService.error(`ModelFusionProvider: Background database update failed with exit code ${code}.`);
-              this._outputChannel.appendLine(`[Watcher] [ERROR] Background database update failed with exit code ${code}.`);
-              notifyModelFusionError(`Background database update failed with exit code ${code}.`, ["Retry", "View Logs"], (choice) => {
-                if (choice === "Retry") {
-                  this._runDatabaseUpdate();
-                }
-              });
-            }
-          });'''
-    if "[Watcher] [ERROR] Background database update failed with exit code" in content:
-        print("  [OK] Watcher close handler already shielded.")
-    elif old_watcher_close_re.search(content):
-        content = old_watcher_close_re.sub(new_watcher_close, content, count=1)
-        changed = True
-        print("  [APPLIED] Shielded watcher close handler with [Watcher] [ERROR] and toast.")
+        new_block = generate_methods_block(vsc, cfg, path_mod, fs_mod, os_mod, lmt).strip() + "\n      "
+        existing_block = content[idx1:idx2]
+
+        if existing_block.strip() != new_block.strip():
+            content = content[:idx1] + new_block + content[idx2:]
+            changed = True
+            print(f"  [APPLIED] Shielded _runDatabaseUpdate and _spawnCliFallback ({vsc}, {cfg}, {path_mod}, {fs_mod}, {os_mod}).")
+        else:
+            print("  [OK] _runDatabaseUpdate and _spawnCliFallback already shielded.")
     else:
-        print("  [WARN] Could not match watcher close handler pattern.")
-
-    # 4d: Watcher child error handler
-    old_watcher_err_re = re.compile(
-        r'child\.on\("error",\s*\(err2\)\s*=>\s*\{[\s\S]*?this\._isUpdateRunning = false;\s*this\._logService\.error\(`ModelFusionProvider: Failed to launch background database update process: \$\{err2\.message\}`\);\s*\}\);',
-        re.MULTILINE
-    )
-    new_watcher_err = '''child.on("error", (err2) => {
-            this._isUpdateRunning = false;
-            const errMsg = `Failed to launch background database update process: ${err2.message}`;
-            this._logService.error(`ModelFusionProvider: ${errMsg}`);
-            this._outputChannel.appendLine(`[Watcher] [ERROR] ${errMsg}`);
-            notifyModelFusionError(`Watcher process error: ${err2.message}`, ["Retry", "View Logs"], (choice) => {
-              if (choice === "Retry") {
-                this._runDatabaseUpdate();
-              }
-            });
-          });'''
-    if "[Watcher] [ERROR] Failed to launch background database update process:" in content:
-        print("  [OK] Watcher child error handler already shielded.")
-    elif old_watcher_err_re.search(content):
-        content = old_watcher_err_re.sub(new_watcher_err, content, count=1)
-        changed = True
-        print("  [APPLIED] Shielded watcher child error handler with [Watcher] [ERROR] and toast.")
-    else:
-        print("  [WARN] Could not match watcher child error handler pattern.")
-
-    # 5. Shield CLI Execution (_spawnCliFallback)
-    # 5a: Synchronous try...catch around child_process2.spawn
-    old_spawn_call = 'const child = child_process2.spawn(cliPath, args2, { cwd: spawnCwd, env: spawnEnv });'
-    new_spawn_call = '''let child;
-          try {
-            child = child_process2.spawn(cliPath, args2, { cwd: spawnCwd, env: spawnEnv });
-          } catch (spawnErr) {
-            try {
-              if (typeof fs7 !== "undefined") { fs7.unlinkSync(tmpPromptFile); }
-              else if (typeof fs3 !== "undefined") { fs3.unlinkSync(tmpPromptFile); }
-              else { require("fs").unlinkSync(tmpPromptFile); }
-            } catch (_) {}
-            const errMsg = `Failed to spawn CLI process synchronously: ${spawnErr.message}`;
-            this._logService.error(`ModelFusionProvider: ${errMsg}`);
-            this._outputChannel.appendLine(`[CLI ERROR] ${errMsg}`);
-            notifyModelFusionError(errMsg, ["Retry", "View Logs", "Reconnect"], (choice) => {
-              if (choice === "Retry" || choice === "Reconnect") {
-                this._spawnCliFallback(promptText, budget, selectionStrategy, fusionMode, fusionModels, openvino, gpu, cpu, fusion, progress, token);
-              }
-            });
-            progress.report(new LanguageModelTextPart3(`Error: Failed to launch ModelFusion CLI.\\n${spawnErr.message}`));
-            resolve7();
-            return;
-          }'''
-    if "Failed to spawn CLI process synchronously:" in content:
-        print("  [OK] Synchronous spawn error shielding already present in _spawnCliFallback.")
-    elif old_spawn_call in content:
-        content = content.replace(old_spawn_call, new_spawn_call, 1)
-        changed = True
-        print("  [APPLIED] Enclosed child_process.spawn in synchronous try...catch boundary.")
-    else:
-        print("  [WARN] Could not match child_process2.spawn line in _spawnCliFallback.")
-
-    # 5b: Pipe child.stderr to output channel as [CLI stderr]
-    old_cli_stderr = '''          child.stderr.on("data", (_data) => {
-          });'''
-    new_cli_stderr = '''          child.stderr?.on("data", (data) => {
-            const lines = data.toString().split("\\n");
-            for (const line of lines) {
-              if (line.trim()) {
-                this._outputChannel.appendLine(`[CLI stderr] ${line.trimEnd()}`);
-              }
-            }
-          });'''
-    if "this._outputChannel.appendLine(`[CLI stderr]" in content:
-        print("  [OK] CLI stderr forwarding already present.")
-    elif old_cli_stderr in content:
-        content = content.replace(old_cli_stderr, new_cli_stderr, 1)
-        changed = True
-        print("  [APPLIED] Forwarded CLI stderr to output channel with [CLI stderr] prefix.")
-    else:
-        print("  [WARN] Could not match empty child.stderr.on('data') block.")
-
-    # 5c: child.on("error") in _spawnCliFallback (matches newline in template string cleanly)
-    old_cli_err_re = re.compile(
-        r'child\.on\("error",\s*\(err2\)\s*=>\s*\{[\s\S]*?Error: Failed to launch ModelFusion CLI[\s\S]*?resolve7\(\);\s*\}\);',
-        re.MULTILINE
-    )
-    new_cli_err = '''child.on("error", (err2) => {
-            cancelReg?.dispose();
-            try {
-              if (typeof fs7 !== "undefined") { fs7.unlinkSync(tmpPromptFile); }
-              else if (typeof fs3 !== "undefined") { fs3.unlinkSync(tmpPromptFile); }
-              else { require("fs").unlinkSync(tmpPromptFile); }
-            } catch (_11) {}
-            const errMsg = `CLI execution error: ${err2.message}`;
-            this._logService.error(`ModelFusionProvider: ${errMsg}`);
-            this._outputChannel.appendLine(`[CLI ERROR] ${errMsg}`);
-            notifyModelFusionError(errMsg, ["Retry", "View Logs", "Reconnect"], (choice) => {
-              if (choice === "Retry" || choice === "Reconnect") {
-                this._spawnCliFallback(promptText, budget, selectionStrategy, fusionMode, fusionModels, openvino, gpu, cpu, fusion, progress, token);
-              }
-            });
-            progress.report(new LanguageModelTextPart3(`Error: Failed to launch ModelFusion CLI.\\n${err2.message}`));
-            resolve7();
-          });'''
-    if "CLI execution error:" in content:
-        print("  [OK] _spawnCliFallback child.on('error') already shielded.")
-    elif old_cli_err_re.search(content):
-        content = old_cli_err_re.sub(new_cli_err, content, count=1)
-        changed = True
-        print("  [APPLIED] Shielded _spawnCliFallback child error handler with [CLI ERROR] and toast.")
-    else:
-        print("  [WARN] Could not match _spawnCliFallback child.on('error') block.")
+        print("  [WARN] Could not locate boundaries for _runDatabaseUpdate and _spawnCliFallback.")
 
     if changed:
         safe_write_file(file_path, content.encode("utf-8"))

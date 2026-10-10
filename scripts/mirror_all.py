@@ -39,6 +39,7 @@ destinations = [
     os.path.abspath(r"mcp\bin\cli.exe"),
     os.path.join(localappdata, r"HugOS MCP\bin\climcp.exe"),
     os.path.join(localappdata, r"HugOS MCP\bin\cli.exe"),
+    os.path.join(localappdata, r"Programs\ModelFusion\cli.exe"),
 ]
 
 for dst in destinations:

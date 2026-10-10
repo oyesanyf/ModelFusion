@@ -453,7 +453,16 @@ pub fn provision_multi_model_fusion_for_hardware() {
                 if !clean_err.trim().is_empty() {
                     eprintln!("⚠️ [PROVISIONING] Pull warning for {}: {}", m, clean_err.trim());
                 }
+                eprintln!(
+                    "❌ [MODEL DOWNLOAD ERROR] Failed to pull model '{}'. Exit status: {:?}. Recovery: Check internet connection or run 'ollama pull {}' directly.",
+                    m, out.status.code(), m
+                );
             }
+        } else {
+            eprintln!(
+                "❌ [MODEL DOWNLOAD ERROR] Failed to pull model '{}'. Exit status: {:?}. Recovery: Check internet connection or run 'ollama pull {}' directly.",
+                m, None as Option<i32>, m
+            );
         }
     }
 
@@ -5938,9 +5947,17 @@ async fn run(args: Args) -> Result<()> {
             }
             Ok(st) => {
                 eprintln!("\n⚠️  [PULL] Ollama pull exited with status code: {:?}", st.code());
+                eprintln!(
+                    "❌ [MODEL DOWNLOAD ERROR] Failed to pull model '{}'. Exit status: {:?}. Recovery: Check internet connection or run 'ollama pull {}' directly.",
+                    target_model, st.code(), target_model
+                );
             }
             Err(e) => {
                 eprintln!("\n⚠️  [PULL] Failed to execute ollama command: {}", e);
+                eprintln!(
+                    "❌ [MODEL DOWNLOAD ERROR] Failed to pull model '{}'. Exit status: {:?}. Recovery: Check internet connection or run 'ollama pull {}' directly.",
+                    target_model, None as Option<i32>, target_model
+                );
             }
         }
 
@@ -5953,7 +5970,21 @@ async fn run(args: Args) -> Result<()> {
                 c_cmd.args(["pull", companion]);
                 c_cmd.stdout(std::process::Stdio::inherit());
                 c_cmd.stderr(std::process::Stdio::inherit());
-                let _ = c_cmd.status();
+                match c_cmd.status() {
+                    Ok(st) if st.success() => {},
+                    Ok(st) => {
+                        eprintln!(
+                            "❌ [MODEL DOWNLOAD ERROR] Failed to pull model '{}'. Exit status: {:?}. Recovery: Check internet connection or run 'ollama pull {}' directly.",
+                            companion, st.code(), companion
+                        );
+                    }
+                    Err(_) => {
+                        eprintln!(
+                            "❌ [MODEL DOWNLOAD ERROR] Failed to pull model '{}'. Exit status: {:?}. Recovery: Check internet connection or run 'ollama pull {}' directly.",
+                            companion, None as Option<i32>, companion
+                        );
+                    }
+                }
             }
             configure_ide_multi_model_fusion(&target_model, verifier);
             println!("\n✨ [SUCCESS] All 4 calibrated models for host hardware are ready.");
@@ -10608,7 +10639,7 @@ fn reclaim_port(port: u16) -> Option<(u32, String, String)> {
                                 "Unknown".to_string()
                             };
                             eprintln!(
-                                "❌ [PORT CONFLICT ERROR] Another tool is currently using port {}: PID {} (Process: '{}', Path: '{}'). Terminating conflicting process to reclaim port for ModelFusion Master Server...",
+                                "❌ [PORT CONFLICT ERROR] Another tool is currently using port {}: PID {} (Process: '{}', Path: '{}'). Recovery: Stop the conflicting tool, or run with --port <PORT>.",
                                 port, pid, proc_name, proc_path
                             );
                             let _ = Command::new("taskkill").args(["/F", "/PID", &pid.to_string()]).output();
@@ -10617,7 +10648,46 @@ fn reclaim_port(port: u16) -> Option<(u32, String, String)> {
                     }
                 }
             }
-            return last_conflict;
+            if last_conflict.is_some() {
+                return last_conflict;
+            }
+        }
+
+        // Fast fallback using netstat if PowerShell returned no conflict or failed
+        if let Ok(output) = Command::new("cmd")
+            .args(["/c", &format!("netstat -ano -p tcp | findstr :{} | findstr LISTENING", port)])
+            .output()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if let Some(pid_str) = parts.last() {
+                    if let Ok(pid) = pid_str.parse::<u32>() {
+                        if pid > 0 && pid != std::process::id() {
+                            let mut proc_name = "Unknown".to_string();
+                            let proc_path = "Unknown".to_string();
+                            if let Ok(tl_out) = Command::new("tasklist")
+                                .args(["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"])
+                                .output()
+                            {
+                                let tl_str = String::from_utf8_lossy(&tl_out.stdout);
+                                if let Some(first_line) = tl_str.lines().next() {
+                                    let cols: Vec<&str> = first_line.split(',').collect();
+                                    if !cols.is_empty() {
+                                        proc_name = cols[0].trim_matches('"').to_string();
+                                    }
+                                }
+                            }
+                            eprintln!(
+                                "❌ [PORT CONFLICT ERROR] Another tool is currently using port {}: PID {} (Process: '{}', Path: '{}'). Recovery: Stop the conflicting tool, or run with --port <PORT>.",
+                                port, pid, proc_name, proc_path
+                            );
+                            let _ = Command::new("taskkill").args(["/F", "/PID", &pid.to_string()]).output();
+                            return Some((pid, proc_name, proc_path));
+                        }
+                    }
+                }
+            }
         }
     }
     None
@@ -10680,19 +10750,25 @@ async fn ensure_server_running(port: u16) {
             const CREATE_NO_WINDOW: u32 = 0x08000000;
             cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
         }
-        let _ = cmd.spawn();
-        for _ in 0..15 {
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-            if let Ok(res) = client.get(&health_url).send().await {
-                if res.status().is_success() {
-                    if let Ok(text) = res.text().await {
-                        if text.contains("modelfusion") {
-                            println!("🚀 [SERVER] ModelFusion Master Server auto-started on port {}", port);
-                            save_active_port_info(port);
-                            break;
+        match cmd.spawn() {
+            Ok(_) => {
+                for _ in 0..15 {
+                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                    if let Ok(res) = client.get(&health_url).send().await {
+                        if res.status().is_success() {
+                            if let Ok(text) = res.text().await {
+                                if text.contains("modelfusion") {
+                                    println!("🚀 [SERVER] ModelFusion Master Server auto-started on port {}", port);
+                                    save_active_port_info(port);
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
+            }
+            Err(e) => {
+                eprintln!("❌ [PROCESS ERROR] Failed to spawn process '{}': {:?}", exe_path.display(), e);
             }
         }
     }
@@ -10993,27 +11069,50 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 if let Some(l) = bound {
                     (l, 5000)
                 } else {
-                    let (proc_name, pid) = if let Some((pid, name, _)) = conflict_info {
-                        (name, pid.to_string())
+                    let (proc_name, pid, proc_path) = if let Some((p, name, path)) = conflict_info {
+                        (name, p.to_string(), path)
+                    } else if let Some((p, name, path)) = reclaim_port(5000) {
+                        (name, p.to_string(), path)
                     } else {
-                        ("Unknown".to_string(), "Unknown".to_string())
+                        ("Unknown".to_string(), "Unknown".to_string(), "Unknown".to_string())
                     };
                     eprintln!(
-                        "❌ [FATAL PORT ERROR] Port {} remains occupied by another tool after reclaim attempt. Another process ('{}' PID {}) is holding the port. Please stop this tool or specify --port <PORT>.",
-                        port, proc_name, pid
+                        "❌ [PORT CONFLICT ERROR] Another tool is currently using port {}: PID {} (Process: '{}', Path: '{}'). Recovery: Stop the conflicting tool, or run with --port <PORT>.",
+                        port, pid, proc_name, proc_path
                     );
-                    return Err(e.into());
+                    eprintln!("⚠️  Port 5000 is occupied. Attempting fallback port 5005...");
+                    let fallback_port = 5005u16;
+                    let fallback_addr = format!("{}:{}", host, fallback_port);
+                    match tokio::net::TcpListener::bind(&fallback_addr).await {
+                        Ok(l) => {
+                            eprintln!("✅ [SERVER] Successfully bound to fallback port {}", fallback_port);
+                            (l, fallback_port)
+                        }
+                        Err(e_fallback) => {
+                            let fallback_conflict = reclaim_port(fallback_port);
+                            let (f_name, f_pid, f_path) = if let Some((p, name, path)) = fallback_conflict {
+                                (name, p.to_string(), path)
+                            } else {
+                                ("Unknown".to_string(), "Unknown".to_string(), "Unknown".to_string())
+                            };
+                            eprintln!(
+                                "❌ [PORT CONFLICT ERROR] Fallback port 5005 is also occupied. PID {} (Process: '{}', Path: '{}'). Exiting.",
+                                f_pid, f_name, f_path
+                            );
+                            return Err(e_fallback.into());
+                        }
+                    }
                 }
             } else {
                 let conflict_info = reclaim_port(port);
-                let (proc_name, pid) = if let Some((pid, name, _)) = conflict_info {
-                    (name, pid.to_string())
+                let (proc_name, pid, proc_path) = if let Some((p, name, path)) = conflict_info {
+                    (name, p.to_string(), path)
                 } else {
-                    ("Unknown".to_string(), "Unknown".to_string())
+                    ("Unknown".to_string(), "Unknown".to_string(), "Unknown".to_string())
                 };
                 eprintln!(
-                    "❌ [FATAL PORT ERROR] Port {} remains occupied by another tool after reclaim attempt. Another process ('{}' PID {}) is holding the port. Please stop this tool or specify --port <PORT>.",
-                    port, proc_name, pid
+                    "❌ [PORT CONFLICT ERROR] Another tool is currently using port {}: PID {} (Process: '{}', Path: '{}'). Recovery: Stop the conflicting tool, or run with --port <PORT>.",
+                    port, pid, proc_name, proc_path
                 );
                 return Err(e.into());
             }
@@ -11068,7 +11167,10 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
     loop {
         let (mut socket, _) = match listener.accept().await {
             Ok(val) => val,
-            Err(_) => continue,
+            Err(e) => {
+                eprintln!("⚠️ [SOCKET ERROR] Listener accept error on port {}: {:?}", active_port, e);
+                continue;
+            }
         };
         let db_path_clone = db_path_opt.clone();
         let slash_enabled = enable_slash_commands;
@@ -11086,7 +11188,11 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
             loop {
                 let n = match socket.read(&mut buf).await {
                     Ok(n) if n > 0 => n,
-                    _ => break,
+                    Ok(_) => break,
+                    Err(e) => {
+                        eprintln!("⚠️ [SOCKET ERROR] Socket read error on port {} (PID {}): {:?}", active_port, std::process::id(), e);
+                        break;
+                    }
                 };
                 request_data.extend_from_slice(&buf[..n]);
 
@@ -11165,8 +11271,28 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 match serde_json::from_slice(body) {
                     Ok(v) => v,
                     Err(_) => {
-                        let response = "HTTP/1.1 400 Bad Request\r\nAccess-Control-Allow-Origin: *\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"error\":\"Invalid JSON\"}";
-                        let _ = socket.write_all(response.as_bytes()).await;
+                        let err_payload = serde_json::json!({
+                            "status": "error",
+                            "error": "Invalid JSON in request body",
+                            "pid": std::process::id(),
+                            "process": "cli",
+                            "recovery": "Provide valid UTF-8 JSON payload with required route fields."
+                        });
+                        let body_str = err_payload.to_string();
+                        let response = format!(
+                            "HTTP/1.1 400 Bad Request\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                            body_str.len(), body_str
+                        );
+                        eprintln!(
+                            "❌ [SERVER ROUTE ERROR] (PID {}) Route '{}' returned error: Invalid JSON in request body. Recovery: Provide valid UTF-8 JSON payload with required route fields.",
+                            std::process::id(), request_path
+                        );
+                        if let Err(e) = socket.write_all(response.as_bytes()).await {
+                            eprintln!("⚠️ [SOCKET ERROR] Socket write error: {:?}", e);
+                        }
+                        if let Err(e) = socket.flush().await {
+                            eprintln!("⚠️ [SOCKET ERROR] Socket write error: {:?}", e);
+                        }
                         return;
                     }
                 }
@@ -11848,7 +11974,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 let resolved_db = resolve_db_path(Some(&db_path_str));
                 let resolved_db_buf = resolved_db.to_string_lossy().to_string();
                 if let Ok(exe_path) = std::env::current_exe() {
-                    let mut cmd = std::process::Command::new(exe_path);
+                    let mut cmd = std::process::Command::new(&exe_path);
                     cmd.arg("--update")
                        .arg("--db-path")
                        .arg(&resolved_db_buf)
@@ -11858,7 +11984,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         use std::os::windows::process::CommandExt;
                         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
                     }
-                    let _ = cmd.spawn();
+                    if let Err(e) = cmd.spawn() {
+                        eprintln!("❌ [PROCESS ERROR] Failed to spawn process '{}': {:?}", exe_path.display(), e);
+                    }
                 }
 
                 let resp_json = serde_json::json!({
@@ -11906,7 +12034,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 let resolved_db = resolve_db_path(Some(&db_path_str));
                 let resolved_db_buf = resolved_db.to_string_lossy().to_string();
                 if let Ok(exe_path) = std::env::current_exe() {
-                    let mut cmd = std::process::Command::new(exe_path);
+                    let mut cmd = std::process::Command::new(&exe_path);
                     cmd.arg("--updatedb")
                        .arg("--db-path")
                        .arg(&resolved_db_buf)
@@ -11919,7 +12047,9 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         use std::os::windows::process::CommandExt;
                         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
                     }
-                    let _ = cmd.spawn();
+                    if let Err(e) = cmd.spawn() {
+                        eprintln!("❌ [PROCESS ERROR] Failed to spawn process '{}': {:?}", exe_path.display(), e);
+                    }
                 }
 
                 let resp_json = serde_json::json!({
@@ -12000,7 +12130,11 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 if model_name.is_empty() {
                     let err_json = serde_json::json!({
                         "status": "error",
-                        "message": "Missing 'model' or 'name' parameter in request payload."
+                        "error": "Missing 'model' or 'name' parameter in request payload.",
+                        "message": "Missing 'model' or 'name' parameter in request payload.",
+                        "pid": std::process::id(),
+                        "process": "cli",
+                        "recovery": "Provide 'model' or 'name' in JSON payload, e.g. {\"model\": \"qwen2.5:7b\"}."
                     });
                     let err_body = serde_json::to_string(&err_json).unwrap_or_default();
                     let response = format!(
@@ -12008,8 +12142,16 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         err_body.len(),
                         err_body
                     );
-                    let _ = socket.write_all(response.as_bytes()).await;
-                    let _ = socket.flush().await;
+                    eprintln!(
+                        "❌ [SERVER ROUTE ERROR] (PID {}) Route '{}' returned error: Missing 'model' or 'name' parameter. Recovery: Provide 'model' or 'name' in JSON payload.",
+                        std::process::id(), request_path
+                    );
+                    if let Err(e) = socket.write_all(response.as_bytes()).await {
+                        eprintln!("⚠️ [SOCKET ERROR] Socket write error: {:?}", e);
+                    }
+                    if let Err(e) = socket.flush().await {
+                        eprintln!("⚠️ [SOCKET ERROR] Socket write error: {:?}", e);
+                    }
                     return;
                 }
 
@@ -12054,20 +12196,52 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     }
                 };
 
-                let result_json = serde_json::json!({
-                    "status": status_val,
-                    "model": model_name,
-                    "message": message_val
-                });
+                let (status_code_str, reason_str) = if status_val == "error" {
+                    eprintln!(
+                        "❌ [MODEL DOWNLOAD ERROR] Failed to pull model '{}' via /api/models/provision: {}. Recovery: Verify Ollama is running and run 'ollama pull {}' directly.",
+                        model_name, message_val, model_name
+                    );
+                    eprintln!(
+                        "❌ [SERVER ROUTE ERROR] (PID {}) Route '{}' returned error: {}. Recovery: Verify Ollama service is running and run 'ollama pull {}' directly.",
+                        std::process::id(), request_path, message_val, model_name
+                    );
+                    ("500", "Internal Server Error")
+                } else {
+                    ("200", "OK")
+                };
+
+                let result_json = if status_val == "error" {
+                    serde_json::json!({
+                        "status": "error",
+                        "error": message_val,
+                        "message": message_val,
+                        "model": model_name,
+                        "pid": std::process::id(),
+                        "process": "cli",
+                        "recovery": format!("Verify Ollama service is running at http://127.0.0.1:11434 and run 'ollama pull {}' directly in terminal.", model_name)
+                    })
+                } else {
+                    serde_json::json!({
+                        "status": status_val,
+                        "model": model_name,
+                        "message": message_val
+                    })
+                };
 
                 let resp_body = serde_json::to_string(&result_json).unwrap_or_default();
                 let response = format!(
-                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    "HTTP/1.1 {} {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    status_code_str,
+                    reason_str,
                     resp_body.len(),
                     resp_body
                 );
-                let _ = socket.write_all(response.as_bytes()).await;
-                let _ = socket.flush().await;
+                if let Err(e) = socket.write_all(response.as_bytes()).await {
+                    eprintln!("⚠️ [SOCKET ERROR] Socket write error: {:?}", e);
+                }
+                if let Err(e) = socket.flush().await {
+                    eprintln!("⚠️ [SOCKET ERROR] Socket write error: {:?}", e);
+                }
                 return;
             }
 
@@ -17926,16 +18100,70 @@ sequenceDiagram
                 }
             };
 
+            let mut status_code: u16 = 200;
+            let mut status_reason = "OK";
+
             let response_json = if let Ok(mut parsed) = serde_json::from_str::<serde_json::Value>(&result_content) {
                 if let Some(obj) = parsed.as_object_mut() {
-                    if !obj.contains_key("content") {
-                        obj.insert("content".to_string(), serde_json::Value::String(result_content.clone()));
-                    }
-                    if !obj.contains_key("response") {
-                        obj.insert("response".to_string(), serde_json::Value::String(result_content.clone()));
-                    }
-                    if !obj.contains_key("output") {
-                        obj.insert("output".to_string(), serde_json::Value::String(result_content.clone()));
+                    let has_explicit_error_status = obj.get("status").and_then(|v| v.as_str()) == Some("error");
+                    let has_error_field = obj.contains_key("error") && !obj.get("error").unwrap_or(&serde_json::Value::Null).is_null();
+                    let is_error_payload = has_explicit_error_status || has_error_field;
+
+                    if is_error_payload {
+                        let err_desc = obj.get("error").and_then(|v| v.as_str())
+                            .or_else(|| obj.get("message").and_then(|v| v.as_str()))
+                            .unwrap_or("Internal server error")
+                            .to_string();
+
+                        let is_bad_request = err_desc.to_lowercase().contains("bad request")
+                            || err_desc.to_lowercase().contains("invalid")
+                            || err_desc.to_lowercase().contains("missing")
+                            || err_desc.to_lowercase().contains("unknown route")
+                            || err_desc.to_lowercase().contains("validation");
+
+                        if is_bad_request {
+                            status_code = 400;
+                            status_reason = "Bad Request";
+                        } else {
+                            status_code = 500;
+                            status_reason = "Internal Server Error";
+                        }
+
+                        obj.insert("status".to_string(), serde_json::Value::String("error".to_string()));
+                        obj.insert("pid".to_string(), serde_json::json!(std::process::id()));
+                        obj.insert("process".to_string(), serde_json::Value::String("cli".to_string()));
+
+                        if !obj.contains_key("recovery") {
+                            let recovery_msg = if is_bad_request {
+                                "Verify request syntax, required parameters, and JSON payload."
+                            } else if err_desc.contains("Ollama") || err_desc.contains("model") {
+                                "Verify Ollama service is active at http://127.0.0.1:11434, check installed models via /api/tags, or run 'ollama pull <model>'."
+                            } else if err_desc.contains("port") || err_desc.contains("address") {
+                                "Check for port conflicts or run server with --port <PORT>."
+                            } else {
+                                "Check Master CLI server logs or retry the request."
+                            };
+                            obj.insert("recovery".to_string(), serde_json::Value::String(recovery_msg.to_string()));
+                        }
+
+                        let recovery_str = obj.get("recovery").and_then(|v| v.as_str()).unwrap_or("");
+                        eprintln!(
+                            "❌ [SERVER ROUTE ERROR] (PID {}) Route '{}' returned error: {}. Recovery: {}",
+                            std::process::id(),
+                            request_path,
+                            err_desc,
+                            recovery_str
+                        );
+                    } else {
+                        if !obj.contains_key("content") {
+                            obj.insert("content".to_string(), serde_json::Value::String(result_content.clone()));
+                        }
+                        if !obj.contains_key("response") {
+                            obj.insert("response".to_string(), serde_json::Value::String(result_content.clone()));
+                        }
+                        if !obj.contains_key("output") {
+                            obj.insert("output".to_string(), serde_json::Value::String(result_content.clone()));
+                        }
                     }
                     parsed
                 } else {
@@ -17952,28 +18180,59 @@ sequenceDiagram
                     })
                 }
             } else {
-                let is_help_card = result_content.contains("TOOL CARD")
-                    || result_content.contains("MODEL CARD")
-                    || result_content.contains("COMMAND HELP")
-                    || result_content.contains("MODELFUSION");
-                serde_json::json!({
-                    "status": "ok",
-                    "help": is_help_card,
-                    "content": result_content,
-                    "response": result_content,
-                    "output": result_content
-                })
+                let trimmed = result_content.trim();
+                let is_raw_error = trimmed.to_lowercase().starts_with("error") || trimmed.starts_with("❌");
+                if is_raw_error {
+                    status_code = 500;
+                    status_reason = "Internal Server Error";
+                    let recovery = "Review command parameters or consult ModelFusion server diagnostics.";
+                    eprintln!(
+                        "❌ [SERVER ROUTE ERROR] (PID {}) Route '{}' returned error: {}. Recovery: {}",
+                        std::process::id(),
+                        request_path,
+                        trimmed,
+                        recovery
+                    );
+                    serde_json::json!({
+                        "status": "error",
+                        "error": trimmed,
+                        "pid": std::process::id(),
+                        "process": "cli",
+                        "recovery": recovery,
+                        "content": result_content,
+                        "response": result_content,
+                        "output": result_content
+                    })
+                } else {
+                    let is_help_card = result_content.contains("TOOL CARD")
+                        || result_content.contains("MODEL CARD")
+                        || result_content.contains("COMMAND HELP")
+                        || result_content.contains("MODELFUSION");
+                    serde_json::json!({
+                        "status": "ok",
+                        "help": is_help_card,
+                        "content": result_content,
+                        "response": result_content,
+                        "output": result_content
+                    })
+                }
             };
 
-            let response_body = serde_json::to_string(&response_json).unwrap();
+            let response_body = serde_json::to_string(&response_json).unwrap_or_default();
             let response = format!(
-                "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                "HTTP/1.1 {} {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                status_code,
+                status_reason,
                 response_body.len(),
                 response_body
             );
 
-            let _ = socket.write_all(response.as_bytes()).await;
-            let _ = socket.flush().await;
+            if let Err(e) = socket.write_all(response.as_bytes()).await {
+                eprintln!("⚠️ [SOCKET ERROR] Socket write error: {:?}", e);
+            }
+            if let Err(e) = socket.flush().await {
+                eprintln!("⚠️ [SOCKET ERROR] Socket write error: {:?}", e);
+            }
         });
     }
 }
