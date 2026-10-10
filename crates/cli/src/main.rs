@@ -318,6 +318,61 @@ pub fn calibrated_sweet_spot_model(sys: &SystemResourceSummary) -> &'static str 
     }
 }
 
+/// Task-Adaptive Calibrated Sweet Spot Model Selection:
+/// Dynamically pairs the task modality with the optimal architecture:
+/// - Writing / Long-Form Prose / Essays -> Gemma 2 (gemma2:27b / gemma2:9b / gemma2:2b)
+/// - Deep Reasoning / Logic / Math -> DeepSeek-R1 (deepseek-r1:32b / 14b / 7b / 1.5b)
+/// - Code / DevOps / General -> Qwen 2.5 (qwen2.5:32b / 14b / 7b / 3b / 1.5b)
+pub fn calibrated_sweet_spot_model_for_task(sys: &SystemResourceSummary, task: &str) -> &'static str {
+    let t = task.to_lowercase();
+    let is_writing = t.contains("write") || t.contains("writing") || t.contains("prose") || t.contains("doc") || t.contains("essay") || t.contains("story") || t.contains("novel") || t.contains("narrative");
+    let is_reasoning = t.contains("reason") || t.contains("logic") || t.contains("boost") || t.contains("deep");
+
+    if is_writing {
+        if sys.has_gpu && sys.free_vram_mb >= 2_000 {
+            if sys.free_vram_mb >= 16_000 {
+                "gemma2:27b"
+            } else if sys.free_vram_mb >= 6_000 {
+                "gemma2:9b"
+            } else {
+                "gemma2:2b"
+            }
+        } else {
+            if sys.free_ram_gb >= 32.0 {
+                "gemma2:27b"
+            } else if sys.free_ram_gb >= 14.0 {
+                "gemma2:9b"
+            } else {
+                "gemma2:2b"
+            }
+        }
+    } else if is_reasoning {
+        if sys.has_gpu && sys.free_vram_mb >= 2_000 {
+            if sys.free_vram_mb >= 22_000 {
+                "deepseek-r1:32b"
+            } else if sys.free_vram_mb >= 12_000 {
+                "deepseek-r1:14b"
+            } else if sys.free_vram_mb >= 5_000 {
+                "deepseek-r1:7b"
+            } else {
+                "deepseek-r1:1.5b"
+            }
+        } else {
+            if sys.free_ram_gb >= 48.0 {
+                "deepseek-r1:32b"
+            } else if sys.free_ram_gb >= 24.0 {
+                "deepseek-r1:14b"
+            } else if sys.free_ram_gb >= 12.0 {
+                "deepseek-r1:7b"
+            } else {
+                "deepseek-r1:1.5b"
+            }
+        }
+    } else {
+        calibrated_sweet_spot_model(sys)
+    }
+}
+
 /// Helper to select optimal Ollama model from an already queried system resource summary.
 pub fn select_ollama_model_from_sys(is_low_budget: bool, res: &SystemResourceSummary) -> &'static str {
     if is_low_budget {
@@ -10406,6 +10461,31 @@ pub fn select_best_installed_ollama_model(installed: &[String]) -> Option<String
 
 pub fn select_companion_fusion_model(primary: &str, installed: &[String]) -> Option<String> {
     let prim_lower = primary.to_lowercase();
+    if prim_lower.contains("gemma") {
+        // Writing/Narrative: pair with DeepSeek-R1 (fact-checking & pacing verifier)
+        if let Some(r1) = installed.iter().find(|m| m.to_lowercase().contains("deepseek-r1")) {
+            return Some(r1.clone());
+        }
+        if let Some(qwen) = installed.iter().find(|m| m.to_lowercase().contains("qwen2.5")) {
+            return Some(qwen.clone());
+        }
+    } else if prim_lower.contains("deepseek") {
+        // Reasoning: pair with Qwen 2.5 (synthesis & structured drafting)
+        if let Some(qwen) = installed.iter().find(|m| m.to_lowercase().contains("qwen2.5")) {
+            return Some(qwen.clone());
+        }
+        if let Some(gemma) = installed.iter().find(|m| m.to_lowercase().contains("gemma2")) {
+            return Some(gemma.clone());
+        }
+    } else {
+        // Code or General: pair with DeepSeek-R1 (AST & verification gate)
+        if let Some(r1) = installed.iter().find(|m| m.to_lowercase().contains("deepseek-r1")) {
+            return Some(r1.clone());
+        }
+        if let Some(gemma) = installed.iter().find(|m| m.to_lowercase().contains("gemma2")) {
+            return Some(gemma.clone());
+        }
+    }
     installed.iter().find(|m| {
         let lower = m.to_lowercase();
         lower != prim_lower && !lower.starts_with(&format!("{}:", prim_lower))
@@ -11295,7 +11375,27 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                 let sys = query_system_resources();
                 let active_hw_model = select_ollama_model_from_sys(false, &sys);
-                let sweet_spot = calibrated_sweet_spot_model(&sys);
+
+                let query_task = raw_request_uri
+                    .split('?')
+                    .nth(1)
+                    .and_then(|q| {
+                        q.split('&').find_map(|pair| {
+                            let mut kv = pair.split('=');
+                            if kv.next()? == "task" {
+                                kv.next().map(|v| v.to_string())
+                            } else {
+                                None
+                            }
+                        })
+                    })
+                    .unwrap_or_default();
+
+                let sweet_spot = if !query_task.is_empty() {
+                    calibrated_sweet_spot_model_for_task(&sys, &query_task)
+                } else {
+                    calibrated_sweet_spot_model(&sys)
+                };
 
                 let ollama_endpoint = std::env::var("LOCAL_OLLAMA_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
                 let probe_client = reqwest::Client::builder()
@@ -11304,16 +11404,18 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     .build()
                     .unwrap_or_default();
                 let installed = fetch_installed_ollama_models(&probe_client, &ollama_endpoint).await;
-                let companion_model = select_companion_fusion_model(&active_hw_model, &installed)
-                    .or_else(|| select_companion_fusion_model(sweet_spot, &installed))
-                    .or_else(|| Some(if sweet_spot.contains("9b") { "gemma2:2b".to_string() } else if sweet_spot.contains("7b") { "deepseek-r1:1.5b".to_string() } else { "qwen2.5:7b".to_string() }));
+                let companion_model = select_companion_fusion_model(sweet_spot, &installed)
+                    .or_else(|| select_companion_fusion_model(&active_hw_model, &installed))
+                    .or_else(|| Some(if sweet_spot.contains("gemma") { "deepseek-r1:1.5b".to_string() } else if sweet_spot.contains("deepseek") { "qwen2.5:7b".to_string() } else { "deepseek-r1:1.5b".to_string() }));
 
                 let resp_json = if request_path == "/api/models/count" {
                     serde_json::json!({
                         "total_models": total_models,
                         "tasks_count": 45,
+                        "task": if query_task.is_empty() { "general" } else { &query_task },
                         "active_hardware_model": active_hw_model,
                         "calibrated_sweet_spot": sweet_spot,
+                        "companion_model": companion_model,
                         "db_path": resolved_db.to_string_lossy().to_string()
                     })
                 } else {
@@ -11321,8 +11423,10 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         "status": "ok",
                         "total_models": total_models,
                         "tasks_count": 45,
+                        "task": if query_task.is_empty() { "general" } else { &query_task },
                         "active_hardware_model": active_hw_model,
                         "calibrated_sweet_spot": sweet_spot,
+                        "companion_model": companion_model,
                         "db_path": resolved_db.to_string_lossy().to_string(),
                         "cpu_name": sys.cpu_name,
                         "logical_cores": sys.logical_cores,

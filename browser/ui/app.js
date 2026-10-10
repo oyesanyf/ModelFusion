@@ -450,9 +450,135 @@ document.addEventListener('DOMContentLoaded', () => {
     return getCalibratedHardwareCompanion(sweetSpot || getCalibratedHardwareSweetSpot());
   }
 
+  function resolveTaskAdaptiveSweetSpot(taskType, intention, availableModels = [], vramMb = 0, ramGb = 0) {
+    const models = Array.isArray(availableModels) && availableModels.length > 0 ? availableModels : (typeof availableOllamaModels !== 'undefined' ? availableOllamaModels : []);
+    const vram = vramMb > 0 ? vramMb : ((window.hardwareGpuVramMb && window.hardwareGpuVramMb > 0) ? window.hardwareGpuVramMb : detectGpuVramMb());
+    const ram = ramGb > 0 ? ramGb : ((window.hardwareRamGb && window.hardwareRamGb > 0) ? window.hardwareRamGb : ((typeof navigator !== 'undefined' && navigator.deviceMemory) ? navigator.deviceMemory : 16));
+
+    const isWriting = taskType === 'writing' || (intention && (intention.isLongForm || intention.targetPages > 0 || intention.targetChapters > 0));
+    const isCode = taskType === 'code' || (intention && intention.taskType === 'code');
+    const isReasoning = taskType === 'reasoning' || (intention && (intention.isBoost || intention.taskType === 'reasoning'));
+
+    let primary = null;
+    let companion = null;
+    let domain = 'General Intelligence';
+
+    if (isWriting) {
+      domain = 'Long-Form Narrative Prose';
+      // Prefer Gemma 2: gemma2:27b > gemma2:9b > gemma2:2b if installed or hardware supports
+      const gemma27 = models.find(m => m.toLowerCase().includes('gemma2:27b') || m.toLowerCase().includes('gemma-2-27b'));
+      const gemma9 = models.find(m => m.toLowerCase().includes('gemma2:9b') || m.toLowerCase().includes('gemma-2-9b'));
+      const gemma2 = models.find(m => m.toLowerCase().includes('gemma2:2b') || m.toLowerCase().includes('gemma2'));
+
+      const hasGpu = vram >= 2000;
+      if (hasGpu) {
+        if (gemma27 && vram >= 16000) {
+          primary = gemma27;
+        } else if (gemma9 && vram >= 6000) {
+          primary = gemma9;
+        } else if (gemma2) {
+          primary = gemma2;
+        } else {
+          if (vram >= 22000) {
+            primary = models.find(m => m.includes('qwen2.5:32b')) || 'qwen2.5:32b';
+          } else if (vram >= 12000) {
+            primary = models.find(m => m.includes('qwen2.5:14b')) || 'qwen2.5:14b';
+          } else {
+            primary = models.find(m => m.includes('qwen2.5:7b')) || 'qwen2.5:7b';
+          }
+        }
+      } else {
+        if (gemma27 && ram >= 32) {
+          primary = gemma27;
+        } else if (gemma9 && ram >= 14) {
+          primary = gemma9;
+        } else if (gemma2) {
+          primary = gemma2;
+        } else {
+          if (ram >= 48) {
+            primary = models.find(m => m.includes('qwen2.5:32b')) || 'qwen2.5:32b';
+          } else if (ram >= 24) {
+            primary = models.find(m => m.includes('qwen2.5:14b')) || 'qwen2.5:14b';
+          } else {
+            primary = models.find(m => m.includes('qwen2.5:7b')) || 'qwen2.5:7b';
+          }
+        }
+      }
+
+      // Companion: deepseek-r1 or qwen2.5 for fact-checking and pacing verification
+      const r1 = models.find(m => m.toLowerCase().includes('deepseek-r1') && !m.toLowerCase().includes('32b'));
+      companion = r1 || models.find(m => m !== primary && m.includes('qwen2.5')) || (primary.includes('32b') ? 'deepseek-r1:7b' : 'deepseek-r1:1.5b');
+
+    } else if (isCode) {
+      domain = 'Computational Code Fusion';
+      const coder = models.find(m => m.toLowerCase().includes('qwen2.5-coder') || m.toLowerCase().includes('coder'));
+      if (coder) {
+        primary = coder;
+      } else {
+        const hasGpu = vram >= 2000;
+        if (hasGpu) {
+          if (vram >= 22000) {
+            primary = models.find(m => m.includes('qwen2.5:32b')) || 'qwen2.5:32b';
+          } else if (vram >= 12000) {
+            primary = models.find(m => m.includes('qwen2.5:14b')) || 'qwen2.5:14b';
+          } else {
+            primary = models.find(m => m.includes('qwen2.5:7b')) || 'qwen2.5:7b';
+          }
+        } else {
+          if (ram >= 48) {
+            primary = models.find(m => m.includes('qwen2.5:32b')) || 'qwen2.5:32b';
+          } else if (ram >= 24) {
+            primary = models.find(m => m.includes('qwen2.5:14b')) || 'qwen2.5:14b';
+          } else {
+            primary = models.find(m => m.includes('qwen2.5:7b')) || 'qwen2.5:7b';
+          }
+        }
+      }
+      companion = models.find(m => m.toLowerCase().includes('deepseek-r1')) || 'deepseek-r1:1.5b';
+
+    } else if (isReasoning) {
+      domain = 'Deep Consensus Reasoning';
+      const r1 = models.find(m => m.toLowerCase().includes('deepseek-r1'));
+      if (r1) {
+        primary = r1;
+      } else {
+        const hasGpu = vram >= 2000;
+        if (hasGpu) {
+          if (vram >= 22000) {
+            primary = 'deepseek-r1:32b';
+          } else if (vram >= 12000) {
+            primary = 'deepseek-r1:14b';
+          } else {
+            primary = 'deepseek-r1:7b';
+          }
+        } else {
+          if (ram >= 48) {
+            primary = 'deepseek-r1:32b';
+          } else if (ram >= 24) {
+            primary = 'deepseek-r1:14b';
+          } else {
+            primary = 'deepseek-r1:7b';
+          }
+        }
+      }
+      companion = models.find(m => m.toLowerCase().includes('qwen2.5')) || 'qwen2.5:7b';
+
+    } else {
+      primary = getCalibratedHardwareSweetSpot();
+      companion = getCalibratedHardwareCompanion(primary);
+    }
+
+    return {
+      primary: primary || 'qwen2.5:7b',
+      companion: companion || 'deepseek-r1:1.5b',
+      domain
+    };
+  }
+
   window.getCalibratedHardwareSweetSpot = getCalibratedHardwareSweetSpot;
   window.getCalibratedHardwareCompanion = getCalibratedHardwareCompanion;
   window.resolveCompanionModel = resolveCompanionModel;
+  window.resolveTaskAdaptiveSweetSpot = resolveTaskAdaptiveSweetSpot;
 
 
   // -----------------------------------------------------------------
@@ -628,28 +754,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Apply theme across all 5 color schemes
-    document.body.classList.remove('theme-white', 'theme-light', 'theme-obsidian', 'theme-midnight', 'theme-warm', 'theme-dark');
-    const theme = settings.theme || 'dark-plus';
-    if (theme === 'white' || theme === 'light') {
-      document.body.classList.add('theme-white');
-      if (themeToggleIcon) themeToggleIcon.textContent = '☀️';
-      if (themeToggleText) themeToggleText.textContent = 'White';
-    } else if (theme === 'obsidian') {
-      document.body.classList.add('theme-obsidian');
-      if (themeToggleIcon) themeToggleIcon.textContent = '⬛';
-      if (themeToggleText) themeToggleText.textContent = 'Obsidian';
-    } else if (theme === 'midnight') {
-      document.body.classList.add('theme-midnight');
-      if (themeToggleIcon) themeToggleIcon.textContent = '🌌';
-      if (themeToggleText) themeToggleText.textContent = 'Midnight';
-    } else if (theme === 'warm') {
-      document.body.classList.add('theme-warm');
-      if (themeToggleIcon) themeToggleIcon.textContent = '🌅';
-      if (themeToggleText) themeToggleText.textContent = 'Warm';
-    } else {
-      document.body.classList.add('theme-dark');
-      if (themeToggleIcon) themeToggleIcon.textContent = '🌙';
-      if (themeToggleText) themeToggleText.textContent = 'Dark';
+    if (typeof document !== 'undefined' && document.body && document.body.classList) {
+      document.body.classList.remove('theme-white', 'theme-light', 'theme-obsidian', 'theme-midnight', 'theme-warm', 'theme-dark');
+      const theme = settings.theme || 'dark-plus';
+      if (theme === 'white' || theme === 'light') {
+        document.body.classList.add('theme-white');
+        if (themeToggleIcon) themeToggleIcon.textContent = '☀️';
+        if (themeToggleText) themeToggleText.textContent = 'White';
+      } else if (theme === 'obsidian') {
+        document.body.classList.add('theme-obsidian');
+        if (themeToggleIcon) themeToggleIcon.textContent = '⬛';
+        if (themeToggleText) themeToggleText.textContent = 'Obsidian';
+      } else if (theme === 'midnight') {
+        document.body.classList.add('theme-midnight');
+        if (themeToggleIcon) themeToggleIcon.textContent = '🌌';
+        if (themeToggleText) themeToggleText.textContent = 'Midnight';
+      } else if (theme === 'warm') {
+        document.body.classList.add('theme-warm');
+        if (themeToggleIcon) themeToggleIcon.textContent = '🌅';
+        if (themeToggleText) themeToggleText.textContent = 'Warm';
+      } else {
+        document.body.classList.add('theme-dark');
+        if (themeToggleIcon) themeToggleIcon.textContent = '🌙';
+        if (themeToggleText) themeToggleText.textContent = 'Dark';
+      }
     }
 
     // Apply font size to terminal
@@ -999,7 +1127,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const models = getAllSelectableModels();
 
     if (customFusionModelsSelect) {
-      const selected = Array.from(customFusionModelsSelect.selectedOptions).map(o => o.value);
+      const selected = Array.from(customFusionModelsSelect.selectedOptions || []).map(o => o.value);
       customFusionModelsSelect.innerHTML = '';
       models.forEach(m => {
         const opt = document.createElement('option');
@@ -1213,9 +1341,9 @@ document.addEventListener('DOMContentLoaded', () => {
         settingActiveModel.appendChild(fusionGroup);
       }
 
-      if (currentVal && Array.from(settingActiveModel.options).some(o => o.value === currentVal)) {
+      if (currentVal && Array.from(settingActiveModel.options || []).some(o => o.value === currentVal)) {
         settingActiveModel.value = currentVal;
-      } else if (settingActiveModel.options.length > 0) {
+      } else if (settingActiveModel.options && settingActiveModel.options.length > 0) {
         settingActiveModel.value = settingActiveModel.options[0].value;
       }
     }
@@ -1319,7 +1447,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (settingActiveModel) {
       let found = false;
-      for (const opt of settingActiveModel.options) {
+      for (const opt of (settingActiveModel.options || [])) {
         if (opt.value === s.activeModel) {
           found = true;
           break;
@@ -6173,8 +6301,8 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
     const lower = raw.toLowerCase();
     if (!lower) return { isCodeHelper: false, cleanQuery: '' };
 
-    // a) Directives: @agent code-helper, @agent code, @agent python, /code-helper, /code, /python, @code-helper
-    const directiveMatch = lower.match(/^(?:@agent\s+(?:code-helper|code|python)|\/(?:code-helper|code|python)|@(?:code-helper|code|python))\b(?:\s+|$)/i);
+    // a) Directives: @agent code-helper, @agent codehelper, @agent code helper, @agent code, @agent python, /code-helper, /codehelper, /code, /python, @code-helper, @codehelper, @code helper, code-helper, codehelper, code helper
+    const directiveMatch = lower.match(/^(?:@agent\s+(?:code[-_ ]?helper|codehelper|code|python)|\/(?:code[-_ ]?helper|codehelper|code|python)|@(?:code[-_ ]?helper|codehelper|code|python)|(?:code[-_ ]helper|codehelper)\b)\b(?:\s+|$)/i);
     if (directiveMatch) {
       const clean = raw.slice(directiveMatch[0].length).trim();
       return { isCodeHelper: true, cleanQuery: clean || raw, directive: true, language: /python/i.test(directiveMatch[0]) ? 'python' : detectCodeLanguage(clean || raw) };
@@ -11908,8 +12036,87 @@ MANDATORY STYLOMETRIC LAWS:
     return codePatterns.some(regex => regex.test(text));
   }
 
-  // Length, Page & Chapter Directive Recognition Regex (matches /\b(\d+)\s*(?:page|chapter|section)\b/i as well as hyphens, plurals, and parts)
-  const PAGE_CHAPTER_DIRECTIVE_REGEX = /\b(\d+)\s*[-_]?\s*(?:page|chapter|section|part)s?\b/i;
+  // -----------------------------------------------------------------
+  // Clean Output Deduplication Helper: Ensure each Page X or Chapter X only appears once
+  // -----------------------------------------------------------------
+  function deduplicatePages(text) {
+    if (!text || typeof text !== 'string') return text || '';
+    const headerRegex = /(?:^|\n)(?=(?:#{1,4}\s*(?:Page|Chapter)\s+\d+|\*{1,2}(?:Page|Chapter)\s+\d+[:\*]|\b(?:Page|Chapter)\s+\d+:))/i;
+    const sections = text.split(headerRegex);
+    if (sections.length <= 1) {
+      return text;
+    }
+    const seenPages = new Set();
+    const seenChapters = new Set();
+    const keptSections = [];
+    for (const sec of sections) {
+      const trimmed = sec.trim();
+      if (!trimmed) continue;
+      const pageMatch = trimmed.match(/^(?:#{1,4}\s*|\*{1,2})?Page\s+(\d+)\b/i);
+      if (pageMatch) {
+        const pageNum = parseInt(pageMatch[1], 10);
+        if (seenPages.has(pageNum)) {
+          continue;
+        }
+        seenPages.add(pageNum);
+        keptSections.push(trimmed);
+        continue;
+      }
+      const chapMatch = trimmed.match(/^(?:#{1,4}\s*|\*{1,2})?Chapter\s+(\d+)\b/i);
+      if (chapMatch) {
+        const chapNum = parseInt(chapMatch[1], 10);
+        if (seenChapters.has(chapNum)) {
+          continue;
+        }
+        seenChapters.add(chapNum);
+        keptSections.push(trimmed);
+        continue;
+      }
+      keptSections.push(trimmed);
+    }
+    return keptSections.join('\n\n');
+  }
+  if (typeof window !== 'undefined') {
+    window.deduplicatePages = deduplicatePages;
+  }
+
+  // -----------------------------------------------------------------
+  // Anti-Loop Circuit Breaker: Detect if a generation turn repeats earlier pages/chapters or sentences
+  // -----------------------------------------------------------------
+  function checkAntiLoopCircuitBreaker(fullResponseBeforeTurn = '', turnResponse = '') {
+    const cleanTurnResponse = (turnResponse || '').trim();
+    if (!cleanTurnResponse || !fullResponseBeforeTurn) {
+      return { isLoopDetected: false, restartsFromBeginning: false, repetitionRatio: 0 };
+    }
+    const cleanTurnLower = cleanTurnResponse.toLowerCase();
+    const priorFullLower = fullResponseBeforeTurn.toLowerCase();
+
+    // Check A: Turn restarts from Page 1 or Chapter 1 when fullResponseBeforeTurn already contains it
+    const restartsFromBeginning = Boolean(
+      /\b(?:page|chapter)\s+1\b/i.test(cleanTurnResponse) &&
+      /\b(?:page|chapter)\s+1\b/i.test(fullResponseBeforeTurn)
+    );
+
+    // Check B: Heavy substring/sentence overlap with prior fullResponse
+    const turnSentences = cleanTurnResponse.split(/(?<=[.!?])\s+/).filter(s => s.trim().length >= 20);
+    let duplicateSentences = 0;
+    for (const s of turnSentences) {
+      const cleanS = s.trim().toLowerCase().replace(/[.!?]+$/, '');
+      if (priorFullLower.includes(cleanS)) {
+        duplicateSentences++;
+      }
+    }
+    const repetitionRatio = turnSentences.length > 0 ? (duplicateSentences / turnSentences.length) : 0;
+    const isLoopDetected = restartsFromBeginning || repetitionRatio > 0.40;
+
+    return { isLoopDetected, restartsFromBeginning, repetitionRatio };
+  }
+  if (typeof window !== 'undefined') {
+    window.checkAntiLoopCircuitBreaker = checkAntiLoopCircuitBreaker;
+  }
+
+  // Length, Page & Chapter Directive Recognition Regex (matches /\b(\d+)\s*(?:page|chapter|section)\b/i as well as hyphens, plurals, typos, and parts)
+  const PAGE_CHAPTER_DIRECTIVE_REGEX = /\b(\d+)\s*[-_]?\s*(?:page|pge|paige|chapter|chapt|chap|section|part)s?\b/i;
   const PAGE_CHAPTER_DIRECTIVE_REGEX_STRICT = /\b(\d+)\s*(?:page|chapter|section)\b/i;
   window.PAGE_CHAPTER_DIRECTIVE_REGEX = PAGE_CHAPTER_DIRECTIVE_REGEX;
 
@@ -12014,7 +12221,7 @@ MANDATORY STYLOMETRIC LAWS:
       taskType = 'code';
     } else if (/^(@agent\s+(search|web-agent|search-index|arxiv|deep research)|\/(search|arxiv|research))\b/i.test(text) || /\b(search the (?:web|internet)|latest news|arXiv paper|pre-?print)\b/i.test(text)) {
       taskType = 'research';
-    } else if (isLongForm || targetPages > 0 || targetChapters > 0 || /\b(write|draft|compose|author|essay|story|novel|poem|chapter|article|blog post|script|dialogue|prose|fiction)\b/i.test(text)) {
+    } else if (isLongForm || targetPages > 0 || targetChapters > 0 || /\b(write|draft|compose|author|essay|eaast|esssay|esay|story|storee|novel|poem|chapter|article|artcle|artical|blog post|script|dialogue|prose|fiction)\b/i.test(text)) {
       taskType = 'writing';
     }
 
@@ -12029,6 +12236,13 @@ MANDATORY STYLOMETRIC LAWS:
     };
   }
   window.parseRegexIntention = parseRegexIntention;
+
+  function detectPromptIntention(prompt = '', options = {}) {
+    return parseRegexIntention(prompt, options);
+  }
+  if (typeof window !== 'undefined') {
+    window.detectPromptIntention = detectPromptIntention;
+  }
 
   const intentCache = new Map();
   window.intentCache = intentCache;
@@ -12336,10 +12550,14 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
     const isFusionMode = modelToUse === 'modelfusion_auto' || modelToUse === 'fast_fusion' || modelToUse === 'deep_reasoning';
     let resolvedOllamaModel = 'qwen2.5:7b';
     const bestInstalled = pickBestInstalledOllamaModel(availableOllamaModels);
-    const sweetSpot = getCalibratedHardwareSweetSpot();
-    const companion = getCalibratedHardwareCompanion(sweetSpot);
+    const taskAdaptive = resolveTaskAdaptiveSweetSpot(intention.taskType, intention, availableOllamaModels);
+    const sweetSpot = taskAdaptive.primary;
+    const companion = taskAdaptive.companion;
 
-    if (activeOllamaModel && activeOllamaModel !== 'modelfusion_auto' && activeOllamaModel !== 'fast_fusion' && activeOllamaModel !== 'deep_reasoning') {
+    if (intention && (intention.isLongForm || intention.targetPages > 1 || intention.targetChapters > 1 || (options && options.outlinePlan))) {
+      // Long-form narrative always engages task-adaptive calibrated sweet spot
+      resolvedOllamaModel = sweetSpot;
+    } else if (activeOllamaModel && activeOllamaModel !== 'modelfusion_auto' && activeOllamaModel !== 'fast_fusion' && activeOllamaModel !== 'deep_reasoning') {
       resolvedOllamaModel = activeOllamaModel;
     } else if (modelToUse === 'deep_reasoning') {
       resolvedOllamaModel = 'qwen2.5:32b';
@@ -12348,7 +12566,7 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
     } else if (modelToUse === 'modelfusion_auto') {
       resolvedOllamaModel = sweetSpot;
     } else {
-      resolvedOllamaModel = bestInstalled || cachedHardwareModel || (activeOllamaModel !== 'modelfusion_auto' ? activeOllamaModel : null) || 'qwen2.5:7b';
+      resolvedOllamaModel = sweetSpot || bestInstalled || cachedHardwareModel || (activeOllamaModel !== 'modelfusion_auto' ? activeOllamaModel : null) || 'qwen2.5:7b';
     }
 
     // Strict guarantee: NEVER let resolvedOllamaModel be 'modelfusion_auto' or empty
@@ -12364,10 +12582,38 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
       resolvedOllamaModel = selectedVisionModel;
     }
 
+    // Long-Form Writing & Approved Outlines: Always enforce multi-model calibrated fusion tier, never lightweight fallback
+    if (intention && (intention.isLongForm || intention.targetPages > 1 || intention.targetChapters > 1 || (options && options.outlinePlan))) {
+      if (resolvedOllamaModel.includes(':1.5b') || resolvedOllamaModel.includes(':1b') || resolvedOllamaModel.includes(':0.5b')) {
+        const higherTier = (availableOllamaModels || []).find(m => m.includes(':7b') || m.includes(':8b') || m.includes(':14b') || m.includes(':32b'));
+        if (higherTier) {
+          resolvedOllamaModel = higherTier;
+          termLog(`[FUSION] 🔮 Elevated narrative model to calibrated fusion tier: ${resolvedOllamaModel}`, 'sys');
+        }
+      }
+    }
+
     let authorDisplayTitle = 'HugOS AI';
     let authorDisplaySub = `(${modelToUse}${hasImages ? ' • Vision' : ''})`;
 
-    if (options && options.panel && options.panel.id === 'humanize') {
+    if (intention && (intention.isLongForm || intention.targetPages > 1 || intention.targetChapters > 1 || (options && options.outlinePlan))) {
+      authorDisplayTitle = 'ModelFusion Narrative Author';
+      authorDisplaySub = '(Multi-Model Prose Fusion • Primary Drafter + Pacing Verifier)';
+      if (typeof termLogFusion === 'function') {
+        const narrativePanel = {
+          name: 'Long-Form Narrative Prose Fusion',
+          arbiter: 'Sequential Chapter Expansion & Pacing Arbiter',
+          specialists: [
+            '🔹 Primary Drafter: Deep Prose Synthesis',
+            '🔹 Fact-Checking & Pacing Verifier',
+            '🔹 Sequential Chapter Expansion Engine'
+          ],
+          task: 'narrative-writing'
+        };
+        termLogFusion(narrativePanel);
+      }
+      termLog('[FUSION] 🔮 Multi-Model Long-Form Narrative Fusion Active: Primary Drafter + Fact-Checking & Pacing Verifier + Sequential Chapter Expansion Engine', 'success');
+    } else if (options && options.panel && options.panel.id === 'humanize') {
       authorDisplayTitle = 'HugOS Humanizer';
       authorDisplaySub = `(✍️ Anti-AI Stylometry • Non-AI Prose • ${modelToUse})`;
     } else if (options && options.panel && options.panel.id === 'translate') {
@@ -12381,7 +12627,7 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
       authorDisplaySub = `(🚀 Deep Reasoning Boost • ${modelToUse})`;
     } else if (modelToUse === 'modelfusion_auto') {
       authorDisplayTitle = 'ModelFusion Auto';
-      authorDisplaySub = `(Sweet Spot: ${sweetSpot} + ${companion})`;
+      authorDisplaySub = `(Sweet Spot: ${sweetSpot} • Domain: ${taskAdaptive.domain} + Companion: ${companion})`;
     } else if (isFusionMode) {
       authorDisplayTitle = 'ModelFusion AI';
       if (modelToUse === 'fast_fusion') {
@@ -12393,7 +12639,8 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
       }
     }
 
-    const authorIcon = (options && options.panel && options.panel.id === 'humanize') ? '✍️'
+    const authorIcon = (intention && (intention.isLongForm || intention.targetPages > 1 || intention.targetChapters > 1 || (options && options.outlinePlan))) ? '🖋️'
+      : (options && options.panel && options.panel.id === 'humanize') ? '✍️'
       : (options && options.panel && options.panel.id === 'translate') ? '🌐'
       : (options && options.panel && options.panel.id === 'style-transfer') ? '🎨'
       : (isFusionMode ? '✨' : '🌐');
@@ -12456,9 +12703,16 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
 
 
 
+    let initialUserContent = userPrompt;
+    if (intention && intention.targetPages > 1 && !(options && options.isContinuation)) {
+      initialUserContent = `${userPrompt}\n\n[EXECUTION INSTRUCTION]: This is an in-depth ${intention.targetPages}-page document. In this first turn, write ONLY Page 1 in full, immersive, publication-grade depth (at least 500-600 words for Page 1 alone). Clearly label it '### Page 1: [Title]'. Do NOT skip ahead or summarize subsequent pages; develop Page 1 thoroughly with multiple rich paragraphs.`;
+    } else if (intention && intention.targetChapters > 1 && !(options && options.isContinuation)) {
+      initialUserContent = `${userPrompt}\n\n[EXECUTION INSTRUCTION]: This is an in-depth ${intention.targetChapters}-chapter document. In this first turn, write ONLY Chapter 1 in full, immersive, publication-grade depth (at least 600-800 words for Chapter 1 alone). Clearly label it '### Chapter 1: [Title]'. Do NOT skip ahead or summarize subsequent chapters; develop Chapter 1 thoroughly.`;
+    }
+
     const messagePayload = {
       role: 'user',
-      content: userPrompt
+      content: initialUserContent
     };
     if (hasImages) {
       if (selectedVisionModel) {
@@ -12607,9 +12861,15 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
       const isAgenticLoop = isGoalDirective && currentSettings.agenticLoopEnabled !== false;
       const targetTokens = (options && typeof options.maxTokens === 'number' && options.maxTokens > 0)
         ? options.maxTokens
-        : (isAgenticLoop ? Math.max(maxTokensToUse, 32768) : maxTokensToUse);
+        : Math.max(
+            isAgenticLoop ? 32768 : maxTokensToUse,
+            Math.ceil((intention && intention.targetPages > 0 ? intention.targetPages : 1) * 700),
+            Math.ceil((intention && intention.targetWords > 0 ? intention.targetWords : 0) * 1.4)
+          );
       const chunkSize = currentSettings.agenticChunkSize || (targetTokens >= 65536 ? 8192 : Math.min(targetTokens, 8192));
-      const maxLoops = isAgenticLoop ? (options && options.maxLoops ? options.maxLoops : Math.min(64, Math.ceil(targetTokens / chunkSize))) : 1;
+      const maxLoops = isAgenticLoop
+        ? (options && options.maxLoops ? options.maxLoops : Math.max(16, Math.min(2048, Math.max(Math.ceil(targetTokens / chunkSize), (intention && intention.targetPages ? intention.targetPages : 1) + 5))))
+        : 1;
 
       // Accurately compute prompt token estimate across all assembled messages including initialText
       const totalCharsInPrompt = conversationMessages.reduce((sum, m) => sum + (m.content ? m.content.length : 0), 0);
@@ -12648,6 +12908,8 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
       let totalEstimatedTokens = fullResponse ? Math.max(1, Math.round(fullResponse.length / 4)) : 0;
 
       for (let turn = 0; turn < maxLoops; turn++) {
+        const fullResponseBeforeTurn = fullResponse;
+        turnResponse = '';
         if (isAgenticLoop && agenticBadge) {
           agenticBadge.innerHTML = `🔄 Agentic Loop: Turn ${turn + 1}/${maxLoops} • ~${Math.round(totalEstimatedTokens).toLocaleString()} / ${targetTokens.toLocaleString()} tokens`;
         }
@@ -13339,6 +13601,23 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
           }
         }
 
+        const trailingWordCountRegex = /(?:\r?\n\s*)*\*{0,2}(?:Word\s+count|Tokens?|Character\s+count):\s*[\d,]+[\s\w]*\*{0,2}\s*$/i;
+        const cleanTurnResponse = turnResponse.replace(trailingWordCountRegex, '').trimEnd();
+        fullResponse = fullResponse.replace(trailingWordCountRegex, '').trimEnd();
+
+        // Anti-Loop Circuit Breaker: Detect if this turn is repeating previously written pages/chapters or paragraphs
+        if (turn > 0 && cleanTurnResponse) {
+          const loopCheck = checkAntiLoopCircuitBreaker(fullResponseBeforeTurn, cleanTurnResponse);
+          if (loopCheck.isLoopDetected) {
+            termLog(`[AGENTIC LOOP] ⚠️ Repetitive generation loop detected (Turn ${turn + 1} repeats earlier pages/sentences, ratio: ${(loopCheck.repetitionRatio * 100).toFixed(0)}%). Halting loop to preserve clean document.`, 'warn');
+            fullResponse = fullResponseBeforeTurn; // Revert duplicate turn output
+            if (responseLine) {
+              responseLine.textContent = fullResponse;
+            }
+            break;
+          }
+        }
+
         // Check continuation condition for next turn in agentic loop
         if (!isAgenticLoop || turn + 1 >= maxLoops) {
           break;
@@ -13363,36 +13642,50 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
         const pageHeaderMatches = textToCheckForLength.match(/(?:^|\n)\s*#{1,4}\s*(?:Page|Chapter)\s+\d+|(?:^|\n)\s*\*{1,2}(?:Page|Chapter)\s+\d+[:\*]|\bPage\s+\d+:/gi) || [];
         const pageHeadersCount = pageHeaderMatches.length;
         const currentWordCount = textToCheckForLength.split(/\s+/).filter(Boolean).length;
+
+        const pageNums = Array.from(textToCheckForLength.matchAll(/\b(?:Page|Chapter)\s+(\d+)\b/gi), m => parseInt(m[1], 10));
+        const maxPageReached = pageNums.length > 0 ? Math.max(...pageNums) : 0;
+        const hasReachedTargetPages = Boolean(
+          (intention.targetPages > 1 && (maxPageReached >= intention.targetPages || pageHeadersCount >= intention.targetPages)) ||
+          (intention.targetChapters > 1 && (maxPageReached >= intention.targetChapters || pageHeadersCount >= intention.targetChapters))
+        );
+        const hasConclusion = /\b(?:Conclusion|Epilogue|Summary|In conclusion|To conclude)\b/i.test(turnResponse) ||
+                              /\b(?:Page|Chapter)\s+\d+:\s*Conclusion\b/i.test(turnResponse);
+
         const isUnderTargetLength = Boolean(
           intention && (
-            (intention.targetPages > 1 && pageHeadersCount < intention.targetPages) ||
-            (intention.targetChapters > 1 && pageHeadersCount < intention.targetChapters) ||
-            (intention.targetWords >= 1500 && currentWordCount < intention.targetWords * 0.75)
+            (!hasReachedTargetPages && intention.targetPages > 1 && maxPageReached < intention.targetPages) ||
+            (!hasReachedTargetPages && intention.targetChapters > 1 && maxPageReached < intention.targetChapters) ||
+            (intention.targetPages <= 1 && intention.targetChapters <= 1 && intention.targetWords >= 1500 && currentWordCount < intention.targetWords * 0.75)
           )
         );
 
-        const shouldContinue = (wasCutOff || isUnderTargetLength) && !isApology;
+        const shouldContinue = (wasCutOff || isUnderTargetLength) && !isApology && !hasReachedTargetPages;
 
         if (!shouldContinue) {
           termLog(`[AGENTIC LOOP] Output generation reached natural completion (${Math.round(totalEstimatedTokens).toLocaleString()} tokens, ${currentWordCount} words).`, 'info');
           break;
         }
 
-        const trailingWordCountRegex = /(?:\r?\n\s*)*\*{0,2}(?:Word\s+count|Tokens?|Character\s+count):\s*[\d,]+[\s\w]*\*{0,2}\s*$/i;
-        const cleanTurnResponse = turnResponse.replace(trailingWordCountRegex, '').trimEnd();
-        fullResponse = fullResponse.replace(trailingWordCountRegex, '').trimEnd();
-
         conversationMessages.push({ role: 'assistant', content: cleanTurnResponse });
         const curTurn = turn + 1;
         let continuationPrompt;
         if (hasUnclosedCodeBlock) {
           continuationPrompt = `Continue writing the code seamlessly from where you stopped. Do not repeat code already written or output pleasantries.`;
-        } else if (isUnderTargetLength && intention && intention.targetPages > 1 && pageHeadersCount < intention.targetPages) {
-          const nextPageIndex = pageHeadersCount + 1;
-          continuationPrompt = `Continue writing the document seamlessly from where you stopped. You must write Page ${nextPageIndex} through Page ${intention.targetPages} in full detail with at least 500 words per page. Do not repeat text already written or output pleasantries. Begin Page ${nextPageIndex} immediately:`;
-        } else if (isUnderTargetLength && intention && intention.targetChapters > 1 && pageHeadersCount < intention.targetChapters) {
-          const nextChapIndex = pageHeadersCount + 1;
-          continuationPrompt = `Continue writing the document seamlessly from where you stopped. You must write Chapter ${nextChapIndex} through Chapter ${intention.targetChapters} in full detail. Do not repeat text already written or output pleasantries. Begin Chapter ${nextChapIndex} immediately:`;
+        } else if (isUnderTargetLength && intention && intention.targetPages > 1 && maxPageReached < intention.targetPages) {
+          const nextPageIndex = maxPageReached + 1;
+          if (nextPageIndex < intention.targetPages) {
+            continuationPrompt = `Continue writing the manuscript seamlessly starting with Page ${nextPageIndex} of ${intention.targetPages} (at least 500 substantive words per page). Detail: Write Page ${nextPageIndex} through Page ${Math.min(nextPageIndex + 1, intention.targetPages)}. Do not repeat earlier text or emit conversational pleasantries. Begin Page ${nextPageIndex} immediately:`;
+          } else {
+            continuationPrompt = `Continue writing the manuscript seamlessly starting with Page ${intention.targetPages} of ${intention.targetPages} (Conclusion & Final Synthesis, at least 500 substantive words). Clearly label it '### Page ${intention.targetPages}: [Title]'. Bring the entire work to a definitive conclusion. Do not repeat earlier text or emit pleasantries. Begin Page ${intention.targetPages} immediately:`;
+          }
+        } else if (isUnderTargetLength && intention && intention.targetChapters > 1 && maxPageReached < intention.targetChapters) {
+          const nextChapIndex = maxPageReached + 1;
+          if (nextChapIndex < intention.targetChapters) {
+            continuationPrompt = `Continue writing the document seamlessly from where you stopped. You must write Chapter ${nextChapIndex} in full detail with at least 600-800 words for Chapter ${nextChapIndex} alone. Clearly label it '### Chapter ${nextChapIndex}: [Title]'. Do not repeat Chapter 1 through ${maxPageReached} or output pleasantries. Begin Chapter ${nextChapIndex} immediately:`;
+          } else {
+            continuationPrompt = `Continue writing the document seamlessly from where you stopped. You must write Chapter ${intention.targetChapters} (Conclusion & Climax) in full detail. Clearly label it '### Chapter ${intention.targetChapters}: [Title]'. Bring the work to a definitive conclusion. Do not repeat earlier chapters. Begin Chapter ${intention.targetChapters} immediately:`;
+          }
         } else {
           continuationPrompt = `Continue seamlessly from where you stopped. Do not repeat text already written or output pleasantries.`;
         }
@@ -13408,9 +13701,22 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
         termLog(`[AGENTIC LOOP] 🔄 Turn ${curTurn}/${maxLoops} completed (~${Math.round(totalEstimatedTokens).toLocaleString()} tokens). Chaining next expansion turn...`, 'info');
       }
 
+      const finalWords = fullResponse.split(/\s+/).filter(Boolean).length;
+      const finalPageNums = Array.from(fullResponse.matchAll(/\b(?:Page|Chapter)\s+(\d+)\b/gi), m => parseInt(m[1], 10));
+      const finalMaxPage = finalPageNums.length > 0 ? Math.max(...finalPageNums) : 0;
+      const finalPageHeaders = (fullResponse.match(/(?:^|\n)\s*#{1,4}\s*(?:Page|Chapter)\s+\d+|(?:^|\n)\s*\*{1,2}(?:Page|Chapter)\s+\d+[:\*]|\bPage\s+\d+:/gi) || []).length;
+      const reportedUnits = Math.max(finalMaxPage, finalPageHeaders, 1);
+
       if (isAgenticLoop && agenticBadge) {
         agenticBadge.className = 'agentic-loop-badge complete';
-        agenticBadge.innerHTML = `✅ Agentic Loop: Complete (${conversationMessages.length > 2 ? Math.floor(conversationMessages.length / 2) : 1} turns • ~${Math.round(totalEstimatedTokens).toLocaleString()} tokens)`;
+        if (intention && intention.targetPages > 1) {
+          agenticBadge.innerHTML = `✅ Agentic Loop: Complete (${reportedUnits} pages • ${finalWords.toLocaleString()} verified words)`;
+        } else if (intention && intention.targetChapters > 1) {
+          agenticBadge.innerHTML = `✅ Agentic Loop: Complete (${reportedUnits} chapters • ${finalWords.toLocaleString()} verified words)`;
+        } else {
+          const turnsDone = conversationMessages.length > 2 ? Math.floor(conversationMessages.length / 2) : 1;
+          agenticBadge.innerHTML = `✅ Agentic Loop: Complete (${turnsDone} turns • ${finalWords.toLocaleString()} verified words)`;
+        }
       }
       if (statusCtrl) {
         statusCtrl.stop();
@@ -13422,8 +13728,14 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
           fullResponse = options.transformFinalText(fullResponse);
         } catch (_) {}
       }
+
+      // Clean Output Deduplication: ensure each Page X or Chapter X only appears once
+      fullResponse = deduplicatePages(fullResponse);
+
       if (fullResponse && typeof fullResponse === 'string') {
         fullResponse = fullResponse
+          .replace(/(?:^|\n)\s*(?:Note|Summary|Disclaimer)?[:\s*]*(?:Each|Every)\s+(?:page|chapter|section)\s+(?:is substantive|contains|averages|consists of|has been written with)\s+.*?(?:500|600|words).*?(?:\n|$)/gi, '\n')
+          .replace(/(?:^|\n)\s*\*{0,2}(?:Note|Word count summary):?\s*.*?(?:500|600|words).*?\*{0,2}\s*(?:\n|$)/gi, '\n')
           .replace(/(?:^|\n)[^\n]*(?:aligns with best practices in web development|In summary, the key steps to continue generating the response would be:)[^\n]*(?:\n|$)/gi, '\n')
           .replace(/\b(?:aligns with best practices in web development|In summary, the key steps to continue generating the response would be:)\b/gi, '')
           .trim();
@@ -26736,7 +27048,7 @@ Instructions:
       assistantBubble.innerHTML = `
         <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: #38bdf8; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
           <span>💻</span> <span>ModelFusion Coding Specialist</span>
-          <span style="font-size: 9.5px; opacity: 0.8; font-family: var(--mono-font);">(Multi-Model Code Fusion • Primary Coder + Verifier Gate)</span>
+          <span style="font-size: 9.5px; opacity: 0.8; font-family: var(--mono-font);">(Multi-Model Code Fusion • Primary Coder + Verifier Gate + Python Sandbox)</span>
         </div>
         <div class="bubble-content">
           <div class="research-status-bar">
