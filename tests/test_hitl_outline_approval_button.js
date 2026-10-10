@@ -279,6 +279,7 @@ assert.ok(mockSandboxWindow.activeOutline.chapters.length >= 3, 'customizeOutlin
 console.log('  ✅ Step 8: customizeOutlineAction successfully adds chapter when confirmed.');
 
 // Step 9: Fault-Injected confirmOutlineAction
+mockSandboxWindow.isGenerating = true;
 let throwConfirmOnce = true;
 const gateConfirmRef = elements['outline-hitl-safety-gate'];
 Object.defineProperty(gateConfirmRef, 'innerHTML', {
@@ -305,11 +306,13 @@ Object.defineProperty(gateConfirmRef, 'innerHTML', {
   configurable: true
 });
 
+assert.strictEqual(mockSandboxWindow.isGenerating, false, 'must reset isGenerating on error');
 assert.ok(elements['outline-hitl-safety-gate'].innerHTML.includes('hitl-error-banner'), 'Gate must render .hitl-error-banner upon exception');
 assert.ok(elements['outline-hitl-safety-gate'].innerHTML.includes('Simulated confirm gate failure'), 'Error banner must contain fault reason');
 console.log('  ✅ Step 9: Fault-injected confirmOutlineAction caught cleanly and rendered .hitl-error-banner.');
 
 // Step 10: Fault-Injected abortOutlineAction
+mockSandboxWindow.isGenerating = true;
 let throwOnce = true;
 const gateElRef = elements['outline-hitl-safety-gate'];
 Object.defineProperty(gateElRef, 'innerHTML', {
@@ -334,6 +337,7 @@ Object.defineProperty(gateElRef, 'innerHTML', {
   writable: true,
   configurable: true
 });
+assert.strictEqual(mockSandboxWindow.isGenerating, false, 'must reset isGenerating on error');
 assert.ok(elements['outline-hitl-safety-gate'].innerHTML.includes('hitl-error-banner'), 'Gate must render .hitl-error-banner on abort failure');
 console.log('  ✅ Step 10: Fault-injected abortOutlineAction caught cleanly and rendered .hitl-error-banner.');
 
@@ -367,5 +371,99 @@ const unhandledFound = capturedLogs.some(log => log.type === 'error' && log.msg.
 assert.ok(unhandledFound, 'unhandledrejection listener must route formatted error to termLog with type error');
 console.log('  ✅ Step 13: unhandledrejection listener successfully captures rejections and routes to termLog.');
 
-console.log('\n🎉 ALL 8 COMPREHENSIVE OUTLINE HITL, ERROR BOUNDARIES & PORT CONFLICT TESTS PASSED! 🛡️🚀\n');
+// Test 9: Adversarial Thrown Value Matrix (5-Type Coverage across Handlers)
+console.log('\nTest 9: Adversarial Thrown Value Matrix (5-Type Coverage across Handlers)...');
+
+// Verify extractErrorMessage helper directly
+assert.strictEqual(typeof mockSandboxWindow.extractErrorMessage, 'function', 'extractErrorMessage must be globally available');
+assert.strictEqual(mockSandboxWindow.extractErrorMessage(new Error('matrix error')), 'matrix error');
+assert.strictEqual(mockSandboxWindow.extractErrorMessage('matrix string error'), 'matrix string error');
+assert.strictEqual(mockSandboxWindow.extractErrorMessage({ error: 'matrix obj', code: 500 }), '{"error":"matrix obj","code":500}');
+assert.strictEqual(mockSandboxWindow.extractErrorMessage(null), 'null');
+assert.strictEqual(mockSandboxWindow.extractErrorMessage(undefined), 'undefined');
+console.log('  ✅ Step 14: extractErrorMessage normalizes Error, string, object, null, and undefined correctly.');
+
+const thrownMatrix = [
+  { name: 'Standard Error object', val: new Error('Simulated matrix Error object') },
+  { name: 'Primitive string', val: 'Simulated matrix string error' },
+  { name: 'Plain object', val: { code: 500, detail: 'Simulated matrix plain object' } },
+  { name: 'null', val: null },
+  { name: 'undefined', val: undefined }
+];
+
+for (const item of thrownMatrix) {
+  // Test confirmOutlineAction with thrown vector
+  mockSandboxWindow.isGenerating = true;
+  let throwConfirm = true;
+  const gateRef = elements['outline-hitl-safety-gate'];
+  Object.defineProperty(gateRef, 'innerHTML', {
+    get() { return this._matrixHtml || ''; },
+    set(val) {
+      if (throwConfirm) {
+        throwConfirm = false;
+        throw item.val;
+      }
+      this._matrixHtml = val;
+    },
+    configurable: true
+  });
+
+  assert.doesNotThrow(() => {
+    mockSandboxWindow.confirmOutlineAction();
+  }, `confirmOutlineAction must not throw on ${item.name}`);
+
+  Object.defineProperty(gateRef, 'innerHTML', {
+    value: gateRef._matrixHtml || '',
+    writable: true,
+    configurable: true
+  });
+
+  assert.strictEqual(mockSandboxWindow.isGenerating, false, `confirmOutlineAction must unlock isGenerating on ${item.name}`);
+  assert.ok(elements['outline-hitl-safety-gate'].innerHTML.includes('hitl-error-banner'), `confirmOutlineAction must render error banner on ${item.name}`);
+
+  // Test abortOutlineAction with thrown vector
+  mockSandboxWindow.isGenerating = true;
+  let throwAbort = true;
+  Object.defineProperty(gateRef, 'innerHTML', {
+    get() { return this._matrixAbortHtml || ''; },
+    set(val) {
+      if (throwAbort) {
+        throwAbort = false;
+        throw item.val;
+      }
+      this._matrixAbortHtml = val;
+    },
+    configurable: true
+  });
+
+  assert.doesNotThrow(() => {
+    mockSandboxWindow.abortOutlineAction();
+  }, `abortOutlineAction must not throw on ${item.name}`);
+
+  Object.defineProperty(gateRef, 'innerHTML', {
+    value: gateRef._matrixAbortHtml || '',
+    writable: true,
+    configurable: true
+  });
+
+  assert.strictEqual(mockSandboxWindow.isGenerating, false, `abortOutlineAction must unlock isGenerating on ${item.name}`);
+  assert.ok(elements['outline-hitl-safety-gate'].innerHTML.includes('hitl-error-banner'), `abortOutlineAction must render error banner on ${item.name}`);
+
+  // Test customizeOutlineAction with thrown vector
+  mockSandboxWindow.confirm = () => { throw item.val; };
+  assert.doesNotThrow(() => {
+    mockSandboxWindow.customizeOutlineAction();
+  }, `customizeOutlineAction must not throw on ${item.name}`);
+  assert.ok(elements['outline-hitl-safety-gate'].innerHTML.includes('hitl-error-banner'), `customizeOutlineAction must render error banner on ${item.name}`);
+
+  // Verify that logged errors do NOT evaluate to "failed: undefined" when a string or object was thrown
+  if (item.name === 'Primitive string' || item.name === 'Plain object') {
+    const hasUndefinedError = capturedLogs.some(log => log.msg && log.msg.includes('failed: undefined'));
+    assert.strictEqual(hasUndefinedError, false, `Logged error must not evaluate to "failed: undefined" on ${item.name}`);
+  }
+}
+
+console.log('  ✅ Step 15: All 5 thrown value types (Error, string, object, null, undefined) safely handled across HITL handlers with 0 crashes.');
+
+console.log('\n🎉 ALL 9 COMPREHENSIVE OUTLINE HITL, ERROR BOUNDARIES & PORT CONFLICT TESTS PASSED! 🛡️🚀\n');
 process.exit(0);

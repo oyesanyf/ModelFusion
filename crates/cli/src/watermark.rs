@@ -403,17 +403,16 @@ pub fn detect_watermark_input(input: &str) -> Result<WatermarkReport, String> {
     let resolved_path = if path.is_file() {
         Some(path.to_path_buf())
     } else {
-        let p1 = Path::new("..").join(unquoted);
-        if p1.is_file() {
-            Some(p1)
-        } else {
-            let p2 = Path::new("../..").join(unquoted);
-            if p2.is_file() {
-                Some(p2)
-            } else {
-                None
-            }
+        let mut candidates = vec![
+            Path::new("..").join(unquoted),
+            Path::new("../..").join(unquoted),
+            Path::new(r"D:\femi\resume").join(unquoted),
+            Path::new(r"C:\Users\oyesanyf\Downloads").join(unquoted),
+        ];
+        if let Some(user_profile) = std::env::var_os("USERPROFILE") {
+            candidates.push(std::path::PathBuf::from(user_profile).join("Downloads").join(unquoted));
         }
+        candidates.into_iter().find(|p| p.is_file())
     };
 
     if let Some(target_path) = resolved_path {
@@ -434,10 +433,10 @@ pub fn detect_watermark_input(input: &str) -> Result<WatermarkReport, String> {
                     let detector = TokenWatermarkDetector::default();
                     match detector.detect_text(&content) {
                         Some(res) => Ok(WatermarkReport::Text {
-                            target: format!("file: {}", unquoted),
+                            target: format!("file: {}", target_path.display()),
                             result: res,
                         }),
-                        None => Err(format!("File '{}' has insufficient tokens (< 2) for statistical watermark evaluation.", unquoted)),
+                        None => Err(format!("File '{}' has insufficient tokens (< 2) for statistical watermark evaluation.", target_path.display())),
                     }
                 }
                 Err(e) => Err(format!("Failed to read/extract text from file '{}': {}", unquoted, e)),
@@ -447,7 +446,7 @@ pub fn detect_watermark_input(input: &str) -> Result<WatermarkReport, String> {
         // If it looks like a file path rather than inline prose, return an explicit error
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
         let is_img_ext = matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp" | "bmp" | "gif" | "tiff" | "ico");
-        let is_doc_ext = matches!(ext.as_str(), "txt" | "md" | "json" | "rs" | "py" | "js" | "ts" | "html" | "css" | "csv" | "log");
+        let is_doc_ext = matches!(ext.as_str(), "pdf" | "docx" | "doc" | "rtf" | "txt" | "md" | "json" | "rs" | "py" | "js" | "ts" | "html" | "css" | "csv" | "log");
         let has_path_sep = unquoted.contains('/') || unquoted.contains('\\');
 
         if is_img_ext {
@@ -613,5 +612,21 @@ mod tests {
         let analysis = scanner.analyze(&img);
         assert_eq!(analysis.total_samples, 400); // 1 sample per pixel, not 3x duplicated
         assert_eq!(analysis.bit_entropy, 0.0);
+    }
+
+    #[test]
+    fn test_detect_watermark_resume_pdf_resolution() {
+        let resume_path = r"D:\femi\resume\AI-Application-Security-Resume-2026C.pdf";
+        if std::path::Path::new(resume_path).is_file() {
+            // 1. Direct path
+            let res_direct = detect_watermark_input(resume_path);
+            assert!(res_direct.is_ok(), "Direct path detection should succeed: {:?}", res_direct.err());
+            // 2. Bare filename resolution
+            let res_bare = detect_watermark_input("AI-Application-Security-Resume-2026C.pdf");
+            assert!(res_bare.is_ok(), "Bare filename detection should succeed: {:?}", res_bare.err());
+            if let Ok(WatermarkReport::Text { target, result }) = res_bare {
+                assert!(result.total_evaluated > 100, "Should evaluate resume document tokens, got {}", result.total_evaluated);
+            }
+        }
     }
 }

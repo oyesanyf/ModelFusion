@@ -10340,7 +10340,24 @@ pub fn sanitize_and_deduplicate_url(raw: &str) -> String {
     }
     s = s.trim().to_string();
 
-    // 1. Detect multiple "http://" or "https://" schemes concatenated together
+    // 1. Fix duplicated protocol prefixes
+    while s.starts_with("https://https://")
+        || s.starts_with("http://http://")
+        || s.starts_with("https://http://")
+        || s.starts_with("http://https://")
+    {
+        if s.starts_with("https://https://") {
+            s = s.replacen("https://https://", "https://", 1);
+        } else if s.starts_with("http://http://") {
+            s = s.replacen("http://http://", "http://", 1);
+        } else if s.starts_with("https://http://") {
+            s = s.replacen("https://http://", "https://", 1);
+        } else if s.starts_with("http://https://") {
+            s = s.replacen("http://https://", "https://", 1);
+        }
+    }
+
+    // 2. Detect multiple "http://" or "https://" schemes concatenated together
     // e.g. "https://example.com/testhttps://example.com/test"
     let lower = s.to_lowercase();
     let second_scheme_pos = lower[1..].find("http://").or_else(|| lower[1..].find("https://"));
@@ -10349,22 +10366,13 @@ pub fn sanitize_and_deduplicate_url(raw: &str) -> String {
         s = s[..actual_pos].trim().to_string();
     }
 
-    // 2. Detect exact repetition of the entire string without duplicate scheme (e.g. len is even and half1 == half2)
+    // 3. Detect exact repetition of the entire string without duplicate scheme (e.g. len is even and half1 == half2)
     let len = s.len();
     if len > 8 && len % 2 == 0 {
         let half = len / 2;
         if s[..half] == s[half..] {
             s = s[..half].to_string();
         }
-    }
-
-    // 3. Fix duplicated protocol prefixes
-    if s.starts_with("https://https://") {
-        s = s.replacen("https://https://", "https://", 1);
-    } else if s.starts_with("http://http://") {
-        s = s.replacen("http://http://", "http://", 1);
-    } else if s.starts_with("https://http://") {
-        s = s.replacen("https://http://", "https://", 1);
     }
 
     // 4. Ensure proper scheme
