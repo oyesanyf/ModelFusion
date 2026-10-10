@@ -345,11 +345,11 @@ console.log(`  ✅ Tools badge dynamically evaluated to: ${badgeNum} capabilitie
 console.log(`  ✅ Toggle button title: "${env.toggleBtn.title}"`);
 
 // ============================================================================
-// PART 4: All 15 Tool Categories and 108 Sub-items Verification
+// PART 4: All 16 Tool Categories and 109 Sub-items Verification
 // ============================================================================
 console.log('\n--- Part 4: Category and Sub-item Inspection across DOM ---');
-assert.strictEqual(env.categoryHeaders.length, 15, `Expected 15 category headers, found ${env.categoryHeaders.length}`);
-console.log(`  ✓ Exactly 15 category headers verified in DOM`);
+assert.strictEqual(env.categoryHeaders.length, 16, `Expected 16 category headers, found ${env.categoryHeaders.length}`);
+console.log(`  ✓ Exactly 16 category headers verified in DOM`);
 
 // Bind category click toggle handler
 env.categoryHeaders.forEach((catHeader) => {
@@ -366,7 +366,7 @@ env.categoryHeaders.forEach((catHeader) => {
   });
 });
 
-// Test each of the 15 categories expands and collapses
+// Test each of the 16 categories expands and collapses
 for (let i = 0; i < env.categoryHeaders.length; i++) {
   const catHeader = env.categoryHeaders[i];
   const catContent = env.categoryContents[i];
@@ -381,7 +381,7 @@ for (let i = 0; i < env.categoryHeaders.length; i++) {
   assert.strictEqual(catContent.classList.contains('collapsed'), true, `Category ${i} should re-collapse on click`);
   assert.strictEqual(catChevron.textContent, '▸', `Category ${i} chevron should be ▸`);
 }
-console.log(`  ✅ All 15 category accordion panels expand and collapse cleanly`);
+console.log(`  ✅ All 16 category accordion panels expand and collapse cleanly`);
 
 assert.strictEqual(env.toolButtons.length, 109, `Expected exactly 109 tool items, found ${env.toolButtons.length}`);
 console.log(`  ✅ All 109 tool items confirmed present in DOM`);

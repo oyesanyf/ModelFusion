@@ -27,9 +27,8 @@ assert.ok(fs.existsSync(htmlPath), 'index.html must exist');
 const htmlContent = fs.readFileSync(htmlPath, 'utf8');
 
 assert.ok(htmlContent.includes('Classification &amp; Taxonomy</span>') && htmlContent.includes('Sentiment &amp; Content Moderation</span>'), 'Classification and Sentiment menus must be separated');
-assert.ok(htmlContent.includes('class="finance-domain-tabs domain-filter-tabs"'), 'Finance tabs must use domain-filter-tabs');
-assert.ok(htmlContent.includes('class="legal-domain-tabs domain-filter-tabs"'), 'Legal tabs must use domain-filter-tabs');
-assert.ok(htmlContent.includes('class="science-domain-tabs domain-filter-tabs"'), 'Science tabs must use domain-filter-tabs');
+assert.ok(htmlContent.includes('Compliance</span>') && htmlContent.includes('Legal</span>'), 'Compliance and Legal menus must be separated in strict A-Z order');
+assert.ok(!htmlContent.includes('domain-filter-tabs'), 'All domain filter tabs must be eliminated for single flat submenus');
 
 // Check that breadcrumb bar starts hidden to prevent duplicate buttons in dashboard mode
 assert.ok(htmlContent.includes('id="header-breadcrumb-bar" style="display: none;"'), '#header-breadcrumb-bar must start with style="display: none;"');

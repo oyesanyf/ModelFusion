@@ -1512,44 +1512,55 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  background: var(--bg-primary);
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 50;
+  padding: 24px;
 }
 
 .fallback-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 32px 40px;
-  max-width: 460px;
+  background: #1e293b;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+  border-radius: 16px;
+  padding: 36px 44px;
+  max-width: 520px;
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
 .fallback-icon {
-  font-size: 40px;
+  font-size: 44px;
+  line-height: 1;
 }
 
 .fallback-card h3 {
-  font-size: 16px;
-  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 600;
+  color: #f8fafc;
+  margin: 0;
 }
 
 .fallback-card p {
-  font-size: 12.5px;
-  color: var(--text-secondary);
-  line-height: 1.5;
+  font-size: 13.5px;
+  color: #cbd5e1;
+  line-height: 1.6;
+  margin: 0;
 }
 
 .fallback-buttons {
   display: flex;
   gap: 10px;
   margin-top: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 /* -------------------------------------------------------------

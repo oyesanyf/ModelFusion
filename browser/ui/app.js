@@ -10671,32 +10671,6 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
       frameFallback.classList.remove('hidden');
     };
 
-    try {
-      if (frameSrc !== currentNavUrl) {
-        if (window.isIpcOnline === false || window.isServerProxyOnline === false) {
-          if (isBlocking) {
-            browserFrame.src = 'about:blank';
-            frameFallback.classList.remove('hidden');
-          } else {
-            browserFrame.src = currentNavUrl;
-          }
-        } else {
-          browserFrame.src = frameSrc;
-        }
-      } else {
-        if (isBlocking && (window.isIpcOnline === false || window.isServerProxyOnline === false)) {
-          browserFrame.src = 'about:blank';
-          frameFallback.classList.remove('hidden');
-        } else {
-          browserFrame.src = frameSrc;
-        }
-      }
-    } catch (e) {
-      termLog(`Direct iframe error: ${e.message}`, 'warn');
-      browserFrame.src = 'about:blank';
-      frameFallback.classList.remove('hidden');
-    }
-
     // Set fallback timeout if frame fails to load due to X-Frame-Options
     const checkTimeout = setTimeout(() => {
       try {
@@ -10711,6 +10685,11 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
 
     browserFrame.onload = () => {
       clearTimeout(checkTimeout);
+      const currentSrc = (browserFrame.src || '').trim();
+      // If iframe loaded about:blank or if fallback is currently visible, DO NOT hide the fallback card!
+      if (!currentSrc || currentSrc === 'about:blank' || currentSrc.endsWith('about:blank') || !frameFallback.classList.contains('hidden')) {
+        return;
+      }
       if (browserFrame.src && browserFrame.src.includes('/api/proxy')) {
         if (window.isServerProxyOnline === false) {
           termLog(`⚠️ ModelFusion proxy offline on load. Failing over to direct fallback for ${currentNavUrl}`, 'warn');
