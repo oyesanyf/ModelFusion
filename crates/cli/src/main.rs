@@ -13236,6 +13236,159 @@ public class ShortcutHelper {
                 return;
             }
 
+            // ── Universal Sandbox Code Execution Endpoint (/api/code/run & /code/run) ──
+            if request_path == "/api/code/run" || request_path == "/code/run" {
+                let mut language = String::new();
+                let mut code = String::new();
+
+                if let Some(pos) = raw_request_uri.find('?') {
+                    let query_str = &raw_request_uri[pos + 1..];
+                    for pair in query_str.split('&') {
+                        if let Some((k, v)) = pair.split_once('=') {
+                            let k_dec = url_decode_simple(k).to_lowercase();
+                            if k_dec == "lang" || k_dec == "language" {
+                                language = url_decode_simple(v).trim().to_lowercase();
+                            } else if k_dec == "code" || k_dec == "script" || k_dec == "src" {
+                                code = url_decode_simple(v);
+                            }
+                        }
+                    }
+                }
+
+                if language.is_empty() {
+                    language = request_json.get("language")
+                        .or_else(|| request_json.get("lang"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("python")
+                        .to_lowercase();
+                }
+
+                if code.is_empty() {
+                    if let Some(c) = request_json.get("code")
+                        .or_else(|| request_json.get("script"))
+                        .or_else(|| request_json.get("src"))
+                        .and_then(|v| v.as_str())
+                    {
+                        code = c.to_string();
+                    }
+                }
+
+                if code.trim().is_empty() {
+                    let err_json = serde_json::json!({
+                        "status": "error",
+                        "error": "No code provided for execution",
+                        "language": language,
+                        "stdout": "",
+                        "stderr": "No code provided",
+                        "exit_code": 1,
+                        "execution_ms": 0
+                    });
+                    let err_body = serde_json::to_string(&err_json).unwrap_or_default();
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        err_body.len(),
+                        err_body
+                    );
+                    let _ = socket.write_all(response.as_bytes()).await;
+                    let _ = socket.flush().await;
+                    return;
+                }
+
+                let start_time = std::time::Instant::now();
+                let is_node = language.contains("js") || language.contains("node") || language.contains("javascript");
+                let lang_norm = if is_node { "javascript" } else { "python" };
+                let ext = if is_node { "js" } else { "py" };
+
+                let temp_dir = std::env::temp_dir();
+                let random_suffix: u64 = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                let script_path = temp_dir.join(format!("mf_sandbox_{}_{}.{}", std::process::id(), random_suffix, ext));
+
+                if let Err(e) = std::fs::write(&script_path, code.as_bytes()) {
+                    let err_json = serde_json::json!({
+                        "status": "error",
+                        "error": format!("Failed to write temporary script: {}", e),
+                        "language": lang_norm,
+                        "stdout": "",
+                        "stderr": format!("{}", e),
+                        "exit_code": 1,
+                        "execution_ms": 0
+                    });
+                    let err_body = serde_json::to_string(&err_json).unwrap_or_default();
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        err_body.len(),
+                        err_body
+                    );
+                    let _ = socket.write_all(response.as_bytes()).await;
+                    let _ = socket.flush().await;
+                    return;
+                }
+
+                let exec_bin = if is_node { "node" } else { "python" };
+                let mut cmd = hidden_tokio_command(exec_bin);
+                cmd.arg(&script_path);
+
+                let timeout_duration = std::time::Duration::from_secs(10);
+                let exec_result = tokio::time::timeout(timeout_duration, cmd.output()).await;
+
+                // Clean up temporary script
+                let _ = std::fs::remove_file(&script_path);
+
+                let elapsed_ms = start_time.elapsed().as_millis() as u64;
+
+                let resp_json = match exec_result {
+                    Ok(Ok(output)) => {
+                        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                        let exit_code = output.status.code().unwrap_or(0);
+                        let status = if output.status.success() { "ok" } else { "error" };
+                        serde_json::json!({
+                            "status": status,
+                            "language": lang_norm,
+                            "stdout": stdout,
+                            "stderr": stderr,
+                            "exit_code": exit_code,
+                            "execution_ms": elapsed_ms
+                        })
+                    }
+                    Ok(Err(e)) => {
+                        serde_json::json!({
+                            "status": "error",
+                            "error": format!("Failed to execute {}: {}", exec_bin, e),
+                            "language": lang_norm,
+                            "stdout": "",
+                            "stderr": format!("Process execution error: {}", e),
+                            "exit_code": 1,
+                            "execution_ms": elapsed_ms
+                        })
+                    }
+                    Err(_) => {
+                        serde_json::json!({
+                            "status": "timeout",
+                            "error": "Execution timed out (10s limit exceeded)",
+                            "language": lang_norm,
+                            "stdout": "",
+                            "stderr": "Execution timed out (10s limit exceeded)",
+                            "exit_code": 124,
+                            "execution_ms": elapsed_ms
+                        })
+                    }
+                };
+
+                let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
             // ── Live WikiSkill & Wikipedia Knowledge Endpoint (/api/wiki, /api/wikiskill) ──
             if request_path == "/api/wiki" || request_path == "/api/wikiskill" {
                 let (query, max_results) = parse_query_and_limit_from_request(&raw_request_uri, &request_json);
