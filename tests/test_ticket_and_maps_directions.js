@@ -58,7 +58,7 @@ assert.strictEqual(
 );
 
 // 1.2 Extract and evaluate resolveNaturalLanguageNavUrl
-const navMatch = appJs.match(/function resolveNaturalLanguageNavUrl\(goal\)\s*\{([\s\S]*?)\n  \}/);
+const navMatch = appJs.match(/function resolveNaturalLanguageNavUrl\([^)]*\)\s*\{([\s\S]*?)\n  \}/);
 assert.ok(navMatch, 'resolveNaturalLanguageNavUrl must be defined in app.js');
 eval(navMatch[0]);
 

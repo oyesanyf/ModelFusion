@@ -169,6 +169,7 @@ const mockDistillationReport = {
 
 // Simulate grounded outline generation
 eval(extractFunction('detectLongFormWritingRequest'));
+eval(extractFunction('generateFactualChapterStems'));
 eval(extractFunction('extractWritingOutline'));
 
 const groundedOutline = extractWritingOutline(

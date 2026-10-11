@@ -327,6 +327,7 @@ console.log('  ✅ Test 6 Passed: Generic HITL gate protects arbitrary sensitive
 console.log('Test 7: Context token budgeting and isolateContext guarantee...');
 // Verify app.js contains the fast structured grounding logic
 assert.ok(
+  appJs.includes('const hasStructuredItems = detectedJobs.length > 0 || detectedExamQuestions.length > 0 || detectedProducts.length > 0 || detectedTickets.length > 0;') ||
   appJs.includes('const hasStructuredItems = detectedExamQuestions.length > 0 || detectedProducts.length > 0 || detectedTickets.length > 0;'),
   'app.js must detect hasStructuredItems to avoid dumping raw DOM text into LLM prompt'
 );

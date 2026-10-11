@@ -122,6 +122,7 @@ eval(extractFunction('resetAuthorStyleProfile'));
 eval(extractFunction('updateAuthorStyleProperty'));
 eval(extractFunction('formatAuthorStylePrompt'));
 eval(extractFunction('detectLongFormWritingRequest'));
+eval(extractFunction('generateFactualChapterStems'));
 eval(extractFunction('extractWritingOutline'));
 eval(extractFunction('buildHitlOutlineWorkspaceHtml'));
 eval(extractFunction('confirmOutlineAction'));

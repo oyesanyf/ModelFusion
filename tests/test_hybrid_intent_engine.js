@@ -8,6 +8,7 @@ const appJs = fs.readFileSync('browser/ui/app.js', 'utf8');
 
 // Test 1: Verify PAGE_CHAPTER_DIRECTIVE_REGEX declaration and export in app.js
 assert.ok(
+  appJs.includes('const PAGE_CHAPTER_DIRECTIVE_REGEX = /\\b(\\d+)\\s*[-_]?\\s*(?:page|pge|paige|chapter|chapt|chap|section|part)s?\\b/i;') ||
   appJs.includes('const PAGE_CHAPTER_DIRECTIVE_REGEX = /\\b(\\d+)\\s*[-_]?\\s*(?:page|chapter|section|part)s?\\b/i;') ||
   appJs.includes('const PAGE_CHAPTER_DIRECTIVE_REGEX = /\\b(\\d+)\\s*(?:page|chapter|section)\\b/i;'),
   'PAGE_CHAPTER_DIRECTIVE_REGEX must be declared in app.js'
