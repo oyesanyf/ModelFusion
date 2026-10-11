@@ -72,9 +72,9 @@ while ((catBlockMatch = catBlockRegex.exec(indexHtml)) !== null) {
   }
 }
 
-assert.strictEqual(categories.length, 15, `Expected exactly 15 categories, found ${categories.length}`);
-assert.strictEqual(allTools.length, 109, `Expected exactly 109 tools, found ${allTools.length}`);
-console.log(`✓ Inventory Verified: exactly 15 categories and 109 tools extracted from index.html.\n`);
+assert.strictEqual(categories.length, 16, `Expected exactly 16 categories, found ${categories.length}`);
+assert.strictEqual(allTools.length, 110, `Expected exactly 110 tools, found ${allTools.length}`);
+console.log(`✓ Inventory Verified: exactly 16 categories and 110 tools extracted from index.html.\n`);
 
 // =========================================================================
 // 2. Realistic Domain-Tailored Inputs Registry for all 106 Tools
@@ -83,20 +83,27 @@ const TOOL_INPUTS = {
   // Classification & Taxonomy (12)
   'tool_bart_large_mnli': '"SpaceX successfully launched Starship Flight 6 into low earth orbit" --labels aerospace, commercial aviation, satellite telecommunications',
   'tool_cross_encoder_deberta': '"The appellate court affirmed the district court summary judgment" --labels judicial ruling, statutory law, constitutional law',
+  'tool_nli_deberta_v3_base': '"The appellate court affirmed the district court summary judgment" --labels judicial ruling, statutory law, constitutional law',
   'tool_deberta_v3_nli_fever': '"The human genome consists of approximately 3.2 billion base pairs" --labels verified fact, scientific refutation, neutral assertion',
+  'tool_deberta_v3_mnli_fever_anli': '"The human genome consists of approximately 3.2 billion base pairs" --labels verified fact, scientific refutation, neutral assertion',
   'tool_distilbart_mnli': '"Quarterly enterprise recurring revenue grew 34% year-over-year" --labels strong earnings, executive churn, revenue decline',
+  'tool_distilbart_mnli_12_3': '"Quarterly enterprise recurring revenue grew 34% year-over-year" --labels strong earnings, executive churn, revenue decline',
   'tool_distilbert_emotion': 'I am absolutely thrilled and overjoyed with our team achievement!',
   'tool_distilbert_sst2': 'The user interface is exceptionally fast, intuitive, and responsive.',
   'tool_finbert_classifier': 'Operating margin expanded 280 basis points due to manufacturing efficiencies.',
   'tool_goemotions_roberta': 'Thank you so much for your guidance, I truly appreciate the support.',
+  'tool_roberta_go_emotions': 'Thank you so much for your guidance, I truly appreciate the support.',
   'tool_koalaai_text_moderation': 'Let us ensure the network configuration complies with enterprise security standards.',
   'tool_longformer_4096': 'The 40-page technical whitepaper outlines distributed consensus mechanisms across high-latency Byzantine fault tolerant systems.',
+  'tool_longformer_base_4096': 'The 40-page technical whitepaper outlines distributed consensus mechanisms across high-latency Byzantine fault tolerant systems.',
   'tool_toxic_bert': 'Respectful discourse and evidence-based debate strengthen scientific progress.',
   'tool_twitter_roberta_sentiment': 'Great update today, loving the new dark mode aesthetics! #HugOS',
 
-  // Code & Security (2)
+  // Code & Security (3)
   'tool_security': 'function authenticate(user, pass) { return db.query("SELECT * FROM users WHERE u=\'" + user + "\'"); }',
+  'tool_vuln_detection': 'function authenticate(user, pass) { return db.query("SELECT * FROM users WHERE u=\'" + user + "\'"); }',
   'tool_graph_index': 'src/core/compiler.rs - AST tokenization and visitor graph traversal',
+  'tool_code_helper': 'Implement a thread-safe ring buffer in Rust with zero heap allocations',
 
   // Computer Use & OS Automation (11)
   'tool_apply_jobs': 'Apply for senior Rust engineer jobs at Google Mountain View or Remote with full-time contract',
@@ -137,9 +144,11 @@ const TOOL_INPUTS = {
   'tool_image_classification': 'satellite_tile.tif - classify land use cover (urban, forest, water, agriculture)',
   'tool_vision': 'architecture_diagram.png - transcribe system components and data pipeline connections',
   'tool_image': 'A futuristic cybernetic workstation in a neon-lit minimalist studio, photorealistic 8k',
+  'tool_image_generation': 'A futuristic cybernetic workstation in a neon-lit minimalist studio, photorealistic 8k',
 
   // Inspect Windows Apps (.EXE / .DLL) (1)
   'tool_pe': 'target/release/cli.exe - inspect PE COFF headers, ASLR, DEP, and import table',
+  'tool_pe_header': 'target/release/cli.exe - inspect PE COFF headers, ASLR, DEP, and import table',
 
   // Legal & Compliance (8)
   'tool_cuad_bert': 'The Recipient agrees not to disclose or permit access to Confidential Information to any third party for a period of 5 years',
@@ -198,15 +207,18 @@ const TOOL_INPUTS = {
 
   // Voice & Audio (3)
   'tool_audio': 'ambient_rain_and_thunder.wav - classify environmental acoustic scene and audio event',
+  'tool_audio_classification': 'ambient_rain_and_thunder.wav - classify environmental acoustic scene and audio event',
   'tool_tts': 'ModelFusion local intelligence suite operating with zero cloud latency and total privacy.',
   'tool_asr': 'interview_recording.mp3 - transcribe multi-speaker audio with timestamp alignment',
 
   // Web Research & Automation (6)
   'tool_browser': 'https://news.ycombinator.com/',
   'tool_browser_deep_research': 'latest breakthroughs in open-weight reasoning models and speculative decoding',
+  'tool_deep_research': 'latest breakthroughs in open-weight reasoning models and speculative decoding',
   'tool_arxiv': 'transformer linear attention mechanisms for long context genomic modeling',
   'tool_summarize': '',
   'tool_markers': 'https://example.com',
+  'tool_som': 'https://example.com',
   'tool_wiki': 'James Webb Space Telescope instruments and cosmological discoveries',
 
   // Writing & Editing (6)
@@ -215,7 +227,8 @@ const TOOL_INPUTS = {
   'tool_translate': 'Advanced artificial intelligence running entirely on local consumer hardware.',
   'tool_outline': 'Architecting Zero-Cloud AI: A Comprehensive Guide to Local Foundation Models and On-Device Agents',
   'tool_style_transfer': 'The empirical metrics substantiate the efficacy of our distributed architecture.',
-  'tool_boost_writing': 'Draft an executive brief on enterprise on-premises LLM deployment strategies and security guarantees.'
+  'tool_boost_writing': 'Draft an executive brief on enterprise on-premises LLM deployment strategies and security guarantees.',
+  'tool_writing_boost': 'Draft an executive brief on enterprise on-premises LLM deployment strategies and security guarantees.'
 };
 
 // =========================================================================
@@ -604,7 +617,7 @@ I'm sorry, but I cannot assist with that request.`;
 (async () => {
   runMismatchTests();
 
-  console.log('--- Executing E2E Verification Across ALL 108 Menu Tools ---');
+  console.log(`--- Executing E2E Verification Across ALL ${allTools.length} Menu Tools ---`);
   let currentCategory = '';
 
   for (let i = 0; i < allTools.length; i++) {
@@ -616,15 +629,15 @@ I'm sorry, but I cannot assist with that request.`;
 
     const res = await executeToolTest(tool, i);
     const mark = res.status === 'PASS' ? '✅' : '❌';
-    console.log(`  ${mark} [${i + 1}/108] ${tool.label} (${tool.tag || tool.toolId}) -> ${res.durationMs}ms`);
+    console.log(`  ${mark} [${i + 1}/${allTools.length}] ${tool.label} (${tool.tag || tool.toolId}) -> ${res.durationMs}ms`);
   }
 
   console.log('\n================================================================================');
-  console.log(`📊 E2E Test Suite Results: ${passCount} Passed, ${failCount} Failed out of 108 Tools`);
-  console.log(`📈 Overall Pass Rate: ${((passCount / 108) * 100).toFixed(1)}%`);
+  console.log(`📊 E2E Test Suite Results: ${passCount} Passed, ${failCount} Failed out of ${allTools.length} Tools`);
+  console.log(`📈 Overall Pass Rate: ${((passCount / allTools.length) * 100).toFixed(1)}%`);
   console.log('================================================================================\n');
 
-  assert.strictEqual(failCount, 0, `All 108 tools must pass! Found ${failCount} failures.`);
+  assert.strictEqual(failCount, 0, `All ${allTools.length} tools must pass! Found ${failCount} failures.`);
 
   // Write comprehensive report
   const finalReport = {
