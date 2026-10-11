@@ -10562,6 +10562,119 @@ pub fn sanitize_and_deduplicate_url(raw: &str) -> String {
         }
     }
 
+    let lower_cb = final_url.to_lowercase();
+    for typo in &[
+        "careerbuilder.com",
+        "career-builder.com",
+        "carredbuilder.com",
+        "carred builder",
+        "carredbuilder",
+        "carrerbuilder.com",
+        "carrerbuilder",
+        "careerbulider.com",
+        "careerbulider",
+    ] {
+        if lower_cb.contains(typo) {
+            if lower_cb.contains("carred builder") {
+                final_url = final_url.replacen("carred builder", "www.careerbuilder.com", 1);
+            }
+            for t in &[
+                "career-builder.com",
+                "carredbuilder.com",
+                "carredbuilder",
+                "carrerbuilder.com",
+                "carrerbuilder",
+                "careerbulider.com",
+                "careerbulider",
+            ] {
+                if final_url.to_lowercase().contains(t) {
+                    if let Some(pos) = final_url.to_lowercase().find(t) {
+                        final_url.replace_range(pos..pos + t.len(), "careerbuilder.com");
+                    }
+                }
+            }
+            if final_url.contains("://careerbuilder.com") {
+                final_url = final_url.replacen("://careerbuilder.com", "://www.careerbuilder.com", 1);
+            }
+            if final_url.starts_with("http://www.careerbuilder.com") {
+                final_url = final_url.replacen("http://www.careerbuilder.com", "https://www.careerbuilder.com", 1);
+            }
+            if !final_url.starts_with("http") {
+                final_url = format!("https://www.careerbuilder.com/{}", final_url.trim_start_matches('/'));
+            }
+            break;
+        }
+    }
+
+    let lower_zr = final_url.to_lowercase();
+    for typo in &["ziprecruiter.com", "zip-recruiter.com", "ziprecruitor.com", "ziprecruiter", "zip-recruiter", "ziprecruitor"] {
+        if lower_zr.contains(typo) {
+            for t in &["zip-recruiter.com", "ziprecruitor.com", "zip-recruiter", "ziprecruitor"] {
+                if final_url.to_lowercase().contains(t) {
+                    if let Some(pos) = final_url.to_lowercase().find(t) {
+                        final_url.replace_range(pos..pos + t.len(), "ziprecruiter.com");
+                    }
+                }
+            }
+            if final_url.contains("://ziprecruiter.com") {
+                final_url = final_url.replacen("://ziprecruiter.com", "://www.ziprecruiter.com", 1);
+            }
+            if final_url.starts_with("http://www.ziprecruiter.com") {
+                final_url = final_url.replacen("http://www.ziprecruiter.com", "https://www.ziprecruiter.com", 1);
+            }
+            if !final_url.starts_with("http") {
+                final_url = format!("https://www.ziprecruiter.com/{}", final_url.trim_start_matches('/'));
+            }
+            break;
+        }
+    }
+
+    let lower_dice = final_url.to_lowercase();
+    for typo in &["dicejobs.com", "dice.com", "dicejobs"] {
+        if lower_dice.contains(typo) {
+            for t in &["dicejobs.com", "dicejobs"] {
+                if final_url.to_lowercase().contains(t) {
+                    if let Some(pos) = final_url.to_lowercase().find(t) {
+                        final_url.replace_range(pos..pos + t.len(), "dice.com");
+                    }
+                }
+            }
+            if final_url.contains("://dice.com") {
+                final_url = final_url.replacen("://dice.com", "://www.dice.com", 1);
+            }
+            if final_url.starts_with("http://www.dice.com") {
+                final_url = final_url.replacen("http://www.dice.com", "https://www.dice.com", 1);
+            }
+            if !final_url.starts_with("http") {
+                final_url = format!("https://www.dice.com/{}", final_url.trim_start_matches('/'));
+            }
+            break;
+        }
+    }
+
+    let lower_monster = final_url.to_lowercase();
+    for typo in &["monsterjobs.com", "monstercareers.com", "monster.com", "monsterjobs", "monstercareers"] {
+        if lower_monster.contains(typo) {
+            for t in &["monsterjobs.com", "monstercareers.com", "monsterjobs", "monstercareers"] {
+                if final_url.to_lowercase().contains(t) {
+                    if let Some(pos) = final_url.to_lowercase().find(t) {
+                        final_url.replace_range(pos..pos + t.len(), "monster.com");
+                    }
+                }
+            }
+            if final_url.contains("://monster.com") {
+                final_url = final_url.replacen("://monster.com", "://www.monster.com", 1);
+            }
+            if final_url.starts_with("http://www.monster.com") {
+                final_url = final_url.replacen("http://www.monster.com", "https://www.monster.com", 1);
+            }
+            if !final_url.starts_with("http") {
+                final_url = format!("https://www.monster.com/{}", final_url.trim_start_matches('/'));
+            }
+            break;
+        }
+    }
+
     if final_url.contains("://linkedin.com") {
         final_url = final_url.replacen("://linkedin.com", "://www.linkedin.com", 1);
     }
@@ -23062,6 +23175,16 @@ public class Pr {
         assert_eq!(sanitize_and_deduplicate_url("https://w.google.com"), "https://www.google.com");
         assert_eq!(sanitize_and_deduplicate_url("https://gogle.com"), "https://www.google.com");
         assert_eq!(sanitize_and_deduplicate_url("https://ww.bing.com"), "https://www.bing.com");
+
+        // Job board typo corrections
+        assert_eq!(sanitize_and_deduplicate_url("http://carredbuilder.com"), "https://www.careerbuilder.com");
+        assert_eq!(sanitize_and_deduplicate_url("http://www.carrerbuilder.com"), "https://www.careerbuilder.com");
+        assert_eq!(sanitize_and_deduplicate_url("http://ziprecruitor.com"), "https://www.ziprecruiter.com");
+        assert_eq!(sanitize_and_deduplicate_url("http://indeeed.com"), "https://www.indeed.com");
+        assert_eq!(sanitize_and_deduplicate_url("http://linkdln.com"), "https://www.linkedin.com");
+        assert_eq!(sanitize_and_deduplicate_url("http://theladder.com"), "https://www.theladders.com");
+        assert_eq!(sanitize_and_deduplicate_url("http://dicejobs.com"), "https://www.dice.com");
+        assert_eq!(sanitize_and_deduplicate_url("http://monsterjobs.com"), "https://www.monster.com");
     }
 
     #[test]
