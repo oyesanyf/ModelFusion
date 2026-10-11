@@ -282,11 +282,7 @@ def try_tier2_browser_automation(payload: dict, file_path: Path, dry_run: bool, 
 
     if dry_run:
         log(f"[WDSI Tier 2] [DRY RUN] Would automate submission via {'Playwright' if has_playwright else 'Selenium'}.", quiet, color="yellow")
-        return {
-            "tier": "Tier 2: Browser Automation",
-            "status": "dry_run_success",
-            "engine": "Playwright" if has_playwright else "Selenium",
-        }
+        return None
 
     # Attempt Playwright automation
     if has_playwright:

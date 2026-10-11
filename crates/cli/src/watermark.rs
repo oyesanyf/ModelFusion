@@ -403,16 +403,63 @@ pub fn detect_watermark_input(input: &str) -> Result<WatermarkReport, String> {
     let resolved_path = if path.is_file() {
         Some(path.to_path_buf())
     } else {
-        let mut candidates = vec![
-            Path::new("..").join(unquoted),
-            Path::new("../..").join(unquoted),
-            Path::new(r"D:\femi\resume").join(unquoted),
-            Path::new(r"C:\Users\oyesanyf\Downloads").join(unquoted),
+        let file_name = path.file_name().and_then(|f| f.to_str()).unwrap_or(unquoted);
+        let mut candidate_dirs: Vec<std::path::PathBuf> = vec![
+            Path::new(".").to_path_buf(),
+            Path::new("..").to_path_buf(),
+            Path::new("../..").to_path_buf(),
+            Path::new(r"D:\femi").to_path_buf(),
+            Path::new(r"D:\femi\resume").to_path_buf(),
+            Path::new(r"C:\Users\oyesanyf\Downloads").to_path_buf(),
+            std::env::temp_dir(),
         ];
         if let Some(user_profile) = std::env::var_os("USERPROFILE") {
-            candidates.push(std::path::PathBuf::from(user_profile).join("Downloads").join(unquoted));
+            let up = std::path::PathBuf::from(user_profile);
+            candidate_dirs.push(up.join("Downloads"));
+            candidate_dirs.push(up.join("Desktop"));
+            candidate_dirs.push(up.join("Documents"));
         }
-        candidates.into_iter().find(|p| p.is_file())
+
+        // 1. Direct candidate matching
+        let mut found = None;
+        for dir in &candidate_dirs {
+            let p1 = dir.join(unquoted);
+            if p1.is_file() {
+                found = Some(p1);
+                break;
+            }
+            let p2 = dir.join(file_name);
+            if p2.is_file() {
+                found = Some(p2);
+                break;
+            }
+        }
+
+        // 2. Prefix/stem fuzzy matching (e.g. requested dental.pdf -> finds dentalcard.pdf)
+        if found.is_none() {
+            let target_stem = Path::new(file_name).file_stem().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+            let target_ext = Path::new(file_name).extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+            if !target_stem.is_empty() {
+                'fuzzy: for dir in &candidate_dirs {
+                    if let Ok(entries) = std::fs::read_dir(dir) {
+                        for entry in entries.flatten() {
+                            let ep = entry.path();
+                            if ep.is_file() {
+                                let entry_stem = ep.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+                                let entry_ext = ep.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+                                let ext_matches = target_ext.is_empty() || target_ext == entry_ext;
+                                if ext_matches && (entry_stem.starts_with(&target_stem) || target_stem.starts_with(&entry_stem) || entry_stem.contains(&target_stem)) {
+                                    found = Some(ep);
+                                    break 'fuzzy;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        found
     };
 
     if let Some(target_path) = resolved_path {
