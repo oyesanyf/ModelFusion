@@ -110,7 +110,7 @@ assert(indexHtml.includes('title="Download Calibrated Models for This Host"'), '
 
 // Run alphabetical menu validation
 const menuAuditOutput = execSync('python tests/test_alphabetical_menu.py', { cwd: repoRoot, encoding: 'utf8' });
-assert(menuAuditOutput.includes('[OK] All 15 categories are strictly in alphabetical order'), 'All 15 menu categories must be strictly sorted');
+assert(menuAuditOutput.includes('[OK] All 16 categories are strictly in alphabetical order'), 'All 16 menu categories must be strictly sorted');
 assert(menuAuditOutput.includes('14 items sorted alphabetically'), 'Utilities category must have 14 sorted items');
 
 console.log('✅ Test 5 Passed: Utilities menu button present and 100% alphabetically sorted.\n');

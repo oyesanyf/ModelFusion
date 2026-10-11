@@ -26,8 +26,8 @@ while ((catMatch = catTitleRegex.exec(indexHtml)) !== null) {
   rawCatTitles.push(catMatch[1].replace(/&amp;/g, '&').trim());
 }
 
-assert.strictEqual(rawCatTitles.length, 15, `Expected exactly 15 categories, found ${rawCatTitles.length}`);
-console.log(`  ✓ Found exactly 15 categories in sidebar accordion`);
+assert.strictEqual(rawCatTitles.length, 16, `Expected exactly 16 categories, found ${rawCatTitles.length}`);
+console.log(`  ✓ Found exactly 16 categories in sidebar accordion`);
 
 const cleanCatTitles = rawCatTitles.map(t => t.replace(/^[^\w\s]+/, '').trim());
 const sortedCatTitles = [...cleanCatTitles].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
@@ -35,7 +35,7 @@ const sortedCatTitles = [...cleanCatTitles].sort((a, b) => a.localeCompare(b, un
 for (let i = 0; i < cleanCatTitles.length; i++) {
   assert.strictEqual(cleanCatTitles[i], sortedCatTitles[i], `Category at index ${i} is out of order: "${cleanCatTitles[i]}" vs expected "${sortedCatTitles[i]}"`);
 }
-console.log('  ✅ All 15 categories are in 100% strict alphabetical order (A-Z):');
+console.log('  ✅ All 16 categories are in 100% strict alphabetical order (A-Z):');
 cleanCatTitles.forEach((c, idx) => console.log(`     ${idx + 1}. ${c}`));
 
 // =========================================================================
@@ -95,13 +95,13 @@ while ((catBlockMatch = catBlockRegex.exec(indexHtml)) !== null) {
   catIdx++;
 }
 
-assert.strictEqual(totalToolsCount, 109, `Expected exactly 109 tools, found ${totalToolsCount}`);
-console.log(`  ✅ Exactly 109 tool buttons verified with non-empty labels, tags, and actions across all 15 categories!`);
+assert.strictEqual(totalToolsCount, 110, `Expected exactly 110 tools, found ${totalToolsCount}`);
+console.log(`  ✅ Exactly 110 tool buttons verified with non-empty labels, tags, and actions across all 16 categories!`);
 
 // =========================================================================
 // TEST 3: Intent Routing & Non-Falling-Through to Default Web Search
 // =========================================================================
-console.log('\n--- Test 3: Command Routing & Intent Protection for All 109 Tools ---');
+console.log('\n--- Test 3: Command Routing & Intent Protection for All 110 Tools ---');
 
 // Extract shouldRouteToWeb from app.js to verify tools are never accidentally sent to web search
 const fnStart = appJs.indexOf('function shouldRouteToWeb(query, mode) {');

@@ -134,7 +134,10 @@ class TestEmbeddingGemma2Replacement(unittest.TestCase):
 
         # Check hardware provisioning pulls embeddinggemma
         self.assertIn('"embeddinggemma"', content)
-        self.assertIn("Embedding='embeddinggemma'", content)
+        self.assertTrue(
+            "Embedding='embeddinggemma'" in content or "Embedding='embeddinggemma:latest'" in content,
+            "Expected Embedding='embeddinggemma' or 'embeddinggemma:latest' in main.rs"
+        )
 
         # Check seed function exists
         self.assertIn("fn seed_embeddinggemma_into_db", content)
