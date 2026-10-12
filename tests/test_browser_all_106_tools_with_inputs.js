@@ -72,9 +72,9 @@ while ((catBlockMatch = catBlockRegex.exec(indexHtml)) !== null) {
   }
 }
 
-assert.strictEqual(categories.length, 16, `Expected exactly 16 categories, found ${categories.length}`);
-assert.strictEqual(allTools.length, 110, `Expected exactly 110 tools, found ${allTools.length}`);
-console.log(`✓ Inventory Verified: exactly 16 categories and 110 tools extracted from index.html.\n`);
+assert.strictEqual(categories.length, 17, `Expected exactly 17 categories, found ${categories.length}`);
+assert.strictEqual(allTools.length, 116, `Expected exactly 116 tools, found ${allTools.length}`);
+console.log(`✓ Inventory Verified: exactly 17 categories and 116 tools extracted from index.html.\n`);
 
 // =========================================================================
 // 2. Realistic Domain-Tailored Inputs Registry for all 106 Tools
@@ -228,7 +228,15 @@ const TOOL_INPUTS = {
   'tool_outline': 'Architecting Zero-Cloud AI: A Comprehensive Guide to Local Foundation Models and On-Device Agents',
   'tool_style_transfer': 'The empirical metrics substantiate the efficacy of our distributed architecture.',
   'tool_boost_writing': 'Draft an executive brief on enterprise on-premises LLM deployment strategies and security guarantees.',
-  'tool_writing_boost': 'Draft an executive brief on enterprise on-premises LLM deployment strategies and security guarantees.'
+  'tool_writing_boost': 'Draft an executive brief on enterprise on-premises LLM deployment strategies and security guarantees.',
+
+  // RD-Agent (Autonomous R&D) (6)
+  'tool_rd_finetune': 'alpaca_cleaned / instruct-tuning --base-model qwen2.5:7b --epochs 3',
+  'tool_rd_factor': 'Alpha101 / US Equities Qlib --horizon 5d',
+  'tool_rd_kaggle': 'tabular-playground-series / features --eval multi_logloss',
+  'tool_rd_medical': 'mimic-iv / clinical-risk --metric auroc',
+  'tool_rd_quant': 'cta_momentum / crypto_perpetuals --leverage 2x',
+  'tool_rd_model': 'arXiv:2401.xxxxx / Transformer Infilling architecture'
 };
 
 // =========================================================================

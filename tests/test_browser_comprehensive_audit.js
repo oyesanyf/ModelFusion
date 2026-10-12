@@ -195,7 +195,8 @@ async function runAuditTests() {
     { name: 'science', aliases: ['science'] },
     { name: 'audio', aliases: ['audio'] },
     { name: 'utilities', aliases: ['utilities'] },
-    { name: 'pe_binary', aliases: ['pe_binary', 'pe'] }
+    { name: 'pe_binary', aliases: ['pe_binary', 'pe'] },
+    { name: 'rdagent', aliases: ['rdagent', 'rd_agent'] }
   ];
 
   for (const catGroup of standardCategoryGroups) {
