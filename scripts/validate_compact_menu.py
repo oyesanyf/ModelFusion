@@ -76,6 +76,14 @@ compact_menu = {
         ("Self-Correct Loop", "@agent loop ", "tool_loop", "🔄", "@loop"),
         ("Structured Plan", "@agent plan ", "tool_plan", "📐", "@plan"),
     ],
+    "RD-Agent (Autonomous R&D)": [
+        ("Autonomous Fine-Tune", "@agent rd-finetune ", "tool_rd_finetune", "🧪", "@rd-finetune"),
+        ("Financial Factors", "@agent rd-factor ", "tool_rd_factor", "📈", "@rd-factor"),
+        ("Kaggle Agent", "@agent rd-kaggle ", "tool_rd_kaggle", "🏆", "@rd-kaggle"),
+        ("Medical Prediction", "@agent rd-medical ", "tool_rd_medical", "🩺", "@rd-medical"),
+        ("Quant Evolution", "@agent rd-quant ", "tool_rd_quant", "💰", "@rd-quant"),
+        ("Research Copilot", "@agent rd-model ", "tool_rd_model", "🦾", "@rd-model"),
+    ],
     "Science & Discovery": [
         ("Atmospheric Weather", "@agent aurora ", "tool_aurora", "🌦️", "@aurora"),
         ("Biomedical Science", "@agent scibert ", "tool_scibert", "📄", "@scibert"),
@@ -156,7 +164,7 @@ for cat, tools in compact_menu.items():
 
 print(f"Total tools: {total}")
 print(f"Max label length: {max_len} chars ('{longest_name}')")
-if all_sorted and total == 106 and max_len <= 20:
-    print("SUCCESS: ALL 106 COMPACT NAMES ARE STRICTLY <= 20 CHARS AND 100% SORTED A-Z!")
+if all_sorted and total == 112 and max_len <= 20:
+    print("SUCCESS: ALL 112 COMPACT NAMES ARE STRICTLY <= 20 CHARS AND 100% SORTED A-Z!")
 else:
     print("FAILED VALIDATION")

@@ -25,8 +25,9 @@ def main():
     assert any("Computer Use" in h for h in headers), "Computer Use category missing!"
     assert any("Finance" in h for h in headers), "Finance & Markets category missing!"
     assert any("Legal" in h for h in headers), "Legal category missing!"
+    assert any("RD-Agent" in h for h in headers), "RD-Agent category missing!"
     assert any("Sentiment" in h for h in headers), "Sentiment & Content Moderation category missing!"
-    assert len(headers) == 16, f"Expected 16 categories, found {len(headers)}: {clean}"
+    assert len(headers) == 17, f"Expected 17 categories, found {len(headers)}: {clean}"
     
     # Verify sub-items inside each category are also sorted
     categories = re.findall(r'<div class="tool-category">(.*?)</div>\s*</div>', content, re.DOTALL)

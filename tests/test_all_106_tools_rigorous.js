@@ -26,8 +26,8 @@ while ((catMatch = catTitleRegex.exec(indexHtml)) !== null) {
   rawCatTitles.push(catMatch[1].replace(/&amp;/g, '&').trim());
 }
 
-assert.strictEqual(rawCatTitles.length, 16, `Expected exactly 16 categories, found ${rawCatTitles.length}`);
-console.log(`  ✓ Found exactly 16 categories in sidebar accordion`);
+assert.strictEqual(rawCatTitles.length, 17, `Expected exactly 17 categories, found ${rawCatTitles.length}`);
+console.log(`  ✓ Found exactly 17 categories in sidebar accordion`);
 
 const cleanCatTitles = rawCatTitles.map(t => t.replace(/^[^\w\s]+/, '').trim());
 const sortedCatTitles = [...cleanCatTitles].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
@@ -95,13 +95,13 @@ while ((catBlockMatch = catBlockRegex.exec(indexHtml)) !== null) {
   catIdx++;
 }
 
-assert.strictEqual(totalToolsCount, 110, `Expected exactly 110 tools, found ${totalToolsCount}`);
-console.log(`  ✅ Exactly 110 tool buttons verified with non-empty labels, tags, and actions across all 16 categories!`);
+assert.strictEqual(totalToolsCount, 116, `Expected exactly 116 tools, found ${totalToolsCount}`);
+console.log(`  ✅ Exactly 116 tool buttons verified with non-empty labels, tags, and actions across all 17 categories!`);
 
 // =========================================================================
 // TEST 3: Intent Routing & Non-Falling-Through to Default Web Search
 // =========================================================================
-console.log('\n--- Test 3: Command Routing & Intent Protection for All 110 Tools ---');
+console.log('\n--- Test 3: Command Routing & Intent Protection for All 116 Tools ---');
 
 // Extract shouldRouteToWeb from app.js to verify tools are never accidentally sent to web search
 const fnStart = appJs.indexOf('function shouldRouteToWeb(query, mode) {');
