@@ -26,6 +26,8 @@ browser/Chromium-win32-x64/*
 !browser/Chromium-win32-x64/hugos-browser.vbs
 !browser/Chromium-win32-x64/run_hidden.vbs
 browser/db/
+mcp/db/
+mcp/bin/*.old
 browser/bin/
 browser/HugOS*.wixpdb
 IDE/vscode-126-extract/
