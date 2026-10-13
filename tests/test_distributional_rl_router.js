@@ -17,7 +17,7 @@ const ROOT_DIR = path.resolve(__dirname, '..');
 const CLI_PATH = path.resolve(ROOT_DIR, 'target/release/cli.exe');
 const APP_JS_PATH = path.resolve(ROOT_DIR, 'browser/ui/app.js');
 
-const TEST_PORT = 5005;
+const TEST_PORT = 5117;
 
 function extractJson(str) {
   const firstBrace = str.indexOf('{');
@@ -269,6 +269,11 @@ async function runTests() {
 
   } finally {
     console.log('  • Terminating ephemeral server process...');
+    try {
+      if (process.platform === 'win32' && serverProcess.pid) {
+        spawnSync('taskkill', ['/F', '/T', '/PID', String(serverProcess.pid)], { stdio: 'ignore' });
+      }
+    } catch (_) {}
     serverProcess.kill('SIGTERM');
     try {
       serverProcess.kill('SIGKILL');
@@ -278,6 +283,7 @@ async function runTests() {
   console.log('\n🎉 ====================================================================');
   console.log('🎉 ALL DISTRIBUTIONAL RL / CVaR TESTS COMPLETED SUCCESSFULLY!');
   console.log('🎉 ====================================================================\n');
+  process.exit(0);
 }
 
 runTests().catch(err => {

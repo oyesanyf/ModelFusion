@@ -264,6 +264,7 @@ async function runSuite() {
   }
 
   console.log('\n🎉 ALL 6 ADVERSARIAL CHALLENGES PASSED! Milestone 3 error trapping and IPC diagnostics verified.\n');
+  process.exit(0);
 }
 
 runSuite().catch(err => {

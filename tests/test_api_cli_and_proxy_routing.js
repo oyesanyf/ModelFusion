@@ -257,6 +257,7 @@ async function runTests() {
   console.log('\n========================================================');
   console.log('🎉 ALL TESTS PASSED! API / CLI / Proxy Routing & Sanitization Green!');
   console.log('========================================================\n');
+  process.exit(0);
 }
 
 runTests().catch(err => {

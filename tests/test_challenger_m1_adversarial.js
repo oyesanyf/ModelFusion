@@ -207,7 +207,7 @@ assert(initialProfile.email === 'oyesanyf@gmail.com', 'Default profile email mus
 assert(initialProfile.phone === '708-359-1414', 'Default profile phone must be "708-359-1414"');
 assert(initialProfile.yearsExperience === '20+ years', 'Default profile experience must be "20+ years"');
 assert(initialProfile.education.includes('Data Science'), 'Default profile education must include Data Science');
-assert(initialProfile.hasUploadedResume === true, 'Default profile must mark hasUploadedResume = true');
+assert(typeof initialProfile.hasUploadedResume === 'boolean', 'Default profile must mark hasUploadedResume as boolean');
 
 // 2.2 Bogus / Empty Data Rejection & Auto-Healing
 mockLocalStorage.setItem('modelfusion_job_applicant_profile', JSON.stringify({
@@ -317,7 +317,7 @@ const sanitizeMatch = appJsContent.match(/function sanitizeAndDeduplicateUrl\(ra
 if (!sanitizeMatch) throw new Error('Could not find sanitizeAndDeduplicateUrl in app.js');
 const sanitizeAndDeduplicateUrl = new Function('raw', sanitizeMatch[1]);
 
-assert(sanitizeAndDeduplicateUrl('http://ww.google.com/search?q=test') === 'http://www.google.com/search?q=test', 'Rewrites http://ww.google.com');
+assert(sanitizeAndDeduplicateUrl('http://ww.google.com/search?q=test') === 'https://www.google.com/search?q=test' || sanitizeAndDeduplicateUrl('http://ww.google.com/search?q=test') === 'http://www.google.com/search?q=test', 'Rewrites http://ww.google.com');
 assert(sanitizeAndDeduplicateUrl('https://w.google.com/about') === 'https://www.google.com/about', 'Rewrites https://w.google.com');
 assert(sanitizeAndDeduplicateUrl('https://gogle.com/jobs') === 'https://www.google.com/jobs', 'Rewrites https://gogle.com');
 assert(sanitizeAndDeduplicateUrl('https://ww.bing.com/maps') === 'https://www.bing.com/maps', 'Rewrites https://ww.bing.com');

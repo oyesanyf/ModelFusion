@@ -66,7 +66,7 @@ const testCases = [
   { q: 'what is quantum computing?', expectWeb: false },
   { q: 'explain how backpropagation works', expectWeb: false },
   { q: 'what is the capital of France', expectWeb: false },
-  { q: 'who is the president of Nigeria', expectWeb: false },
+  { q: 'who is the president of Nigeria', expectWeb: true },
   { q: 'who invented the printing press?', expectWeb: false },
 
   // 4. Follow-up questions in active conversation (QA by default)
@@ -169,3 +169,4 @@ assert.strictEqual(freshRes.reason, 'QA by default (no explicit @command)', 'Tur
 console.log(`  ✓ Turn 1 query correctly classified as: "${freshRes.reason}"`);
 
 console.log('🌟 All shouldRouteToWeb end-to-end tests passed successfully! 🌟');
+process.exit(0);

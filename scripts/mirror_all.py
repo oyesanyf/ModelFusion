@@ -55,7 +55,19 @@ for dst in destinations:
         if os.path.exists(dst) and get_sha256(dst) == src_hash:
             print(f"[MATCH (File in use, hash matched)] {dst}")
         else:
-            print(f"[WARN: Locked by running process] {dst} ({e})")
+            try:
+                old_path = dst + ".old"
+                if os.path.exists(old_path):
+                    try:
+                        os.remove(old_path)
+                    except Exception:
+                        pass
+                os.replace(dst, old_path)
+                shutil.copy2(src, dst)
+                match = (get_sha256(dst) == src_hash)
+                print(f"[{'MATCH (Replaced via NTFS rename)' if match else 'FAIL'}] {dst}")
+            except Exception as rename_err:
+                print(f"[WARN: Locked by running process] {dst} ({rename_err})")
 
 # Mirror browser UI files across all targets (IDE, Browser, and packaged distributions)
 ui_destinations = [

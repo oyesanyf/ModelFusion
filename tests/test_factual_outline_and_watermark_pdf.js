@@ -286,3 +286,4 @@ if (!cliExeToTest) {
 }
 
 console.log('\n🎉 ALL TESTS PASSED SUCCESSFULLY! Factual Outline & Watermark PDF fully verified.');
+process.exit(0);

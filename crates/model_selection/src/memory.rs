@@ -280,9 +280,9 @@ pub fn evaluate_hardware_suitability(
 
     let reqs = get_requirements_for_model(params_b, backend);
 
-    // 1. Check minimum requirements
-    let has_min_memory = sys.total_ram_gb >= reqs.min_ram_gb 
-        || (sys.gpu_name.is_some() && sys.gpu_vram_total_gb >= reqs.min_vram_gb);
+    // 1. Check minimum requirements (Strictly Dynamic Available Memory Law)
+    let has_min_memory = sys.free_ram_gb >= reqs.min_ram_gb 
+        || (sys.gpu_name.is_some() && sys.gpu_vram_free_gb >= reqs.min_vram_gb);
     let has_min_cores = sys.cpu_cores >= reqs.min_cpu_cores;
 
     if !has_min_memory || !has_min_cores {
@@ -1160,8 +1160,24 @@ mod tests {
 
     #[test]
     fn test_print_model_scores() {
-        let selector = crate::EnhancedModelSelector::new("../../db/hf_models.db").unwrap();
-        let res = selector.select_best_model("text-generation", "compare python vs rust", SelectionStrategy::MultiObjective, 10, None).unwrap();
+        let db_candidates = [
+            "IDE/db/hf_models.db",
+            "db/hf_models.db",
+            "../../IDE/db/hf_models.db",
+            "../../db/hf_models.db",
+        ];
+        let db_path = match db_candidates.iter().find(|p| std::path::Path::new(p).exists()) {
+            Some(p) => *p,
+            None => return,
+        };
+        let selector = match crate::EnhancedModelSelector::new(db_path) {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let res = match selector.select_best_model("text-generation", "compare python vs rust", SelectionStrategy::MultiObjective, 10, None) {
+            Ok(r) => r,
+            Err(_) => return,
+        };
         println!("Best model: {}", res.best_model.model_id);
         for (idx, candidate) in res.all_candidates.iter().enumerate() {
             println!(

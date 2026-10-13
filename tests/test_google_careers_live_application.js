@@ -238,6 +238,7 @@ async function run() {
   console.log('========================================================================');
   console.log('🎉 GOOGLE CAREERS JOB APPLICATION TEST PASSED WITH 100% SUCCESS!');
   console.log('========================================================================\n');
+  process.exit(0);
 }
 
 run().catch(err => {

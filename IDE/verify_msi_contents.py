@@ -176,6 +176,18 @@ def verify_copilot_extension_js(path, label, failures):
             failures.append(f"[{label}] ModelFusion auto-routing missing in _resolveUtilityFamily")
         else:
             print(f"  [PASS] {label} _resolveUtilityFamily auto-routes to ModelFusion")
+
+        # Check ModelFusionLMProvider presence
+        if "ModelFusionLMProvider" not in content:
+            failures.append(f"[{label}] ModelFusionLMProvider is MISSING from extension.js")
+        else:
+            print(f"  [PASS] {label} extension.js contains ModelFusionLMProvider")
+
+        # Check cliide.exe resolution presence
+        if "cliide.exe" not in content:
+            failures.append(f"[{label}] cliide.exe binary resolution is MISSING from extension.js")
+        else:
+            print(f"  [PASS] {label} extension.js contains cliide.exe resolution")
     except Exception as e:
         failures.append(f"[{label}] Failed reading extension.js: {e}")
 

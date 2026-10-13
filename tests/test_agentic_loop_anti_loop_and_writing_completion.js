@@ -303,3 +303,4 @@ assert.strictEqual(reasoningSweetSpot.domain, 'Deep Consensus Reasoning');
 console.log(`  ✓ Reasoning task routed to primary: ${reasoningSweetSpot.primary}`);
 
 console.log('\n🎉 ALL AGENTIC LOOP, COMPLETION & TASK-ADAPTIVE SWEET SPOT TESTS PASSED PERFECTLY!\n');
+process.exit(0);

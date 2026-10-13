@@ -322,6 +322,33 @@ pub fn calibrated_sweet_spot_model(sys: &SystemResourceSummary) -> &'static str 
     }
 }
 
+pub fn calibrated_max_capable_model_and_panel_size(sys: &SystemResourceSummary) -> (&'static str, usize) {
+    let max_capable_model = if sys.free_ram_gb >= 48.0 || sys.free_vram_mb >= 24_000 {
+        "qwen2.5:32b"
+    } else if sys.free_ram_gb >= 24.0 || sys.free_vram_mb >= 14_000 {
+        "qwen2.5:14b"
+    } else if sys.free_ram_gb >= 12.0 || sys.free_vram_mb >= 4_500 {
+        "qwen2.5:7b"
+    } else if sys.free_ram_gb >= 6.0 || sys.free_vram_mb >= 2_000 {
+        "qwen2.5:3b"
+    } else {
+        "qwen2.5:1.5b"
+    };
+    let free_vram_gb_val = (sys.free_vram_mb as f64) / 1024.0;
+    let fusion_panel_size: usize = if sys.free_ram_gb >= 64.0 || free_vram_gb_val >= 24.0 {
+        7
+    } else if sys.free_ram_gb >= 32.0 || free_vram_gb_val >= 12.0 {
+        5
+    } else if sys.free_ram_gb >= 16.0 || free_vram_gb_val >= 6.0 {
+        4
+    } else if sys.free_ram_gb >= 8.0 || free_vram_gb_val >= 3.0 {
+        3
+    } else {
+        2
+    };
+    (max_capable_model, fusion_panel_size)
+}
+
 /// Task-Adaptive Calibrated Sweet Spot Model Selection:
 /// Dynamically pairs the task modality with the optimal architecture:
 /// - Writing / Long-Form Prose / Essays -> Gemma 2 (gemma2:27b / gemma2:9b / gemma2:2b)
@@ -5267,6 +5294,7 @@ fn main() -> Result<()> {
         let sys_res = query_system_resources();
         let sweet_spot = calibrated_sweet_spot_model(&sys_res);
         let active_hw = select_ollama_model_from_sys(false, &sys_res);
+        let (max_capable_model, fusion_panel_size) = calibrated_max_capable_model_and_panel_size(&sys_res);
 
         let info = serde_json::json!({
             "cpu": sys_mem.gpu_name.is_none(),
@@ -5277,6 +5305,8 @@ fn main() -> Result<()> {
             "gpu_vram_total": sys_mem.gpu_vram_total_gb,
             "gpu_vram_free": sys_mem.gpu_vram_free_gb,
             "calibrated_sweet_spot": sweet_spot,
+            "max_capable_model": max_capable_model,
+            "fusion_panel_size": fusion_panel_size,
             "active_hardware_model": active_hw,
             "free_disk": free_disk_gb,
             "total_disk": total_disk_gb,
@@ -5562,6 +5592,7 @@ async fn run(args: Args) -> Result<()> {
         let sys_res = query_system_resources();
         let sweet_spot = calibrated_sweet_spot_model(&sys_res);
         let active_hw = select_ollama_model_from_sys(false, &sys_res);
+        let (max_capable_model, fusion_panel_size) = calibrated_max_capable_model_and_panel_size(&sys_res);
 
         let info = serde_json::json!({
             "cpu": sys_mem.gpu_name.is_none(),
@@ -5575,6 +5606,8 @@ async fn run(args: Args) -> Result<()> {
             "gpu_vram_free": sys_mem.gpu_vram_free_gb,
             "gpu_vram_available": sys_mem.gpu_vram_free_gb,
             "calibrated_sweet_spot": sweet_spot,
+            "max_capable_model": max_capable_model,
+            "fusion_panel_size": fusion_panel_size,
             "active_hardware_model": active_hw,
             "free_disk": free_disk_gb,
             "available_disk": free_disk_gb,
@@ -12652,6 +12685,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                 let sys = query_system_resources();
                 let active_hw_model = select_ollama_model_from_sys(false, &sys);
+                let (max_capable_model, fusion_panel_size) = calibrated_max_capable_model_and_panel_size(&sys);
 
                 let query_task = raw_request_uri
                     .split('?')
@@ -12692,6 +12726,8 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         "task": if query_task.is_empty() { "general" } else { &query_task },
                         "active_hardware_model": active_hw_model,
                         "calibrated_sweet_spot": sweet_spot,
+                        "max_capable_model": max_capable_model,
+                        "fusion_panel_size": fusion_panel_size,
                         "companion_model": companion_model,
                         "db_path": resolved_db.to_string_lossy().to_string()
                     })
@@ -12703,6 +12739,8 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         "task": if query_task.is_empty() { "general" } else { &query_task },
                         "active_hardware_model": active_hw_model,
                         "calibrated_sweet_spot": sweet_spot,
+                        "max_capable_model": max_capable_model,
+                        "fusion_panel_size": fusion_panel_size,
                         "companion_model": companion_model,
                         "db_path": resolved_db.to_string_lossy().to_string(),
                         "cpu_name": sys.cpu_name,
@@ -12725,6 +12763,8 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             "free_vram_mb": sys.free_vram_mb,
                             "has_gpu": sys.has_gpu,
                             "calibrated_sweet_spot": sweet_spot,
+                            "max_capable_model": max_capable_model,
+                            "fusion_panel_size": fusion_panel_size,
                             "free_disk_gb": (sys.free_disk_gb * 100.0).round() / 100.0
                         },
                         "consensus": {

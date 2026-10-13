@@ -259,7 +259,7 @@ if (-not $serverRunning) {
     $cliPath = Join-Path $rootDir "target\release\cli.exe"
     if (Test-Path $cliPath) {
         $cliDir = Split-Path -Parent $cliPath
-        Start-Process -FilePath $cliPath -ArgumentList "--server", "--port", "5000" -WorkingDirectory $cliDir -WindowStyle Hidden
+        Start-Process -FilePath $cliPath -ArgumentList "--server", "--port", "5000" -WorkingDirectory $cliDir -WindowStyle Hidden -RedirectStandardOutput "$env:TEMP\modelfusion_server_out.log" -RedirectStandardError "$env:TEMP\modelfusion_server_err.log"
         for ($i = 0; $i -lt 10; $i++) {
             try {
                 $h = Invoke-WebRequest -Uri "http://127.0.0.1:5000/health" -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue

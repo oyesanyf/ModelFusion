@@ -126,8 +126,8 @@ pub async fn run_fusion(
     let is_multi_sample = fusion_mode == "multi-sample";
 
     // For multi-sample mode: select 1 best model, create N configs with different temperatures
-    // For multi-model mode: select N different models
-    let panel_task = "text-generation";
+    // For multi-model mode: select N different models (uses detected_task with text-generation fallback)
+    let panel_task = detected_task.as_str();
 
     let (panel_models, fallback_pool) = if is_multi_sample {
         let (model_id, fallback) = if let Some(ref model_id) = forced_model {
