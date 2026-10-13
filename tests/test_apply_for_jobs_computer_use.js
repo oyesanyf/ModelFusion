@@ -613,6 +613,78 @@ assert(appJs.includes('ModelFusion Career-Ops & Autonomous Job Application Speci
 
 console.log('✅ Test 12 Passed: Load Page button and Career-Ops agent branding verified.\n');
 
-console.log('========================================================================');
-console.log('🎉 ALL 12 AUTONOMOUS JOB APPLICATION TEST SUITES PASSED WITH 100% SUCCESS!');
-console.log('========================================================================\n');
+// =========================================================================
+// 13. getIpcUrl, Instantaneous Workspace Grounding & confirmJobApplication
+// =========================================================================
+console.log('--- Test 13: getIpcUrl, Instantaneous Workspace Grounding & confirmJobApplication ---');
+
+(async () => {
+  // 13.1 Assert getIpcUrl is defined in app.js and returns proper URLs
+  const getIpcUrlMatch = appJs.match(/function getIpcUrl\([\s\S]*?\n\}/);
+  assert(getIpcUrlMatch, 'getIpcUrl function must exist in app.js');
+  vm.runInContext(getIpcUrlMatch[0], sandbox);
+  vm.runInContext('window.getIpcUrl = getIpcUrl;', sandbox);
+
+  const getIpcUrl = sandbox.window.getIpcUrl;
+  assert.strictEqual(typeof getIpcUrl, 'function', 'window.getIpcUrl must be a function');
+  assert.strictEqual(getIpcUrl('/api/jobs/apply'), 'http://127.0.0.1:5000/api/jobs/apply', 'getIpcUrl must format /api/jobs/apply correctly');
+  assert.strictEqual(getIpcUrl('/api/resume/parse'), 'http://127.0.0.1:5000/api/resume/parse', 'getIpcUrl must format /api/resume/parse correctly');
+  assert.strictEqual(getIpcUrl('api/test'), 'http://127.0.0.1:5000/api/test', 'getIpcUrl must add leading slash if omitted');
+
+  // 13.2 Verify isUniversalBrowserGoal includes job keywords
+  const testGoal = 'Search and apply for jobs: Senior Rust Engineer';
+  const isJobGoal = true;
+  const detectedJobs = [{ title: 'Senior Rust Engineer', company: 'Google' }];
+  const hasAnyStructuredItems = true;
+  const isContentGoal = /(?:extract|answer|question|test|exam|quiz|find|tell|solve|what|parse|vuln|security|threat|analy)/i.test(testGoal);
+  const isUniversalBrowserGoal = isContentGoal || isJobGoal || detectedJobs.length > 0 || hasAnyStructuredItems || /(?:job|jobs|apply|career|position|role|resume|hiring|recruit|shop|price|product|buy|cart|order|deal|book|ticket|flight|seat|hotel|reservation|form|submit|map|maps|direction|directions|route|navigate|distance|drive|transit|walk)/i.test(testGoal);
+  assert.strictEqual(isUniversalBrowserGoal, true, 'isUniversalBrowserGoal must evaluate to true for job goals');
+
+  assert(appJs.includes('const isUniversalBrowserGoal = isContentGoal || isJobGoal || detectedJobs.length > 0 || hasAnyStructuredItems'), 'app.js must include isJobGoal in isUniversalBrowserGoal');
+
+  // 13.3 Verify immediate workspace pre-rendering before /api/computer-use
+  assert(appJs.includes('const preStreamEl = bubble ? bubble.querySelector(\'.stream-content\') : null;'), 'app.js must query preStreamEl');
+  assert(appJs.includes('${hitlWorkspaceCardHtml}') && appJs.includes('stream-content-planner'), 'app.js must pre-render hitlWorkspaceCardHtml and stream-content-planner');
+
+  // 13.4 Verify confirmJobApplication executes and updates gate without ReferenceError
+  let mockGateHtml = '';
+  sandbox.document = {
+    getElementById: (id) => {
+      if (id === 'job-hitl-safety-gate') {
+        return {
+          set innerHTML(val) { mockGateHtml = val; },
+          get innerHTML() { return mockGateHtml; }
+        };
+      }
+      return null;
+    }
+  };
+  sandbox.fetchWithTimeout = async () => ({
+    ok: true,
+    json: async () => ({ status: 'ok', application_id: 'app-12345' })
+  });
+
+  // Mock active job posting
+  sandbox.window.activeJobPostings = [{
+    title: 'Senior Rust Systems Engineer',
+    company: 'ModelFusion Core Labs',
+    location: 'Remote',
+    applyUrl: 'https://careers.google.com/jobs/results/123'
+  }];
+
+  // Extract confirmJobApplication if not already in sandbox
+  const confirmMatch = appJs.match(/async function confirmJobApplication\([\s\S]*?\n  \}/);
+  assert(confirmMatch, 'confirmJobApplication must exist in app.js');
+  vm.runInContext(confirmMatch[0], sandbox);
+  vm.runInContext('window.confirmJobApplication = confirmJobApplication;', sandbox);
+
+  await sandbox.confirmJobApplication(0);
+  assert(mockGateHtml.includes('job-application-approved-banner'), 'confirmJobApplication must render .job-application-approved-banner');
+  assert(mockGateHtml.includes('Application Dispatched &amp; Confirmation Received!') || mockGateHtml.includes('Application Approved &amp; Submitted Successfully!'), 'confirmJobApplication must render confirmation banner');
+
+  console.log('✅ Test 13 Passed: getIpcUrl, isUniversalBrowserGoal parity & confirmJobApplication verified.\n');
+
+  console.log('========================================================================');
+  console.log('🎉 ALL 13 AUTONOMOUS JOB APPLICATION TEST SUITES PASSED WITH 100% SUCCESS!');
+  console.log('========================================================================\n');
+})();

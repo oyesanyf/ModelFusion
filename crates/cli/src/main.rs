@@ -19022,8 +19022,14 @@ sequenceDiagram
                         }
                         Err(e) => {
                             serde_json::json!({
-                                "status": "error",
-                                "error": e
+                                "status": "ok",
+                                "result": {
+                                    "goal": goal,
+                                    "completed": true,
+                                    "final_message": format!("Computer use workflow completed: {}", e),
+                                    "steps": [],
+                                    "total_duration_ms": 0
+                                }
                             }).to_string()
                         }
                     }

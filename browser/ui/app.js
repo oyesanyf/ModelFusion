@@ -40,6 +40,18 @@ if (typeof window !== 'undefined') {
   window.normalizeModelTag = normalizeModelTag;
 }
 
+function getIpcUrl(endpointPath = '') {
+  const base = ((typeof currentSettings !== 'undefined' && currentSettings && currentSettings.ipcUrl) ? currentSettings.ipcUrl : 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+  const cleanPath = String(endpointPath || '').startsWith('/') ? String(endpointPath || '') : `/${endpointPath || ''}`;
+  return `${base}${cleanPath}`;
+}
+if (typeof window !== 'undefined') {
+  window.getIpcUrl = getIpcUrl;
+}
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports.getIpcUrl = getIpcUrl;
+}
+
 function isModelMatch(candidate, target) {
   if (!candidate || !target) return false;
   const c = normalizeModelTag(typeof candidate === 'string' ? candidate : (candidate.name || candidate.model || '')).toLowerCase().trim();
@@ -23682,7 +23694,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 
       let parsedData = null;
       try {
-        const resp = await fetch('http://127.0.0.1:5000/api/resume/parse', {
+        const resp = await fetch(getIpcUrl('/api/resume/parse'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -26704,12 +26716,19 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     termLog(`🖥️ [COMPUTER USE] Initializing UI-TARS autonomous loop for goal: "${goal}"`, 'info');
     setChatRunningState(true);
 
+    const isEarlyJobGoal = isJobApplicationCmd || /(?:apply[- ]?jobs?|job[- ]?applications?|job[- ]?apply|career[- ]?ops|search and apply for jobs|\bjobs?\b|\bcareers?\b|\bhiring\b|\brecruit)/i.test(goal);
+
     const bubble = createAiBubble({
-      icon: '🖥️',
-      title: 'HugOS Computer Use Agent (UI-TARS)',
-      modelTag: 'ui-tars • OS Grounding',
+      icon: isEarlyJobGoal ? '💼' : '🖥️',
+      title: isEarlyJobGoal ? 'ModelFusion Career-Ops & Job Application Agent' : 'HugOS Computer Use Agent (UI-TARS)',
+      modelTag: isEarlyJobGoal ? 'Career-Ops • ATS & CV Fit' : 'ui-tars • OS Grounding',
       isTool: true
     });
+
+    if (isEarlyJobGoal && bubble) {
+      const sp = bubble.querySelector('.spinner-text');
+      if (sp) sp.textContent = '⏳ Grounding Career-Ops job postings, ATS requirements & candidate CV fit...';
+    }
 
     // 1) Concurrently execute live web search via ModelFusion backend search endpoint (/api/search?q=...)
     let liveSearchResults = [];
@@ -26760,10 +26779,11 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       termLog(`👁️ [COMPUTER USE] Inspecting and grounding live page DOM: ${targetNavUrl}`, 'info');
       try {
         let htmlContent = '';
+        let proxyFetchAttempted = false;
         // Direct fetch (fastest for localhost / 127.0.0.1 / CORS enabled)
         try {
-          const directResp = await fetch(targetNavUrl, { mode: 'cors' });
-          if (directResp.ok) {
+          const directResp = await fetchWithTimeout(targetNavUrl, { mode: 'cors', timeout: 1500 });
+          if (directResp && directResp.ok) {
             htmlContent = await directResp.text();
           }
         } catch (_) {}
@@ -26772,8 +26792,9 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         if (!htmlContent) {
           const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
           try {
-            const proxyResp = await fetch(`${ipcUrl}/api/proxy?url=${encodeURIComponent(targetNavUrl)}`);
-            if (proxyResp.ok) {
+            proxyFetchAttempted = true;
+            const proxyResp = await fetchWithTimeout(`${ipcUrl}/api/proxy?url=${encodeURIComponent(targetNavUrl)}`, { timeout: 2500 });
+            if (proxyResp && proxyResp.ok) {
               htmlContent = await proxyResp.text();
             }
           } catch (_) {}
@@ -26834,11 +26855,12 @@ Analyze the temporal progression across the sampled video keyframes, describing 
         if (detectedExamQuestions.length === 0 && (htmlContent || livePageText)) {
           detectedExamQuestions = extractExamQuestions(null, htmlContent || livePageText);
         }
-        if (detectedExamQuestions.length === 0 && (isExamGoal || /exam[- ]?solver/i.test(goal) || /exam[- ]?solver/i.test(cmd)) && targetNavUrl) {
+        if (detectedExamQuestions.length === 0 && (isExamGoal || /exam[- ]?solver/i.test(goal) || /exam[- ]?solver/i.test(cmd)) && targetNavUrl && !proxyFetchAttempted) {
           try {
+            proxyFetchAttempted = true;
             const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
-            const proxyResp = await fetch(`${ipcUrl}/api/proxy?url=${encodeURIComponent(targetNavUrl)}`);
-            if (proxyResp.ok) {
+            const proxyResp = await fetchWithTimeout(`${ipcUrl}/api/proxy?url=${encodeURIComponent(targetNavUrl)}`, { timeout: 2500 });
+            if (proxyResp && proxyResp.ok) {
               const fetchedHtml = await proxyResp.text();
               if (fetchedHtml) {
                 detectedExamQuestions = extractExamQuestions(null, fetchedHtml);
@@ -26857,10 +26879,12 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     // Universal Proxy Fetch Helper for Cross-Origin Viewport Inspection
     const fetchTargetHtmlViaProxy = async (url) => {
       if (!url) return null;
+      if (proxyFetchAttempted) return '';
       try {
+        proxyFetchAttempted = true;
         const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
-        const proxyResp = await fetch(`${ipcUrl}/api/proxy?url=${encodeURIComponent(url)}`);
-        if (proxyResp.ok) {
+        const proxyResp = await fetchWithTimeout(`${ipcUrl}/api/proxy?url=${encodeURIComponent(url)}`, { timeout: 2500 });
+        if (proxyResp && proxyResp.ok) {
           return await proxyResp.text();
         }
       } catch (_) {}
@@ -27332,12 +27356,23 @@ The live webpage contains ${detectedDirections?.routes?.length || 1} navigation 
       userAiPrompt += `Please summarize the route options, highlight the fastest route, and describe turn-by-turn guidance.`;
     }
 
+    const preStreamEl = bubble ? bubble.querySelector('.stream-content') : null;
+    if (preStreamEl && (hitlWorkspaceCardHtml || searchCardHtml || livePageCardHtml)) {
+      preStreamEl.innerHTML = `
+        ${searchCardHtml}
+        ${livePageCardHtml}
+        ${hitlWorkspaceCardHtml}
+        ${uitarsGroundingHtml}
+        <div class="stream-content-planner" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text-muted);">⏳ Synthesizing Career-Ops & grounding analysis...</div>
+      `;
+    }
+
     try {
       const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
       let resp = null;
       let fetchErr = null;
       try {
-        resp = await fetch(`${ipcUrl}/api/computer-use`, {
+        resp = await fetchWithTimeout(`${ipcUrl}/api/computer-use`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -27347,7 +27382,8 @@ The live webpage contains ${detectedDirections?.routes?.length || 1} navigation 
             url: targetNavUrl,
             page_title: livePageTitle,
             page_content: livePageText ? livePageText.slice(0, 10000) : ''
-          })
+          }),
+          timeout: isJobGoal ? 3500 : 10000
         });
       } catch (fErr) {
         fetchErr = fErr;
@@ -27371,7 +27407,7 @@ The live webpage contains ${detectedDirections?.routes?.length || 1} navigation 
           bubble.classList.remove('streaming');
           const res = data.result;
           const isContentGoal = /(?:extract|answer|question|test|exam|quiz|find|tell|solve|what|parse|vuln|security|threat|analy)/i.test(goal);
-          const isUniversalBrowserGoal = isContentGoal || /(?:shop|price|product|buy|cart|order|deal|book|ticket|flight|seat|hotel|reservation|form|submit|map|maps|direction|directions|route|navigate|distance|drive|transit|walk)/i.test(goal);
+          const isUniversalBrowserGoal = isContentGoal || isJobGoal || detectedJobs.length > 0 || hasAnyStructuredItems || /(?:job|jobs|apply|career|position|role|resume|hiring|recruit|shop|price|product|buy|cart|order|deal|book|ticket|flight|seat|hotel|reservation|form|submit|map|maps|direction|directions|route|navigate|distance|drive|transit|walk)/i.test(goal);
 
           if (isUniversalBrowserGoal) { // Handles if (isContentGoal) { and all universal browser workflows
             let html = `
