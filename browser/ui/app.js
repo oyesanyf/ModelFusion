@@ -3866,7 +3866,7 @@ const SPECIFIC_MODEL_CARDS = {
 
   'prithvi': {
     id: 'prithvi',
-    name: 'Prithvi NASA-IBM Geospatial Earth Model',
+    name: 'Prithvi-EO-2.0 NASA-IBM Geospatial Earth Model',
     category: 'science',
     icon: '🛰️',
     author: 'NASA & IBM Research',
@@ -3938,7 +3938,7 @@ const SPECIFIC_MODEL_CARDS = {
 
   'evo': {
     id: 'evo',
-    name: 'Evo Genomic Foundation Suite',
+    name: 'Evo 2 Genomic Foundation Suite',
     category: 'science',
     icon: '🧬',
     author: 'Arc Institute, Stanford & Together AI',
@@ -4014,7 +4014,7 @@ const SPECIFIC_MODEL_CARDS = {
 
   'chronos': {
     id: 'chronos',
-    name: 'Chronos-T5 Zero-Shot Time-Series Forecaster',
+    name: 'Chronos-Bolt & Chronos-T5 Zero-Shot Time-Series Forecaster',
     category: 'finance',
     icon: '⏱️',
     author: 'Amazon Science',
@@ -4062,7 +4062,7 @@ const SPECIFIC_MODEL_CARDS = {
 
   'llama-fin': {
     id: 'llama-fin',
-    name: 'Llama-Fin-8B Valuation & DCF Engine',
+    name: 'Llama-3.3-Fin-8B Valuation & DCF Engine',
     category: 'finance',
     icon: '💼',
     author: 'ModelFusion Quantitative Finance Group',
@@ -4086,7 +4086,7 @@ const SPECIFIC_MODEL_CARDS = {
 
   'fingpt': {
     id: 'fingpt',
-    name: 'FinGPT-Forecaster Market Movement Predictor',
+    name: 'FinGPT-Forecaster v3.3 Market Movement Predictor',
     category: 'finance',
     icon: '📉',
     author: 'AI4Finance Foundation',
@@ -4110,7 +4110,7 @@ const SPECIFIC_MODEL_CARDS = {
 
   'saul-7b': {
     id: 'saul-7b',
-    name: 'Saul-7B Mistral Legal Reasoning LLM',
+    name: 'SaulLM-7B / 54B Legal Reasoning LLM',
     category: 'legal',
     icon: '⚖️',
     author: 'Equall AI / LegalBench',
@@ -4236,7 +4236,7 @@ const SPECIFIC_MODEL_CARDS = {
 
   'ui-tars': {
     id: 'ui-tars',
-    name: 'UI-TARS Vision-Language Desktop Agent',
+    name: 'UI-TARS-1.5 Vision-Language Desktop Agent',
     category: 'computer_use',
     icon: '🖱️',
     author: 'ByteDance & UI-TARS Open Source Consortium',
@@ -4417,7 +4417,7 @@ const SPECIFIC_MODEL_CARDS = {
 
   'yolo': {
     id: 'yolo',
-    name: 'YOLOv10 / DETR Real-Time Object Detection',
+    name: 'YOLOv11 / DETR Real-Time Object Detection',
     category: 'vision',
     icon: '🔍',
     author: 'Tsinghua University / Ultralytics',
@@ -4465,7 +4465,7 @@ const SPECIFIC_MODEL_CARDS = {
 
   'whisper': {
     id: 'whisper',
-    name: 'OpenAI Whisper Large-v3 Multilingual ASR',
+    name: 'OpenAI Whisper Large-v3-Turbo Multilingual ASR',
     category: 'audio',
     icon: '🎙️',
     author: 'OpenAI & Open-Source Community',
@@ -7380,6 +7380,708 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
         </div>
       </details>
     `;
+  }
+
+  // -----------------------------------------------------------------
+  // 4.496b Universal Accurate Search & Multi-Source Grounding Suite
+  // -----------------------------------------------------------------
+
+  /**
+   * Cleans and optimizes query string for search engine and knowledge retrieval
+   */
+  function buildOptimizedSearchQuery(rawQuery, domain = 'general') {
+    if (!rawQuery || typeof rawQuery !== 'string') return '';
+    let q = rawQuery
+      .replace(/^@agent\s+[\w-]+\s*:?\s*/i, '')
+      .replace(/^[\/@][\w-]+\s*:?\s*/i, '')
+      .replace(/--[\w-]+(?:\s+[^\s]+)?/g, '')
+      .replace(/\b(?:please\s+)?(?:analyze|evaluate|explain|tell\s+me\s+about|what\s+is|what\s+are|how\s+does|can\s+you\s+find|search\s+for|look\s+up|give\s+me)\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (domain === 'finance') {
+      if (/\b(?:stock|price|quote|shares|market\s+cap|valuation|pe\s+ratio)\b/i.test(q)) {
+        if (!/\b202[5-9]\b/.test(q)) q += ' stock price quote 2026';
+      }
+    } else if (domain === 'science' || domain === 'rd_agent') {
+      if (!/\b(?:paper|preprint|research|arxiv|discovery)\b/i.test(q)) {
+        q += ' research preprint 2026';
+      }
+    } else if (domain === 'legal' || domain === 'compliance') {
+      if (!/\b(?:statute|regulation|law|precedent|compliance)\b/i.test(q)) {
+        q += ' legal statute regulation 2026';
+      }
+    } else if (domain === 'code_security') {
+      // Preserve CVE identifiers if present
+      const cveMatch = rawQuery.match(/\bCVE-\d{4}-\d{4,7}\b/i);
+      if (cveMatch && !q.includes(cveMatch[0])) {
+        q = `${cveMatch[0]} ${q}`;
+      }
+    }
+    return q.trim();
+  }
+
+  function sanitizeSearchTopic(rawQuery) {
+    if (!rawQuery || typeof rawQuery !== 'string') return '';
+    return rawQuery
+      .replace(/^@agent\s+[\w-]+\s*:?\s*/i, '')
+      .replace(/^[\/@][\w-]+\s*:?\s*/i, '')
+      .replace(/--[\w-]+(?:\s+[^\s]+)?/g, '')
+      .replace(/\b(?:stock|price|market|quote|shares|valuation|analysis|overview|guide)\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /**
+   * Deduplicates search results by normalized URL and scores results by
+   * keyword match, domain authority (sec.gov, nasdaq.com, arxiv.org, nature.com, etc.), and freshness.
+   */
+  function deduplicateAndRankSearchResults(results, query = '') {
+    if (!Array.isArray(results) || results.length === 0) return [];
+
+    const normalizeUrl = (url) => {
+      try {
+        const u = new URL(url);
+        return `${u.hostname.replace(/^www\./, '')}${u.pathname.replace(/\/+$/, '')}`.toLowerCase();
+      } catch (_) {
+        return (url || '').toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/+$/, '');
+      }
+    };
+
+    const queryTokens = (query || '').toLowerCase().split(/\W+/).filter(t => t.length > 2);
+
+    const highTrustDomains = {
+      'nasdaq.com': 8,
+      'sec.gov': 8,
+      'federalreserve.gov': 7,
+      'bls.gov': 7,
+      'wikipedia.org': 6,
+      'arxiv.org': 8,
+      'nature.com': 8,
+      'science.org': 8,
+      'ncbi.nlm.nih.gov': 8,
+      'law.cornell.edu': 7,
+      'supremecourt.gov': 8,
+      'justia.com': 6,
+      'courtlistener.com': 6,
+      'nvd.nist.gov': 8,
+      'cve.org': 8,
+      'github.com': 5,
+      'rust-lang.org': 6,
+      'developer.mozilla.org': 6,
+      'reuters.com': 6,
+      'bloomberg.com': 6,
+      'wsj.com': 6,
+      'cnbc.com': 5
+    };
+
+    const seenUrls = new Set();
+    const scored = [];
+
+    for (const item of results) {
+      if (!item || (!item.title && !item.snippet)) continue;
+      const norm = normalizeUrl(item.url || '');
+      if (norm && seenUrls.has(norm)) continue;
+      if (norm) seenUrls.add(norm);
+
+      let score = 0;
+      const titleLower = (item.title || '').toLowerCase();
+      const snipLower = (item.snippet || '').toLowerCase();
+      const text = `${titleLower} ${snipLower}`;
+
+      // Keyword overlap
+      for (const token of queryTokens) {
+        if (titleLower.includes(token)) score += 3;
+        if (snipLower.includes(token)) score += 1;
+      }
+
+      // Domain authority bonus
+      for (const [dom, weight] of Object.entries(highTrustDomains)) {
+        if (norm.includes(dom)) {
+          score += weight;
+          break;
+        }
+      }
+
+      // Freshness bonus
+      if (text.includes('2026')) score += 5;
+      else if (text.includes('2025')) score += 3;
+
+      scored.push({ item, score });
+    }
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored.map(s => s.item);
+  }
+
+  /**
+   * Fetches official summary extract from Wikipedia REST API with fast fallback
+   */
+  async function fetchWikipediaSummary(topic) {
+    if (!topic || typeof topic !== 'string') return null;
+    const cleanTopic = topic.trim();
+    if (!cleanTopic) return null;
+
+    try {
+      const res = await fetchWithTimeout(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cleanTopic.replace(/ /g, '_'))}`, { timeout: 2500 });
+      if (res && res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data && data.extract && data.type !== 'disambiguation') {
+          return {
+            title: data.title || cleanTopic,
+            extract: data.extract,
+            url: data.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(cleanTopic.replace(/ /g, '_'))}`
+          };
+        }
+      }
+    } catch (_) {}
+
+    // Fallback: search Wikipedia
+    try {
+      const sResults = await searchWikipediaDirect(cleanTopic, 1);
+      if (sResults && sResults.length > 0) {
+        const art = await fetchWikipediaArticleDirect(sResults[0].title);
+        if (art && art.extract) {
+          return {
+            title: art.title,
+            extract: art.extract.slice(0, 600),
+            url: art.url
+          };
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /**
+   * Real-Time Financial Market Quote Fetcher
+   * Multi-tier architecture:
+   * Tier 1: Local Master Server /api/finance/quote (Nasdaq Live API backend)
+   * Tier 2: Direct Nasdaq JSON API (https://api.nasdaq.com/api/quote/{SYM})
+   * Tier 3: Live Web Search extraction
+   * NEVER returns hardcoded stale baseline quotes or default GOOGL for non-ticker queries!
+   */
+  async function fetchLiveMarketQuote(query) {
+    if (!query || typeof query !== 'string') return null;
+    const q = query.trim();
+    const qLower = q.toLowerCase();
+
+    // 40+ Top Companies & Symbols Map
+    const companyToTicker = [
+      [['googl', 'goog', 'google', 'alphabet'], 'GOOGL', 'Alphabet Inc.'],
+      [['aapl', 'apple'], 'AAPL', 'Apple Inc.'],
+      [['msft', 'microsoft'], 'MSFT', 'Microsoft Corporation'],
+      [['nvda', 'nvidia'], 'NVDA', 'NVIDIA Corporation'],
+      [['amzn', 'amazon'], 'AMZN', 'Amazon.com Inc.'],
+      [['meta', 'facebook'], 'META', 'Meta Platforms Inc.'],
+      [['tsla', 'tesla'], 'TSLA', 'Tesla Inc.'],
+      [['nflx', 'netflix'], 'NFLX', 'Netflix Inc.'],
+      [['amd', 'advanced micro devices'], 'AMD', 'Advanced Micro Devices Inc.'],
+      [['intc', 'intel'], 'INTC', 'Intel Corporation'],
+      [['avgo', 'broadcom'], 'AVGO', 'Broadcom Inc.'],
+      [['pltr', 'palantir'], 'PLTR', 'Palantir Technologies Inc.'],
+      [['orcl', 'oracle'], 'ORCL', 'Oracle Corporation'],
+      [['crm', 'salesforce'], 'CRM', 'Salesforce Inc.'],
+      [['coin', 'coinbase'], 'COIN', 'Coinbase Global Inc.'],
+      [['uber'], 'UBER', 'Uber Technologies Inc.'],
+      [['abnb', 'airbnb'], 'ABNB', 'Airbnb Inc.'],
+      [['snow', 'snowflake'], 'SNOW', 'Snowflake Inc.'],
+      [['brk.b', 'brk-b', 'berkshire'], 'BRK.B', 'Berkshire Hathaway Inc.'],
+      [['jpm', 'jpmorgan', 'jp morgan'], 'JPM', 'JPMorgan Chase & Co.'],
+      [['gs', 'goldman sachs', 'goldman'], 'GS', 'Goldman Sachs Group Inc.'],
+      [['v', 'visa'], 'V', 'Visa Inc.'],
+      [['ma', 'mastercard'], 'MA', 'Mastercard Inc.'],
+      [['wmt', 'walmart'], 'WMT', 'Walmart Inc.'],
+      [['cost', 'costco'], 'COST', 'Costco Wholesale Corporation'],
+      [['dis', 'disney'], 'DIS', 'Walt Disney Company'],
+      [['ba', 'boeing'], 'BA', 'Boeing Company'],
+      [['xom', 'exxon'], 'XOM', 'Exxon Mobil Corporation'],
+      [['cvx', 'chevron'], 'CVX', 'Chevron Corporation'],
+      [['lly', 'eli lilly', 'lilly'], 'LLY', 'Eli Lilly and Company'],
+      [['nvo', 'novo nordisk'], 'NVO', 'Novo Nordisk A/S'],
+      [['asml'], 'ASML', 'ASML Holding N.V.'],
+      [['tsm', 'tsmc', 'taiwan semiconductor'], 'TSM', 'Taiwan Semiconductor Manufacturing Co.'],
+      [['arm'], 'ARM', 'Arm Holdings plc'],
+      [['mu', 'micron'], 'MU', 'Micron Technology Inc.'],
+      [['qcom', 'qualcomm'], 'QCOM', 'Qualcomm Inc.'],
+      [['ibm'], 'IBM', 'International Business Machines Corp.'],
+      [['csco', 'cisco'], 'CSCO', 'Cisco Systems Inc.'],
+      [['shop', 'shopify'], 'SHOP', 'Shopify Inc.'],
+      [['spot', 'spotify'], 'SPOT', 'Spotify Technology S.A.'],
+      [['spy', 's&p 500', 'sp500'], 'SPY', 'SPDR S&P 500 ETF Trust']
+    ];
+
+    let ticker = null;
+    let name = null;
+
+    // 1. Alias lookup
+    for (const [aliases, sym, cname] of companyToTicker) {
+      for (const alias of aliases) {
+        const regex = new RegExp(`(^|\\b)${alias}(\\b|$)`, 'i');
+        if (regex.test(qLower)) {
+          ticker = sym;
+          name = cname;
+          break;
+        }
+      }
+      if (ticker) break;
+    }
+
+    // 2. $TICKER or explicit ticker syntax
+    if (!ticker) {
+      const tickerMatch = q.match(/\$([A-Z]{1,5})\b/i) || q.match(/\b(?:ticker|stock|symbol)\s*:?\s*([A-Z]{1,5})\b/i);
+      if (tickerMatch) {
+        ticker = tickerMatch[1].toUpperCase();
+        name = ticker;
+      }
+    }
+
+    // 3. Standalone uppercase 1-5 letters (excluding stopwords & tool keywords)
+    if (!ticker) {
+      const candidateMatch = q.match(/\b([A-Z]{1,5})\b/);
+      if (candidateMatch) {
+        const candidate = candidateMatch[1].toUpperCase();
+        const stopwords = new Set([
+          'CHRONOS', 'FINBERT', 'FINGPT', 'DCF', 'SEC', 'CEO', 'CFO', 'GDP', 'CPI', 'ETF', 'IPO', 'ROE', 'ROI',
+          'YOY', 'QOQ', 'USD', 'EUR', 'GBP', 'JPY', 'THE', 'AND', 'FOR', 'INC', 'CORP', 'STOCK', 'PRICE',
+          'LIVE', 'QUOTE', 'WHAT', 'SHOW', 'LIST', 'VIEW', 'RATE', 'HIGH', 'LOW', 'CAP', 'API', 'NOW', 'HOW',
+          'WHY', 'CAN', 'YOU', 'ARE', 'ALL', 'AI', 'NLP', 'ML', 'LLM', 'RL', 'USA', 'UK'
+        ]);
+        if (!stopwords.has(candidate)) {
+          // If query has financial terms, accept candidate
+          if (/\b(?:stock|price|market|shares|equity|quote|valuation)\b/i.test(qLower)) {
+            ticker = candidate;
+            name = candidate;
+          }
+        }
+      }
+    }
+
+    // CRITICAL: If no ticker is found and query has no financial company context, return null!
+    // NEVER default non-ticker queries to 'GOOGL'!
+    if (!ticker) {
+      return null;
+    }
+
+    const targetTicker = ticker;
+    const targetName = name || targetTicker;
+
+    // Tier 1: Query ModelFusion Master Server real-time quote endpoint (:5000 / :5005)
+    try {
+      const res = await fetchWithTimeout(getIpcUrl(`/api/finance/quote?ticker=${encodeURIComponent(targetTicker)}&q=${encodeURIComponent(targetTicker)}`), { method: 'GET', timeout: 2500 });
+      if (res && res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data && data.status === 'ok' && (data.price || data.price_formatted)) {
+          const priceStr = data.price_formatted || (typeof data.price === 'number' ? `$${data.price.toFixed(2)}` : String(data.price));
+          return {
+            ticker: data.ticker || targetTicker,
+            name: data.name || targetName,
+            price: priceStr,
+            change: data.change || `${data.net_change || ''} (${data.pct_change || ''})`.trim(),
+            isUp: data.is_up !== false,
+            range_52w: data.range_52w || 'N/A',
+            marketCap: data.market_cap || 'Live Cap',
+            pe: data.pe_ratio || data.pe || '',
+            forwardPe: data.forward_pe || '',
+            eps: data.eps || '',
+            volume: data.volume || '',
+            exchange: data.exchange || 'NASDAQ',
+            source: data.source || 'Nasdaq Real-Time Market Feed',
+            url: data.google_finance_url || `https://www.google.com/finance/quote/${targetTicker}:NASDAQ`,
+            searchContext: data.summary || data.search_context || `${targetName} (${targetTicker}) live quote: ${priceStr}`
+          };
+        }
+      }
+    } catch (_) {}
+
+    // Tier 2: Direct client-side live market query via Nasdaq JSON API
+    try {
+      const nasdaqInfoRes = await fetchWithTimeout(`https://api.nasdaq.com/api/quote/${encodeURIComponent(targetTicker)}/info?assetclass=stocks`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        timeout: 2500
+      });
+      if (nasdaqInfoRes && nasdaqInfoRes.ok) {
+        const infoData = await nasdaqInfoRes.json().catch(() => null);
+        const primary = infoData?.data?.primaryData;
+        if (primary && primary.lastSalePrice) {
+          const rawPrice = primary.lastSalePrice.replace('$', '').replace(/,/g, '').trim();
+          const priceNum = parseFloat(rawPrice);
+          const priceStr = !isNaN(priceNum) ? `$${priceNum.toFixed(2)}` : primary.lastSalePrice;
+          const netChange = primary.netChange || '';
+          const pctChange = primary.percentageChange || '';
+          const delta = (primary.deltaIndicator || '').toLowerCase();
+          const isUp = delta === 'up' || !netChange.startsWith('-');
+          const companyName = infoData?.data?.companyName ? infoData.data.companyName.replace(/ Class A Common Stock| Common Stock/gi, '').trim() : targetName;
+          const exchange = infoData?.data?.exchange || 'NASDAQ';
+
+          // Try summary for 52-week range and market cap
+          let range52w = 'N/A';
+          let marketCapStr = 'Live Cap';
+          let peStr = '';
+          try {
+            const sumRes = await fetchWithTimeout(`https://api.nasdaq.com/api/quote/${encodeURIComponent(targetTicker)}/summary?assetclass=stocks`, {
+              method: 'GET',
+              headers: { 'Accept': 'application/json' },
+              timeout: 2000
+            });
+            if (sumRes && sumRes.ok) {
+              const sumData = await sumRes.json().catch(() => null);
+              const sd = sumData?.data?.summaryData;
+              if (sd) {
+                const rRaw = sd.FiftTwoWeekHighLow?.value || sd.FiftyTwoWeekHighLow?.value;
+                if (rRaw && rRaw.includes('/')) {
+                  const [v1, v2] = rRaw.split('/').map(v => parseFloat(v.replace('$', '').trim())).filter(v => !isNaN(v));
+                  if (v1 && v2) {
+                    range52w = `$${Math.min(v1, v2).toFixed(2)} - $${Math.max(v1, v2).toFixed(2)}`;
+                  }
+                }
+                const mcRaw = sd.MarketCap?.value;
+                if (mcRaw) {
+                  const mcNum = parseFloat(mcRaw.replace(/,/g, ''));
+                  if (!isNaN(mcNum)) {
+                    if (mcNum >= 1e12) marketCapStr = `$${(mcNum / 1e12).toFixed(2)}T`;
+                    else if (mcNum >= 1e9) marketCapStr = `$${(mcNum / 1e9).toFixed(2)}B`;
+                    else if (mcNum >= 1e6) marketCapStr = `$${(mcNum / 1e6).toFixed(2)}M`;
+                    else marketCapStr = `$${mcRaw}`;
+                  }
+                }
+                peStr = sd.PERatio?.value || '';
+              }
+            }
+          } catch (_) {}
+
+          return {
+            ticker: targetTicker,
+            name: companyName,
+            price: priceStr,
+            change: `${netChange} (${pctChange})`.trim(),
+            isUp,
+            range_52w: range52w,
+            marketCap: marketCapStr,
+            pe: peStr,
+            exchange,
+            source: 'Nasdaq Real-Time Market Feed',
+            url: `https://www.google.com/finance/quote/${targetTicker}:${exchange.split('-')[0] || 'NASDAQ'}`,
+            searchContext: `${companyName} (${targetTicker}) live quote: ${priceStr}, 52-week range: ${range52w}, market cap: ${marketCapStr}`
+          };
+        }
+      }
+    } catch (_) {}
+
+    // Tier 3: Live Web Search extraction fallback (No hardcoded 2024 baselines!)
+    try {
+      const searchRes = await executeWebSearch(`${targetTicker} stock price market cap 52 week range 2026`, 5);
+      if (Array.isArray(searchRes) && searchRes.length > 0) {
+        const text = searchRes.map(r => `${r.title}: ${r.snippet}`).join(' | ');
+        const priceMatch = text.match(/\$(\d{1,5}(?:\.\d{1,2})?)/);
+        if (priceMatch) {
+          const parsedPrice = parseFloat(priceMatch[1]);
+          const priceStr = `$${parsedPrice.toFixed(2)}`;
+          return {
+            ticker: targetTicker,
+            name: targetName,
+            price: priceStr,
+            change: '+1.72 (+0.49%)',
+            isUp: true,
+            range_52w: 'Verified 2026 Range',
+            marketCap: 'Live Cap',
+            pe: '',
+            source: 'Live Web Search Market Feed',
+            url: `https://www.google.com/finance/quote/${targetTicker}:NASDAQ`,
+            searchContext: text
+          };
+        }
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  async function fetchLiveLegalGrounding(query) {
+    if (!query || typeof query !== 'string') return null;
+    const q = query.trim();
+    const localAuthorities = resolveLegalDomainAuthorities(q);
+    if (!localAuthorities) return null;
+
+    // Query ModelFusion Master Server real-time legal grounding endpoint with 3000ms timeout
+    try {
+      const res = await fetchWithTimeout(getIpcUrl(`/api/legal/ground?q=${encodeURIComponent(q)}`), { method: 'GET', timeout: 3000 });
+      if (res && res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data && data.status === 'ok') {
+          return {
+            topic: q,
+            domain: data.domain || localAuthorities.domainName,
+            statutes: Array.isArray(data.statutes) && data.statutes.length > 0 ? data.statutes : localAuthorities.statutes,
+            precedents: Array.isArray(data.precedents) && data.precedents.length > 0 ? data.precedents : localAuthorities.precedents,
+            summary: data.summary || localAuthorities.defaultSummary,
+            sources: data.sources || []
+          };
+        }
+      }
+    } catch (_) {}
+
+    return {
+      topic: q,
+      domain: localAuthorities.domainName,
+      statutes: localAuthorities.statutes,
+      precedents: localAuthorities.precedents,
+      summary: localAuthorities.defaultSummary,
+      sources: []
+    };
+  }
+
+  function buildMarketTickerCardHtml(quote) {
+    if (!quote || !quote.price) return '';
+    return `
+      <div class="finance-live-ticker-card" style="margin: 8px 0 14px 0; padding: 12px 14px; background: linear-gradient(135deg, rgba(16,185,129,0.12) 0%, rgba(15,23,42,0.85) 100%); border: 1px solid rgba(16,185,129,0.4); border-radius: 8px; font-family: inherit;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <span style="font-weight: 700; font-size: 14.5px; color: #10b981; display: inline-flex; align-items: center; gap: 6px;">
+            <span>💹</span> <strong>${escapeHtml(quote.ticker)}</strong> &bull; <span style="color: #cbd5e1; font-weight: 500;">${escapeHtml(quote.name)}</span>
+          </span>
+          <span style="font-size: 19px; font-weight: 800; color: #f8fafc; letter-spacing: -0.02em;">${escapeHtml(quote.price)}</span>
+        </div>
+        <div style="font-size: 11.5px; color: #94a3b8; display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 8px;">
+          ${quote.change ? `<span><strong style="color: #cbd5e1;">Change:</strong> <span style="color: ${quote.isUp ? '#10b981' : '#ef4444'}; font-weight: 600;">${escapeHtml(quote.change)}</span></span>` : ''}
+          <span><strong style="color: #cbd5e1;">52-Wk Range:</strong> ${escapeHtml(quote.range_52w || 'N/A')}</span>
+          <span><strong style="color: #cbd5e1;">Market Cap:</strong> ${escapeHtml(quote.marketCap || 'Live Cap')}</span>
+          ${quote.pe ? `<span><strong style="color: #cbd5e1;">P/E:</strong> ${escapeHtml(quote.pe)}</span>` : ''}
+          <span style="color: #10b981; font-weight: 600;">🌐 Live Real-Time Feed</span>
+        </div>
+        <div>
+          <a href="${escapeHtml(quote.url || `https://www.google.com/finance/quote/${quote.ticker}:NASDAQ`)}" target="_blank" class="wv-btn-mini" style="display: inline-flex; align-items: center; gap: 5px; text-decoration: none; color: #38bdf8; font-size: 11px; padding: 4px 10px; background: rgba(56,189,248,0.1); border: 1px solid rgba(56,189,248,0.25); border-radius: 4px; font-weight: 500; cursor: pointer;">
+            🌐 View on Google Finance
+          </a>
+        </div>
+      </div>
+    `;
+  }
+
+  function buildResearchSourcesCardHtml(results, query = '') {
+    if (!results || results.length === 0) return '';
+    const getDomain = (url) => {
+      try {
+        if (!url) return '';
+        return new URL(url).hostname.replace(/^www\./, '');
+      } catch (_) {
+        return '';
+      }
+    };
+    const domainSet = new Set();
+    results.forEach(r => {
+      const d = getDomain(r.url);
+      if (d) domainSet.add(d);
+    });
+    const topDomains = Array.from(domainSet).slice(0, 4);
+    const domainSummary = topDomains.length > 0 ? `(${topDomains.join(', ')})` : '';
+
+    return `
+      <div class="research-sources-card" style="margin: 8px 0 12px 0;">
+        <details class="research-sources-compact" open>
+          <summary class="sources-compact-summary" style="cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #38bdf8;">
+            <span class="sources-icon">🌐</span>
+            <span class="sources-count">${results.length} Verified Sources</span>
+            <span class="sources-preview-domains" style="color: #94a3b8; font-weight: 400; font-size: 11px;">${escapeHtml(domainSummary)}</span>
+          </summary>
+          <div class="sources-compact-list" style="margin-top: 8px; display: flex; flex-direction: column; gap: 4px;">
+            ${results.map((r, i) => {
+              const cleanTitle = r.title ? r.title.replace(/^\[arXiv\]\s*/i, '') : `Source [${i + 1}]`;
+              const domain = getDomain(r.url);
+              const isArxiv = (r.url && r.url.includes('arxiv.org')) || (r.title && r.title.startsWith('[arXiv]'));
+              const snippet = (r.snippet || '').trim().replace(/\s+/g, ' ').slice(0, 160);
+              return `<a href="${escapeHtml(r.url || '#')}" target="_blank" rel="noopener noreferrer" class="source-compact-link" title="${escapeHtml(snippet)}" style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; background: rgba(15,23,42,0.6); border: 1px solid rgba(56,189,248,0.2); border-radius: 4px; text-decoration: none; color: #e2e8f0; font-size: 11.5px;">
+                <span class="source-compact-title" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 75%;">${isArxiv ? '<span class="source-compact-tag" style="color: #f59e0b; font-weight: 700;">[arXiv]</span> ' : ''}${escapeHtml(cleanTitle)}</span>
+                <span class="source-domain" style="color: #64748b; font-size: 10.5px;">${escapeHtml(domain)}</span>
+              </a>`;
+            }).join('')}
+          </div>
+        </details>
+      </div>
+    `;
+  }
+
+  /**
+   * Universal Accurate Search & Multi-Source Grounding Helper
+   * Complements local & specialized models across all 16 submenus with verified,
+   * deduplicated, authority-ranked live search results, Wikipedia extracts,
+   * live Nasdaq market quotes, arXiv scientific papers, and statutory legal grounding.
+   */
+  async function enrichWithAccurateLiveSearch(query, options = {}) {
+    if (!query || typeof query !== 'string') {
+      return {
+        query: '',
+        optimizedQuery: '',
+        domain: 'general',
+        results: [],
+        wikiSummary: null,
+        marketQuote: null,
+        arxivPapers: [],
+        legalSources: [],
+        groundingPromptBlock: '',
+        marketCardHtml: '',
+        sourcesCardHtml: '',
+        hasGrounding: false
+      };
+    }
+
+    const rawQuery = query.trim();
+    const domain = options.domain || 'general';
+    const maxResults = Math.min(Math.max(1, options.maxResults || 6), 25);
+    const timeoutMs = options.timeoutMs || 3200;
+
+    const includeWiki = options.includeWiki !== undefined ? options.includeWiki : true;
+    const includeMarketQuote = options.includeMarketQuote || (domain === 'finance') || /\b(?:stock|price|quote|shares|ticker|nasdaq|dow|s&p)\b/i.test(rawQuery);
+    const includeArxiv = options.includeArxiv || (domain === 'science' || domain === 'rd_agent');
+    const includeLegal = options.includeLegal || (domain === 'legal' || domain === 'compliance');
+
+    const optimizedQuery = buildOptimizedSearchQuery(rawQuery, domain);
+    const cleanTopicQuery = sanitizeSearchTopic(rawQuery);
+
+    const tasks = [];
+
+    // 1. Live Web Search
+    tasks.push(
+      executeWebSearch(optimizedQuery, maxResults + 2)
+        .then(res => ({ type: 'web', data: res }))
+        .catch(() => ({ type: 'web', data: [] }))
+    );
+
+    // 2. Wikipedia Lead Summary
+    if (includeWiki && cleanTopicQuery) {
+      tasks.push(
+        fetchWikipediaSummary(cleanTopicQuery)
+          .then(res => ({ type: 'wiki', data: res }))
+          .catch(() => ({ type: 'wiki', data: null }))
+      );
+    }
+
+    // 3. Live Market Quote
+    if (includeMarketQuote) {
+      tasks.push(
+        fetchLiveMarketQuote(rawQuery)
+          .then(res => ({ type: 'quote', data: res }))
+          .catch(() => ({ type: 'quote', data: null }))
+      );
+    }
+
+    // 4. arXiv Academic Papers
+    if (includeArxiv && cleanTopicQuery) {
+      tasks.push(
+        executeArxivSearch(cleanTopicQuery, 4)
+          .then(res => ({ type: 'arxiv', data: res }))
+          .catch(() => ({ type: 'arxiv', data: [] }))
+      );
+    }
+
+    // 5. Live Legal Grounding
+    if (includeLegal) {
+      tasks.push(
+        fetchLiveLegalGrounding(rawQuery)
+          .then(res => ({ type: 'legal', data: res }))
+          .catch(() => ({ type: 'legal', data: null }))
+      );
+    }
+
+    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), timeoutMs));
+    const settled = await Promise.race([
+      Promise.allSettled(tasks),
+      timeoutPromise.then(() => [])
+    ]);
+
+    let webResults = [];
+    let wikiSummary = null;
+    let marketQuote = null;
+    let arxivPapers = [];
+    let legalSources = [];
+    let legalData = null;
+
+    if (Array.isArray(settled)) {
+      for (const item of settled) {
+        if (item.status === 'fulfilled' && item.value && item.value.type) {
+          if (item.value.type === 'web') webResults = item.value.data || [];
+          if (item.value.type === 'wiki') wikiSummary = item.value.data || null;
+          if (item.value.type === 'quote') marketQuote = item.value.data || null;
+          if (item.value.type === 'arxiv') arxivPapers = item.value.data || [];
+          if (item.value.type === 'legal' && item.value.data) {
+            legalData = item.value.data;
+            legalSources = item.value.data.sources || [];
+          }
+        }
+      }
+    }
+
+    const rawCombined = [...webResults, ...arxivPapers];
+    if (wikiSummary && wikiSummary.url) {
+      rawCombined.unshift({
+        title: `${wikiSummary.title} - Wikipedia`,
+        url: wikiSummary.url,
+        snippet: wikiSummary.extract
+      });
+    }
+
+    const rankedResults = deduplicateAndRankSearchResults(rawCombined, rawQuery).slice(0, maxResults);
+
+    let groundingPromptBlock = '';
+    const sections = [];
+
+    if (marketQuote) {
+      sections.push(`[LIVE NASDAQ REAL-TIME MARKET QUOTE (2026)]:
+Ticker: ${marketQuote.ticker} (${marketQuote.name})
+Verified Price: ${marketQuote.price}
+Net Change: ${marketQuote.change || 'N/A'}
+52-Week Range: ${marketQuote.range_52w}
+Market Capitalization: ${marketQuote.marketCap}
+P/E Ratio: ${marketQuote.pe || 'N/A'}
+Source: ${marketQuote.source || 'Nasdaq Real-Time Feed'}
+URL: ${marketQuote.url}`);
+    }
+
+    if (wikiSummary && wikiSummary.extract) {
+      sections.push(`[WIKIPEDIA FACTUAL FOUNDATION]:
+Topic: ${wikiSummary.title}
+Extract: ${wikiSummary.extract}`);
+    }
+
+    if (rankedResults.length > 0) {
+      const list = rankedResults.map((r, i) => `[${i + 1}] ${r.title}\nURL: ${r.url}\nEvidence: ${r.snippet}`).join('\n\n');
+      sections.push(`[VERIFIED LIVE SEARCH & AUTHORITY-RANKED GROUNDING (2026)]:\n${list}`);
+    }
+
+    if (sections.length > 0) {
+      groundingPromptBlock = `\n${sections.join('\n\n')}\n`;
+    }
+
+    const marketCardHtml = marketQuote ? buildMarketTickerCardHtml(marketQuote) : '';
+    const sourcesCardHtml = rankedResults.length > 0 ? buildResearchSourcesCardHtml(rankedResults, rawQuery) : '';
+    const hasGrounding = Boolean(rankedResults.length > 0 || marketQuote || wikiSummary);
+
+    return {
+      query: rawQuery,
+      optimizedQuery,
+      domain,
+      results: rankedResults,
+      wikiSummary,
+      marketQuote,
+      quote: marketQuote,
+      arxivPapers,
+      legal: legalData,
+      legalSources,
+      groundingPromptBlock,
+      marketCardHtml,
+      sourcesCardHtml,
+      hasGrounding
+    };
+  }
+
+  if (typeof window !== 'undefined') {
+    window.enrichWithAccurateLiveSearch = enrichWithAccurateLiveSearch;
+    window.deduplicateAndRankSearchResults = deduplicateAndRankSearchResults;
+    window.buildOptimizedSearchQuery = buildOptimizedSearchQuery;
+    window.fetchLiveMarketQuote = fetchLiveMarketQuote;
+    window.fetchWikipediaSummary = fetchWikipediaSummary;
+    window.buildResearchSourcesCardHtml = buildResearchSourcesCardHtml;
+    window.buildMarketTickerCardHtml = buildMarketTickerCardHtml;
   }
 
   // -----------------------------------------------------------------
@@ -28798,7 +29500,11 @@ Instructions:
 
       // Enrich with live grounding if factual, entity-based, or financial
       let classificationEnrichment = null;
-      if (modelQuery && (targetModelKey === 'finbert' || /stock|market|earnings|sec|nasdaq|dow|s&p|revenue|profit|financial|quote|ticker/i.test(modelQuery))) {
+      const needsFactGrounding = targetModelKey === 'finbert' ||
+        targetModelKey === 'deberta-v3-base-mnli-fever-anli' ||
+        /stock|market|earnings|sec|nasdaq|dow|s&p|revenue|profit|financial|quote|ticker|202[4-9]|president|ceo|prime minister|inflation|gdp/i.test(modelQuery) ||
+        (typeof shouldRouteToWeb === 'function' && shouldRouteToWeb(modelQuery).routeToWeb);
+      if (modelQuery && needsFactGrounding) {
         try {
           classificationEnrichment = await enrichWithAccurateLiveSearch(modelQuery, {
             domain: 'classification',
@@ -29071,704 +29777,6 @@ Analyze the user's scientific query with rigorous technical precision:
       return;
     }
 
-  // -----------------------------------------------------------------
-  // 4.496b Universal Accurate Search & Multi-Source Grounding Suite
-  // -----------------------------------------------------------------
-
-  /**
-   * Cleans and optimizes query string for search engine and knowledge retrieval
-   */
-  function buildOptimizedSearchQuery(rawQuery, domain = 'general') {
-    if (!rawQuery || typeof rawQuery !== 'string') return '';
-    let q = rawQuery
-      .replace(/^@agent\s+[\w-]+\s*:?\s*/i, '')
-      .replace(/^[\/@][\w-]+\s*:?\s*/i, '')
-      .replace(/--[\w-]+(?:\s+[^\s]+)?/g, '')
-      .replace(/\b(?:please\s+)?(?:analyze|evaluate|explain|tell\s+me\s+about|what\s+is|what\s+are|how\s+does|can\s+you\s+find|search\s+for|look\s+up|give\s+me)\b/gi, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (domain === 'finance') {
-      if (/\b(?:stock|price|quote|shares|market\s+cap|valuation|pe\s+ratio)\b/i.test(q)) {
-        if (!/\b202[5-9]\b/.test(q)) q += ' stock price quote 2026';
-      }
-    } else if (domain === 'science' || domain === 'rd_agent') {
-      if (!/\b(?:paper|preprint|research|arxiv|discovery)\b/i.test(q)) {
-        q += ' research preprint 2026';
-      }
-    } else if (domain === 'legal' || domain === 'compliance') {
-      if (!/\b(?:statute|regulation|law|precedent|compliance)\b/i.test(q)) {
-        q += ' legal statute regulation 2026';
-      }
-    } else if (domain === 'code_security') {
-      // Preserve CVE identifiers if present
-      const cveMatch = rawQuery.match(/\bCVE-\d{4}-\d{4,7}\b/i);
-      if (cveMatch && !q.includes(cveMatch[0])) {
-        q = `${cveMatch[0]} ${q}`;
-      }
-    }
-    return q.trim();
-  }
-
-  function sanitizeSearchTopic(rawQuery) {
-    if (!rawQuery || typeof rawQuery !== 'string') return '';
-    return rawQuery
-      .replace(/^@agent\s+[\w-]+\s*:?\s*/i, '')
-      .replace(/^[\/@][\w-]+\s*:?\s*/i, '')
-      .replace(/--[\w-]+(?:\s+[^\s]+)?/g, '')
-      .replace(/\b(?:stock|price|market|quote|shares|valuation|analysis|overview|guide)\b/gi, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  /**
-   * Deduplicates search results by normalized URL and scores results by
-   * keyword match, domain authority (sec.gov, nasdaq.com, arxiv.org, nature.com, etc.), and freshness.
-   */
-  function deduplicateAndRankSearchResults(results, query = '') {
-    if (!Array.isArray(results) || results.length === 0) return [];
-
-    const normalizeUrl = (url) => {
-      try {
-        const u = new URL(url);
-        return `${u.hostname.replace(/^www\./, '')}${u.pathname.replace(/\/+$/, '')}`.toLowerCase();
-      } catch (_) {
-        return (url || '').toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/+$/, '');
-      }
-    };
-
-    const queryTokens = (query || '').toLowerCase().split(/\W+/).filter(t => t.length > 2);
-
-    const highTrustDomains = {
-      'nasdaq.com': 8,
-      'sec.gov': 8,
-      'federalreserve.gov': 7,
-      'bls.gov': 7,
-      'wikipedia.org': 6,
-      'arxiv.org': 8,
-      'nature.com': 8,
-      'science.org': 8,
-      'ncbi.nlm.nih.gov': 8,
-      'law.cornell.edu': 7,
-      'supremecourt.gov': 8,
-      'justia.com': 6,
-      'courtlistener.com': 6,
-      'nvd.nist.gov': 8,
-      'cve.org': 8,
-      'github.com': 5,
-      'rust-lang.org': 6,
-      'developer.mozilla.org': 6,
-      'reuters.com': 6,
-      'bloomberg.com': 6,
-      'wsj.com': 6,
-      'cnbc.com': 5
-    };
-
-    const seenUrls = new Set();
-    const scored = [];
-
-    for (const item of results) {
-      if (!item || (!item.title && !item.snippet)) continue;
-      const norm = normalizeUrl(item.url || '');
-      if (norm && seenUrls.has(norm)) continue;
-      if (norm) seenUrls.add(norm);
-
-      let score = 0;
-      const titleLower = (item.title || '').toLowerCase();
-      const snipLower = (item.snippet || '').toLowerCase();
-      const text = `${titleLower} ${snipLower}`;
-
-      // Keyword overlap
-      for (const token of queryTokens) {
-        if (titleLower.includes(token)) score += 3;
-        if (snipLower.includes(token)) score += 1;
-      }
-
-      // Domain authority bonus
-      for (const [dom, weight] of Object.entries(highTrustDomains)) {
-        if (norm.includes(dom)) {
-          score += weight;
-          break;
-        }
-      }
-
-      // Freshness bonus
-      if (text.includes('2026')) score += 5;
-      else if (text.includes('2025')) score += 3;
-
-      scored.push({ item, score });
-    }
-
-    scored.sort((a, b) => b.score - a.score);
-    return scored.map(s => s.item);
-  }
-
-  /**
-   * Fetches official summary extract from Wikipedia REST API with fast fallback
-   */
-  async function fetchWikipediaSummary(topic) {
-    if (!topic || typeof topic !== 'string') return null;
-    const cleanTopic = topic.trim();
-    if (!cleanTopic) return null;
-
-    try {
-      const res = await fetchWithTimeout(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cleanTopic.replace(/ /g, '_'))}`, { timeout: 2500 });
-      if (res && res.ok) {
-        const data = await res.json().catch(() => null);
-        if (data && data.extract && data.type !== 'disambiguation') {
-          return {
-            title: data.title || cleanTopic,
-            extract: data.extract,
-            url: data.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(cleanTopic.replace(/ /g, '_'))}`
-          };
-        }
-      }
-    } catch (_) {}
-
-    // Fallback: search Wikipedia
-    try {
-      const sResults = await searchWikipediaDirect(cleanTopic, 1);
-      if (sResults && sResults.length > 0) {
-        const art = await fetchWikipediaArticleDirect(sResults[0].title);
-        if (art && art.extract) {
-          return {
-            title: art.title,
-            extract: art.extract.slice(0, 600),
-            url: art.url
-          };
-        }
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  /**
-   * Real-Time Financial Market Quote Fetcher
-   * Multi-tier architecture:
-   * Tier 1: Local Master Server /api/finance/quote (Nasdaq Live API backend)
-   * Tier 2: Direct Nasdaq JSON API (https://api.nasdaq.com/api/quote/{SYM})
-   * Tier 3: Live Web Search extraction
-   * NEVER returns hardcoded stale baseline quotes or default GOOGL for non-ticker queries!
-   */
-  async function fetchLiveMarketQuote(query) {
-    if (!query || typeof query !== 'string') return null;
-    const q = query.trim();
-    const qLower = q.toLowerCase();
-
-    // 40+ Top Companies & Symbols Map
-    const companyToTicker = [
-      [['googl', 'goog', 'google', 'alphabet'], 'GOOGL', 'Alphabet Inc.'],
-      [['aapl', 'apple'], 'AAPL', 'Apple Inc.'],
-      [['msft', 'microsoft'], 'MSFT', 'Microsoft Corporation'],
-      [['nvda', 'nvidia'], 'NVDA', 'NVIDIA Corporation'],
-      [['amzn', 'amazon'], 'AMZN', 'Amazon.com Inc.'],
-      [['meta', 'facebook'], 'META', 'Meta Platforms Inc.'],
-      [['tsla', 'tesla'], 'TSLA', 'Tesla Inc.'],
-      [['nflx', 'netflix'], 'NFLX', 'Netflix Inc.'],
-      [['amd', 'advanced micro devices'], 'AMD', 'Advanced Micro Devices Inc.'],
-      [['intc', 'intel'], 'INTC', 'Intel Corporation'],
-      [['avgo', 'broadcom'], 'AVGO', 'Broadcom Inc.'],
-      [['pltr', 'palantir'], 'PLTR', 'Palantir Technologies Inc.'],
-      [['orcl', 'oracle'], 'ORCL', 'Oracle Corporation'],
-      [['crm', 'salesforce'], 'CRM', 'Salesforce Inc.'],
-      [['coin', 'coinbase'], 'COIN', 'Coinbase Global Inc.'],
-      [['uber'], 'UBER', 'Uber Technologies Inc.'],
-      [['abnb', 'airbnb'], 'ABNB', 'Airbnb Inc.'],
-      [['snow', 'snowflake'], 'SNOW', 'Snowflake Inc.'],
-      [['brk.b', 'brk-b', 'berkshire'], 'BRK.B', 'Berkshire Hathaway Inc.'],
-      [['jpm', 'jpmorgan', 'jp morgan'], 'JPM', 'JPMorgan Chase & Co.'],
-      [['gs', 'goldman sachs', 'goldman'], 'GS', 'Goldman Sachs Group Inc.'],
-      [['v', 'visa'], 'V', 'Visa Inc.'],
-      [['ma', 'mastercard'], 'MA', 'Mastercard Inc.'],
-      [['wmt', 'walmart'], 'WMT', 'Walmart Inc.'],
-      [['cost', 'costco'], 'COST', 'Costco Wholesale Corporation'],
-      [['dis', 'disney'], 'DIS', 'Walt Disney Company'],
-      [['ba', 'boeing'], 'BA', 'Boeing Company'],
-      [['xom', 'exxon'], 'XOM', 'Exxon Mobil Corporation'],
-      [['cvx', 'chevron'], 'CVX', 'Chevron Corporation'],
-      [['lly', 'eli lilly', 'lilly'], 'LLY', 'Eli Lilly and Company'],
-      [['nvo', 'novo nordisk'], 'NVO', 'Novo Nordisk A/S'],
-      [['asml'], 'ASML', 'ASML Holding N.V.'],
-      [['tsm', 'tsmc', 'taiwan semiconductor'], 'TSM', 'Taiwan Semiconductor Manufacturing Co.'],
-      [['arm'], 'ARM', 'Arm Holdings plc'],
-      [['mu', 'micron'], 'MU', 'Micron Technology Inc.'],
-      [['qcom', 'qualcomm'], 'QCOM', 'Qualcomm Inc.'],
-      [['ibm'], 'IBM', 'International Business Machines Corp.'],
-      [['csco', 'cisco'], 'CSCO', 'Cisco Systems Inc.'],
-      [['shop', 'shopify'], 'SHOP', 'Shopify Inc.'],
-      [['spot', 'spotify'], 'SPOT', 'Spotify Technology S.A.'],
-      [['spy', 's&p 500', 'sp500'], 'SPY', 'SPDR S&P 500 ETF Trust']
-    ];
-
-    let ticker = null;
-    let name = null;
-
-    // 1. Alias lookup
-    for (const [aliases, sym, cname] of companyToTicker) {
-      for (const alias of aliases) {
-        const regex = new RegExp(`(^|\\b)${alias}(\\b|$)`, 'i');
-        if (regex.test(qLower)) {
-          ticker = sym;
-          name = cname;
-          break;
-        }
-      }
-      if (ticker) break;
-    }
-
-    // 2. $TICKER or explicit ticker syntax
-    if (!ticker) {
-      const tickerMatch = q.match(/\$([A-Z]{1,5})\b/i) || q.match(/\b(?:ticker|stock|symbol)\s*:?\s*([A-Z]{1,5})\b/i);
-      if (tickerMatch) {
-        ticker = tickerMatch[1].toUpperCase();
-        name = ticker;
-      }
-    }
-
-    // 3. Standalone uppercase 1-5 letters (excluding stopwords & tool keywords)
-    if (!ticker) {
-      const candidateMatch = q.match(/\b([A-Z]{1,5})\b/);
-      if (candidateMatch) {
-        const candidate = candidateMatch[1].toUpperCase();
-        const stopwords = new Set([
-          'CHRONOS', 'FINBERT', 'FINGPT', 'DCF', 'SEC', 'CEO', 'CFO', 'GDP', 'CPI', 'ETF', 'IPO', 'ROE', 'ROI',
-          'YOY', 'QOQ', 'USD', 'EUR', 'GBP', 'JPY', 'THE', 'AND', 'FOR', 'INC', 'CORP', 'STOCK', 'PRICE',
-          'LIVE', 'QUOTE', 'WHAT', 'SHOW', 'LIST', 'VIEW', 'RATE', 'HIGH', 'LOW', 'CAP', 'API', 'NOW', 'HOW',
-          'WHY', 'CAN', 'YOU', 'ARE', 'ALL', 'AI', 'NLP', 'ML', 'LLM', 'RL', 'USA', 'UK'
-        ]);
-        if (!stopwords.has(candidate)) {
-          // If query has financial terms, accept candidate
-          if (/\b(?:stock|price|market|shares|equity|quote|valuation)\b/i.test(qLower)) {
-            ticker = candidate;
-            name = candidate;
-          }
-        }
-      }
-    }
-
-    // CRITICAL: If no ticker is found and query has no financial company context, return null!
-    // NEVER default non-ticker queries to 'GOOGL'!
-    if (!ticker) {
-      return null;
-    }
-
-    const targetTicker = ticker;
-    const targetName = name || targetTicker;
-
-    // Tier 1: Query ModelFusion Master Server real-time quote endpoint (:5000 / :5005)
-    try {
-      const res = await fetchWithTimeout(getIpcUrl(`/api/finance/quote?ticker=${encodeURIComponent(targetTicker)}&q=${encodeURIComponent(targetTicker)}`), { method: 'GET', timeout: 2500 });
-      if (res && res.ok) {
-        const data = await res.json().catch(() => null);
-        if (data && data.status === 'ok' && (data.price || data.price_formatted)) {
-          const priceStr = data.price_formatted || (typeof data.price === 'number' ? `$${data.price.toFixed(2)}` : String(data.price));
-          return {
-            ticker: data.ticker || targetTicker,
-            name: data.name || targetName,
-            price: priceStr,
-            change: data.change || `${data.net_change || ''} (${data.pct_change || ''})`.trim(),
-            isUp: data.is_up !== false,
-            range_52w: data.range_52w || 'N/A',
-            marketCap: data.market_cap || 'Live Cap',
-            pe: data.pe_ratio || data.pe || '',
-            forwardPe: data.forward_pe || '',
-            eps: data.eps || '',
-            volume: data.volume || '',
-            exchange: data.exchange || 'NASDAQ',
-            source: data.source || 'Nasdaq Real-Time Market Feed',
-            url: data.google_finance_url || `https://www.google.com/finance/quote/${targetTicker}:NASDAQ`,
-            searchContext: data.summary || data.search_context || `${targetName} (${targetTicker}) live quote: ${priceStr}`
-          };
-        }
-      }
-    } catch (_) {}
-
-    // Tier 2: Direct client-side live market query via Nasdaq JSON API
-    try {
-      const nasdaqInfoRes = await fetchWithTimeout(`https://api.nasdaq.com/api/quote/${encodeURIComponent(targetTicker)}/info?assetclass=stocks`, {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' },
-        timeout: 2500
-      });
-      if (nasdaqInfoRes && nasdaqInfoRes.ok) {
-        const infoData = await nasdaqInfoRes.json().catch(() => null);
-        const primary = infoData?.data?.primaryData;
-        if (primary && primary.lastSalePrice) {
-          const rawPrice = primary.lastSalePrice.replace('$', '').replace(/,/g, '').trim();
-          const priceNum = parseFloat(rawPrice);
-          const priceStr = !isNaN(priceNum) ? `$${priceNum.toFixed(2)}` : primary.lastSalePrice;
-          const netChange = primary.netChange || '';
-          const pctChange = primary.percentageChange || '';
-          const delta = (primary.deltaIndicator || '').toLowerCase();
-          const isUp = delta === 'up' || !netChange.startsWith('-');
-          const companyName = infoData?.data?.companyName ? infoData.data.companyName.replace(/ Class A Common Stock| Common Stock/gi, '').trim() : targetName;
-          const exchange = infoData?.data?.exchange || 'NASDAQ';
-
-          // Try summary for 52-week range and market cap
-          let range52w = 'N/A';
-          let marketCapStr = 'Live Cap';
-          let peStr = '';
-          try {
-            const sumRes = await fetchWithTimeout(`https://api.nasdaq.com/api/quote/${encodeURIComponent(targetTicker)}/summary?assetclass=stocks`, {
-              method: 'GET',
-              headers: { 'Accept': 'application/json' },
-              timeout: 2000
-            });
-            if (sumRes && sumRes.ok) {
-              const sumData = await sumRes.json().catch(() => null);
-              const sd = sumData?.data?.summaryData;
-              if (sd) {
-                const rRaw = sd.FiftTwoWeekHighLow?.value || sd.FiftyTwoWeekHighLow?.value;
-                if (rRaw && rRaw.includes('/')) {
-                  const [v1, v2] = rRaw.split('/').map(v => parseFloat(v.replace('$', '').trim())).filter(v => !isNaN(v));
-                  if (v1 && v2) {
-                    range52w = `$${Math.min(v1, v2).toFixed(2)} - $${Math.max(v1, v2).toFixed(2)}`;
-                  }
-                }
-                const mcRaw = sd.MarketCap?.value;
-                if (mcRaw) {
-                  const mcNum = parseFloat(mcRaw.replace(/,/g, ''));
-                  if (!isNaN(mcNum)) {
-                    if (mcNum >= 1e12) marketCapStr = `$${(mcNum / 1e12).toFixed(2)}T`;
-                    else if (mcNum >= 1e9) marketCapStr = `$${(mcNum / 1e9).toFixed(2)}B`;
-                    else if (mcNum >= 1e6) marketCapStr = `$${(mcNum / 1e6).toFixed(2)}M`;
-                    else marketCapStr = `$${mcRaw}`;
-                  }
-                }
-                peStr = sd.PERatio?.value || '';
-              }
-            }
-          } catch (_) {}
-
-          return {
-            ticker: targetTicker,
-            name: companyName,
-            price: priceStr,
-            change: `${netChange} (${pctChange})`.trim(),
-            isUp,
-            range_52w: range52w,
-            marketCap: marketCapStr,
-            pe: peStr,
-            exchange,
-            source: 'Nasdaq Real-Time Market Feed',
-            url: `https://www.google.com/finance/quote/${targetTicker}:${exchange.split('-')[0] || 'NASDAQ'}`,
-            searchContext: `${companyName} (${targetTicker}) live quote: ${priceStr}, 52-week range: ${range52w}, market cap: ${marketCapStr}`
-          };
-        }
-      }
-    } catch (_) {}
-
-    // Tier 3: Live Web Search extraction fallback (No hardcoded 2024 baselines!)
-    try {
-      const searchRes = await executeWebSearch(`${targetTicker} stock price market cap 52 week range 2026`, 5);
-      if (Array.isArray(searchRes) && searchRes.length > 0) {
-        const text = searchRes.map(r => `${r.title}: ${r.snippet}`).join(' | ');
-        const priceMatch = text.match(/\$(\d{1,5}(?:\.\d{1,2})?)/);
-        if (priceMatch) {
-          const parsedPrice = parseFloat(priceMatch[1]);
-          const priceStr = `$${parsedPrice.toFixed(2)}`;
-          return {
-            ticker: targetTicker,
-            name: targetName,
-            price: priceStr,
-            change: '+1.72 (+0.49%)',
-            isUp: true,
-            range_52w: 'Verified 2026 Range',
-            marketCap: 'Live Cap',
-            pe: '',
-            source: 'Live Web Search Market Feed',
-            url: `https://www.google.com/finance/quote/${targetTicker}:NASDAQ`,
-            searchContext: text
-          };
-        }
-      }
-    } catch (_) {}
-
-    return null;
-  }
-
-  async function fetchLiveLegalGrounding(query) {
-    if (!query || typeof query !== 'string') return null;
-    const q = query.trim();
-    const localAuthorities = resolveLegalDomainAuthorities(q);
-    if (!localAuthorities) return null;
-
-    // Query ModelFusion Master Server real-time legal grounding endpoint with 3000ms timeout
-    try {
-      const res = await fetchWithTimeout(getIpcUrl(`/api/legal/ground?q=${encodeURIComponent(q)}`), { method: 'GET', timeout: 3000 });
-      if (res && res.ok) {
-        const data = await res.json().catch(() => null);
-        if (data && data.status === 'ok') {
-          return {
-            topic: q,
-            domain: data.domain || localAuthorities.domainName,
-            statutes: Array.isArray(data.statutes) && data.statutes.length > 0 ? data.statutes : localAuthorities.statutes,
-            precedents: Array.isArray(data.precedents) && data.precedents.length > 0 ? data.precedents : localAuthorities.precedents,
-            summary: data.summary || localAuthorities.defaultSummary,
-            sources: data.sources || []
-          };
-        }
-      }
-    } catch (_) {}
-
-    return {
-      topic: q,
-      domain: localAuthorities.domainName,
-      statutes: localAuthorities.statutes,
-      precedents: localAuthorities.precedents,
-      summary: localAuthorities.defaultSummary,
-      sources: []
-    };
-  }
-
-  function buildMarketTickerCardHtml(quote) {
-    if (!quote || !quote.price) return '';
-    return `
-      <div class="finance-live-ticker-card" style="margin: 8px 0 14px 0; padding: 12px 14px; background: linear-gradient(135deg, rgba(16,185,129,0.12) 0%, rgba(15,23,42,0.85) 100%); border: 1px solid rgba(16,185,129,0.4); border-radius: 8px; font-family: inherit;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-          <span style="font-weight: 700; font-size: 14.5px; color: #10b981; display: inline-flex; align-items: center; gap: 6px;">
-            <span>💹</span> <strong>${escapeHtml(quote.ticker)}</strong> &bull; <span style="color: #cbd5e1; font-weight: 500;">${escapeHtml(quote.name)}</span>
-          </span>
-          <span style="font-size: 19px; font-weight: 800; color: #f8fafc; letter-spacing: -0.02em;">${escapeHtml(quote.price)}</span>
-        </div>
-        <div style="font-size: 11.5px; color: #94a3b8; display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 8px;">
-          ${quote.change ? `<span><strong style="color: #cbd5e1;">Change:</strong> <span style="color: ${quote.isUp ? '#10b981' : '#ef4444'}; font-weight: 600;">${escapeHtml(quote.change)}</span></span>` : ''}
-          <span><strong style="color: #cbd5e1;">52-Wk Range:</strong> ${escapeHtml(quote.range_52w || 'N/A')}</span>
-          <span><strong style="color: #cbd5e1;">Market Cap:</strong> ${escapeHtml(quote.marketCap || 'Live Cap')}</span>
-          ${quote.pe ? `<span><strong style="color: #cbd5e1;">P/E:</strong> ${escapeHtml(quote.pe)}</span>` : ''}
-          <span style="color: #10b981; font-weight: 600;">🌐 Live Real-Time Feed</span>
-        </div>
-        <div>
-          <a href="${escapeHtml(quote.url || `https://www.google.com/finance/quote/${quote.ticker}:NASDAQ`)}" target="_blank" class="wv-btn-mini" style="display: inline-flex; align-items: center; gap: 5px; text-decoration: none; color: #38bdf8; font-size: 11px; padding: 4px 10px; background: rgba(56,189,248,0.1); border: 1px solid rgba(56,189,248,0.25); border-radius: 4px; font-weight: 500; cursor: pointer;">
-            🌐 View on Google Finance
-          </a>
-        </div>
-      </div>
-    `;
-  }
-
-  function buildResearchSourcesCardHtml(results, query = '') {
-    if (!results || results.length === 0) return '';
-    const getDomain = (url) => {
-      try {
-        if (!url) return '';
-        return new URL(url).hostname.replace(/^www\./, '');
-      } catch (_) {
-        return '';
-      }
-    };
-    const domainSet = new Set();
-    results.forEach(r => {
-      const d = getDomain(r.url);
-      if (d) domainSet.add(d);
-    });
-    const topDomains = Array.from(domainSet).slice(0, 4);
-    const domainSummary = topDomains.length > 0 ? `(${topDomains.join(', ')})` : '';
-
-    return `
-      <div class="research-sources-card" style="margin: 8px 0 12px 0;">
-        <details class="research-sources-compact" open>
-          <summary class="sources-compact-summary" style="cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #38bdf8;">
-            <span class="sources-icon">🌐</span>
-            <span class="sources-count">${results.length} Verified Sources</span>
-            <span class="sources-preview-domains" style="color: #94a3b8; font-weight: 400; font-size: 11px;">${escapeHtml(domainSummary)}</span>
-          </summary>
-          <div class="sources-compact-list" style="margin-top: 8px; display: flex; flex-direction: column; gap: 4px;">
-            ${results.map((r, i) => {
-              const cleanTitle = r.title ? r.title.replace(/^\[arXiv\]\s*/i, '') : `Source [${i + 1}]`;
-              const domain = getDomain(r.url);
-              const isArxiv = (r.url && r.url.includes('arxiv.org')) || (r.title && r.title.startsWith('[arXiv]'));
-              const snippet = (r.snippet || '').trim().replace(/\s+/g, ' ').slice(0, 160);
-              return `<a href="${escapeHtml(r.url || '#')}" target="_blank" rel="noopener noreferrer" class="source-compact-link" title="${escapeHtml(snippet)}" style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; background: rgba(15,23,42,0.6); border: 1px solid rgba(56,189,248,0.2); border-radius: 4px; text-decoration: none; color: #e2e8f0; font-size: 11.5px;">
-                <span class="source-compact-title" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 75%;">${isArxiv ? '<span class="source-compact-tag" style="color: #f59e0b; font-weight: 700;">[arXiv]</span> ' : ''}${escapeHtml(cleanTitle)}</span>
-                <span class="source-domain" style="color: #64748b; font-size: 10.5px;">${escapeHtml(domain)}</span>
-              </a>`;
-            }).join('')}
-          </div>
-        </details>
-      </div>
-    `;
-  }
-
-  /**
-   * Universal Accurate Search & Multi-Source Grounding Helper
-   * Complements local & specialized models across all 16 submenus with verified,
-   * deduplicated, authority-ranked live search results, Wikipedia extracts,
-   * live Nasdaq market quotes, arXiv scientific papers, and statutory legal grounding.
-   */
-  async function enrichWithAccurateLiveSearch(query, options = {}) {
-    if (!query || typeof query !== 'string') {
-      return {
-        query: '',
-        optimizedQuery: '',
-        domain: 'general',
-        results: [],
-        wikiSummary: null,
-        marketQuote: null,
-        arxivPapers: [],
-        legalSources: [],
-        groundingPromptBlock: '',
-        marketCardHtml: '',
-        sourcesCardHtml: '',
-        hasGrounding: false
-      };
-    }
-
-    const rawQuery = query.trim();
-    const domain = options.domain || 'general';
-    const maxResults = Math.min(Math.max(1, options.maxResults || 6), 25);
-    const timeoutMs = options.timeoutMs || 3200;
-
-    const includeWiki = options.includeWiki !== undefined ? options.includeWiki : true;
-    const includeMarketQuote = options.includeMarketQuote || (domain === 'finance') || /\b(?:stock|price|quote|shares|ticker|nasdaq|dow|s&p)\b/i.test(rawQuery);
-    const includeArxiv = options.includeArxiv || (domain === 'science' || domain === 'rd_agent');
-    const includeLegal = options.includeLegal || (domain === 'legal' || domain === 'compliance');
-
-    const optimizedQuery = buildOptimizedSearchQuery(rawQuery, domain);
-    const cleanTopicQuery = sanitizeSearchTopic(rawQuery);
-
-    const tasks = [];
-
-    // 1. Live Web Search
-    tasks.push(
-      executeWebSearch(optimizedQuery, maxResults + 2)
-        .then(res => ({ type: 'web', data: res }))
-        .catch(() => ({ type: 'web', data: [] }))
-    );
-
-    // 2. Wikipedia Lead Summary
-    if (includeWiki && cleanTopicQuery) {
-      tasks.push(
-        fetchWikipediaSummary(cleanTopicQuery)
-          .then(res => ({ type: 'wiki', data: res }))
-          .catch(() => ({ type: 'wiki', data: null }))
-      );
-    }
-
-    // 3. Live Market Quote
-    if (includeMarketQuote) {
-      tasks.push(
-        fetchLiveMarketQuote(rawQuery)
-          .then(res => ({ type: 'quote', data: res }))
-          .catch(() => ({ type: 'quote', data: null }))
-      );
-    }
-
-    // 4. arXiv Academic Papers
-    if (includeArxiv && cleanTopicQuery) {
-      tasks.push(
-        executeArxivSearch(cleanTopicQuery, 4)
-          .then(res => ({ type: 'arxiv', data: res }))
-          .catch(() => ({ type: 'arxiv', data: [] }))
-      );
-    }
-
-    // 5. Live Legal Grounding
-    if (includeLegal) {
-      tasks.push(
-        fetchLiveLegalGrounding(rawQuery)
-          .then(res => ({ type: 'legal', data: res }))
-          .catch(() => ({ type: 'legal', data: null }))
-      );
-    }
-
-    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve('timeout'), timeoutMs));
-    const settled = await Promise.race([
-      Promise.allSettled(tasks),
-      timeoutPromise.then(() => [])
-    ]);
-
-    let webResults = [];
-    let wikiSummary = null;
-    let marketQuote = null;
-    let arxivPapers = [];
-    let legalSources = [];
-
-    if (Array.isArray(settled)) {
-      for (const item of settled) {
-        if (item.status === 'fulfilled' && item.value && item.value.type) {
-          if (item.value.type === 'web') webResults = item.value.data || [];
-          if (item.value.type === 'wiki') wikiSummary = item.value.data || null;
-          if (item.value.type === 'quote') marketQuote = item.value.data || null;
-          if (item.value.type === 'arxiv') arxivPapers = item.value.data || [];
-          if (item.value.type === 'legal' && item.value.data) {
-            legalSources = item.value.data.sources || [];
-          }
-        }
-      }
-    }
-
-    const rawCombined = [...webResults, ...arxivPapers];
-    if (wikiSummary && wikiSummary.url) {
-      rawCombined.unshift({
-        title: `${wikiSummary.title} - Wikipedia`,
-        url: wikiSummary.url,
-        snippet: wikiSummary.extract
-      });
-    }
-
-    const rankedResults = deduplicateAndRankSearchResults(rawCombined, rawQuery).slice(0, maxResults);
-
-    let groundingPromptBlock = '';
-    const sections = [];
-
-    if (marketQuote) {
-      sections.push(`[LIVE NASDAQ REAL-TIME MARKET QUOTE (2026)]:
-Ticker: ${marketQuote.ticker} (${marketQuote.name})
-Verified Price: ${marketQuote.price}
-Net Change: ${marketQuote.change || 'N/A'}
-52-Week Range: ${marketQuote.range_52w}
-Market Capitalization: ${marketQuote.marketCap}
-P/E Ratio: ${marketQuote.pe || 'N/A'}
-Source: ${marketQuote.source || 'Nasdaq Real-Time Feed'}
-URL: ${marketQuote.url}`);
-    }
-
-    if (wikiSummary && wikiSummary.extract) {
-      sections.push(`[WIKIPEDIA FACTUAL FOUNDATION]:
-Topic: ${wikiSummary.title}
-Extract: ${wikiSummary.extract}`);
-    }
-
-    if (rankedResults.length > 0) {
-      const list = rankedResults.map((r, i) => `[${i + 1}] ${r.title}\nURL: ${r.url}\nEvidence: ${r.snippet}`).join('\n\n');
-      sections.push(`[VERIFIED LIVE SEARCH & AUTHORITY-RANKED GROUNDING (2026)]:\n${list}`);
-    }
-
-    if (sections.length > 0) {
-      groundingPromptBlock = `\n${sections.join('\n\n')}\n`;
-    }
-
-    const marketCardHtml = marketQuote ? buildMarketTickerCardHtml(marketQuote) : '';
-    const sourcesCardHtml = rankedResults.length > 0 ? buildResearchSourcesCardHtml(rankedResults, rawQuery) : '';
-    const hasGrounding = Boolean(rankedResults.length > 0 || marketQuote || wikiSummary);
-
-    return {
-      query: rawQuery,
-      optimizedQuery,
-      domain,
-      results: rankedResults,
-      wikiSummary,
-      marketQuote,
-      arxivPapers,
-      legalSources,
-      groundingPromptBlock,
-      marketCardHtml,
-      sourcesCardHtml,
-      hasGrounding
-    };
-  }
-
-  if (typeof window !== 'undefined') {
-    window.enrichWithAccurateLiveSearch = enrichWithAccurateLiveSearch;
-    window.deduplicateAndRankSearchResults = deduplicateAndRankSearchResults;
-    window.buildOptimizedSearchQuery = buildOptimizedSearchQuery;
-    window.fetchLiveMarketQuote = fetchLiveMarketQuote;
-    window.fetchWikipediaSummary = fetchWikipediaSummary;
-    window.buildResearchSourcesCardHtml = buildResearchSourcesCardHtml;
-    window.buildMarketTickerCardHtml = buildMarketTickerCardHtml;
-  }
-
 
   // 4.497 Finance & Markets Foundation Models Directive (@agent finance, /finance, @agent chronos, @agent finbert, etc.)
   const isFinanceCmd = (
@@ -29912,7 +29920,7 @@ Extract: ${wikiSummary.extract}`);
       if (finEnrichment && finEnrichment.groundingPromptBlock) {
         attachmentContext = (attachmentContext || '') + '\n' + finEnrichment.groundingPromptBlock;
       }
-      const liveQuote = finEnrichment ? finEnrichment.quote : null;
+      const liveQuote = finEnrichment ? (finEnrichment.marketQuote || finEnrichment.quote) : null;
 
       const bubble = createAiBubble({
         icon: effectiveIcon,
@@ -30485,13 +30493,24 @@ Instructions:
       const streamContent = assistantBubble.querySelector('.stream-content');
       const statusCtrl = startDynamicStatus(assistantBubble, 'code', codeHelperCheck.cleanQuery);
 
-      const codePrompt = `${codeHelperCheck.cleanQuery || cmd}
+      let codePrompt = `${codeHelperCheck.cleanQuery || cmd}
 
 [MULTI-MODEL CODE FUSION INSTRUCTIONS]:
 1. PRIMARY CODER OBJECTIVE: Formulate clean, production-grade, idiomatic, fully-runnable code. Wrap the primary executable script in a markdown code block (\`\`\`python or \`\`\`javascript).
 2. COMPANION VERIFIER GATE: Guard against edge cases, boundary conditions, off-by-one errors, division by zero, and numerical overflow.
 3. COMPUTATIONAL ACCURACY: For calculations, probabilities, math, compound interest, or data processing, ensure the script computes and prints the exact numbers to stdout.
 4. EXPLANATION: After the code block, deliver a clear, publication-quality explanation detailing the approach, time/space complexity, and the verified results.`;
+
+      if (codeHelperCheck.cleanQuery && /cve-\d+|vulnerability|owasp|latest\s+version|api\s+reference/i.test(codeHelperCheck.cleanQuery)) {
+        try {
+          const codeEnrichment = await enrichWithAccurateLiveSearch(codeHelperCheck.cleanQuery, { domain: 'code_security', maxResults: 3 });
+          if (codeEnrichment && codeEnrichment.groundingPromptBlock) {
+            codePrompt += '\n' + codeEnrichment.groundingPromptBlock;
+          }
+        } catch (e) {
+          console.warn('[CODE-HELPER] Security/API enrichment skipped:', e);
+        }
+      }
 
       const codeSysPrompt = 'You are ModelFusion Coding Specialist, powered by Multi-Model Code Fusion. Provide clean, runnable, bug-free code with rigorous verification of mathematical calculations and edge cases.';
 
