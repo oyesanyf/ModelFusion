@@ -211,3 +211,4 @@ console.log('✅ Test 6 Passed: Command gate intercepts standard runs and permit
 console.log('========================================================================');
 console.log('🎉 ALL MANDATORY RESUME GATE TESTS PASSED WITH 100% SUCCESS!');
 console.log('========================================================================\n');
+process.exit(0);

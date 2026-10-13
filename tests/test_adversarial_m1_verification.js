@@ -218,23 +218,23 @@ function probeHealth(endpoint, timeoutMs = 600) {
     ).bind(null, require('url'), require('http'), require('https'));
 
     for (let cycle = 1; cycle <= 5; cycle++) {
-      const s = await createInProcessProxyServer(5005);
+      const s = await createInProcessProxyServer(5115);
       assert.ok(s, `Cycle ${cycle}: Server should be active`);
-      const isUp = await probeHealth('http://127.0.0.1:5005/health', 300);
+      const isUp = await probeHealth('http://127.0.0.1:5115/health', 300);
       assert.strictEqual(isUp, true, `Cycle ${cycle}: Server must respond 200 OK`);
       await new Promise((resolve) => s.close(resolve));
-      const isDown = await probeHealth('http://127.0.0.1:5005/health', 200);
+      const isDown = await probeHealth('http://127.0.0.1:5115/health', 200);
       assert.strictEqual(isDown, false, `Cycle ${cycle}: Server must be offline after close`);
     }
     console.log('  ✅ [PASS] 5 consecutive rapid spin-up / teardown cycles completed with 0 port leaks or collisions.');
 
     // 3. Fallback HTML Generation under Upstream Network Failure
     console.log('\n--- Adversarial Test Group 9: Proxy Upstream Network Failure Resilience ---');
-    const proxyServer = await createInProcessProxyServer(5006);
+    const proxyServer = await createInProcessProxyServer(5116);
     
     // Request a completely unreachable URL through the proxy
     const proxyRes = await new Promise((resolve, reject) => {
-      http.get('http://127.0.0.1:5006/api/proxy?url=https://unreachable.invalid.domain.test/index.html', (res) => {
+      http.get('http://127.0.0.1:5116/api/proxy?url=https://unreachable.invalid.domain.test/index.html', (res) => {
         let body = '';
         res.on('data', chunk => body += chunk);
         res.on('end', () => resolve({ status: res.statusCode, body, headers: res.headers }));

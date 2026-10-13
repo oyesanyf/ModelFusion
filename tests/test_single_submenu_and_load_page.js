@@ -35,9 +35,9 @@ assert.ok(!indexHtml.includes('science-domain-tabs'), 'index.html must not conta
 console.log('  ✅ 0 domain-filter-tabs confirmed in index.html (all inner sub-groupings eliminated).');
 
 // ============================================================================
-// PART 2: Verify Exactly 16 Categories in Strict Alphabetical Order A-Z
+// PART 2: Verify Exactly 17 Categories in Strict Alphabetical Order A-Z
 // ============================================================================
-console.log('\n--- Part 2: Verifying Exactly 16 Categories in Strict Alphabetical Order A-Z ---');
+console.log('\n--- Part 2: Verifying Exactly 17 Categories in Strict Alphabetical Order A-Z ---');
 
 const catTitleRegex = /class="cat-title">([^<]+)<\/span>/g;
 const titles = [];
@@ -49,18 +49,19 @@ while ((match = catTitleRegex.exec(indexHtml)) !== null) {
 console.log(`Found ${titles.length} categories:`);
 titles.forEach((t, i) => console.log(`  ${i + 1}. ${t}`));
 
-assert.strictEqual(titles.length, 16, `Expected exactly 16 categories, found ${titles.length}`);
+assert.strictEqual(titles.length, 17, `Expected exactly 17 categories, found ${titles.length}`);
 
 // Normalize for clean alphabetical comparison
 const cleanTitles = titles.map(t => t.replace(/&amp;/g, '&').replace(/^[^\w\s]+/, '').trim());
 const expectedTitles = [...cleanTitles].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 
 assert.deepStrictEqual(cleanTitles, expectedTitles, 'Categories must be strictly sorted alphabetically A-Z');
-console.log('  ✅ Exactly 16 categories verified in strict alphabetical order (A-Z).');
+console.log('  ✅ Exactly 17 categories verified in strict alphabetical order (A-Z).');
 
 // Verify Compliance and Legal separation
 assert.ok(cleanTitles.includes('Compliance'), 'Compliance category must be present under C');
 assert.ok(cleanTitles.includes('Legal'), 'Legal category must be present under L');
+assert.ok(cleanTitles.includes('RD-Agent (Autonomous R&D)'), 'RD-Agent category must be present under R');
 
 const complianceIdx = cleanTitles.indexOf('Compliance');
 const codeIdx = cleanTitles.indexOf('Code & Security');
@@ -72,13 +73,18 @@ const inspectIdx = cleanTitles.indexOf('Inspect Windows Apps (.EXE / .DLL)');
 const planningIdx = cleanTitles.indexOf('Planning & Deep Thinking');
 assert.ok(inspectIdx < legalIdx && legalIdx < planningIdx, 'Legal must be between Inspect Windows Apps and Planning & Deep Thinking');
 
+const rdAgentIdx = cleanTitles.indexOf('RD-Agent (Autonomous R&D)');
+const scienceIdx = cleanTitles.indexOf('Science & Discovery');
+assert.ok(planningIdx < rdAgentIdx && rdAgentIdx < scienceIdx, 'RD-Agent must be between Planning & Deep Thinking and Science & Discovery');
+
 console.log('  ✅ Category ordering verified:');
 console.log(`     - 'Compliance' placed at index ${complianceIdx + 1} (after 'Code & Security', before 'Computer Use')`);
 console.log(`     - 'Legal' placed at index ${legalIdx + 1} (after 'Inspect Windows Apps', before 'Planning & Deep Thinking')`);
+console.log(`     - 'RD-Agent (Autonomous R&D)' placed at index ${rdAgentIdx + 1} (after 'Planning & Deep Thinking', before 'Science & Discovery')`);
 
-// Verify sub-items inside each of the 16 categories are sorted
+// Verify sub-items inside each of the 17 categories are sorted
 const catBlocks = indexHtml.match(/<div class="tool-category">([\s\S]*?)<\/div>\s*<\/div>/g) || [];
-assert.strictEqual(catBlocks.length, 16, `Expected 16 tool-category blocks, found ${catBlocks.length}`);
+assert.strictEqual(catBlocks.length, 17, `Expected 17 tool-category blocks, found ${catBlocks.length}`);
 
 catBlocks.forEach((block, idx) => {
   const titleM = block.match(/class="cat-title">([^<]+)<\/span>/);
@@ -87,7 +93,7 @@ catBlocks.forEach((block, idx) => {
   const expectedLabels = [...labelMatches].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   assert.deepStrictEqual(labelMatches, expectedLabels, `Tool items in '${title}' must be sorted alphabetically: ${JSON.stringify(labelMatches)} vs ${JSON.stringify(expectedLabels)}`);
 });
-console.log('  ✅ Sub-items in all 16 categories verified strictly sorted alphabetically A-Z.');
+console.log('  ✅ Sub-items in all 17 categories verified strictly sorted alphabetically A-Z.');
 
 // ============================================================================
 // PART 3: Verify Load Page Blank Resilience & Frame Fallback Guard
@@ -166,3 +172,5 @@ console.log('  ✅ High contrast and elevated card styling verified in styles.cs
 console.log('\n=================================================================');
 console.log('🎉 ALL SINGLE SUBMENU & LOAD PAGE RESILIENCE TESTS PASSED (100%)');
 console.log('=================================================================\n');
+
+process.exit(0);

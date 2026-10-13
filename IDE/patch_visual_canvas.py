@@ -409,9 +409,116 @@ def patch_extension_js():
         break;
       }"""
 
-        if host_anchor in content and 'case "requestSynthesis":' not in content:
-            content = content.replace(host_anchor, host_addition, 1)
-            print("[PATCH] Successfully inserted requestSynthesis and applyVisualCode handlers into _handleMessage.")
+        host_anchor_10 = """          case "applyCandidatePatch": {
+            try {
+              await vscode83.commands.executeCommand(
+                "hugos.candidate.applyPatch",
+                message.candidateId,
+                message.filePath,
+                message.candidateContent
+              );
+            } catch {
+              this._logService.warn(`Candidate patch apply invoked for ${message.candidateId}`);
+            }
+            break;
+          }"""
+
+        host_addition_10 = """          case "applyCandidatePatch": {
+            try {
+              await vscode83.commands.executeCommand(
+                "hugos.candidate.applyPatch",
+                message.candidateId,
+                message.filePath,
+                message.candidateContent
+              );
+            } catch {
+              this._logService.warn(`Candidate patch apply invoked for ${message.candidateId}`);
+            }
+            break;
+          }
+          case "attachVisualAsset": {
+            this._logService.trace(`DashboardViewProvider: Attached visual asset ${message.asset?.id}`);
+            break;
+          }
+          case "clearVisualAssets": {
+            this._logService.trace("DashboardViewProvider: Cleared visual assets");
+            break;
+          }
+          case "requestSynthesis": {
+            try {
+              const { spawn: spawnProc } = require("child_process");
+              const pathMod = require("path");
+              const pyScript = pathMod.resolve(__dirname, "../../../src/scripts/run_model_visual.py");
+              const asset = message.asset;
+              const workflow = message.workflow || "ui-synthesis";
+              const prompt = message.prompt || "";
+              const args = [pyScript, "--image", asset?.base64Data || "", "--workflow", workflow, "--format", "json"];
+              if (prompt) args.push("--prompt", prompt);
+
+              const proc = spawnProc("python", args, { windowsHide: true });
+              let stdout = "";
+              let stderr = "";
+              proc.stdout.on("data", d => { stdout += d.toString(); });
+              proc.stderr.on("data", d => { stderr += d.toString(); });
+              proc.on("close", code => {
+                if (code === 0 && stdout) {
+                  try {
+                    const parsed = JSON.parse(stdout.trim());
+                    _webview.postMessage({
+                      type: "visualSynthesisResult",
+                      status: "success",
+                      workflow,
+                      output: parsed.code || parsed.diagnosis || "",
+                      summary: parsed.summary || "",
+                      designTokens: parsed.design_tokens || "",
+                      rootCause: parsed.root_cause || "",
+                      patch: parsed.css_patch || "",
+                      explanation: parsed.explanation || "",
+                      provider: parsed.provider || "local-vlm",
+                      latencyMs: 140
+                    });
+                    return;
+                  } catch {}
+                }
+                _webview.postMessage({
+                  type: "visualSynthesisResult",
+                  status: "error",
+                  workflow,
+                  output: stderr || stdout || "Visual inference failed"
+                });
+              });
+            } catch (synthErr) {
+              _webview.postMessage({
+                type: "visualSynthesisResult",
+                status: "error",
+                workflow: message.workflow,
+                output: String(synthErr)
+              });
+            }
+            break;
+          }
+          case "applyVisualCode": {
+            try {
+              const editor = vscode83.window.activeTextEditor;
+              if (editor && message.code) {
+                await editor.edit(editBuilder => {
+                  editBuilder.insert(editor.selection.active, message.code);
+                });
+                vscode83.window.showInformationMessage("Synthesized visual component applied to editor!");
+              }
+            } catch (applyErr) {
+              this._logService.warn(`DashboardViewProvider: Error applying visual code: ${applyErr}`);
+            }
+            break;
+          }"""
+
+        if 'case "requestSynthesis":' not in content:
+            if host_anchor in content:
+                content = content.replace(host_anchor, host_addition, 1)
+                print("[PATCH] Successfully inserted requestSynthesis and applyVisualCode handlers into _handleMessage.")
+            elif host_anchor_10 in content:
+                content = content.replace(host_anchor_10, host_addition_10, 1)
+                print("[PATCH] Successfully inserted requestSynthesis and applyVisualCode handlers (10-space) into _handleMessage.")
 
         # Save to main target
         with open(MAIN_EXT_JS, "w", encoding="utf-8") as f:

@@ -491,7 +491,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Dynamic client-side evaluation matching Rust Master CLI matrix
     const vramMb = (window.hardwareGpuVramMb && window.hardwareGpuVramMb > 0) ? window.hardwareGpuVramMb : detectGpuVramMb();
-    const ramGb = (window.hardwareRamGb && window.hardwareRamGb > 0) ? window.hardwareRamGb : ((typeof navigator !== 'undefined' && navigator.deviceMemory) ? navigator.deviceMemory : 16);
+    const ramGb = (typeof window !== 'undefined' && window.hardwareFreeRamGb) ? window.hardwareFreeRamGb : ((typeof window !== 'undefined' && window.hardwareRamGb) ? window.hardwareRamGb : (typeof navigator !== 'undefined' && navigator.deviceMemory ? navigator.deviceMemory : 16));
 
     if (vramMb >= 22000) return 'qwen2.5:32b';
     if (vramMb >= 12000) return 'qwen2.5:14b';
@@ -523,7 +523,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function resolveTaskAdaptiveSweetSpot(taskType, intention, availableModels = [], vramMb = 0, ramGb = 0) {
     const models = Array.isArray(availableModels) && availableModels.length > 0 ? availableModels : (typeof availableOllamaModels !== 'undefined' ? availableOllamaModels : []);
     const vram = vramMb > 0 ? vramMb : ((window.hardwareGpuVramMb && window.hardwareGpuVramMb > 0) ? window.hardwareGpuVramMb : detectGpuVramMb());
-    const ram = ramGb > 0 ? ramGb : ((window.hardwareRamGb && window.hardwareRamGb > 0) ? window.hardwareRamGb : ((typeof navigator !== 'undefined' && navigator.deviceMemory) ? navigator.deviceMemory : 16));
+    const ram = ramGb > 0 ? ramGb : ((typeof window !== 'undefined' && window.hardwareFreeRamGb) ? window.hardwareFreeRamGb : ((typeof window !== 'undefined' && window.hardwareRamGb) ? window.hardwareRamGb : (typeof navigator !== 'undefined' && navigator.deviceMemory ? navigator.deviceMemory : 16)));
 
     const isWriting = taskType === 'writing' || (intention && (intention.isLongForm || intention.targetPages > 0 || intention.targetChapters > 0));
     const isCode = taskType === 'code' || (intention && intention.taskType === 'code');
@@ -649,6 +649,19 @@ document.addEventListener('DOMContentLoaded', () => {
   window.getCalibratedHardwareCompanion = getCalibratedHardwareCompanion;
   window.resolveCompanionModel = resolveCompanionModel;
   window.resolveTaskAdaptiveSweetSpot = resolveTaskAdaptiveSweetSpot;
+
+  function deriveBrowserFusionModelCount(freeRamGb, freeVramMb) {
+    const r = typeof freeRamGb === 'number' ? freeRamGb : ((typeof window !== 'undefined' && window.hardwareFreeRamGb) ? window.hardwareFreeRamGb : 16);
+    const v = typeof freeVramMb === 'number' ? freeVramMb : ((typeof window !== 'undefined' && window.hardwareGpuVramMb) ? window.hardwareGpuVramMb : 0);
+    if (r >= 64 || v >= 24000) return 7;
+    if (r >= 32 || v >= 12000) return 5;
+    if (r >= 16 || v >= 6000) return 4;
+    if (r >= 8 || v >= 3000) return 3;
+    return 2;
+  }
+  if (typeof window !== 'undefined') {
+    window.deriveBrowserFusionModelCount = deriveBrowserFusionModelCount;
+  }
 
 
   // -----------------------------------------------------------------
@@ -2818,9 +2831,40 @@ const HELP_CATEGORIES = {
     ]
   },
 
+  'compliance': {
+    id: 'compliance',
+    menuIndex: 3,
+    icon: '📑',
+    title: 'Compliance',
+    subtitle: 'Regulatory Compliance, Agreement Parsing & Contract Analysis',
+    overview: 'Regulatory compliance auditing, contract clause extraction, and agreement verification. Powered by CUAD-BERT, Legal-BERT, Legal-Longformer, and Pile-of-Law for automated risk detection across complex contractual and statutory documents.',
+    engines: [
+      { name: 'CUAD-BERT', spec: 'Contract Understanding Atticus Project', role: 'Clause-level extraction across 41 critical categories (indemnity, non-compete, change of control)' },
+      { name: 'Legal-BERT', spec: 'European & US Legal Corpora', role: 'Statutory classification, semantic case precedent search, and LexGLUE benchmarks' },
+      { name: 'Legal-Longformer', spec: 'Long-Context Attention (4,096+ tokens)', role: 'Deep attention over multi-page judicial briefs, opinions, and complex transactional agreements' },
+      { name: 'Pile-of-Law LegalBERT', spec: '256GB Legal Corpus', role: 'Federal court opinions, administrative filings, and SEC disclosures analysis' }
+    ],
+    inputs: 'Contracts (NDA, MSA, SLA, EULA, Employment), compliance filings, statutory regulations, corporate policies.',
+    directives: [
+      { cmd: '@agent legal cuad-bert <contract>', desc: 'Audit agreement for unilateral termination, indemnity, and limitation of liability caps', example: '@agent legal cuad-bert Audit this Master Services Agreement for unilateral termination for convenience' },
+      { cmd: '@agent legal legal-bert <clause>', desc: 'Classify compliance obligations and regulatory statutory requirements', example: '@agent legal legal-bert Evaluate indemnification obligations under New York General Obligations Law' },
+      { cmd: '@agent legal legal-longformer <brief>', desc: 'Long-form agreement analysis across multi-page transactional contracts', example: '@agent legal legal-longformer Summarize the legal covenants and compliance obligations of this agreement' },
+      { cmd: '@agent legal pile-of-law <filing>', desc: 'Federal administrative filing and regulatory compliance audit', example: '@agent legal pile-of-law Analyze administrative agency rulemaking authority post-Loper Bright v. Raimondo' }
+    ],
+    useCases: [
+      'Automated clause-level contract review for high-risk indemnity and non-compete covenants.',
+      'Auditing corporate policies against federal and state statutory regulations.',
+      'Extracting regulatory obligations from lengthy multi-page administrative filings.'
+    ],
+    examples: [
+      '@agent legal cuad-bert Audit this Master Services Agreement for unilateral termination for convenience',
+      '@agent legal legal-bert Evaluate indemnification obligations under New York General Obligations Law',
+      '@agent legal legal-longformer Summarize the legal covenants and compliance obligations of this agreement'
+    ]
+  },
   'computer_use': {
     id: 'computer_use',
-    menuIndex: 3,
+    menuIndex: 4,
     icon: '🖱️',
     title: 'Computer Use & OS Automation',
     subtitle: 'Screen Grounding, VLM Desktop Agent & OS Automation',
@@ -2860,7 +2904,7 @@ const HELP_CATEGORIES = {
 
   'tabular': {
     id: 'tabular',
-    menuIndex: 4,
+    menuIndex: 5,
     icon: '📊',
     title: 'Data & Spreadsheets (CSV/Excel)',
     subtitle: 'Adaptive Contextual Data Science Optimization & Tabular AutoML',
@@ -2894,7 +2938,7 @@ const HELP_CATEGORIES = {
 
   'finance': {
     id: 'finance',
-    menuIndex: 5,
+    menuIndex: 6,
     icon: '💰',
     title: 'Finance & Markets',
     subtitle: 'Institutional Financial AI, Valuation, SEC Filings & Forecasting',
@@ -2937,7 +2981,7 @@ const HELP_CATEGORIES = {
 
   'vision': {
     id: 'vision',
-    menuIndex: 6,
+    menuIndex: 7,
     icon: '👁️',
     title: 'Images & Vision',
     subtitle: 'Computer Vision, Visual Grounding & Generative Synthesis',
@@ -2972,7 +3016,7 @@ const HELP_CATEGORIES = {
 
   'pe_binary': {
     id: 'pe_binary',
-    menuIndex: 7,
+    menuIndex: 8,
     icon: '🛡️',
     title: 'Inspect Windows Apps (.EXE / .DLL)',
     subtitle: 'Windows Portable Executable (PECOFF) Static Binary Forensics',
@@ -3004,9 +3048,9 @@ const HELP_CATEGORIES = {
 
   'legal': {
     id: 'legal',
-    menuIndex: 8,
+    menuIndex: 9,
     icon: '⚖️',
-    title: 'Legal & Compliance',
+    title: 'Legal',
     subtitle: 'Legal Reasoning, Statutory Interpretation & Contract Understanding',
     overview: '8 specialized legal foundation models for contract clause extraction, indemnification analysis, statutory interpretation, judicial scholarship, and automated legal drafting. Enables law firms and enterprise legal teams to review contracts and analyze regulations with 100% data sovereignty and attorney-client privilege protection.',
     engines: [
@@ -3045,7 +3089,7 @@ const HELP_CATEGORIES = {
 
   'agent': {
     id: 'agent',
-    menuIndex: 9,
+    menuIndex: 10,
     icon: '🧠',
     title: 'Planning & Deep Thinking',
     subtitle: 'Autonomous Planning, Deep Reasoning & Adversarial Verification',
@@ -3079,51 +3123,10 @@ const HELP_CATEGORIES = {
     ]
   },
 
-  'science': {
-    id: 'science',
-    menuIndex: 10,
-    icon: '🔬',
-    title: 'Science & Discovery',
-    subtitle: 'Scientific Foundation Models (Biology, Chemistry, Climate & Literature)',
-    overview: '20 scientific foundation models across Biology, Genomics, Chemistry, Materials Science, Climate, and Scientific Literature. Runs specialized neural architectures (ESM2, ChemBERTa, ClimaX, Prithvi, Galactica) locally for accelerating discoveries with zero cloud subscription fees.',
-    engines: [
-      { name: 'ESM2 & ESMFold', spec: 'Meta AI / Evolutionary Scale Modeling', role: 'Protein language modeling and ultra-fast single-sequence 3D atomic structure folding (PDB output)' },
-      { name: 'ESM3', spec: 'EvolutionaryScale Frontier Model', role: 'Generative biology model co-designing sequence, structure, and biological function simultaneously' },
-      { name: 'Evo & Nucleotide Transformer', spec: 'Arc Institute / InstaDeep', role: 'Long-context single-nucleotide genomic models for DNA, RNA, and regulatory promoter modeling' },
-      { name: 'ChemBERTa & MoLFormer', spec: 'SMILES Chemical Transformers', role: 'Molecular property prediction, toxicity estimation, and high-throughput drug screening' },
-      { name: 'Prithvi & ClimaX', spec: 'NASA-IBM / Microsoft Research', role: 'Geospatial satellite Earth observation and heterogeneous atmospheric weather forecasting' },
-      { name: 'Galactica & SciBERT', spec: 'Scientific Reasoning & Literature', role: 'Mathematical LaTeX equation derivation, reaction prediction, and paper summarization' }
-    ],
-    inputs: 'FASTA amino acid sequences, DNA/RNA sequences, SMILES/SELFIES chemical strings, PDB 3D structures, NetCDF climate grids, LaTeX math expressions.',
-    directives: [
-      { cmd: '@agent science <model> <query/sequence>', desc: 'Query any of the 20 scientific models', example: '@agent science esm2 MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLTLKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHDFFKSAMPEGYVQERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNYNSHNVYIMADKQKNGIKVNFKIRHNIEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSTQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK' },
-      { cmd: '@agent science esm2 <fasta>', desc: 'Protein residue contacts, evolutionary conservation, and variant prediction', example: '@agent science esm2 MKTIIALSYIFCLVFA' },
-      { cmd: '@agent science esmfold <fasta>', desc: 'Ultra-fast 3D protein structure folding and PDB coordinate output', example: '@agent science esmfold MKWVTFISLLLLFSSAYSRGVFRRDTHKSEIAHRFKDLGEEHFKGLVLIAFSQYLQQCPFDEHVKLVNELTEFAKTCVADESHAGCEKSLHTLFGDELCKVASLRETYGDMADCCEKQEPERNECFLSHKDDSPDLPKLKPDPNTLCDEFKADEKKFWGKYLYEIARRHPYFYAPELLYYANKYNGVFQECCQAEDKGACLLPKIETMREKVLTSSARQRLRCASIQKFGERALKAWSVARLSQKFPKAEFVEVTKLVTDLTKVHKECCHGDLLECADDRADLAKYICDNQDTISSKLKECCDKPLLEKSHCIAEVEKDAIPENLPPLTADFAEDKDVCKNYQEAKDAFLGSFLYEYSRRHPEYAVSVLLRLAKEYEATLEECCAKDDPHACYSTVFDKLKHLVDEPQNLIKQNCDQFEKLGEYGFQNALIVRYTRKVPQVSTPTLVEVSRSLGKVGTRCCTKPESERMPCTEDYLSLILNRLCVLHEKTPVSEKVTKCCTESLVNRRPCFSALTPDETYVPKAFDEKLFTFHADICTLPDTEKQIKKQTALVELLKHKPKATEEQLKTVMENFVAFVDKCCAADDKEACFAVEGPKLVVSTQTALA' },
-      { cmd: '@agent science esm3 <prompt>', desc: 'Generative de novo protein co-design across sequence and structure', example: '@agent science esm3 Generate a thermostable PET-degrading hydrolase enzyme active at 70 degrees Celsius' },
-      { cmd: '@agent science chemberta <smiles>', desc: 'Molecular property, solubility, and toxicity prediction', example: '@agent science chemberta CC(=O)OC1=CC=CC=C1C(=O)O' },
-      { cmd: '@agent science molformer <smiles>', desc: 'High-throughput drug candidate binding affinity screening', example: '@agent science molformer CN1C=NC2=C1C(=O)N(C(=O)N2C)C' },
-      { cmd: '@agent science evo <dna>', desc: 'Genome-scale nucleotide and CRISPR target sequence modeling', example: '@agent science evo ATGCGATCGATCGATCGATCGATCGATCGA' },
-      { cmd: '@agent science prithvi <coords>', desc: 'Geospatial flood, wildfire, and land cover satellite classification', example: '@agent science prithvi 37.7749, -122.4194' },
-      { cmd: '@agent science aurora <lat,lon>', desc: 'Kilometer-scale operational numerical weather and atmospheric trajectory forecasting', example: '@agent science aurora 41.8781, -87.6298' },
-      { cmd: '@agent science galactica <math/chem>', desc: 'Scientific literature reasoning and equation derivation', example: '@agent science galactica Derive the Navier-Stokes equations from the Boltzmann transport equation' }
-    ],
-    useCases: [
-      'De novo enzyme design and targeted therapeutic protein engineering without expensive wet lab iterations.',
-      'High-throughput in silico drug screening for binding affinity and oral bioavailability.',
-      'Global sub-seasonal climate risk modeling and extreme weather trajectory tracking.'
-    ],
-    examples: [
-      '@agent science esm2 MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLTLKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHDFFKSAMPEGYVQERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNYNSHNVYIMADKQKNGIKVNFKIRHNIEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSTQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK',
-      '@agent science chemberta CC(=O)OC1=CC=CC=C1C(=O)O',
-      '@agent science molformer CN1C=NC2=C1C(=O)N(C(=O)N2C)C',
-      '@agent science galactica Derive the Navier-Stokes equations from the Boltzmann transport equation'
-    ]
-  },
-
-  'rdagent': {
-    id: 'rdagent',
+  'rd_agent': {
+    id: 'rd_agent',
     menuIndex: 11,
-    icon: '🤖',
+    icon: '🧪',
     title: 'RD-Agent (Autonomous R&D)',
     subtitle: 'Autonomous Data-Driven R&D, Factor Mining, Model Evolution & Fine-Tuning',
     overview: 'Microsoft RD-Agent autonomous data-driven R&D framework. Features dual-loop architecture (Research Loop proposes hypotheses, Development Loop synthesizes code, runs backtests/benchmarks, and co-evolves solutions). Supports FT-Agent/FT-Dojo autonomous fine-tuning, RD-Agent(Q) quantitative strategy evolution, FinFactor financial mining, Kaggle competitions, medical prediction, and research paper implementation.',
@@ -3163,10 +3166,50 @@ const HELP_CATEGORIES = {
       '@agent rd-model https://arxiv.org/abs/2401.00001 implementation'
     ]
   },
+  'science': {
+    id: 'science',
+    menuIndex: 12,
+    icon: '🔬',
+    title: 'Science & Discovery',
+    subtitle: 'Scientific Foundation Models (Biology, Chemistry, Climate & Literature)',
+    overview: '20 scientific foundation models across Biology, Genomics, Chemistry, Materials Science, Climate, and Scientific Literature. Runs specialized neural architectures (ESM2, ChemBERTa, ClimaX, Prithvi, Galactica) locally for accelerating discoveries with zero cloud subscription fees.',
+    engines: [
+      { name: 'ESM2 & ESMFold', spec: 'Meta AI / Evolutionary Scale Modeling', role: 'Protein language modeling and ultra-fast single-sequence 3D atomic structure folding (PDB output)' },
+      { name: 'ESM3', spec: 'EvolutionaryScale Frontier Model', role: 'Generative biology model co-designing sequence, structure, and biological function simultaneously' },
+      { name: 'Evo & Nucleotide Transformer', spec: 'Arc Institute / InstaDeep', role: 'Long-context single-nucleotide genomic models for DNA, RNA, and regulatory promoter modeling' },
+      { name: 'ChemBERTa & MoLFormer', spec: 'SMILES Chemical Transformers', role: 'Molecular property prediction, toxicity estimation, and high-throughput drug screening' },
+      { name: 'Prithvi & ClimaX', spec: 'NASA-IBM / Microsoft Research', role: 'Geospatial satellite Earth observation and heterogeneous atmospheric weather forecasting' },
+      { name: 'Galactica & SciBERT', spec: 'Scientific Reasoning & Literature', role: 'Mathematical LaTeX equation derivation, reaction prediction, and paper summarization' }
+    ],
+    inputs: 'FASTA amino acid sequences, DNA/RNA sequences, SMILES/SELFIES chemical strings, PDB 3D structures, NetCDF climate grids, LaTeX math expressions.',
+    directives: [
+      { cmd: '@agent science <model> <query/sequence>', desc: 'Query any of the 20 scientific models', example: '@agent science esm2 MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLTLKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHDFFKSAMPEGYVQERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNYNSHNVYIMADKQKNGIKVNFKIRHNIEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSTQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK' },
+      { cmd: '@agent science esm2 <fasta>', desc: 'Protein residue contacts, evolutionary conservation, and variant prediction', example: '@agent science esm2 MKTIIALSYIFCLVFA' },
+      { cmd: '@agent science esmfold <fasta>', desc: 'Ultra-fast 3D protein structure folding and PDB coordinate output', example: '@agent science esmfold MKWVTFISLLLLFSSAYSRGVFRRDTHKSEIAHRFKDLGEEHFKGLVLIAFSQYLQQCPFDEHVKLVNELTEFAKTCVADESHAGCEKSLHTLFGDELCKVASLRETYGDMADCCEKQEPERNECFLSHKDDSPDLPKLKPDPNTLCDEFKADEKKFWGKYLYEIARRHPYFYAPELLYYANKYNGVFQECCQAEDKGACLLPKIETMREKVLTSSARQRLRCASIQKFGERALKAWSVARLSQKFPKAEFVEVTKLVTDLTKVHKECCHGDLLECADDRADLAKYICDNQDTISSKLKECCDKPLLEKSHCIAEVEKDAIPENLPPLTADFAEDKDVCKNYQEAKDAFLGSFLYEYSRRHPEYAVSVLLRLAKEYEATLEECCAKDDPHACYSTVFDKLKHLVDEPQNLIKQNCDQFEKLGEYGFQNALIVRYTRKVPQVSTPTLVEVSRSLGKVGTRCCTKPESERMPCTEDYLSLILNRLCVLHEKTPVSEKVTKCCTESLVNRRPCFSALTPDETYVPKAFDEKLFTFHADICTLPDTEKQIKKQTALVELLKHKPKATEEQLKTVMENFVAFVDKCCAADDKEACFAVEGPKLVVSTQTALA' },
+      { cmd: '@agent science esm3 <prompt>', desc: 'Generative de novo protein co-design across sequence and structure', example: '@agent science esm3 Generate a thermostable PET-degrading hydrolase enzyme active at 70 degrees Celsius' },
+      { cmd: '@agent science chemberta <smiles>', desc: 'Molecular property, solubility, and toxicity prediction', example: '@agent science chemberta CC(=O)OC1=CC=CC=C1C(=O)O' },
+      { cmd: '@agent science molformer <smiles>', desc: 'High-throughput drug candidate binding affinity screening', example: '@agent science molformer CN1C=NC2=C1C(=O)N(C(=O)N2C)C' },
+      { cmd: '@agent science evo <dna>', desc: 'Genome-scale nucleotide and CRISPR target sequence modeling', example: '@agent science evo ATGCGATCGATCGATCGATCGATCGATCGA' },
+      { cmd: '@agent science prithvi <coords>', desc: 'Geospatial flood, wildfire, and land cover satellite classification', example: '@agent science prithvi 37.7749, -122.4194' },
+      { cmd: '@agent science aurora <lat,lon>', desc: 'Kilometer-scale operational numerical weather and atmospheric trajectory forecasting', example: '@agent science aurora 41.8781, -87.6298' },
+      { cmd: '@agent science galactica <math/chem>', desc: 'Scientific literature reasoning and equation derivation', example: '@agent science galactica Derive the Navier-Stokes equations from the Boltzmann transport equation' }
+    ],
+    useCases: [
+      'De novo enzyme design and targeted therapeutic protein engineering without expensive wet lab iterations.',
+      'High-throughput in silico drug screening for binding affinity and oral bioavailability.',
+      'Global sub-seasonal climate risk modeling and extreme weather trajectory tracking.'
+    ],
+    examples: [
+      '@agent science esm2 MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLTLKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHDFFKSAMPEGYVQERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNYNSHNVYIMADKQKNGIKVNFKIRHNIEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSTQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK',
+      '@agent science chemberta CC(=O)OC1=CC=CC=C1C(=O)O',
+      '@agent science molformer CN1C=NC2=C1C(=O)N(C(=O)N2C)C',
+      '@agent science galactica Derive the Navier-Stokes equations from the Boltzmann transport equation'
+    ]
+  },
 
   'sentiment': {
     id: 'sentiment',
-    menuIndex: 11,
+    menuIndex: 13,
     icon: '💖',
     title: 'Sentiment & Content Moderation',
     subtitle: 'Sentiment Analysis, Emotion Detection & Automated Content Moderation',
@@ -3193,7 +3236,7 @@ const HELP_CATEGORIES = {
   },
   'utilities': {
     id: 'utilities',
-    menuIndex: 12,
+    menuIndex: 14,
     icon: '⚙️',
     title: 'Utilities & System',
     subtitle: 'System Telemetry, Hardware Sizing & Database Maintenance',
@@ -3235,7 +3278,7 @@ const HELP_CATEGORIES = {
 
   'audio': {
     id: 'audio',
-    menuIndex: 13,
+    menuIndex: 15,
     icon: '🎙️',
     title: 'Voice & Audio',
     subtitle: 'Acoustic Transcription, Voice Synthesis & Sound Classification',
@@ -3265,7 +3308,7 @@ const HELP_CATEGORIES = {
 
   'web': {
     id: 'web',
-    menuIndex: 14,
+    menuIndex: 16,
     icon: '🌐',
     title: 'Web Research & Automation',
     subtitle: 'Grounded Live Search, arXiv Research & WikiSkill Distillation',
@@ -3301,7 +3344,7 @@ const HELP_CATEGORIES = {
 
   'writing': {
     id: 'writing',
-    menuIndex: 15,
+    menuIndex: 17,
     icon: '✍️',
     title: 'Writing & Editing',
     subtitle: 'Anti-AI Stylometry, Token Watermark Detection & Translation',
@@ -3334,6 +3377,15 @@ const HELP_CATEGORIES = {
     ]
   }
 };
+
+// Non-enumerable alias for backward compatibility
+try {
+  Object.defineProperty(HELP_CATEGORIES, 'rdagent', {
+    get() { return this.rd_agent; },
+    enumerable: false,
+    configurable: true
+  });
+} catch (_) {}
 
 const SPECIFIC_MODELS = {
   // Classification & Taxonomy (Menu 1)
@@ -5296,6 +5348,7 @@ const TOOL_SAMPLE_REGISTRY = {
 
 const CATEGORY_KEYWORDS = {
   'classification': ['classification', 'taxonomy', 'nli', 'zeroshot', 'zero-shot', 'mnli', 'deberta', 'multilabel', 'topic', 'classify'],
+  'compliance': ['compliance', 'regulatory', 'agreement', 'agreements', 'cuad', 'cuad-bert', 'pile-of-law'],
   'sentiment': ['sentiment', 'emotion', 'emotions', 'goemotions', 'sst2', 'moderation', 'toxic', 'toxicity', 'safety', 'mood', 'feeling'],
   'code': ['code', 'security', 'sast', 'vuln', 'vulnerability', 'vulnerabilities', 'ast', 'transpile', 'dockerfile', 'owasp', 'secret', 'secrets', 'graph-index', 'graph', 'pii-scan', 'vuln-scan', 'api-docs'],
   'computer_use': ['computer_use', 'computer-use', 'computer', 'os', 'desktop', 'ui-tars', 'uitars', 'grounding', 'mouse', 'keyboard', 'screen-grounding', 'desktop-click', 'desktop-type', 'desktop-scroll', 'click', 'type', 'scroll', 'shopping', 'ticket-booking', 'exam-solver', 'map-directions', 'apply-jobs', 'apply_jobs', 'apply-job', 'jobs', 'job-application'],
@@ -5303,8 +5356,9 @@ const CATEGORY_KEYWORDS = {
   'finance': ['finance', 'markets', 'market', 'sec', '10-k', '10k', 'valuation', 'dcf', 'finbert', 'fingpt', 'stock', 'stocks', 'equity', 'chronos', 'patchtst', 'llama-fin', 'qwen-finance'],
   'vision': ['vision', 'images', 'image', 'photo', 'photos', 'vqa', 'ocr', 'flux', 'yolo', 'florence', 'detection', 'object-detection', 'image-classification', 'video', 'sdxl'],
   'pe_binary': ['pe_binary', 'pe-binary', 'pe', 'pecoff', 'coff', 'exe', 'dll', 'binary', 'binaries', 'authenticode', 'entropy', 'strings', 'packer', 'packer-detect', 'inspect'],
-  'legal': ['legal', 'compliance', 'contract', 'contracts', 'law', 'statute', 'statutory', 'brief', 'briefs', 'cuad', 'saul', 'saul-7b', 'lawma', 'pile-of-law', 'law-chat', 'law-llm'],
+  'legal': ['legal', 'law', 'statute', 'statutory', 'brief', 'briefs', 'saul', 'saul-7b', 'lawma', 'law-chat', 'law-llm'],
   'agent': ['agent', 'planning', 'deep-thinking', 'deep_thinking', 'thinking', 'reasoning', 'boost', 'grill-me', 'grillme', 'cot', 'reflection', 'rest-rl', 'restrl', 'goal', 'plan', 'agentic-loop', 'decompose'],
+  'rd_agent': ['rd_agent', 'rdagent', 'rd-agent', 'rd', 'finetune', 'rd-finetune', 'factor', 'rd-factor', 'kaggle', 'rd-kaggle', 'medical', 'rd-medical', 'quant', 'rd-quant', 'multiharness', 'multi-harness', 'rd-model'],
   'science': ['science', 'discovery', 'biology', 'chemistry', 'genomic', 'genomics', 'protein', 'proteins', 'climate', 'scientific', 'biotech', 'pharma', 'earth', 'esm', 'chemberta', 'galactica', 'aurora', 'prithvi', 'evo'],
   'utilities': ['utilities', 'utility', 'system', 'telemetry', 'sys-info', 'sysinfo', 'hardware', 'catalog', 'db', 'database', 'sqlite', 'vacuum', 'integrity', 'db-check', 'db-vacuum', 'db-rebuild', 'db-prune', 'audit', 'audit-menus', 'benchmark', 'export', 'active-model'],
   'audio': ['audio', 'voice', 'sound', 'speech', 'asr', 'tts', 'transcription', 'whisper', 'piper', 'kokoro'],
@@ -5388,11 +5442,11 @@ function resolveHelpResolution(parsed) {
   const matchedModels = [];
   const modelTokens = new Set();
 
-  // 1. Check for menu index numbers (1 to 15)
+  // 1. Check for menu index numbers (1 to 17)
   for (const token of tokens) {
     const cleanToken = token.replace(/[^a-z0-9_-]/g, '');
     const num = parseInt(cleanToken, 10);
-    if (!isNaN(num) && num >= 1 && num <= 15) {
+    if (!isNaN(num) && num >= 1 && num <= 17) {
       const foundCat = Object.values(HELP_CATEGORIES).find(c => c.menuIndex === num);
       if (foundCat && !matchedCategories.includes(foundCat)) {
         matchedCategories.push(foundCat);
@@ -11146,8 +11200,20 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     if (!data) return;
     if (data.active_hardware_model) cachedHardwareModel = data.active_hardware_model;
     if (data.hardware) cachedHardwareStats = data.hardware;
-    if (data.hardware && typeof data.hardware.free_vram_mb === 'number') {
-      window.hardwareGpuVramMb = data.hardware.free_vram_mb;
+    if (data.hardware) {
+      if (typeof data.hardware.free_vram_mb === 'number') {
+        window.hardwareGpuVramMb = data.hardware.free_vram_mb;
+      }
+      if (typeof data.hardware.free_ram_gb === 'number') {
+        window.hardwareFreeRamGb = data.hardware.free_ram_gb;
+        window.hardwareRamGb = data.hardware.free_ram_gb;
+      }
+      if (typeof data.hardware.total_ram_gb === 'number') {
+        window.hardwareTotalRamGb = data.hardware.total_ram_gb;
+      }
+      if (typeof data.hardware.fusion_panel_size === 'number') {
+        window.hardwareFusionPanelSize = data.hardware.fusion_panel_size;
+      }
     }
     if (data.calibrated_sweet_spot) {
       window.calibratedSweetSpotModel = data.calibrated_sweet_spot;
@@ -11657,13 +11723,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     if (lower.startsWith('http://localhost') || lower.startsWith('http://127.0.0.1') || lower.startsWith('about:') || lower.startsWith('file:')) {
       return false;
     }
-    const blockingSites = [
-      'google.', 'youtube.com', 'youtu.be', 'github.com', 'twitter.com', 'x.com',
-      'facebook.com', 'instagram.com', 'linkedin.com', 'theladders.com', 'ladders.com', 'reddit.com', 'bing.com',
-      'yahoo.com', 'duckduckgo.com', 'medium.com', 'wikipedia.org', 'cloudflare.com',
-      'apple.com', 'microsoft.com', 'amazon.com', 'netflix.com', 'quora.com', 'stackoverflow.com'
-    ];
-    if (blockingSites.some(d => lower.includes(d))) {
+    if (lower.startsWith('http://') || lower.startsWith('https://')) {
       return true;
     }
     return false;
@@ -11813,7 +11873,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     browserFrame.onerror = (e) => {
       termLog(`Iframe load error detected for ${currentNavUrl}: Connection refused or blocked by security policy.`, 'warn');
       window.isServerProxyOnline = false;
-      browserFrame.src = currentNavUrl;
+      browserFrame.src = 'about:blank';
       frameFallback.classList.remove('hidden');
     };
 
@@ -16788,6 +16848,59 @@ Respond with ONLY a valid JSON object matching this schema:
 
   function generateFactualChapterStems(topic = '', prompt = '', options = {}) {
     const combined = ((topic || '') + ' ' + (prompt || '')).toLowerCase();
+
+    // 0. Deep Research Academic & Empirical Treatise (Mandatory 10-Chapter Curriculum)
+    const isDeepResearch = Boolean(options.isDeepResearch) ||
+      /\b(?:deep[-_ ]?research|browser\s+deep\s+research)\b/i.test(combined);
+    if (isDeepResearch) {
+      const subjectClean = (topic || prompt || 'Academic Research')
+        .replace(/^(@agent\s+outline|\/outline|@outline|write|outline)\s*:?\s*/i, '')
+        .replace(/^(?:(?:write|outline|draft|generate)\s+(?:me\s+)?(?:a\s+|an\s+)?(?:book|novel|long[- ]form\s+essay|treatise|essay|paper|guide|story|monograph)?(?:\s+(?:on|about|regarding))?(?:\s+(?:an?\s+)?(?:essay|book|study|paper))?(?:\s+(?:on|about|regarding))?\s*|@agent\s+(?:browser\s+deep\s+research\s+on|deep\s+research|research)\s*|\/(?:research)\s*|deep[-_ ]?research\s+(?:on|about)?\s*)/i, '')
+        .trim();
+      const subject = subjectClean || 'Domain Systems';
+      return [
+        {
+          stem: `Theoretical Foundations & Executive Summary of ${subject}`,
+          plot: `Rigorous academic framing, historical genesis, governing mathematical/operational principles, core problem statement, and executive research objectives.`
+        },
+        {
+          stem: `Literature Review & State-of-the-Art Survey`,
+          plot: `Exhaustive survey of prior scholarship, canonical papers, state-of-the-art benchmarks, contrasting methodologies, and existing theoretical limitations.`
+        },
+        {
+          stem: `Architectural Framework & Technical Mechanics`,
+          plot: `System architecture decomposition, core subsystem mechanics, operational workflows, protocol specifications, and implementation topology.`
+        },
+        {
+          stem: `Mathematical Modeling & Algorithmic Formulations`,
+          plot: `Formal mathematical derivations, asymptotic complexity bounds, objective functions, algorithmic proofs, and formal constraint definitions.`
+        },
+        {
+          stem: `Empirical Evaluation & Performance Benchmarks`,
+          plot: `Empirical benchmarking data, throughput/latency metrics under stress, statistical error distributions, and ablation study findings.`
+        },
+        {
+          stem: `Vulnerabilities, Threat Vectors & Safety Mitigations`,
+          plot: `Adversarial threat modeling, failure mode taxonomy, edge case vulnerabilities, safety containment mechanisms, and robustness validation.`
+        },
+        {
+          stem: `System Integration, Scalability & Production Hardening`,
+          plot: `Enterprise-grade deployment considerations, fault tolerance architectures, horizontal scaling characteristics, and operational telemetry.`
+        },
+        {
+          stem: `Comparative Paradigms & Critical Trade-Offs`,
+          plot: `In-depth comparative analysis contrasting candidate architectures, Pareto frontier trade-offs (efficiency vs latency vs accuracy), and selection criteria.`
+        },
+        {
+          stem: `Regulatory, Compliance & Ethical Governance`,
+          plot: `Legal and regulatory statutory compliance, auditability standards, data governance policies, ethical safety guardrails, and risk scoring.`
+        },
+        {
+          stem: `Conclusions, Strategic Roadmap & Annotated Bibliography`,
+          plot: `Synthesis of research conclusions, open research frontiers, strategic forward-looking roadmap, and exhaustive annotated academic citations.`
+        }
+      ];
+    }
 
     // 1. Nigeria (Historical, Political, Cultural & Economic Horizons)
     if (/\b(?:nigeria|nigerian|lagos|abuja|yoruba|igbo|hausa|biafra|nok|benin|oyo|sokoto)\b/i.test(combined)) {
@@ -32856,7 +32969,7 @@ The current calendar year is 2026. If you are asked about real-world facts such 
 
     // Sizing matrix verification
     const vram = window.hardwareGpuVramMb || 6890;
-    const ram = window.hardwareRamGb || 16;
+    const ram = window.hardwareFreeRamGb || window.hardwareRamGb || 16;
     const cores = window.hardwareCpuCores || 8;
 
     resourceItems.push({
@@ -32997,4 +33110,4 @@ The current calendar year is 2026. If you are asked about real-world facts such 
   if (typeof window !== 'undefined') {
     window.termLog = termLog;
   }
-});
+});

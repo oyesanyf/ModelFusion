@@ -733,6 +733,18 @@ if (Test-Path $patchCliideScript) {
     Write-Host "[OK] Applied cliide binary resolution patches across extension.js" -ForegroundColor Green
 }
 
+# 4.981 Apply Visual Canvas patches to extension.js
+Write-Host "[INFO] Applying Visual Canvas patches to extension.js..." -ForegroundColor Yellow
+$patchVisualCanvasScript = Join-Path $PSScriptRoot "patch_visual_canvas.py"
+if (Test-Path $patchVisualCanvasScript) {
+    python $patchVisualCanvasScript
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] patch_visual_canvas script failed! Aborting MSI build." -ForegroundColor Red
+        Exit 1
+    }
+    Write-Host "[OK] Applied Visual Canvas patches and verified 4-way parity across extension.js" -ForegroundColor Green
+}
+
 # 4.98 Ensure 100% parity and presence across all versioned runtime directories
 Write-Host "[INFO] Synchronizing all configuration, settings, extensions, and ReST-RL to versioned runtime directories..." -ForegroundColor Yellow
 $versionedDirs = @(Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' })
@@ -1044,7 +1056,7 @@ if (-not $serverRunning) {
     if (Test-Path $cliPath) {
         Sign-FileWithCert $cliPath
         $cliDir = Split-Path -Parent $cliPath
-        Start-Process -FilePath $cliPath -ArgumentList "--server", "--port", "5000" -WorkingDirectory $cliDir -WindowStyle Hidden
+        Start-Process -FilePath $cliPath -ArgumentList "--server", "--port", "5000" -WorkingDirectory $cliDir -WindowStyle Hidden -RedirectStandardOutput "$env:TEMP\modelfusion_server_out.log" -RedirectStandardError "$env:TEMP\modelfusion_server_err.log"
         for ($i = 0; $i -lt 10; $i++) {
             try {
                 $h = Invoke-WebRequest -Uri "http://127.0.0.1:5000/health" -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue

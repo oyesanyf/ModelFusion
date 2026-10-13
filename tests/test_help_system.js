@@ -149,12 +149,13 @@ for (const tc of typoCommands) {
 }
 console.log(`✅ Check 2 Passed: All ${typoCommands.length} command & typo variants parsed with exact token accuracy.`);
 
-// 3. Test Resolution Across All 15 Categories
-console.log('\n--- Check 3: Resolution Across All 15 Menu Categories ---');
+// 3. Test Resolution Across All 17 Categories
+console.log('\n--- Check 3: Resolution Across All 17 Menu Categories ---');
 
 const expectedCategories = [
   'classification',
   'code',
+  'compliance',
   'computer_use',
   'tabular',
   'finance',
@@ -162,6 +163,7 @@ const expectedCategories = [
   'pe_binary',
   'legal',
   'agent',
+  'rd_agent',
   'science',
   'sentiment',
   'utilities',
@@ -170,14 +172,14 @@ const expectedCategories = [
   'writing'
 ];
 
-assert.strictEqual(Object.keys(HELP_CATEGORIES).length, 15, 'HELP_CATEGORIES must contain exactly 15 menus');
+assert.strictEqual(Object.keys(HELP_CATEGORIES).length, 17, 'HELP_CATEGORIES must contain exactly 17 menus');
 
 for (const catKey of expectedCategories) {
   const cat = HELP_CATEGORIES[catKey];
   assert.ok(cat, `Category "${catKey}" must exist in HELP_CATEGORIES`);
   assert.ok(cat.title, `Category "${catKey}" must have a title`);
   assert.ok(cat.icon, `Category "${catKey}" must have an icon`);
-  assert.ok(cat.menuIndex >= 1 && cat.menuIndex <= 15, `Category "${catKey}" menuIndex must be 1..15`);
+  assert.ok(cat.menuIndex >= 1 && cat.menuIndex <= 17, `Category "${catKey}" menuIndex must be 1..17`);
   assert.ok(Array.isArray(cat.engines) && cat.engines.length >= 2, `Category "${catKey}" must have >=2 engines`);
   assert.ok(Array.isArray(cat.directives) && cat.directives.length >= 2, `Category "${catKey}" must have >=2 directives`);
   assert.ok(Array.isArray(cat.examples) && cat.examples.length >= 2, `Category "${catKey}" must have >=2 runnable examples`);
@@ -194,7 +196,7 @@ for (const catKey of expectedCategories) {
   assert.ok(html.includes('help-table'), `HTML for ${catKey} must contain help-table`);
   assert.ok(html.includes('data-help-cmd'), `HTML for ${catKey} must contain interactive data-help-cmd attributes`);
 }
-console.log(`✅ Check 3 Passed: All 15 categories verified with rich metadata, tables, and HTML rendering.`);
+console.log(`✅ Check 3 Passed: All 17 categories verified with rich metadata, tables, and HTML rendering.`);
 
 // 4. Test User Prompt Specific Case: "@help science of @helo esm" and Model Deep Dives
 console.log('\n--- Check 4: User Prompt Case ("@help science of @helo esm") & Models ---');
@@ -218,7 +220,7 @@ assert.ok(userHtml.includes('@agent science esmfold'), 'Must include @agent scie
 console.log('✅ Check 4 Passed: "@help science of @helo esm" accurately resolves to combined ESM protein suite & Science domain.');
 
 // 5. Test Global Overview
-console.log('\n--- Check 5: Global @help Overview (All 14 Navigation Cards) ---');
+console.log('\n--- Check 5: Global @help Overview (All 17 Navigation Cards) ---');
 
 const globalParsed = parseHelpQuery('@help');
 const globalRes = resolveHelpResolution(globalParsed);
@@ -232,7 +234,7 @@ for (const catKey of expectedCategories) {
   assert.ok(globalHtml.includes(`data-help-cmd="@help ${cat.id}"`), `Global overview must have clickable pill for "${cat.id}"`);
 }
 
-console.log('✅ Check 5 Passed: Global @help overview contains all 14 interactive navigation cards with runnable pills.');
+console.log('✅ Check 5 Passed: Global @help overview contains all 17 interactive navigation cards with runnable pills.');
 
 // 6. Test False Positive Guard (conversational requests MUST NOT be hijacked)
 console.log('\n--- Check 6: Conversational Natural Language Guard (Zero False Positives) ---');
@@ -288,9 +290,9 @@ for (const pc of prepCases) {
 }
 console.log(`✅ Check 7 Passed: All ${prepCases.length} preposition variations correctly routed with zero false category collisions.`);
 
-// 8. Test Numbered Menus (Menu 1 to Menu 14)
-console.log('\n--- Check 8: Numbered Menus (1 to 14) ---');
-for (let i = 1; i <= 14; i++) {
+// 8. Test Numbered Menus (Menu 1 to Menu 17)
+console.log('\n--- Check 8: Numbered Menus (1 to 17) ---');
+for (let i = 1; i <= 17; i++) {
   const p1 = parseHelpQuery(`@help ${i}`);
   const r1 = resolveHelpResolution(p1);
   assert.ok(r1 && r1.category, `@help ${i} must resolve to a category`);
@@ -301,7 +303,7 @@ for (let i = 1; i <= 14; i++) {
   assert.ok(r2 && r2.category, `@help menu ${i} must resolve to a category`);
   assert.strictEqual(r2.category.menuIndex, i, `@help menu ${i} must match menuIndex ${i}`);
 }
-console.log('✅ Check 8 Passed: All 14 numbered menus (@help 1..14, @help menu 1..14) accurately resolved.');
+console.log('✅ Check 8 Passed: All 17 numbered menus (@help 1..17, @help menu 1..17) accurately resolved.');
 
 // 9. Test Multi-Entity Compound Guides
 console.log('\n--- Check 9: Multi-Entity Compound Guides ---');
@@ -405,4 +407,6 @@ console.log(`✅ Check 11 Passed: All ${classificationVariations.length} full HF
 console.log('\n======================================================');
 console.log('🌟 ALL HELP SUB-SYSTEM TESTS PASSED 100% GREEN! 🌟');
 console.log('======================================================\n');
+
+process.exit(0);
 

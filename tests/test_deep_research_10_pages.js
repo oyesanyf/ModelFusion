@@ -74,6 +74,10 @@ const detectFnMatch = appJsContent.match(/function detectLongFormWritingRequest\
 assert.ok(detectFnMatch, 'detectLongFormWritingRequest function must be extractable');
 vm.runInContext(`function detectLongFormWritingRequest(prompt = '', options = {}) { ${detectFnMatch[1]} }`, ctx);
 
+const factualStemsMatch = appJsContent.match(/function generateFactualChapterStems\(topic = '', prompt = '', options = \{\}\) \{([\s\S]*?)\n  \}/);
+assert.ok(factualStemsMatch, 'generateFactualChapterStems function must be extractable');
+vm.runInContext(`function generateFactualChapterStems(topic = '', prompt = '', options = {}) { ${factualStemsMatch[1]} }`, ctx);
+
 const outlineFnMatch = appJsContent.match(/function extractWritingOutline\(prompt = '', docText = '', options = \{\}\) \{([\s\S]*?)\n  \}/);
 assert.ok(outlineFnMatch, 'extractWritingOutline function must be extractable');
 vm.runInContext(`
@@ -133,3 +137,4 @@ assert.strictEqual(custom.targetWords, 12500, `Should scale targetWords to 25 * 
 console.log(`  ✓ Custom scaling verified: ${custom.targetPages} pages -> ${custom.targetWords} words`);
 
 console.log('\n🎉 ALL DEEP RESEARCH 10+ PAGE DEFAULT TESTS PASSED PERFECTLY!\n');
+process.exit(0);

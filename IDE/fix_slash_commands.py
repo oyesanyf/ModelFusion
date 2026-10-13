@@ -84,7 +84,8 @@ UNMINIFIED_BLOCK = r'''
       "text-to-speech","text-to-image","image-super-resolution","table-question-answering","feature-ranking","error",
       "research","reseach","search","rl","restrl","rest-rl","createfile","create-file","create_file","newfile","new-file","new_file",
       "btw","goal","schedule","browser","browser-agent","grill-me","grillme","teamwork-preview","teamworkpreview","learn","boost","generative_ui","generative-ui","genui","ui",
-      "som","deep-research","deepresearch","timeseries","decision","clef","classify-intent","classifyintent","agentic-loop","agenticloop"
+      "som","deep-research","deepresearch","timeseries","decision","clef","classify-intent","classifyintent","agentic-loop","agenticloop",
+      "rd-agent","rdagent","rd-finetune","rd-factor","rd-kaggle","rd-medical","rd-quant","rd-model","multi-harness","multiharness","harness","harness-stats","harness-train","computer-use","exam-solver","map-directions","desktop-click","desktop-type","desktop-scroll","screen-grounding","shopping","ticket-booking","ui-tars","apply-jobs","career-ops","humanize","watermark","detect-watermark","outline","pull-model","ensure-ollama"
     ]);
     const normCmd = (cmd) => {
       if (!cmd) return "";
@@ -93,6 +94,9 @@ UNMINIFIED_BLOCK = r'''
       l = l.replace(/^@agent[\s\/:]+/, "");
       l = l.replace(/^[\\/@]+/, "");
       l = l.trim();
+      if (l === "rdagent") return "rd-agent";
+      if (l === "multiharness" || l === "harness") return "multi-harness";
+      if (l === "careerops") return "career-ops";
       if (l === "clef" || l === "clef-flash" || l === "classify-intent" || l === "classifyintent") return "decision";
       if (l === "browser-agent" || l === "browseragent") return "browser";
       if (l === "deepresearch") return "deep-research";
@@ -419,8 +423,8 @@ MINIFIED_BLOCK = r'''
 if(!c&&o?.command){let cmdName=o.command.toLowerCase();if(cmdName==="evove"||cmdName==="evoce"||cmdName==="evovle"||cmdName==="evolv"||cmdName==="evolution")cmdName="evolve";c="/"+cmdName;this._outputChannel.appendLine("[SlashCmd] Recognized command directly via options.command: /"+cmdName);}
 if(!c&&o?.slashCommand){let cmdName=o.slashCommand.toLowerCase();if(cmdName==="evove"||cmdName==="evoce"||cmdName==="evovle"||cmdName==="evolv"||cmdName==="evolution")cmdName="evolve";c="/"+cmdName;}
 if(!c){
-let KC=new Set(["decision","clef","classify-intent","classifyintent","stats","statsd","sys-info","sysinfo","tasks","mcp","keys","api-keys","command","commands","help","active-model","active-models","activemodels","activemodel","current-model","current-models","ide-model","models-in-use","version","updatedb","comment","comments","doc","docs","decision-stats","decisionstats","performance-stats","performancestats","cache-stats","cachestats","novel-ai-stats","novelaistats","evolve","evovle","evove","evoce","evolv","evolution","avo","update","clearcache","restore","security","code-vulnerability-detection","codevulnerabilitydetection","fix","edit","review","explain","tests","refactor","audit","optimize","boost","booster","generate","dataanalyst","data-analyst","datascience","data-science","jupyter","pe-header-extraction","peheaderextraction","export-pdf","exportpdf","acdso","automl","risk-automl","riskautoml","@automl","/automl","@agent automl","@acdso","/acdso","@agent acdso","prepare-model","prepare-all-models","question","summary","sentiment","ner","ml-analytics","model-ranking","model-recommendations","analytics-demo","ml-retrain","search-query","demo-hyde","add-documents","gpu","cpu","ollama","openvino","onnx","vllm","fusion","cot","context-auto","full","score","judge","plan","predict","innovate","verbose","debug","sinq","enable-ml","ml-learning","delegation","recursion","real-options","prompt-quality-scoring","ml-fallback","enable-innovations","workflow-optimization","semantic-analysis","temporal-tracking","predictive-mode","enable-hyde","use-hyde","hyde-variants","model","budget","fusion-models","fusion-mode","selection-strategy","innovation-level","top-k","sinq-nbits","sinq-group-size","sinq-tiling-mode","sinq-method","weight-format","ov-model-dir","port","db-path","report","reporttype","ml-confidence-threshold","ml-ensemble-method","ml-cleanup","text-classification","token-classification","question-answering","text-generation","summarization","translation","fill-mask","text2text-generation","language-detection","grammar-correction","paraphrase-generation","causal-language-modeling","zero-shot-classification","feature-extraction","sentence-similarity","anonymization","coreference-resolution","spam-detection","malware-text-detection","phishing-detection","pii-detection","hate-speech-detection","cyberbullying-detection","fake-news-detection","legal-judgment-classification","contract-clause-classification","case-outcome-prediction","financial-ner","legal-ner","biomedical-ner","chemical-reaction-ner","financial-sentiment-analysis","scientific-abstract-summarization","emotion-detection","sarcasm-detection","stance-detection","bias-detection","hallucination-detection","reading-level-assessment","generation-groundedness","citation-intent-classification","code-summary-generation","code-clone-detection","image-classification","object-detection","image-segmentation","visual-question-answering","document-question-answering","zero-shot-image-classification","depth-estimation","image-feature-extraction","automatic-speech-recognition","audio-classification","voice-activity-detection","emotion-recognition","video-classification","text-to-speech","text-to-image","image-super-resolution","table-question-answering","feature-ranking","error","research","reseach","search","rl","restrl","rest-rl","createfile","create-file","create_file","newfile","new-file","new_file"]);
-let normCmd=function(cmd){if(!cmd)return"";let l=cmd.toLowerCase().trim();if(l==="@automl"||l==="/automl"||l==="@agent automl"||l==="@acdso"||l==="/acdso"||l==="@agent acdso")return"acdso";l=l.replace(/^@agent[\s\/:]+/,"");l=l.replace(/^[\\/@]+/,"");l=l.trim();if(l==="clef"||l==="clef-flash"||l==="classify-intent"||l==="classifyintent")return"decision";if(l==="rl"||l==="restrl")return"rest-rl";if(l==="create-file"||l==="create_file"||l==="newfile"||l==="new-file"||l==="new_file")return"createfile";if(l.startsWith("evol")||l.startsWith("evov")||l.startsWith("evoc")||l==="evolution"||l==="evovle")return"evolve";if(l==="avo")return"avo";if(l==="reseach")return"research";if(l==="statsd")return"stats";if(l==="api-keys")return"keys";if(l==="sys-info")return"sysinfo";if(l==="active-models"||l==="activemodels"||l==="activemodel"||l==="current-model"||l==="current-models"||l==="ide-model"||l==="models-in-use")return"active-model";if(l==="v")return"version";if(l==="update-db")return"updatedb";if(l==="decisionstats")return"decision-stats";if(l==="performancestats")return"performance-stats";if(l==="cachestats")return"cache-stats";if(l==="novelaistats")return"novel-ai-stats";if(l==="boost"||l==="booster")return"optimize";if(l==="datascience"||l==="data-science")return"data-science";if(l==="acdso"||l==="automl"||l==="risk-automl"||l==="riskautoml"||l==="risk_automl")return"acdso";if(l==="dataanalyst"||l==="data-analyst")return"data-analyst";if(l==="peheaderextraction")return"pe-header-extraction";if(l==="exportpdf")return"export-pdf";if(l==="commands"||l==="help")return"command";if(l==="comments"||l==="docs")return"comment";return l;};
+let KC=new Set(["decision","clef","classify-intent","classifyintent","stats","statsd","sys-info","sysinfo","tasks","mcp","keys","api-keys","command","commands","help","active-model","active-models","activemodels","activemodel","current-model","current-models","ide-model","models-in-use","version","updatedb","comment","comments","doc","docs","decision-stats","decisionstats","performance-stats","performancestats","cache-stats","cachestats","novel-ai-stats","novelaistats","evolve","evovle","evove","evoce","evolv","evolution","avo","update","clearcache","restore","security","code-vulnerability-detection","codevulnerabilitydetection","fix","edit","review","explain","tests","refactor","audit","optimize","boost","booster","generate","dataanalyst","data-analyst","datascience","data-science","jupyter","pe-header-extraction","peheaderextraction","export-pdf","exportpdf","acdso","automl","risk-automl","riskautoml","@automl","/automl","@agent automl","@acdso","/acdso","@agent acdso","prepare-model","prepare-all-models","question","summary","sentiment","ner","ml-analytics","model-ranking","model-recommendations","analytics-demo","ml-retrain","search-query","demo-hyde","add-documents","gpu","cpu","ollama","openvino","onnx","vllm","fusion","cot","context-auto","full","score","judge","plan","predict","innovate","verbose","debug","sinq","enable-ml","ml-learning","delegation","recursion","real-options","prompt-quality-scoring","ml-fallback","enable-innovations","workflow-optimization","semantic-analysis","temporal-tracking","predictive-mode","enable-hyde","use-hyde","hyde-variants","model","budget","fusion-models","fusion-mode","selection-strategy","innovation-level","top-k","sinq-nbits","sinq-group-size","sinq-tiling-mode","sinq-method","weight-format","ov-model-dir","port","db-path","report","reporttype","ml-confidence-threshold","ml-ensemble-method","ml-cleanup","text-classification","token-classification","question-answering","text-generation","summarization","translation","fill-mask","text2text-generation","language-detection","grammar-correction","paraphrase-generation","causal-language-modeling","zero-shot-classification","feature-extraction","sentence-similarity","anonymization","coreference-resolution","spam-detection","malware-text-detection","phishing-detection","pii-detection","hate-speech-detection","cyberbullying-detection","fake-news-detection","legal-judgment-classification","contract-clause-classification","case-outcome-prediction","financial-ner","legal-ner","biomedical-ner","chemical-reaction-ner","financial-sentiment-analysis","scientific-abstract-summarization","emotion-detection","sarcasm-detection","stance-detection","bias-detection","hallucination-detection","reading-level-assessment","generation-groundedness","citation-intent-classification","code-summary-generation","code-clone-detection","image-classification","object-detection","image-segmentation","visual-question-answering","document-question-answering","zero-shot-image-classification","depth-estimation","image-feature-extraction","automatic-speech-recognition","audio-classification","voice-activity-detection","emotion-recognition","video-classification","text-to-speech","text-to-image","image-super-resolution","table-question-answering","feature-ranking","error","research","reseach","search","rl","restrl","rest-rl","createfile","create-file","create_file","newfile","new-file","new_file","rd-agent","rdagent","rd-finetune","rd-factor","rd-kaggle","rd-medical","rd-quant","rd-model","multi-harness","multiharness","harness","harness-stats","harness-train","computer-use","exam-solver","map-directions","desktop-click","desktop-type","desktop-scroll","screen-grounding","shopping","ticket-booking","ui-tars","apply-jobs","career-ops","humanize","watermark","detect-watermark","outline","pull-model","ensure-ollama"]);
+let normCmd=function(cmd){if(!cmd)return"";let l=cmd.toLowerCase().trim();if(l==="@automl"||l==="/automl"||l==="@agent automl"||l==="@acdso"||l==="/acdso"||l==="@agent acdso")return"acdso";l=l.replace(/^@agent[\s\/:]+/,"");l=l.replace(/^[\\/@]+/,"");l=l.trim();if(l==="rdagent")return"rd-agent";if(l==="multiharness"||l==="harness")return"multi-harness";if(l==="careerops")return"career-ops";if(l==="clef"||l==="clef-flash"||l==="classify-intent"||l==="classifyintent")return"decision";if(l==="rl"||l==="restrl")return"rest-rl";if(l==="create-file"||l==="create_file"||l==="newfile"||l==="new-file"||l==="new_file")return"createfile";if(l.startsWith("evol")||l.startsWith("evov")||l.startsWith("evoc")||l==="evolution"||l==="evovle")return"evolve";if(l==="avo")return"avo";if(l==="reseach")return"research";if(l==="statsd")return"stats";if(l==="api-keys")return"keys";if(l==="sys-info")return"sysinfo";if(l==="active-models"||l==="activemodels"||l==="activemodel"||l==="current-model"||l==="current-models"||l==="ide-model"||l==="models-in-use")return"active-model";if(l==="v")return"version";if(l==="update-db")return"updatedb";if(l==="decisionstats")return"decision-stats";if(l==="performancestats")return"performance-stats";if(l==="cachestats")return"cache-stats";if(l==="novelaistats")return"novel-ai-stats";if(l==="boost"||l==="booster")return"optimize";if(l==="datascience"||l==="data-science")return"data-science";if(l==="acdso"||l==="automl"||l==="risk-automl"||l==="riskautoml"||l==="risk_automl")return"acdso";if(l==="dataanalyst"||l==="data-analyst")return"data-analyst";if(l==="peheaderextraction")return"pe-header-extraction";if(l==="exportpdf")return"export-pdf";if(l==="commands"||l==="help")return"command";if(l==="comments"||l==="docs")return"comment";return l;};
 let isUM=function(M){if(!M)return false;let R=M.role;if(R===1||String(R)==="1"||String(R).toLowerCase()==="user")return true;if(M.constructor&&M.constructor.name.toLowerCase().includes("user"))return true;return false;};
 let clnUT=function(S){if(!S)return"";let X=String(S);X=X.replace(/The following is a compressed version of the preceeding history in the current conversation\./gi," ");X=X.replace(/The following is a compressed version of the preceding history in the current conversation\./gi," ");X=X.replace(/\[Compacted conversation\]/gi," ");X=X.replace(/<user>[\s\S]*?<\/user>\s*(?:<assistant>[\s\S]*?<\/assistant>)?/gi," ");X=X.replace(/<assistant>[\s\S]*?<\/assistant>/gi," ");let ur=X.match(/<user[_\s]*request>([\s\S]*?)<\/user[_\s]*request>/i);if(ur&&ur[1].trim())return ur[1].trim();X=X.replace(/\[Context: Selected Explorer Item\(s\):[\s\S]*?\]/gi," ");X=X.replace(/<attachments[\s\S]*?<\/attachments>/gi," ");X=X.replace(/<attachment[\s\S]*?<\/attachment>/gi," ");X=X.replace(/<environment_info[\s\S]*?<\/environment_info>/gi," ");X=X.replace(/<workspace_info[\s\S]*?<\/workspace_info>/gi," ");X=X.replace(/<editorContext[\s\S]*?<\/editorContext>/gi," ");X=X.replace(/<reminderInstructions[\s\S]*?<\/reminderInstructions>/gi," ");X=X.replace(/<customizationsUpdate[\s\S]*?<\/customizationsUpdate>/gi," ");X=X.replace(/<conversation-summary[\s\S]*?<\/conversation-summary>/gi," ");X=X.replace(/The current date is \d{4}-\d{2}-\d{2}\.?/gi," ");X=X.replace(/The user's current OS is: [^\n\r]*/gi," ");X=X.replace(/<\/?[a-zA-Z][\w:-]*(\s+[^>]*)?>/gi," ");let uM=X.match(/(?:^|\n)\s*(?:User|Human):\s*([\s\S]*)$/i);if(uM&&uM[1].trim())return uM[1].trim();return X.trim();};
 let extKC=function(S){if(!S)return"";let cl=clnUT(S);if(!cl)return"";let nlR=cl.match(/(?:^|\n)\s*(?:search the internet|serarch the internet|do research|do reseach|search the web|browse the web|web research|internet research)\b\s*(?:for|about|on|:)?\s*([\s\S]*)/i);if(nlR){let tp=nlR[1].trim().replace(/^[:\-\s]+/,'');return"/research"+(tp?" "+tp:"");}let nlS=cl.match(/(?:^|\n)\s*(?:live web search)\b\s*(?:for|about|on|:)?\s*([\s\S]*)/i);if(nlS){let tp=nlS[1].trim().replace(/^[:\-\s]+/,'');return"/search"+(tp?" "+tp:"");}let dAt=cl.match(/(?:^|\n)\s*@([a-zA-Z][\w-]*)\b\s*([\s\S]*)/i);if(dAt){let rc=dAt[1].toLowerCase();let cn=normCmd(rc);if(rc!=="command"&&rc!=="commands"&&(KC.has(rc)||KC.has(cn))){let args=(dAt[2]||"").trim();if(cn==="rest-rl"&&!args)args="status";return"/"+cn+(args?" "+args:"");}}let dcm=cl.match(/(?:^|\n)\s*@(?:comments?)\b\s*([\s\S]*)/i);if(dcm)return"/comment"+(dcm[1]?" "+dcm[1].trim():"");let dtm=cl.match(/(?:^|\n)\s*@(?:tasks?)\b\s*([\s\S]*)/i);if(dtm){let rest=dtm[1].trim();let ws=rest.split(/\s+/);let fw=ws.length>0?normCmd(ws[0].replace(/^(--|-|\/|@)/,"")):"";if(fw&&(KC.has(fw)||KC.has(normCmd(fw)))){let cn=normCmd(fw);let aw=rest.slice(rest.toLowerCase().indexOf(fw.toLowerCase())+fw.length).trim();return"/"+cn+(aw?" "+aw:"");}return"/tasks"+(rest?" "+rest:"");}let dAgent=cl.match(/(?:^|\n)\s*@agent\b\s*([\s\S]*)/i);if(dAgent){let rest=dAgent[1].trim();if(!rest)return"";let ws=rest.split(/\s+/);let raw=ws[0].replace(/^(--|-|\/|@)/,"").toLowerCase();let nf=normCmd(raw);if(nf==="evolve"){let idx=rest.toLowerCase().indexOf(ws[0].toLowerCase());let aw=idx>=0?rest.slice(idx+ws[0].length).replace(/[\r\n\t]+/g," ").trim():"";return"/evolve"+(aw?" "+aw:"");}if(nf==="avo"){let idx=rest.toLowerCase().indexOf(ws[0].toLowerCase());let aw=idx>=0?rest.slice(idx+ws[0].length).replace(/[\r\n\t]+/g," ").trim():"";return"/avo"+(aw?" "+aw:"");}if(ws[0].startsWith("/")||ws[0].startsWith("--")||ws[0].startsWith("-")){let rawS=ws[0].replace(/^(--|-|\/)/,"").toLowerCase();let cn=normCmd(rawS);if(KC.has(rawS)||KC.has(cn)){let idx=rest.toLowerCase().indexOf(ws[0].toLowerCase());let aw=idx>=0?rest.slice(idx+ws[0].length).trim():"";return"/"+cn+(aw?" "+aw:"");}}if(KC.has(raw)||KC.has(nf)){let cn=KC.has(nf)?nf:raw;let idx=rest.toLowerCase().indexOf(ws[0].toLowerCase());let aw=idx>=0?rest.slice(idx+ws[0].length).trim():"";return"/"+cn+(aw?" "+aw:"");}return"";}let dam=cl.match(/(?:^|\n)\s*@(?:commands?|modelfusion|hugos|code)\b\s*([\s\S]*)/i);if(dam){let rest=dam[1].trim();if(!rest)return"/command";let ws=rest.split(/\s+/);let raw=ws[0].replace(/^(--|-|\/|@)/,"").toLowerCase();let fw=normCmd(raw);if(KC.has(raw)||KC.has(fw)){let cn=KC.has(fw)?fw:raw;let aw=rest.slice(rest.toLowerCase().indexOf(ws[0].toLowerCase())+ws[0].length).trim();return"/"+cn+(aw?" "+aw:"");}return"";}let sm=cl.match(/(?:^|\n)\s*\/([a-zA-Z][\w-]*)\b\s*([\s\S]*)/i);if(sm){let raw=sm[1].toLowerCase();let cn=normCmd(raw);if(KC.has(raw)||KC.has(cn))return"/"+cn+(sm[2]?" "+sm[2].trim():"");}let anyAgent=cl.match(/(?:^|\n)\s*@[a-zA-Z0-9_-]+\s+[\/-]*([a-zA-Z0-9_-]+)(?:\b\s*([\s\S]*))?/i);if(anyAgent){let raw=anyAgent[1].toLowerCase();let cn=normCmd(raw);if(KC.has(raw)||KC.has(cn))return"/"+cn+((anyAgent[2]||"")?" "+anyAgent[2].trim():"");}let ws=cl.split(/\s+/);if(ws.length>0){let firstClean=normCmd(ws[0].toLowerCase().replace(/^(--|-|\/|@)/,"").replace(/[^a-z0-9_-]/g,""));if(KC.has(firstClean)||KC.has(normCmd(firstClean))){let cn=normCmd(firstClean);let rest=ws.slice(1).join(" ").trim();return"/"+cn+(rest?" "+rest:"");}}return"";};
@@ -1001,6 +1005,11 @@ def patch_healthcheck_watchdog(content, file_path):
 def patch_request_timeout(content, file_path):
     """Patch _sendOrchestrationRequest so active jobs never time out unless user cancels."""
     if "isLongRunningJob" in content and "effectiveTimeout" in content:
+        if "rd-agent|" not in content:
+            content = content.replace(
+                "update|updatedb)",
+                "update|updatedb|rd-agent|rdagent|rd-finetune|rd-factor|rd-kaggle|rd-medical|rd-quant|rd-model|multi-harness|computer-use|exam-solver|map-directions|shopping|ticket-booking|ui-tars|apply-jobs|career-ops)"
+            )
         return content
 
     target_block = (
@@ -1028,7 +1037,7 @@ def patch_request_timeout(content, file_path):
     replace_block = (
         '          const config4 = vscode15.workspace.getConfiguration("hugos.modelfusion");\n'
         '          const configTimeout = config4.get("requestTimeout", 0);\n'
-        '          const isLongRunningJob = /^\\s*(\\/|@agent\\s+)?(browser|browser-agent|acdso|automl|risk-automl|data-science|datascience|data-analyst|dataanalyst|evolve|rest-rl|restrl|rl|research|update|updatedb)\\b/i.test(promptText);\n'
+        '          const isLongRunningJob = /^\\s*(\\/|@agent\\s+)?(browser|browser-agent|acdso|automl|risk-automl|data-science|datascience|data-analyst|dataanalyst|evolve|rest-rl|restrl|rl|research|update|updatedb|rd-agent|rdagent|rd-finetune|rd-factor|rd-kaggle|rd-medical|rd-quant|rd-model|multi-harness|computer-use|exam-solver|map-directions|shopping|ticket-booking|ui-tars|apply-jobs|career-ops)\\b/i.test(promptText);\n'
         '          let effectiveTimeout = (configTimeout > 0) ? configTimeout * 1e3 : 0;\n'
         '          const options = {\n'
         '            hostname: "127.0.0.1",\n'
@@ -1239,6 +1248,55 @@ def patch_ollama_missing_model_guidance(content, file_path):
     return content
 
 
+def patch_agents_to_commands(content, file_path=""):
+    """Ensure all RD-Agent, multi-harness, computer-use, and career-ops commands are registered in agentsToCommands table."""
+    if '"analytics-demo": "editAgent" /* Agent */' in content:
+        if '"rd-agent": "editAgent"' not in content:
+            extra_cmds = (
+                '        "analytics-demo": "editAgent" /* Agent */,\n'
+                '        "rd-agent": "editAgent" /* Agent */,\n'
+                '        "rdagent": "editAgent" /* Agent */,\n'
+                '        "rd-finetune": "editAgent" /* Agent */,\n'
+                '        "rd-factor": "editAgent" /* Agent */,\n'
+                '        "rd-kaggle": "editAgent" /* Agent */,\n'
+                '        "rd-medical": "editAgent" /* Agent */,\n'
+                '        "rd-quant": "editAgent" /* Agent */,\n'
+                '        "rd-model": "editAgent" /* Agent */,\n'
+                '        "multi-harness": "editAgent" /* Agent */,\n'
+                '        "multiharness": "editAgent" /* Agent */,\n'
+                '        "harness": "editAgent" /* Agent */,\n'
+                '        "harness-stats": "editAgent" /* Agent */,\n'
+                '        "harness-train": "editAgent" /* Agent */,\n'
+                '        "computer-use": "editAgent" /* Agent */,\n'
+                '        "exam-solver": "editAgent" /* Agent */,\n'
+                '        "map-directions": "editAgent" /* Agent */,\n'
+                '        "desktop-click": "editAgent" /* Agent */,\n'
+                '        "desktop-type": "editAgent" /* Agent */,\n'
+                '        "desktop-scroll": "editAgent" /* Agent */,\n'
+                '        "screen-grounding": "editAgent" /* Agent */,\n'
+                '        "shopping": "editAgent" /* Agent */,\n'
+                '        "ticket-booking": "editAgent" /* Agent */,\n'
+                '        "ui-tars": "editAgent" /* Agent */,\n'
+                '        "apply-jobs": "editAgent" /* Agent */,\n'
+                '        "career-ops": "editAgent" /* Agent */,\n'
+                '        "humanize": "editAgent" /* Agent */,\n'
+                '        "watermark": "editAgent" /* Agent */,\n'
+                '        "detect-watermark": "editAgent" /* Agent */,\n'
+                '        "outline": "editAgent" /* Agent */,\n'
+                '        "pull-model": "editAgent" /* Agent */,\n'
+                '        "ensure-ollama": "editAgent" /* Agent */,\n'
+                '        "decision": "editAgent" /* Agent */,\n'
+                '        "acdso": "editAgent" /* Agent */,\n'
+                '        "automl": "editAgent" /* Agent */,\n'
+                '        "risk-automl": "editAgent" /* Agent */,\n'
+                '        "rl": "editAgent" /* Agent */,\n'
+                '        "restrl": "editAgent" /* Agent */,\n'
+                '        "rest-rl": "editAgent" /* Agent */'
+            )
+            content = content.replace('"analytics-demo": "editAgent" /* Agent */', extra_cmds, 1)
+            print(f"  [OK] Injected RD-Agent and Computer-Use commands into agentsToCommands in {file_path}")
+    return content
+
 
 def patch_file(file_path):
     """Patch a single extension.js file."""
@@ -1310,6 +1368,7 @@ def patch_file(file_path):
                         print(f"  Added {len(missing)} missing commands to fastInfoCommands in {file_path}")
                 break
         new_content = re.sub(r'("version")(\s+)("updatedb")', r'\1,\2\3', new_content)
+        new_content = patch_agents_to_commands(new_content, file_path)
         new_content = patch_workspace_structure(new_content, file_path)
         new_content = patch_healthcheck_watchdog(new_content, file_path)
         new_content = patch_request_timeout(new_content, file_path)
@@ -1335,6 +1394,7 @@ def patch_file(file_path):
             return False
         
         new_content = content[:si] + '\n' + MINIFIED_BLOCK.strip() + '\n' + content[ei:]
+        new_content = patch_agents_to_commands(new_content, file_path)
         new_content = patch_workspace_structure(new_content, file_path)
         new_content = patch_healthcheck_watchdog(new_content, file_path)
         new_content = patch_request_timeout(new_content, file_path)
@@ -1347,6 +1407,7 @@ def patch_file(file_path):
         return True
     else:
         new_content = content
+        new_content = patch_agents_to_commands(new_content, file_path)
         new_content = patch_workspace_structure(new_content, file_path)
         new_content = patch_healthcheck_watchdog(new_content, file_path)
         new_content = patch_request_timeout(new_content, file_path)

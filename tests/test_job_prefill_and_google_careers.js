@@ -209,3 +209,4 @@ assert(workspaceHtml.includes('Auto-Generate'), 'Must have auto-generate passwor
 console.log('✅ Test 6 Passed: Interactive portal account and screening controls verified.\n');
 
 console.log('🎉 ALL TESTS PASSED SUCCESSFULLY! 100% Verification Complete.');
+process.exit(0);

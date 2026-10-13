@@ -99,6 +99,7 @@ async function run() {
   }
 
   console.log('🎉 ALL ROUTE ERROR TESTS PASSED!');
+  process.exit(0);
 }
 
 run().catch(err => {
