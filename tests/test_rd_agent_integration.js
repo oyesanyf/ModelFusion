@@ -32,6 +32,7 @@ const rdToolsExpected = [
   { id: 'tool_rd_factor', label: 'Financial Factor Mining', tag: '@rd-factor', cmd: '@agent rd-factor ' },
   { id: 'tool_rd_kaggle', label: 'Kaggle Competition Agent', tag: '@rd-kaggle', cmd: '@agent rd-kaggle ' },
   { id: 'tool_rd_medical', label: 'Medical Prediction Evolution', tag: '@rd-medical', cmd: '@agent rd-medical ' },
+  { id: 'tool_rd_multiharness', label: 'Multi-Harness RL Evolution', tag: '@multi-harness', cmd: '@agent multi-harness ' },
   { id: 'tool_rd_quant', label: 'Quant Strategy Evolution', tag: '@rd-quant', cmd: '@agent rd-quant ' },
   { id: 'tool_rd_model', label: 'Research Paper Copilot', tag: '@rd-model', cmd: '@agent rd-model ' }
 ];
@@ -49,10 +50,10 @@ assert.ok(rdBlockMatch, 'RD-Agent category block must exist');
 const rdLabelsInBlock = (rdBlockMatch[0].match(/class="tool-label">([^<]+)<\/span>/g) || [])
   .map(l => l.replace(/class="tool-label">/, '').replace(/<\/span>/, '').trim());
 
-assert.strictEqual(rdLabelsInBlock.length, 6, `Expected 6 tools in RD-Agent category block, found ${rdLabelsInBlock.length}`);
+assert.strictEqual(rdLabelsInBlock.length, 7, `Expected 7 tools in RD-Agent category block, found ${rdLabelsInBlock.length}`);
 const sortedRdLabels = [...rdLabelsInBlock].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 assert.deepStrictEqual(rdLabelsInBlock, sortedRdLabels, 'RD-Agent tools must be strictly sorted A-Z in index.html');
-console.log('  ✅ index.html: Category and all 6 tools strictly sorted A-Z.');
+console.log('  ✅ index.html: Category and all 7 tools strictly sorted A-Z.');
 
 // 2. Validate browser/ui/app.js Interception & Workspaces
 console.log('\n2. Validating browser/ui/app.js Logic...');

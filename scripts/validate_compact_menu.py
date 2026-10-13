@@ -81,6 +81,7 @@ compact_menu = {
         ("Financial Factors", "@agent rd-factor ", "tool_rd_factor", "📈", "@rd-factor"),
         ("Kaggle Agent", "@agent rd-kaggle ", "tool_rd_kaggle", "🏆", "@rd-kaggle"),
         ("Medical Prediction", "@agent rd-medical ", "tool_rd_medical", "🩺", "@rd-medical"),
+        ("Multi-Harness RL", "@agent multi-harness ", "tool_rd_multiharness", "⚡", "@multi-harness"),
         ("Quant Evolution", "@agent rd-quant ", "tool_rd_quant", "💰", "@rd-quant"),
         ("Research Copilot", "@agent rd-model ", "tool_rd_model", "🦾", "@rd-model"),
     ],
@@ -164,7 +165,7 @@ for cat, tools in compact_menu.items():
 
 print(f"Total tools: {total}")
 print(f"Max label length: {max_len} chars ('{longest_name}')")
-if all_sorted and total == 112 and max_len <= 20:
-    print("SUCCESS: ALL 112 COMPACT NAMES ARE STRICTLY <= 20 CHARS AND 100% SORTED A-Z!")
+if all_sorted and total == 113 and max_len <= 20:
+    print("SUCCESS: ALL 113 COMPACT NAMES ARE STRICTLY <= 20 CHARS AND 100% SORTED A-Z!")
 else:
     print("FAILED VALIDATION")

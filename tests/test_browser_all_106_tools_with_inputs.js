@@ -73,8 +73,8 @@ while ((catBlockMatch = catBlockRegex.exec(indexHtml)) !== null) {
 }
 
 assert.strictEqual(categories.length, 17, `Expected exactly 17 categories, found ${categories.length}`);
-assert.strictEqual(allTools.length, 116, `Expected exactly 116 tools, found ${allTools.length}`);
-console.log(`✓ Inventory Verified: exactly 17 categories and 116 tools extracted from index.html.\n`);
+assert.strictEqual(allTools.length, 117, `Expected exactly 117 tools, found ${allTools.length}`);
+console.log(`✓ Inventory Verified: exactly 17 categories and 117 tools extracted from index.html.\n`);
 
 // =========================================================================
 // 2. Realistic Domain-Tailored Inputs Registry for all 106 Tools
@@ -235,6 +235,7 @@ const TOOL_INPUTS = {
   'tool_rd_factor': 'Alpha101 / US Equities Qlib --horizon 5d',
   'tool_rd_kaggle': 'tabular-playground-series / features --eval multi_logloss',
   'tool_rd_medical': 'mimic-iv / clinical-risk --metric auroc',
+  'tool_rd_multiharness': 'Evaluate policy across all 6 native harnesses --efficiency-reward 1.0',
   'tool_rd_quant': 'cta_momentum / crypto_perpetuals --leverage 2x',
   'tool_rd_model': 'arXiv:2401.xxxxx / Transformer Infilling architecture'
 };

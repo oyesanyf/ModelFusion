@@ -914,6 +914,211 @@ impl AdaptiveController {
     }
 }
 
+/// The 6 native execution harnesses in ModelFusion / HugOS without third-party dependencies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum MultiHarnessKind {
+    /// HugOS IDE Code Generation, Infilling & Editor Harness (cliide.exe)
+    IdeCopilot,
+    /// ModelFusion Master CLI Execution & Automation Harness (cli.exe)
+    CliTerminal,
+    /// HugOS Browser UI-TARS, DOM Grounding & Web Automation Harness (clibrowser.exe)
+    BrowserComputerUse,
+    /// Background ReST-RL Daemon, Sandbox Runner & Mutation Testing Harness (crates/core/src/rl)
+    ReStRlDaemon,
+    /// Autonomous Dual-Loop R&D Framework Harness (run_rd_agent)
+    RdAgent,
+    /// Model Context Protocol Tool Calling Harness (climcp.exe)
+    McpBridge,
+}
+
+impl MultiHarnessKind {
+    pub fn all() -> &'static [Self] {
+        &[
+            Self::IdeCopilot,
+            Self::CliTerminal,
+            Self::BrowserComputerUse,
+            Self::ReStRlDaemon,
+            Self::RdAgent,
+            Self::McpBridge,
+        ]
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::IdeCopilot => "ide-copilot",
+            Self::CliTerminal => "cli-terminal",
+            Self::BrowserComputerUse => "browser-computer-use",
+            Self::ReStRlDaemon => "rest-rl-daemon",
+            Self::RdAgent => "rd-agent",
+            Self::McpBridge => "mcp-bridge",
+        }
+    }
+
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::IdeCopilot => "HugOS IDE Copilot",
+            Self::CliTerminal => "ModelFusion Master CLI",
+            Self::BrowserComputerUse => "HugOS Browser UI-TARS",
+            Self::ReStRlDaemon => "ReST-RL Daemon Sandbox",
+            Self::RdAgent => "RD-Agent Dual-Loop R&D",
+            Self::McpBridge => "MCP Protocol Bridge",
+        }
+    }
+
+    pub fn binary_name(&self) -> &'static str {
+        match self {
+            Self::IdeCopilot => "cliide.exe",
+            Self::CliTerminal => "cli.exe",
+            Self::BrowserComputerUse => "clibrowser.exe",
+            Self::ReStRlDaemon => "crates/core/src/rl",
+            Self::RdAgent => "run_rd_agent",
+            Self::McpBridge => "climcp.exe",
+        }
+    }
+
+    pub fn default_dialect(&self) -> &'static str {
+        match self {
+            Self::IdeCopilot => "chat-completions",
+            Self::CliTerminal => "messages",
+            Self::BrowserComputerUse => "responses",
+            Self::ReStRlDaemon => "chat-completions",
+            Self::RdAgent => "messages",
+            Self::McpBridge => "messages",
+        }
+    }
+
+    pub fn from_str_loose(s: &str) -> Option<Self> {
+        let lower = s.to_ascii_lowercase().replace('_', "-");
+        match lower.as_str() {
+            "ide" | "ide-copilot" | "copilot" | "cliide" => Some(Self::IdeCopilot),
+            "cli" | "cli-terminal" | "terminal" | "master" => Some(Self::CliTerminal),
+            "browser" | "browser-computer-use" | "ui-tars" | "clibrowser" | "web" => Some(Self::BrowserComputerUse),
+            "restrl" | "rest-rl" | "rest-rl-daemon" | "daemon" | "sandbox" => Some(Self::ReStRlDaemon),
+            "rdagent" | "rd-agent" | "rd" => Some(Self::RdAgent),
+            "mcp" | "mcp-bridge" | "climcp" => Some(Self::McpBridge),
+            _ => None,
+        }
+    }
+}
+
+/// Computes the exact Tool-Efficiency Reward formula from the Hugging Face / Liquid AI paper
+/// "The ultimate guide to multi-harness RL":
+/// R = correctness * (1.0 + 1.5 / (15.0 + tool_calls))
+pub fn calculate_tool_efficiency_reward(correctness: f64, tool_calls: usize) -> f64 {
+    if correctness <= 0.0 {
+        return 0.0;
+    }
+    let bonus = 1.5 / (15.0 + tool_calls as f64);
+    correctness * (1.0 + bonus)
+}
+
+/// Execution trajectory record captured from a native ModelFusion harness.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HarnessTrajectoryRecord {
+    pub harness: MultiHarnessKind,
+    pub dialect: String,
+    pub prompt_tokens: usize,
+    pub completion_tokens: usize,
+    pub tool_calls: usize,
+    pub correctness: f64,
+    pub efficiency_reward: f64,
+    pub is_token_faithful: bool,
+    pub status: String,
+}
+
+impl HarnessTrajectoryRecord {
+    pub fn new(
+        harness: MultiHarnessKind,
+        dialect: impl Into<String>,
+        prompt_tokens: usize,
+        completion_tokens: usize,
+        tool_calls: usize,
+        correctness: f64,
+        is_token_faithful: bool,
+        status: impl Into<String>,
+    ) -> Self {
+        let efficiency_reward = calculate_tool_efficiency_reward(correctness, tool_calls);
+        Self {
+            harness,
+            dialect: dialect.into(),
+            prompt_tokens,
+            completion_tokens,
+            tool_calls,
+            correctness,
+            efficiency_reward,
+            is_token_faithful,
+            status: status.into(),
+        }
+    }
+}
+
+/// Multi-harness benchmark aggregating results across all native harnesses.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MultiHarnessBenchmark {
+    pub records: Vec<HarnessTrajectoryRecord>,
+    pub total_prompt_tokens: usize,
+    pub total_completion_tokens: usize,
+    pub total_tool_calls: usize,
+    pub mean_correctness: f64,
+    pub mean_efficiency_reward: f64,
+}
+
+impl Default for MultiHarnessBenchmark {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MultiHarnessBenchmark {
+    pub fn new() -> Self {
+        Self {
+            records: Vec::new(),
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            total_tool_calls: 0,
+            mean_correctness: 0.0,
+            mean_efficiency_reward: 0.0,
+        }
+    }
+
+    pub fn add_record(&mut self, record: HarnessTrajectoryRecord) {
+        self.records.push(record);
+        self.recompute_aggregates();
+    }
+
+    pub fn recompute_aggregates(&mut self) {
+        if self.records.is_empty() {
+            self.total_prompt_tokens = 0;
+            self.total_completion_tokens = 0;
+            self.total_tool_calls = 0;
+            self.mean_correctness = 0.0;
+            self.mean_efficiency_reward = 0.0;
+            return;
+        }
+
+        let mut sum_p = 0;
+        let mut sum_c = 0;
+        let mut sum_tc = 0;
+        let mut sum_correct = 0.0;
+        let mut sum_eff = 0.0;
+
+        for r in &self.records {
+            sum_p += r.prompt_tokens;
+            sum_c += r.completion_tokens;
+            sum_tc += r.tool_calls;
+            sum_correct += r.correctness;
+            sum_eff += r.efficiency_reward;
+        }
+
+        let n = self.records.len() as f64;
+        self.total_prompt_tokens = sum_p;
+        self.total_completion_tokens = sum_c;
+        self.total_tool_calls = sum_tc;
+        self.mean_correctness = sum_correct / n;
+        self.mean_efficiency_reward = sum_eff / n;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1180,4 +1385,54 @@ mod tests {
         // Critical state (kappa = 1.0) final_score equals CVaR: cvar_score
         assert!((score_crit.final_score - score_crit.cvar_score).abs() < 1e-5);
     }
+
+    #[test]
+    fn test_tool_efficiency_reward_formula() {
+        // Zero correctness gives 0.0
+        assert_eq!(calculate_tool_efficiency_reward(0.0, 0), 0.0);
+        assert_eq!(calculate_tool_efficiency_reward(-0.5, 5), 0.0);
+
+        // 1 call: 1.0 * (1.0 + 1.5 / 16.0) = 1.09375
+        let r_1 = calculate_tool_efficiency_reward(1.0, 1);
+        assert!((r_1 - 1.09375).abs() < 1e-5, "Expected ~1.09375, got {}", r_1);
+
+        // 4 calls: 1.0 * (1.0 + 1.5 / 19.0) = 1.078947...
+        let r_4 = calculate_tool_efficiency_reward(1.0, 4);
+        assert!((r_4 - 1.0789473684210527).abs() < 1e-4, "Expected ~1.0789, got {}", r_4);
+
+        // 10 calls: 1.0 * (1.0 + 1.5 / 25.0) = 1.06
+        let r_10 = calculate_tool_efficiency_reward(1.0, 10);
+        assert!((r_10 - 1.06).abs() < 1e-5, "Expected ~1.06, got {}", r_10);
+    }
+
+    #[test]
+    fn test_multi_harness_kinds_enumeration() {
+        let kinds = MultiHarnessKind::all();
+        assert_eq!(kinds.len(), 6);
+        assert_eq!(MultiHarnessKind::from_str_loose("ide"), Some(MultiHarnessKind::IdeCopilot));
+        assert_eq!(MultiHarnessKind::from_str_loose("cli"), Some(MultiHarnessKind::CliTerminal));
+        assert_eq!(MultiHarnessKind::from_str_loose("browser"), Some(MultiHarnessKind::BrowserComputerUse));
+        assert_eq!(MultiHarnessKind::from_str_loose("restrl"), Some(MultiHarnessKind::ReStRlDaemon));
+        assert_eq!(MultiHarnessKind::from_str_loose("rdagent"), Some(MultiHarnessKind::RdAgent));
+        assert_eq!(MultiHarnessKind::from_str_loose("mcp"), Some(MultiHarnessKind::McpBridge));
+
+        // Test trajectory and benchmark aggregation
+        let mut bench = MultiHarnessBenchmark::new();
+        let traj = HarnessTrajectoryRecord::new(
+            MultiHarnessKind::IdeCopilot,
+            "chat-completions",
+            120,
+            45,
+            1,
+            1.0,
+            true,
+            "success",
+        );
+        assert!((traj.efficiency_reward - 1.09375).abs() < 1e-5);
+        bench.add_record(traj);
+        assert_eq!(bench.records.len(), 1);
+        assert_eq!(bench.total_tool_calls, 1);
+        assert_eq!(bench.total_prompt_tokens, 120);
+    }
 }
+

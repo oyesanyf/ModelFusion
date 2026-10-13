@@ -73,6 +73,7 @@ pub fn is_known_tool_or_model(name: &str) -> bool {
         "apply-jobs", "apply_jobs", "job-application", "job_application", "apply-job", "jobs", "job",
         "parse-resume", "resume-parse", "parseresume", "resumeparse", "parse_resume", "resume_parse", "resume",
         "rd-agent", "rdagent", "rd-finetune", "rd-factor", "rd-kaggle", "rd-medical", "rd-quant", "rd-model",
+        "multi-harness", "multiharness", "harness", "rd-multiharness",
         "acdso", "dataanalyst", "timeseries", "predict", "datascience", "decision",
         "finance", "finbert", "chronos", "fingpt", "llama-fin", "patchtst",
         "vision", "vqa", "object-detection", "image-classification", "video", "image",
@@ -435,6 +436,7 @@ pub static CATEGORIES: &[CategoryInfo] = &[
             ("@agent rd-medical <cohort/target>", "Automated medical prediction model evolution and clinical feature hypothesis"),
             ("@agent rd-quant <universe/market>", "RD-Agent(Q) data-centric quantitative strategy and factor-model co-optimization"),
             ("@agent rd-model <paper/spec>", "Automated paper reading and runnable model code implementation"),
+            ("@agent multi-harness [--harness <kind>]", "Multi-Harness RL Evolution across 6 native ModelFusion harnesses with tool-efficiency rewards"),
         ],
         examples: &[
             "@agent rd-finetune qwen2.5-coder on customer-support-dataset",
@@ -443,6 +445,7 @@ pub static CATEGORIES: &[CategoryInfo] = &[
             "@agent rd-kaggle Titanic survival tabular feature engineering",
             "@agent rd-medical ICU 30-day readmission prediction risk model",
             "@agent rd-model https://arxiv.org/abs/2401.00001",
+            "@agent multi-harness --harness all",
         ],
     },
     CategoryInfo {
@@ -943,6 +946,33 @@ pub static TOOL_CARDS: &[ToolCard] = &[
             "cli.exe --tool-help rd-model",
         ],
         related: &["rd-agent", "arxiv", "code-translate"],
+    },
+    ToolCard {
+        id: "multi-harness",
+        name: "Multi-Harness RL Evolution Engine",
+        category: "rdagent",
+        menu_index: 11,
+        icon: "⚡",
+        architecture: "Multi-Harness RL with Native Zero-Dependency Execution & Tool-Efficiency Rewards",
+        purpose: "Evaluates and evolves policies across ModelFusion's 6 native execution harnesses (IDE Copilot, Master CLI, Browser UI-TARS, ReST-RL Daemon, RD-Agent, MCP Bridge) with token-faithful dialect translation and non-linear tool-efficiency rewards.",
+        input_format: "Target harness or query (e.g. --harness all, --harness ide, --efficiency-reward 3).",
+        options: &[
+            ("--multi-harness", "Launch multi-harness benchmark and evaluation loop"),
+            ("--harness <ide|cli|browser|restrl|rdagent|mcp|all>", "Target native execution harness"),
+            ("--efficiency-reward <N>", "Calculate paper's tool-efficiency reward for N tool calls"),
+        ],
+        directives: &[
+            ("@agent multi-harness", "Execute native multi-harness RL evaluation across all 6 harnesses"),
+            ("@agent multi-harness --harness <kind>", "Execute evaluation on targeted native harness"),
+            ("cli.exe --multi-harness --harness all", "CLI multi-harness benchmark runner"),
+        ],
+        examples: &[
+            "@agent multi-harness --harness all",
+            "@agent multi-harness --harness ide",
+            "cli.exe --multi-harness --efficiency-reward 4",
+            "cli.exe --tool-help multi-harness",
+        ],
+        related: &["rd-agent", "rl-route", "boost"],
     },
     ToolCard {
         id: "classify",
@@ -2148,6 +2178,7 @@ pub fn format_tool_help_card(query: &str) -> String {
     let lower = match lower_raw.as_str() {
         "apply for jobs" | "apply-job" | "apply_job" | "applyjobs" | "job-application" | "job_application" | "jobapplication" | "jobs" | "job" => "apply-jobs".to_string(),
         "parse-resume" | "parseresume" | "resume-parse" | "resumeparse" | "parse_resume" | "resume_parse" | "resume" => "parse-resume".to_string(),
+        "multi-harness" | "multiharness" | "harness" | "rd-multiharness" | "rdmultiharness" | "rd_multiharness" => "multi-harness".to_string(),
         _ => lower_raw,
     };
     let tokens: Vec<&str> = lower.split_whitespace().collect();
