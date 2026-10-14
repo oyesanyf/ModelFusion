@@ -35995,32 +35995,42 @@ The current calendar year is 2026. If you are asked about real-world facts such 
 
   let globalLangExtractMenuMap = new Map();
 
-  function annotateAllMenuCategoriesWithLangExtract() {
-    globalLangExtractMenuMap.clear();
+  // Instant zero-cost initialization from static prototypes so synchronous callers/tests have all 16 categories immediately
+  for (const [catName, tools] of Object.entries(DEFAULT_16_CATEGORY_MENU_PROTOTYPES)) {
+    globalLangExtractMenuMap.set(catName, tools.map(t => ({
+      id: t.id,
+      label: t.title,
+      cmd: t.cmd,
+      langExtract: { intent: 'tool_execution', domain: catName, confidence: 1.0, entities: [] }
+    })));
+  }
 
+  function annotateAllMenuCategoriesWithLangExtract() {
     if (typeof document !== 'undefined') {
       const catElements = document.querySelectorAll('.tool-category');
-      catElements.forEach(catEl => {
-        const headerEl = catEl.querySelector('.tool-category-header');
-        const catId = (headerEl ? headerEl.getAttribute('data-cat') : null) || 'general';
-        const toolBtns = catEl.querySelectorAll('.tool-item-btn, .tool-command-btn');
-        toolBtns.forEach(btn => {
-          const cmd = btn.getAttribute('data-cmd') || btn.getAttribute('title') || btn.textContent.trim();
-          const lx = langExtractInterpretQuery(cmd);
-          btn._langExtract = lx;
-          btn.setAttribute('data-langextract-intent', lx.intent);
-          btn.setAttribute('data-langextract-domain', lx.domain);
-          if (!globalLangExtractMenuMap.has(catId)) {
+      if (catElements.length > 0) {
+        catElements.forEach(catEl => {
+          const headerEl = catEl.querySelector('.tool-category-header');
+          const catId = (headerEl ? headerEl.getAttribute('data-cat') : null) || 'general';
+          const toolBtns = catEl.querySelectorAll('.tool-item-btn, .tool-command-btn');
+          if (toolBtns.length > 0) {
             globalLangExtractMenuMap.set(catId, []);
+            toolBtns.forEach(btn => {
+              const cmd = btn.getAttribute('data-cmd') || btn.getAttribute('title') || btn.textContent.trim();
+              const lx = langExtractInterpretQuery(cmd);
+              btn._langExtract = lx;
+              btn.setAttribute('data-langextract-intent', lx.intent);
+              btn.setAttribute('data-langextract-domain', lx.domain);
+              globalLangExtractMenuMap.get(catId).push({
+                id: btn.getAttribute('data-tool-id') || btn.id || 'tool',
+                label: btn.getAttribute('title') || btn.textContent.trim(),
+                cmd: cmd,
+                langExtract: lx
+              });
+            });
           }
-          globalLangExtractMenuMap.get(catId).push({
-            id: btn.getAttribute('data-tool-id') || btn.id || 'tool',
-            label: btn.getAttribute('title') || btn.textContent.trim(),
-            cmd: cmd,
-            langExtract: lx
-          });
         });
-      });
+      }
     }
 
     for (const [catName, tools] of Object.entries(DEFAULT_16_CATEGORY_MENU_PROTOTYPES)) {
@@ -36099,13 +36109,15 @@ The current calendar year is 2026. If you are asked about real-world facts such 
         el.addEventListener('change', (e) => processElement(e.target));
       }
     });
-
-    annotateAllMenuCategoriesWithLangExtract();
   }
 
-  // Initialize Universal LangExtract Grounding & Menu Annotations
+  // Initialize Universal LangExtract Grounding & Menu Annotations (non-blocking idle task)
   bindUniversalLangExtractListeners();
-  annotateAllMenuCategoriesWithLangExtract();
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(() => annotateAllMenuCategoriesWithLangExtract());
+  } else if (typeof setTimeout === 'function') {
+    setTimeout(() => annotateAllMenuCategoriesWithLangExtract(), 20);
+  }
 
   // Universal export of APIs
   if (typeof window !== 'undefined') {
