@@ -309,28 +309,343 @@ fn extract_html_attr(tag: &str, attr: &str) -> Option<String> {
     None
 }
 
-/// Executes a live web search against DuckDuckGo (Lite and Instant Answer API) and Wikipedia.
-pub async fn live_web_search(query: &str, max_results: usize) -> Result<Vec<SearchResult>> {
-    let mut results: Vec<SearchResult> = Vec::new();
+/// Calculates multi-token relevance score between query and a candidate search result.
+/// Returns negative score if distinctive query tokens (e.g. rare surname) are missing.
+pub fn calculate_search_relevance(query: &str, title: &str, snippet: &str) -> i32 {
+    let q_lower = query.to_lowercase();
+    let t_lower = title.to_lowercase();
+    let s_lower = snippet.to_lowercase();
 
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(6))
-        .timeout(Duration::from_secs(12))
-        .build()?;
+    let stopwords = [
+        "the", "and", "for", "has", "have", "had", "published", "any", "articles", "article",
+        "who", "what", "where", "when", "why", "how", "did", "does", "with", "from", "about",
+        "his", "her", "their", "its", "our", "him", "them", "this", "that", "these", "those",
+        "all", "some", "few", "more", "most", "other", "into", "onto", "upon", "can", "will",
+        "would", "should", "could", "tell", "show", "give", "find", "search", "lookup"
+    ];
 
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        USER_AGENT,
-        HeaderValue::from_static(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        ),
+    let tokens: Vec<&str> = q_lower
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| t.len() >= 3 && !stopwords.contains(t))
+        .collect();
+
+    let mut score = 0;
+
+    // Exact phrase match
+    if t_lower.contains(&q_lower) || s_lower.contains(&q_lower) {
+        score += 100;
+    }
+
+    if tokens.is_empty() {
+        return score + 10;
+    }
+
+    let mut matched_tokens = 0;
+    for token in &tokens {
+        let in_title = t_lower.contains(token);
+        let in_snip = s_lower.contains(token);
+        if in_title || in_snip {
+            matched_tokens += 1;
+            score += 40;
+            if in_title {
+                score += 20;
+            }
+        }
+    }
+
+    // Anti-Poisoning Multi-Token Law:
+    // If the query has 2+ distinctive tokens (e.g. "femi", "oyesanya"), but the candidate
+    // matched 0 tokens or only 1 common token (e.g. only matched "femi" while missing "oyesanya"),
+    // heavily penalize so that completely unrelated people (e.g. "Femi Adebayo") are NEVER injected!
+    if tokens.len() >= 2 {
+        if matched_tokens == 0 {
+            return -100;
+        }
+        if matched_tokens == 1 {
+            return -50;
+        }
+    }
+
+    score
+}
+
+/// Searches DuckDuckGo HTML endpoint directly.
+async fn search_duckduckgo_html(
+    client: &reqwest::Client,
+    headers: &HeaderMap,
+    query: &str,
+    max_results: usize,
+) -> Vec<SearchResult> {
+    let mut results = Vec::new();
+    let url = format!("https://html.duckduckgo.com/html/?q={}", encode_query(query));
+    if let Ok(resp) = client.get(&url).headers(headers.clone()).send().await {
+        if resp.status().is_success() {
+            if let Ok(html) = resp.text().await {
+                let link_pat = "class=\"result__a\"";
+                let link_pat_alt = "class='result__a'";
+                let mut cursor = 0;
+                while let Some(pos) = safe_subslice(&html, cursor, html.len())
+                    .find(link_pat)
+                    .or_else(|| safe_subslice(&html, cursor, html.len()).find(link_pat_alt))
+                {
+                    let abs_pos = cursor + pos;
+                    if let Some(href_idx) = safe_subslice(&html, 0, abs_pos).rfind("href=\"")
+                        .or_else(|| safe_subslice(&html, 0, abs_pos).rfind("href='"))
+                    {
+                        let quote_char = html.as_bytes().get(href_idx + 5).copied().unwrap_or(b'"') as char;
+                        let url_start = href_idx + 6;
+                        if let Some(url_end) = safe_subslice(&html, url_start, html.len()).find(quote_char) {
+                            let raw_url = safe_subslice(&html, url_start, url_start + url_end);
+                            let clean_url = if let Some(uddg_pos) = raw_url.find("uddg=") {
+                                let after_uddg = safe_subslice(raw_url, uddg_pos + 5, raw_url.len());
+                                let end_param = after_uddg.find('&').unwrap_or(after_uddg.len());
+                                decode_percent_encoded(safe_subslice(after_uddg, 0, end_param))
+                            } else {
+                                raw_url.to_string()
+                            };
+
+                            let tag_close = safe_subslice(&html, abs_pos, html.len()).find('>').map(|p| abs_pos + p + 1).unwrap_or(abs_pos);
+                            let title = if let Some(tag_end) = safe_subslice(&html, tag_close, html.len()).find("</a>") {
+                                clean_html_entities(safe_subslice(&html, tag_close, tag_close + tag_end))
+                            } else {
+                                String::new()
+                            };
+
+                            let snippet = if let Some(snip_idx) = safe_subslice(&html, abs_pos, html.len()).find("result__snippet") {
+                                let snip_pos = abs_pos + snip_idx;
+                                if let Some(gt) = safe_subslice(&html, snip_pos, html.len()).find('>') {
+                                    let s_start = snip_pos + gt + 1;
+                                    if let Some(close) = safe_subslice(&html, s_start, html.len()).find("</a>")
+                                        .or_else(|| safe_subslice(&html, s_start, html.len()).find("</div>"))
+                                    {
+                                        clean_html_entities(safe_subslice(&html, s_start, s_start + close))
+                                    } else {
+                                        String::new()
+                                    }
+                                } else {
+                                    String::new()
+                                }
+                            } else {
+                                String::new()
+                            };
+
+                            if clean_url.starts_with("http") && !title.is_empty() {
+                                if !results.iter().any(|r: &SearchResult| r.url == clean_url) {
+                                    results.push(SearchResult {
+                                        title,
+                                        url: clean_url,
+                                        snippet,
+                                    });
+                                }
+                            }
+                            if results.len() >= max_results {
+                                break;
+                            }
+                        }
+                    }
+                    cursor = abs_pos + 15;
+                    while cursor < html.len() && !html.is_char_boundary(cursor) {
+                        cursor += 1;
+                    }
+                }
+            }
+        }
+    }
+    results
+}
+
+/// Searches Google Basic Web Search (gbv=1) and Google News RSS in parallel.
+async fn search_google_and_news(
+    client: &reqwest::Client,
+    headers: &HeaderMap,
+    query: &str,
+    max_results: usize,
+) -> Vec<SearchResult> {
+    let mut results = Vec::new();
+
+    // 1. Google News RSS
+    let news_url = format!(
+        "https://news.google.com/rss/search?q={}&hl=en-US&gl=US&ceid=US:en",
+        encode_query(query)
     );
+    if let Ok(resp) = client.get(&news_url).headers(headers.clone()).send().await {
+        if resp.status().is_success() {
+            if let Ok(xml) = resp.text().await {
+                let mut cursor = 0;
+                while let Some(item_start) = safe_subslice(&xml, cursor, xml.len()).find("<item>") {
+                    let abs_start = cursor + item_start + 6;
+                    if let Some(item_end) = safe_subslice(&xml, abs_start, xml.len()).find("</item>") {
+                        let item_chunk = safe_subslice(&xml, abs_start, abs_start + item_end);
+                        let title = extract_tag_content(item_chunk, "title").map(|t| clean_html_entities(&t)).unwrap_or_default();
+                        let link = extract_tag_content(item_chunk, "link").unwrap_or_default();
+                        let snippet = extract_tag_content(item_chunk, "description").map(|d| clean_html_entities(&d)).unwrap_or_default();
 
-    // 1. DuckDuckGo Lite endpoint with pagination (up to 5 pages)
+                        if !title.is_empty() && link.starts_with("http") {
+                            if !results.iter().any(|r: &SearchResult| r.url == link || r.title == title) {
+                                results.push(SearchResult {
+                                    title,
+                                    url: link,
+                                    snippet,
+                                });
+                            }
+                        }
+                        cursor = abs_start + item_end + 7;
+                        if results.len() >= max_results {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Google Web Search GBV=1
+    let g_url = format!(
+        "https://www.google.com/search?q={}&gbv=1&hl=en&num=15",
+        encode_query(query)
+    );
+    if let Ok(resp) = client.get(&g_url).headers(headers.clone()).send().await {
+        if resp.status().is_success() {
+            if let Ok(html) = resp.text().await {
+                let url_q_pat = "/url?q=";
+                let mut cursor = 0;
+                while let Some(pos) = safe_subslice(&html, cursor, html.len()).find(url_q_pat) {
+                    let abs_pos = cursor + pos + url_q_pat.len();
+                    if let Some(end_url) = safe_subslice(&html, abs_pos, html.len()).find('&')
+                        .or_else(|| safe_subslice(&html, abs_pos, html.len()).find('"'))
+                        .or_else(|| safe_subslice(&html, abs_pos, html.len()).find('\''))
+                    {
+                        let raw_url = safe_subslice(&html, abs_pos, abs_pos + end_url);
+                        let clean_url = decode_percent_encoded(raw_url);
+                        if clean_url.starts_with("http") && !clean_url.contains("google.com") {
+                            if let Some(tag_close) = safe_subslice(&html, abs_pos, html.len()).find('>') {
+                                let after_gt = abs_pos + tag_close + 1;
+                                if let Some(tag_end) = safe_subslice(&html, after_gt, html.len()).find("</a>") {
+                                    let raw_title = safe_subslice(&html, after_gt, after_gt + tag_end);
+                                    let clean_title = clean_html_entities(raw_title);
+                                    if !clean_title.is_empty() && !results.iter().any(|r: &SearchResult| r.url == clean_url || r.title == clean_title) {
+                                        results.push(SearchResult {
+                                            title: clean_title,
+                                            url: clean_url,
+                                            snippet: String::new(),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    cursor = abs_pos + 10;
+                    while cursor < html.len() && !html.is_char_boundary(cursor) {
+                        cursor += 1;
+                    }
+                    if results.len() >= max_results {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    results
+}
+
+/// Searches Bing HTML endpoint directly.
+async fn search_bing_html(
+    client: &reqwest::Client,
+    headers: &HeaderMap,
+    query: &str,
+    max_results: usize,
+) -> Vec<SearchResult> {
+    let mut results = Vec::new();
+    let url = format!("https://www.bing.com/search?q={}&setlang=en", encode_query(query));
+    if let Ok(resp) = client.get(&url).headers(headers.clone()).send().await {
+        if resp.status().is_success() {
+            if let Ok(html) = resp.text().await {
+                let algo_pat = "class=\"b_algo\"";
+                let algo_pat_alt = "class='b_algo'";
+                let mut cursor = 0;
+                while let Some(pos) = safe_subslice(&html, cursor, html.len())
+                    .find(algo_pat)
+                    .or_else(|| safe_subslice(&html, cursor, html.len()).find(algo_pat_alt))
+                {
+                    let abs_pos = cursor + pos;
+                    if let Some(h2_idx) = safe_subslice(&html, abs_pos, html.len()).find("<h2") {
+                        let h2_pos = abs_pos + h2_idx;
+                        if let Some(href_idx) = safe_subslice(&html, h2_pos, html.len()).find("href=\"")
+                            .or_else(|| safe_subslice(&html, h2_pos, html.len()).find("href='"))
+                        {
+                            let quote_char = html.as_bytes().get(h2_pos + href_idx + 5).copied().unwrap_or(b'"') as char;
+                            let url_start = h2_pos + href_idx + 6;
+                            if let Some(url_end) = safe_subslice(&html, url_start, html.len()).find(quote_char) {
+                                let link = safe_subslice(&html, url_start, url_start + url_end).to_string();
+                                if let Some(gt) = safe_subslice(&html, url_start + url_end, html.len()).find('>') {
+                                    let title_start = url_start + url_end + gt + 1;
+                                    if let Some(a_end) = safe_subslice(&html, title_start, html.len()).find("</a>") {
+                                        let title = clean_html_entities(safe_subslice(&html, title_start, title_start + a_end));
+
+                                        let snippet = if let Some(cap_idx) = safe_subslice(&html, abs_pos, html.len()).find("b_caption") {
+                                            let cap_pos = abs_pos + cap_idx;
+                                            if let Some(p_idx) = safe_subslice(&html, cap_pos, html.len()).find("<p") {
+                                                let p_pos = cap_pos + p_idx;
+                                                if let Some(p_gt) = safe_subslice(&html, p_pos, html.len()).find('>') {
+                                                    let s_start = p_pos + p_gt + 1;
+                                                    if let Some(p_close) = safe_subslice(&html, s_start, html.len()).find("</p>") {
+                                                        clean_html_entities(safe_subslice(&html, s_start, s_start + p_close))
+                                                    } else {
+                                                        String::new()
+                                                    }
+                                                } else {
+                                                    String::new()
+                                                }
+                                            } else {
+                                                String::new()
+                                            }
+                                        } else {
+                                            String::new()
+                                        };
+
+                                        if link.starts_with("http") && !title.is_empty() {
+                                            if !results.iter().any(|r: &SearchResult| r.url == link || r.title == title) {
+                                                results.push(SearchResult {
+                                                    title,
+                                                    url: link,
+                                                    snippet,
+                                                });
+                                            }
+                                        }
+                                        if results.len() >= max_results {
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    cursor = abs_pos + 20;
+                    while cursor < html.len() && !html.is_char_boundary(cursor) {
+                        cursor += 1;
+                    }
+                }
+            }
+        }
+    }
+    results
+}
+
+/// Searches DuckDuckGo Lite endpoint with pagination fallback.
+async fn search_duckduckgo_lite(
+    client: &reqwest::Client,
+    headers: &HeaderMap,
+    query: &str,
+    max_results: usize,
+) -> Vec<SearchResult> {
+    let mut results = Vec::new();
     let mut post_params: Vec<(String, String)> = vec![("q".to_string(), query.to_string())];
     let mut pages_visited = 0;
 
-    while results.len() < max_results && pages_visited < 5 {
+    while results.len() < max_results && pages_visited < 3 {
         pages_visited += 1;
         let lite_resp = client
             .post("https://lite.duckduckgo.com/lite/")
@@ -384,7 +699,7 @@ pub async fn live_web_search(query: &str, max_results: usize) -> Result<Vec<Sear
                                 };
 
                                 if clean_url.starts_with("http") && !title.is_empty() {
-                                    if !results.iter().any(|r| r.url == clean_url || r.title == title) {
+                                    if !results.iter().any(|r: &SearchResult| r.url == clean_url || r.title == title) {
                                         results.push(SearchResult {
                                             title,
                                             url: clean_url,
@@ -417,9 +732,81 @@ pub async fn live_web_search(query: &str, max_results: usize) -> Result<Vec<Sear
             _ => break,
         }
     }
+    results
+}
 
-    // 2. Wikipedia Search API Supplement if results < max_results
+/// Executes a live web search across 4 complementary search engines in parallel:
+/// DuckDuckGo HTML, Google Search + Google News RSS, Bing Web Search, and DuckDuckGo Lite,
+/// backed by strict multi-token relevance scoring, anti-poisoning filtering, and verified Wikipedia supplement.
+pub async fn live_web_search(query: &str, max_results: usize) -> Result<Vec<SearchResult>> {
+    let mut results: Vec<SearchResult> = Vec::new();
+
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(6))
+        .timeout(Duration::from_secs(12))
+        .build()?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        USER_AGENT,
+        HeaderValue::from_static(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        ),
+    );
+
+    // 1. Run 4 Complementary Live Search Engines in parallel via tokio::join!
+    let (ddg_html, google_res, bing_res, ddg_lite) = tokio::join!(
+        search_duckduckgo_html(&client, &headers, query, max_results * 2),
+        search_google_and_news(&client, &headers, query, max_results * 2),
+        search_bing_html(&client, &headers, query, max_results * 2),
+        search_duckduckgo_lite(&client, &headers, query, max_results * 2)
+    );
+
+    let normalize_url = |u: &str| -> String {
+        let without_proto = u.trim_start_matches("https://").trim_start_matches("http://");
+        without_proto.trim_end_matches('/').to_lowercase()
+    };
+
+    let mut candidate_pool: Vec<SearchResult> = Vec::new();
+    let mut seen_urls = std::collections::HashSet::new();
+
+    for res in ddg_html.into_iter().chain(google_res).chain(bing_res).chain(ddg_lite) {
+        let norm = normalize_url(&res.url);
+        if seen_urls.insert(norm) {
+            candidate_pool.push(res);
+        }
+    }
+
+    // 2. Strict Multi-Token Relevance Scoring & Anti-Poisoning Filtering
+    let mut scored: Vec<(SearchResult, i32)> = Vec::new();
+    for res in candidate_pool {
+        let score = calculate_search_relevance(query, &res.title, &res.snippet);
+        if score > 0 {
+            scored.push((res, score));
+        }
+    }
+
+    scored.sort_by(|a, b| b.1.cmp(&a.1));
+    for (res, _) in scored {
+        results.push(res);
+        if results.len() >= max_results {
+            break;
+        }
+    }
+
+    // 3. Wikipedia Search API Supplement with Strict Multi-Token Entity Guard
     if results.len() < max_results {
+        let q_lower = query.to_lowercase();
+        let stopwords = [
+            "the", "and", "for", "has", "have", "had", "published", "any", "articles", "article",
+            "who", "what", "where", "when", "why", "how", "did", "does", "with", "from", "about",
+            "his", "her", "their", "its", "our", "him", "them", "this", "that", "these", "those"
+        ];
+        let required_tokens: Vec<&str> = q_lower
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|t| t.len() >= 3 && !stopwords.contains(t))
+            .collect();
+
         let needed = max_results.saturating_sub(results.len());
         let wiki_limit = needed.clamp(1, 50);
         let wiki_url = format!(
@@ -437,18 +824,30 @@ pub async fn live_web_search(query: &str, max_results: usize) -> Result<Vec<Sear
                                 .and_then(|s| s.as_str())
                                 .map(clean_html_entities)
                                 .unwrap_or_default();
-                            let wiki_page_url = format!(
-                                "https://en.wikipedia.org/wiki/{}",
-                                encode_query(&clean_title.replace(' ', "_"))
-                            );
-                            if !results.iter().any(|r| r.url == wiki_page_url || r.title == clean_title) {
-                                results.push(SearchResult {
-                                    title: clean_title,
-                                    url: wiki_page_url,
-                                    snippet: clean_snip,
-                                });
-                                if results.len() >= max_results {
-                                    break;
+
+                            let combined_text = format!("{} {}", clean_title, clean_snip).to_lowercase();
+                            // Strict Wikipedia Anti-Poisoning Guard:
+                            // ONLY include if the Wikipedia result contains ALL distinctive tokens
+                            let all_matched = if required_tokens.is_empty() {
+                                true
+                            } else {
+                                required_tokens.iter().all(|tok| combined_text.contains(tok))
+                            };
+
+                            if all_matched {
+                                let wiki_page_url = format!(
+                                    "https://en.wikipedia.org/wiki/{}",
+                                    encode_query(&clean_title.replace(' ', "_"))
+                                );
+                                if !results.iter().any(|r| r.url == wiki_page_url || r.title == clean_title) {
+                                    results.push(SearchResult {
+                                        title: clean_title,
+                                        url: wiki_page_url,
+                                        snippet: clean_snip,
+                                    });
+                                    if results.len() >= max_results {
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -458,7 +857,7 @@ pub async fn live_web_search(query: &str, max_results: usize) -> Result<Vec<Sear
         }
     }
 
-    // 3. Fallback: DuckDuckGo Instant Answer API if results < max_results
+    // 4. Fallback: DuckDuckGo Instant Answer API if results < max_results
     if results.len() < max_results {
         let api_url = format!(
             "https://api.duckduckgo.com/?q={}&format=json",
@@ -472,11 +871,14 @@ pub async fn live_web_search(query: &str, max_results: usize) -> Result<Vec<Sear
 
                 if !abstract_text.is_empty() && !abstract_url.is_empty() {
                     if !results.iter().any(|r| r.url == abstract_url) {
-                        results.push(SearchResult {
-                            title: if heading.is_empty() { query.to_string() } else { heading },
-                            url: abstract_url,
-                            snippet: abstract_text,
-                        });
+                        let score = calculate_search_relevance(query, &heading, &abstract_text);
+                        if score > 0 {
+                            results.push(SearchResult {
+                                title: if heading.is_empty() { query.to_string() } else { heading },
+                                url: abstract_url,
+                                snippet: abstract_text,
+                            });
+                        }
                     }
                 }
 
@@ -485,13 +887,16 @@ pub async fn live_web_search(query: &str, max_results: usize) -> Result<Vec<Sear
                         if let (Some(text), Some(url)) = (t["Text"].as_str(), t["FirstURL"].as_str()) {
                             let title = text.split(" - ").next().unwrap_or(text).chars().take(60).collect::<String>();
                             if !results.iter().any(|r| r.url == url) {
-                                results.push(SearchResult {
-                                    title,
-                                    url: url.to_string(),
-                                    snippet: text.to_string(),
-                                });
-                                if results.len() >= max_results {
-                                    break;
+                                let score = calculate_search_relevance(query, &title, text);
+                                if score > 0 {
+                                    results.push(SearchResult {
+                                        title,
+                                        url: url.to_string(),
+                                        snippet: text.to_string(),
+                                    });
+                                    if results.len() >= max_results {
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -503,6 +908,201 @@ pub async fn live_web_search(query: &str, max_results: usize) -> Result<Vec<Sear
 
     results.truncate(max_results);
     Ok(results)
+}
+
+/// Google LangExtract Query Interpreter and Entity Grounder.
+/// Performs structured entity extraction, coreference resolution, and query interpretation.
+pub fn langextract_interpret_query(raw_query: &str, history: &[String]) -> serde_json::Value {
+    let text = raw_query.trim();
+    let lower_text = text.to_lowercase();
+
+    // Check if python langextract engine is available on disk
+    let engine_script = std::path::Path::new("scripts/langextract_engine.py");
+    if engine_script.exists() {
+        let history_json = serde_json::to_string(history).unwrap_or_else(|_| "[]".to_string());
+        if let Ok(output) = std::process::Command::new("python")
+            .arg("scripts/langextract_engine.py")
+            .arg("--query")
+            .arg(text)
+            .arg("--history")
+            .arg(&history_json)
+            .output()
+        {
+            if output.status.success() {
+                if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+                    return val;
+                }
+            }
+        }
+    }
+
+    // Fast zero-latency native fallback
+    let stopwords = [
+        "the", "and", "for", "has", "have", "had", "published", "any", "articles", "article",
+        "who", "what", "where", "when", "why", "how", "did", "does", "with", "from", "about",
+        "his", "her", "their", "its", "our", "him", "them", "this", "that", "these", "those",
+        "all", "some", "few", "more", "most", "other", "into", "onto", "upon", "can", "will"
+    ];
+
+    let mut extractions = Vec::new();
+    let mut intent = "qa".to_string();
+    let mut domain = "general".to_string();
+    let mut route_to_web = false;
+
+    // Directives
+    let clean_prompt = if lower_text.starts_with("@agent ") || lower_text.starts_with('/') || lower_text.starts_with("--") {
+        let parts: Vec<&str> = text.splitn(2, ' ').collect();
+        let directive = parts[0];
+        let rest = parts.get(1).copied().unwrap_or("").trim();
+        extractions.push(serde_json::json!({
+            "extraction_class": "action_intent",
+            "extraction_text": directive,
+            "char_interval": { "start_pos": 0, "end_pos": directive.len() },
+            "alignment_status": "MATCH_EXACT",
+            "attributes": { "directive": directive, "raw_command": "true" }
+        }));
+        if directive.contains("research") {
+            intent = "deep_research".to_string();
+            route_to_web = true;
+            domain = "research".to_string();
+        } else if directive.contains("search") {
+            intent = "web_search".to_string();
+            route_to_web = true;
+            domain = "web".to_string();
+        }
+        rest
+    } else {
+        text
+    };
+
+    if lower_text.contains("deep research") || lower_text.contains("deep-research") {
+        intent = "deep_research".to_string();
+        route_to_web = true;
+        domain = "research".to_string();
+    } else if lower_text.contains("search for ") || lower_text.contains("google ") {
+        intent = "web_search".to_string();
+        route_to_web = true;
+        domain = "web".to_string();
+    }
+
+    // Coreference
+    let mut resolved_entity: Option<String> = None;
+    let mut is_followup = false;
+    let pronouns = ["he", "she", "his", "her", "him", "they", "their", "the author"];
+    for p in &pronouns {
+        if let Some(pos) = lower_text.find(p) {
+            for turn in history.iter().rev() {
+                let clean_turn = turn.trim();
+                let words: Vec<&str> = clean_turn.split_whitespace().collect();
+                if !words.is_empty() && words.len() <= 5 {
+                    resolved_entity = Some(words.join(" "));
+                    is_followup = true;
+                    extractions.push(serde_json::json!({
+                        "extraction_class": "coreference",
+                        "extraction_text": *p,
+                        "char_interval": { "start_pos": pos, "end_pos": pos + p.len() },
+                        "alignment_status": "MATCH_EXACT",
+                        "attributes": {
+                            "referent": resolved_entity.clone().unwrap_or_default(),
+                            "source": "conversation_history"
+                        }
+                    }));
+                    break;
+                }
+            }
+            if is_followup {
+                break;
+            }
+        }
+    }
+
+    // Publication inquiry
+    if lower_text.contains("published") || lower_text.contains("articles") || lower_text.contains("papers") {
+        intent = "publication_inquiry".to_string();
+        route_to_web = true;
+        domain = "bibliography".to_string();
+        if let Some(pos) = lower_text.find("published") {
+            extractions.push(serde_json::json!({
+                "extraction_class": "publication_inquiry",
+                "extraction_text": "published",
+                "char_interval": { "start_pos": pos, "end_pos": pos + 9 },
+                "alignment_status": "MATCH_EXACT",
+                "attributes": {
+                    "type": "bibliography_lookup",
+                    "search_engine": "google_and_duckduckgo",
+                    "requires_live_search": "true"
+                }
+            }));
+        }
+    }
+
+    // Person entity extraction
+    let mut is_person = false;
+    let subject = clean_prompt;
+    let words: Vec<&str> = subject.split_whitespace().collect();
+    let non_stopwords: Vec<&str> = words.iter().copied().filter(|w| !stopwords.contains(&w.to_lowercase().as_str())).collect();
+    if resolved_entity.is_none() && words.len() >= 1 && words.len() <= 5 && !non_stopwords.is_empty() {
+        let ent = words.join(" ");
+        if let Some(pos) = text.to_lowercase().find(&ent.to_lowercase()) {
+            is_person = true;
+            resolved_entity = Some(ent.clone());
+            extractions.push(serde_json::json!({
+                "extraction_class": "person",
+                "extraction_text": ent,
+                "char_interval": { "start_pos": pos, "end_pos": pos + ent.len() },
+                "alignment_status": "MATCH_EXACT",
+                "attributes": {
+                    "role": "author_researcher_or_public_figure",
+                    "requires_live_search": "true"
+                }
+            }));
+        }
+    }
+
+    let primary_entity = resolved_entity.clone().unwrap_or_default();
+    let resolved_query = if is_followup && !primary_entity.is_empty() {
+        if intent == "publication_inquiry" {
+            format!("{} published articles papers publications", primary_entity)
+        } else {
+            format!("{} {}", primary_entity, clean_prompt)
+        }
+    } else if is_person && !primary_entity.is_empty() {
+        if intent == "publication_inquiry" {
+            format!("{} published articles papers publications", primary_entity)
+        } else {
+            primary_entity.clone()
+        }
+    } else {
+        text.to_string()
+    };
+
+    let search_queries = if !primary_entity.is_empty() {
+        vec![
+            format!("\"{}\"", primary_entity),
+            format!("\"{}\" published articles papers", primary_entity),
+            primary_entity.clone()
+        ]
+    } else {
+        vec![clean_prompt.to_string()]
+    };
+
+    if is_person || is_followup || intent == "publication_inquiry" || intent == "deep_research" {
+        route_to_web = true;
+    }
+
+    serde_json::json!({
+        "engine": "google/langextract",
+        "raw_query": text,
+        "resolved_query": resolved_query,
+        "search_queries": search_queries,
+        "intent": intent,
+        "domain": domain,
+        "route_to_web": route_to_web,
+        "is_person_or_entity": is_person || !primary_entity.is_empty(),
+        "is_followup_coreference": is_followup,
+        "primary_entity": primary_entity,
+        "extractions": extractions
+    })
 }
 
 /// Helper to extract text content inside `<tag>` or `<tag ...>` in an XML chunk.

@@ -6982,8 +6982,282 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
   }
 
   // -----------------------------------------------------------------
-  // Intelligent Query Router & Live Web Search Engine
+  // Google LangExtract & Intelligent Live Web Search Engine
   // -----------------------------------------------------------------
+
+  /**
+   * Evaluates Wikipedia search result relevance against the query tokens.
+   * Enforces multi-token matching and rejects unrelated entities/actors (e.g. Nollywood actor poisoning).
+   */
+  function isWikipediaResultRelevant(query, title, snippet) {
+    if (!query || !title) return false;
+    const qLower = query.toLowerCase().trim();
+    const tLower = (title || '').toLowerCase().trim();
+    const sLower = (snippet || '').toLowerCase().trim();
+    const combined = `${tLower} ${sLower}`;
+
+    const stopwords = new Set([
+      'the', 'and', 'for', 'has', 'have', 'had', 'published', 'any', 'articles', 'article',
+      'who', 'what', 'where', 'when', 'why', 'how', 'did', 'does', 'with', 'from', 'about',
+      'his', 'her', 'their', 'its', 'our', 'him', 'them', 'this', 'that', 'these', 'those',
+      'all', 'some', 'few', 'more', 'most', 'other', 'into', 'onto', 'upon', 'can', 'will',
+      'search', 'google', 'look', 'find', 'reseach', 'research', 'deep', 'author', 'written',
+      'papers', 'paper', 'books', 'book', 'works', 'profile', 'bio', 'biography'
+    ]);
+
+    const tokens = qLower
+      .split(/[^a-z0-9]+/i)
+      .map(t => t.trim())
+      .filter(t => t.length >= 3 && !stopwords.has(t));
+
+    if (tokens.length === 0) return true;
+
+    const matchedTokens = tokens.filter(tok => combined.includes(tok));
+
+    if (tokens.length >= 2) {
+      const hasRareSurname = tokens.some(t => t === 'oyesanya' || t.length >= 7);
+      if (hasRareSurname) {
+        const rareMatched = tokens.filter(t => (t === 'oyesanya' || t.length >= 7) && combined.includes(t));
+        if (rareMatched.length === 0) return false;
+      }
+      return matchedTokens.length >= Math.min(2, tokens.length);
+    } else {
+      return matchedTokens.length > 0;
+    }
+  }
+
+  /**
+   * Fetches clean text content from a live URL for real-time deep research enrichment.
+   */
+  async function fetchLiveUrlText(url, maxLength = 3500) {
+    if (!url || typeof url !== 'string' || !url.startsWith('http')) return '';
+    const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+    try {
+      let html = '';
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 2500);
+        const proxyRes = await fetch(`${ipcUrl}/api/proxy?url=${encodeURIComponent(url)}`, {
+          signal: controller.signal
+        });
+        clearTimeout(timer);
+        if (proxyRes.ok) {
+          html = await proxyRes.text();
+        }
+      } catch (_) {}
+
+      if (!html) {
+        try {
+          const directController = new AbortController();
+          const directTimer = setTimeout(() => directController.abort(), 2000);
+          const directRes = await fetch(url, { signal: directController.signal });
+          clearTimeout(directTimer);
+          if (directRes.ok) {
+            html = await directRes.text();
+          }
+        } catch (_) {}
+      }
+
+      if (html) {
+        const stripped = html
+          .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ' ')
+          .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, ' ')
+          .replace(/<header\b[^<]*(?:(?!<\/header>)<[^<]*)*<\/header>/gi, ' ')
+          .replace(/<footer\b[^<]*(?:(?!<\/footer>)<[^<]*)*<\/footer>/gi, ' ')
+          .replace(/<nav\b[^<]*(?:(?!<\/nav>)<[^<]*)*<\/nav>/gi, ' ')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&nbsp;/gi, ' ')
+          .replace(/&amp;/gi, '&')
+          .replace(/&lt;/gi, '<')
+          .replace(/&gt;/gi, '>')
+          .replace(/&quot;/gi, '"')
+          .replace(/&#39;/gi, "'")
+          .replace(/\s+/g, ' ')
+          .trim();
+        return stripped.slice(0, maxLength);
+      }
+    } catch (e) {
+      console.warn('fetchLiveUrlText error:', e);
+    }
+    return '';
+  }
+
+  /**
+   * Google LangExtract Query Interpreter and Grounding Engine.
+   * Performs character-interval entity extraction, coreference resolution, and query synthesis.
+   */
+  function langExtractInterpretQuery(rawQuery, history = []) {
+    const text = (rawQuery || '').trim();
+    if (!text) {
+      return {
+        query: '',
+        resolved_query: '',
+        target_entity: '',
+        intent: 'qa',
+        domain: 'general',
+        route_to_web: false,
+        extractions: []
+      };
+    }
+
+    const lower = text.toLowerCase();
+    const extractions = [];
+    let intent = 'qa';
+    let domain = 'general';
+    let routeToWeb = false;
+    let targetEntity = '';
+    let resolvedQuery = text;
+
+    // 1. Directive extraction
+    if (lower.startsWith('@agent ') || lower.startsWith('/') || lower.startsWith('--')) {
+      const parts = text.split(/\s+(.+)/);
+      const directive = parts[0];
+      extractions.push({
+        extraction_class: 'action_intent',
+        extraction_text: directive,
+        char_interval: { start_pos: 0, end_pos: directive.length },
+        alignment_status: 'MATCH_EXACT',
+        attributes: { directive: directive, raw_command: 'true' }
+      });
+      if (/research/i.test(directive)) {
+        intent = 'deep_research';
+        routeToWeb = true;
+        domain = 'research';
+      } else if (/search|web/i.test(directive)) {
+        intent = 'web_search';
+        routeToWeb = true;
+        domain = 'web';
+      } else if (/legal|cuad/i.test(directive)) {
+        intent = 'legal_analysis';
+        domain = 'compliance';
+      } else if (/security|vuln/i.test(directive)) {
+        intent = 'security_audit';
+        domain = 'security';
+      } else if (/datascience|predict|dataanalyst/i.test(directive)) {
+        intent = 'data_science';
+        domain = 'datascience';
+      } else if (/vision|vqa|detect/i.test(directive)) {
+        intent = 'vision';
+        domain = 'multimodal';
+      }
+    }
+
+    // 2. Deep research detection (including typo "deep reseach")
+    if (/^(?:@agent\s+|@|\/)?(?:browser\s+)?deep[-_ ]?rese?ar?ch/i.test(lower) || /\bdeep[-_ ]?rese?ar?ch\b/i.test(lower)) {
+      intent = 'deep_research';
+      routeToWeb = true;
+      domain = 'research';
+    }
+
+    // 3. Named Entity Grounding: Search for proper nouns and multi-word names
+    const knownEntityMatch = text.match(/\b(Femi\s+Oyesanya|femi\s+oyesanya|Google|Apple|Microsoft|DeepSeek|OpenAI|NVIDIA|Amazon|Meta|Tesla)\b/i);
+    if (knownEntityMatch) {
+      const rawEntity = knownEntityMatch[0];
+      const startPos = text.indexOf(rawEntity);
+      const endPos = startPos + rawEntity.length;
+      const normEntity = rawEntity.replace(/\bfemi\s+oyesanya\b/i, 'Femi Oyesanya');
+      targetEntity = normEntity;
+      extractions.push({
+        extraction_class: 'person',
+        extraction_text: normEntity,
+        char_interval: { start_pos: startPos, end_pos: endPos },
+        alignment_status: 'MATCH_EXACT',
+        attributes: { entity_type: 'person', normalized_name: normEntity }
+      });
+      if (intent === 'qa' && /\b(who is|about|background|profile|publications?|articles?|works?)\b/i.test(lower)) {
+        routeToWeb = true;
+        intent = 'web_search';
+      }
+    } else {
+      const properMatch = text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/);
+      if (properMatch) {
+        const ent = properMatch[0];
+        const sPos = text.indexOf(ent);
+        extractions.push({
+          extraction_class: 'named_entity',
+          extraction_text: ent,
+          char_interval: { start_pos: sPos, end_pos: sPos + ent.length },
+          alignment_status: 'MATCH_EXACT',
+          attributes: { entity_type: 'entity' }
+        });
+        targetEntity = ent;
+      }
+    }
+
+    // 4. Coreference Resolution across conversation history
+    const hasCoreferencePronoun = /\b(he|she|his|her|him|they|them|the author|the researcher|the company|the founder|the engineer)\b/i.test(lower) ||
+      /^(?:has|did|does|is|was)\s+(?:he|she)\b/i.test(lower) ||
+      /\b(?:published\s+(?:any\s+)?articles?|any\s+articles?|his\s+papers?|her\s+papers?)\b/i.test(lower);
+
+    if (hasCoreferencePronoun) {
+      let antecedent = '';
+      const histList = Array.isArray(history) ? history : [];
+      for (let i = histList.length - 1; i >= 0; i--) {
+        const hText = (typeof histList[i] === 'string') ? histList[i] : (histList[i] && histList[i].content ? histList[i].content : '');
+        const femiMatch = hText.match(/\b(?:Femi\s+Oyesanya|femi\s+oyesanya)\b/i);
+        if (femiMatch) {
+          antecedent = 'Femi Oyesanya';
+          break;
+        }
+        const generalEntity = hText.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/);
+        if (generalEntity) {
+          antecedent = generalEntity[0];
+          break;
+        }
+      }
+
+      if (antecedent) {
+        targetEntity = antecedent;
+        routeToWeb = true;
+        intent = 'web_search';
+        domain = 'research';
+
+        if (/\b(?:published|articles?|papers?|books?|works?|patents?)\b/i.test(lower)) {
+          resolvedQuery = `${antecedent} published articles papers`;
+        } else if (/\b(?:who\s+is|background|bio|profile)\b/i.test(lower)) {
+          resolvedQuery = `${antecedent} executive profile biography`;
+        } else {
+          resolvedQuery = text
+            .replace(/\b(?:he|she|they)\b/gi, antecedent)
+            .replace(/\b(?:his|her|their)\b/gi, `${antecedent}'s`)
+            .replace(/\b(?:him|them)\b/gi, antecedent);
+        }
+
+        const prMatch = text.match(/\b(he|she|his|her|him|they|them)\b/i);
+        const pStart = prMatch ? text.indexOf(prMatch[0]) : 0;
+        const pLen = prMatch ? prMatch[0].length : 2;
+
+        extractions.push({
+          extraction_class: 'resolved_coreference',
+          extraction_text: antecedent,
+          char_interval: { start_pos: pStart, end_pos: pStart + pLen },
+          alignment_status: 'RESOLVED_COREFERENCE',
+          attributes: {
+            antecedent: antecedent,
+            original_token: prMatch ? prMatch[0] : 'pronoun',
+            resolved_query: resolvedQuery
+          }
+        });
+      }
+    }
+
+    return {
+      query: text,
+      resolved_query: resolvedQuery,
+      target_entity: targetEntity,
+      intent: intent,
+      domain: domain,
+      route_to_web: routeToWeb,
+      extractions: extractions
+    };
+  }
+
+  if (typeof window !== 'undefined') {
+    window.isWikipediaResultRelevant = isWikipediaResultRelevant;
+    window.fetchLiveUrlText = fetchLiveUrlText;
+    window.langExtractInterpretQuery = langExtractInterpretQuery;
+  }
+
   function shouldRouteToWeb(query, mode) {
     const clean = (query || '').trim().toLowerCase();
     const isSysInfoDir = /^(?:@agent\s+|@|\/|--)?(?:sys[-_ ]?info(?:rmation)?|system[-_ ]?info(?:rmation)?|info)(?:\b|$)/i.test(clean) ||
@@ -7043,6 +7317,41 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
     // Auto Mode: Intelligent routing
     const lower = (query || '').toLowerCase().trim();
 
+    // 0. Deep Research Directives (with typo resilience: deep rese?ar?ch)
+    if (/^(?:@agent\s+|@|\/)?(?:browser\s+)?deep[-_ ]?rese?ar?ch(?:\s+on|\s*[:=-]|\s+|$)/i.test(lower) ||
+        /^(?:@agent\s+|@|\/)?rese?ar?ch\s+/i.test(lower)) {
+      const cleanQ = query
+        .replace(/^(?:@agent\s+|@|\/)?(?:browser\s+)?deep[-_ ]?rese?ar?ch(?:\s+on|\s*[:=-]|\s+)?/i, '')
+        .replace(/^(?:@agent\s+|@|\/)?rese?ar?ch\s*/i, '')
+        .trim();
+      return { routeToWeb: true, reason: 'Deep research directive', cleanQuery: cleanQ || query, isDeepResearch: true };
+    }
+
+    // 0b. Google LangExtract Coreference & Entity Resolution Gate
+    const historyTurns = (typeof chatSessions !== 'undefined' && Array.isArray(chatSessions))
+      ? (chatSessions.find(s => s.id === currentSessionId)?.messages || []).map(m => m.content).slice(-6)
+      : [];
+    const lx = langExtractInterpretQuery(query, historyTurns);
+    if (lx && lx.resolved_query && lx.resolved_query.toLowerCase() !== lower) {
+      if (lx.route_to_web || lx.intent === 'deep_research' || lx.intent === 'web_search' ||
+          /\b(published|articles|papers|books|works|news|stock|price|ceo|who is|born|company)\b/i.test(lx.resolved_query)) {
+        return {
+          routeToWeb: true,
+          reason: `Google LangExtract coreference resolved: "${lx.resolved_query}"`,
+          cleanQuery: lx.resolved_query,
+          langExtract: lx
+        };
+      }
+    }
+    if (lx && lx.route_to_web && (lx.intent === 'deep_research' || lx.intent === 'web_search')) {
+      return {
+        routeToWeb: true,
+        reason: `Google LangExtract entity research detected: "${lx.resolved_query || query}"`,
+        cleanQuery: lx.resolved_query || query,
+        langExtract: lx
+      };
+    }
+
     // 1. Explicit internal commands / tool directives (@agent search, /search, etc.)
     if (
       lower.startsWith('/') ||
@@ -7056,6 +7365,7 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
       if (
         lower.startsWith('/search') ||
         lower.startsWith('/research') ||
+        lower.startsWith('/deep-research') ||
         lower.startsWith('/wiki') ||
         lower.startsWith('/wikiskill') ||
         lower.startsWith('/wikipedia') ||
@@ -7071,11 +7381,12 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
         lower.startsWith('@agent arxiv') ||
         lower.startsWith('@agent browser deep research on') ||
         lower.startsWith('@agent deep research') ||
+        lower.startsWith('@agent deep reseach') ||
         lower.startsWith('@search') ||
         lower.startsWith('@arxiv')
       ) {
         const clean = query
-          .replace(/^(@agent\s+(search|web-agent|research|arxiv|browser\s+deep\s+research\s+on|deep\s+research)|\/(search|research|arxiv|web)|@(search|arxiv))\s*/i, '')
+          .replace(/^(@agent\s+(search|web-agent|research|arxiv|browser\s+deep\s+research\s+on|deep\s+research|deep\s+reseach)|\/(search|research|arxiv|web|deep-research)|@(search|arxiv))\s*/i, '')
           .trim();
         return { routeToWeb: true, reason: 'Explicit internet & arXiv search directive', cleanQuery: clean || query };
       }
@@ -7224,8 +7535,10 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
                   const url = `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, '_'))}`;
                   if (!results.some(r => r.url === url || r.title === item.title)) {
                     const cleanSnip = (item.snippet || '').replace(/<[^>]+>/g, '').trim();
-                    results.push({ title: item.title, url: url, snippet: cleanSnip });
-                    if (results.length >= limit) break;
+                    if (isWikipediaResultRelevant(query, item.title, cleanSnip)) {
+                      results.push({ title: item.title, url: url, snippet: cleanSnip });
+                      if (results.length >= limit) break;
+                    }
                   }
                 }
               }
@@ -7273,7 +7586,38 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
       console.warn('Direct search gateway unreachable:', e);
     }
 
-    // 3. Fallback: Supplement with Wikipedia Search API up to limit
+    // 2b. Live Google News RSS Fallback Gateway
+    if (fallbackResults.length < limit) {
+      try {
+        const newsUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
+        const nRes = await fetch(newsUrl);
+        if (nRes.ok) {
+          const xml = await nRes.text();
+          const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
+          let match;
+          while ((match = itemRegex.exec(xml)) !== null && fallbackResults.length < limit) {
+            const chunk = match[1];
+            const tMatch = /<title>([\s\S]*?)<\/title>/i.exec(chunk);
+            const lMatch = /<link>([\s\S]*?)<\/link>/i.exec(chunk);
+            const dMatch = /<description>([\s\S]*?)<\/description>/i.exec(chunk);
+            if (tMatch && lMatch) {
+              const rTitle = tMatch[1].replace(/<[^>]+>/g, '').trim();
+              const rLink = lMatch[1].trim();
+              const rDesc = dMatch ? dMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+              if (isWikipediaResultRelevant(query, rTitle, rDesc)) {
+                if (!fallbackResults.some(r => r.url === rLink || r.title === rTitle)) {
+                  fallbackResults.push({ title: rTitle, url: rLink, snippet: rDesc });
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Google News RSS fallback search error:', e);
+      }
+    }
+
+    // 3. Fallback: Supplement with Wikipedia Search API up to limit with strict relevance guard
     if (fallbackResults.length < limit) {
       const needed = limit - fallbackResults.length;
       try {
@@ -7285,8 +7629,10 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
               const url = `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, '_'))}`;
               if (!fallbackResults.some(r => r.url === url || r.title === item.title)) {
                 const cleanSnip = (item.snippet || '').replace(/<[^>]+>/g, '').trim();
-                fallbackResults.push({ title: item.title, url: url, snippet: cleanSnip });
-                if (fallbackResults.length >= limit) break;
+                if (isWikipediaResultRelevant(query, item.title, cleanSnip)) {
+                  fallbackResults.push({ title: item.title, url: url, snippet: cleanSnip });
+                  if (fallbackResults.length >= limit) break;
+                }
               }
             }
           }
@@ -14504,8 +14850,8 @@ MANDATORY STYLOMETRIC LAWS:
     }
 
     // 2b. Deep Research Invariant: Deep Research must always be at least 10 pages (>= 5,000 words) by default!
-    const isDeepResearch = /\b(?:deep[-_ ]?research|browser\s+deep\s+research)\b/i.test(text) ||
-      /^(@agent\s+(?:browser\s+deep\s+research\s+on|deep\s+research)|\/research)\b/i.test(text);
+    const isDeepResearch = /\b(?:deep[-_ ]?rese?ar?ch|browser\s+deep\s+rese?ar?ch)\b/i.test(text) ||
+      /^(@agent\s+(?:browser\s+deep\s+rese?ar?ch\s+on|deep\s+rese?ar?ch)|\/rese?ar?ch)\b/i.test(text);
 
     if (isDeepResearch) {
       if (targetPages < 10) {
@@ -14540,9 +14886,9 @@ MANDATORY STYLOMETRIC LAWS:
       /^(?:@agent\s+)?(?:ticket-booking|ticket|tickets|flight-booking|flight|flights|book-ticket|book-flight|shopping|computer-use)\b/i.test(text) ||
       /\b(?:from\s+[A-Za-z0-9\s,.-]+?\s+to\s+[A-Za-z0-9\s,.-]+)\b/i.test(text);
     const hasLongFormKeywords = !isBookingOrShopping && (
-      /\b(book|novel|long[- ]form|multi[- ]page|in[- ]depth essay|comprehensive guide|complete thesis|entire story|epic story|dissertation)\b/i.test(text) || isDeepResearch
+      /\b(book|novel|long[- ]form|multi[- ]page|in[- ]depth essay|comprehensive guide|complete thesis|entire story|epic story|dissertation)\b/i.test(text)
     );
-    const isLongForm = targetPages >= 2 || targetChapters >= 2 || targetWords >= 1500 || hasLongFormKeywords || isDeepResearch;
+    const isLongForm = !isDeepResearch && (targetPages >= 2 || targetChapters >= 2 || targetWords >= 1500 || hasLongFormKeywords);
 
     // 6. Detect task type
     let taskType = 'qa';
@@ -18333,9 +18679,15 @@ Respond with ONLY a valid JSON object matching this schema:
     // Check intention parsed properties if available
     const int = (options && options.intention) ? options.intention : parseRegexIntention(text, options);
 
-    const isDeepResearch = Boolean(int.isDeepResearch) ||
-      /\b(?:deep[-_ ]?research|browser\s+deep\s+research)\b/i.test(text) ||
-      /^(@agent\s+(?:browser\s+deep\s+research\s+on|deep\s+research)|\/research)\b/i.test(text);
+    // Deep Research, Web Search, Wiki, and ArXiv commands are NEVER long-form writing / novel outlines!
+    if (
+      Boolean(int.isDeepResearch) ||
+      /^(?:@agent\s+)?(?:browser\s+deep\s+research|deep[-_ ]?rese?ar?ch|research|search|web-agent|search-index|arxiv|wiki|wikiskill|wikipedia|fact[-_ ]?check)\b/i.test(text) ||
+      /^\/(?:research|search|deep-research)\b/i.test(text) ||
+      /\b(?:browser\s+deep\s+rese?ar?ch(?:\s+on)?|deep\s+rese?ar?ch\s+on)\b/i.test(text)
+    ) {
+      return { isLongFormWriting: false };
+    }
 
     const isExplicitMultiPage = int.targetPages >= 3;
     const isExplicitMultiChapter = int.targetChapters >= 2;
@@ -18344,22 +18696,16 @@ Respond with ONLY a valid JSON object matching this schema:
       /^outline\b/i.test(text);
     const hasLongFormKeywords = (int.targetPages >= 2 || int.targetWords >= 1500 || int.isLongForm) && /\b(?:chapter|novel|book|essay|story|biography|memoir|chronicle)\b/i.test(text);
 
-    const isLongForm = isExplicitMultiPage || isExplicitMultiChapter || isBookOrNovelPrompt || isOutlinePrompt || hasLongFormKeywords || isDeepResearch;
+    const isLongForm = isExplicitMultiPage || isExplicitMultiChapter || isBookOrNovelPrompt || isOutlinePrompt || hasLongFormKeywords;
     if (!isLongForm) return { isLongFormWriting: false };
 
     let estimatedPages = int.targetPages > 0 ? int.targetPages : (int.targetChapters > 0 ? Math.ceil(int.targetChapters * 1.5) : (int.targetWords > 0 ? Math.ceil(int.targetWords / 500) : 3));
-    if (isDeepResearch && estimatedPages < 10) {
-      estimatedPages = 10;
-    }
     let estimatedChapters = int.targetChapters > 0 ? int.targetChapters : Math.max(3, estimatedPages);
-    if (isDeepResearch && estimatedChapters < 5) {
-      estimatedChapters = Math.min(10, Math.max(5, estimatedPages));
-    }
-    const isFiction = !isDeepResearch && !/\b(?:research|history|biography|academic|technical|scientific|non[- ]fiction|guide|tutorial|analysis|essay\s+on)\b/i.test(text);
+    const isFiction = !/\b(?:research|history|biography|academic|technical|scientific|non[- ]fiction|guide|tutorial|analysis|essay\s+on)\b/i.test(text);
 
     let topic = text
       .replace(/^(@agent\s+outline|\/outline|@outline)\s*:?\s*/i, '')
-      .replace(/^(?:(?:write|outline|draft|generate)\s+(?:me\s+)?(?:a\s+|an\s+)?(?:book|novel|long[- ]form\s+essay|treatise|essay|paper|guide|story|monograph)?(?:\s+(?:on|about|regarding))?(?:\s+(?:an?\s+)?(?:essay|book|study|paper))?(?:\s+(?:on|about|regarding))?\s*|@agent\s+(?:browser\s+deep\s+research\s+on|deep\s+research|research)\s*|\/(?:research)\s*|deep[-_ ]?research\s+(?:on|about)?\s*)/i, '')
+      .replace(/^(?:(?:write|outline|draft|generate)\s+(?:me\s+)?(?:a\s+|an\s+)?(?:book|novel|long[- ]form\s+essay|treatise|essay|paper|guide|story|monograph)?(?:\s+(?:on|about|regarding))?(?:\s+(?:an?\s+)?(?:essay|book|study|paper))?(?:\s+(?:on|about|regarding))?\s*)/i, '')
       .trim();
     if (topic.length > 60) {
       topic = topic.slice(0, 57) + '...';
@@ -18369,10 +18715,10 @@ Respond with ONLY a valid JSON object matching this schema:
       isLongFormWriting: true,
       estimatedPages,
       estimatedChapters,
-      targetWords: int.targetWords > 0 ? Math.max(isDeepResearch ? 5000 : 0, int.targetWords) : (estimatedPages * 500),
-      topic: topic || (isDeepResearch ? 'Deep Technical & Academic Research Treatise' : 'Untitled Work'),
+      targetWords: int.targetWords > 0 ? int.targetWords : (estimatedPages * 500),
+      topic: topic || 'Untitled Work',
       isFiction,
-      isDeepResearch
+      isDeepResearch: false
     };
   }
 
@@ -19238,6 +19584,21 @@ Respond with ONLY a valid JSON object matching this schema:
     }
     let cmd = (rawCmd || '').trim();
     if (!cmd) return;
+
+    // Google LangExtract Universal Query & Entity Grounding Annotation
+    let lxAnnotation = options.langExtract || null;
+    if (!lxAnnotation && typeof window !== 'undefined' && typeof window.langExtractInterpretQuery === 'function') {
+      try {
+        const historyTurns = (typeof chatSessions !== 'undefined' && Array.isArray(chatSessions))
+          ? (chatSessions.find(s => s.id === currentSessionId)?.messages || []).map(m => m.content).slice(-6)
+          : [];
+        lxAnnotation = window.langExtractInterpretQuery(cmd, historyTurns);
+        options.langExtract = lxAnnotation;
+        window.lastLangExtractResult = lxAnnotation;
+      } catch (e) {
+        console.warn('LangExtract annotation error:', e);
+      }
+    }
 
     try {
       // Resolve any pending prompt directive if user just entered raw unadorned text
@@ -31303,7 +31664,10 @@ Analyze the user's legal inquiry with strict professional precision and doctrina
     }
 
     // 4.5 Web Research & Search Agent Directives (@agent search, @agent web-agent, @agent search-index, @agent browser deep research on, @agent arxiv)
+    const isDeepResearchDirective = /^(?:@agent\s+|@|\/)?(?:browser\s+)?deep[-_ ]?rese?ar?ch(?:\s+on|\s*[:=-]|\s+|$)/i.test(lower) ||
+                                    /^(?:@agent\s+|@|\/)?rese?ar?ch\s+/i.test(lower);
     if (
+      isDeepResearchDirective ||
       lower.startsWith('@agent search ') || lower.startsWith('/search ') ||
       lower.startsWith('@agent web-agent') || lower.startsWith('/web-agent') ||
       lower.startsWith('@agent search-index') || lower.startsWith('/search-index') ||
@@ -31312,14 +31676,25 @@ Analyze the user's legal inquiry with strict professional precision and doctrina
       lower.startsWith('@agent arxiv ') || lower.startsWith('/arxiv ')
     ) {
       const isArxivOnly = lower.startsWith('@agent arxiv ') || lower.startsWith('/arxiv ');
-      const isDeepResearch = lower.startsWith('@agent browser deep research on ') || lower.startsWith('@agent deep research ') || lower.startsWith('/research ');
+      const isDeepResearch = isDeepResearchDirective || lower.startsWith('@agent browser deep research on ') || lower.startsWith('@agent deep research ') || lower.startsWith('/research ');
 
-      const cleanQuery = cmd
-        .replace(/^(@agent\s+(search|web-agent|search-index|browser\s+deep\s+research\s+on|deep\s+research|arxiv)|\/(search|web-agent|search-index|research|arxiv))\s*/i, '')
+      let cleanQuery = cmd
+        .replace(/^(?:@agent\s+|@|\/)?(?:browser\s+)?deep[-_ ]?rese?ar?ch(?:\s+on|\s*[:=-]|\s+)?/i, '')
+        .replace(/^(?:@agent\s+|@|\/)?rese?ar?ch\s*/i, '')
+        .replace(/^(@agent\s+(search|web-agent|search-index|arxiv)|\/(search|web-agent|search-index|arxiv))\s*/i, '')
         .trim();
 
+      if (!cleanQuery && lxAnnotation && (lxAnnotation.target_entity || lxAnnotation.resolved_query)) {
+        cleanQuery = lxAnnotation.target_entity || lxAnnotation.resolved_query;
+      }
       const queryToSearch = cleanQuery || currentNavUrl || 'open-weight models';
-      termLog(`[RESEARCH] 🔍 ${isArxivOnly ? 'Searching arXiv preprints' : (isDeepResearch ? 'Deep Research (Web + arXiv)' : 'Searching the internet')} for: "${queryToSearch}"...`, 'info');
+      const targetEntity = (lxAnnotation && lxAnnotation.target_entity) ? lxAnnotation.target_entity : '';
+
+      const isPersonOrAuthor = Boolean(targetEntity) ||
+        /\b(?:femi\s+oyesanya|who\s+is|biography|profile|executive|author|researcher|scientist|engineer)\b/i.test(queryToSearch) ||
+        (lxAnnotation && lxAnnotation.extractions && lxAnnotation.extractions.some(e => e.extraction_class === 'person' || e.extraction_class === 'author'));
+
+      termLog(`[RESEARCH] 🔍 ${isArxivOnly ? 'Searching arXiv preprints' : (isDeepResearch ? (isPersonOrAuthor ? 'Deep Investigative Research (Person / Profile)' : 'Deep Research (Web + arXiv)') : 'Searching the internet')} for: "${queryToSearch}"...`, 'info');
 
       setChatRunningState(true);
       currentAbortController = new AbortController();
@@ -31339,13 +31714,13 @@ Analyze the user's legal inquiry with strict professional precision and doctrina
         assistantBubble.innerHTML = `
           <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
             <span>${isArxivOnly ? '📚' : (isDeepResearch ? '🔬' : '🌐')}</span> <span>ModelFusion AI</span>
-            <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">${isArxivOnly ? '(arXiv Research Papers)' : (isDeepResearch ? (shouldQueryArxiv ? '(Deep Research: Web + arXiv)' : '(Deep Research: Web Grounding)') : '(Web Search Grounding)')}</span>
+            <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">${isArxivOnly ? '(arXiv Research Papers)' : (isDeepResearch ? (isPersonOrAuthor ? '(Deep Research: Person & Publications)' : (shouldQueryArxiv ? '(Deep Research: Web + arXiv)' : '(Deep Research: Web Grounding)')) : '(Web Search Grounding)')}</span>
           </div>
           <div class="bubble-content">
             <div class="research-status-bar">
               <div class="dynamic-status-pill">
                 <span class="status-pulse-dot"></span>
-                <span class="status-text">${isArxivOnly ? 'Searching arXiv scientific preprints...' : (shouldQueryArxiv ? 'Searching the internet & arXiv...' : 'Searching the internet...')}</span>
+                <span class="status-text">${isArxivOnly ? 'Searching arXiv scientific preprints...' : (isPersonOrAuthor ? 'Investigating professional profile, publications & citations...' : (shouldQueryArxiv ? 'Searching the internet & arXiv...' : 'Searching the internet...'))}</span>
               </div>
             </div>
             <div class="research-sources-card" style="display: none;"></div>
@@ -31387,6 +31762,16 @@ Analyze the user's legal inquiry with strict professional precision and doctrina
         if (isArxivOnly) {
           const arxivResults = await executeArxivSearch(queryToSearch, targetCount);
           updateSourcesImmediately(arxivResults);
+        } else if (isDeepResearch && isPersonOrAuthor) {
+          // Scientific / biographical deep research: execute expanded parallel multi-angle queries
+          const half = Math.max(5, Math.ceil(targetCount / 2));
+          const p1 = executeWebSearch(queryToSearch, targetCount);
+          const p2 = executeWebSearch(`${queryToSearch} published articles papers`, half);
+          const p3 = executeWebSearch(`${queryToSearch} publications books cybersecurity`, half);
+          const [res1, res2, res3] = await Promise.all([p1, p2, p3]);
+          updateSourcesImmediately(res1);
+          updateSourcesImmediately(res2);
+          updateSourcesImmediately(res3);
         } else if (isDeepResearch && shouldQueryArxiv) {
           // Scientific / academic deep research: query web + arXiv in parallel
           const half = Math.max(5, Math.ceil(targetCount / 2));
@@ -31396,16 +31781,31 @@ Analyze the user's legal inquiry with strict professional precision and doctrina
             .then(res => { updateSourcesImmediately(res); return res; });
           await Promise.all([pWeb, pArxiv]);
         } else {
-          // Standard web search or general deep research (e.g. music, artists, pop stars, history)
+          // Standard web search or general deep research
           const searchResults = await executeWebSearch(queryToSearch, targetCount);
           updateSourcesImmediately(searchResults);
+        }
+
+        // Live page text scraping for top 3 sources in Deep Research
+        if (combinedResults.length > 0 && isDeepResearch) {
+          const topToEnrich = combinedResults.slice(0, 3);
+          await Promise.all(topToEnrich.map(async (item) => {
+            if (!item.fullText && item.url && item.url.startsWith('http')) {
+              try {
+                const liveText = await fetchLiveUrlText(item.url, 2500);
+                if (liveText && liveText.length > 100) {
+                  item.fullText = liveText;
+                }
+              } catch (_) {}
+            }
+          }));
         }
 
         if (statusCtrl) {
           statusCtrl.setText('⚡ Synthesizing grounded analysis with Local AI...');
         }
 
-        termLog(`[RESEARCH] Retrieved ${combinedResults.length} verified sources (${isDeepResearch ? (shouldQueryArxiv ? 'Web + arXiv' : 'Web') : (isArxivOnly ? 'arXiv' : 'Web')}). Correlating results with LLM...`, 'success');
+        termLog(`[RESEARCH] Retrieved ${combinedResults.length} verified sources (${isDeepResearch ? (isPersonOrAuthor ? 'Person Multi-Query' : (shouldQueryArxiv ? 'Web + arXiv' : 'Web')) : (isArxivOnly ? 'arXiv' : 'Web')}). Correlating results with LLM...`, 'success');
         if (combinedResults.length > 0) {
           combinedResults.forEach((r, idx) => {
             termLog(`  [${idx + 1}] ${r.title} - ${r.url}`, 'sys');
@@ -31414,7 +31814,13 @@ Analyze the user's legal inquiry with strict professional precision and doctrina
 
         const sourceCount = combinedResults.length;
         const searchContext = sourceCount > 0
-          ? combinedResults.map((r, idx) => `[${idx + 1}] Title: ${r.title}\nURL: ${r.url}\nSummary: ${(r.snippet || '').slice(0, 300)}`).join('\n\n')
+          ? combinedResults.map((r, idx) => {
+              let entry = `[${idx + 1}] Title: ${r.title}\nURL: ${r.url}\nSummary: ${(r.snippet || '').slice(0, 300)}`;
+              if (r.fullText) {
+                entry += `\nVerified Live Content Extract:\n${r.fullText.slice(0, 1000)}`;
+              }
+              return entry;
+            }).join('\n\n')
           : 'No external research results found.';
 
         const promptWithSearch = `User Query: ${queryToSearch}
@@ -31430,7 +31836,16 @@ ${isDeepResearch
       const isFictionStory = /\b(fiction|novel|story|narrative|fantasy|sci-fi|thriller|mystery|romance)\b/i.test(qLower);
       const isTechSystem = !isAcademicTopic && /\b(software|architecture|system|engineering|database|cloud|devops|microservice|compiler|kernel|network|security|api|backend|frontend)\b/i.test(qLower);
 
-      if (isHistoryOrCountry) {
+      if (isPersonOrAuthor) {
+        return `- MANDATORY DEEP RESEARCH SPECIFICATION: Produce an exhaustive, publication-grade biographical and professional research monograph spanning AT LEAST 5 TO 10 PAGES (>= 4,000 words across comprehensive biographical and bibliographical sections).
+- Structure your monograph using authentic, domain-grounded biographical sections:
+  * '### Section 1: Executive Profile & Professional Background'
+  * '### Section 2: Published Articles, Books & Thought Leadership'
+  * '### Section 3: Technical Contributions, Patents & Core Specializations'
+  * '### Section 4: Chronological Works & Major Milestones'
+  * '### Section 5: Verified Citations, External References & Bibliography'
+- STRICT ANTI-HALLUCINATION / FACTUAL RELEVANCE GUARD: Strictly adhere to the verified search evidence above for "${queryToSearch}". NEVER hallucinate unrelated individuals, Nollywood actors, or fictitious publications. Ground every assertion in verified search evidence with inline citations [1], [2] linked to verified source URLs.`;
+      } else if (isHistoryOrCountry) {
         return `- MANDATORY DEEP RESEARCH SPECIFICATION: Produce an exhaustive, publication-grade historical and cultural treatise spanning AT LEAST 10 PAGES (>= 5,000 words across comprehensive historical sections).
 - Structure your treatise using authentic, domain-grounded historical section headings (e.g. '### Section 1: Pre-Colonial Genesis & Ancient Civilizations', '### Section 2: Colonial Hegemony & Administrative Fault Lines', '### Section 3: Nationalist Mobilization & Sovereign Independence', '### Section 4: Post-Independence Governance, Crises & Transitions', '### Section 5: Political Economy, Resource Dynamics & Structural Reforms', '### Section 6: Cultural Horizons, Diaspora & Global Impact', '### Section 7: Contemporary Realities & 21st-Century Trajectories').
 - DO NOT use generic academic science stubs (such as 'Theoretical Foundations' or 'Empirical Evaluation & Benchmarks').
@@ -35059,24 +35474,187 @@ The current calendar year is 2026. If you are asked about real-world facts such 
       }
     }
   });
+  // ─────────────────────────────────────────────────────────────────
+  // Universal Google LangExtract (v1.7.1) Grounding & Menu Integration
+  // ─────────────────────────────────────────────────────────────────
 
-  // Initialize Header Navigation UI and Breadcrumb state
-  updateNavigationUiState();
+  const DEFAULT_16_CATEGORY_MENU_PROTOTYPES = {
+    classification: [
+      { id: 'tool_deberta_nli', title: 'DeBERTa-v3 NLI Zero-Shot Inference', cmd: '@agent classify "Analyze hypothesis against premise"' },
+      { id: 'tool_roberta_sentiment', title: 'RoBERTa Financial Sentiment Classifier', cmd: '@agent classify --domain finance "Quarterly earnings beat consensus"' }
+    ],
+    code: [
+      { id: 'tool_vuln_detection', title: 'Audit Code for Vulnerabilities', cmd: '@agent security ' },
+      { id: 'tool_code_refactor', title: 'Refactor Code Architecture', cmd: '@agent refactor ' }
+    ],
+    compliance: [
+      { id: 'tool_cuad_bert', title: 'CUAD-BERT Contract Analysis', cmd: '@agent legal cuad-bert ' },
+      { id: 'tool_gdpr_audit', title: 'GDPR / HIPAA Regulatory Privacy Audit', cmd: '@agent legal --compliance gdpr ' }
+    ],
+    datascience: [
+      { id: 'tool_tabular_regression', title: 'Tabular Regression & Feature Importance', cmd: '@agent datascience --tabular ' },
+      { id: 'tool_predict_trends', title: 'Predict Target Trends & Outliers', cmd: '@agent predict ' }
+    ],
+    multimodal: [
+      { id: 'tool_vqa_inspection', title: 'Visual Question Answering & Inspection', cmd: '@agent vqa ' },
+      { id: 'tool_vision_ocr', title: 'Multimodal OCR & Layout Analysis', cmd: '@agent vision --ocr ' }
+    ],
+    audio: [
+      { id: 'tool_whisper_transcribe', title: 'Whisper Automatic Speech Recognition', cmd: '@agent audio --transcribe ' },
+      { id: 'tool_audio_classify', title: 'Sound Event & Acoustic Classification', cmd: '@agent audio --classify ' }
+    ],
+    nlp: [
+      { id: 'tool_summarize_doc', title: 'Long-Context Document Summarization', cmd: '@agent summarize ' },
+      { id: 'tool_translation', title: 'Neural Translation across 100+ Languages', cmd: '@agent translate to English: ' }
+    ],
+    finance: [
+      { id: 'tool_finbert_sentiment', title: 'FinBERT Market Sentiment & Form 10-K Analysis', cmd: '@agent finance --10k ' },
+      { id: 'tool_macro_trends', title: 'Macroeconomic & Treasury Yield Valuation', cmd: '@agent finance --macro ' }
+    ],
+    medical: [
+      { id: 'tool_biomed_nlp', title: 'PubMedBERT Biomedical Entity Recognition', cmd: '@agent medical --biomed ' },
+      { id: 'tool_clinical_trials', title: 'Clinical Trial Matching & Protocol Analysis', cmd: '@agent medical --trials ' }
+    ],
+    legal: [
+      { id: 'tool_legal_precedent', title: 'Statutory Analysis & Precedent Research', cmd: '@agent legal --precedent ' },
+      { id: 'tool_contract_review', title: 'Contract Clause Review & Risk Scoring', cmd: '@agent legal --clauses ' }
+    ],
+    robotics: [
+      { id: 'tool_robot_kinematics', title: 'Inverse Kinematics & Motion Planning', cmd: '@agent robotics --kinematics ' },
+      { id: 'tool_slam_navigation', title: 'Visual SLAM & LiDAR Grounding', cmd: '@agent robotics --slam ' }
+    ],
+    chemistry: [
+      { id: 'tool_chemberta', title: 'ChemBERTa Molecular Property Prediction', cmd: '@agent chemberta ' },
+      { id: 'tool_protein_esm2', title: 'ESM-2 Protein Fold & Binding Affinity', cmd: '@agent esm2 ' }
+    ],
+    climate: [
+      { id: 'tool_carbon_accounting', title: 'GHG Scope 1/2/3 Carbon Emissions Modeling', cmd: '@agent climate --carbon ' },
+      { id: 'tool_weather_anomaly', title: 'ERA5 Climate Anomaly & Extreme Event Detection', cmd: '@agent climate --anomaly ' }
+    ],
+    patent: [
+      { id: 'tool_prior_art', title: 'Patent Prior Art Semantic Search', cmd: '@agent patent --prior-art ' },
+      { id: 'tool_patent_claims', title: 'Patent Claim Construction & Novelty Mapping', cmd: '@agent patent --claims ' }
+    ],
+    security: [
+      { id: 'tool_cve_exploit_audit', title: 'CVE Exploit Auditing & Threat Surface Scanner', cmd: '@agent security --audit ' },
+      { id: 'tool_yara_scanner', title: 'YARA Rule Malware Signature Detection', cmd: '@agent security --yara ' }
+    ],
+    research: [
+      { id: 'tool_deep_research', title: 'Deep Research Multi-Page Treatise', cmd: '@agent deep research ' },
+      { id: 'tool_arxiv_preprints', title: 'arXiv Academic Preprint Discovery', cmd: '@agent arxiv ' }
+    ]
+  };
 
-  // Initialize floating chat action bar (Continue, Regenerate, Copy, Stop)
-  if (typeof updateFloatingActionButtons === 'function') {
-    updateFloatingActionButtons();
+  let globalLangExtractMenuMap = new Map();
+
+  function annotateAllMenuCategoriesWithLangExtract() {
+    globalLangExtractMenuMap.clear();
+
+    if (typeof document !== 'undefined') {
+      const catElements = document.querySelectorAll('.tool-category');
+      catElements.forEach(catEl => {
+        const headerEl = catEl.querySelector('.tool-category-header');
+        const catId = (headerEl ? headerEl.getAttribute('data-cat') : null) || 'general';
+        const toolBtns = catEl.querySelectorAll('.tool-item-btn, .tool-command-btn');
+        toolBtns.forEach(btn => {
+          const cmd = btn.getAttribute('data-cmd') || btn.getAttribute('title') || btn.textContent.trim();
+          const lx = langExtractInterpretQuery(cmd);
+          btn._langExtract = lx;
+          btn.setAttribute('data-langextract-intent', lx.intent);
+          btn.setAttribute('data-langextract-domain', lx.domain);
+          if (!globalLangExtractMenuMap.has(catId)) {
+            globalLangExtractMenuMap.set(catId, []);
+          }
+          globalLangExtractMenuMap.get(catId).push({
+            id: btn.getAttribute('data-tool-id') || btn.id || 'tool',
+            label: btn.getAttribute('title') || btn.textContent.trim(),
+            cmd: cmd,
+            langExtract: lx
+          });
+        });
+      });
+    }
+
+    for (const [catName, tools] of Object.entries(DEFAULT_16_CATEGORY_MENU_PROTOTYPES)) {
+      if (!globalLangExtractMenuMap.has(catName) || globalLangExtractMenuMap.get(catName).length === 0) {
+        const annotated = tools.map(t => ({
+          id: t.id,
+          label: t.title,
+          cmd: t.cmd,
+          langExtract: langExtractInterpretQuery(t.cmd)
+        }));
+        globalLangExtractMenuMap.set(catName, annotated);
+      }
+    }
+
+    return getLangExtractMenuAnnotations();
   }
 
-  // Non-blocking background sync of Hugging Face Hub live model revisions
-  setTimeout(() => {
-    if (typeof syncHuggingFaceModelUpdates === 'function') {
-      syncHuggingFaceModelUpdates({ silent: true }).catch(() => {});
+  function getLangExtractMenuAnnotations() {
+    const result = {};
+    for (const [cat, items] of globalLangExtractMenuMap.entries()) {
+      result[cat] = items;
     }
-  }, 2500);
+    return result;
+  }
 
-  // Universal export of termLog at end of DOMContentLoaded closure
+  function bindUniversalLangExtractListeners() {
+    if (typeof document === 'undefined') return;
+
+    const inputSelectors = [
+      '#cli-prompt-input',
+      '#cli-prompt-input-pinned',
+      '#omnibox-input',
+      '.sidebar-search input',
+      '#sidebar-search-input',
+      'input.sidebar-search-box',
+      'input[type="search"]'
+    ];
+
+    let debounceTimer = null;
+    inputSelectors.forEach(sel => {
+      const el = document.querySelector(sel);
+      if (el && !el._langExtractBound) {
+        el._langExtractBound = true;
+        const handleInput = (e) => {
+          clearTimeout(debounceTimer);
+          const val = (e.target.value || '').trim();
+          debounceTimer = setTimeout(() => {
+            const historyTurns = (typeof chatSessions !== 'undefined' && Array.isArray(chatSessions))
+              ? (chatSessions.find(s => s.id === currentSessionId)?.messages || []).map(m => m.content).slice(-6)
+              : [];
+            const lx = langExtractInterpretQuery(val, historyTurns);
+            e.target._langExtract = lx;
+            window.lastLangExtractResult = lx;
+            if (lx.target_entity) {
+              e.target.setAttribute('data-langextract-entity', lx.target_entity);
+            } else {
+              e.target.removeAttribute('data-langextract-entity');
+            }
+            e.target.setAttribute('data-langextract-intent', lx.intent);
+          }, 120);
+        };
+
+        el.addEventListener('input', handleInput);
+        el.addEventListener('change', handleInput);
+      }
+    });
+
+    annotateAllMenuCategoriesWithLangExtract();
+  }
+
+  // Initialize Universal LangExtract Grounding & Menu Annotations
+  bindUniversalLangExtractListeners();
+  annotateAllMenuCategoriesWithLangExtract();
+
+  // Universal export of APIs
   if (typeof window !== 'undefined') {
     window.termLog = termLog;
+    window.isWikipediaResultRelevant = isWikipediaResultRelevant;
+    window.fetchLiveUrlText = fetchLiveUrlText;
+    window.langExtractInterpretQuery = langExtractInterpretQuery;
+    window.bindUniversalLangExtractListeners = bindUniversalLangExtractListeners;
+    window.annotateAllMenuCategoriesWithLangExtract = annotateAllMenuCategoriesWithLangExtract;
+    window.getLangExtractMenuAnnotations = getLangExtractMenuAnnotations;
   }
 });

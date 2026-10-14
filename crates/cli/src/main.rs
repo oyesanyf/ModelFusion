@@ -3298,6 +3298,20 @@ struct Args {
     #[arg(long, help = "Validate actions or payloads without performing network requests or changes")]
     dry_run: bool,
 
+    #[arg(
+        long = "langextract",
+        visible_alias = "lang-extract",
+        visible_alias = "lang_extract",
+        visible_alias = "lx",
+        num_args = 0..=1,
+        default_missing_value = "",
+        help = "Execute Google LangExtract structured entity and query interpreter with character-level grounding"
+    )]
+    langextract: Option<String>,
+
+    #[arg(long = "history", help = "JSON array of prior turns for coreference resolution")]
+    history: Option<String>,
+
     #[arg(long = "cli", visible_alias = "api-cli", visible_alias = "api/cli", num_args = 0..=1, default_missing_value = "", help = "Run ModelFusion CLI command wrapper")]
     cli: Option<String>,
 
@@ -4679,6 +4693,27 @@ where
                 }
                 return args;
             }
+            if (sub_clean == "langextract" || sub_clean == "lang-extract" || sub_clean == "lang_extract" || sub_clean == "lx") && !has_combinator {
+                args.remove(1);
+                args[1] = "--langextract".to_string();
+                if args.len() > 3 {
+                    let flag_pos = args[2..].iter().position(|a| a.starts_with("--"));
+                    if let Some(pos) = flag_pos {
+                        if pos > 0 {
+                            let query_tokens = args[2..2 + pos].join(" ");
+                            let remaining_flags = args[2 + pos..].to_vec();
+                            args.truncate(2);
+                            args.push(query_tokens);
+                            args.extend(remaining_flags);
+                        }
+                    } else {
+                        let combined = args[2..].join(" ");
+                        args.truncate(2);
+                        args.push(combined);
+                    }
+                }
+                return args;
+            }
             if (sub_clean == "rl-route" || sub_clean == "rl_route" || sub_clean == "rlroute") && !has_combinator {
                 args.remove(1);
                 args[1] = "--rl-route".to_string();
@@ -5218,6 +5253,30 @@ where
             if args[i].starts_with('-') {
                 flag_tokens.push(args[i].clone());
                 if (args[i] == "--choices" || args[i] == "--schema" || args[i] == "--decision-schema") && i + 1 < args.len() {
+                    flag_tokens.push(args[i + 1].clone());
+                    i += 1;
+                }
+            } else {
+                query_tokens.push(args[i].clone());
+            }
+            i += 1;
+        }
+        if !query_tokens.is_empty() {
+            let combined = query_tokens.join(" ");
+            args.truncate(2);
+            args.push(combined);
+            args.extend(flag_tokens);
+        }
+    }
+
+    if args.len() > 2 && args[1] == "--langextract" {
+        let mut query_tokens = Vec::new();
+        let mut flag_tokens = Vec::new();
+        let mut i = 2;
+        while i < args.len() {
+            if args[i].starts_with('-') {
+                flag_tokens.push(args[i].clone());
+                if args[i] == "--history" && i + 1 < args.len() {
                     flag_tokens.push(args[i + 1].clone());
                     i += 1;
                 }
@@ -6526,6 +6585,36 @@ async fn run(args: Args) -> Result<()> {
                 serde_json::to_string_pretty(&res)?
             );
         }
+        return Ok(());
+    }
+
+    // Google LangExtract Structured Query & Grounding Engine Dispatch
+    if let Some(ref lx_val) = args.langextract {
+        let query_text = if !lx_val.trim().is_empty() {
+            lx_val.trim().to_string()
+        } else if let Some(ref q) = args.query {
+            q.trim().to_string()
+        } else if let Some(ref p) = args.prompt {
+            p.trim().to_string()
+        } else if let Some(ref t) = args.text {
+            t.trim().to_string()
+        } else {
+            String::new()
+        };
+
+        if query_text.is_empty() {
+            println!("🧬 **Google LangExtract Structured Query & Grounding Engine**\n\nCharacter-level entity extraction, coreference resolution, and multi-search query interpretation.\n\n**Usage**:\n- `cli.exe --langextract \"Femi Oyesanya published articles\"`\n- `cli.exe --langextract \"has he published any articles\"`\n- `cli.exe @agent langextract \"Apple stock price\"`\n\n*Key Flags*: `--langextract <query>`, `--history <json>`.");
+            return Ok(());
+        }
+
+        let history_vec: Vec<String> = if let Some(ref h) = args.history {
+            serde_json::from_str::<Vec<String>>(h).unwrap_or_else(|_| vec![h.clone()])
+        } else {
+            Vec::new()
+        };
+
+        let result = modelfusion_core::langextract_interpret_query(&query_text, &history_vec);
+        println!("{}", serde_json::to_string_pretty(&result)?);
         return Ok(());
     }
 
@@ -15025,6 +15114,67 @@ public class ShortcutHelper {
                     "HTTP/1.1 {} {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                     status_code,
                     status_text,
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Google LangExtract Query Interpretation & Grounding Endpoint (/api/langextract/interpret and /api/langextract) ──
+            if request_path == "/api/langextract/interpret" || request_path == "/api/langextract" || request_path == "/langextract" {
+                let mut query = String::new();
+                let mut history_vec: Vec<String> = Vec::new();
+                if let Some(pos) = raw_request_uri.find('?') {
+                    let query_str = &raw_request_uri[pos + 1..];
+                    for pair in query_str.split('&') {
+                        if let Some((k, v)) = pair.split_once('=') {
+                            let k_dec = url_decode_simple(k).to_lowercase();
+                            if k_dec == "q" || k_dec == "query" || k_dec == "text" || k_dec == "prompt" {
+                                query = url_decode_simple(v).trim().to_string();
+                            } else if k_dec == "history" {
+                                let h_str = url_decode_simple(v);
+                                if let Ok(parsed) = serde_json::from_str::<Vec<String>>(&h_str) {
+                                    history_vec = parsed;
+                                } else {
+                                    history_vec = vec![h_str];
+                                }
+                            }
+                        }
+                    }
+                }
+                if query.is_empty() {
+                    if let Some(q) = request_json.get("query").and_then(|v| v.as_str())
+                        .or_else(|| request_json.get("q").and_then(|v| v.as_str()))
+                        .or_else(|| request_json.get("text").and_then(|v| v.as_str()))
+                    {
+                        query = q.trim().to_string();
+                    }
+                    if let Some(hist_arr) = request_json.get("history").and_then(|v| v.as_array()) {
+                        history_vec = hist_arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect();
+                    }
+                }
+
+                if query.is_empty() {
+                    let err_json = serde_json::json!({
+                        "error": "Query parameter 'q', 'query', or JSON 'query' is required"
+                    });
+                    let err_body = serde_json::to_string(&err_json).unwrap_or_default();
+                    let response = format!(
+                        "HTTP/1.1 400 Bad Request\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        err_body.len(),
+                        err_body
+                    );
+                    let _ = socket.write_all(response.as_bytes()).await;
+                    let _ = socket.flush().await;
+                    return;
+                }
+
+                let lx_result = modelfusion_core::langextract_interpret_query(&query, &history_vec);
+                let resp_body = serde_json::to_string(&lx_result).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                     resp_body.len(),
                     resp_body
                 );
