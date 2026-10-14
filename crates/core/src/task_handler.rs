@@ -330,12 +330,22 @@ impl ComprehensiveTaskHandler {
         }
         let capability_norm = cap_base.clamp(0.0, 1.0);
 
+        let is_superseded_legacy = {
+            let m = name_lower.as_str();
+            !(m.contains("qwen2.5") || m.contains("qwen3") || m.contains("deepseek-r1") || m.contains("gemma2") || m.contains("gemma-2") || m.contains("llama-3") || m.contains("llama3") || m.contains("flux") || m.contains("v2") || m.contains("v3") || m.contains("2025") || m.contains("2026"))
+            && (m.contains("gpt2") || m.contains("opt-") || m.contains("bloom") || m.contains("llama-2") || m.contains("llama2") || m.contains("vicuna") || m.contains("alpaca") || m.contains("falcon-7b") || m.contains("falcon-40b") || m.contains("mpt-7b") || m.contains("sd-v1-4") || m.contains("bert-base-uncased"))
+        };
+
         // 5. Anti-Hype Combined Decision Score (0.0 to 1.0 scale)
-        // 35% Download Scale + 25% Utility Ratio + 25% Param Efficiency + 15% Capability
-        let decision_norm = (popularity_norm * 0.35)
+        // 30% Download Scale + 25% Utility Ratio + 25% Param Efficiency + 20% Capability
+        let mut decision_norm = (popularity_norm * 0.30)
             + (utility_ratio_norm * 0.25)
             + (efficiency_norm * 0.25)
-            + (capability_norm * 0.15);
+            + (capability_norm * 0.20);
+
+        if is_superseded_legacy {
+            decision_norm *= 0.55; // Strict stale legacy architecture penalty
+        }
 
         (
             decision_norm * 10.0,
