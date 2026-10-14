@@ -36,9 +36,18 @@ const sandbox = {
   localStorage: { getItem: () => null, setItem: () => {} },
   navigator: { userAgent: 'test' },
   console: console,
-  currentSettings: { webSearchEnabled: true, webSearchMode: 'auto' },
+  currentSettings: { webSearchEnabled: true, webSearchMode: 'auto', ipcUrl: 'http://127.0.0.1:5000' },
   chatSessions: [],
-  currentSessionId: null
+  currentSessionId: null,
+  fetch: global.fetch,
+  URL: global.URL,
+  encodeURIComponent: encodeURIComponent,
+  decodeURIComponent: decodeURIComponent,
+  Math: Math,
+  Array: Array,
+  Promise: Promise,
+  setTimeout: setTimeout,
+  clearTimeout: clearTimeout
 };
 sandbox.window = sandbox;
 
@@ -64,6 +73,16 @@ vm.runInContext(`
 const wikiFnMatch = appJsContent.match(/function isWikipediaResultRelevant\(query, title, snippet\) \{([\s\S]*?)\n  \}/);
 assert.ok(wikiFnMatch, 'isWikipediaResultRelevant function must be extractable from app.js');
 vm.runInContext(`function isWikipediaResultRelevant(query, title, snippet) { ${wikiFnMatch[1]} }`, ctx);
+
+// Extract executeWebSearch
+const webFnMatch = appJsContent.match(/async function executeWebSearch\(query, maxResults = 5\) \{([\s\S]*?)\n  \}/);
+assert.ok(webFnMatch, 'executeWebSearch function must be extractable from app.js');
+vm.runInContext(`async function executeWebSearch(query, maxResults = 5) { ${webFnMatch[1]} }`, ctx);
+
+// Extract executeArxivSearch
+const arxivFnMatch = appJsContent.match(/async function executeArxivSearch\(query, maxResults = 5\) \{([\s\S]*?)\n  \}/);
+assert.ok(arxivFnMatch, 'executeArxivSearch function must be extractable from app.js');
+vm.runInContext(`async function executeArxivSearch(query, maxResults = 5) { ${arxivFnMatch[1]} }`, ctx);
 
 // Extract langExtractInterpretQuery
 const lxFnMatch = appJsContent.match(/function langExtractInterpretQuery\(rawQuery, history = \[\]\) \{([\s\S]*?)\n  \}/);
@@ -100,6 +119,8 @@ assert.ok(getMenuFnMatch, 'getLangExtractMenuAnnotations function must be extrac
 vm.runInContext(`function getLangExtractMenuAnnotations() { ${getMenuFnMatch[1]} }`, ctx);
 
 const isWikipediaResultRelevant = sandbox.isWikipediaResultRelevant;
+const executeWebSearch = sandbox.executeWebSearch;
+const executeArxivSearch = sandbox.executeArxivSearch;
 const langExtractInterpretQuery = sandbox.langExtractInterpretQuery;
 const shouldRouteToWeb = sandbox.shouldRouteToWeb;
 const detectLongFormWritingRequest = sandbox.detectLongFormWritingRequest;
@@ -184,7 +205,8 @@ const routeTests = [
   { q: 'deep reseach on femi Oyesanya', expected: true, desc: 'Deep research directive with typo' },
   { q: 'deep research on femi Oyesanya', expected: true, desc: 'Deep research directive canonical' },
   { q: 'who is Femi Oyesanya', expected: true, desc: 'Entity inquiry' },
-  { q: 'has he published any articles', expected: true, desc: 'Coreference query with history', history: historyTurns }
+  { q: 'has he published any articles', expected: true, desc: 'Coreference query with history', history: historyTurns },
+  { q: 'femi oyesanya', expected: true, desc: 'Bare entity query without who-is prefix' }
 ];
 
 for (const t of routeTests) {
@@ -206,6 +228,17 @@ for (const t of routeTests) {
   );
   console.log(`✅ Route verified: "${t.q}" -> routeToWeb=${decision.routeToWeb} [${decision.reason}]`);
 }
+
+// Explicit bare entity assertion
+const bareDecision = shouldRouteToWeb('femi oyesanya', 'auto');
+assert.strictEqual(bareDecision.routeToWeb, true, 'Bare entity "femi oyesanya" must route to web');
+const bareInterpret = langExtractInterpretQuery('femi oyesanya');
+assert.strictEqual(bareInterpret.route_to_web, true, 'langExtractInterpretQuery bare entity route_to_web must be true');
+assert.strictEqual(bareInterpret.target_entity, 'Femi Oyesanya', 'target_entity must be Femi Oyesanya');
+const barePerson = bareInterpret.extractions.find(e => e.extraction_class === 'person');
+assert(barePerson, 'Must have person extraction for bare entity');
+assert.strictEqual(barePerson.extraction_text, 'Femi Oyesanya');
+console.log(`✅ Bare entity routing & extraction verified: "${barePerson.extraction_text}" [${barePerson.char_interval.start_pos}:${barePerson.char_interval.end_pos}] -> routeToWeb=true`);
 
 // -------------------------------------------------------------
 // Test 5: Wikipedia & Multi-Token Anti-Poisoning Gate
@@ -300,4 +333,90 @@ for (const cat of expected16Categories) {
 
 console.log(`✅ Verified all 16 tool categories: ${totalAnnotatedTools} total tools annotated with character-interval LangExtract metadata.`);
 
-console.log('\n🎉 ALL VERIFICATION TESTS PASSED SUCCESSFULLY! (6/6)');
+(async () => {
+  // -------------------------------------------------------------
+  // Test 7: Live Multi-Engine Search E2E Across 5 Queries
+  // -------------------------------------------------------------
+  console.log('\n--- Test 7: Live Multi-Search E2E Across 5 Queries ---');
+  const liveSearchQueries = [
+    'femi oyesanya',
+    'has he published any articles',
+    'Femi Oyesanya Nigerian 419 cybercrime',
+    'Google langextract structured extraction',
+    'Federal Reserve interest rate policy'
+  ];
+
+  for (const q of liveSearchQueries) {
+    let queryToSearch = q;
+    if (q === 'has he published any articles') {
+      const resolved = langExtractInterpretQuery(q, historyTurns);
+      queryToSearch = resolved.resolved_query || q;
+    }
+    const results = await executeWebSearch(queryToSearch, 5);
+    assert(Array.isArray(results), `Results for "${q}" must be an array`);
+    assert(results.length > 0, `Results for "${q}" must return at least 1 result`);
+    for (const item of results) {
+      assert(item.title, `Result for "${q}" must have a title`);
+      assert(item.url, `Result for "${q}" must have a url`);
+    }
+    // Anti-poisoning assertion: Nollywood actors must not be returned
+    if (queryToSearch.toLowerCase().includes('femi oyesanya')) {
+      for (const item of results) {
+        assert(!item.title.includes('Femi Adebayo'), `Poison actor Femi Adebayo must not be in results for "${q}"`);
+        assert(!item.title.includes('Femi Branch'), `Poison actor Femi Branch must not be in results for "${q}"`);
+      }
+    }
+    console.log(`✅ Live search verified for "${q}" (${results.length} results returned, top: "${results[0].title}")`);
+  }
+
+  // -------------------------------------------------------------
+  // Test 8: Live Deep Research Multi-Run E2E with arXiv Invariant
+  // -------------------------------------------------------------
+  console.log('\n--- Test 8: Live Deep Research Multi-Run E2E (arXiv Invariant) ---');
+  const deepResearchTopics = [
+    'femi Oyesanya',
+    'post-quantum lattice cryptography',
+    'AI cybersecurity containment'
+  ];
+
+  for (const topic of deepResearchTopics) {
+    const isPerson = topic.toLowerCase().includes('femi oyesanya');
+    let webResults = [];
+    let arxivResults = [];
+
+    if (isPerson) {
+      const [res1, res2, res3, resArxiv] = await Promise.all([
+        executeWebSearch(topic, 5),
+        executeWebSearch(`${topic} published articles papers`, 3),
+        executeWebSearch(`${topic} publications books cybersecurity`, 3),
+        executeArxivSearch(topic, 5)
+      ]);
+      webResults = [...res1, ...res2, ...res3];
+      arxivResults = resArxiv || [];
+    } else {
+      const [pWeb, pArxiv] = await Promise.all([
+        executeWebSearch(topic, 5),
+        executeArxivSearch(topic, 5)
+      ]);
+      webResults = pWeb || [];
+      arxivResults = pArxiv || [];
+    }
+
+    assert(Array.isArray(webResults), `Web results for deep research on "${topic}" must be an array`);
+    assert(webResults.length > 0, `Web results for deep research on "${topic}" must return at least 1 result`);
+    assert(Array.isArray(arxivResults), `arXiv results for deep research on "${topic}" must be an array`);
+
+    // For academic / scientific deep research topics, verify arXiv returns papers
+    if (!isPerson) {
+      assert(arxivResults.length > 0, `arXiv must return papers for academic deep research on "${topic}"`);
+      const hasArxivIdOrTitle = arxivResults.some(r => r.url.includes('arxiv.org') || r.title.includes('[arXiv]'));
+      assert(hasArxivIdOrTitle, `arXiv results must be verified for "${topic}"`);
+    }
+    console.log(`✅ Deep research E2E verified for "${topic}": ${webResults.length} web sources, ${arxivResults.length} arXiv papers.`);
+  }
+
+  console.log('\n🎉 ALL VERIFICATION TESTS PASSED SUCCESSFULLY! (8/8)\n');
+})().catch(err => {
+  console.error('❌ Test failed:', err);
+  process.exit(1);
+});

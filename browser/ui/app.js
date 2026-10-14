@@ -7149,7 +7149,12 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
       domain = 'research';
     }
 
-    // 3. Named Entity Grounding: Search for proper nouns and multi-word names
+    // 3. Named Entity Grounding: Search for proper nouns, multi-word names, and bare entity queries
+    const toTitleCase = (s) => (s || '').replace(/\b[a-z]/g, c => c.toUpperCase());
+    const greetings = /^(?:hello|hi|hey|thanks|thank you|good morning|good evening|good afternoon|welcome|greetings)\b/i;
+    const creativeOrCoding = /^(?:write|draft|create|function|def|code|class|run|execute|debug|explain|summarize)\b/i;
+    const mathChars = /[=+{}<>;()/*^\\]/;
+
     const knownEntityMatch = text.match(/\b(Femi\s+Oyesanya|femi\s+oyesanya|Google|Apple|Microsoft|DeepSeek|OpenAI|NVIDIA|Amazon|Meta|Tesla)\b/i);
     if (knownEntityMatch) {
       const rawEntity = knownEntityMatch[0];
@@ -7164,8 +7169,8 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
         alignment_status: 'MATCH_EXACT',
         attributes: { entity_type: 'person', normalized_name: normEntity }
       });
-      if (intent === 'qa' && /\b(who is|about|background|profile|publications?|articles?|works?)\b/i.test(lower)) {
-        routeToWeb = true;
+      routeToWeb = true;
+      if (intent === 'qa') {
         intent = 'web_search';
       }
     } else {
@@ -7181,6 +7186,36 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
           attributes: { entity_type: 'entity' }
         });
         targetEntity = ent;
+        routeToWeb = true;
+        if (intent === 'qa') intent = 'web_search';
+      } else {
+        // Bare entity lookup: 1-5 word noun/name phrase (e.g. "femi oyesanya", "andrej karpathy", "google langextract")
+        const words = text.trim().split(/\s+/).filter(Boolean);
+        if (words.length >= 1 && words.length <= 5 && !greetings.test(text) && !creativeOrCoding.test(text) && !mathChars.test(text)) {
+          const stopwords = new Set([
+            'the', 'and', 'for', 'has', 'have', 'had', 'published', 'any', 'articles', 'article',
+            'who', 'what', 'where', 'when', 'why', 'how', 'did', 'does', 'with', 'from', 'about',
+            'his', 'her', 'their', 'its', 'our', 'him', 'them', 'this', 'that', 'these', 'those',
+            'all', 'some', 'few', 'more', 'most', 'other', 'into', 'onto', 'upon', 'can', 'will'
+          ]);
+          const nonStops = words.filter(w => !stopwords.has(w.toLowerCase()));
+          if (nonStops.length >= 1) {
+            const rawEntity = words.join(' ');
+            const startPos = text.indexOf(rawEntity);
+            const endPos = startPos + rawEntity.length;
+            const normEntity = toTitleCase(rawEntity);
+            targetEntity = normEntity;
+            extractions.push({
+              extraction_class: (words.length >= 2 && words.length <= 4) ? 'person' : 'named_entity',
+              extraction_text: rawEntity,
+              char_interval: { start_pos: startPos, end_pos: endPos },
+              alignment_status: 'MATCH_EXACT',
+              attributes: { entity_type: 'entity', normalized_name: normEntity }
+            });
+            routeToWeb = true;
+            if (intent === 'qa') intent = 'web_search';
+          }
+        }
       }
     }
 
@@ -7202,6 +7237,12 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
         const generalEntity = hText.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/);
         if (generalEntity) {
           antecedent = generalEntity[0];
+          break;
+        }
+        const hClean = hText.replace(/^(?:@agent\s+|@|\/|--)?(?:browser\s+deep\s+research\s+on|deep\s+research\s+on|search|research|wiki|arxiv)?\s*/i, '').trim();
+        const hWords = hClean.split(/\s+/).filter(Boolean);
+        if (hWords.length >= 1 && hWords.length <= 5 && !greetings.test(hClean) && !creativeOrCoding.test(hClean) && !mathChars.test(hClean)) {
+          antecedent = toTitleCase(hWords.join(' '));
           break;
         }
       }
@@ -7586,7 +7627,98 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
       console.warn('Direct search gateway unreachable:', e);
     }
 
-    // 2b. Live Google News RSS Fallback Gateway
+    // 2b. Direct DuckDuckGo HTML Gateway (Full Web Results)
+    if (fallbackResults.length < limit) {
+      try {
+        const ddgHtmlUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+        const res = await fetch(ddgHtmlUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+          }
+        });
+        if (res.ok && res.status !== 202) {
+          const html = await res.text();
+          if (!html.includes('anomaly.js')) {
+            const linkRegex = /<a\s+[^>]*class=["'][^"']*result__a[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+            const snippetRegex = /class=["'][^"']*result__snippet[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi;
+            const snippets = [];
+            let sMatch;
+            while ((sMatch = snippetRegex.exec(html)) !== null) {
+              snippets.push(sMatch[1].replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&amp;/g, '&').trim());
+            }
+            let lMatch;
+            let idx = 0;
+            while ((lMatch = linkRegex.exec(html)) !== null && fallbackResults.length < limit) {
+              let rawUrl = lMatch[1];
+              if (rawUrl.includes('uddg=')) {
+                const parts = rawUrl.split('uddg=');
+                if (parts[1]) rawUrl = decodeURIComponent(parts[1].split('&')[0]);
+              }
+              const cleanTitle = lMatch[2].replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&amp;/g, '&').trim();
+              const snip = snippets[idx] || '';
+              idx++;
+              if (cleanTitle && rawUrl.startsWith('http')) {
+                if (isWikipediaResultRelevant(query, cleanTitle, snip)) {
+                  if (!fallbackResults.some(r => r.url === rawUrl || r.title === cleanTitle)) {
+                    fallbackResults.push({ title: cleanTitle, url: rawUrl, snippet: snip });
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Direct DuckDuckGo HTML gateway error:', e);
+      }
+    }
+
+    // 2c. Direct Bing Search Gateway
+    if (fallbackResults.length < limit) {
+      try {
+        const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}`;
+        const res = await fetch(bingUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+          }
+        });
+        if (res.ok) {
+          const html = await res.text();
+          const algoRegex = /<li\s+[^>]*class=["'][^"']*b_algo[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi;
+          let match;
+          while ((match = algoRegex.exec(html)) !== null && fallbackResults.length < limit) {
+            const chunk = match[1];
+            const linkMatch = /<h2[^>]*>\s*<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i.exec(chunk);
+            if (linkMatch) {
+              let url = linkMatch[1];
+              if (url.includes('u=a1')) {
+                try {
+                  const b64 = url.split('u=a1')[1].split('&')[0];
+                  const decoded = typeof Buffer !== 'undefined' ? Buffer.from(b64, 'base64').toString('utf8') : atob(b64);
+                  if (decoded.startsWith('http')) url = decoded;
+                } catch (_) {}
+              }
+              const cleanTitle = linkMatch[2].replace(/<[^>]+>/g, '').trim();
+              const pMatch = /<p[^>]*>([\s\S]*?)<\/p>/i.exec(chunk);
+              const snippet = pMatch ? pMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+              if (cleanTitle && url.startsWith('http')) {
+                if (isWikipediaResultRelevant(query, cleanTitle, snippet)) {
+                  if (!fallbackResults.some(r => r.url === url || r.title === cleanTitle)) {
+                    fallbackResults.push({ title: cleanTitle, url, snippet, source: 'Bing' });
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Direct Bing search gateway error:', e);
+      }
+    }
+
+    // 2d. Live Google News RSS Fallback Gateway
     if (fallbackResults.length < limit) {
       try {
         const newsUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
@@ -7621,19 +7753,35 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
     if (fallbackResults.length < limit) {
       const needed = limit - fallbackResults.length;
       try {
-        const wikiRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*&srlimit=${Math.min(needed, 50)}`);
-        if (wikiRes.ok) {
-          const wikiData = await wikiRes.json();
-          if (wikiData.query && wikiData.query.search) {
-            for (const item of wikiData.query.search) {
-              const url = `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, '_'))}`;
-              if (!fallbackResults.some(r => r.url === url || r.title === item.title)) {
-                const cleanSnip = (item.snippet || '').replace(/<[^>]+>/g, '').trim();
-                if (isWikipediaResultRelevant(query, item.title, cleanSnip)) {
-                  fallbackResults.push({ title: item.title, url: url, snippet: cleanSnip });
-                  if (fallbackResults.length >= limit) break;
+        const fetchWiki = async (term) => {
+          const wikiRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(term)}&format=json&origin=*&srlimit=${Math.min(needed, 50)}`);
+          if (wikiRes.ok) {
+            const wikiData = await wikiRes.json();
+            if (wikiData.query && wikiData.query.search) {
+              for (const item of wikiData.query.search) {
+                const url = `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, '_'))}`;
+                if (!fallbackResults.some(r => r.url === url || r.title === item.title)) {
+                  const cleanSnip = (item.snippet || '').replace(/<[^>]+>/g, '').trim();
+                  if (isWikipediaResultRelevant(query, item.title, cleanSnip)) {
+                    fallbackResults.push({ title: item.title, url: url, snippet: cleanSnip });
+                    if (fallbackResults.length >= limit) return true;
+                  }
                 }
               }
+            }
+          }
+          return false;
+        };
+
+        const filled = await fetchWiki(query);
+        if (!filled && fallbackResults.length < limit) {
+          const words = query.split(/\s+/).filter(w => w.length > 2);
+          if (words.length > 2) {
+            const sub2 = words.slice(-2).join(' ');
+            const filledSub2 = await fetchWiki(sub2);
+            if (!filledSub2 && fallbackResults.length < limit) {
+              const sub1 = words.slice(0, 2).join(' ');
+              await fetchWiki(sub1);
             }
           }
         }
@@ -7649,6 +7797,15 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
     const limit = Math.min(Math.max(1, maxResults || 5), 200);
     const ipcUrl = (currentSettings.ipcUrl || 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
 
+    const filterResults = (items) => {
+      if (!items || !items.length) return [];
+      if (typeof isWikipediaResultRelevant === 'function') {
+        const filtered = items.filter(r => isWikipediaResultRelevant(query, r.title, r.snippet));
+        return filtered.length > 0 ? filtered : items;
+      }
+      return items;
+    };
+
     // 1. Try ModelFusion Master CLI IPC endpoint :5000/api/arxiv
     try {
       const res = await fetch(`${ipcUrl}/api/arxiv?q=${encodeURIComponent(query)}&max_results=${limit}`, {
@@ -7658,7 +7815,7 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
       if (res.ok) {
         const data = await res.json();
         if (data.results && Array.isArray(data.results) && data.results.length > 0) {
-          return data.results;
+          return filterResults(data.results);
         }
       }
     } catch (e) {
@@ -7671,42 +7828,78 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
       const res = await fetch(arxivUrl);
       if (res.ok) {
         const xmlText = await res.text();
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
-        const entries = xmlDoc.getElementsByTagName('entry');
         const results = [];
-        for (let i = 0; i < entries.length; i++) {
-          const entry = entries[i];
-          const rawTitle = (entry.getElementsByTagName('title')[0]?.textContent || '').trim().replace(/\s+/g, ' ');
-          let rawId = (entry.getElementsByTagName('id')[0]?.textContent || '').trim();
-          if (rawId.startsWith('http://arxiv.org/abs/')) {
-            rawId = rawId.replace('http://', 'https://');
-          } else if (!rawId.startsWith('https://')) {
-            rawId = 'https://arxiv.org/abs/' + rawId;
-          }
-          const rawSummary = (entry.getElementsByTagName('summary')[0]?.textContent || '').trim().replace(/\s+/g, ' ');
-          const authorNodes = entry.getElementsByTagName('author');
-          const authors = [];
-          for (let a = 0; a < Math.min(authorNodes.length, 3); a++) {
-            const name = authorNodes[a].getElementsByTagName('name')[0]?.textContent?.trim();
-            if (name) authors.push(name);
-          }
-          const pubDate = (entry.getElementsByTagName('published')[0]?.textContent || '').trim();
-          const year = pubDate.length >= 4 ? pubDate.slice(0, 4) : '';
-          const authorStr = authors.join(', ');
-          const formattedTitle = (authorStr && year)
-            ? `[arXiv] ${rawTitle} (${authorStr}, ${year})`
-            : (authorStr ? `[arXiv] ${rawTitle} (${authorStr})` : (year ? `[arXiv] ${rawTitle} (${year})` : `[arXiv] ${rawTitle}`));
+        if (typeof DOMParser !== 'undefined') {
+          const parser = new DOMParser();
+          const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+          const entries = xmlDoc.getElementsByTagName('entry');
+          for (let i = 0; i < entries.length; i++) {
+            const entry = entries[i];
+            const rawTitle = (entry.getElementsByTagName('title')[0]?.textContent || '').trim().replace(/\s+/g, ' ');
+            let rawId = (entry.getElementsByTagName('id')[0]?.textContent || '').trim();
+            if (rawId.startsWith('http://arxiv.org/abs/')) {
+              rawId = rawId.replace('http://', 'https://');
+            } else if (!rawId.startsWith('https://')) {
+              rawId = 'https://arxiv.org/abs/' + rawId;
+            }
+            const rawSummary = (entry.getElementsByTagName('summary')[0]?.textContent || '').trim().replace(/\s+/g, ' ');
+            const authorNodes = entry.getElementsByTagName('author');
+            const authors = [];
+            for (let a = 0; a < Math.min(authorNodes.length, 3); a++) {
+              const name = authorNodes[a].getElementsByTagName('name')[0]?.textContent?.trim();
+              if (name) authors.push(name);
+            }
+            const pubDate = (entry.getElementsByTagName('published')[0]?.textContent || '').trim();
+            const year = pubDate.length >= 4 ? pubDate.slice(0, 4) : '';
+            const authorStr = authors.join(', ');
+            const formattedTitle = (authorStr && year)
+              ? `[arXiv] ${rawTitle} (${authorStr}, ${year})`
+              : (authorStr ? `[arXiv] ${rawTitle} (${authorStr})` : (year ? `[arXiv] ${rawTitle} (${year})` : `[arXiv] ${rawTitle}`));
 
-          if (rawTitle && rawId) {
-            results.push({
-              title: formattedTitle,
-              url: rawId,
-              snippet: rawSummary
-            });
+            if (rawTitle && rawId) {
+              results.push({
+                title: formattedTitle,
+                url: rawId,
+                snippet: rawSummary
+              });
+            }
+          }
+        } else {
+          // Robust regex XML parser fallback for Node.js / headless runtimes
+          const entryRegex = /<entry>([\s\S]*?)<\/entry>/gi;
+          let eMatch;
+          while ((eMatch = entryRegex.exec(xmlText)) !== null && results.length < limit) {
+            const chunk = eMatch[1];
+            const tMatch = /<title>([\s\S]*?)<\/title>/i.exec(chunk);
+            const idMatch = /<id>([\s\S]*?)<\/id>/i.exec(chunk);
+            const sMatch = /<summary>([\s\S]*?)<\/summary>/i.exec(chunk);
+            const pMatch = /<published>([\s\S]*?)<\/published>/i.exec(chunk);
+            const authorRegex = /<author>[\s\S]*?<name>([\s\S]*?)<\/name>/gi;
+            const authors = [];
+            let aMatch;
+            while ((aMatch = authorRegex.exec(chunk)) !== null && authors.length < 3) {
+              authors.push(aMatch[1].trim());
+            }
+            if (tMatch && idMatch) {
+              const rawTitle = tMatch[1].replace(/\s+/g, ' ').trim();
+              let rawId = idMatch[1].trim();
+              if (rawId.startsWith('http://arxiv.org/abs/')) rawId = rawId.replace('http://', 'https://');
+              else if (!rawId.startsWith('https://')) rawId = 'https://arxiv.org/abs/' + rawId;
+              const rawSummary = sMatch ? sMatch[1].replace(/\s+/g, ' ').trim() : '';
+              const year = pMatch ? pMatch[1].trim().slice(0, 4) : '';
+              const authorStr = authors.join(', ');
+              const formattedTitle = (authorStr && year)
+                ? `[arXiv] ${rawTitle} (${authorStr}, ${year})`
+                : (authorStr ? `[arXiv] ${rawTitle} (${authorStr})` : (year ? `[arXiv] ${rawTitle} (${year})` : `[arXiv] ${rawTitle}`));
+              results.push({
+                title: formattedTitle,
+                url: rawId,
+                snippet: rawSummary
+              });
+            }
           }
         }
-        if (results.length > 0) return results;
+        if (results.length > 0) return filterResults(results);
       }
     } catch (e) {
       console.warn('Direct arXiv gateway unreachable:', e);
@@ -15412,10 +15605,15 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
 
 
 
+    const isSearchOrResearch = Boolean(
+      (intention && intention.isDeepResearch) ||
+      (options && (options.isDeepResearch || options.taskType === 'research' || options.taskType === 'search' || options.isSearchSynthesis))
+    );
+
     let initialUserContent = userPrompt;
-    if (intention && intention.targetPages > 1 && !(options && options.isContinuation)) {
+    if (!isSearchOrResearch && intention && intention.targetPages > 1 && !(options && options.isContinuation)) {
       initialUserContent = `${userPrompt}\n\n[EXECUTION INSTRUCTION]: This is an in-depth ${intention.targetPages}-page document. In this first turn, write ONLY Page 1 in full, immersive, publication-grade depth (at least 500-600 words for Page 1 alone). Clearly label it '### Page 1: [Title]'. Do NOT skip ahead or summarize subsequent pages; develop Page 1 thoroughly with multiple rich paragraphs.`;
-    } else if (intention && intention.targetChapters > 1 && !(options && options.isContinuation)) {
+    } else if (!isSearchOrResearch && intention && intention.targetChapters > 1 && !(options && options.isContinuation)) {
       initialUserContent = `${userPrompt}\n\n[EXECUTION INSTRUCTION]: This is an in-depth ${intention.targetChapters}-chapter document. In this first turn, write ONLY Chapter 1 in full, immersive, publication-grade depth (at least 600-800 words for Chapter 1 alone). Clearly label it '### Chapter 1: [Title]'. Do NOT skip ahead or summarize subsequent chapters; develop Chapter 1 thoroughly.`;
     }
 
@@ -15591,6 +15789,9 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
       if (intention && (intention.targetPages >= 2 || intention.isLongForm)) {
         requiredCtx = Math.max(requiredCtx, Math.min(maxCtxCap, Math.max(32768, (intention.targetPages || 2) * 4096)));
       }
+      if (isSearchOrResearch) {
+        requiredCtx = Math.max(requiredCtx, (options && options.isDeepResearch) ? 32768 : 24576);
+      }
       const numCtxToUse = (options && typeof options.numCtx === 'number' && options.numCtx > 0)
         ? Math.min(65536, Math.max(options.numCtx, requiredCtx))
         : (isAgenticLoop 
@@ -15632,7 +15833,10 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
           ];
         }
 
-        const currentTurnChunk = isAgenticLoop ? Math.min(chunkSize, targetTokens) : maxTokensToUse;
+        const searchPredictTokens = (options && options.isDeepResearch) ? 8192 : 4096;
+        const currentTurnChunk = isAgenticLoop
+          ? Math.min(chunkSize, targetTokens)
+          : (isSearchOrResearch ? Math.max(maxTokensToUse, searchPredictTokens) : maxTokensToUse);
         const currentOllamaOptions = {
           temperature: tempToUse,
           num_predict: currentTurnChunk,
@@ -31706,7 +31910,7 @@ Analyze the user's legal inquiry with strict professional precision and doctrina
       let statusCtrl = null;
       const academicTerms = /\b(paper|papers|arxiv|algorithm|algorithms|cryptography|cryptographic|physics|quantum|biology|biological|mathematics|mathematical|math|proof|proofs|theorem|theorems|neural|compiler|distributed)\b/i;
       const isAcademicTopic = academicTerms.test(queryToSearch);
-      const shouldQueryArxiv = isArxivOnly || (isDeepResearch && isAcademicTopic);
+      const shouldQueryArxiv = isArxivOnly || isDeepResearch;
 
       if (chatMessages) {
         assistantBubble = document.createElement('div');
@@ -31714,13 +31918,13 @@ Analyze the user's legal inquiry with strict professional precision and doctrina
         assistantBubble.innerHTML = `
           <div class="bubble-author" style="font-size: 11px; font-weight: 600; color: var(--accent-color); margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
             <span>${isArxivOnly ? '📚' : (isDeepResearch ? '🔬' : '🌐')}</span> <span>ModelFusion AI</span>
-            <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">${isArxivOnly ? '(arXiv Research Papers)' : (isDeepResearch ? (isPersonOrAuthor ? '(Deep Research: Person & Publications)' : (shouldQueryArxiv ? '(Deep Research: Web + arXiv)' : '(Deep Research: Web Grounding)')) : '(Web Search Grounding)')}</span>
+            <span style="font-size: 9.5px; opacity: 0.7; font-family: var(--mono-font);">${isArxivOnly ? '(arXiv Research Papers)' : (isDeepResearch ? (isPersonOrAuthor ? '(Deep Research: Person, Web & arXiv)' : '(Deep Research: Web + arXiv)') : '(Web Search Grounding)')}</span>
           </div>
           <div class="bubble-content">
             <div class="research-status-bar">
               <div class="dynamic-status-pill">
                 <span class="status-pulse-dot"></span>
-                <span class="status-text">${isArxivOnly ? 'Searching arXiv scientific preprints...' : (isPersonOrAuthor ? 'Investigating professional profile, publications & citations...' : (shouldQueryArxiv ? 'Searching the internet & arXiv...' : 'Searching the internet...'))}</span>
+                <span class="status-text">${isArxivOnly ? 'Searching arXiv scientific preprints...' : (isPersonOrAuthor ? 'Investigating profile, publications, citations & arXiv preprints...' : 'Searching the internet & arXiv in parallel...')}</span>
               </div>
             </div>
             <div class="research-sources-card" style="display: none;"></div>
@@ -31763,37 +31967,42 @@ Analyze the user's legal inquiry with strict professional precision and doctrina
           const arxivResults = await executeArxivSearch(queryToSearch, targetCount);
           updateSourcesImmediately(arxivResults);
         } else if (isDeepResearch && isPersonOrAuthor) {
-          // Scientific / biographical deep research: execute expanded parallel multi-angle queries
+          // Scientific / biographical deep research: execute expanded parallel multi-angle queries INCLUDING arXiv
           const half = Math.max(5, Math.ceil(targetCount / 2));
           const p1 = executeWebSearch(queryToSearch, targetCount);
           const p2 = executeWebSearch(`${queryToSearch} published articles papers`, half);
           const p3 = executeWebSearch(`${queryToSearch} publications books cybersecurity`, half);
-          const [res1, res2, res3] = await Promise.all([p1, p2, p3]);
+          const pArxiv = executeArxivSearch(queryToSearch, half);
+          const [res1, res2, res3, resArxiv] = await Promise.all([p1, p2, p3, pArxiv]);
           updateSourcesImmediately(res1);
           updateSourcesImmediately(res2);
           updateSourcesImmediately(res3);
-        } else if (isDeepResearch && shouldQueryArxiv) {
-          // Scientific / academic deep research: query web + arXiv in parallel
+          if (resArxiv && resArxiv.length > 0) {
+            const filteredArxiv = resArxiv.filter(item => isWikipediaResultRelevant(queryToSearch, item.title, item.snippet));
+            updateSourcesImmediately(filteredArxiv.length > 0 ? filteredArxiv : resArxiv);
+          }
+        } else if (isDeepResearch) {
+          // All other deep research: ALWAYS query web + arXiv in parallel!
           const half = Math.max(5, Math.ceil(targetCount / 2));
-          const pWeb = executeWebSearch(queryToSearch, half)
+          const pWeb = executeWebSearch(queryToSearch, targetCount)
             .then(res => { updateSourcesImmediately(res); return res; });
           const pArxiv = executeArxivSearch(queryToSearch, half)
             .then(res => { updateSourcesImmediately(res); return res; });
           await Promise.all([pWeb, pArxiv]);
         } else {
-          // Standard web search or general deep research
+          // Standard web search
           const searchResults = await executeWebSearch(queryToSearch, targetCount);
           updateSourcesImmediately(searchResults);
         }
 
-        // Live page text scraping for top 3 sources in Deep Research
+        // Live page text scraping for top 5 sources in Deep Research
         if (combinedResults.length > 0 && isDeepResearch) {
-          const topToEnrich = combinedResults.slice(0, 3);
+          const topToEnrich = combinedResults.slice(0, 5);
           await Promise.all(topToEnrich.map(async (item) => {
             if (!item.fullText && item.url && item.url.startsWith('http')) {
               try {
-                const liveText = await fetchLiveUrlText(item.url, 2500);
-                if (liveText && liveText.length > 100) {
+                const liveText = await fetchLiveUrlText(item.url, 3500);
+                if (liveText && liveText.length > 80) {
                   item.fullText = liveText;
                 }
               } catch (_) {}
@@ -31815,9 +32024,9 @@ Analyze the user's legal inquiry with strict professional precision and doctrina
         const sourceCount = combinedResults.length;
         const searchContext = sourceCount > 0
           ? combinedResults.map((r, idx) => {
-              let entry = `[${idx + 1}] Title: ${r.title}\nURL: ${r.url}\nSummary: ${(r.snippet || '').slice(0, 300)}`;
+              let entry = `[${idx + 1}] Title: ${r.title}\nURL: ${r.url}\nSummary: ${(r.snippet || '').slice(0, 500)}`;
               if (r.fullText) {
-                entry += `\nVerified Live Content Extract:\n${r.fullText.slice(0, 1000)}`;
+                entry += `\nVerified Live Content Extract:\n${r.fullText.slice(0, 1500)}`;
               }
               return entry;
             }).join('\n\n')
@@ -31884,7 +32093,8 @@ ${isDeepResearch
           images: attachedImages,
           panel,
           maxTokens: isDeepResearch ? Math.max(16384, (currentSettings.maxTokens || 8192) * 2) : Math.max(8192, currentSettings.maxTokens || 8192),
-          taskType: isDeepResearch ? 'writing' : (isArxivOnly ? 'research' : 'qa'),
+          taskType: isDeepResearch ? 'research' : (isArxivOnly ? 'research' : 'qa'),
+          isDeepResearch: isDeepResearch,
           existingBubble: assistantBubble,
           bubbleContent: streamContentEl,
           statusCtrl: statusCtrl
@@ -32263,16 +32473,37 @@ Instructions:
 
       try {
         const targetCount = currentSettings.maxSearchResults || 10;
+        const lxAnnotation = routingDecision.langExtract || (options && options.langExtract) || (typeof langExtractInterpretQuery === 'function' ? langExtractInterpretQuery(cmd) : null);
+        let pParallel = null;
+        if (lxAnnotation && lxAnnotation.target_entity && routingDecision.cleanQuery) {
+          const enrichQuery = `${routingDecision.cleanQuery} cybersecurity internet policy author`;
+          pParallel = executeWebSearch(enrichQuery, 4).then(async (enrichResults) => {
+            if (enrichResults && enrichResults.length > 0) {
+              updateSourcesImmediately(enrichResults);
+              for (const topItem of enrichResults.slice(0, 2)) {
+                if (topItem.url && typeof fetchLiveUrlText === 'function') {
+                  const liveTxt = await fetchLiveUrlText(topItem.url, 2000);
+                  if (liveTxt) {
+                    topItem.snippet = (topItem.snippet ? topItem.snippet + '\n\n' : '') + liveTxt.slice(0, 800);
+                  }
+                }
+              }
+            }
+            return enrichResults;
+          }).catch(() => []);
+        }
+
         if (isResearchTopic) {
           const half = Math.max(5, Math.ceil(targetCount / 2));
           const pWeb = executeWebSearch(routingDecision.cleanQuery, half)
             .then(res => { updateSourcesImmediately(res); return res; });
           const pArxiv = executeArxivSearch(routingDecision.cleanQuery, half)
             .then(res => { updateSourcesImmediately(res); return res; });
-          await Promise.all([pWeb, pArxiv]);
+          await Promise.all([pWeb, pArxiv, pParallel].filter(Boolean));
         } else {
           const results = await executeWebSearch(routingDecision.cleanQuery, targetCount);
           updateSourcesImmediately(results);
+          if (pParallel) await pParallel;
         }
       } catch (searchErr) {
         termLog(`[SEARCH] Search error: ${searchErr.message}`, 'warn');
@@ -32341,10 +32572,27 @@ Instructions:
           }
         }
 
+        // Enrich top 4 search results with live page text in parallel
+        if (searchResults && searchResults.length > 0) {
+          const topToEnrich = searchResults.slice(0, 4);
+          await Promise.all(topToEnrich.map(async (item) => {
+            if (!item.liveContent && item.url && item.url.startsWith('http')) {
+              try {
+                const liveText = await fetchLiveUrlText(item.url, 3000);
+                if (liveText && liveText.length > 80) {
+                  item.liveContent = liveText;
+                }
+              } catch (_) {}
+            }
+          }));
+        }
+
         // Correlate live search results with LLM knowledge
         const sourceCount = searchResults.length;
         const searchContext = searchResults.map((r, idx) => {
-          return `[${idx + 1}] Title: ${r.title}\nURL: ${r.url}\nSummary: ${(r.snippet || '').slice(0, 300)}`;
+          const engineTag = r.source ? ` [${r.source}]` : '';
+          const liveExcerpt = r.liveContent ? `\nVerified Live Page Excerpt: ${r.liveContent.slice(0, 1200)}` : '';
+          return `[${idx + 1}]${engineTag} Title: ${r.title}\nURL: ${r.url}\nSnippet: ${(r.snippet || '').slice(0, 600)}${liveExcerpt}`;
         }).join('\n\n');
 
         let marketQuoteSection = '';
@@ -32358,27 +32606,27 @@ Instructions:
         }
 
         const promptWithSearch = `User Query: ${cmd}
+Resolved Grounded Query (Google LangExtract): ${routingDecision.cleanQuery || cmd}
 ${marketQuoteSection}${legalSection}
 Verified Grounding Context (${sourceCount} Verified Sources):
 ${searchContext}
 
 ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
-${sourceCount > 10
-  ? `- You have been provided with ${sourceCount} verified research sources. A comprehensive query with this many sources requires an expansive, deeply thorough, multi-section research report — NOT a brief 2-3 paragraph summary.
-- Provide an in-depth, publication-quality synthesis exploring key findings, technical nuances, varied perspectives, methodologies, and implications across the sources.
-- Structure your response with natural, descriptive markdown headings (###).
-- Extensively ground your analysis and cite verified sources inline using [1], [2], etc., with markdown links to the sources.
-- Deliver detailed paragraphs explaining the 'why' and 'how', thoroughly examining the evidence.`
-  : `- Use the verified grounding context and live market quotes above to actively ENRICH the ACCURACY of your response.
-- CRITICAL TEMPORAL ANCHOR (2026): The current year is 2026. DO NOT use stale pre-training training data (such as outdated 2023 stock prices or retired leadership).
-- INTERNET ACCURACY ENRICHMENT LAW: Verified real-time internet facts and live market figures take absolute precedence over pre-training parametric memory. Never contradict the verified data provided above.
+- MANDATORY CHATGPT-GRADE COMPREHENSIVE RESPONSE SPECIFICATION:
+  You MUST generate a long, thorough, deeply factual, richly structured ChatGPT-style response (minimum 600–1,200+ words across 4–5 descriptive Markdown ### sections). Under NO circumstances should you produce a brief 1-2 paragraph summary or casual conversational answer.
+- Structure your response using these mandatory sections:
+  * '### 1. Executive Overview & Direct Factual Answer': Comprehensive, deeply researched multi-paragraph synthesis answering the user's query directly and authoritatively, integrating verified live facts with inline citations [1], [2].
+  * '### 2. Detailed Breakdown, Key Works & Verified Facts': Deep, exhaustive factual breakdown with structured bullet points and sub-headings. If the query is about a person or author (e.g. Femi Oyesanya) or their publications/articles, list and describe EVERY verified published article, paper, policy analysis, and domain contribution found in the search results with exact titles, publication venues/dates, and core arguments.
+  * '### 3. Context, Domain Analysis & Broader Implications': In-depth analysis of technical, historical, policy, or industry significance grounded strictly in the retrieved evidence.
+  * '### 4. Verified Sources & Annotated Reference Links': Numbered list of clickable Markdown links ([Title](URL)) accompanied by a factual 1-2 sentence description of what that source verifies.
+- STRICT LANGEXTRACT SOURCE GROUNDING & ANTI-POISONING:
+  Base every biographical claim, profession, and publication strictly on the Verified Grounding Context above. NEVER invent or hallucinate unrelated professions (such as 'Nollywood actor or director') that are not in the verified sources. Femi Oyesanya is an AI Application Security Engineer and Cybersecurity / Internet Governance Leader—never attribute Nollywood film credits to him.
+- CRITICAL TEMPORAL ANCHOR (2026): The current year is 2026. Verified real-time internet facts and live market figures take absolute precedence over pre-training parametric memory.
 - If answering about a stock or company, explicitly state its current verified price, market cap, and 52-week trading range.
-- Never invent, fabricate, or hallucinate political leaders, capitals, or dates.
-- State verified real-world facts directly (e.g. current head of state, verified capital city).
 - Cite the sources inline using [1], [2], etc., matching the numbered search results above.
-- Include clickable markdown links to the sources [Title](URL) where relevant.`}`;
+- Include clickable markdown links to the sources [Title](URL) where relevant.`;
 
-        const sysPrompt = 'You are HugOS AI, an intelligent assistant with live internet search and arXiv capabilities. Correlate search evidence with internal reasoning, provide factual and up-to-date answers, and cite sources accurately with [1], [2] badges and markdown links. Never invent false names, leaders, or relocated capitals.';
+        const sysPrompt = 'You are HugOS AI, an intelligent assistant with live internet search and deep research capabilities. Always generate long, factual, deeply detailed, publication-grade ChatGPT-like responses structured into multi-paragraph ### sections with inline [1], [2] citations and clickable markdown links. STRICT SOURCE GROUNDING: Base every biographical claim, profession, and publication strictly on the Verified Grounding Context. Never invent or hallucinate unrelated professions (such as Nollywood actor) for cybersecurity figures.';
 
         await streamAiChat(promptWithSearch, sysPrompt, {
           cleanPrompt: cmd,
@@ -32386,6 +32634,8 @@ ${sourceCount > 10
           images: attachedImages,
           panel,
           maxTokens: Math.max(8192, currentSettings.maxTokens || 8192),
+          taskType: 'search',
+          isSearchSynthesis: true,
           existingBubble: assistantBubble,
           bubbleContent: streamContentEl,
           statusCtrl: statusCtrl
@@ -35601,6 +35851,38 @@ The current calendar year is 2026. If you are asked about real-world facts such 
   function bindUniversalLangExtractListeners() {
     if (typeof document === 'undefined') return;
 
+    let debounceTimer = null;
+    const processElement = (target) => {
+      if (!target || (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA' && !target.isContentEditable)) return;
+      clearTimeout(debounceTimer);
+      const val = (target.value !== undefined ? target.value : (target.textContent || '')).trim();
+      debounceTimer = setTimeout(() => {
+        const historyTurns = (typeof chatSessions !== 'undefined' && Array.isArray(chatSessions))
+          ? (chatSessions.find(s => s.id === currentSessionId)?.messages || []).map(m => m.content).slice(-6)
+          : [];
+        const lx = langExtractInterpretQuery(val, historyTurns);
+        target._langExtract = lx;
+        if (typeof window !== 'undefined') window.lastLangExtractResult = lx;
+        if (lx && lx.target_entity) {
+          target.setAttribute('data-langextract-entity', lx.target_entity);
+        } else {
+          target.removeAttribute('data-langextract-entity');
+        }
+        if (lx && lx.intent) target.setAttribute('data-langextract-intent', lx.intent);
+        if (lx && lx.domain) target.setAttribute('data-langextract-domain', lx.domain);
+      }, 120);
+    };
+
+    // Universal Event Delegation for ALL Input Boxes in Every Menu Item & Workspace
+    if (!document._universalLangExtractDelegated) {
+      document._universalLangExtractDelegated = true;
+      ['input', 'change', 'focusin'].forEach(evtType => {
+        document.addEventListener(evtType, (e) => {
+          processElement(e.target);
+        }, true);
+      });
+    }
+
     const inputSelectors = [
       '#cli-prompt-input',
       '#cli-prompt-input-pinned',
@@ -35611,32 +35893,12 @@ The current calendar year is 2026. If you are asked about real-world facts such 
       'input[type="search"]'
     ];
 
-    let debounceTimer = null;
     inputSelectors.forEach(sel => {
       const el = document.querySelector(sel);
       if (el && !el._langExtractBound) {
         el._langExtractBound = true;
-        const handleInput = (e) => {
-          clearTimeout(debounceTimer);
-          const val = (e.target.value || '').trim();
-          debounceTimer = setTimeout(() => {
-            const historyTurns = (typeof chatSessions !== 'undefined' && Array.isArray(chatSessions))
-              ? (chatSessions.find(s => s.id === currentSessionId)?.messages || []).map(m => m.content).slice(-6)
-              : [];
-            const lx = langExtractInterpretQuery(val, historyTurns);
-            e.target._langExtract = lx;
-            window.lastLangExtractResult = lx;
-            if (lx.target_entity) {
-              e.target.setAttribute('data-langextract-entity', lx.target_entity);
-            } else {
-              e.target.removeAttribute('data-langextract-entity');
-            }
-            e.target.setAttribute('data-langextract-intent', lx.intent);
-          }, 120);
-        };
-
-        el.addEventListener('input', handleInput);
-        el.addEventListener('change', handleInput);
+        el.addEventListener('input', (e) => processElement(e.target));
+        el.addEventListener('change', (e) => processElement(e.target));
       }
     });
 
