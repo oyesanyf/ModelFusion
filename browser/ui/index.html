@@ -58,15 +58,16 @@
       <nav class="sidebar-nav-list" aria-label="Main Navigation">
         <button type="button" class="sidebar-nav-item active" id="sidebar-new-chat" title="New chat (Ctrl+N)">
           <span class="nav-item-icon">📝</span>
-          <span class="nav-item-text">New chat</span>
+          <span class="nav-item-text">New Chat</span>
+          <span class="nav-item-kbd">Ctrl+N</span>
         </button>
         <button type="button" class="sidebar-nav-item" id="sidebar-images" title="Vision &amp; Image Generation">
           <span class="nav-item-icon">🖼️</span>
-          <span class="nav-item-text">Images</span>
+          <span class="nav-item-text">Images &amp; Vision</span>
         </button>
         <button type="button" class="sidebar-nav-item" id="sidebar-deep-research" title="Autonomous Multi-Step Deep Research">
           <span class="nav-item-icon">🔍</span>
-          <span class="nav-item-text">Deep research</span>
+          <span class="nav-item-text">Deep Research</span>
         </button>
         <button type="button" class="sidebar-nav-item" id="sidebar-writing-editing" title="Writing &amp; Editing (Humanize, Translate, Style Transfer)">
           <span class="nav-item-icon">✍️</span>
@@ -75,22 +76,18 @@
 
         <div class="sidebar-section-divider"></div>
 
-        <!-- Collapsible Tools & Directives Accordion (Default Collapsed for Distinct Demarcation) -->
-        <div class="sidebar-tools-accordion collapsed" id="sidebar-tools-accordion">
+        <!-- Collapsible Tools & Directives Accordion (Expanded by Default for Immediate Capability Discovery) -->
+        <div class="sidebar-tools-accordion" id="sidebar-tools-accordion">
           <button type="button" class="sidebar-tools-header" id="sidebar-tools-toggle" title="Toggle ModelFusion Tools &amp; Directives (All 348+ Tools)">
             <span class="tools-header-icon">🛠️</span>
             <span class="tools-header-title">Agent Capabilities</span>
             <span class="tools-header-badge">348</span>
-            <span class="tools-header-chevron" id="tools-accordion-chevron">▸</span>
+            <span class="tools-header-chevron" id="tools-accordion-chevron">▾</span>
           </button>
           <div class="sidebar-tools-body" id="sidebar-tools-body">
-            <div class="sidebar-tools-audit-bar" style="display: flex; gap: 4px; margin-bottom: 6px; padding: 0 2px;">
-              <button type="button" class="btn-sidebar-audit-menus" id="btn-sidebar-audit-menus" title="Run automated click-test across sidebar menus" style="flex: 1;">
-                <span>🧪</span> <span>Menus</span>
-              </button>
-              <button type="button" class="btn-sidebar-audit-menus" id="btn-sidebar-audit-all" title="Run comprehensive end-to-end audit across all links, buttons, prompts &amp; resource logic" style="flex: 1.4; background: rgba(59, 130, 246, 0.12); color: #3b82f6; border-color: rgba(59, 130, 246, 0.4);">
-                <span>⚡</span> <span>Audit All</span>
-              </button>
+            <div class="sidebar-capability-search-wrap">
+              <span class="capability-search-icon">🔎</span>
+              <input type="text" id="sidebar-capability-filter" class="sidebar-capability-filter" placeholder="Filter 348+ capabilities..." autocomplete="off" spellcheck="false" />
             </div>
 
             <!-- 1. Classification & Taxonomy -->
@@ -751,6 +748,15 @@
                   <span class="tool-tag">@boost</span>
                 </button>
               </div>
+            </div>
+
+            <div class="sidebar-tools-audit-bar" style="display: flex; gap: 4px; margin-top: 8px; padding: 4px 2px 2px 2px;">
+              <button type="button" class="btn-sidebar-audit-menus" id="btn-sidebar-audit-menus" title="Run automated click-test across sidebar menus" style="flex: 1;">
+                <span>🧪</span> <span>Menus</span>
+              </button>
+              <button type="button" class="btn-sidebar-audit-menus" id="btn-sidebar-audit-all" title="Run comprehensive end-to-end audit across all links, buttons, prompts &amp; resource logic" style="flex: 1.4; background: rgba(59, 130, 246, 0.12); color: #3b82f6; border-color: rgba(59, 130, 246, 0.4);">
+                <span>⚡</span> <span>Audit All</span>
+              </button>
             </div>
           </div>
         </div>

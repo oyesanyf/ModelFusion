@@ -15378,7 +15378,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     browserFrame.onload = () => {
       clearTimeout(checkTimeout);
       const currentSrc = (browserFrame.src || '').trim();
-      if (!currentSrc || currentSrc === 'about:blank' || currentSrc.endsWith('about:blank')) {
+      if (!currentSrc || currentSrc === 'about:blank' || currentSrc.endsWith('about:blank') || (typeof frameFallback !== 'undefined' && frameFallback && !frameFallback.classList.contains('hidden'))) {
         return;
       }
       if (browserFrame.src && browserFrame.src.includes('/api/proxy')) {
@@ -22270,19 +22270,6 @@ Respond with ONLY a valid JSON object matching this schema:
             return;
           }
         }
-      }
-    }
-
-    const activeSession = chatSessions.find(s => s.id === currentSessionId);
-    if (activeSession) {
-      const lastMsg = activeSession.messages[activeSession.messages.length - 1];
-      if (!lastMsg || lastMsg.role !== 'user' || lastMsg.content !== cmd) {
-        activeSession.messages.push({
-          role: 'user',
-          content: cmd,
-          attachments: currentAttachments
-        });
-        saveChatHistory();
       }
     }
 
@@ -34734,13 +34721,21 @@ The current calendar year is 2026. If you are asked about real-world facts such 
   const sidebarToolsToggle = document.getElementById('sidebar-tools-toggle');
   const sidebarToolsAccordion = document.getElementById('sidebar-tools-accordion');
 
+  function toggleSidebarToolsAccordion(forceOpen) {
+    if (!sidebarToolsAccordion) return;
+    const isCurrentlyCollapsed = sidebarToolsAccordion.classList.contains('collapsed');
+    const shouldOpen = (typeof forceOpen === 'boolean') ? forceOpen : isCurrentlyCollapsed;
+    sidebarToolsAccordion.classList.toggle('collapsed', !shouldOpen);
+    const chevron = document.getElementById('tools-accordion-chevron');
+    if (chevron) {
+      chevron.textContent = shouldOpen ? '▾' : '▸';
+    }
+  }
+  window.toggleSidebarToolsAccordion = toggleSidebarToolsAccordion;
+
   if (sidebarToolsToggle && sidebarToolsAccordion) {
     sidebarToolsToggle.addEventListener('click', () => {
-      sidebarToolsAccordion.classList.toggle('collapsed');
-      const chevron = document.getElementById('tools-accordion-chevron');
-      if (chevron) {
-        chevron.textContent = sidebarToolsAccordion.classList.contains('collapsed') ? '▸' : '▾';
-      }
+      toggleSidebarToolsAccordion();
     });
   }
 
@@ -35538,6 +35533,55 @@ The current calendar year is 2026. If you are asked about real-world facts such 
     });
   }
 
+  // Live Capability Filter Search Box
+  const capabilityFilterInput = document.getElementById('sidebar-capability-filter');
+  if (capabilityFilterInput) {
+    capabilityFilterInput.addEventListener('input', (e) => {
+      const q = (e.target.value || '').trim().toLowerCase();
+      const categories = document.querySelectorAll('.tool-category');
+
+      categories.forEach((catEl) => {
+        const headerEl = catEl.querySelector('.tool-category-header');
+        const contentEl = catEl.querySelector('.tool-category-content');
+        const chevronEl = catEl.querySelector('.cat-chevron');
+        const catTitleEl = catEl.querySelector('.cat-title');
+        const catTitleText = (catTitleEl ? catTitleEl.textContent : '').toLowerCase();
+        const toolBtns = catEl.querySelectorAll('.tool-item-btn, .tool-command-btn');
+
+        if (!q) {
+          catEl.style.display = '';
+          toolBtns.forEach(btn => { btn.style.display = ''; });
+          return;
+        }
+
+        const catMatches = catTitleText.includes(q);
+        let matchingChildCount = 0;
+
+        toolBtns.forEach(btn => {
+          const label = (btn.querySelector('.tool-label') ? btn.querySelector('.tool-label').textContent : '').toLowerCase();
+          const tag = (btn.querySelector('.tool-tag') ? btn.querySelector('.tool-tag').textContent : '').toLowerCase();
+          const cmd = (btn.getAttribute('data-cmd') || '').toLowerCase();
+          const title = (btn.getAttribute('title') || '').toLowerCase();
+
+          const btnMatches = catMatches || label.includes(q) || tag.includes(q) || cmd.includes(q) || title.includes(q);
+          btn.style.display = btnMatches ? '' : 'none';
+          if (btnMatches) matchingChildCount++;
+        });
+
+        if (catMatches || matchingChildCount > 0) {
+          catEl.style.display = '';
+          if (contentEl) {
+            contentEl.classList.remove('collapsed');
+            if (chevronEl) chevronEl.textContent = '▾';
+          }
+          if (headerEl) headerEl.classList.add('open');
+        } else {
+          catEl.style.display = 'none';
+        }
+      });
+    });
+  }
+
   // Toggle category sections
   document.querySelectorAll('.tool-category-header').forEach((catHeader) => {
     catHeader.addEventListener('click', () => {
@@ -35549,6 +35593,9 @@ The current calendar year is 2026. If you are asked about real-world facts such 
           chevron.textContent = isCollapsed ? '▸' : '▾';
         }
         catHeader.classList.toggle('open', !isCollapsed);
+        if (!isCollapsed) {
+          catHeader.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
       }
     });
   });
