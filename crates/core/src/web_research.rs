@@ -995,7 +995,14 @@ pub fn langextract_interpret_query(raw_query: &str, history: &[String]) -> serde
                 let clean_turn = turn.trim();
                 let words: Vec<&str> = clean_turn.split_whitespace().collect();
                 if !words.is_empty() && words.len() <= 5 {
-                    resolved_entity = Some(words.join(" "));
+                    let title_cased = words.iter().map(|w| {
+                        let mut c = w.chars();
+                        match c.next() {
+                            None => String::new(),
+                            Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                        }
+                    }).collect::<Vec<_>>().join(" ");
+                    resolved_entity = Some(title_cased);
                     is_followup = true;
                     extractions.push(serde_json::json!({
                         "extraction_class": "coreference",
@@ -1088,6 +1095,9 @@ pub fn langextract_interpret_query(raw_query: &str, history: &[String]) -> serde
 
     if is_person || is_followup || intent == "publication_inquiry" || intent == "deep_research" {
         route_to_web = true;
+        if intent == "qa" {
+            intent = "web_search".to_string();
+        }
     }
 
     serde_json::json!({
@@ -1368,22 +1378,22 @@ pub async fn synthesize_research(
     let system_prompt = "\
 You are an Autonomous Deep Web Research Agent powered by open-weight reasoning models (Qwen 2.5 / DeepSeek-R1). \
 Your objective is to analyze, verify, and synthesize real-time internet search results into an authoritative, \
-comprehensive, and structured research report.
+comprehensive, exhaustive, and multi-section research monograph in ChatGPT-grade depth and prose.
 
 Guidelines:
-- Deliver deep technical and commercial insights with rigorous analytical clarity.
-- Structure using clear markdown headings:
+- Generate a long, factual, publication-grade report with rich markdown headings:
   # 🌐 Deep Research Report: <Title>
-  ## 📋 Executive Summary
-  ## 🚀 Key Developments & Breakthroughs
-  ## 🔬 Technical Deep Dive & Architecture
-  ## 📈 Market & Commercial Outlook
-  ## 📚 Sources & Citations
-- In the Sources section, cite every relevant source as a markdown link [Source Title](URL).
-- Highlight key metrics, players, benchmarks, and dates.";
+  ## 📋 Executive Summary & Direct Factual Overview
+  ## 🚀 Key Developments, Breakthroughs & Verified Works
+  ## 🔬 Technical Deep Dive, Architecture & Methodologies
+  ## 📈 Market, Commercial, Policy & Future Implications
+  ## 📚 Verified Sources & Annotated Citations
+- Base all biographical claims, publications, and professional affiliations strictly on the retrieved search data. Never fabricate careers or invent unrelated affiliations (e.g. never claim cybersecurity leaders or researchers are Nollywood actors).
+- In the Sources section, cite every relevant source as a markdown link [Source Title](URL) with an explanatory note.
+- Highlight key metrics, publications, authors, benchmarks, and dates.";
 
     let user_prompt = format!(
-        "Research Topic: \"{}\"\n\nLive Internet Search Data (Retrieved):\n{}\n\nGenerate the complete research report:",
+        "Research Topic: \"{}\"\n\nLive Internet Search Data (Retrieved):\n{}\n\nGenerate the complete, exhaustive research report:",
         query, context_block
     );
 
@@ -1400,7 +1410,7 @@ Guidelines:
         "stream": false,
         "options": {
             "temperature": 0.3,
-            "num_predict": 2048
+            "num_predict": 4096
         }
     });
 
@@ -1455,7 +1465,11 @@ pub async fn run_deep_research(
         search_arxiv(query, 5)
     );
     let web_results = web_res.unwrap_or_default();
-    let arxiv_results = arxiv_res.unwrap_or_default();
+    let raw_arxiv_results = arxiv_res.unwrap_or_default();
+    let arxiv_results: Vec<SearchResult> = raw_arxiv_results
+        .into_iter()
+        .filter(|r| calculate_search_relevance(query, &r.title, &r.snippet) >= 0)
+        .collect();
     let n_web = web_results.len();
     let m_arxiv = arxiv_results.len();
     println!(

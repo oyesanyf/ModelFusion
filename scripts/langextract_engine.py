@@ -28,6 +28,54 @@ STOPWORDS = {
     "would", "should", "could", "tell", "show", "give", "find", "search", "lookup"
 }
 
+GREETINGS = {
+    "hello", "hi", "hey", "thanks", "thank you", "good morning", "good evening", "good afternoon", "welcome", "greetings"
+}
+
+PROMPT_DESCRIPTION = "Extract named entities (person, organization, topic), action intents, and publication inquiries with exact character intervals."
+EXAMPLES = [
+    lx.data.AnnotatedDocument(
+        document_id="example-1",
+        text="who is Femi Oyesanya",
+        extractions=[
+            lx.data.Extraction(
+                extraction_class="person",
+                extraction_text="Femi Oyesanya",
+                char_interval=lx.data.CharInterval(start_pos=7, end_pos=19),
+                attributes={"role": "researcher_or_author"}
+            )
+        ]
+    )
+] if HAS_LANGEXTRACT else []
+
+def run_official_lx_extract(text: str, model_id: str = "qwen2.5:7b", model_url: str = "http://localhost:11434") -> List[Dict[str, Any]]:
+    """Runs official Google LangExtract extraction via lx.extract with grounding verification."""
+    if not HAS_LANGEXTRACT or not text:
+        return []
+    try:
+        extracted_doc = lx.extract(
+            text_or_documents=text,
+            prompt_description=PROMPT_DESCRIPTION,
+            examples=EXAMPLES,
+            model_id=model_id,
+            model_url=model_url
+        )
+        docs = extracted_doc if isinstance(extracted_doc, list) else [extracted_doc]
+        verified_extractions = []
+        for doc in docs:
+            for e in getattr(doc, "extractions", []):
+                if e.char_interval:
+                    verified_extractions.append({
+                        "extraction_class": e.extraction_class,
+                        "extraction_text": e.extraction_text,
+                        "char_interval": {"start_pos": e.char_interval.start_pos, "end_pos": e.char_interval.end_pos},
+                        "attributes": getattr(e, "attributes", {}) or {}
+                    })
+        return verified_extractions
+    except Exception as e:
+        sys.stderr.write(f"[LangExtract LLM Warning] {e}\n")
+        return []
+
 def extract_char_intervals(text: str, substring: str) -> List[Dict[str, int]]:
     """Finds all non-overlapping character intervals for a substring in text."""
     intervals = []
@@ -44,6 +92,9 @@ def extract_char_intervals(text: str, substring: str) -> List[Dict[str, int]]:
         start = pos + max(1, len(substring))
     return intervals
 
+def title_case_words(s: str) -> str:
+    return " ".join(w.capitalize() for w in s.split())
+
 def resolve_coreference_from_history(query: str, history: List[str]) -> Optional[str]:
     """Finds the most recent prominent person or entity from conversation history."""
     if not history:
@@ -53,13 +104,16 @@ def resolve_coreference_from_history(query: str, history: List[str]) -> Optional
         if not turn or not isinstance(turn, str):
             continue
         clean_turn = re.sub(r'^(?:@agent\s+|/|--)?(?:browser\s+deep\s+research\s+on|deep\s+research\s+on|search|research|wiki|arxiv)?\s*', '', turn, flags=re.IGNORECASE).strip()
-        # Look for capitalized 2-4 word names or proper nouns
+        # Look for 1-5 word names or proper nouns
         words = [w.strip(".,;:?!'\"") for w in clean_turn.split() if w.strip(".,;:?!'\"")]
         if 1 <= len(words) <= 5:
-            # Check if it has non-stopwords
+            # Check if it has non-stopwords and not greeting
+            clean_phrase = " ".join(words).lower()
+            if clean_phrase in GREETINGS:
+                continue
             non_stops = [w for w in words if w.lower() not in STOPWORDS]
             if len(non_stops) >= 1:
-                return " ".join(words)
+                return title_case_words(" ".join(words))
     return None
 
 def interpret_query_langextract(
@@ -257,6 +311,8 @@ def interpret_query_langextract(
     # If it is a person/author lookup or publication inquiry, always route to web
     if is_person or is_followup or intent in ("publication_inquiry", "deep_research", "web_search"):
         route_to_web = True
+        if intent == "qa":
+            intent = "web_search"
 
     # Build response
     result_dict = {
@@ -305,6 +361,9 @@ def main():
     parser.add_argument("--history", type=str, default="[]", help="JSON array of prior turns for coreference")
     parser.add_argument("--active-menu-tool", type=str, default="", help="Active sidebar menu category/tool")
     parser.add_argument("--html", type=str, default="", help="Path to write interactive HTML visualization")
+    parser.add_argument("--use-llm", action="store_true", help="Invoke official lx.extract with local LLM verification")
+    parser.add_argument("--model-id", type=str, default="qwen2.5:7b", help="Model ID for lx.extract")
+    parser.add_argument("--model-url", type=str, default="http://localhost:11434", help="Model URL for lx.extract")
     args = parser.parse_args()
 
     query = args.query
@@ -325,6 +384,13 @@ def main():
                 history = [cleaned]
 
     result = interpret_query_langextract(query, history, args.active_menu_tool)
+
+    # Optional official LangExtract LLM extraction
+    if args.use_llm and HAS_LANGEXTRACT:
+        official_exts = run_official_lx_extract(query, model_id=args.model_id, model_url=args.model_url)
+        if official_exts:
+            result["official_lx_extractions"] = official_exts
+            result["extractions"].extend(official_exts)
 
     # Optional HTML visualization using lx.visualize
     if args.html and HAS_LANGEXTRACT:
