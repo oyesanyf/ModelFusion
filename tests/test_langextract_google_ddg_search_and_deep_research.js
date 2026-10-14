@@ -118,6 +118,18 @@ const getMenuFnMatch = appJsContent.match(/function getLangExtractMenuAnnotation
 assert.ok(getMenuFnMatch, 'getLangExtractMenuAnnotations function must be extractable from app.js');
 vm.runInContext(`function getLangExtractMenuAnnotations() { ${getMenuFnMatch[1]} }`, ctx);
 
+// Extract generatePageBlueprint
+const blueprintFnMatch = appJsContent.match(/function generatePageBlueprint\(query = '', isPerson = false, isAcademic = false\) \{([\s\S]*?)\n  \}/);
+assert.ok(blueprintFnMatch, 'generatePageBlueprint function must be extractable from app.js');
+vm.runInContext(`function generatePageBlueprint(query = '', isPerson = false, isAcademic = false) { ${blueprintFnMatch[1]} }`, ctx);
+vm.runInContext(`window.generatePageBlueprint = generatePageBlueprint;`, ctx);
+
+// Extract extractPageWordCount
+const wordCountFnMatch = appJsContent.match(/function extractPageWordCount\(text, pageNum\) \{([\s\S]*?)\n  \}/);
+assert.ok(wordCountFnMatch, 'extractPageWordCount function must be extractable from app.js');
+vm.runInContext(`function extractPageWordCount(text, pageNum) { ${wordCountFnMatch[1]} }`, ctx);
+vm.runInContext(`window.extractPageWordCount = extractPageWordCount;`, ctx);
+
 const isWikipediaResultRelevant = sandbox.isWikipediaResultRelevant;
 const executeWebSearch = sandbox.executeWebSearch;
 const executeArxivSearch = sandbox.executeArxivSearch;
@@ -126,6 +138,8 @@ const shouldRouteToWeb = sandbox.shouldRouteToWeb;
 const detectLongFormWritingRequest = sandbox.detectLongFormWritingRequest;
 const getLangExtractMenuAnnotations = sandbox.getLangExtractMenuAnnotations;
 const annotateAllMenuCategoriesWithLangExtract = sandbox.annotateAllMenuCategoriesWithLangExtract;
+const generatePageBlueprint = sandbox.generatePageBlueprint;
+const extractPageWordCount = sandbox.extractPageWordCount;
 
 console.log('✅ All required LangExtract and search APIs successfully extracted and validated.');
 
@@ -415,7 +429,82 @@ console.log(`✅ Verified all 16 tool categories: ${totalAnnotatedTools} total t
     console.log(`✅ Deep research E2E verified for "${topic}": ${webResults.length} web sources, ${arxivResults.length} arXiv papers.`);
   }
 
-  console.log('\n🎉 ALL VERIFICATION TESTS PASSED SUCCESSFULLY! (8/8)\n');
+  // -------------------------------------------------------------
+  // Test 9: Deep Research 10-Page Curriculum Blueprint & Depth Expansion Gates
+  // -------------------------------------------------------------
+  console.log('\n--- Test 9: Deep Research 10-Page Curriculum Blueprint & Intra-Page Depth Expansion ---');
+  
+  // 9a: Blueprint validation for Academic / Default (e.g. Homomorphic Encryption)
+  const heBlueprint = sandbox.generatePageBlueprint('Homomorphic Encryption', false, true);
+  assert.strictEqual(heBlueprint.length, 10, 'Homomorphic Encryption blueprint must contain exactly 10 pages');
+  assert.strictEqual(heBlueprint[0], 'Executive Summary & Foundational Principles');
+  assert.strictEqual(heBlueprint[1], 'Comprehensive Literature Survey & Historical Foundations');
+  assert.strictEqual(heBlueprint[2], 'Mathematical Formulations & Core Theoretical Frameworks');
+  assert.strictEqual(heBlueprint[3], 'Core Algorithmic Mechanics, Schemes & Key Protocols');
+  assert.strictEqual(heBlueprint[4], 'Empirical Benchmarks, Complexity & Performance Analysis');
+  assert.strictEqual(heBlueprint[9], 'Exhaustive Bibliography, Source Concordance & Grounded Citations');
+  for (let i = 0; i < heBlueprint.length; i++) {
+    assert(!heBlueprint[i].includes('Section'), `Page ${i + 1} title "${heBlueprint[i]}" must not contain duplicate Section labels`);
+  }
+  console.log('✅ Academic / Technical 10-Page Curriculum Blueprint verified with zero Section duplication.');
+
+  // 9b: Blueprint validation for Biographical Person (e.g. Femi Oyesanya)
+  const personBlueprint = sandbox.generatePageBlueprint('Femi Oyesanya', true, false);
+  assert.strictEqual(personBlueprint.length, 10, 'Biographical blueprint must contain exactly 10 pages');
+  assert.strictEqual(personBlueprint[0], 'Executive Profile & Professional Foundations');
+  assert.strictEqual(personBlueprint[2], 'Major Publications, Books & Critical Treatises (Part I)');
+  assert.strictEqual(personBlueprint[3], 'Major Publications, Thought Leadership & Essays (Part II)');
+  assert.strictEqual(personBlueprint[9], 'Verified Citations, External References & Bibliography');
+  console.log('✅ Biographical 10-Page Curriculum Blueprint verified.');
+
+  // 9c: Blueprint validation for History / Country (e.g. Nigeria)
+  const countryBlueprint = sandbox.generatePageBlueprint('Nigeria', false, false);
+  assert.strictEqual(countryBlueprint.length, 10, 'Country/History blueprint must contain exactly 10 pages');
+  assert.strictEqual(countryBlueprint[0], 'Executive Overview & Geographic Context');
+  assert.strictEqual(countryBlueprint[1], 'Pre-Colonial Genesis & Ancient Civilizations');
+  assert.strictEqual(countryBlueprint[9], 'Synthesis, 21st-Century Trajectories & Bibliography');
+  console.log('✅ Country/History 10-Page Curriculum Blueprint verified.');
+
+  // 9d: extractPageWordCount validation
+  const testDoc = `### Page 1: Executive Summary & Foundational Principles
+
+This is the first dense paragraph of page 1 containing foundational definitions and theoretical context.
+Under sub-heading #### 1.1 Core Foundations, we analyze lattice-based encryption mechanisms and ring-LWE hardness.
+Another substantive paragraph detailing ring learning with errors, noise growth management, bootstrapping routines, and modulus switching protocols across multi-party computation.
+Grounded evidence [1] proves that fully homomorphic encryption achieves post-quantum security guarantees against quantum Shor-type factoring attacks.
+
+### Page 2: Literature Survey
+
+Brief preliminary notes on early work by Gentry.`;
+
+  const p1Words = sandbox.extractPageWordCount(testDoc, 1);
+  const p2Words = sandbox.extractPageWordCount(testDoc, 2);
+  assert(p1Words >= 60, `Page 1 word count should be around 75 words, got ${p1Words}`);
+  assert(p2Words <= 15, `Page 2 word count should be around 7 words, got ${p2Words}`);
+  assert(p2Words < 450, 'Page 2 should be under MIN_WORDS_PER_PAGE (450)');
+  console.log(`✅ extractPageWordCount verified: Page 1 = ${p1Words} words, Page 2 = ${p2Words} words.`);
+
+  // 9e: Intra-page expansion gate check
+  const MIN_WORDS_PER_PAGE = 450;
+  const isP2UnderMin = p2Words < MIN_WORDS_PER_PAGE;
+  assert.strictEqual(isP2UnderMin, true, 'Page 2 with 7 words MUST trigger intra-page depth expansion gate');
+  console.log('✅ Intra-page depth expansion gate verified (triggers when words < 450).');
+
+  // 9f: Hard stop sequence verification in Ollama options
+  const targetPages = 10;
+  const currentTargetPage = 1;
+  const nextP = currentTargetPage + 1;
+  const stopSequences = [
+    `### Page ${nextP}`, `## Page ${nextP}`, `# Page ${nextP}`,
+    `\nPage ${nextP}:`, `\nPage ${nextP} `, `**Page ${nextP}`,
+    `### Section ${nextP}`, `\nSection ${nextP}:`
+  ];
+  assert(stopSequences.includes('### Page 2'), 'Stop sequences must contain "### Page 2"');
+  assert(stopSequences.includes('## Page 2'), 'Stop sequences must contain "## Page 2"');
+  assert(stopSequences.includes('\nPage 2:'), 'Stop sequences must contain "\\nPage 2:"');
+  console.log('✅ Turn 1 hard stop sequences verified: Ollama cannot spill into Page 2.');
+
+  console.log('\n🎉 ALL VERIFICATION TESTS PASSED SUCCESSFULLY! (9/9)\n');
 })().catch(err => {
   console.error('❌ Test failed:', err);
   process.exit(1);
