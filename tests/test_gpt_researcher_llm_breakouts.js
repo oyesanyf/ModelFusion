@@ -30,14 +30,26 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { execSync } = require('child_process');
 
 console.log('🧪 Starting Verification: GPT-Researcher 8-Agent Synthesized Deep Research on "research LLM break outs"\n');
+
+// -------------------------------------------------------------
+// Test 0: Static Syntax & Duplicate Declaration Guard on app.js
+// -------------------------------------------------------------
+console.log('--- Test 0: Static Syntax & Duplicate Declaration Guard on app.js ---');
+const appJsPath = path.join(__dirname, '..', 'browser', 'ui', 'app.js');
+try {
+  execSync(`node -c "${appJsPath}"`, { stdio: 'pipe' });
+  console.log('  ✅ node -c browser/ui/app.js passed with 0 syntax errors');
+} catch (e) {
+  assert.fail(`Fatal syntax error in browser/ui/app.js: ${e.stderr ? e.stderr.toString() : e.message}`);
+}
 
 // -------------------------------------------------------------
 // Test 1: Load and Setup VM Environment with app.js
 // -------------------------------------------------------------
 console.log('--- Test 1: Environment Setup & 8-Agent Engine Loading ---');
-const appJsPath = path.join(__dirname, '..', 'browser', 'ui', 'app.js');
 const appJsContent = fs.readFileSync(appJsPath, 'utf8').replace(/\r\n/g, '\n');
 
 const sandbox = {
