@@ -340,9 +340,11 @@ console.log('✅ All 8 GPT-Researcher agents, skills, and synthesized deep resea
   const conclusion = writeConclusion(targetTopic, dossier);
 
   // Review draft
-  const reviewResult = reviewResearchDraft(sections, { minWordsPerPage: 150 });
+  const reviewResult = reviewResearchDraft(sections, { minWordsPerPage: 450 });
   assert.strictEqual(reviewResult.approved, true, 'Draft sections must pass ReviewerAgent criteria');
-  console.log(`✅ ReviewerAgent: Draft certified with score ${reviewResult.overallScore}% (${reviewResult.passedSections}/${reviewResult.totalSections} sections approved).`);
+  assert.strictEqual(reviewResult.overallScore, 100, `Draft sections must achieve 100% approval, got ${reviewResult.overallScore}%`);
+  assert.strictEqual(reviewResult.passedSections, reviewResult.totalSections, `All ${reviewResult.totalSections} sections must pass review`);
+  console.log(`✅ ReviewerAgent: Draft certified with score ${reviewResult.overallScore}% (${reviewResult.passedSections}/${reviewResult.totalSections} sections approved with >= 450 words/page).`);
 
   // Publish final monograph
   const fullMonograph = publishResearchMonograph(targetTopic, sections, dossier, agentSelection);
@@ -350,6 +352,7 @@ console.log('✅ All 8 GPT-Researcher agents, skills, and synthesized deep resea
   assert(fullMonograph.includes('## 📑 Table of Contents'), 'Must include Table of Contents');
   assert(fullMonograph.includes('### Exhaustive Bibliography & Grounded Citations'), 'Must include references bibliography');
   const totalMonographWords = fullMonograph.split(/\s+/).filter(Boolean).length;
+  assert(totalMonographWords >= 4500, `Total monograph must have >= 4500 words, got ${totalMonographWords}`);
   console.log(`✅ PublisherAgent: Published 10-Page Research Monograph (${totalMonographWords} total words, APA/IEEE references included).`);
 
   // -------------------------------------------------------------
