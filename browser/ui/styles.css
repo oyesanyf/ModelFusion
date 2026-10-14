@@ -1557,10 +1557,64 @@ body {
 
 .fallback-buttons {
   display: flex;
-  gap: 10px;
-  margin-top: 8px;
+  gap: 12px;
+  margin-top: 10px;
   flex-wrap: wrap;
   justify-content: center;
+}
+
+.cli-run-btn,
+#btn-open-toplevel {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%) !important;
+  border: 1px solid #38bdf8 !important;
+  color: #ffffff !important;
+  padding: 8px 18px !important;
+  border-radius: 8px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.35) !important;
+  transition: all 0.2s ease-in-out !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  text-decoration: none !important;
+}
+
+.cli-run-btn:hover,
+#btn-open-toplevel:hover {
+  background: linear-gradient(135deg, #0369a1 0%, #075985 100%) !important;
+  border-color: #7dd3fc !important;
+  box-shadow: 0 6px 16px rgba(2, 132, 199, 0.5) !important;
+  transform: translateY(-1px) !important;
+}
+
+.cli-btn-secondary,
+#btn-fallback-retry,
+#btn-fallback-home {
+  background: rgba(30, 41, 59, 0.9) !important;
+  border: 1px solid rgba(148, 163, 184, 0.35) !important;
+  color: #e2e8f0 !important;
+  padding: 8px 16px !important;
+  border-radius: 8px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+  transition: all 0.2s ease-in-out !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  text-decoration: none !important;
+}
+
+.cli-btn-secondary:hover,
+#btn-fallback-retry:hover,
+#btn-fallback-home:hover {
+  background: rgba(51, 65, 85, 0.95) !important;
+  border-color: rgba(56, 189, 248, 0.6) !important;
+  color: #f8fafc !important;
+  transform: translateY(-1px) !important;
 }
 
 /* -------------------------------------------------------------
