@@ -14941,9 +14941,125 @@ MANDATORY STYLOMETRIC LAWS:
   }
 
   // -----------------------------------------------------------------
+  // 10-Page Unified Curriculum Blueprint Generator for Deep Research
+  // -----------------------------------------------------------------
+  function generatePageBlueprint(query = '', isPerson = false, isAcademic = false) {
+    const qLower = (query || '').toLowerCase();
+    const isHistoryOrCountry = /\b(nigeria|africa|asia|europe|america|country|nation|history|empire|republic|kingdom|colonial|independence|war|revolution|culture|civilization)\b/i.test(qLower);
+    const isFictionStory = /\b(fiction|novel|story|narrative|fantasy|sci-fi|thriller|mystery|romance)\b/i.test(qLower);
+    const isTechSystem = !isAcademic && /\b(software|architecture|system|engineering|database|cloud|devops|microservice|compiler|kernel|network|security|api|backend|frontend)\b/i.test(qLower);
+
+    if (isPerson) {
+      return [
+        'Executive Profile & Professional Foundations',
+        'Early Life, Academic Formations & Key Influences',
+        'Major Publications, Books & Critical Treatises (Part I)',
+        'Major Publications, Thought Leadership & Essays (Part II)',
+        'Technical Frameworks, Patents & Core Specializations',
+        'Detailed Case Studies & Real-World Implementations',
+        'Comparative Scholarship & Critical Discourse',
+        'Strategic Vision, Philosophy & Future Outlook',
+        'Archival Record, Public Contributions & Legacy',
+        'Verified Citations, External References & Bibliography'
+      ];
+    } else if (isHistoryOrCountry) {
+      return [
+        'Executive Overview & Geographic Context',
+        'Pre-Colonial Genesis & Ancient Civilizations',
+        'Colonial Hegemony & Administrative Fault Lines',
+        'Nationalist Mobilization & Sovereign Independence',
+        'Post-Independence Governance, Crises & Transitions',
+        'Political Economy, Resource Dynamics & Fiscal Policy',
+        'Social Transformations, Demographics & Urbanization',
+        'Digital Infrastructure, Innovation & Industry',
+        'Regional Integration, Foreign Policy & Global Standing',
+        'Synthesis, 21st-Century Trajectories & Bibliography'
+      ];
+    } else if (isFictionStory) {
+      return [
+        'Protagonist Status Quo & The Ordinary World',
+        'Inciting Incident & The Reluctant Call',
+        'Crossing the Threshold & Expanding Stakes',
+        'The Trials, Allies & Emerging Antagonists',
+        'Deepening Conflict & Midpoint Turning Point',
+        'The Crucible, Betrayal & Rising Tension',
+        'The Dark Night of the Soul & Inner Revelation',
+        'Gathering the Force & Strategic Re-engagement',
+        'The Climactic Confrontation & The Climax',
+        'Resolution, New Normal & The Denouement'
+      ];
+    } else if (isTechSystem) {
+      return [
+        'System Overview, Architectural Motivation & Executive Summary',
+        'Domain Context, Related Work & Foundational Literature',
+        'Core Component Topology & Data Flow Pipelines',
+        'Protocol Specifications, Wire Formats & State Machines',
+        'Algorithmic Mechanics, Data Structures & Concurrency Models',
+        'Performance Profiles, Latency Analysis & Benchmarks',
+        'Resilience, Fault Tolerance & Chaos Engineering',
+        'Security Vectors, Threat Modeling & Access Control',
+        'Production Deployment, Observability & Operational Runbooks',
+        'Future Trajectories, Open Challenges & Bibliography'
+      ];
+    } else {
+      return [
+        'Executive Summary & Foundational Principles',
+        'Comprehensive Literature Survey & Historical Foundations',
+        'Mathematical Formulations & Core Theoretical Frameworks',
+        'Core Algorithmic Mechanics, Schemes & Key Protocols',
+        'Empirical Benchmarks, Complexity & Performance Analysis',
+        'Hardware Acceleration, Co-processors & Implementation Constraints',
+        'Threat Models, Attack Vectors & Cryptographic Security Proofs',
+        'Practical Enterprise Applications & Industrial Case Studies',
+        'Emerging Frontiers, Standardization & Open Research Problems',
+        'Exhaustive Bibliography, Source Concordance & Grounded Citations'
+      ];
+    }
+  }
+  if (typeof window !== 'undefined') {
+    window.generatePageBlueprint = generatePageBlueprint;
+  }
+
+  function extractPageWordCount(text, pageNum) {
+    if (!text || typeof text !== 'string') return 0;
+    const pageHeaderRegex = new RegExp(`(?:^|\\n)\\s*#{1,4}\\s*Page\\s+${pageNum}\\b`, 'i');
+    const match = text.match(pageHeaderRegex);
+    if (!match) {
+      return text.split(/\s+/).filter(Boolean).length;
+    }
+    const startIndex = match.index;
+    const nextPageHeaderRegex = new RegExp(`(?:^|\\n)\\s*#{1,4}\\s*Page\\s+${pageNum + 1}\\b`, 'i');
+    const rest = text.slice(startIndex + match[0].length);
+    const nextMatch = rest.match(nextPageHeaderRegex);
+    const slice = nextMatch ? rest.slice(0, nextMatch.index) : rest;
+    return slice.split(/\s+/).filter(Boolean).length;
+  }
+  if (typeof window !== 'undefined') {
+    window.extractPageWordCount = extractPageWordCount;
+  }
+
+  function extractChapterWordCount(text, chapNum) {
+    if (!text || typeof text !== 'string') return 0;
+    const chapHeaderRegex = new RegExp(`(?:^|\\n)\\s*#{1,4}\\s*Chapter\\s+${chapNum}\\b`, 'i');
+    const match = text.match(chapHeaderRegex);
+    if (!match) {
+      return text.split(/\s+/).filter(Boolean).length;
+    }
+    const startIndex = match.index;
+    const nextChapHeaderRegex = new RegExp(`(?:^|\\n)\\s*#{1,4}\\s*Chapter\\s+${chapNum + 1}\\b`, 'i');
+    const rest = text.slice(startIndex + match[0].length);
+    const nextMatch = rest.match(nextChapHeaderRegex);
+    const slice = nextMatch ? rest.slice(0, nextMatch.index) : rest;
+    return slice.split(/\s+/).filter(Boolean).length;
+  }
+  if (typeof window !== 'undefined') {
+    window.extractChapterWordCount = extractChapterWordCount;
+  }
+
+  // -----------------------------------------------------------------
   // Anti-Loop Circuit Breaker: Detect if a generation turn repeats earlier pages/chapters or sentences
   // -----------------------------------------------------------------
-  function checkAntiLoopCircuitBreaker(fullResponseBeforeTurn = '', turnResponse = '') {
+  function checkAntiLoopCircuitBreaker(fullResponseBeforeTurn = '', turnResponse = '', currentTargetPage = 0) {
     const cleanTurnResponse = (turnResponse || '').trim();
     if (!cleanTurnResponse || !fullResponseBeforeTurn) {
       return { isLoopDetected: false, restartsFromBeginning: false, repetitionRatio: 0 };
@@ -14952,8 +15068,9 @@ MANDATORY STYLOMETRIC LAWS:
     const priorFullLower = fullResponseBeforeTurn.toLowerCase();
 
     // Check A: Turn restarts from Page 1 or Chapter 1 when fullResponseBeforeTurn already contains it
+    // Exception: If currentTargetPage <= 1 (e.g. intra-page depth expansion on Page 1), it is not a restart loop
     const restartsFromBeginning = Boolean(
-      /\b(?:page|chapter)\s+1\b/i.test(cleanTurnResponse) &&
+      (currentTargetPage <= 1 ? false : /\b(?:page|chapter)\s+1\b/i.test(cleanTurnResponse)) &&
       /\b(?:page|chapter)\s+1\b/i.test(fullResponseBeforeTurn)
     );
 
@@ -15610,11 +15727,32 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
       (options && (options.isDeepResearch || options.taskType === 'research' || options.taskType === 'search' || options.isSearchSynthesis))
     );
 
+    const isMultiPageTarget = Boolean(
+      intention && (intention.targetPages > 1 || intention.targetChapters > 1) &&
+      !(options && options.isContinuation)
+    );
+
     let initialUserContent = userPrompt;
-    if (!isSearchOrResearch && intention && intention.targetPages > 1 && !(options && options.isContinuation)) {
-      initialUserContent = `${userPrompt}\n\n[EXECUTION INSTRUCTION]: This is an in-depth ${intention.targetPages}-page document. In this first turn, write ONLY Page 1 in full, immersive, publication-grade depth (at least 500-600 words for Page 1 alone). Clearly label it '### Page 1: [Title]'. Do NOT skip ahead or summarize subsequent pages; develop Page 1 thoroughly with multiple rich paragraphs.`;
-    } else if (!isSearchOrResearch && intention && intention.targetChapters > 1 && !(options && options.isContinuation)) {
-      initialUserContent = `${userPrompt}\n\n[EXECUTION INSTRUCTION]: This is an in-depth ${intention.targetChapters}-chapter document. In this first turn, write ONLY Chapter 1 in full, immersive, publication-grade depth (at least 600-800 words for Chapter 1 alone). Clearly label it '### Chapter 1: [Title]'. Do NOT skip ahead or summarize subsequent chapters; develop Chapter 1 thoroughly.`;
+    if (isMultiPageTarget) {
+      if (intention && intention.targetPages > 1) {
+        const p1Title = (options && options.pageBlueprint && options.pageBlueprint[0])
+          ? options.pageBlueprint[0]
+          : 'Executive Summary & Foundational Principles';
+        initialUserContent = `${userPrompt}\n\n[MANDATORY PAGE-BY-PAGE EXECUTION PROTOCOL — TURN 1 (PAGE 1 OF ${intention.targetPages} ONLY)]:
+You are writing Page 1 of an exhaustive ${intention.targetPages}-page treatise.
+In this turn, write ONLY '### Page 1: ${p1Title}'.
+CRITICAL LENGTH & DEPTH LAW FOR PAGE 1:
+- Page 1 ALONE must be at least 550 to 750 words (minimum 6 to 8 long, dense, fully developed paragraphs).
+- Organize Page 1 with 3 internal sub-headings: '#### 1.1 Core Foundations & Definitions', '#### 1.2 Theoretical & Historical Context', and '#### 1.3 Key Mechanisms & Verified Evidence'.
+- Under each sub-heading, write 2 to 3 long, detailed, analytical paragraphs packed with concrete facts, mathematical/technical specifics, and inline citations [1], [2] referencing the Verified Grounding Context URLs.
+- DO NOT write Page 2 or any subsequent page headers in this turn! Stop immediately once Page 1 is complete.`;
+      } else if (intention && intention.targetChapters > 1) {
+        initialUserContent = `${userPrompt}\n\n[MANDATORY CHAPTER-BY-CHAPTER EXECUTION PROTOCOL — TURN 1 (CHAPTER 1 OF ${intention.targetChapters} ONLY)]:
+You are writing Chapter 1 of an in-depth ${intention.targetChapters}-chapter work.
+In this turn, write ONLY Chapter 1 in full, immersive, publication-grade depth (at least 600-800 words for Chapter 1 alone). Clearly label it '### Chapter 1: [Title]'.
+- Organize Chapter 1 with 3 internal sub-headings: '#### 1.1 Exposition & Status Quo', '#### 1.2 Inciting Developments', and '#### 1.3 Rising Complications'.
+- Do NOT skip ahead or summarize subsequent chapters; develop Chapter 1 thoroughly. DO NOT write Chapter 2 in this turn!`;
+      }
     }
 
     const messagePayload = {
@@ -15775,8 +15913,8 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
           );
       const chunkSize = currentSettings.agenticChunkSize || (targetTokens >= 65536 ? 8192 : Math.min(targetTokens, 8192));
       const maxLoops = isAgenticLoop
-        ? (options && options.maxLoops ? options.maxLoops : Math.max(16, Math.min(2048, Math.max(Math.ceil(targetTokens / chunkSize), (intention && intention.targetPages ? intention.targetPages : 1) + 5))))
-        : 1;
+        ? (options && options.maxLoops ? options.maxLoops : Math.max(24, Math.min(2048, Math.max(Math.ceil(targetTokens / chunkSize), ((intention && intention.targetPages ? intention.targetPages : 1) * 3) + 5))))
+        : (options && options.isSearchSynthesis ? 2 : 1);
 
       // Accurately compute prompt token estimate across all assembled messages including initialText
       const totalCharsInPrompt = conversationMessages.reduce((sum, m) => sum + (m.content ? m.content.length : 0), 0);
@@ -15816,12 +15954,19 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
       let fullResponse = (options && options.isContinuation && options.initialText) ? (options.initialText.trimEnd() + '\n\n') : '';
       let turnResponse = '';
       let totalEstimatedTokens = fullResponse ? Math.max(1, Math.round(fullResponse.length / 4)) : 0;
+      let currentTargetPage = 1;
+      let intraPageExpansions = 0;
+      let currentTargetChapter = 1;
+      let intraChapterExpansions = 0;
 
       for (let turn = 0; turn < maxLoops; turn++) {
         const fullResponseBeforeTurn = fullResponse;
         turnResponse = '';
         if (isAgenticLoop && agenticBadge) {
-          agenticBadge.innerHTML = `🔄 Agentic Loop: Turn ${turn + 1}/${maxLoops} • ~${Math.round(totalEstimatedTokens).toLocaleString()} / ${targetTokens.toLocaleString()} tokens`;
+          const pageProgStr = (intention && intention.targetPages > 1)
+            ? `Page ${currentTargetPage}/${intention.targetPages}`
+            : ((intention && intention.targetChapters > 1) ? `Chapter ${currentTargetChapter}/${intention.targetChapters}` : `Turn ${turn + 1}/${maxLoops}`);
+          agenticBadge.innerHTML = `🔄 Agentic Loop: ${pageProgStr} • ~${Math.round(totalEstimatedTokens).toLocaleString()} / ${targetTokens.toLocaleString()} tokens`;
         }
 
         // Maintain generous prompt window across deep turns
@@ -15847,6 +15992,20 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
           presence_penalty: presencePenaltyToUse,
           frequency_penalty: frequencyPenaltyToUse
         };
+        if (intention && intention.targetPages > 1 && currentTargetPage <= intention.targetPages) {
+          const nextP = currentTargetPage + 1;
+          currentOllamaOptions.stop = [
+            `### Page ${nextP}`, `## Page ${nextP}`, `# Page ${nextP}`,
+            `\nPage ${nextP}:`, `\nPage ${nextP} `, `**Page ${nextP}`,
+            `### Section ${nextP}`, `\nSection ${nextP}:`
+          ];
+        } else if (intention && intention.targetChapters > 1 && currentTargetChapter <= intention.targetChapters) {
+          const nextC = currentTargetChapter + 1;
+          currentOllamaOptions.stop = [
+            `### Chapter ${nextC}`, `## Chapter ${nextC}`, `# Chapter ${nextC}`,
+            `\nChapter ${nextC}:`, `\nChapter ${nextC} `, `**Chapter ${nextC}`
+          ];
+        }
         const reqBodyStr = JSON.stringify({
           model: resolvedOllamaModel,
           messages: activeMessages,
@@ -16518,9 +16677,27 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
         const cleanTurnResponse = turnResponse.replace(trailingWordCountRegex, '').trimEnd();
         fullResponse = fullResponse.replace(trailingWordCountRegex, '').trimEnd();
 
+        // Sanitize repeated page header during intra-page expansion
+        let sanitizedTurnResponse = cleanTurnResponse;
+        if (intraPageExpansions > 0 && intention && intention.targetPages > 1) {
+          const dupHeaderRegex = new RegExp(`^\\s*#{1,4}\\s*Page\\s+${currentTargetPage}\\b[^\\n]*\\n*`, 'i');
+          if (dupHeaderRegex.test(sanitizedTurnResponse)) {
+            sanitizedTurnResponse = sanitizedTurnResponse.replace(dupHeaderRegex, '').trimStart();
+            fullResponse = fullResponseBeforeTurn + (fullResponseBeforeTurn.endsWith('\n\n') ? '' : '\n\n') + sanitizedTurnResponse;
+            if (responseLine) responseLine.textContent = fullResponse;
+          }
+        } else if (intraChapterExpansions > 0 && intention && intention.targetChapters > 1) {
+          const dupHeaderRegex = new RegExp(`^\\s*#{1,4}\\s*Chapter\\s+${currentTargetChapter}\\b[^\\n]*\\n*`, 'i');
+          if (dupHeaderRegex.test(sanitizedTurnResponse)) {
+            sanitizedTurnResponse = sanitizedTurnResponse.replace(dupHeaderRegex, '').trimStart();
+            fullResponse = fullResponseBeforeTurn + (fullResponseBeforeTurn.endsWith('\n\n') ? '' : '\n\n') + sanitizedTurnResponse;
+            if (responseLine) responseLine.textContent = fullResponse;
+          }
+        }
+
         // Anti-Loop Circuit Breaker: Detect if this turn is repeating previously written pages/chapters or paragraphs
-        if (turn > 0 && cleanTurnResponse) {
-          const loopCheck = checkAntiLoopCircuitBreaker(fullResponseBeforeTurn, cleanTurnResponse);
+        if (turn > 0 && sanitizedTurnResponse) {
+          const loopCheck = checkAntiLoopCircuitBreaker(fullResponseBeforeTurn, sanitizedTurnResponse, currentTargetPage);
           if (loopCheck.isLoopDetected) {
             termLog(`[AGENTIC LOOP] ⚠️ Repetitive generation loop detected (Turn ${turn + 1} repeats earlier pages/sentences, ratio: ${(loopCheck.repetitionRatio * 100).toFixed(0)}%). Halting loop to preserve clean document.`, 'warn');
             fullResponse = fullResponseBeforeTurn; // Revert duplicate turn output
@@ -16552,56 +16729,93 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
         const textToCheckForLength = (options && options.isContinuation && options.initialText)
           ? (options.initialText + '\n\n' + fullResponse)
           : fullResponse;
-        const pageHeaderMatches = textToCheckForLength.match(/(?:^|\n)\s*#{1,4}\s*(?:Page|Chapter)\s+\d+|(?:^|\n)\s*\*{1,2}(?:Page|Chapter)\s+\d+[:\*]|\bPage\s+\d+:/gi) || [];
-        const pageHeadersCount = pageHeaderMatches.length;
         const currentWordCount = textToCheckForLength.split(/\s+/).filter(Boolean).length;
 
-        const pageNums = Array.from(textToCheckForLength.matchAll(/\b(?:Page|Chapter)\s+(\d+)\b/gi), m => parseInt(m[1], 10));
-        const maxPageReached = pageNums.length > 0 ? Math.max(...pageNums) : 0;
-        const hasReachedTargetPages = Boolean(
-          (intention.targetPages > 1 && (maxPageReached >= intention.targetPages || pageHeadersCount >= intention.targetPages)) ||
-          (intention.targetChapters > 1 && (maxPageReached >= intention.targetChapters || pageHeadersCount >= intention.targetChapters))
-        );
-        const hasConclusion = /\b(?:Conclusion|Epilogue|Summary|In conclusion|To conclude)\b/i.test(turnResponse) ||
-                              /\b(?:Page|Chapter)\s+\d+:\s*Conclusion\b/i.test(turnResponse);
+        const MIN_WORDS_PER_PAGE = 450;
+        const MIN_WORDS_PER_CHAPTER = 500;
+        const currentPageWordCount = extractPageWordCount(textToCheckForLength, currentTargetPage);
+        const currentChapterWordCount = extractChapterWordCount(textToCheckForLength, currentTargetChapter);
 
-        const isUnderTargetLength = Boolean(
-          intention && (
-            (!hasReachedTargetPages && intention.targetPages > 1 && maxPageReached < intention.targetPages) ||
-            (!hasReachedTargetPages && intention.targetChapters > 1 && maxPageReached < intention.targetChapters) ||
-            (intention.targetPages <= 1 && intention.targetChapters <= 1 && intention.targetWords >= 1500 && currentWordCount < intention.targetWords * 0.75)
-          )
-        );
+        let shouldContinue = false;
+        let continuationPrompt = '';
 
-        const shouldContinue = (wasCutOff || isUnderTargetLength) && !isApology && !hasReachedTargetPages;
+        if (hasUnclosedCodeBlock) {
+          shouldContinue = true;
+          continuationPrompt = `Continue writing the code seamlessly from where you stopped. Do not repeat code already written or output pleasantries.`;
+        } else if (intention && intention.targetPages > 1) {
+          const isCurrentPageUnderMin = currentPageWordCount < MIN_WORDS_PER_PAGE;
+          if (isCurrentPageUnderMin && intraPageExpansions < 2) {
+            // Intra-Page Depth Expansion Gate
+            intraPageExpansions++;
+            shouldContinue = true;
+            continuationPrompt = `[INTRA-PAGE DEPTH EXPANSION — PAGE ${currentTargetPage} OF ${intention.targetPages}]:
+The text for Page ${currentTargetPage} is currently only ${currentPageWordCount} words, which does NOT meet the required minimum depth of 550-750 words.
+Continue expanding Page ${currentTargetPage} directly from where you left off.
+Do NOT write "Page ${currentTargetPage + 1}" or any subsequent page header yet!
+Write at least 300 additional substantive words of deep analysis, concrete evidence, technical formulas, and verified citations under sub-heading '#### ${currentTargetPage}.${intraPageExpansions + 1} Extended Analysis & Technical Specifics'.
+Do NOT repeat earlier text or emit conversational pleasantries. Continue Page ${currentTargetPage} immediately:`;
+          } else if (currentTargetPage < intention.targetPages) {
+            // Next Page Progression
+            currentTargetPage++;
+            intraPageExpansions = 0;
+            shouldContinue = true;
+            const nextPageTitle = (options && options.pageBlueprint && options.pageBlueprint[currentTargetPage - 1])
+              ? options.pageBlueprint[currentTargetPage - 1]
+              : `Analysis & Key Dimensions (Part ${currentTargetPage})`;
+            continuationPrompt = `[PAGE-BY-PAGE EXECUTION PROTOCOL — TURN ${turn + 2} (PAGE ${currentTargetPage} OF ${intention.targetPages} ONLY)]:
+Page ${currentTargetPage - 1} is complete. Now write ONLY '### Page ${currentTargetPage}: ${nextPageTitle}'.
+CRITICAL LENGTH & DEPTH LAW FOR PAGE ${currentTargetPage}:
+- Page ${currentTargetPage} ALONE must be at least 550 to 750 words (minimum 6 to 8 long, dense, fully developed paragraphs).
+- Organize Page ${currentTargetPage} with 3 internal sub-headings: '#### ${currentTargetPage}.1 In-Depth Framework & Principles', '#### ${currentTargetPage}.2 Technical Architecture & Empirical Findings', and '#### ${currentTargetPage}.3 Practical Considerations & Grounded Evidence'.
+- Under each sub-heading, write 2 to 3 detailed analytical paragraphs packed with verified facts and citations.
+- DO NOT write Page ${currentTargetPage + 1} or any subsequent page in this turn! Stop immediately once Page ${currentTargetPage} is complete.`;
+          } else {
+            // All target pages reached and depth satisfied
+            shouldContinue = false;
+          }
+        } else if (intention && intention.targetChapters > 1) {
+          const isCurrentChapterUnderMin = currentChapterWordCount < MIN_WORDS_PER_CHAPTER;
+          if (isCurrentChapterUnderMin && intraChapterExpansions < 2) {
+            // Intra-Chapter Depth Expansion Gate
+            intraChapterExpansions++;
+            shouldContinue = true;
+            continuationPrompt = `[INTRA-CHAPTER DEPTH EXPANSION — CHAPTER ${currentTargetChapter} OF ${intention.targetChapters}]:
+The text for Chapter ${currentTargetChapter} is currently only ${currentChapterWordCount} words, which does NOT meet the required minimum depth of 600-800 words.
+Continue expanding Chapter ${currentTargetChapter} directly from where you left off.
+Do NOT write "Chapter ${currentTargetChapter + 1}" yet!
+Write at least 300 additional words of narrative development, dialogue, and atmospheric detail under sub-heading '#### ${currentTargetChapter}.${intraChapterExpansions + 1} Deepening Scene & Complications'.
+Do NOT repeat earlier text. Continue Chapter ${currentTargetChapter} immediately:`;
+          } else if (currentTargetChapter < intention.targetChapters) {
+            // Next Chapter Progression
+            currentTargetChapter++;
+            intraChapterExpansions = 0;
+            shouldContinue = true;
+            continuationPrompt = `[CHAPTER-BY-CHAPTER EXECUTION PROTOCOL — TURN ${turn + 2} (CHAPTER ${currentTargetChapter} OF ${intention.targetChapters} ONLY)]:
+Chapter ${currentTargetChapter - 1} is complete. Now write ONLY '### Chapter ${currentTargetChapter}: [Title]'.
+CRITICAL LENGTH & DEPTH LAW FOR CHAPTER ${currentTargetChapter}:
+- Chapter ${currentTargetChapter} ALONE must be at least 600 to 800 words with in-depth narrative and multiple paragraphs.
+- Organize Chapter ${currentTargetChapter} with 3 internal sub-headings: '#### ${currentTargetChapter}.1 Narrative Escalation', '#### ${currentTargetChapter}.2 Turning Point & Conflict', and '#### ${currentTargetChapter}.3 Resolving Arc & Transition'.
+- DO NOT write Chapter ${currentTargetChapter + 1} in this turn! Stop immediately once Chapter ${currentTargetChapter} is complete.`;
+          } else {
+            shouldContinue = false;
+          }
+        } else if (options && options.isSearchSynthesis && turn === 0 && currentWordCount < 600) {
+          shouldContinue = true;
+          continuationPrompt = `[GROUNDED SEARCH SYNTHESIS — EXTENDED ANALYSIS TURN]:
+The initial synthesis is ${currentWordCount} words. Provide an extended, comprehensive deep-dive into the verified sources above.
+Elaborate on technical nuances, practical implementations, comparative perspectives, and future implications.
+Do NOT repeat earlier text or emit pleasantries. Seamlessly append the extended analysis with descriptive markdown sub-headings:`;
+        } else if (wasCutOff || (intention && intention.targetWords >= 1500 && currentWordCount < intention.targetWords * 0.75)) {
+          shouldContinue = true;
+          continuationPrompt = `Continue seamlessly from where you stopped. Do not repeat text already written or output pleasantries.`;
+        }
 
         if (!shouldContinue) {
           termLog(`[AGENTIC LOOP] Output generation reached natural completion (${Math.round(totalEstimatedTokens).toLocaleString()} tokens, ${currentWordCount} words).`, 'info');
           break;
         }
 
-        conversationMessages.push({ role: 'assistant', content: cleanTurnResponse });
-        const curTurn = turn + 1;
-        let continuationPrompt;
-        if (hasUnclosedCodeBlock) {
-          continuationPrompt = `Continue writing the code seamlessly from where you stopped. Do not repeat code already written or output pleasantries.`;
-        } else if (isUnderTargetLength && intention && intention.targetPages > 1 && maxPageReached < intention.targetPages) {
-          const nextPageIndex = maxPageReached + 1;
-          if (nextPageIndex < intention.targetPages) {
-            continuationPrompt = `Continue writing the manuscript seamlessly starting with Page ${nextPageIndex} of ${intention.targetPages} (at least 500 substantive words per page). Detail: Write Page ${nextPageIndex} through Page ${Math.min(nextPageIndex + 1, intention.targetPages)}. Do not repeat earlier text or emit conversational pleasantries. Begin Page ${nextPageIndex} immediately:`;
-          } else {
-            continuationPrompt = `Continue writing the manuscript seamlessly starting with Page ${intention.targetPages} of ${intention.targetPages} (Conclusion & Final Synthesis, at least 500 substantive words). Clearly label it '### Page ${intention.targetPages}: [Title]'. Bring the entire work to a definitive conclusion. Do not repeat earlier text or emit pleasantries. Begin Page ${intention.targetPages} immediately:`;
-          }
-        } else if (isUnderTargetLength && intention && intention.targetChapters > 1 && maxPageReached < intention.targetChapters) {
-          const nextChapIndex = maxPageReached + 1;
-          if (nextChapIndex < intention.targetChapters) {
-            continuationPrompt = `Continue writing the document seamlessly from where you stopped. You must write Chapter ${nextChapIndex} in full detail with at least 600-800 words for Chapter ${nextChapIndex} alone. Clearly label it '### Chapter ${nextChapIndex}: [Title]'. Do not repeat Chapter 1 through ${maxPageReached} or output pleasantries. Begin Chapter ${nextChapIndex} immediately:`;
-          } else {
-            continuationPrompt = `Continue writing the document seamlessly from where you stopped. You must write Chapter ${intention.targetChapters} (Conclusion & Climax) in full detail. Clearly label it '### Chapter ${intention.targetChapters}: [Title]'. Bring the work to a definitive conclusion. Do not repeat earlier chapters. Begin Chapter ${intention.targetChapters} immediately:`;
-          }
-        } else {
-          continuationPrompt = `Continue seamlessly from where you stopped. Do not repeat text already written or output pleasantries.`;
-        }
+        conversationMessages.push({ role: 'assistant', content: sanitizedTurnResponse });
         conversationMessages.push({ role: 'user', content: continuationPrompt });
         if (!hasUnclosedCodeBlock) {
           if (!fullResponse.endsWith('\n') && !fullResponse.endsWith(' ')) {
@@ -16611,7 +16825,11 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
           }
         }
 
-        termLog(`[AGENTIC LOOP] 🔄 Turn ${curTurn}/${maxLoops} completed (~${Math.round(totalEstimatedTokens).toLocaleString()} tokens). Chaining next expansion turn...`, 'info');
+        const curTurn = turn + 1;
+        const pageProgStr = (intention && intention.targetPages > 1)
+          ? `Page ${currentTargetPage}/${intention.targetPages}`
+          : ((intention && intention.targetChapters > 1) ? `Chapter ${currentTargetChapter}/${intention.targetChapters}` : `Turn ${curTurn}/${maxLoops}`);
+        termLog(`[AGENTIC LOOP] 🔄 Turn ${curTurn}/${maxLoops} completed (~${Math.round(totalEstimatedTokens).toLocaleString()} tokens, ${pageProgStr}). Chaining next expansion turn...`, 'info');
       }
 
       const finalWords = fullResponse.split(/\s+/).filter(Boolean).length;
@@ -32032,56 +32250,35 @@ Analyze the user's legal inquiry with strict professional precision and doctrina
             }).join('\n\n')
           : 'No external research results found.';
 
+        const pageBlueprint = isDeepResearch
+          ? generatePageBlueprint(queryToSearch, isPersonOrAuthor, isAcademicTopic)
+          : null;
+
+        const deepResearchInstructions = isDeepResearch
+          ? (() => {
+              const blueprintList = pageBlueprint.map((title, i) => `  * '### Page ${i + 1}: ${title}'`).join('\n');
+              return `- MANDATORY DEEP RESEARCH SPECIFICATION: Deep Research must ALWAYS produce an exhaustive, publication-grade treatise spanning AT LEAST 10 FULL PAGES (minimum 5,500 to 7,500+ words across all 10 pages).
+- CRITICAL LENGTH & DEPTH LAW: Each individual page must be at least 550 to 750 words (minimum 6 to 8 long, dense, fully developed paragraphs per page).
+- Structure the monograph strictly using the unified 10-Page Curriculum Blueprint:
+${blueprintList}
+- Organize each page with internal sub-headings (e.g. '#### X.1 Core Foundations', '#### X.2 Technical Framework & Evidence', '#### X.3 Grounded Citations & Analysis') containing concrete evidence, technical formulas, and verified citations [1], [2].
+- STRICT ANTI-HALLUCINATION / FACTUAL RELEVANCE GUARD: Strictly adhere to the verified search evidence above for "${queryToSearch}". NEVER hallucinate unrelated individuals, Nollywood actors, or fictitious publications. Ground every assertion in verified search evidence with inline citations [1], [2] linked to verified source URLs.`;
+            })()
+          : (sourceCount > 10
+            ? `- You have been provided with ${sourceCount} verified research sources. A comprehensive query with this many sources requires an expansive, deeply thorough, multi-section research report — NOT a brief 2-3 paragraph summary.
+- Provide an in-depth, publication-quality synthesis exploring key findings, technical nuances, varied perspectives, methodologies, and implications across the sources.
+- Structure your response with natural, descriptive markdown headings (###).
+- Extensively ground your analysis and cite verified sources inline using [1], [2], etc., with markdown links to the sources.
+- Deliver detailed paragraphs explaining the 'why' and 'how', thoroughly examining the evidence.`
+            : `- Provide an engaging, deeply detailed, comprehensive, and well-structured response directly answering the user query. Organize your response with natural, descriptive markdown headings (###). Write in rich, fluid, natural prose (avoid corporate clichés, formulaic transitions, or robotic summaries). Ground your analysis in the verified facts and cite sources inline where relevant.`);
+
         const promptWithSearch = `User Query: ${queryToSearch}
 
 Verified Grounding Context (${sourceCount} Verified Sources):
 ${searchContext}
 
 ${attachmentContext ? attachmentContext + '\n\n' : ''}Instructions:
-${isDeepResearch
-  ? (() => {
-      const qLower = queryToSearch.toLowerCase();
-      const isHistoryOrCountry = /\b(nigeria|africa|asia|europe|america|country|nation|history|empire|republic|kingdom|colonial|independence|war|revolution|culture|civilization)\b/i.test(qLower);
-      const isFictionStory = /\b(fiction|novel|story|narrative|fantasy|sci-fi|thriller|mystery|romance)\b/i.test(qLower);
-      const isTechSystem = !isAcademicTopic && /\b(software|architecture|system|engineering|database|cloud|devops|microservice|compiler|kernel|network|security|api|backend|frontend)\b/i.test(qLower);
-
-      if (isPersonOrAuthor) {
-        return `- MANDATORY DEEP RESEARCH SPECIFICATION: Produce an exhaustive, publication-grade biographical and professional research monograph spanning AT LEAST 5 TO 10 PAGES (>= 4,000 words across comprehensive biographical and bibliographical sections).
-- Structure your monograph using authentic, domain-grounded biographical sections:
-  * '### Section 1: Executive Profile & Professional Background'
-  * '### Section 2: Published Articles, Books & Thought Leadership'
-  * '### Section 3: Technical Contributions, Patents & Core Specializations'
-  * '### Section 4: Chronological Works & Major Milestones'
-  * '### Section 5: Verified Citations, External References & Bibliography'
-- STRICT ANTI-HALLUCINATION / FACTUAL RELEVANCE GUARD: Strictly adhere to the verified search evidence above for "${queryToSearch}". NEVER hallucinate unrelated individuals, Nollywood actors, or fictitious publications. Ground every assertion in verified search evidence with inline citations [1], [2] linked to verified source URLs.`;
-      } else if (isHistoryOrCountry) {
-        return `- MANDATORY DEEP RESEARCH SPECIFICATION: Produce an exhaustive, publication-grade historical and cultural treatise spanning AT LEAST 10 PAGES (>= 5,000 words across comprehensive historical sections).
-- Structure your treatise using authentic, domain-grounded historical section headings (e.g. '### Section 1: Pre-Colonial Genesis & Ancient Civilizations', '### Section 2: Colonial Hegemony & Administrative Fault Lines', '### Section 3: Nationalist Mobilization & Sovereign Independence', '### Section 4: Post-Independence Governance, Crises & Transitions', '### Section 5: Political Economy, Resource Dynamics & Structural Reforms', '### Section 6: Cultural Horizons, Diaspora & Global Impact', '### Section 7: Contemporary Realities & 21st-Century Trajectories').
-- DO NOT use generic academic science stubs (such as 'Theoretical Foundations' or 'Empirical Evaluation & Benchmarks').
-- Deliver deep, factual, chronological, and sociological prose with inline citations [1], [2], linking to verified sources.`;
-      } else if (isFictionStory) {
-        return `- MANDATORY DEEP RESEARCH SPECIFICATION: Produce an exhaustive, publication-grade literary analysis or narrative manuscript spanning AT LEAST 10 PAGES (>= 5,000 words).
-- Structure your work using authentic narrative arc headings (e.g. '### Section 1: Protagonist Status Quo & Inciting Incident', '### Section 2: Crossing the Threshold & Rising Stakes', '### Section 3: Deepening Conflict & Midpoint Turning Point', '### Section 4: The Crucible & Dark Night of the Soul', '### Section 5: Climactic Confrontation & Resolution').
-- DO NOT use generic academic science stubs (such as 'Theoretical Foundations' or 'Empirical Evaluation & Benchmarks').
-- Deliver rich, immersive prose with authentic character depth and thematic development.`;
-      } else if (isTechSystem) {
-        return `- MANDATORY DEEP RESEARCH SPECIFICATION: Produce an exhaustive, publication-grade technical treatise spanning AT LEAST 10 PAGES (>= 5,000 words across comprehensive architectural sections).
-- Structure your treatise using system architecture headings (e.g. '### Section 1: Architectural Overview & System Motivation', '### Section 2: Core Components & Data Flow Pipelines', '### Section 3: Protocol Specifications & Integration Mechanics', '### Section 4: Performance Benchmarks, Latency & Scaling Profiles', '### Section 5: Resilience, Fault Tolerance & Edge Cases', '### Section 6: Security Vectors & Threat Surface Auditing', '### Section 7: Production Deployment & Future Engineering Roadmap').
-- Ground every section with verified documentation and inline citations [1], [2].`;
-      } else {
-        return `- MANDATORY DEEP RESEARCH SPECIFICATION: Deep Research must ALWAYS produce an exhaustive, publication-grade academic and empirical treatise spanning AT LEAST 10 PAGES (>= 5,000 words across 5 to 10 comprehensive sections/chapters) by default.
-- Structure your treatise using descriptive markdown section headings adapted to the topic (e.g. '### Section 1: Executive Summary & Foundational Principles', '### Section 2: Literature Review & State-of-the-Art Survey', '### Section 3: Technical Framework & Mechanics', '### Section 4: Empirical Evaluation & Benchmarks', '### Section 5: Practical Engineering Considerations', '### Section 6: Safety, Security & Edge Cases', '### Section 7: Future Trajectories & Grounded Bibliography').
-- Deliver rigorous, in-depth prose exploring verified facts, comparative analysis, edge cases, and future directions.
-- Ground every section with verified sources and inline citations [1], [2], etc., linking to verified sources.`;
-      }
-    })()
-  : (sourceCount > 10
-    ? `- You have been provided with ${sourceCount} verified research sources. A comprehensive query with this many sources requires an expansive, deeply thorough, multi-section research report — NOT a brief 2-3 paragraph summary.
-- Provide an in-depth, publication-quality synthesis exploring key findings, technical nuances, varied perspectives, methodologies, and implications across the sources.
-- Structure your response with natural, descriptive markdown headings (###).
-- Extensively ground your analysis and cite verified sources inline using [1], [2], etc., with markdown links to the sources.
-- Deliver detailed paragraphs explaining the 'why' and 'how', thoroughly examining the evidence.`
-    : `- Provide an engaging, deeply detailed, comprehensive, and well-structured response directly answering the user query. Organize your response with natural, descriptive markdown headings (###). Write in rich, fluid, natural prose (avoid corporate clichés, formulaic transitions, or robotic summaries). Ground your analysis in the verified facts and cite sources inline where relevant.`)}`;
+${deepResearchInstructions}`;
 
         const sysPrompt = isArxivOnly
           ? 'You are HugOS Browser AI, an expert academic and scientific research assistant. Correlate arXiv preprints and research papers, synthesize key findings, methodologies, and citations accurately with markdown links.'
@@ -32095,6 +32292,7 @@ ${isDeepResearch
           maxTokens: isDeepResearch ? Math.max(16384, (currentSettings.maxTokens || 8192) * 2) : Math.max(8192, currentSettings.maxTokens || 8192),
           taskType: isDeepResearch ? 'research' : (isArxivOnly ? 'research' : 'qa'),
           isDeepResearch: isDeepResearch,
+          pageBlueprint: pageBlueprint,
           existingBubble: assistantBubble,
           bubbleContent: streamContentEl,
           statusCtrl: statusCtrl

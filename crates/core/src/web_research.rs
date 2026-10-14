@@ -1378,7 +1378,7 @@ pub async fn synthesize_research(
     let system_prompt = "\
 You are an Autonomous Deep Web Research Agent powered by open-weight reasoning models (Qwen 2.5 / DeepSeek-R1). \
 Your objective is to analyze, verify, and synthesize real-time internet search results into an authoritative, \
-comprehensive, exhaustive, and multi-section research monograph in ChatGPT-grade depth and prose.
+comprehensive, exhaustive, and multi-section research monograph in publication-grade depth and prose.
 
 Guidelines:
 - Generate a long, factual, publication-grade report with rich markdown headings:
@@ -1388,6 +1388,7 @@ Guidelines:
   ## 🔬 Technical Deep Dive, Architecture & Methodologies
   ## 📈 Market, Commercial, Policy & Future Implications
   ## 📚 Verified Sources & Annotated Citations
+- Deep Research sections must be thorough and deeply analytical: write multiple dense, multi-paragraph subsections with internal '####' sub-headings under each major section (minimum 400-600 words per major section).
 - Base all biographical claims, publications, and professional affiliations strictly on the retrieved search data. Never fabricate careers or invent unrelated affiliations (e.g. never claim cybersecurity leaders or researchers are Nollywood actors).
 - In the Sources section, cite every relevant source as a markdown link [Source Title](URL) with an explanatory note.
 - Highlight key metrics, publications, authors, benchmarks, and dates.";
@@ -1410,7 +1411,7 @@ Guidelines:
         "stream": false,
         "options": {
             "temperature": 0.3,
-            "num_predict": 4096
+            "num_predict": 8192
         }
     });
 
