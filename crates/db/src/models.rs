@@ -3,6 +3,7 @@
 use anyhow::{Context, Result};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use crate::schema;
 
@@ -32,16 +33,132 @@ pub struct ModelMetrics {
 }
 
 impl ModelMetrics {
-    /// Simple recency score: decays linearly from 1.0 to 0.1 over one year.
+    /// Compute an Exponential Temporal Decay + Legacy Generation Penalty score in [0.10, 1.0].
     pub fn recency_score(&self) -> f64 {
         use chrono::{DateTime, Utc};
-        DateTime::parse_from_rfc3339(&self.last_modified)
+        let parsed = DateTime::parse_from_rfc3339(&self.last_modified)
             .or_else(|_| DateTime::parse_from_str(&self.last_modified, "%Y-%m-%dT%H:%M:%S%.fZ"))
-            .map(|dt| {
-                let days = (Utc::now() - dt.with_timezone(&Utc)).num_days();
-                (1.0_f64 - days as f64 / 365.0).max(0.1)
-            })
-            .unwrap_or(0.5)
+            .or_else(|_| {
+                let trimmed = self.last_modified.split('T').next().unwrap_or(&self.last_modified);
+                DateTime::parse_from_str(&format!("{}T00:00:00Z", trimmed), "%Y-%m-%dT%H:%M:%SZ")
+            });
+
+        let mut score = if let Ok(dt) = parsed {
+            let days_old = (Utc::now() - dt.with_timezone(&Utc)).num_days().max(0) as f64;
+            if days_old <= 90.0 {
+                1.0
+            } else if days_old <= 180.0 {
+                0.92
+            } else if days_old <= 365.0 {
+                0.78
+            } else if days_old <= 730.0 {
+                0.50
+            } else {
+                (0.35 * (- (days_old - 730.0) / 730.0).exp()).max(0.10)
+            }
+        } else {
+            0.50
+        };
+
+        if self.is_stale_or_legacy_architecture() {
+            score = (score * 0.45).min(0.35);
+        }
+
+        score
+    }
+
+    /// Detect superseded legacy models from past eras that should not be prioritized
+    pub fn is_stale_or_legacy_architecture(&self) -> bool {
+        let m = self.model_id.to_lowercase();
+        // Modern release exceptions:
+        if m.contains("qwen2.5") || m.contains("qwen3") || m.contains("deepseek-r1") || m.contains("gemma2") || m.contains("gemma-2") || m.contains("llama-3") || m.contains("llama3") || m.contains("flux") || m.contains("v2") || m.contains("v3") || m.contains("2025") || m.contains("2026") {
+            return false;
+        }
+        m.contains("gpt2")
+            || m.contains("gpt-neo")
+            || m.contains("gpt-j")
+            || m.contains("opt-")
+            || m.contains("bloom")
+            || m.contains("llama-2")
+            || m.contains("llama2")
+            || m.contains("vicuna")
+            || m.contains("alpaca")
+            || m.contains("falcon-7b")
+            || m.contains("falcon-40b")
+            || m.contains("mpt-7b")
+            || m.contains("starcoder-base")
+            || m.contains("stable-diffusion-v1")
+            || m.contains("sd-v1-4")
+            || m.contains("bert-base-uncased")
+            || m.contains("distilbert-base")
+            || m.contains("distilbert")
+            || m.contains("roberta-base")
+            || m.contains("t5-small")
+            || m.contains("t5-base")
+            || m.contains("finbert")
+            || m.contains("legal-bert")
+            || m.contains("scibert")
+            || m.contains("galactica")
+    }
+
+    pub fn staleness_tier(&self) -> &'static str {
+        let r = self.recency_score();
+        if r >= 0.85 {
+            "fresh"
+        } else if r >= 0.65 {
+            "recent"
+        } else if r >= 0.40 {
+            "aging"
+        } else {
+            "stale"
+        }
+    }
+
+    pub fn task_domain(&self) -> &'static str {
+        let tag = self.pipeline_tag.to_lowercase();
+        let mid = self.model_id.to_lowercase();
+        if tag.contains("text-generation") || tag.contains("conversational") {
+            if mid.contains("r1") || mid.contains("reason") {
+                "reasoning"
+            } else if mid.contains("coder") || mid.contains("starcoder") {
+                "code"
+            } else {
+                "general_llm"
+            }
+        } else if tag.contains("image") || tag.contains("visual") || tag.contains("vision") || tag.contains("object-detection") {
+            "vision"
+        } else if tag.contains("audio") || tag.contains("speech") || tag.contains("text-to-speech") || tag.contains("automatic-speech-recognition") {
+            "audio"
+        } else if tag.contains("feature-extraction") || tag.contains("sentence-similarity") || mid.contains("embed") {
+            "embeddings"
+        } else if mid.contains("finbert") || mid.contains("fingpt") || mid.contains("chronos") {
+            "finance"
+        } else if mid.contains("legal") || mid.contains("saul") || mid.contains("cuad") {
+            "legal"
+        } else if mid.contains("sec") || mid.contains("cisco") || mid.contains("malware") {
+            "security"
+        } else if mid.contains("esm") || mid.contains("evo2") || mid.contains("chemberta") || mid.contains("bio") {
+            "science"
+        } else if tag.contains("classification") || tag.contains("text-classification") || tag.contains("zero-shot") {
+            "classification"
+        } else if tag.contains("translation") {
+            "translation"
+        } else if tag.contains("summarization") {
+            "summarization"
+        } else if tag.contains("time-series") || tag.contains("timeseries") {
+            "timeseries"
+        } else {
+            "general_domain"
+        }
+    }
+
+    pub fn effective_priority_score(&self) -> f64 {
+        let norm_dec = if self.decision_score <= 1.0 && self.decision_score > 0.0 {
+            self.decision_score * 10.0
+        } else {
+            self.decision_score
+        };
+        norm_dec * (0.55 + 0.45 * self.recency_score())
     }
 }
 
@@ -221,9 +338,10 @@ impl HuggingFaceModelDatabase {
     }
 
     /// Retrieve the top `limit` models for a given `pipeline_tag`, ranked by
-    /// `decision_score` descending, then `downloads` descending.
+    /// temporal freshness and effective priority score descending.
     pub fn get_by_task(&self, pipeline_tag: &str, limit: usize) -> Result<Vec<ModelMetrics>> {
         let conn = self.connect()?;
+        let candidate_limit = (limit * 3).max(60) as i64;
         let mut stmt = conn.prepare(
             r#"SELECT model_id, author, pipeline_tag, tags, description,
                       downloads, likes, decision_score, capability_score,
@@ -231,18 +349,30 @@ impl HuggingFaceModelDatabase {
                       last_modified, license, task_keywords, architecture, size_mb, language
                FROM models
                WHERE pipeline_tag = ?1
-               ORDER BY decision_score DESC, downloads DESC
+               ORDER BY (
+                 (CASE WHEN decision_score <= 1.0 AND decision_score > 0.0 THEN decision_score * 10.0 ELSE decision_score END) *
+                 (CASE
+                   WHEN last_modified >= '2025-06-01' THEN 1.0
+                   WHEN last_modified >= '2024-06-01' THEN 0.80
+                   WHEN last_modified >= '2023-01-01' THEN 0.50
+                   ELSE 0.30
+                 END)
+               ) DESC, downloads DESC
                LIMIT ?2"#,
         )?;
-        let rows = stmt.query_map(params![pipeline_tag, limit as i64], row_to_model)?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+        let rows = stmt.query_map(params![pipeline_tag, candidate_limit], row_to_model)?;
+        let mut models = rows.collect::<Result<Vec<_>, _>>()?;
+        models.sort_by(|a, b| b.effective_priority_score().partial_cmp(&a.effective_priority_score()).unwrap_or(std::cmp::Ordering::Equal));
+        models.truncate(limit);
+        Ok(models)
     }
 
     /// Full-text style search: returns models whose model_id or description
-    /// contains `query` (case-insensitive), ordered by `decision_score`.
+    /// contains `query` (case-insensitive), ordered by effective priority score.
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<ModelMetrics>> {
         let conn = self.connect()?;
         let like = format!("%{}%", query.to_lowercase());
+        let candidate_limit = (limit * 3).max(60) as i64;
         let mut stmt = conn.prepare(
             r#"SELECT model_id, author, pipeline_tag, tags, description,
                       downloads, likes, decision_score, capability_score,
@@ -250,11 +380,22 @@ impl HuggingFaceModelDatabase {
                       last_modified, license, task_keywords, architecture, size_mb, language
                FROM models
                WHERE lower(model_id) LIKE ?1 OR lower(description) LIKE ?1
-               ORDER BY decision_score DESC, downloads DESC
+               ORDER BY (
+                 (CASE WHEN decision_score <= 1.0 AND decision_score > 0.0 THEN decision_score * 10.0 ELSE decision_score END) *
+                 (CASE
+                   WHEN last_modified >= '2025-06-01' THEN 1.0
+                   WHEN last_modified >= '2024-06-01' THEN 0.80
+                   WHEN last_modified >= '2023-01-01' THEN 0.50
+                   ELSE 0.30
+                 END)
+               ) DESC, downloads DESC
                LIMIT ?2"#,
         )?;
-        let rows = stmt.query_map(params![like, limit as i64], row_to_model)?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+        let rows = stmt.query_map(params![like, candidate_limit], row_to_model)?;
+        let mut models = rows.collect::<Result<Vec<_>, _>>()?;
+        models.sort_by(|a, b| b.effective_priority_score().partial_cmp(&a.effective_priority_score()).unwrap_or(std::cmp::Ordering::Equal));
+        models.truncate(limit);
+        Ok(models)
     }
 
     /// Total number of models in the database.
@@ -311,20 +452,87 @@ impl HuggingFaceModelDatabase {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    /// Return top overall models sorted by decision score
+    /// Return top overall models sorted by effective priority score
     pub fn get_top_overall(&self, limit: usize) -> Result<Vec<ModelMetrics>> {
         let conn = self.connect()?;
+        let candidate_limit = (limit * 3).max(60) as i64;
         let mut stmt = conn.prepare(
             r#"SELECT model_id, author, pipeline_tag, tags, description,
                       downloads, likes, decision_score, capability_score,
                       efficiency_score, popularity_score, model_type, library_name,
                       last_modified, license, task_keywords, architecture, size_mb, language
                FROM models
-               ORDER BY decision_score DESC, downloads DESC
+               ORDER BY (
+                 (CASE WHEN decision_score <= 1.0 AND decision_score > 0.0 THEN decision_score * 10.0 ELSE decision_score END) *
+                 (CASE
+                   WHEN last_modified >= '2025-06-01' THEN 1.0
+                   WHEN last_modified >= '2024-06-01' THEN 0.80
+                   WHEN last_modified >= '2023-01-01' THEN 0.50
+                   ELSE 0.30
+                 END)
+               ) DESC, downloads DESC
                LIMIT ?1"#,
         )?;
-        let rows = stmt.query_map(params![limit as i64], row_to_model)?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+        let rows = stmt.query_map(params![candidate_limit], row_to_model)?;
+        let mut models = rows.collect::<Result<Vec<_>, _>>()?;
+        models.sort_by(|a, b| b.effective_priority_score().partial_cmp(&a.effective_priority_score()).unwrap_or(std::cmp::Ordering::Equal));
+        models.truncate(limit);
+        Ok(models)
+    }
+
+    /// Reorganizes and recalibrates database scores:
+    /// - Normalizes all decision_score values to 0..10 scale.
+    /// - Penalizes stale/legacy architectures (>2 years old or legacy gpt2/llama-2/opt/bloom).
+    /// - Boosts verified modern 2025/2026 releases.
+    pub fn reorganize_and_recalibrate_stale_models(&self) -> Result<usize> {
+        let conn = self.connect()?;
+        let mut updated = 0;
+        // 1. Rescale any 0..1 decision scores to 0..10
+        let r1 = conn.execute(
+            "UPDATE models
+             SET decision_score = decision_score * 10.0,
+                 capability_score = capability_score * 10.0,
+                 efficiency_score = efficiency_score * 10.0,
+                 popularity_score = popularity_score * 10.0
+             WHERE decision_score <= 1.0 AND decision_score > 0.0",
+            [],
+        )?;
+        updated += r1;
+
+        // 2. Deprioritize stale models (>2 years old or legacy architecture)
+        let r2 = conn.execute(
+            "UPDATE models
+             SET decision_score = ROUND(decision_score * 0.60, 2)
+             WHERE (last_modified < '2024-01-01'
+                    OR lower(model_id) LIKE '%gpt2%'
+                    OR lower(model_id) LIKE '%llama-2%'
+                    OR lower(model_id) LIKE '%opt-%'
+                    OR lower(model_id) LIKE '%bloom%'
+                    OR lower(model_id) LIKE '%falcon-7b%'
+                    OR lower(model_id) LIKE '%vicuna%')
+               AND decision_score > 3.0",
+            [],
+        )?;
+        updated += r2;
+
+        // 3. Boost modern 2025/2026 workhorse models
+        let r3 = conn.execute(
+            "UPDATE models
+             SET decision_score = MIN(10.0, ROUND(decision_score * 1.15, 2))
+             WHERE last_modified >= '2025-01-01'
+               AND (lower(model_id) LIKE '%qwen%'
+                    OR lower(model_id) LIKE '%deepseek%'
+                    OR lower(model_id) LIKE '%gemma%'
+                    OR lower(model_id) LIKE '%llama-3%'
+                    OR lower(model_id) LIKE '%phi-4%'
+                    OR lower(model_id) LIKE '%bge%'
+                    OR lower(model_id) LIKE '%esm3%'
+                    OR lower(model_id) LIKE '%flux%')",
+            [],
+        )?;
+        updated += r3;
+
+        Ok(updated)
     }
 
     /// Calculate database statistics including total models, last updated timestamp,
@@ -363,6 +571,199 @@ impl HuggingFaceModelDatabase {
             top_tasks,
             top_models,
         })
+    }
+
+    /// Dynamically selects the best, freshest, and hardware-appropriate model for a given menu category.
+    ///
+    /// Considers:
+    /// 1. Category keywords and pipeline tags (e.g. finance, banking, writing, legal, security, vision, audio, code).
+    /// 2. Hardware sizing constraint: `max_param_b` derived from `free_ram_gb` and `free_vram_mb`.
+    /// 3. Staleness penalty: filters out or strongly downweights stale models (<0.45 recency_score or legacy architecture).
+    /// 4. Freshness boost: prioritizes 2025/2026 releases.
+    pub fn select_best_dynamic_model_for_menu(
+        &self,
+        category: &str,
+        query_hint: Option<&str>,
+        free_ram_gb: f64,
+        free_vram_mb: f64,
+    ) -> Result<Option<ModelMetrics>> {
+        let cat = category.to_lowercase().trim().to_string();
+        let max_param_b = if free_ram_gb < 6.0 && free_vram_mb < 2000.0 {
+            2.5
+        } else if free_ram_gb < 12.0 && free_vram_mb < 4500.0 {
+            4.5
+        } else if free_ram_gb < 24.0 && free_vram_mb < 12000.0 {
+            9.5
+        } else if free_ram_gb < 48.0 && free_vram_mb < 22000.0 {
+            16.0
+        } else {
+            75.0
+        };
+
+        let (keywords, pipeline_tags): (Vec<&str>, Vec<&str>) = match cat.as_str() {
+            "finance" | "banking" | "fintech" => (
+                vec!["finance", "banking", "financial", "fingpt", "finbert", "market", "stock", "trading", "qwen-finance", "chronos"],
+                vec!["text-generation", "time-series-forecasting", "tabular-regression", "text-classification"],
+            ),
+            "writing" | "editing" | "narrative" | "prose" => (
+                vec!["writing", "creative", "editing", "narrative", "gemma2", "gemma-2", "qwen", "paraphrase"],
+                vec!["text-generation", "text2text-generation"],
+            ),
+            "deep_research" | "research" | "reasoning" => (
+                vec!["reasoning", "research", "r1", "deepseek-r1", "cot", "think", "qwq"],
+                vec!["text-generation"],
+            ),
+            "code" | "programming" | "software" => (
+                vec!["coder", "code", "qwen2.5-coder", "starcoder", "python", "rust"],
+                vec!["text-generation"],
+            ),
+            "security" | "threat_audit" | "cybersecurity" => (
+                vec!["security", "cybersecurity", "threat", "foundation-sec", "secbert", "malware", "vulnerability"],
+                vec!["text-generation", "text-classification"],
+            ),
+            "legal" | "compliance" => (
+                vec!["legal", "law", "saul", "lawma", "contract", "compliance", "regulatory", "legal-bert"],
+                vec!["text-generation", "fill-mask", "text-classification"],
+            ),
+            "science" | "chemistry" | "bioinformatics" => (
+                vec!["science", "protein", "biology", "esm", "chemberta", "chemberta-2", "bio", "evo2"],
+                vec!["text-generation", "feature-extraction", "protein-folding"],
+            ),
+            "vision" | "image" | "multimodal" => (
+                vec!["vision", "multimodal", "vl", "qwen-vl", "florence", "yolo", "flux", "segment"],
+                vec!["image-text-to-text", "image-classification", "object-detection", "text-to-image", "image-segmentation"],
+            ),
+            "audio" | "speech" => (
+                vec!["audio", "speech", "whisper", "tts", "asr", "kokoro"],
+                vec!["automatic-speech-recognition", "text-to-speech", "audio-classification"],
+            ),
+            "classification" | "sentiment" => (
+                vec!["classification", "sentiment", "emotion", "intent", "deberta", "bart"],
+                vec!["text-classification"],
+            ),
+            "data_science" | "tabular" | "timeseries" => (
+                vec!["tabular", "timeseries", "forecasting", "chronos", "patchtst", "xgboost"],
+                vec!["tabular-classification", "tabular-regression", "time-series-forecasting"],
+            ),
+            _ => (
+                vec!["general", "chat", "assistant", "qwen", "llama-3", "gemma"],
+                vec!["text-generation", "conversational"],
+            ),
+        };
+
+        let mut candidates = Vec::new();
+        let query_str = query_hint.unwrap_or("").to_lowercase();
+
+        for ptag in &pipeline_tags {
+            if let Ok(mut list) = self.get_by_task(ptag, 40) {
+                candidates.append(&mut list);
+            }
+        }
+
+        for kw in &keywords {
+            if let Ok(mut list) = self.search(kw, 20) {
+                candidates.append(&mut list);
+            }
+        }
+
+        if !query_str.is_empty() {
+            if let Ok(mut list) = self.search(&query_str, 20) {
+                candidates.append(&mut list);
+            }
+        }
+
+        // If no domain candidates exist, fall back to top overall models
+        if candidates.is_empty() {
+            if let Ok(list) = self.get_top_overall(20) {
+                candidates = list;
+            }
+        }
+
+        let mut seen = HashSet::new();
+        let mut unique_candidates = Vec::new();
+        for m in candidates {
+            if seen.insert(m.model_id.clone()) {
+                unique_candidates.push(m);
+            }
+        }
+
+        if unique_candidates.is_empty() {
+            return Ok(None);
+        }
+
+        let get_param_b = |m: &ModelMetrics| -> f64 {
+            let lower = m.model_id.to_lowercase();
+            if lower.contains("70b") || lower.contains("72b") { return 72.0; }
+            if lower.contains("32b") || lower.contains("34b") { return 32.0; }
+            if lower.contains("27b") { return 27.0; }
+            if lower.contains("14b") { return 14.0; }
+            if lower.contains("9b") || lower.contains("8b") { return 8.5; }
+            if lower.contains("7b") { return 7.0; }
+            if lower.contains("3b") || lower.contains("4b") { return 3.5; }
+            if lower.contains("2b") { return 2.0; }
+            if lower.contains("1.5b") { return 1.5; }
+            if lower.contains("0.5b") { return 0.5; }
+            if m.size_mb > 0.0 {
+                return (m.size_mb / 2000.0).max(0.5);
+            }
+            7.0
+        };
+
+        let mut scored: Vec<(f64, ModelMetrics)> = unique_candidates.into_iter().map(|m| {
+            let param_b = get_param_b(&m);
+            let fits_hardware = param_b <= max_param_b;
+            let hw_penalty = if fits_hardware { 1.0 } else { 0.20 };
+            let staleness_penalty = if m.is_stale_or_legacy_architecture() || m.recency_score() < 0.45 {
+                0.25
+            } else {
+                1.0
+            };
+            let mid = m.model_id.to_lowercase();
+            let desc = m.description.to_lowercase();
+            let mut match_bonus = 1.0;
+            for kw in &keywords {
+                if mid.contains(kw) || desc.contains(kw) {
+                    match_bonus += 0.5;
+                }
+            }
+            let total_score = m.effective_priority_score() * hw_penalty * staleness_penalty * match_bonus;
+            (total_score, m)
+        }).collect();
+
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+        Ok(scored.into_iter().next().map(|(_, m)| m))
+    }
+
+    /// Returns dynamic model recommendations for standard menu actions
+    /// (e.g. "finance", "banking", "writing", "code", "security", "legal", "research", "vision", "audio", "classification", "data_science").
+    pub fn get_dynamic_menu_recommendations(
+        &self,
+        free_ram_gb: f64,
+        free_vram_mb: f64,
+    ) -> Result<HashMap<String, ModelMetrics>> {
+        let categories = [
+            "finance",
+            "banking",
+            "writing",
+            "deep_research",
+            "code",
+            "security",
+            "legal",
+            "science",
+            "vision",
+            "audio",
+            "classification",
+            "data_science",
+            "general",
+        ];
+        let mut map = HashMap::new();
+        for cat in &categories {
+            if let Ok(Some(model)) = self.select_best_dynamic_model_for_menu(cat, None, free_ram_gb, free_vram_mb) {
+                map.insert(cat.to_string(), model);
+            }
+        }
+        Ok(map)
     }
 }
 

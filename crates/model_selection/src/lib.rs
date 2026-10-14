@@ -250,12 +250,16 @@ impl EnhancedModelSelector {
                 0.7 // Default neutral
             };
 
-            let mut final_score = downloads_norm * 0.35
-                + decision_norm * 0.25
+            let mut final_score = downloads_norm * 0.22
+                + decision_norm * 0.26
                 + utility_ratio_norm * 0.15
-                + efficiency_val * 0.15
-                + license_val * 0.05
-                + freshness * 0.05;
+                + efficiency_val * 0.12
+                + license_val * 0.03
+                + freshness * 0.22;
+
+            if freshness < 0.35 {
+                final_score *= 0.60; // Strict multiplicative penalty for stale models (>2 years old or legacy architecture)
+            }
 
             // Apply strategy variations/stubs
             match strategy {

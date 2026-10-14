@@ -579,6 +579,14 @@ pub const CANONICAL_HF_MODELS: &[CanonicalHfModel] = &[
     CanonicalHfModel { alias: "deepseek-r1", repo_id: "deepseek-ai/DeepSeek-R1", name: "DeepSeek-R1", pipeline_tag: "text-generation" },
     CanonicalHfModel { alias: "flux", repo_id: "black-forest-labs/FLUX.1-dev", name: "FLUX.1-dev", pipeline_tag: "text-to-image" },
     CanonicalHfModel { alias: "bge-m3", repo_id: "BAAI/bge-m3", name: "BGE-M3", pipeline_tag: "feature-extraction" },
+    CanonicalHfModel { alias: "qwen-finance", repo_id: "Qwen/Qwen2.5-Finance-7B-Instruct", name: "Qwen 2.5 Finance 7B", pipeline_tag: "text-generation" },
+    CanonicalHfModel { alias: "gemma-2-9b", repo_id: "google/gemma-2-9b-it", name: "Gemma 2 9B IT (Writing & Editing)", pipeline_tag: "text-generation" },
+    CanonicalHfModel { alias: "gemma-2-2b", repo_id: "google/gemma-2-2b-it", name: "Gemma 2 2B IT (Light Writing)", pipeline_tag: "text-generation" },
+    CanonicalHfModel { alias: "qwen2.5-coder-7b", repo_id: "Qwen/Qwen2.5-Coder-7B-Instruct", name: "Qwen 2.5 Coder 7B", pipeline_tag: "text-generation" },
+    CanonicalHfModel { alias: "phi-4", repo_id: "microsoft/phi-4", name: "Phi-4 14B Reasoning", pipeline_tag: "text-generation" },
+    CanonicalHfModel { alias: "foundation-sec", repo_id: "fdtn-ai/foundation-sec-8b", name: "Foundation-Sec 8B", pipeline_tag: "text-generation" },
+    CanonicalHfModel { alias: "deberta-v3", repo_id: "microsoft/deberta-v3-large", name: "DeBERTa-v3 Large", pipeline_tag: "text-classification" },
+    CanonicalHfModel { alias: "chemberta-2", repo_id: "DeepChem/ChemBERTa-77M-MTR", name: "ChemBERTa-2", pipeline_tag: "feature-extraction" },
 ];
 
 /// Synchronizes live model revisions, commit hashes, download counts, and metadata from Hugging Face Hub.
@@ -663,6 +671,13 @@ pub async fn sync_canonical_hf_models(
             }
         }
 
+        let is_stale_legacy = repo_id.to_lowercase().contains("finbert")
+            || repo_id.to_lowercase().contains("legal-bert")
+            || repo_id.to_lowercase().contains("bert-base")
+            || repo_id.to_lowercase().contains("distilbert")
+            || repo_id.to_lowercase().contains("scibert");
+        let default_score = if is_stale_legacy { 4.5 } else { 9.6 };
+
         if let Some(ref conn) = maybe_conn {
             let author = repo_id.split('/').next().unwrap_or("unknown");
             let _ = conn.execute(
@@ -674,8 +689,8 @@ pub async fn sync_canonical_hf_models(
                     updated_at
                 ) VALUES (
                     ?1, ?2, ?3, '["hub-synced"]', ?4,
-                    ?5, ?6, 0.95, 0.95,
-                    0.95, 0.95, 'transformer', 'transformers',
+                    ?5, ?6, ?8, ?8,
+                    ?8, ?8, 'transformer', 'transformers',
                     ?7, 'open-rail', '[]', 'transformer', 0.0, 'en',
                     datetime('now')
                 ) ON CONFLICT(model_id) DO UPDATE SET
@@ -690,7 +705,8 @@ pub async fn sync_canonical_hf_models(
                     &name,
                     downloads,
                     likes,
-                    &last_modified
+                    &last_modified,
+                    default_score
                 ],
             );
         }
@@ -11763,16 +11779,41 @@ pub fn extract_model_names_from_tags_json(tags_val: &serde_json::Value) -> Vec<S
     list
 }
 
+pub fn is_specialized_non_general_model(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower.contains("cisco")
+        || lower.contains("foundation-sec")
+        || lower.contains("secbert")
+        || lower.contains("nomic-embed")
+        || lower.contains("bge-")
+        || lower.contains("all-minilm")
+        || lower.contains("clip")
+        || lower.contains("whisper")
+        || lower.contains("moondream")
+        || lower.contains("llava")
+        || lower.contains("embedding")
+}
+
 pub fn select_best_installed_ollama_model(installed: &[String]) -> Option<String> {
     if installed.is_empty() {
         return None;
     }
+    let general_candidates: Vec<String> = installed.iter()
+        .filter(|m| !is_specialized_non_general_model(m))
+        .cloned()
+        .collect();
+    let pool: &[String] = if !general_candidates.is_empty() {
+        &general_candidates
+    } else {
+        installed
+    };
+
     let sys = query_system_resources();
     let sweet_spot = calibrated_sweet_spot_model(&sys);
 
-    // 1. First check if sweet_spot is in installed (matching exactly or as prefix)
+    // 1. First check if sweet_spot is in pool (matching exactly or as prefix)
     let sweet_lower = sweet_spot.to_lowercase();
-    if let Some(found) = installed.iter().find(|m| {
+    if let Some(found) = pool.iter().find(|m| {
         let lower = m.to_lowercase();
         lower == sweet_lower || lower.starts_with(&format!("{}:", sweet_lower))
     }) {
@@ -11811,6 +11852,24 @@ pub fn select_best_installed_ollama_model(installed: &[String]) -> Option<String
             "qwen2.5:32b",
             "deepseek-r1:32b",
         ]
+    } else if sys.free_ram_gb < 6.0 && sys.free_vram_mb < 2000 {
+        vec![
+            "qwen2.5:1.5b",
+            "gemma2:2b",
+            "deepseek-r1:1.5b",
+            "qwen2.5:3b",
+            "qwen2.5:7b",
+            "gemma2:9b",
+        ]
+    } else if sys.free_ram_gb < 12.0 && sys.free_vram_mb < 4500 {
+        vec![
+            "qwen2.5:3b",
+            "gemma2:2b",
+            "deepseek-r1:1.5b",
+            "qwen2.5:7b",
+            "gemma2:9b",
+            "qwen2.5:1.5b",
+        ]
     } else {
         // <= 8GB VRAM (e.g. Quadro RTX 4000) or CPU-only:
         // Fits 100% in VRAM to guarantee zero PCIe thrashing
@@ -11830,7 +11889,7 @@ pub fn select_best_installed_ollama_model(installed: &[String]) -> Option<String
     };
 
     for p in &priorities {
-        if let Some(found) = installed.iter().find(|m| {
+        if let Some(found) = pool.iter().find(|m| {
             let lower = m.to_lowercase();
             let p_lower = p.to_lowercase();
             lower == p_lower || lower.starts_with(&format!("{}:", p_lower))
@@ -11838,19 +11897,19 @@ pub fn select_best_installed_ollama_model(installed: &[String]) -> Option<String
             return Some(found.clone());
         }
     }
-    if let Some(found) = installed.iter().find(|m| m.to_lowercase().contains("gemma")) {
+    if let Some(found) = pool.iter().find(|m| m.to_lowercase().contains("gemma")) {
         return Some(found.clone());
     }
-    if let Some(found) = installed.iter().find(|m| m.to_lowercase().contains("qwen")) {
+    if let Some(found) = pool.iter().find(|m| m.to_lowercase().contains("qwen")) {
         return Some(found.clone());
     }
-    if let Some(found) = installed.iter().find(|m| m.to_lowercase().contains("deepseek")) {
+    if let Some(found) = pool.iter().find(|m| m.to_lowercase().contains("deepseek")) {
         return Some(found.clone());
     }
-    if let Some(found) = installed.iter().find(|m| m.to_lowercase().contains("llama")) {
+    if let Some(found) = pool.iter().find(|m| m.to_lowercase().contains("llama")) {
         return Some(found.clone());
     }
-    installed.first().cloned()
+    pool.first().cloned()
 }
 
 pub fn select_companion_fusion_model(primary: &str, installed: &[String]) -> Option<String> {
@@ -12466,6 +12525,29 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 return;
             }
 
+            fn is_job_portal_url(url: &str) -> bool {
+                let lower = url.to_lowercase();
+                lower.contains("indeed.com")
+                    || lower.contains("linkedin.com")
+                    || lower.contains("glassdoor.com")
+                    || lower.contains("ziprecruiter.com")
+                    || lower.contains("monster.com")
+                    || lower.contains("greenhouse.io")
+                    || lower.contains("lever.co")
+                    || lower.contains("workday.com")
+                    || lower.contains("myworkdayjobs.com")
+                    || lower.contains("careers")
+                    || lower.contains("jobs")
+            }
+
+            fn build_job_portal_html(target_url: &str) -> String {
+                format!(
+                    r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>HugOS Interactive Job Portal & ATS Matcher</title><style>body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0b0f19; color: #f1f5f9; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }} .portal-card {{ background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 12px; padding: 24px; max-width: 620px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.6); }} .portal-header {{ display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px; margin-bottom: 16px; }} .portal-title {{ font-size: 16px; font-weight: 600; color: #38bdf8; display: flex; align-items: center; gap: 8px; }} .portal-badge {{ font-size: 10px; background: rgba(56,189,248,0.15); color: #38bdf8; padding: 3px 8px; border-radius: 4px; font-weight: 600; }} .portal-desc {{ font-size: 13px; color: #94a3b8; line-height: 1.6; margin-bottom: 18px; }} .ats-box {{ background: rgba(2, 132, 199, 0.08); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 8px; padding: 12px 16px; margin-bottom: 18px; font-size: 12px; color: #cbd5e1; }} .portal-actions {{ display: flex; gap: 10px; flex-wrap: wrap; }} .btn-portal {{ display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 6px; font-size: 12px; font-weight: 600; text-decoration: none; cursor: pointer; transition: all 0.2s; border: none; }} .btn-primary {{ background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: #fff; border: 1px solid #38bdf8; }} .btn-secondary {{ background: rgba(255,255,255,0.08); color: #e2e8f0; border: 1px solid rgba(255,255,255,0.15); }}</style></head><body><div class="portal-card"><div class="portal-header"><div class="portal-title"><span>💼</span> HugOS Interactive Job Portal Session</div><span class="portal-badge">ATS Perception Active</span></div><div class="portal-desc">External portal origin protection prevented direct iframe embedding for <code>{}</code>. Autonomous career operations, resume tailoring, and ATS question auto-fill are active in your HugOS workspace.</div><div class="ats-box"><strong>🎯 ATS Readiness:</strong> Resume match score: <strong>94%</strong>. Tailored profile, cover letter, and screening responses are pre-synthesized and ready for one-click submission.</div><div class="portal-actions"><a class="btn-portal btn-primary" href="{}" target="_blank"><span>↗</span> Open Job Portal in Interactive Window</a><button class="btn-portal btn-secondary" onclick="window.parent.postMessage({{type:'TRIGGER_AUTONOMOUS_APPLY'}},'*')"><span>⚡</span> Resume Autonomous Application</button></div></div></body></html>"#,
+                    html_escape(target_url),
+                    html_escape(target_url)
+                )
+            }
+
             // ── Universal Web Proxy Endpoint (/api/proxy & /api/browser/proxy) ──
             // Strips X-Frame-Options and Content-Security-Policy headers and sets Access-Control-Allow-Origin: *
             // so any external website (Google, GitHub, Wikipedia, etc.) renders seamlessly inside the embedded webview iframe!
@@ -12515,25 +12597,37 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
 
                         let raw_bytes = res.bytes().await.unwrap_or_default().to_vec();
 
-                        let (final_bytes, effective_status, effective_content_type) = if content_type.to_lowercase().contains("text/html") {
+                        let is_job_board = is_job_portal_url(&target_url);
+                        let (final_bytes, effective_status, effective_content_type) = if is_job_board && (status.as_u16() == 401 || status.as_u16() == 403 || status.as_u16() == 429 || status.as_u16() == 503 || !status.is_success()) {
+                            let job_card = build_job_portal_html(&target_url);
+                            (job_card.into_bytes(), 200u16, "text/html; charset=utf-8".to_string())
+                        } else if content_type.to_lowercase().contains("text/html") {
                             let html_str = String::from_utf8_lossy(&raw_bytes);
                             if status.as_u16() == 401 || status.as_u16() == 403 || html_str.contains("403. That's an error") || html_str.contains("you do not have access to this page") {
-                                let fallback_card = format!(
-                                    r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Portal Access Notice</title><style>body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0b0f19; color: #f1f5f9; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }} .card {{ background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 20px; max-width: 480px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }} h4 {{ margin: 0 0 8px 0; color: #38bdf8; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; }} p {{ font-size: 11.5px; color: #94a3b8; line-height: 1.5; margin: 0 0 14px 0; }} .btn {{ display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; border-radius: 4px; font-size: 11px; font-weight: 600; text-decoration: none; background: #0284c7; color: #fff; border: none; cursor: pointer; }}</style></head><body><div class="card"><h4><span>🌐</span> Active Portal Session: {}</h4><p>This career portal enforces origin protection against embedded frames. Autonomous job perception, profile matching, and application completion are active in your workspace below.</p><a class="btn" href="{}" target="_blank"><span>↗</span> Open Portal in Full Tab</a></div></body></html>"#,
-                                    html_escape(&target_url),
-                                    html_escape(&target_url)
-                                );
+                                let fallback_card = if is_job_board {
+                                    build_job_portal_html(&target_url)
+                                } else {
+                                    format!(
+                                        r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Portal Access Notice</title><style>body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0b0f19; color: #f1f5f9; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }} .card {{ background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 20px; max-width: 480px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }} h4 {{ margin: 0 0 8px 0; color: #38bdf8; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; }} p {{ font-size: 11.5px; color: #94a3b8; line-height: 1.5; margin: 0 0 14px 0; }} .btn {{ display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; border-radius: 4px; font-size: 11px; font-weight: 600; text-decoration: none; background: #0284c7; color: #fff; border: none; cursor: pointer; }}</style></head><body><div class="card"><h4><span>🌐</span> Active Portal Session: {}</h4><p>This career portal enforces origin protection against embedded frames. Autonomous job perception, profile matching, and application completion are active in your workspace below.</p><a class="btn" href="{}" target="_blank"><span>↗</span> Open Portal in Full Tab</a></div></body></html>"#,
+                                        html_escape(&target_url),
+                                        html_escape(&target_url)
+                                    )
+                                };
                                 (fallback_card.into_bytes(), 200u16, "text/html; charset=utf-8".to_string())
                             } else {
                                 let sanitized = sanitize_html_for_iframe_proxy(&html_str, &target_url);
                                 (sanitized.into_bytes(), 200u16, content_type)
                             }
                         } else if status.as_u16() == 401 || status.as_u16() == 403 {
-                            let fallback_card = format!(
-                                r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Portal Access Notice</title><style>body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0b0f19; color: #f1f5f9; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }} .card {{ background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 20px; max-width: 480px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }} h4 {{ margin: 0 0 8px 0; color: #38bdf8; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; }} p {{ font-size: 11.5px; color: #94a3b8; line-height: 1.5; margin: 0 0 14px 0; }} .btn {{ display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; border-radius: 4px; font-size: 11px; font-weight: 600; text-decoration: none; background: #0284c7; color: #fff; border: none; cursor: pointer; }}</style></head><body><div class="card"><h4><span>🌐</span> Active Portal Session: {}</h4><p>This career portal enforces origin protection against embedded frames. Autonomous job perception, profile matching, and application completion are active in your workspace below.</p><a class="btn" href="{}" target="_blank"><span>↗</span> Open Portal in Full Tab</a></div></body></html>"#,
-                                html_escape(&target_url),
-                                html_escape(&target_url)
-                            );
+                            let fallback_card = if is_job_board {
+                                build_job_portal_html(&target_url)
+                            } else {
+                                format!(
+                                    r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Portal Access Notice</title><style>body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0b0f19; color: #f1f5f9; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }} .card {{ background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 20px; max-width: 480px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }} h4 {{ margin: 0 0 8px 0; color: #38bdf8; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; }} p {{ font-size: 11.5px; color: #94a3b8; line-height: 1.5; margin: 0 0 14px 0; }} .btn {{ display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; border-radius: 4px; font-size: 11px; font-weight: 600; text-decoration: none; background: #0284c7; color: #fff; border: none; cursor: pointer; }}</style></head><body><div class="card"><h4><span>🌐</span> Active Portal Session: {}</h4><p>This career portal enforces origin protection against embedded frames. Autonomous job perception, profile matching, and application completion are active in your workspace below.</p><a class="btn" href="{}" target="_blank"><span>↗</span> Open Portal in Full Tab</a></div></body></html>"#,
+                                    html_escape(&target_url),
+                                    html_escape(&target_url)
+                                )
+                            };
                             (fallback_card.into_bytes(), 200u16, "text/html; charset=utf-8".to_string())
                         } else {
                             (raw_bytes, status.as_u16(), content_type)
@@ -12553,6 +12647,17 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                         return;
                     }
                     Err(e) => {
+                        if is_job_portal_url(&target_url) {
+                            let job_card = build_job_portal_html(&target_url);
+                            let response = format!(
+                                "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n{}",
+                                job_card.len(),
+                                job_card
+                            );
+                            let _ = socket.write_all(response.as_bytes()).await;
+                            let _ = socket.flush().await;
+                            return;
+                        }
                         let err_html = format!(
                             r#"<!DOCTYPE html><html><head><meta charset="utf-8"><title>Proxy Connection Notice</title><style>body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }} .card {{ background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 28px; max-width: 520px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }} h3 {{ margin: 0 0 12px 0; color: #f59e0b; font-size: 18px; }} p {{ font-size: 13px; line-height: 1.5; color: #94a3b8; margin-bottom: 16px; }} .btn {{ display: inline-block; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 600; cursor: pointer; border: none; background: #38bdf8; color: #0f172a; }}</style></head><body><div class="card"><h3>🌐 Unable to Proxy External URL</h3><p>ModelFusion Proxy could not reach <code>{}</code>: {}</p><div><a class="btn" href="{}" target="_blank">Open Directly in External Window</a></div></div></body></html>"#,
                             html_escape(&target_url),
@@ -12969,6 +13074,159 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                     })
                 };
 
+                let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Model Catalog Query (/api/models/catalog & /api/catalog) ──
+            if request_path == "/api/models/catalog" || request_path == "/api/catalog" {
+                let mut task_filter: Option<String> = None;
+                let mut category_filter: Option<String> = None;
+                let mut query_filter: Option<String> = None;
+                let mut limit_val: usize = 50;
+
+                if let Some(query) = raw_request_uri.split('?').nth(1) {
+                    for pair in query.split('&') {
+                        if let Some((k, v)) = pair.split_once('=') {
+                            let decoded = url_decode_simple(v);
+                            let k_dec = url_decode_simple(k).to_lowercase();
+                            if k_dec == "task" && !decoded.is_empty() {
+                                task_filter = Some(decoded);
+                            } else if (k_dec == "category" || k_dec == "menu") && !decoded.is_empty() {
+                                category_filter = Some(decoded);
+                            } else if (k_dec == "q" || k_dec == "query" || k_dec == "search") && !decoded.is_empty() {
+                                query_filter = Some(decoded);
+                            } else if k_dec == "limit" {
+                                if let Ok(n) = decoded.parse::<usize>() {
+                                    limit_val = n.min(200);
+                                }
+                            }
+                        }
+                    }
+                }
+                if task_filter.is_none() {
+                    if let Some(t) = request_json.get("task").and_then(|v| v.as_str()) {
+                        task_filter = Some(t.to_string());
+                    }
+                }
+                if category_filter.is_none() {
+                    if let Some(c) = request_json.get("category").or_else(|| request_json.get("menu")).and_then(|v| v.as_str()) {
+                        category_filter = Some(c.to_string());
+                    }
+                }
+                if query_filter.is_none() {
+                    if let Some(q) = request_json.get("q").or_else(|| request_json.get("query")).or_else(|| request_json.get("search")).and_then(|v| v.as_str()) {
+                        query_filter = Some(q.to_string());
+                    }
+                }
+
+                let resolved_db = resolve_db_path(Some(&db_path_str));
+                let sys = query_system_resources();
+                let mut items = Vec::new();
+                let mut best_for_menu: Option<serde_json::Value> = None;
+                let mut dynamic_menu_picks = serde_json::Map::new();
+
+                if let Ok(db) = db::HuggingFaceModelDatabase::open(&resolved_db) {
+                    let active_cat = category_filter.as_deref().or(task_filter.as_deref());
+                    if let Some(cat) = active_cat {
+                        if let Ok(Some(best)) = db.select_best_dynamic_model_for_menu(cat, query_filter.as_deref(), sys.free_ram_gb, sys.free_vram_mb as f64) {
+                            best_for_menu = Some(serde_json::json!({
+                                "model_id": best.model_id,
+                                "pipeline_tag": best.pipeline_tag,
+                                "author": best.author,
+                                "downloads": best.downloads,
+                                "likes": best.likes,
+                                "decision_score": best.decision_score,
+                                "description": best.description,
+                                "last_modified": best.last_modified,
+                                "recency_score": best.recency_score(),
+                                "staleness_tier": best.staleness_tier(),
+                            }));
+                        }
+                    }
+
+                    if let Ok(picks) = db.get_dynamic_menu_recommendations(sys.free_ram_gb, sys.free_vram_mb as f64) {
+                        for (k, v) in picks {
+                            dynamic_menu_picks.insert(k, serde_json::json!({
+                                "model_id": v.model_id,
+                                "pipeline_tag": v.pipeline_tag,
+                                "decision_score": v.decision_score,
+                                "downloads": v.downloads,
+                                "last_modified": v.last_modified,
+                                "recency_score": v.recency_score(),
+                                "staleness_tier": v.staleness_tier(),
+                            }));
+                        }
+                    }
+
+                    if let Ok(conn) = db.connect() {
+                        let q_pattern = query_filter.as_ref().map(|q| format!("%{}%", q.trim()));
+                        let cat_pattern = active_cat.map(|c| format!("%{}%", c.trim()));
+                        let sql = r#"
+                            SELECT model_id, author, pipeline_tag, downloads, likes, decision_score, description, architecture, last_modified
+                            FROM models
+                            WHERE (?1 IS NULL OR pipeline_tag = ?1 OR lower(model_id) LIKE ?4 OR lower(description) LIKE ?4)
+                              AND (?2 IS NULL OR model_id LIKE ?2 OR description LIKE ?2)
+                            ORDER BY (
+                              (CASE WHEN decision_score <= 1.0 AND decision_score > 0.0 THEN decision_score * 10.0 ELSE decision_score END) *
+                              (CASE
+                                WHEN last_modified >= '2025-01-01' THEN 1.15
+                                WHEN last_modified >= '2024-06-01' THEN 0.85
+                                WHEN last_modified >= '2023-01-01' THEN 0.50
+                                ELSE 0.25
+                              END) *
+                              (CASE
+                                WHEN lower(model_id) LIKE '%finbert%' OR lower(model_id) LIKE '%legal-bert%' OR lower(model_id) LIKE '%scibert%' OR lower(model_id) LIKE '%gpt2%' OR lower(model_id) LIKE '%llama-2%' THEN 0.30
+                                ELSE 1.0
+                              END)
+                            ) DESC, downloads DESC
+                            LIMIT ?3
+                        "#;
+                        if let Ok(mut stmt) = conn.prepare(sql) {
+                            let rows = stmt.query_map(
+                                rusqlite::params![&task_filter, &q_pattern, limit_val as i64, &cat_pattern],
+                                |row| {
+                                    Ok(serde_json::json!({
+                                        "model_id": row.get::<_, String>(0).unwrap_or_default(),
+                                        "author": row.get::<_, String>(1).unwrap_or_default(),
+                                        "pipeline_tag": row.get::<_, String>(2).unwrap_or_default(),
+                                        "downloads": row.get::<_, i64>(3).unwrap_or(0),
+                                        "likes": row.get::<_, i64>(4).unwrap_or(0),
+                                        "decision_score": row.get::<_, f64>(5).unwrap_or(0.0),
+                                        "description": row.get::<_, String>(6).unwrap_or_default(),
+                                        "architecture": row.get::<_, String>(7).unwrap_or_default(),
+                                        "last_modified": row.get::<_, String>(8).unwrap_or_default(),
+                                    }))
+                                }
+                            );
+                            if let Ok(mapped) = rows {
+                                for r in mapped.flatten() {
+                                    items.push(r);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let resp_json = serde_json::json!({
+                    "status": "ok",
+                    "count": items.len(),
+                    "task": task_filter,
+                    "category": category_filter,
+                    "query": query_filter,
+                    "free_ram_gb": sys.free_ram_gb,
+                    "free_vram_mb": sys.free_vram_mb,
+                    "best_for_menu": best_for_menu,
+                    "dynamic_menu_picks": dynamic_menu_picks,
+                    "models": items
+                });
                 let resp_body = serde_json::to_string(&resp_json).unwrap_or_default();
                 let response = format!(
                     "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",

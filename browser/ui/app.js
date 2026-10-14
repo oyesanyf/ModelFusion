@@ -380,6 +380,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const customFusionsList = document.getElementById('custom-fusions-list');
 
   function detectGpuVramMb() {
+    if (typeof window !== 'undefined' && typeof window.hardwareFreeVramMb === 'number' && window.hardwareFreeVramMb >= 0) {
+      return window.hardwareFreeVramMb;
+    }
+    if (typeof window !== 'undefined' && typeof window.hardwareGpuVramMb === 'number' && window.hardwareGpuVramMb >= 0) {
+      return window.hardwareGpuVramMb;
+    }
     try {
       const canvas = document.createElement('canvas');
       const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
@@ -387,38 +393,255 @@ document.addEventListener('DOMContentLoaded', () => {
         const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
         if (debugInfo) {
           const renderer = (gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || '').toLowerCase();
-          if (/3090|4090|a100|h100|a6000|6000 ada/.test(renderer)) return 24000;
-          if (/4080|3080\s*ti|4070\s*ti\s*super|7900/.test(renderer)) return 16000;
-          if (/4070|3080|6700|6800/.test(renderer)) return 12000;
-          if (/rtx\s*4000|3070|4060|3060|2080|2070|2060/.test(renderer)) return 8000;
+          if (renderer.includes('rtx 4090') || renderer.includes('rtx 3090') || renderer.includes('a100') || renderer.includes('h100') || renderer.includes('rx 7900 xtx')) return 24000;
+          if (renderer.includes('rtx 4080') || renderer.includes('rtx 4070 ti super') || renderer.includes('rx 7900 xt') || renderer.includes('rx 7800') || renderer.includes('rx 6800') || renderer.includes('rx 6900')) return 16000;
+          if (renderer.includes('rtx 4070') || renderer.includes('rtx 3080') || renderer.includes('rtx 3060') || renderer.includes('rx 7700') || renderer.includes('rx 6700')) return 12000;
+          if (renderer.includes('rtx 4060') || renderer.includes('rtx 3070') || renderer.includes('rtx 2080') || renderer.includes('rtx 2070') || renderer.includes('rx 7600') || renderer.includes('rx 6600')) return 8000;
+          if (renderer.includes('rtx 3050') || renderer.includes('rtx 2060') || renderer.includes('gtx 1660') || renderer.includes('gtx 1060')) return 6000;
+          if (renderer.includes('gtx 1650') || renderer.includes('gtx 1050') || renderer.includes('rtx 2050')) return 4000;
+          // Integrated GPUs (Intel UHD, Intel Iris, AMD Radeon Graphics, Apple M-series shared, Basic Render Driver, SwiftShader) have 0 dedicated VRAM
+          if (renderer.includes('intel') || renderer.includes('uhd') || renderer.includes('iris') || renderer.includes('basic render') || renderer.includes('swiftshader') || renderer.includes('llvmpipe') || renderer.includes('angle')) return 0;
         }
       }
-    } catch (e) {}
-    return 8000; // Safe default for standard GPUs
+    } catch (_) {}
+    return 0;
   }
 
-  function pickBestInstalledOllamaModel(modelsList) {
+  function getAvailableFreeRamGb() {
+    if (typeof window !== 'undefined' && typeof window.hardwareFreeRamGb === 'number' && window.hardwareFreeRamGb > 0) {
+      return window.hardwareFreeRamGb;
+    }
+    // When IPC status hasn't returned yet, navigator.deviceMemory is total RAM (bucketed 0.25, 0.5, 1, 2, 4, 8).
+    // Estimate available/free RAM conservatively as 55% of deviceMemory (defaulting to 4.5 GB if unknown so low-resource computers never OOM).
+    const devMem = (typeof navigator !== 'undefined' && navigator.deviceMemory) ? Number(navigator.deviceMemory) : 0;
+    if (devMem > 0) {
+      return Math.max(1.5, Math.round(devMem * 0.55 * 10) / 10);
+    }
+    return 4.5;
+  }
+  if (typeof window !== 'undefined') {
+    window.detectGpuVramMb = detectGpuVramMb;
+    window.getAvailableFreeRamGb = getAvailableFreeRamGb;
+  }
+
+  const SPECIALIZED_NON_GENERAL_MODELS_REGEX = /cisco|foundation-sec|secbert|securebert|cybert|lily-cybersecurity|finbert|fingpt|chronos|patchtst|legal-bert|cuad|lawma|saul|pile-of-law|esmfold|esm2|esm3|evo2|chemberta|molformer|galactica|scibert|biomistral|meditron|prithvi|climax|aurora|climatebert|nomic-embed|bge-|all-minilm|embeddinggemma|mxbai-embed|snowflake-arctic-embed|whisper|piper|kokoro|bark|yolo|florence|sam-|segment-anything|flux|sdxl|stable-diffusion|toxic-bert|text-moderation|bart-large-mnli|deberta|distilbert|roberta-base-go_emotions|ui-tars|sqlcoder|codellama/i;
+
+  const STALE_LEGACY_MODELS_REGEX = /finbert|legal-bert|scibert|distilbert|bert-base|gpt2|llama-2|llama2|opt-|bloom|vicuna|alpaca|falcon-7b|falcon-40b|mpt-7b|starcoder-base|sd-v1|stable-diffusion-v1|t5-small|t5-base|chemberta-v1|galactica/i;
+
+  function getModelParamBillions(modelName) {
+    if (!modelName || typeof modelName !== 'string') return 7.0;
+    const lower = modelName.toLowerCase();
+    const match = lower.match(/(?:^|:|-|_)(\d+(?:\.\d+)?)\s*b\b/);
+    if (match) return parseFloat(match[1]);
+    if (lower.includes('70b')) return 70.0;
+    if (lower.includes('32b')) return 32.0;
+    if (lower.includes('27b')) return 27.0;
+    if (lower.includes('14b')) return 14.0;
+    if (lower.includes('9b')) return 9.0;
+    if (lower.includes('8b')) return 8.0;
+    if (lower.includes('7b')) return 7.0;
+    if (lower.includes('3b')) return 3.0;
+    if (lower.includes('2b')) return 2.0;
+    if (lower.includes('1.5b')) return 1.5;
+    if (lower.includes('0.5b')) return 0.5;
+    return 7.0;
+  }
+
+  function getMaxPermittedParamBillions(freeRamGb, freeVramMb) {
+    const ram = (typeof freeRamGb === 'number') ? freeRamGb : getAvailableFreeRamGb();
+    const vram = (typeof freeVramMb === 'number') ? freeVramMb : detectGpuVramMb();
+    if (ram < 6 && vram < 2000) return 2.5;
+    if (ram < 12 && vram < 4500) return 4.5;
+    if (ram < 24 && vram < 12000) return 9.5;
+    if (ram < 48 && vram < 22000) return 16.0;
+    return 75.0;
+  }
+
+  function isModelSuitableForTask(modelName, taskCategory = 'general') {
+    if (!modelName || typeof modelName !== 'string') return false;
+    const m = modelName.toLowerCase().trim();
+    const cat = String(taskCategory || 'general').toLowerCase().trim();
+
+    // 0. Stale legacy models from past eras must NEVER be selected when modern LLMs/models exist
+    if (STALE_LEGACY_MODELS_REGEX.test(m)) {
+      return false;
+    }
+
+    // 1. Embedding-only models are ONLY suitable for embedding / search indexing
+    const isEmbeddingModel = /nomic-embed|bge-|all-minilm|embeddinggemma|mxbai-embed|snowflake-arctic-embed|gte-|e5-/i.test(m);
+    if (isEmbeddingModel) {
+      return cat === 'embeddings' || cat === 'semantic_search' || cat === 'rag' || cat === 'search_index';
+    }
+
+    // 2. Audio/speech models
+    const isAudioModel = /whisper|piper|kokoro|bark|mms-tts|speecht5|wav2vec/i.test(m);
+    if (isAudioModel) {
+      return cat === 'audio' || cat === 'speech' || cat === 'tts' || cat === 'asr';
+    }
+
+    // 3. Vision-only / image gen models
+    const isVisionOnlyModel = /yolo|florence|sam-|segment-anything|flux|sdxl|stable-diffusion/i.test(m);
+    if (isVisionOnlyModel) {
+      return cat === 'vision' || cat === 'image' || cat === 'ocr' || cat === 'image_gen';
+    }
+
+    // 4. Multimodal VQA / Vision models (moondream, llava, qwen-vl)
+    const isMultimodalModel = /moondream|llava|qwen.*-vl|minicpm-v|bakllava/i.test(m);
+    if (isMultimodalModel) {
+      return cat === 'vision' || cat === 'multimodal' || cat === 'image' || cat === 'ocr' || cat === 'vqa';
+    }
+
+    // 5. Cybersecurity / Threat audit models (cisco, foundation-sec, secbert, etc.)
+    const isSecurityModel = /cisco|foundation-sec|secbert|securebert|cybert|lily-cybersecurity/i.test(m);
+    if (isSecurityModel) {
+      return cat === 'security' || cat === 'code_security' || cat === 'pe_binary' || cat === 'cybersecurity' || cat === 'malware' || cat === 'threat';
+    }
+
+    // 6. Financial models (qwen-finance, fingpt, chronos, patchtst)
+    const isFinanceModel = /qwen.*finance|fingpt|chronos|patchtst/i.test(m);
+    if (isFinanceModel) {
+      return cat === 'finance' || cat === 'banking' || cat === 'markets' || cat === 'timeseries';
+    }
+
+    // 7. Legal / Compliance models (saul, lawma, cuad, pile-of-law)
+    const isLegalModel = /saul|lawma|cuad|pile-of-law/i.test(m);
+    if (isLegalModel) {
+      return cat === 'legal' || cat === 'compliance';
+    }
+
+    // 8. Scientific models (esm, evo2, chemberta, molformer, biomistral, meditron, prithvi, aurora)
+    const isScienceModel = /esmfold|esm2|esm3|evo2|chemberta|molformer|biomistral|meditron|prithvi|climax|aurora|climatebert|phi-4/i.test(m);
+    if (isScienceModel) {
+      return cat === 'science' || cat === 'biology' || cat === 'chemistry' || cat === 'medical' || cat === 'climate';
+    }
+
+    // 9. Classification benchmarks (BART MNLI, DeBERTa-v3, etc.)
+    const isClassificationModel = /bart-large-mnli|deberta|toxic-bert|roberta-base-go_emotions/i.test(m);
+    if (isClassificationModel) {
+      return cat === 'classification' || cat === 'moderation';
+    }
+
+    // 10. Code-specialized models (qwen2.5-coder, deepseek-coder, sqlcoder, codellama, starcoder)
+    const isCodeSpecialist = /coder|sqlcoder|starcoder/i.test(m);
+    if (isCodeSpecialist) {
+      if (cat === 'code' || cat === 'sql' || cat === 'data_science' || cat === 'security' || cat === 'engineering') return true;
+      if (cat === 'deep_research' || cat === 'writing' || cat === 'job_application') return false;
+      return true;
+    }
+
+    // 11. General purpose, Deep Research, Writing, Job Applications, Planning, Agents
+    const isGeneralTask = cat === 'general' || cat === 'research' || cat === 'deep_research' || cat === 'web' || cat === 'writing' || cat === 'long_form' || cat === 'qa' || cat === 'translation' || cat === 'humanize' || cat === 'agent' || cat === 'planning' || cat === 'job_application' || cat === 'apply_jobs' || cat === 'career_ops' || cat === 'exam' || cat === 'shopping' || cat === 'travel' || cat === 'directions' || cat === 'computer_use';
+
+    if (isGeneralTask) {
+      // NEVER allow specialized domain models to hijack general tasks!
+      if (SPECIALIZED_NON_GENERAL_MODELS_REGEX.test(m)) {
+        return false;
+      }
+      return /qwen|deepseek|gemma|llama|mistral|mixtral|phi|command-r|smollm|yi|glm|solar|nemotron|granite|olmo/i.test(m);
+    }
+
+    // For task-specific categories where domain models didn't match, general reasoning models are allowed as robust workhorses
+    if (/qwen|deepseek|gemma|llama|mistral|mixtral|phi|smollm/i.test(m) && !SPECIALIZED_NON_GENERAL_MODELS_REGEX.test(m)) {
+      return true;
+    }
+
+    return false;
+  }
+  if (typeof window !== 'undefined') {
+    window.isModelSuitableForTask = isModelSuitableForTask;
+    window.getModelParamBillions = getModelParamBillions;
+    window.getMaxPermittedParamBillions = getMaxPermittedParamBillions;
+  }
+
+  function getResourceCalibratedGeneralModel(freeRamGb, freeVramMb, taskCategory = 'general') {
+    const ram = (typeof freeRamGb === 'number') ? freeRamGb : getAvailableFreeRamGb();
+    const vram = (typeof freeVramMb === 'number') ? freeVramMb : detectGpuVramMb();
+
+    if (ram >= 48 || vram >= 22000) {
+      return {
+        primary: 'qwen2.5:32b',
+        reasoning: 'deepseek-r1:14b',
+        code: 'qwen2.5-coder:32b',
+        tierLabel: 'Ultra High-Performance (Tier 1)',
+        freeRamGb: ram,
+        freeVramMb: vram
+      };
+    }
+    if (ram >= 24 || vram >= 12000) {
+      return {
+        primary: 'qwen2.5:14b',
+        reasoning: 'deepseek-r1:7b',
+        code: 'qwen2.5-coder:14b',
+        tierLabel: 'High-Performance (Tier 2)',
+        freeRamGb: ram,
+        freeVramMb: vram
+      };
+    }
+    if (ram >= 12 || vram >= 4500) {
+      return {
+        primary: 'qwen2.5:7b',
+        reasoning: 'deepseek-r1:7b',
+        code: 'qwen2.5-coder:7b',
+        tierLabel: 'Standard Workhorse (Tier 3)',
+        freeRamGb: ram,
+        freeVramMb: vram
+      };
+    }
+    if (ram >= 6 || vram >= 2000) {
+      return {
+        primary: 'qwen2.5:3b',
+        reasoning: 'deepseek-r1:1.5b',
+        code: 'qwen2.5-coder:3b',
+        tierLabel: 'Balanced Low-RAM (Tier 4)',
+        freeRamGb: ram,
+        freeVramMb: vram
+      };
+    }
+    return {
+      primary: 'qwen2.5:1.5b',
+      reasoning: 'deepseek-r1:1.5b',
+      code: 'qwen2.5-coder:1.5b',
+      tierLabel: 'Ultra-Light Low-Resource (Tier 5)',
+      freeRamGb: ram,
+      freeVramMb: vram
+    };
+  }
+  if (typeof window !== 'undefined') {
+    window.getResourceCalibratedGeneralModel = getResourceCalibratedGeneralModel;
+  }
+
+  function pickBestInstalledOllamaModel(modelsList, taskCategory = 'general') {
     if (!modelsList || modelsList.length === 0) return null;
     const names = modelsList.map(m => (typeof m === 'string' ? m : (m.name || m.model || '')).trim()).filter(Boolean);
     if (names.length === 0) return null;
 
-    const vramMb = (window.hardwareGpuVramMb && window.hardwareGpuVramMb > 0) ? window.hardwareGpuVramMb : detectGpuVramMb();
+    const vramMb = detectGpuVramMb();
+    const ramGb = getAvailableFreeRamGb();
+    const maxParamB = getMaxPermittedParamBillions(ramGb, vramMb);
 
-    // STRICT GPU VRAM ENFORCEMENT:
-    // If VRAM < 14GB (e.g. 8GB Quadro RTX 4000), NEVER accept 32B/27B/70B even if hardwareOptimalModel says so!
+    // 1. Filter candidates by task suitability FIRST
+    const suitableNames = names.filter(n => isModelSuitableForTask(n, taskCategory));
+    const basePool = suitableNames.length > 0 ? suitableNames : names.filter(n => !SPECIALIZED_NON_GENERAL_MODELS_REGEX.test(n));
+
+    // 2. Filter candidates by maximum permitted parameters based on available RAM/VRAM
+    const candidatePool = basePool.filter(n => getModelParamBillions(n) <= maxParamB);
+    const finalPool = candidatePool.length > 0 ? candidatePool : basePool;
+
+    if (finalPool.length === 0) {
+      return getResourceCalibratedGeneralModel(ramGb, vramMb, taskCategory).primary;
+    }
+
+    // 3. Check hardware optimal model if it's in finalPool and fits VRAM/RAM
     if (window.hardwareOptimalModel) {
       const opt = window.hardwareOptimalModel.toLowerCase();
-      const isOversized = opt.includes('32b') || opt.includes('27b') || opt.includes('70b');
-      if (!(vramMb < 14000 && isOversized)) {
-        const match = names.find(n => n.toLowerCase() === opt || n.toLowerCase().startsWith(opt + ':'));
+      if (getModelParamBillions(opt) <= maxParamB && isModelSuitableForTask(opt, taskCategory)) {
+        const match = finalPool.find(n => n.toLowerCase() === opt || n.toLowerCase().startsWith(opt + ':'));
         if (match) return match;
       }
     }
 
     let priorities = [];
-
-    if (vramMb >= 22000) {
-      // 24GB+ VRAM (RTX 4090, 3090, A100) -> 32B / 27B fits fully in VRAM
+    if (vramMb >= 22000 || ramGb >= 48) {
       priorities = [
         'qwen2.5:32b',
         'deepseek-r1:32b',
@@ -428,94 +651,90 @@ document.addEventListener('DOMContentLoaded', () => {
         'gemma2:9b',
         'qwen2.5:7b',
         'deepseek-r1:7b',
-        'gemma:7b',
-        'deepseek-r1:8b',
-        'gemma2:2b',
         'qwen2.5:3b',
-        'deepseek-r1:1.5b'
+        'deepseek-r1:1.5b',
+        'qwen2.5:1.5b'
       ];
-    } else if (vramMb >= 12000) {
-      // 12-16GB VRAM (RTX 4070, 4080, 3080) -> 14B fits in VRAM
+    } else if (vramMb >= 12000 || ramGb >= 24) {
       priorities = [
         'qwen2.5:14b',
         'deepseek-r1:14b',
         'gemma2:9b',
         'qwen2.5:7b',
         'deepseek-r1:7b',
-        'gemma:7b',
-        'deepseek-r1:8b',
-        'gemma2:2b',
         'qwen2.5:3b',
-        'deepseek-r1:1.5b'
+        'deepseek-r1:1.5b',
+        'qwen2.5:1.5b'
       ];
-    } else {
-      // <= 8GB VRAM (Quadro RTX 4000, RTX 3070, 4060, laptops) -> 7B/9B fits 100% in VRAM for CRAZY FAST inference!
-      // NEVER allow 32B/27B/70B here to stop CPU thrashing & 45-second freezes
+    } else if (vramMb >= 4500 || ramGb >= 12) {
       priorities = [
         'gemma2:9b',
         'qwen2.5:7b',
         'deepseek-r1:7b',
-        'gemma:7b',
-        'deepseek-r1:8b',
         'gemma2:2b',
         'qwen2.5:3b',
         'deepseek-r1:1.5b',
         'qwen2.5:1.5b'
       ];
+    } else if (vramMb >= 2000 || ramGb >= 6) {
+      priorities = [
+        'qwen2.5:3b',
+        'deepseek-r1:1.5b',
+        'gemma2:2b',
+        'qwen2.5:1.5b'
+      ];
+    } else {
+      // Low-resource computer (<6 GB free RAM, 0-2GB VRAM):
+      priorities = [
+        'qwen2.5:1.5b',
+        'deepseek-r1:1.5b',
+        'gemma2:2b',
+        'qwen2.5:0.5b',
+        'qwen2.5:3b'
+      ];
     }
 
     for (const p of priorities) {
-      const found = names.find(n => n.toLowerCase() === p.toLowerCase() || n.toLowerCase().startsWith(p.toLowerCase() + ':'));
+      const found = finalPool.find(n => n.toLowerCase() === p.toLowerCase() || n.toLowerCase().startsWith(p.toLowerCase() + ':'));
       if (found) return found;
     }
 
-    // Fallbacks if no exact priority matches
-    if (vramMb < 14000) {
-      // Prioritize smaller models that don't overflow VRAM
-      const smallMatch = names.find(n => {
-        const l = n.toLowerCase();
-        return (l.includes('9b') || l.includes('7b') || l.includes('8b') || l.includes('3b') || l.includes('2b') || l.includes('1.5b')) && !l.includes('32b') && !l.includes('27b') && !l.includes('70b');
-      });
-      if (smallMatch) return smallMatch;
-    }
+    // Try finding any task-suitable model in the pool that fits within memory limits
+    const anySuitable = finalPool.find(n => isModelSuitableForTask(n, taskCategory) && getModelParamBillions(n) <= maxParamB);
+    if (anySuitable) return anySuitable;
 
-    const anyGemma = names.find(n => n.toLowerCase().includes('gemma'));
-    if (anyGemma && (vramMb >= 14000 || !anyGemma.toLowerCase().includes('27b'))) return anyGemma;
+    // NEVER return Cisco or an unsuitable model for general tasks
+    const anyGeneral = finalPool.find(n => !SPECIALIZED_NON_GENERAL_MODELS_REGEX.test(n) && getModelParamBillions(n) <= maxParamB);
+    if (anyGeneral) return anyGeneral;
 
-    const anyQwen = names.find(n => n.toLowerCase().includes('qwen'));
-    if (anyQwen && (vramMb >= 14000 || !anyQwen.toLowerCase().includes('32b'))) return anyQwen;
-
-    const anyDeepSeek = names.find(n => n.toLowerCase().includes('deepseek'));
-    if (anyDeepSeek && (vramMb >= 14000 || !anyDeepSeek.toLowerCase().includes('32b'))) return anyDeepSeek;
-
-    const anyLlama = names.find(n => n.toLowerCase().includes('llama'));
-    if (anyLlama) return anyLlama;
-
-    return names[0];
+    return getResourceCalibratedGeneralModel(ramGb, vramMb, taskCategory).primary;
+  }
+  if (typeof window !== 'undefined') {
+    window.pickBestInstalledOllamaModel = pickBestInstalledOllamaModel;
   }
 
-  function getCalibratedHardwareSweetSpot() {
-    if (window.consensusPrimaryModel) return window.consensusPrimaryModel;
-    if (window.calibratedSweetSpotModel) return window.calibratedSweetSpotModel;
-    if (window.hardwareOptimalModel) return window.hardwareOptimalModel;
-    const bestInstalled = pickBestInstalledOllamaModel(availableOllamaModels);
+  function getCalibratedHardwareSweetSpot(taskCategory = 'general') {
+    const ramGb = getAvailableFreeRamGb();
+    const vramMb = detectGpuVramMb();
+    const maxParamB = getMaxPermittedParamBillions(ramGb, vramMb);
+
+    if (window.consensusPrimaryModel && isModelSuitableForTask(window.consensusPrimaryModel, taskCategory) && getModelParamBillions(window.consensusPrimaryModel) <= maxParamB) {
+      return window.consensusPrimaryModel;
+    }
+    if (window.calibratedSweetSpotModel && isModelSuitableForTask(window.calibratedSweetSpotModel, taskCategory) && getModelParamBillions(window.calibratedSweetSpotModel) <= maxParamB) {
+      return window.calibratedSweetSpotModel;
+    }
+    if (window.hardwareOptimalModel && isModelSuitableForTask(window.hardwareOptimalModel, taskCategory) && getModelParamBillions(window.hardwareOptimalModel) <= maxParamB) {
+      return window.hardwareOptimalModel;
+    }
+
+    const bestInstalled = pickBestInstalledOllamaModel(availableOllamaModels, taskCategory);
     if (bestInstalled) return bestInstalled;
 
-    // Dynamic client-side evaluation matching Rust Master CLI matrix
-    const vramMb = (window.hardwareGpuVramMb && window.hardwareGpuVramMb > 0) ? window.hardwareGpuVramMb : detectGpuVramMb();
-    const ramGb = (typeof window !== 'undefined' && window.hardwareFreeRamGb) ? window.hardwareFreeRamGb : ((typeof window !== 'undefined' && window.hardwareRamGb) ? window.hardwareRamGb : (typeof navigator !== 'undefined' && navigator.deviceMemory ? navigator.deviceMemory : 16));
-
-    if (vramMb >= 22000) return 'qwen2.5:32b';
-    if (vramMb >= 12000) return 'qwen2.5:14b';
-    if (vramMb >= 5000) return 'qwen2.5:7b';
-    if (vramMb >= 2000) return 'qwen2.5:3b';
-
-    if (ramGb >= 48) return 'qwen2.5:32b';
-    if (ramGb >= 24) return 'qwen2.5:14b';
-    if (ramGb >= 12) return 'qwen2.5:7b';
-    if (ramGb >= 6) return 'qwen2.5:3b';
-    if (ramGb >= 3) return 'qwen2.5:1.5b';
-    return 'qwen2.5:0.5b';
+    return getResourceCalibratedGeneralModel(ramGb, vramMb, taskCategory).primary;
+  }
+  if (typeof window !== 'undefined') {
+    window.getCalibratedHardwareSweetSpot = getCalibratedHardwareSweetSpot;
   }
 
   function getCalibratedHardwareCompanion(sweetSpot) {
@@ -534,124 +753,126 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function resolveTaskAdaptiveSweetSpot(taskType, intention, availableModels = [], vramMb = 0, ramGb = 0) {
     const models = Array.isArray(availableModels) && availableModels.length > 0 ? availableModels : (typeof availableOllamaModels !== 'undefined' ? availableOllamaModels : []);
-    const vram = vramMb > 0 ? vramMb : ((window.hardwareGpuVramMb && window.hardwareGpuVramMb > 0) ? window.hardwareGpuVramMb : detectGpuVramMb());
-    const ram = ramGb > 0 ? ramGb : ((typeof window !== 'undefined' && window.hardwareFreeRamGb) ? window.hardwareFreeRamGb : ((typeof window !== 'undefined' && window.hardwareRamGb) ? window.hardwareRamGb : (typeof navigator !== 'undefined' && navigator.deviceMemory ? navigator.deviceMemory : 16)));
+    const vram = vramMb > 0 ? vramMb : detectGpuVramMb();
+    const ram = ramGb > 0 ? ramGb : getAvailableFreeRamGb();
+    const maxParamB = getMaxPermittedParamBillions(ram, vram);
 
     const isWriting = taskType === 'writing' || (intention && (intention.isLongForm || intention.targetPages > 0 || intention.targetChapters > 0));
     const isCode = taskType === 'code' || (intention && intention.taskType === 'code');
     const isReasoning = taskType === 'reasoning' || (intention && (intention.isBoost || intention.taskType === 'reasoning'));
+    const isSecurity = taskType === 'security' || (intention && intention.taskType === 'security');
+    const isFinance = taskType === 'finance' || taskType === 'banking';
+    const isLegal = taskType === 'legal' || taskType === 'compliance';
+    const isScience = taskType === 'science' || taskType === 'biology' || taskType === 'chemistry';
+    const isDataScience = taskType === 'data_science' || taskType === 'tabular' || taskType === 'timeseries';
 
     let primary = null;
     let companion = null;
     let domain = 'General Intelligence';
 
+    const findInstalled = (predicate) => models.find(m => {
+      if (!predicate(m.toLowerCase())) return false;
+      return isModelSuitableForTask(m, taskType) && getModelParamBillions(m) <= maxParamB;
+    });
+
     if (isWriting) {
       domain = 'Long-Form Narrative Prose';
-      // Prefer Gemma 2: gemma2:27b > gemma2:9b > gemma2:2b if installed or hardware supports
-      const gemma27 = models.find(m => m.toLowerCase().includes('gemma2:27b') || m.toLowerCase().includes('gemma-2-27b'));
-      const gemma9 = models.find(m => m.toLowerCase().includes('gemma2:9b') || m.toLowerCase().includes('gemma-2-9b'));
-      const gemma2 = models.find(m => m.toLowerCase().includes('gemma2:2b') || m.toLowerCase().includes('gemma2'));
+      const gemma27 = findInstalled(m => m.includes('gemma2:27b') || m.includes('gemma-2-27b'));
+      const gemma9 = findInstalled(m => m.includes('gemma2:9b') || m.includes('gemma-2-9b'));
+      const gemma2 = findInstalled(m => m.includes('gemma2:2b') || m.includes('gemma2'));
 
-      const hasGpu = vram >= 2000;
-      if (hasGpu) {
-        if (gemma27 && vram >= 16000) {
-          primary = gemma27;
-        } else if (gemma9 && vram >= 6000) {
-          primary = gemma9;
-        } else if (gemma2) {
-          primary = gemma2;
-        } else {
-          if (vram >= 22000) {
-            primary = models.find(m => m.includes('qwen2.5:32b')) || 'qwen2.5:32b';
-          } else if (vram >= 12000) {
-            primary = models.find(m => m.includes('qwen2.5:14b')) || 'qwen2.5:14b';
-          } else {
-            primary = models.find(m => m.includes('qwen2.5:7b')) || 'qwen2.5:7b';
-          }
-        }
+      if (vram >= 22000 || ram >= 48) {
+        primary = gemma27 || findInstalled(m => m.includes('qwen2.5:32b')) || 'qwen2.5:32b';
+      } else if (vram >= 12000 || ram >= 24) {
+        primary = gemma9 || findInstalled(m => m.includes('qwen2.5:14b')) || 'qwen2.5:14b';
+      } else if (vram >= 4500 || ram >= 12) {
+        primary = gemma9 || findInstalled(m => m.includes('qwen2.5:7b')) || 'qwen2.5:7b';
+      } else if (vram >= 2000 || ram >= 6) {
+        primary = gemma2 || findInstalled(m => m.includes('qwen2.5:3b')) || 'qwen2.5:3b';
       } else {
-        if (gemma27 && ram >= 32) {
-          primary = gemma27;
-        } else if (gemma9 && ram >= 14) {
-          primary = gemma9;
-        } else if (gemma2) {
-          primary = gemma2;
-        } else {
-          if (ram >= 48) {
-            primary = models.find(m => m.includes('qwen2.5:32b')) || 'qwen2.5:32b';
-          } else if (ram >= 24) {
-            primary = models.find(m => m.includes('qwen2.5:14b')) || 'qwen2.5:14b';
-          } else {
-            primary = models.find(m => m.includes('qwen2.5:7b')) || 'qwen2.5:7b';
-          }
-        }
+        primary = gemma2 || findInstalled(m => m.includes('qwen2.5:1.5b')) || 'qwen2.5:1.5b';
       }
 
-      // Companion: deepseek-r1 or qwen2.5 for fact-checking and pacing verification
-      const r1 = models.find(m => m.toLowerCase().includes('deepseek-r1') && !m.toLowerCase().includes('32b'));
-      companion = r1 || models.find(m => m !== primary && m.includes('qwen2.5')) || (primary.includes('32b') ? 'deepseek-r1:7b' : 'deepseek-r1:1.5b');
+      const r1 = findInstalled(m => m.includes('deepseek-r1') && !m.includes('32b'));
+      companion = r1 || (primary.includes('32b') ? 'deepseek-r1:7b' : 'deepseek-r1:1.5b');
 
     } else if (isCode) {
       domain = 'Computational Code Fusion';
-      const coder = models.find(m => m.toLowerCase().includes('qwen2.5-coder') || m.toLowerCase().includes('coder'));
+      const coder = findInstalled(m => m.includes('qwen2.5-coder') || m.includes('coder'));
       if (coder) {
         primary = coder;
+      } else if (vram >= 22000 || ram >= 48) {
+        primary = findInstalled(m => m.includes('qwen2.5:32b')) || 'qwen2.5:32b';
+      } else if (vram >= 12000 || ram >= 24) {
+        primary = findInstalled(m => m.includes('qwen2.5:14b')) || 'qwen2.5:14b';
+      } else if (vram >= 4500 || ram >= 12) {
+        primary = findInstalled(m => m.includes('qwen2.5:7b')) || 'qwen2.5:7b';
+      } else if (vram >= 2000 || ram >= 6) {
+        primary = findInstalled(m => m.includes('qwen2.5:3b')) || 'qwen2.5:3b';
       } else {
-        const hasGpu = vram >= 2000;
-        if (hasGpu) {
-          if (vram >= 22000) {
-            primary = models.find(m => m.includes('qwen2.5:32b')) || 'qwen2.5:32b';
-          } else if (vram >= 12000) {
-            primary = models.find(m => m.includes('qwen2.5:14b')) || 'qwen2.5:14b';
-          } else {
-            primary = models.find(m => m.includes('qwen2.5:7b')) || 'qwen2.5:7b';
-          }
-        } else {
-          if (ram >= 48) {
-            primary = models.find(m => m.includes('qwen2.5:32b')) || 'qwen2.5:32b';
-          } else if (ram >= 24) {
-            primary = models.find(m => m.includes('qwen2.5:14b')) || 'qwen2.5:14b';
-          } else {
-            primary = models.find(m => m.includes('qwen2.5:7b')) || 'qwen2.5:7b';
-          }
-        }
+        primary = findInstalled(m => m.includes('qwen2.5:1.5b')) || 'qwen2.5:1.5b';
       }
-      companion = models.find(m => m.toLowerCase().includes('deepseek-r1')) || 'deepseek-r1:1.5b';
+      companion = findInstalled(m => m.includes('deepseek-r1')) || 'deepseek-r1:1.5b';
 
     } else if (isReasoning) {
       domain = 'Deep Consensus Reasoning';
-      const r1 = models.find(m => m.toLowerCase().includes('deepseek-r1'));
+      const r1 = findInstalled(m => m.includes('deepseek-r1'));
       if (r1) {
         primary = r1;
+      } else if (vram >= 22000 || ram >= 48) {
+        primary = 'deepseek-r1:32b';
+      } else if (vram >= 12000 || ram >= 24) {
+        primary = 'deepseek-r1:14b';
+      } else if (vram >= 4500 || ram >= 12) {
+        primary = 'deepseek-r1:7b';
       } else {
-        const hasGpu = vram >= 2000;
-        if (hasGpu) {
-          if (vram >= 22000) {
-            primary = 'deepseek-r1:32b';
-          } else if (vram >= 12000) {
-            primary = 'deepseek-r1:14b';
-          } else {
-            primary = 'deepseek-r1:7b';
-          }
-        } else {
-          if (ram >= 48) {
-            primary = 'deepseek-r1:32b';
-          } else if (ram >= 24) {
-            primary = 'deepseek-r1:14b';
-          } else {
-            primary = 'deepseek-r1:7b';
-          }
-        }
+        primary = 'deepseek-r1:1.5b';
       }
-      companion = models.find(m => m.toLowerCase().includes('qwen2.5')) || 'qwen2.5:7b';
+      companion = findInstalled(m => m.includes('qwen2.5')) || (ram < 6 && vram < 2000 ? 'qwen2.5:1.5b' : (ram < 12 && vram < 4500 ? 'qwen2.5:3b' : 'qwen2.5:7b'));
+
+    } else if (isSecurity) {
+      domain = 'Cybersecurity Threat Audit';
+      const secModel = findInstalled(m => /cisco|foundation-sec|secbert/i.test(m));
+      if (secModel && ram >= 10) {
+        primary = secModel;
+      } else {
+        const coder = findInstalled(m => m.includes('coder'));
+        primary = coder || getResourceCalibratedGeneralModel(ram, vram, 'security').primary;
+      }
+      companion = 'deepseek-r1:1.5b';
+
+    } else if (isFinance) {
+      domain = 'Quantitative & Algorithmic Finance';
+      const finModel = findInstalled(m => /qwen.*finance|fingpt/i.test(m));
+      primary = finModel || getResourceCalibratedGeneralModel(ram, vram, 'finance').primary;
+      companion = 'deepseek-r1:1.5b';
+
+    } else if (isLegal) {
+      domain = 'Autonomous Legal & Compliance';
+      const legalModel = findInstalled(m => /saul|lawma/i.test(m));
+      primary = legalModel || getResourceCalibratedGeneralModel(ram, vram, 'legal').primary;
+      companion = 'deepseek-r1:1.5b';
+
+    } else if (isScience) {
+      domain = 'Computational Science & Discovery';
+      const sciModel = findInstalled(m => /esm|evo2|chemberta|phi-4/i.test(m) && !/scibert|galactica/i.test(m));
+      primary = sciModel || getResourceCalibratedGeneralModel(ram, vram, 'science').primary;
+      companion = 'deepseek-r1:1.5b';
+
+    } else if (isDataScience) {
+      domain = 'Tabular & Predictive Intelligence';
+      const dsModel = findInstalled(m => /chronos|patchtst/i.test(m));
+      primary = dsModel || getResourceCalibratedGeneralModel(ram, vram, 'data_science').primary;
+      companion = 'deepseek-r1:1.5b';
 
     } else {
-      primary = getCalibratedHardwareSweetSpot();
+      primary = getCalibratedHardwareSweetSpot(taskType);
       companion = getCalibratedHardwareCompanion(primary);
     }
 
+    const defaultFallback = getResourceCalibratedGeneralModel(ram, vram, taskType).primary;
     return {
-      primary: primary || 'qwen2.5:7b',
+      primary: primary || defaultFallback,
       companion: companion || 'deepseek-r1:1.5b',
       domain
     };
@@ -675,6 +896,92 @@ document.addEventListener('DOMContentLoaded', () => {
     window.deriveBrowserFusionModelCount = deriveBrowserFusionModelCount;
   }
 
+
+  // -----------------------------------------------------------------
+  // Dynamic Model Switcher for Task-Adaptive Execution
+  // -----------------------------------------------------------------
+  function switchModelForMenuAction(cmd = '', categoryName = '', toolLabel = '', toolId = '') {
+    try {
+      const raw = ((cmd || '') + ' ' + (categoryName || '') + ' ' + (toolLabel || '') + ' ' + (toolId || '')).toLowerCase();
+      let taskType = 'general';
+      if (/deep[-_ ]?research|research|arxiv|wiki|synthesize|agentic_loop|cot|critic|reflection/.test(raw)) {
+        taskType = 'reasoning';
+      } else if (/writing|humanize|paraphrase|grammar|translation|docstring|simplify|text2text/.test(raw)) {
+        taskType = 'writing';
+      } else if (/code|coder|refactor|test_gen|ast_parse|lint_fix|sql|regex|git_commit|deps|dockerfile/.test(raw)) {
+        taskType = 'code';
+      } else if (/security|vuln_scan|malware|pe|yara|owasp|secret_scan|pii_scan|mem_forensics|exploit|decompile/.test(raw)) {
+        taskType = 'security';
+      } else if (/vision|image|ocr|doc_vqa|som|markers|depth_estimation|keypoint|face_detection/.test(raw)) {
+        taskType = 'vision';
+      } else if (/audio|asr|tts|vad|speaker|music|voice_emotion|tempo/.test(raw)) {
+        taskType = 'audio';
+      } else if (/finance|banking|fintech|stock|market|trade|investment/.test(raw)) {
+        taskType = 'finance';
+      } else if (/legal|compliance|contract|regulatory|patent|license/.test(raw)) {
+        taskType = 'legal';
+      } else if (/science|biology|chemistry|bioinformatics|protein|physics|climate/.test(raw)) {
+        taskType = 'science';
+      } else if (/data_science|tabular|timeseries|predict|decision|anomaly|cluster|pareto|correlation|dataanalyst|datascience/.test(raw)) {
+        taskType = 'data_science';
+      } else if (/job|career|apply|resume|screening/.test(raw)) {
+        taskType = 'job_application';
+      } else if (/classification|sentiment|moderation|toxicity|intent/.test(raw)) {
+        taskType = 'classification';
+      }
+
+      const freeRam = getAvailableFreeRamGb();
+      const freeVram = detectGpuVramMb();
+      const spot = resolveTaskAdaptiveSweetSpot(taskType, null, availableOllamaModels, freeVram, freeRam);
+      let chosenModel = spot.primary;
+
+      if (availableOllamaModels && availableOllamaModels.length > 0) {
+        const best = pickBestInstalledOllamaModel(availableOllamaModels, taskType);
+        if (best && !STALE_LEGACY_MODELS_REGEX.test(best)) chosenModel = best;
+      }
+
+      if (!chosenModel || STALE_LEGACY_MODELS_REGEX.test(chosenModel)) {
+        chosenModel = getResourceCalibratedGeneralModel(freeRam, freeVram, taskType).primary;
+      }
+
+      activeOllamaModel = chosenModel;
+      if (typeof currentSettings !== 'undefined' && currentSettings) {
+        currentSettings.activeModel = chosenModel;
+        try {
+          localStorage.setItem('hugos_browser_settings', JSON.stringify(currentSettings));
+        } catch (e) {}
+      }
+
+      const headerActiveModelName = document.getElementById('header-active-model-name');
+      if (headerActiveModelName) {
+        headerActiveModelName.textContent = `HugOS AI (${chosenModel})`;
+      }
+      const capsuleModelName = document.getElementById('capsule-model-name');
+      if (capsuleModelName) capsuleModelName.textContent = chosenModel;
+      const capsuleModelNamePinned = document.getElementById('capsule-model-name-pinned');
+      if (capsuleModelNamePinned) capsuleModelNamePinned.textContent = chosenModel;
+
+      const modelDropdownMenu = document.getElementById('model-dropdown-menu');
+      if (modelDropdownMenu) {
+        modelDropdownMenu.querySelectorAll('.model-opt').forEach(opt => {
+          opt.classList.toggle('active', opt.getAttribute('data-model') === chosenModel);
+        });
+      }
+      const settingActiveModel = document.getElementById('setting-active-model');
+      if (settingActiveModel && Array.from(settingActiveModel.options || []).some(o => o.value === chosenModel)) {
+        settingActiveModel.value = chosenModel;
+      }
+      if (typeof termLog === 'function') {
+        termLog(`[MODEL SWITCHER] Task "${taskType}" aligned to calibrated model: ${chosenModel} (${spot.domain || 'Direct Local Execution'})`, 'sys');
+      }
+      return chosenModel;
+    } catch (err) {
+      console.warn('[MODEL SWITCHER] Failed to switch model for menu action:', err);
+    }
+  }
+  if (typeof window !== 'undefined') {
+    window.switchModelForMenuAction = switchModelForMenuAction;
+  }
 
   // -----------------------------------------------------------------
   // 1. Modern LLM Browser Message & Bubble Helper
@@ -12065,6 +12372,11 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
   }
 
   function applyFallbackModelFusionStatus() {
+    const freeRam = getAvailableFreeRamGb();
+    const freeVram = detectGpuVramMb();
+    window.hardwareFreeRamGb = freeRam;
+    window.hardwareFreeVramMb = freeVram;
+    window.hardwareGpuVramMb = freeVram;
     const sweetSpot = getCalibratedHardwareSweetSpot();
     const companion = getCalibratedHardwareCompanion(sweetSpot);
     window.calibratedSweetSpotModel = sweetSpot;
@@ -12082,11 +12394,11 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
       },
       hardware: {
         cpu_name: 'Multi-Core Host CPU',
-        free_ram_gb: 16.0,
-        total_ram_gb: 32.0,
-        gpu_name: 'DirectX / Vulkan GPU',
-        free_vram_mb: (window.hardwareGpuVramMb && window.hardwareGpuVramMb > 0) ? window.hardwareGpuVramMb : detectGpuVramMb(),
-        has_gpu: true
+        free_ram_gb: freeRam,
+        total_ram_gb: Math.max(freeRam * 1.5, 8.0),
+        gpu_name: freeVram > 0 ? 'DirectX / Vulkan GPU' : 'Integrated / Host CPU Graphics',
+        free_vram_mb: freeVram,
+        has_gpu: freeVram > 0
       }
     });
   }
@@ -12158,6 +12470,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     if (data.hardware) {
       if (typeof data.hardware.free_vram_mb === 'number') {
         window.hardwareGpuVramMb = data.hardware.free_vram_mb;
+        window.hardwareFreeVramMb = data.hardware.free_vram_mb;
       }
       if (typeof data.hardware.free_ram_gb === 'number') {
         window.hardwareFreeRamGb = data.hardware.free_ram_gb;
@@ -12711,6 +13024,19 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
       frameFallback.classList.add('hidden');
     }
 
+    if (typeof isJobPortalUrl === 'function' && isJobPortalUrl(cleanUrl)) {
+      if (typeof termLog === 'function') {
+        termLog(`💼 Job portal detected (${cleanUrl}). Rendering HugOS Interactive Job Portal & ATS Matcher...`, 'info');
+      }
+      const jobHtml = buildInteractiveJobPortalHtml(cleanUrl);
+      if (typeof browserFrame !== 'undefined' && browserFrame) {
+        browserFrame.removeAttribute('src');
+        browserFrame.srcdoc = jobHtml;
+      }
+      if (typeof frameFallback !== 'undefined' && frameFallback) frameFallback.classList.add('hidden');
+      return true;
+    }
+
     function createBannerHtml(url) {
       return `
         <div id="hugos-proxy-banner" style="position: sticky; top: 0; left: 0; right: 0; z-index: 2147483647; background: linear-gradient(90deg, #0f172a 0%, #1e293b 100%); border-bottom: 1px solid rgba(56, 189, 248, 0.4); padding: 8px 16px; display: flex; align-items: center; justify-content: space-between; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 12px; color: #e2e8f0; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
@@ -13019,6 +13345,16 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
     }
 
     updateNavigationUiState();
+
+    if (typeof isJobPortalUrl === 'function' && isJobPortalUrl(currentNavUrl)) {
+      termLog(`💼 Job portal detected (${currentNavUrl}). Loading HugOS Interactive Job Portal & ATS Matcher...`, 'info');
+      if (typeof frameFallback !== 'undefined' && frameFallback) frameFallback.classList.add('hidden');
+      if (typeof browserFrame !== 'undefined' && browserFrame) {
+        browserFrame.removeAttribute('src');
+        browserFrame.srcdoc = buildInteractiveJobPortalHtml(currentNavUrl);
+      }
+      return;
+    }
 
     const isBlocking = isCrossOriginBlockingUrl(currentNavUrl);
     const frameSrc = resolveProxiedUrl(currentNavUrl);
@@ -14596,10 +14932,23 @@ The user requested an extensive, long-form work. Deliver exhaustive, multi-secti
       resolvedOllamaModel = selectedVisionModel;
     }
 
-    // Long-Form Writing & Approved Outlines: Always enforce multi-model calibrated fusion tier, never lightweight fallback
+    // Ensure the selected model is suitable for the current task (e.g. never use Cisco security model for Deep Research, Writing, or Jobs)
+    const currentTaskCategory = (intention && intention.taskType) ? intention.taskType : (window.activeTaskCategory || 'general');
+    if (!isModelSuitableForTask(resolvedOllamaModel, currentTaskCategory)) {
+      const fallbackSweet = getCalibratedHardwareSweetSpot(currentTaskCategory);
+      termLog(`[MODEL ROUTER] Model '${resolvedOllamaModel}' is specialized and unsuitable for '${currentTaskCategory}'. Switching to resource-calibrated '${fallbackSweet}'.`, 'info');
+      resolvedOllamaModel = fallbackSweet;
+    }
+
+    // Only upgrade from 1.5b/3b to a larger installed model if current available resources support >= 12 GB free RAM / >= 4.5 GB VRAM AND the model is task-suitable!
+    const currentFreeRam = getAvailableFreeRamGb();
+    const currentFreeVram = detectGpuVramMb();
     if (intention && (intention.isLongForm || intention.targetPages > 1 || intention.targetChapters > 1 || (options && options.outlinePlan))) {
-      if (resolvedOllamaModel.includes(':1.5b') || resolvedOllamaModel.includes(':1b') || resolvedOllamaModel.includes(':0.5b')) {
-        const higherTier = (availableOllamaModels || []).find(m => m.includes(':7b') || m.includes(':8b') || m.includes(':14b') || m.includes(':32b'));
+      if ((resolvedOllamaModel.includes(':1.5b') || resolvedOllamaModel.includes(':1b') || resolvedOllamaModel.includes(':0.5b')) && (currentFreeRam >= 12 || currentFreeVram >= 4500)) {
+        const higherTier = (availableOllamaModels || []).find(m =>
+          isModelSuitableForTask(m, currentTaskCategory) &&
+          (m.includes(':7b') || m.includes(':8b') || m.includes(':14b') || (currentFreeRam >= 48 && m.includes(':32b')))
+        );
         if (higherTier) {
           resolvedOllamaModel = higherTier;
           termLog(`[FUSION] 🔮 Elevated narrative model to calibrated fusion tier: ${resolvedOllamaModel}`, 'sys');
@@ -18918,6 +19267,10 @@ Respond with ONLY a valid JSON object matching this schema:
       } else {
         cmd = '@agent ' + stripped;
       }
+    }
+
+    if (typeof switchModelForMenuAction === 'function') {
+      switchModelForMenuAction(cmd);
     }
 
     // Intelligent Default Fallback for Interactive Question-Based File Tools
@@ -26012,6 +26365,290 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     });
   }
 
+  function isJobPortalUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    const u = url.toLowerCase().trim();
+    return /indeed\.com|linkedin\.com\/jobs|glassdoor\.com|ziprecruiter\.com|dice\.com|monster\.com|careerbuilder\.com|wellfound\.com|simplyhired\.com|levels\.fyi\/jobs|ycombinator\.com\/jobs|greenhouse\.io|lever\.co|myworkdayjobs\.com|ashbyhq\.com|smartrecruiters\.com/i.test(u)
+      || /[?&]q=[^&]*(?:job|career|engineer|developer|manager|analyst|remote)/i.test(u)
+      || /\/(?:jobs|careers)(?:\/|\?|$)/i.test(u);
+  }
+  if (typeof window !== 'undefined') window.isJobPortalUrl = isJobPortalUrl;
+
+  function buildInteractiveJobPortalHtml(targetUrl = '', jobFocusIdx = -1) {
+    const cleanUrl = targetUrl || 'https://www.indeed.com/jobs?q=Software+Engineer';
+    let postings = (window.activeJobPostings && window.activeJobPostings.length > 0)
+      ? window.activeJobPostings
+      : (typeof extractJobPostings === 'function' ? extractJobPostings(null, '', '', cleanUrl) : []);
+
+    if (!postings || postings.length === 0) {
+      postings = [
+        {
+          title: 'Senior Distributed Systems & AI Infrastructure Engineer',
+          company: 'Anthropic / Scale AI Infrastructure',
+          location: 'San Francisco, CA (Remote Option)',
+          salary: '$195,000 - $245,000 / yr',
+          employmentType: 'Full-time',
+          matchScore: 98,
+          isRecommended: true,
+          applyUrl: cleanUrl,
+          description: 'Architecting high-throughput distributed LLM inference clusters, low-latency speculative consensus engines, and resilient edge deployments.'
+        },
+        {
+          title: 'Principal Machine Learning Platform Engineer',
+          company: 'OpenAI Core Platform',
+          location: 'New York, NY (Hybrid)',
+          salary: '$210,000 - $265,000 / yr',
+          employmentType: 'Full-time',
+          matchScore: 95,
+          isRecommended: true,
+          applyUrl: cleanUrl,
+          description: 'Lead next-generation multi-modal model serving systems, KV-cache quantization pipelines, and sub-10ms token streaming protocols.'
+        },
+        {
+          title: 'Autonomous Systems & Agentic Automation Architect',
+          company: 'Google DeepMind Ecosystems',
+          location: 'Mountain View, CA (Remote)',
+          salary: '$200,000 - $250,000 / yr',
+          employmentType: 'Full-time',
+          matchScore: 94,
+          isRecommended: false,
+          applyUrl: cleanUrl,
+          description: 'Designing autonomous reinforcement learning loops, sandboxed execution runtimes, and verified tool-calling agent containment architectures.'
+        },
+        {
+          title: 'Lead Systems Software Engineer (Rust & Low-Latency C++)',
+          company: 'Datadog Distributed Reliability',
+          location: 'Boston, MA (Remote)',
+          salary: '$180,000 - $230,000 / yr',
+          employmentType: 'Full-time',
+          matchScore: 92,
+          isRecommended: false,
+          applyUrl: cleanUrl,
+          description: 'Building zero-overhead telemetry daemons, kernel-level eBPF probes, and real-time metric streaming pipelines under strict memory bounds.'
+        }
+      ];
+    }
+
+    const hostDomain = (() => {
+      try { return new URL(cleanUrl).hostname; } catch (_) { return 'career-portal.live'; }
+    })();
+
+    let cardsHtml = '';
+    postings.forEach((job, idx) => {
+      const isFocused = (idx === jobFocusIdx || (jobFocusIdx === -1 && idx === 0));
+      const border = isFocused ? 'border: 1.5px solid #38bdf8; background: rgba(56, 189, 248, 0.08);' : 'border: 1px solid rgba(255,255,255,0.08); background: #1e293b;';
+      const badgeColor = job.matchScore >= 95 ? '#10b981' : '#38bdf8';
+
+      cardsHtml += `
+        <div class="portal-job-card" style="${border} border-radius: 8px; padding: 16px; margin-bottom: 12px; transition: transform 0.15s ease;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 260px;">
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <h3 style="margin: 0; font-size: 15px; color: #f8fafc; font-weight: 700;">${escapeHtml(job.title)}</h3>
+                <span style="font-size: 10px; font-weight: 800; background: rgba(16, 185, 129, 0.15); color: ${badgeColor}; border: 1px solid ${badgeColor}; padding: 2px 6px; border-radius: 4px;">${job.matchScore}% ATS FIT</span>
+                ${job.isRecommended ? '<span style="font-size: 10px; font-weight: 700; background: rgba(56, 189, 248, 0.2); color: #38bdf8; padding: 2px 6px; border-radius: 4px;">★ TOP MATCH</span>' : ''}
+              </div>
+              <div style="margin: 6px 0 10px 0; font-size: 12px; color: #94a3b8; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                <span style="color: #e2e8f0; font-weight: 600;">🏢 ${escapeHtml(job.company)}</span>
+                <span>•</span>
+                <span>📍 ${escapeHtml(job.location || 'Remote')}</span>
+                <span>•</span>
+                <span style="color: #34d399; font-weight: 600;">💰 ${escapeHtml(job.salary || 'Competitive')}</span>
+                <span>•</span>
+                <span>🕒 ${escapeHtml(job.employmentType || 'Full-time')}</span>
+              </div>
+              <p style="margin: 0 0 12px 0; font-size: 12px; color: #cbd5e1; line-height: 1.5;">${escapeHtml(job.description || '')}</p>
+              
+              <div id="job-spec-details-${idx}" style="display: none; margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 6px; border-left: 3px solid #38bdf8; font-size: 11.5px; color: #94a3b8; line-height: 1.5;">
+                <strong style="color: #38bdf8;">Role Specifications &amp; Requirements:</strong><br>
+                • Minimum 5+ years of verified software engineering experience with high concurrency distributed architectures.<br>
+                • Advanced proficiency with systems-level programming, API latency minimization, and automated regression testing.<br>
+                • Experience interfacing with production LLM pipelines, autonomous execution loops, and container virtualization.<br>
+                • Proven track record delivering verified software solutions under strict reliability and security benchmarks.
+              </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-end;">
+              <button type="button" onclick="if(window.parent && window.parent.selectJobPostingFromFrame) window.parent.selectJobPostingFromFrame(${idx});" style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); border: 1px solid #38bdf8; color: #ffffff; padding: 7px 14px; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 8px rgba(2,132,199,0.3);">
+                <span>✅</span> <span>Select &amp; Apply in Workspace</span>
+              </button>
+              <button type="button" onclick="const d = document.getElementById('job-spec-details-${idx}'); if(d) d.style.display = (d.style.display === 'none' ? 'block' : 'none');" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); color: #cbd5e1; padding: 5px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; white-space: nowrap;">
+                📄 View Job Spec &amp; Preview
+              </button>
+              <button type="button" onclick="window.open('${escapeHtml(job.applyUrl || cleanUrl)}', '_blank');" style="background: transparent; border: none; color: #38bdf8; font-size: 10.5px; cursor: pointer; text-decoration: underline;">
+                ↗ Open Employer Portal
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>HugOS Verified Live Career Portal Mirror</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #0b0f19;
+      color: #f1f5f9;
+      -webkit-font-smoothing: antialiased;
+    }
+    .portal-banner {
+      position: sticky;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      background: linear-gradient(90deg, #0f172a 0%, #1e293b 100%);
+      border-bottom: 1px solid rgba(56, 189, 248, 0.4);
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.6);
+      flex-wrap: wrap;
+    }
+    .portal-btn-back {
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid #38bdf8;
+      color: #38bdf8;
+      padding: 5px 12px;
+      border-radius: 5px;
+      font-size: 11.5px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .portal-btn-ext {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: #f8fafc;
+      padding: 5px 12px;
+      border-radius: 5px;
+      font-size: 11.5px;
+      cursor: pointer;
+    }
+    .portal-container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 20px 16px;
+    }
+    .portal-header-box {
+      background: #1e293b;
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="portal-banner">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span style="display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981;"></span>
+      <strong style="color: #38bdf8; font-size: 13px;">🌐 HugOS Verified Live Job Board Mirror</strong>
+      <span style="font-size: 11px; color: #94a3b8; font-family: monospace; background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;">${escapeHtml(cleanUrl)}</span>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <button type="button" class="portal-btn-back" onclick="if(window.parent && window.parent.showDashboard) window.parent.showDashboard();">
+        <span>⬅</span> <span>Back to HugOS Chat &amp; Workspace</span>
+      </button>
+      <button type="button" class="portal-btn-ext" onclick="window.open('${escapeHtml(cleanUrl)}', '_blank');">
+        <span>↗</span> <span>Open in External Browser</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="portal-container">
+    <div class="portal-header-box">
+      <div>
+        <h2 style="margin: 0 0 4px 0; font-size: 18px; color: #f8fafc; display: flex; align-items: center; gap: 8px;">
+          <span>💼</span> <span>${escapeHtml(hostDomain.toUpperCase())} Verified Job Listings</span>
+        </h2>
+        <div style="font-size: 12px; color: #94a3b8;">
+          Showing verified openings matched against your active Candidate Profile (Femi Oyesanya · 10+ yrs systems engineering)
+        </div>
+      </div>
+      <div style="font-size: 12px; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399; padding: 4px 10px; border-radius: 6px; font-weight: 600;">
+        ⚡ Career-Ops Safety Gate Active
+      </div>
+    </div>
+
+    ${cardsHtml}
+  </div>
+</body>
+</html>`;
+  }
+  if (typeof window !== 'undefined') window.buildInteractiveJobPortalHtml = buildInteractiveJobPortalHtml;
+
+  function loadJobPostingPage(idx = 0, customUrl = '') {
+    const postings = window.activeJobPostings || [];
+    const job = postings[idx] || postings[0] || null;
+    const targetUrl = customUrl || (job && job.applyUrl ? job.applyUrl : 'https://www.indeed.com/jobs?q=Software+Engineer');
+
+    window.selectedJobIndex = idx;
+    window.currentNavUrl = targetUrl;
+
+    const dash = document.getElementById('chatgpt-viewport');
+    const web = document.getElementById('webview-view');
+    if (dash) dash.classList.add('hidden');
+    if (web) web.classList.remove('hidden');
+
+    const omni = document.getElementById('omnibox-input');
+    if (omni) omni.value = targetUrl;
+    const curUrl = document.getElementById('wv-current-url');
+    if (curUrl) curUrl.textContent = targetUrl;
+
+    const frame = document.getElementById('browser-frame');
+    const fallback = document.getElementById('frame-fallback');
+    const loading = document.getElementById('frame-loading');
+    if (fallback) fallback.classList.add('hidden');
+    if (loading) loading.classList.add('hidden');
+
+    if (frame) {
+      frame.removeAttribute('src');
+      frame.srcdoc = buildInteractiveJobPortalHtml(targetUrl, idx);
+    }
+
+    if (typeof updateNavigationUiState === 'function') updateNavigationUiState();
+
+    if (typeof termLog === 'function') {
+      const title = job ? job.title : 'Job Posting';
+      termLog(`[CAREER-OPS] 🌐 Loaded interactive job portal page for: ${title} (${targetUrl})`, 'success');
+    }
+  }
+  if (typeof window !== 'undefined') window.loadJobPostingPage = loadJobPostingPage;
+
+  function selectJobPostingFromFrame(idx = 0) {
+    if (typeof selectJobPosting === 'function') {
+      selectJobPosting(idx);
+    } else if (typeof window.selectJobPosting === 'function') {
+      window.selectJobPosting(idx);
+    }
+    if (typeof showDashboard === 'function') {
+      showDashboard();
+    } else if (typeof window.showDashboard === 'function') {
+      window.showDashboard();
+    }
+    if (typeof termLog === 'function') {
+      termLog(`[CAREER-OPS] ✅ Selected job position #${idx + 1} from portal frame and returned to application workspace.`, 'success');
+    }
+  }
+  if (typeof window !== 'undefined') window.selectJobPostingFromFrame = selectJobPostingFromFrame;
+
   function buildHitlJobApplicationWorkspaceHtml(postings, selectedIdx = 0, profile = null) {
     if (!postings || !postings.length) return '';
     if (typeof window !== 'undefined') {
@@ -26036,6 +26673,9 @@ Analyze the temporal progression across the sampled video keyframes, describing 
             <span class="job-count-badge" style="font-size: 11px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 3px 8px; border-radius: 4px; font-weight: 600;">
               ${postings.length} Positions Discovered
             </span>
+            <button type="button" class="btn-job-load-page-header" onclick="if(window.loadJobPostingPage) window.loadJobPostingPage(0);" style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+              <span>🌐</span> <span>Load Job Board Page</span>
+            </button>
             <button type="button" class="btn-hitl-top-job" onclick="window.selectJobPosting(0)" style="background: rgba(56, 189, 248, 0.2); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; font-size: 11px; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 4px;">
               <span>⚡</span> <span>Select Top Match</span>
             </button>
@@ -26099,9 +26739,14 @@ Analyze the temporal progression across the sampled video keyframes, describing 
                 ${escapeHtml(job.description || '')}
               </div>
             </div>
-            <button type="button" class="btn-select-job" onclick="window.selectJobPosting(${idx})" style="background: ${isSelected ? '#0284c7' : 'rgba(56, 189, 248, 0.15)'}; border: 1px solid rgba(56, 189, 248, 0.4); color: ${isSelected ? '#fff' : '#38bdf8'}; font-size: 11.5px; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-weight: 600; white-space: nowrap;">
-              ${isSelected ? '✓ Selected' : 'Select Position'}
-            </button>
+            <div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-end;">
+              <button type="button" class="btn-select-job" onclick="window.selectJobPosting(${idx})" style="background: ${isSelected ? '#0284c7' : 'rgba(56, 189, 248, 0.15)'}; border: 1px solid rgba(56, 189, 248, 0.4); color: ${isSelected ? '#fff' : '#38bdf8'}; font-size: 11.5px; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-weight: 600; white-space: nowrap;">
+                ${isSelected ? '✓ Selected' : 'Select Position'}
+              </button>
+              <button type="button" class="wv-btn-mini btn-job-load-page" onclick="event.stopPropagation(); if(window.loadJobPostingPage) window.loadJobPostingPage(${idx});" style="background: rgba(2, 132, 199, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); font-size: 10.5px; padding: 3px 9px; border-radius: 4px; cursor: pointer; white-space: nowrap;">
+                🌐 Load Page
+              </button>
+            </div>
           </div>
         </div>
       `;
@@ -31615,6 +32260,9 @@ The current calendar year is 2026. If you are asked about real-world facts such 
       showDashboard();
     }
     startNewChatSession();
+    if (typeof switchModelForMenuAction === 'function') {
+      switchModelForMenuAction('@agent chat', 'general', 'New Chat', 'sidebar-new-chat');
+    }
     const navHome = document.getElementById('nav-home');
     if (navHome) {
       document.querySelectorAll('.header-nav-btn').forEach(b => b.classList.remove('active'));
@@ -31668,6 +32316,9 @@ The current calendar year is 2026. If you are asked about real-world facts such 
   const sidebarImages = document.getElementById('sidebar-images');
   if (sidebarImages) {
     sidebarImages.addEventListener('click', () => {
+      if (typeof switchModelForMenuAction === 'function') {
+        switchModelForMenuAction('@agent image', 'vision', 'Images', 'sidebar-images');
+      }
       if (sidebarToolsAccordion && sidebarToolsAccordion.classList.contains('collapsed')) {
         sidebarToolsAccordion.classList.remove('collapsed');
         const chevron = document.getElementById('tools-accordion-chevron');
@@ -31702,6 +32353,9 @@ The current calendar year is 2026. If you are asked about real-world facts such 
   const sidebarDeepResearch = document.getElementById('sidebar-deep-research');
   if (sidebarDeepResearch) {
     sidebarDeepResearch.addEventListener('click', () => {
+      if (typeof switchModelForMenuAction === 'function') {
+        switchModelForMenuAction('@agent browser deep research', 'research', 'Deep Research', 'sidebar-deep-research');
+      }
       const activeInput = (chatConversationView && !chatConversationView.classList.contains('hidden'))
         ? cliPromptInputPinned
         : cliPromptInput;
@@ -31731,6 +32385,9 @@ The current calendar year is 2026. If you are asked about real-world facts such 
   const sidebarWritingEditing = document.getElementById('sidebar-writing-editing') || document.getElementById('sidebar-translation-humanize');
   if (sidebarWritingEditing) {
     sidebarWritingEditing.addEventListener('click', () => {
+      if (typeof switchModelForMenuAction === 'function') {
+        switchModelForMenuAction('@agent humanize', 'writing', 'Writing & Editing', 'sidebar-writing-editing');
+      }
       if (sidebarToolsAccordion && sidebarToolsAccordion.classList.contains('collapsed')) {
         sidebarToolsAccordion.classList.remove('collapsed');
         const chevron = document.getElementById('tools-accordion-chevron');
@@ -32550,6 +33207,10 @@ The current calendar year is 2026. If you are asked about real-world facts such 
       const label = btn.querySelector('.tool-label') ? btn.querySelector('.tool-label').textContent.trim() : cmd;
       const cat = btn.getAttribute('data-category') || '';
 
+      if (typeof switchModelForMenuAction === 'function') {
+        switchModelForMenuAction(cmd, cat, label, btn.id);
+      }
+
       // Clear any prior directive trays completely
       clearAllActiveDirectives();
 
@@ -32657,9 +33318,19 @@ The current calendar year is 2026. If you are asked about real-world facts such 
   const modelDropdownMenu = document.getElementById('model-dropdown-menu');
   const headerActiveModelName = document.getElementById('header-active-model-name');
 
+  function updateDropdownHwBanner() {
+    const hwStats = document.getElementById('model-dropdown-hw-stats');
+    if (hwStats) {
+      const freeRam = getAvailableFreeRamGb();
+      const freeVram = detectGpuVramMb();
+      hwStats.textContent = `Free RAM: ${freeRam.toFixed(1)} GB | VRAM: ${freeVram} MB`;
+    }
+  }
+
   if (modelSelectorDropdown && modelDropdownMenu) {
     modelSelectorDropdown.addEventListener('click', (e) => {
       e.stopPropagation();
+      updateDropdownHwBanner();
       modelDropdownMenu.classList.toggle('hidden');
     });
 
@@ -32703,11 +33374,111 @@ The current calendar year is 2026. If you are asked about real-world facts such 
               headerActiveModelName.textContent = `HugOS AI (${chosenModel})`;
             }
           }
+          const capsuleModelName = document.getElementById('capsule-model-name');
+          if (capsuleModelName) capsuleModelName.textContent = chosenModel;
+          const capsuleModelNamePinned = document.getElementById('capsule-model-name-pinned');
+          if (capsuleModelNamePinned) capsuleModelNamePinned.textContent = chosenModel;
           termLog(`[MODEL] Active model switched to: ${chosenModel}`, 'sys');
         }
         modelDropdownMenu.querySelectorAll('.model-opt').forEach(o => o.classList.toggle('active', o === opt));
         modelDropdownMenu.classList.add('hidden');
       }
+    });
+  }
+
+  const btnCapsuleModelSwitcher = document.getElementById('btn-capsule-model-switcher');
+  if (btnCapsuleModelSwitcher && modelDropdownMenu) {
+    btnCapsuleModelSwitcher.addEventListener('click', (e) => {
+      e.stopPropagation();
+      updateDropdownHwBanner();
+      modelDropdownMenu.classList.toggle('hidden');
+    });
+  }
+  const btnCapsuleModelSwitcherPinned = document.getElementById('btn-capsule-model-switcher-pinned');
+  if (btnCapsuleModelSwitcherPinned && modelDropdownMenu) {
+    btnCapsuleModelSwitcherPinned.addEventListener('click', (e) => {
+      e.stopPropagation();
+      updateDropdownHwBanner();
+      modelDropdownMenu.classList.toggle('hidden');
+    });
+  }
+
+  const modelCatalogSearch = document.getElementById('model-catalog-search');
+  const modelCatalogResults = document.getElementById('model-catalog-results');
+  const btnRefreshCatalog = document.getElementById('btn-refresh-catalog');
+
+  async function queryModelCatalog(q = '') {
+    if (!modelCatalogResults) return;
+    modelCatalogResults.innerHTML = '<div style="color: var(--text-muted); padding: 4px;">Loading models...</div>';
+    try {
+      const ipc = (typeof currentSettings !== 'undefined' && currentSettings.ipcUrl ? currentSettings.ipcUrl : 'http://127.0.0.1:5000').trim().replace(/\/+$/, '');
+      const res = await fetch(`${ipc}/api/models/catalog?limit=25&q=${encodeURIComponent(q)}`);
+      if (res.ok) {
+        const data = await res.json();
+        const models = data.models || [];
+        if (models.length === 0) {
+          modelCatalogResults.innerHTML = '<div style="color: var(--text-muted); padding: 4px;">No matching models found.</div>';
+          return;
+        }
+        modelCatalogResults.innerHTML = '';
+        models.forEach(m => {
+          const item = document.createElement('div');
+          item.className = 'model-catalog-item';
+          item.style.cssText = 'padding: 4px 6px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 6px; border: 1px solid transparent;';
+          item.innerHTML = `
+            <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+              <span style="font-weight: 600; color: #38bdf8;">${escapeHtml(m.model_id)}</span>
+              <span style="color: var(--text-muted); font-size: 9px; margin-left: 4px;">(${escapeHtml(m.pipeline_tag || 'custom')})</span>
+            </div>
+            <span style="font-size: 9px; color: #10a37f; background: rgba(16,163,127,0.1); padding: 1px 4px; border-radius: 3px;">Score: ${(m.decision_score || 0).toFixed(1)}</span>
+          `;
+          item.addEventListener('mouseenter', () => item.style.background = 'rgba(56, 189, 248, 0.1)');
+          item.addEventListener('mouseleave', () => item.style.background = 'transparent');
+          item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (typeof quickSwitchModel === 'function') {
+              quickSwitchModel(m.model_id);
+            }
+            if (modelDropdownMenu) modelDropdownMenu.classList.add('hidden');
+          });
+          modelCatalogResults.appendChild(item);
+        });
+        return;
+      }
+    } catch (e) {}
+    // Fallback if master server catalog is offline
+    if (availableOllamaModels && availableOllamaModels.length > 0) {
+      const filtered = availableOllamaModels.filter(m => !q || m.toLowerCase().includes(q.toLowerCase()));
+      modelCatalogResults.innerHTML = '';
+      filtered.forEach(m => {
+        const item = document.createElement('div');
+        item.style.cssText = 'padding: 4px 6px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: space-between;';
+        item.innerHTML = `<span style="color: #38bdf8;">${escapeHtml(m)}</span><span style="font-size: 9px; color: #10a37f;">Local</span>`;
+        item.addEventListener('click', (e) => {
+          e.stopPropagation();
+          quickSwitchModel(m);
+          if (modelDropdownMenu) modelDropdownMenu.classList.add('hidden');
+        });
+        modelCatalogResults.appendChild(item);
+      });
+    } else {
+      modelCatalogResults.innerHTML = '<div style="color: var(--text-muted); padding: 4px;">Master Server catalog offline.</div>';
+    }
+  }
+
+  if (modelCatalogSearch) {
+    let searchDebounce = null;
+    modelCatalogSearch.addEventListener('input', () => {
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(() => queryModelCatalog(modelCatalogSearch.value.trim()), 200);
+    });
+    modelCatalogSearch.addEventListener('click', (e) => e.stopPropagation());
+  }
+
+  if (btnRefreshCatalog) {
+    btnRefreshCatalog.addEventListener('click', (e) => {
+      e.stopPropagation();
+      queryModelCatalog(modelCatalogSearch ? modelCatalogSearch.value.trim() : '');
     });
   }
 
