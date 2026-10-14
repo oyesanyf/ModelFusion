@@ -24,9 +24,10 @@ function generateWix(srcDir, outputFile) {
     function walk(currentPath, parentDirId) {
         const items = fs.readdirSync(currentPath);
         for (const item of items) {
-            // Skip build metadata, developer scripts, .msi, .wxs, .wixpdb, .log, and .git from installer payload
+            // Skip build metadata, developer scripts, duplicate/backup binaries, .msi, .wxs, .wixpdb, .log, and .git from installer payload
             if (item.endsWith('.msi') || item.endsWith('.wxs') || item.endsWith('.wixpdb') || item.endsWith('.log') || item === '.git' ||
-                item === 'build_number.txt' || item === 'generate_wix.js' || item.endsWith('.ps1') || item.endsWith('.md')) {
+                item === 'build_number.txt' || item === 'generate_wix.js' || item.endsWith('.ps1') || item.endsWith('.md') ||
+                item.endsWith('.old') || item.endsWith('.bak') || /\(\d+\)\.exe$/i.test(item)) {
                 continue;
             }
             const itemPath = path.join(currentPath, item);

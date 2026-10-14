@@ -915,8 +915,8 @@ Write-Host "[OK] Signed $count ModelFusion binaries inside bin/." -ForegroundCol
 [System.GC]::WaitForPendingFinalizers()
 Start-Sleep -Seconds 3
 
-# Kill any lingering wix or wixnative processes from previous runs, as well as HugOS and cli to release locks
-Stop-Process -Name wix, wixnative, HugOS, cli -Force -ErrorAction SilentlyContinue
+# Kill any lingering wix or wixnative processes from previous runs, as well as HugOS and cliide to release locks
+Stop-Process -Name wix, wixnative, HugOS, cliide -Force -ErrorAction SilentlyContinue
 Remove-Item "$env:LOCALAPPDATA\Temp\#cab*" -Force -Recurse -ErrorAction SilentlyContinue
 Remove-Item "$env:TEMP\#cab*" -Force -Recurse -ErrorAction SilentlyContinue
 
@@ -1052,7 +1052,13 @@ for ($i = 0; $i -lt 10; $i++) {
 }
 if (-not $serverRunning) {
     Write-Host "[INFO] Re-starting ModelFusion Master Server daemon on port 5000..." -ForegroundColor Yellow
-    $cliPath = Join-Path $repoRoot "target\release\cli.exe"
+    $cliPath = Join-Path $repoRoot "target\release\cliide.exe"
+    if (-not (Test-Path $cliPath)) {
+        $cliPath = Join-Path $PSScriptRoot "bin\cliide.exe"
+    }
+    if (-not (Test-Path $cliPath)) {
+        $cliPath = Join-Path $repoRoot "target\release\cli.exe"
+    }
     if (Test-Path $cliPath) {
         Sign-FileWithCert $cliPath
         $cliDir = Split-Path -Parent $cliPath

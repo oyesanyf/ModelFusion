@@ -73,28 +73,24 @@ REM Step 2: Background Daemon Verification (Ollama & ModelFusion Master Server)
 REM Runs asynchronously AFTER the browser window is already active on screen.
 REM -------------------------------------------------------------------------
 
-REM Discover ModelFusion Master CLI Binary (Browser Dedicated clibrowser.exe or cli.exe)
+REM Discover Browser Dedicated CLI Binary (clibrowser.exe with fallback to browser cli.exe)
 set CLI_BIN=
 if exist "%SCRIPT_DIR%..\bin\clibrowser.exe" (
     set "CLI_BIN=%SCRIPT_DIR%..\bin\clibrowser.exe"
 ) else if exist "%LOCALAPPDATA%\HugOS Browser\bin\clibrowser.exe" (
     set "CLI_BIN=%LOCALAPPDATA%\HugOS Browser\bin\clibrowser.exe"
-) else if exist "%SCRIPT_DIR%..\bin\cli.exe" (
-    set "CLI_BIN=%SCRIPT_DIR%..\bin\cli.exe"
 ) else if exist "%SCRIPT_DIR%..\..\target\release\clibrowser.exe" (
     set "CLI_BIN=%SCRIPT_DIR%..\..\target\release\clibrowser.exe"
-) else if exist "%SCRIPT_DIR%..\..\target\release\cli.exe" (
-    set "CLI_BIN=%SCRIPT_DIR%..\..\target\release\cli.exe"
+) else if exist "%SCRIPT_DIR%..\bin\cli.exe" (
+    set "CLI_BIN=%SCRIPT_DIR%..\bin\cli.exe"
 ) else if exist "%LOCALAPPDATA%\HugOS Browser\bin\cli.exe" (
     set "CLI_BIN=%LOCALAPPDATA%\HugOS Browser\bin\cli.exe"
-) else if exist "%LOCALAPPDATA%\HugOS IDE\bin\cliide.exe" (
-    set "CLI_BIN=%LOCALAPPDATA%\HugOS IDE\bin\cliide.exe"
-) else if exist "%LOCALAPPDATA%\HugOS IDE\bin\cli.exe" (
-    set "CLI_BIN=%LOCALAPPDATA%\HugOS IDE\bin\cli.exe"
+) else if exist "%SCRIPT_DIR%..\..\target\release\cli.exe" (
+    set "CLI_BIN=%SCRIPT_DIR%..\..\target\release\cli.exe"
+) else if exist "D:\harfile\ModelFusion\target\release\clibrowser.exe" (
+    set "CLI_BIN=D:\harfile\ModelFusion\target\release\clibrowser.exe"
 ) else if exist "D:\harfile\ModelFusion\target\release\cli.exe" (
     set "CLI_BIN=D:\harfile\ModelFusion\target\release\cli.exe"
-) else if exist "%SCRIPT_DIR%..\..\target\debug\cli.exe" (
-    set "CLI_BIN=%SCRIPT_DIR%..\..\target\debug\cli.exe"
 ) else (
     where clibrowser >nul 2>&1
     if not errorlevel 1 for /f "delims=" %%f in ('where clibrowser') do set "CLI_BIN=%%f"
