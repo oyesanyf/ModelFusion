@@ -48,8 +48,8 @@ function generateWix(srcDir, outputFile) {
                 });
                 walk(itemPath, dirId);
             } else {
-                // Skip source maps (.map files) and pyc files to optimize package size and eliminate MAX_PATH collisions
-                if (item.endsWith('.map') || item.endsWith('.pyc')) {
+                // Skip source maps (.map files), pyc files, backup files, and duplicate (N).exe binaries
+                if (item.endsWith('.map') || item.endsWith('.pyc') || item.endsWith('.old') || item.endsWith('.bak') || /\(\d+\)\.exe$/i.test(item)) {
                     continue;
                 }
                 const relSource = path.relative(path.dirname(outputFile), itemPath);

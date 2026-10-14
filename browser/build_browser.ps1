@@ -28,8 +28,8 @@ Write-Host "--------------------------------------------------------" -Foregroun
 Write-Host "[START] Starting HugOS Browser Signed MSI Packaging Process" -ForegroundColor Green
 Write-Host "--------------------------------------------------------" -ForegroundColor Green
 
-# 0. Terminate any background clibrowser or chrome processes to prevent file locks
-Stop-Process -Name clibrowser, chrome -Force -ErrorAction SilentlyContinue
+# 0. Terminate any background clibrowser processes to prevent file locks
+Stop-Process -Name clibrowser -Force -ErrorAction SilentlyContinue
 
 # 1. Verify binary staging
 $cliBrowserBinPath = Join-Path $browserDir "bin\clibrowser.exe"
@@ -256,7 +256,13 @@ for ($i = 0; $i -lt 10; $i++) {
 }
 if (-not $serverRunning) {
     Write-Host "[INFO] Re-starting ModelFusion Master Server daemon on port 5000..." -ForegroundColor Yellow
-    $cliPath = Join-Path $rootDir "target\release\cli.exe"
+    $cliPath = Join-Path $rootDir "target\release\clibrowser.exe"
+    if (-not (Test-Path $cliPath)) {
+        $cliPath = Join-Path $browserDir "bin\clibrowser.exe"
+    }
+    if (-not (Test-Path $cliPath)) {
+        $cliPath = Join-Path $rootDir "target\release\cli.exe"
+    }
     if (Test-Path $cliPath) {
         $cliDir = Split-Path -Parent $cliPath
         Start-Process -FilePath $cliPath -ArgumentList "--server", "--port", "5000" -WorkingDirectory $cliDir -WindowStyle Hidden -RedirectStandardOutput "$env:TEMP\modelfusion_server_out.log" -RedirectStandardError "$env:TEMP\modelfusion_server_err.log"

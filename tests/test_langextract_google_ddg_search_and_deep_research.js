@@ -85,10 +85,124 @@ assert.ok(arxivFnMatch, 'executeArxivSearch function must be extractable from ap
 vm.runInContext(`async function executeArxivSearch(query, maxResults = 5) { ${arxivFnMatch[1]} }`, ctx);
 
 // Extract langExtractInterpretQuery
-const lxFnMatch = appJsContent.match(/function langExtractInterpretQuery\(rawQuery, history = \[\]\) \{([\s\S]*?)\n  \}/);
+const lxFnMatch = appJsContent.match(/function langExtractInterpretQuery\([^\)]*\) \{([\s\S]*?)\n  \}/);
 assert.ok(lxFnMatch, 'langExtractInterpretQuery function must be extractable from app.js');
-vm.runInContext(`function langExtractInterpretQuery(rawQuery, history = []) { ${lxFnMatch[1]} }`, ctx);
+vm.runInContext(`function langExtractInterpretQuery(rawQuery, history = [], sessionMemory = null) { ${lxFnMatch[1]} }`, ctx);
 vm.runInContext(`window.langExtractInterpretQuery = langExtractInterpretQuery;`, ctx);
+
+// Extract getAuthoritySearchRecords
+const authFnMatch = appJsContent.match(/function getAuthoritySearchRecords\(query\) \{([\s\S]*?)\n  \}/);
+assert.ok(authFnMatch, 'getAuthoritySearchRecords function must be extractable from app.js');
+vm.runInContext(`function getAuthoritySearchRecords(query) { ${authFnMatch[1]} }`, ctx);
+vm.runInContext(`window.getAuthoritySearchRecords = getAuthoritySearchRecords;`, ctx);
+
+// Extract getOrCreateSessionLangExtractMemory
+const memFnMatch = appJsContent.match(/function getOrCreateSessionLangExtractMemory\([^\)]*\) \{([\s\S]*?)\n  \}/);
+assert.ok(memFnMatch, 'getOrCreateSessionLangExtractMemory function must be extractable from app.js');
+vm.runInContext(`function getOrCreateSessionLangExtractMemory(session) { ${memFnMatch[1]} }`, ctx);
+vm.runInContext(`window.getOrCreateSessionLangExtractMemory = getOrCreateSessionLangExtractMemory;`, ctx);
+
+// Extract clusterEntityMatches
+const clusterFnMatch = appJsContent.match(/function clusterEntityMatches\([^\)]*\) \{([\s\S]*?)\n  \}/);
+assert.ok(clusterFnMatch, 'clusterEntityMatches function must be extractable from app.js');
+vm.runInContext(`function clusterEntityMatches(query, searchResults = [], lxAnnotation = null) { ${clusterFnMatch[1]} }`, ctx);
+vm.runInContext(`window.clusterEntityMatches = clusterEntityMatches;`, ctx);
+
+// Extract buildLangExtractMultiTurnPromptBlock
+const blockFnMatch = appJsContent.match(/function buildLangExtractMultiTurnPromptBlock\([^\)]*\) \{([\s\S]*?)\n  \}/);
+assert.ok(blockFnMatch, 'buildLangExtractMultiTurnPromptBlock function must be extractable from app.js');
+vm.runInContext(`function buildLangExtractMultiTurnPromptBlock(cmd, lxAnnotation, sessionMemory = null, clustering = null) { ${blockFnMatch[1]} }`, ctx);
+vm.runInContext(`window.buildLangExtractMultiTurnPromptBlock = buildLangExtractMultiTurnPromptBlock;`, ctx);
+
+// Extract generateSerpQueries
+const gsqFnMatch = appJsContent.match(/async function generateSerpQueries\([^\)]*\) \{([\s\S]*?)\n  \}/);
+assert.ok(gsqFnMatch, 'generateSerpQueries function must be extractable from app.js');
+vm.runInContext(`async function generateSerpQueries(options = {}) { ${gsqFnMatch[1]} }`, ctx);
+vm.runInContext(`window.generateSerpQueries = generateSerpQueries;`, ctx);
+
+// Extract processSerpResult
+const psrFnMatch = appJsContent.match(/async function processSerpResult\([^\)]*\) \{([\s\S]*?)\n  \}/);
+assert.ok(psrFnMatch, 'processSerpResult function must be extractable from app.js');
+vm.runInContext(`async function processSerpResult(options = {}) { ${psrFnMatch[1]} }`, ctx);
+vm.runInContext(`window.processSerpResult = processSerpResult;`, ctx);
+
+// Extract runRecursiveDeepResearch
+const rrdrFnMatch = appJsContent.match(/async function runRecursiveDeepResearch\([^\)]*\) \{([\s\S]*?)\n  \}/);
+assert.ok(rrdrFnMatch, 'runRecursiveDeepResearch function must be extractable from app.js');
+vm.runInContext(`async function runRecursiveDeepResearch(options = {}) { ${rrdrFnMatch[1]} }`, ctx);
+vm.runInContext(`window.runRecursiveDeepResearch = runRecursiveDeepResearch;`, ctx);
+
+// Extract chooseResearchAgent
+const craFnMatch = appJsContent.match(/function chooseResearchAgent\(query\) \{([\s\S]*?)\n  \}/);
+assert.ok(craFnMatch, 'chooseResearchAgent function must be extractable from app.js');
+vm.runInContext(`function chooseResearchAgent(query) { ${craFnMatch[1]} }`, ctx);
+vm.runInContext(`window.chooseResearchAgent = chooseResearchAgent;`, ctx);
+
+// Extract planResearchOutline
+const proFnMatch = appJsContent.match(/async function planResearchOutline\([^\)]*\) \{([\s\S]*?)\n  \}/);
+assert.ok(proFnMatch, 'planResearchOutline function must be extractable from app.js');
+vm.runInContext(`async function planResearchOutline(query, initialResults = [], agentRole = '') { ${proFnMatch[1]} }`, ctx);
+vm.runInContext(`window.planResearchOutline = planResearchOutline;`, ctx);
+
+// Extract curateResearchSources
+const crsFnMatch = appJsContent.match(/function curateResearchSources\([^\)]*\) \{([\s\S]*?)\n  \}/);
+assert.ok(crsFnMatch, 'curateResearchSources function must be extractable from app.js');
+vm.runInContext(`function curateResearchSources(sources = [], query = '', maxResults = 25) { ${crsFnMatch[1]} }`, ctx);
+vm.runInContext(`window.curateResearchSources = curateResearchSources;`, ctx);
+
+// Extract compressAndTrackContext
+const catcFnMatch = appJsContent.match(/function compressAndTrackContext\([^\)]*\) \{([\s\S]*?)\n  \}/);
+assert.ok(catcFnMatch, 'compressAndTrackContext function must be extractable from app.js');
+vm.runInContext(`function compressAndTrackContext(curatedSources = [], learnings = [], maxWords = 25000) { ${catcFnMatch[1]} }`, ctx);
+vm.runInContext(`window.compressAndTrackContext = compressAndTrackContext;`, ctx);
+
+// Extract runSynthesizedDeepResearch
+const rsdrFnMatch = appJsContent.match(/async function runSynthesizedDeepResearch\([^\)]*\) \{([\s\S]*?)\n  \}/);
+assert.ok(rsdrFnMatch, 'runSynthesizedDeepResearch function must be extractable from app.js');
+vm.runInContext(`async function runSynthesizedDeepResearch(options = {}) { ${rsdrFnMatch[1]} }`, ctx);
+vm.runInContext(`window.runSynthesizedDeepResearch = runSynthesizedDeepResearch;`, ctx);
+
+// Extract getSimilarContentByQuery
+const gscbqFnMatch = appJsContent.match(/function getSimilarContentByQuery\([^\)]*\) \{([\s\S]*?)\n  \}/);
+assert.ok(gscbqFnMatch, 'getSimilarContentByQuery function must be extractable from app.js');
+vm.runInContext(`function getSimilarContentByQuery(query, sources = [], maxResults = 5) { ${gscbqFnMatch[1]} }`, ctx);
+vm.runInContext(`window.getSimilarContentByQuery = getSimilarContentByQuery;`, ctx);
+
+// Extract writeReportIntroduction
+const wriFnMatch = appJsContent.match(/function writeReportIntroduction\([^\)]*\) \{([\s\S]*?)\n  \}/);
+assert.ok(wriFnMatch, 'writeReportIntroduction function must be extractable from app.js');
+vm.runInContext(`function writeReportIntroduction(query, agentRole, contextDossier) { ${wriFnMatch[1]} }`, ctx);
+vm.runInContext(`window.writeReportIntroduction = writeReportIntroduction;`, ctx);
+
+// Extract writeSubtopicSection
+const wssFnMatch = appJsContent.match(/function writeSubtopicSection\([^\)]*\) \{([\s\S]*?)\n  \}/);
+assert.ok(wssFnMatch, 'writeSubtopicSection function must be extractable from app.js');
+vm.runInContext(`function writeSubtopicSection(subtopicTitle, subtopicIndex, contextDossier, agentRole, query) { ${wssFnMatch[1]} }`, ctx);
+vm.runInContext(`window.writeSubtopicSection = writeSubtopicSection;`, ctx);
+
+// Extract writeConclusion
+const wcFnMatch = appJsContent.match(/function writeConclusion\([^\)]*\) \{([\s\S]*?)\n  \}/);
+assert.ok(wcFnMatch, 'writeConclusion function must be extractable from app.js');
+vm.runInContext(`function writeConclusion(query, contextDossier) { ${wcFnMatch[1]} }`, ctx);
+vm.runInContext(`window.writeConclusion = writeConclusion;`, ctx);
+
+// Extract reviewResearchDraft
+const rrdFnMatch = appJsContent.match(/function reviewResearchDraft\([^\)]*\) \{([\s\S]*?)\n  \}/);
+assert.ok(rrdFnMatch, 'reviewResearchDraft function must be extractable from app.js');
+vm.runInContext(`function reviewResearchDraft(sections = [], options = {}) { ${rrdFnMatch[1]} }`, ctx);
+vm.runInContext(`window.reviewResearchDraft = reviewResearchDraft;`, ctx);
+
+// Extract reviseResearchSection
+const rrsFnMatch = appJsContent.match(/function reviseResearchSection\([^\)]*\) \{([\s\S]*?)\n  \}/);
+assert.ok(rrsFnMatch, 'reviseResearchSection function must be extractable from app.js');
+vm.runInContext(`function reviseResearchSection(section, reviewFeedback, contextDossier) { ${rrsFnMatch[1]} }`, ctx);
+vm.runInContext(`window.reviseResearchSection = reviseResearchSection;`, ctx);
+
+// Extract publishResearchMonograph
+const prmFnMatch = appJsContent.match(/function publishResearchMonograph\([^\)]*\) \{([\s\S]*?)\n  \}/);
+assert.ok(prmFnMatch, 'publishResearchMonograph function must be extractable from app.js');
+vm.runInContext(`function publishResearchMonograph(query, sections = [], contextDossier = null, agent = null) { ${prmFnMatch[1]} }`, ctx);
+vm.runInContext(`window.publishResearchMonograph = publishResearchMonograph;`, ctx);
 
 // Extract shouldRouteToWeb
 const routeFnMatch = appJsContent.match(/function shouldRouteToWeb\(query, mode\) \{([\s\S]*?)\n  \}/);

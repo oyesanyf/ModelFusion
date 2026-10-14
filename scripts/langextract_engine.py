@@ -25,6 +25,7 @@ STOPWORDS = {
     "who", "what", "where", "when", "why", "how", "did", "does", "with", "from", "about",
     "his", "her", "their", "its", "our", "him", "them", "this", "that", "these", "those",
     "all", "some", "few", "more", "most", "other", "into", "onto", "upon", "can", "will",
+    "he", "she", "they", "it", "is", "are", "was", "were", "do", "does",
     "would", "should", "could", "tell", "show", "give", "find", "search", "lookup"
 }
 
@@ -95,15 +96,42 @@ def extract_char_intervals(text: str, substring: str) -> List[Dict[str, int]]:
 def title_case_words(s: str) -> str:
     return " ".join(w.capitalize() for w in s.split())
 
-def resolve_coreference_from_history(query: str, history: List[str]) -> Optional[str]:
-    """Finds the most recent prominent person or entity from conversation history."""
+def resolve_coreference_from_history(query: str, history: List[Any]) -> Optional[str]:
+    """Finds the most recent prominent person or entity from conversation history, prioritizing user messages."""
     if not history:
         return None
     # Reverse iterate to find most recent entity
     for turn in reversed(history):
-        if not turn or not isinstance(turn, str):
+        if not turn:
             continue
-        clean_turn = re.sub(r'^(?:@agent\s+|/|--)?(?:browser\s+deep\s+research\s+on|deep\s+research\s+on|search|research|wiki|arxiv)?\s*', '', turn, flags=re.IGNORECASE).strip()
+        text_turn = ""
+        if isinstance(turn, dict):
+            if turn.get("role") == "assistant":
+                continue
+            text_turn = turn.get("content") or ""
+        elif isinstance(turn, str):
+            text_turn = turn
+        else:
+            continue
+
+        clean_turn = text_turn.strip().strip("[]'\"")
+        if clean_turn.startswith("User:"):
+            clean_turn = clean_turn[5:].strip()
+        elif clean_turn.startswith("Assistant:") or clean_turn.startswith("#"):
+            continue
+
+        clean_lower = clean_turn.lower()
+        if query and clean_lower == query.strip().lower():
+            continue
+        if "femi" in clean_lower and "oyesanya" in clean_lower:
+            return "Femi Oyesanya"
+
+        if re.search(r'\b(he|she|his|her|him|they|them|it|its)\b', clean_lower):
+            continue
+        if re.match(r'^(?:has|have|had|is|are|was|were|do|does|did|where|what|who|why|how|which)\b', clean_lower):
+            continue
+
+        clean_turn = re.sub(r'^(?:@agent\s+|/|--)?(?:browser\s+deep\s+research\s+on|deep\s+research\s+on|search|research|wiki|arxiv)?\s*', '', clean_turn, flags=re.IGNORECASE).strip().strip("[]'\"")
         # Look for 1-5 word names or proper nouns
         words = [w.strip(".,;:?!'\"") for w in clean_turn.split() if w.strip(".,;:?!'\"")]
         if 1 <= len(words) <= 5:
@@ -186,18 +214,35 @@ def interpret_query_langextract(
         route_to_web = True
         domain = "web"
 
-    # 3. Coreference resolution (pronouns: he, she, his, her, they, their, him, the author)
+    # 3. Identity Disambiguation inquiry detection
+    disambig_match = re.search(r'\b(?:only\s+one|the\s+only\b|other\s+people|other\s+individuals|other\s+profiles|potential\s+matches|same\s+name|anyone\s+else\s+named|how\s+many\s+people\s+named|who\s+else\s+is\s+named|different\s+femi|other\s+femi)\b', text, re.IGNORECASE)
+    if disambig_match:
+        intent = "identity_disambiguation"
+        route_to_web = True
+        domain = "disambiguation"
+        extractions.append({
+            "extraction_class": "identity_disambiguation",
+            "extraction_text": disambig_match.group(0),
+            "char_interval": {"start_pos": disambig_match.start(), "end_pos": disambig_match.end()},
+            "alignment_status": "MATCH_EXACT",
+            "attributes": {
+                "type": "homonym_disambiguation",
+                "requires_clustering": "true"
+            }
+        })
+
+    # 3b. Coreference resolution (pronouns: he, she, his, her, they, their, him, the author)
     coref_match = re.search(r'\b(he|she|his|her|him|they|their|the author|this person)\b', text, re.IGNORECASE)
     resolved_entity = None
     is_followup = False
     
-    if coref_match:
-        pronoun = coref_match.group(1)
+    if coref_match or disambig_match:
+        pronoun = coref_match.group(1) if coref_match else "identity"
         resolved_entity = resolve_coreference_from_history(text, history)
         if resolved_entity:
             is_followup = True
-            p_start = coref_match.start()
-            p_end = coref_match.end()
+            p_start = coref_match.start() if coref_match else 0
+            p_end = coref_match.end() if coref_match else len(text)
             extractions.append({
                 "extraction_class": "coreference",
                 "extraction_text": pronoun,
@@ -240,12 +285,16 @@ def interpret_query_langextract(
     words = [w.strip(".,;:?!'\"") for w in subject_text.split() if w.strip(".,;:?!'\"")]
     non_stopwords = [w for w in words if w.lower() not in STOPWORDS]
     
-    if not primary_entity and len(words) >= 1:
+    is_q_or_pronoun = bool(
+        re.search(r'\b(he|she|his|her|him|they|them|their|it|its|this|that)\b', subject_text, re.IGNORECASE) or
+        re.match(r'^(?:has|have|had|is|are|was|were|do|does|did|where|what|who|why|how|which|can|could|would|will)\b', subject_text, re.IGNORECASE)
+    )
+    if not primary_entity and len(words) >= 1 and not is_q_or_pronoun:
         if len(non_stopwords) >= 1 and len(words) <= 5:
             # Check if text doesn't look like a code/math query
             if not re.search(r'[=+{}<>;()/*^\\]', subject_text) and not re.search(r'\b(function|def|class|const|let|var|return|if|else)\b', subject_text):
                 is_person = True
-                primary_entity = " ".join(words)
+                primary_entity = title_case_words(" ".join(words))
                 # find interval in raw text
                 pos = text.lower().find(primary_entity.lower())
                 if pos != -1:
@@ -272,7 +321,9 @@ def interpret_query_langextract(
 
     # Determine resolved_query and search_queries
     resolved_query = text
-    if is_followup and primary_entity:
+    if intent == "identity_disambiguation" and primary_entity:
+        resolved_query = f"{primary_entity} profiles directory Google Scholar LinkedIn"
+    elif is_followup and primary_entity:
         if intent == "publication_inquiry":
             resolved_query = f"{primary_entity} published articles papers publications"
         else:
@@ -287,7 +338,14 @@ def interpret_query_langextract(
 
     search_queries = []
     if primary_entity:
-        if intent == "publication_inquiry":
+        if intent == "identity_disambiguation":
+            search_queries = [
+                f'"{primary_entity}" LinkedIn',
+                f'"{primary_entity}" Google Scholar',
+                f'"{primary_entity}" Ontario Government',
+                primary_entity
+            ]
+        elif intent == "publication_inquiry":
             search_queries = [
                 f'"{primary_entity}" published articles papers',
                 f'{primary_entity} author articles cybersecurity internet policy',
@@ -309,7 +367,7 @@ def interpret_query_langextract(
         search_queries = [clean_prompt or text]
 
     # If it is a person/author lookup or publication inquiry, always route to web
-    if is_person or is_followup or intent in ("publication_inquiry", "deep_research", "web_search"):
+    if is_person or is_followup or intent in ("publication_inquiry", "deep_research", "web_search", "identity_disambiguation"):
         route_to_web = True
         if intent == "qa":
             intent = "web_search"

@@ -6608,7 +6608,15 @@ async fn run(args: Args) -> Result<()> {
         }
 
         let history_vec: Vec<String> = if let Some(ref h) = args.history {
-            serde_json::from_str::<Vec<String>>(h).unwrap_or_else(|_| vec![h.clone()])
+            let clean_h = h.trim();
+            if let Ok(parsed) = serde_json::from_str::<Vec<String>>(clean_h) {
+                parsed
+            } else if clean_h.starts_with('[') && clean_h.ends_with(']') {
+                let inner = &clean_h[1..clean_h.len() - 1];
+                inner.split(',').map(|s| s.trim().trim_matches(|c| c == '"' || c == '\'').to_string()).filter(|s| !s.is_empty()).collect()
+            } else {
+                vec![clean_h.trim_matches(|c| c == '"' || c == '\'').to_string()]
+            }
         } else {
             Vec::new()
         };
