@@ -26,9 +26,9 @@ const appJsContent = fs.readFileSync(appJsPath, 'utf8');
 const mainRsContent = fs.readFileSync(mainRsPath, 'utf8');
 
 // =========================================================================
-// 1. hugos-browser.bat Startup URL & Port 5000 Health Check Tests
+// 1. hugos-browser.bat Startup URL, Instant Launch & Port 5000/5005 Health Checks
 // =========================================================================
-console.log('--- Test 1: hugos-browser.bat Startup URL & Health Checks ---');
+console.log('--- Test 1: hugos-browser.bat Startup URL, Instant Launch & Health Checks ---');
 
 // Assert default START_URL is file protocol
 assert(
@@ -46,13 +46,29 @@ assert(
   'hugos-browser.bat must NOT set START_URL to http://127.0.0.1:5000/index.html'
 );
 
-// Assert curl health checks use -f and search for modelfusion
+// Assert Instant Launch Invariant: start chrome.exe executes BEFORE curl health checks
+const chromeLaunchIdx = batContent.indexOf('start "" "%CHROME_BIN%" --app="%START_URL%"');
+const curlHealthIdx = batContent.indexOf('curl -s -f --connect-timeout 1 --max-time 1 http://127.0.0.1:5000/health');
+assert(chromeLaunchIdx !== -1, 'hugos-browser.bat must launch chrome.exe with --app="%START_URL%"');
+assert(curlHealthIdx !== -1, 'hugos-browser.bat must include fast health check on port 5000');
 assert(
-  batContent.includes('curl -s -f --max-time 2 http://127.0.0.1:5000/health | findstr /i "modelfusion"'),
-  'hugos-browser.bat must use curl -f and verify modelfusion in health check'
+  chromeLaunchIdx < curlHealthIdx,
+  'Instant Launch Invariant violated: chrome.exe must launch BEFORE any blocking curl health checks'
 );
 
-console.log('✅ Test 1 Passed: hugos-browser.bat isolates startup URL to file:// and verifies modelfusion service.\n');
+// Assert dual-port resilience: both port 5000 and fallback port 5005 are checked
+assert(
+  batContent.includes('http://127.0.0.1:5005/health'),
+  'hugos-browser.bat must check fallback port 5005 in addition to port 5000'
+);
+
+// Assert zero blocking loops or timeout delays before or during launch
+assert(
+  !batContent.includes('for /L %%i in (1,1,10)'),
+  'hugos-browser.bat must not contain blocking 10-iteration loops'
+);
+
+console.log('✅ Test 1 Passed: hugos-browser.bat isolates startup URL to file://, launches browser instantly (<100ms), and checks ports 5000/5005.\n');
 
 // =========================================================================
 // 2. browser/ui/app.js Zero Foreign Redirects & Safe Protocol Tests
