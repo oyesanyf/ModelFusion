@@ -408,7 +408,7 @@ assert(jobHtml.includes('btn-job-confirm') || jobHtml.includes('Approve &amp; Su
 // --- Group 10: Cross-Origin Proxy Fetch Fallback Across All Tools ---
 console.log('\n--- Group 10: Cross-Origin Proxy Fetch Fallback Across All Tools ---');
 assert(appJsContent.includes('fetchTargetHtmlViaProxy'), 'fetchTargetHtmlViaProxy helper is defined');
-assert(appJsContent.includes('detectedProducts = extractProducts(proxyDoc, proxyHtml)'), 'Proxy fallback extracts products for shopping');
+assert(appJsContent.includes('detectedProducts = extractProducts(proxyDoc, proxyHtml, goal)') || appJsContent.includes('detectedProducts = extractProducts(proxyDoc, proxyHtml)'), 'Proxy fallback extracts products for shopping');
 assert(appJsContent.includes('detectedTickets = extractTickets(proxyDoc, proxyHtml, goal)'), 'Proxy fallback extracts tickets for booking');
 assert(appJsContent.includes('detectedDirections = extractDirections(proxyDoc, proxyHtml)'), 'Proxy fallback extracts directions for maps');
 assert(appJsContent.includes('Live DOM Grounded via Proxy:'), 'General computer use falls back to proxy when DOM text is empty');

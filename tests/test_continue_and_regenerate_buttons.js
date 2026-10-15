@@ -36,33 +36,31 @@ const indexHtmlContent = fs.readFileSync(indexHtmlPath, 'utf8');
 const stylesCssContent = fs.readFileSync(stylesCssPath, 'utf8');
 
 // ============================================================================
-// PART 2: Clean Hierarchy & Zero Redundant Floating Bar in index.html
+// PART 2: Floating Action Bar and Message Bubble Action Bar Presence in index.html
 // ============================================================================
-console.log('\n--- Part 2: HTML Zero-Redundancy Verification in index.html ---');
+console.log('\n--- Part 2: Floating Quick Action Bar Verification in index.html ---');
 
 assert.ok(
-  !indexHtmlContent.includes('id="chat-floating-actions"'),
-  '❌ Redundant #chat-floating-actions MUST be completely removed from index.html'
-);
-console.log('  ✅ Verified: Redundant #chat-floating-actions completely removed from index.html');
-
-assert.ok(
-  !indexHtmlContent.includes('id="btn-floating-continue"'),
-  '❌ Redundant #btn-floating-continue must not exist in index.html'
+  indexHtmlContent.includes('id="chat-floating-actions"'),
+  '❌ #chat-floating-actions must exist in index.html'
 );
 assert.ok(
-  !indexHtmlContent.includes('id="btn-floating-regenerate"'),
-  '❌ Redundant #btn-floating-regenerate must not exist in index.html'
+  indexHtmlContent.includes('id="btn-floating-continue"'),
+  '❌ #btn-floating-continue must exist in index.html'
 );
 assert.ok(
-  !indexHtmlContent.includes('id="btn-floating-copy"'),
-  '❌ Redundant #btn-floating-copy must not exist in index.html'
+  indexHtmlContent.includes('id="btn-floating-regenerate"'),
+  '❌ #btn-floating-regenerate must exist in index.html'
 );
 assert.ok(
-  !indexHtmlContent.includes('id="btn-floating-stop"'),
-  '❌ Redundant #btn-floating-stop must not exist in index.html'
+  indexHtmlContent.includes('id="btn-floating-copy"'),
+  '❌ #btn-floating-copy must exist in index.html'
 );
-console.log('  ✅ Verified: All redundant floating pills removed (chat capsule handles stop natively)');
+assert.ok(
+  indexHtmlContent.includes('id="btn-floating-stop"'),
+  '❌ #btn-floating-stop must exist in index.html'
+);
+console.log('  ✅ Verified: Floating action bar (#chat-floating-actions) and all 4 quick action pills present in index.html');
 
 // ============================================================================
 // PART 3: Message Bubble Action Bar Presence in app.js

@@ -3204,8 +3204,7 @@ const HELP_CATEGORIES = {
       { cmd: '@agent shopping <item>', desc: 'Automate e-commerce navigation, price comparison, cart addition, and checkout flow', example: '@agent shopping Find best price for 32GB DDR5 SODIMM laptop RAM' },
       { cmd: '@agent ticket-booking <details>', desc: 'Automate airline/train reservation forms and seat selection', example: '@agent ticket-booking Find one-way flight from JFK to LHR on November 15' },
       { cmd: '@agent exam-solver <question>', desc: 'Visual reasoning solver for complex multi-choice exam figures and diagrams', example: '@agent exam-solver Which layer of the OSI model is responsible for end-to-end encryption? A) Transport B) Presentation C) Network D) Session' },
-      { cmd: '@agent map-directions <route>', desc: 'Navigate GIS mapping web applications and compute optimal route waypoints', example: '@agent map-directions Route from Millennium Park Chicago to O\'Hare International Airport' },
-      { cmd: '@agent apply-jobs <job title> [preferences]', desc: 'Search job boards, parse job requirements, upload resume, and autofill application forms with HITL review', example: '@agent apply-jobs Senior Rust Systems Engineer remote full-time' }
+      { cmd: '@agent map-directions <route>', desc: 'Navigate GIS mapping web applications and compute optimal route waypoints', example: '@agent map-directions Route from Millennium Park Chicago to O\'Hare International Airport' }
     ],
     useCases: [
       'Automating legacy Windows desktop enterprise software that lacks public REST APIs.',
@@ -3215,7 +3214,6 @@ const HELP_CATEGORIES = {
     examples: [
       '@agent computer-use Open Notepad and write a project status report',
       '@agent screen-grounding',
-      '@agent apply-jobs Senior Rust Engineer remote full-time',
       '@agent shopping Find best price for 32GB DDR5 SODIMM laptop RAM',
       '@agent ticket-booking Find one-way flight from JFK to LHR on November 15'
     ]
@@ -18201,17 +18199,32 @@ In this turn, write ONLY Chapter 1 in full, immersive, publication-grade depth (
           let pendingTagPrefix = '';
 
           let renderScheduled = null;
+          let renderTimeoutId = null;
+          let renderRafId = null;
+          let streamFinalized = false;
+          const cancelScheduledStreamRender = () => {
+            if (renderTimeoutId !== null) {
+              clearTimeout(renderTimeoutId);
+              renderTimeoutId = null;
+            }
+            if (renderRafId !== null) {
+              cancelAnimationFrame(renderRafId);
+              renderRafId = null;
+            }
+            renderScheduled = null;
+          };
           let lastRenderTime = 0;
           let lastRecommendationTime = 0;
           const RENDER_INTERVAL_MS = 60;
 
           const renderStreamDom = (force = false) => {
             const now = performance.now();
-            if (!force && renderScheduled) {
-              return; // Frame already queued, drop duplicate synchronous calls to prevent event loop starvation
+            if (!force && (renderScheduled || streamFinalized)) {
+              return; // Frame already queued or stream finalized, drop duplicate synchronous calls to prevent event loop starvation
             }
 
             const performRender = () => {
+              if (streamFinalized && !force) return;
               lastRenderTime = performance.now();
               const targetEl = getStreamTarget();
               if (targetEl) {
@@ -18259,19 +18272,23 @@ In this turn, write ONLY Chapter 1 in full, immersive, publication-grade depth (
             };
 
             if (force) {
-              if (renderScheduled) {
-                cancelAnimationFrame(renderScheduled);
-                renderScheduled = null;
-              }
+              cancelScheduledStreamRender();
               performRender();
             } else if (now - lastRenderTime >= RENDER_INTERVAL_MS) {
-              renderScheduled = requestAnimationFrame(() => {
+              cancelScheduledStreamRender();
+              renderScheduled = true;
+              renderRafId = requestAnimationFrame(() => {
+                renderRafId = null;
                 renderScheduled = null;
                 performRender();
               });
             } else {
-              renderScheduled = setTimeout(() => {
-                renderScheduled = requestAnimationFrame(() => {
+              cancelScheduledStreamRender();
+              renderScheduled = true;
+              renderTimeoutId = setTimeout(() => {
+                renderTimeoutId = null;
+                renderRafId = requestAnimationFrame(() => {
+                  renderRafId = null;
                   renderScheduled = null;
                   performRender();
                 });
@@ -18415,10 +18432,8 @@ In this turn, write ONLY Chapter 1 in full, immersive, publication-grade depth (
 
           // Force final render of turn
           renderStreamDom(true);
-          if (renderScheduled) {
-            cancelAnimationFrame(renderScheduled);
-            renderScheduled = null;
-          }
+          streamFinalized = true;
+          cancelScheduledStreamRender();
           if (responseLine) {
             responseLine.textContent = fullResponse;
           }
@@ -18553,12 +18568,6 @@ CRITICAL LENGTH & DEPTH LAW FOR CHAPTER ${currentTargetChapter}:
           } else {
             shouldContinue = false;
           }
-        } else if (options && options.isSearchSynthesis && turn === 0 && currentWordCount < 600) {
-          shouldContinue = true;
-          continuationPrompt = `[GROUNDED SEARCH SYNTHESIS — EXTENDED ANALYSIS TURN]:
-The initial synthesis is ${currentWordCount} words. Provide an extended, comprehensive deep-dive into the verified sources above.
-Elaborate on technical nuances, practical implementations, comparative perspectives, and future implications.
-Do NOT repeat earlier text or emit pleasantries. Seamlessly append the extended analysis with descriptive markdown sub-headings:`;
         } else if (wasCutOff || (intention && intention.targetWords >= 1500 && currentWordCount < intention.targetWords * 0.75)) {
           shouldContinue = true;
           continuationPrompt = `Continue seamlessly from where you stopped. Do not repeat text already written or output pleasantries.`;
@@ -18675,6 +18684,9 @@ Do NOT repeat earlier text or emit pleasantries. Seamlessly append the extended 
           bubbleContent.innerHTML = formatAssistantContent(finalMergedText, cleanPromptToFormat);
         }
       }
+      if (typeof updateFloatingActionButtons === 'function') {
+        updateFloatingActionButtons();
+      }
       if (activeSession && (fullResponse || turnResponse) && (fullResponse.trim() || turnResponse.trim())) {
         const rawContentToPersist = (options && options.isContinuation && options.initialText)
           ? mergeContinuationText(options.initialText, fullResponse)
@@ -18707,11 +18719,21 @@ Do NOT repeat earlier text or emit pleasantries. Seamlessly append the extended 
         statusCtrl = null;
       }
       if (err.name === 'AbortError' || currentAbortController?.signal?.aborted) {
+        streamFinalized = true;
+        cancelScheduledStreamRender();
         if (assistantBubble) {
           assistantBubble.classList.remove('streaming');
         }
-        if (bubbleContent && (!bubbleContent.textContent || bubbleContent.textContent === 'Thinking...')) {
-          bubbleContent.innerHTML = '<em>⏹ Generation stopped by user.</em>';
+        if (bubbleContent) {
+          if (fullResponse && fullResponse.trim()) {
+            const cleanPromptToFormat = (options && (options.cleanPrompt || options.originalUserPrompt)) || extractCleanUserPrompt(userPrompt);
+            bubbleContent.innerHTML = formatAssistantContent(unwrapJsonContent(fullResponse), cleanPromptToFormat);
+          } else if (!bubbleContent.textContent || bubbleContent.textContent === 'Thinking...') {
+            bubbleContent.innerHTML = '<em>⏹ Generation stopped by user.</em>';
+          }
+        }
+        if (typeof updateFloatingActionButtons === 'function') {
+          updateFloatingActionButtons();
         }
         responseLine.remove();
         return null;
@@ -18902,6 +18924,9 @@ Do NOT repeat earlier text or emit pleasantries. Seamlessly append the extended 
       }
       setChatRunningState(false);
       currentAbortController = null;
+      if (typeof updateFloatingActionButtons === 'function') {
+        updateFloatingActionButtons();
+      }
     }
   }
 
