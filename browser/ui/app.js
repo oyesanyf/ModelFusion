@@ -17521,6 +17521,22 @@ In this turn, write ONLY Chapter 1 in full, immersive, publication-grade depth (
     }
 
     try {
+      let renderScheduled = null;
+      let renderTimeoutId = null;
+      let renderRafId = null;
+      let streamFinalized = false;
+      const cancelScheduledStreamRender = () => {
+        if (renderTimeoutId !== null) {
+          clearTimeout(renderTimeoutId);
+          renderTimeoutId = null;
+        }
+        if (renderRafId !== null) {
+          cancelAnimationFrame(renderRafId);
+          renderRafId = null;
+        }
+        renderScheduled = null;
+      };
+
       let res = null;
       let lastFetchErr = null;
       const isFileOrigin = window.location.protocol === 'file:';
@@ -17666,7 +17682,7 @@ In this turn, write ONLY Chapter 1 in full, immersive, publication-grade depth (
       const chunkSize = currentSettings.agenticChunkSize || (targetTokens >= 65536 ? 8192 : Math.min(targetTokens, 8192));
       const maxLoops = isAgenticLoop
         ? (options && options.maxLoops ? options.maxLoops : Math.max(24, Math.min(2048, Math.max(Math.ceil(targetTokens / chunkSize), ((intention && intention.targetPages ? intention.targetPages : 1) * 3) + 5))))
-        : (options && options.isSearchSynthesis ? 2 : 1);
+        : 1;
 
       // Accurately compute prompt token estimate across all assembled messages including initialText
       const totalCharsInPrompt = conversationMessages.reduce((sum, m) => sum + (m.content ? m.content.length : 0), 0);
@@ -18198,21 +18214,8 @@ In this turn, write ONLY Chapter 1 in full, immersive, publication-grade depth (
           let inThinkTag = false;
           let pendingTagPrefix = '';
 
-          let renderScheduled = null;
-          let renderTimeoutId = null;
-          let renderRafId = null;
-          let streamFinalized = false;
-          const cancelScheduledStreamRender = () => {
-            if (renderTimeoutId !== null) {
-              clearTimeout(renderTimeoutId);
-              renderTimeoutId = null;
-            }
-            if (renderRafId !== null) {
-              cancelAnimationFrame(renderRafId);
-              renderRafId = null;
-            }
-            renderScheduled = null;
-          };
+          cancelScheduledStreamRender();
+          streamFinalized = false;
           let lastRenderTime = 0;
           let lastRecommendationTime = 0;
           const RENDER_INTERVAL_MS = 60;
@@ -18644,6 +18647,9 @@ CRITICAL LENGTH & DEPTH LAW FOR CHAPTER ${currentTargetChapter}:
         ? options.originalPrompt
         : userPrompt;
 
+      streamFinalized = true;
+      cancelScheduledStreamRender();
+
       if (assistantBubble) {
         assistantBubble.classList.remove('streaming');
         if (window.StreamingCursorManager) {
@@ -18714,6 +18720,8 @@ CRITICAL LENGTH & DEPTH LAW FOR CHAPTER ${currentTargetChapter}:
       }
       return fullResponse;
     } catch (err) {
+      streamFinalized = true;
+      cancelScheduledStreamRender();
       if (statusCtrl) {
         statusCtrl.stop();
         statusCtrl = null;
