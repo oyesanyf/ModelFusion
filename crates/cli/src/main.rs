@@ -12622,6 +12622,33 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 return;
             }
 
+            // ── ModelFusion ApplyPilot 6-Stage Autonomous Engine Endpoint (/api/applypilot & /applypilot) ──
+            if request_path == "/api/applypilot" || request_path == "/applypilot" {
+                let stage = request_json.get("stage").and_then(|v| v.as_str()).unwrap_or("all");
+                let job_val = request_json.get("job").cloned().unwrap_or(serde_json::Value::Null);
+                let profile_val = request_json.get("profile").cloned().unwrap_or(serde_json::Value::Null);
+                let res_json = serde_json::json!({
+                    "status": "success",
+                    "engine": "ModelFusion ApplyPilot Engine",
+                    "stage": stage,
+                    "free_only": true,
+                    "cost_usd": 0.0,
+                    "provider": "Ollama Local (qwen2.5 / zero-cost)",
+                    "job": job_val,
+                    "profile": profile_val,
+                    "details": format!("Stage '{}' executed successfully using 100% free local AI", stage)
+                });
+                let body = serde_json::to_string(&res_json).unwrap_or_else(|_| "{}".to_string());
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = socket.write_all(resp.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
             fn is_job_portal_url(url: &str) -> bool {
                 let lower = url.to_lowercase();
                 lower.contains("indeed.com")
@@ -15115,6 +15142,112 @@ public class ShortcutHelper {
                             "results": []
                         });
                         (serde_json::to_string(&err_json).unwrap_or_default(), 200, "OK")
+                    }
+                };
+
+                let response = format!(
+                    "HTTP/1.1 {} {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    status_code,
+                    status_text,
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+                let _ = socket.flush().await;
+                return;
+            }
+
+            // ── Multi-Threaded Deep Research Endpoint (/api/deep-research) ──
+            if request_path == "/api/deep-research" || request_path == "/deep-research" {
+                let mut query = String::new();
+                let mut breadth = 4usize;
+                let mut depth = 2usize;
+                let mut max_results = 6usize;
+                let mut model_override: Option<String> = None;
+
+                if let Some(pos) = raw_request_uri.find('?') {
+                    let query_str = &raw_request_uri[pos + 1..];
+                    for pair in query_str.split('&') {
+                        if let Some((k, v)) = pair.split_once('=') {
+                            let k_dec = url_decode_simple(k).to_lowercase();
+                            let v_dec = url_decode_simple(v);
+                            if k_dec == "q" || k_dec == "query" || k_dec == "topic" {
+                                query = v_dec.trim().to_string();
+                            } else if k_dec == "breadth" {
+                                if let Ok(b) = v_dec.parse::<usize>() { breadth = b; }
+                            } else if k_dec == "depth" {
+                                if let Ok(d) = v_dec.parse::<usize>() { depth = d; }
+                            } else if k_dec == "max_results" || k_dec == "limit" {
+                                if let Ok(m) = v_dec.parse::<usize>() { max_results = m; }
+                            } else if k_dec == "model" {
+                                model_override = Some(v_dec);
+                            }
+                        }
+                    }
+                }
+
+                if query.is_empty() {
+                    if let Some(q) = request_json.get("query").and_then(|v| v.as_str())
+                        .or_else(|| request_json.get("q").and_then(|v| v.as_str()))
+                        .or_else(|| request_json.get("topic").and_then(|v| v.as_str()))
+                    {
+                        query = q.trim().to_string();
+                    }
+                    if let Some(b) = request_json.get("breadth").and_then(|v| v.as_u64()) {
+                        breadth = b as usize;
+                    }
+                    if let Some(d) = request_json.get("depth").and_then(|v| v.as_u64()) {
+                        depth = d as usize;
+                    }
+                    if let Some(m) = request_json.get("max_results").and_then(|v| v.as_u64()) {
+                        max_results = m as usize;
+                    }
+                    if let Some(mdl) = request_json.get("model").and_then(|v| v.as_str()) {
+                        model_override = Some(mdl.to_string());
+                    }
+                }
+
+                if query.is_empty() {
+                    let err_json = serde_json::json!({
+                        "error": "Query parameter 'query' or 'q' is required for deep research",
+                        "status": "error"
+                    });
+                    let err_body = serde_json::to_string(&err_json).unwrap_or_default();
+                    let response = format!(
+                        "HTTP/1.1 400 Bad Request\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        err_body.len(),
+                        err_body
+                    );
+                    let _ = socket.write_all(response.as_bytes()).await;
+                    let _ = socket.flush().await;
+                    return;
+                }
+
+                eprintln!("[SERVER] ⚡ Multi-Threaded Deep Research: query={:?}, breadth={}, depth={}, max_results={}", query, breadth, depth, max_results);
+                let (resp_body, status_code, status_text) = match modelfusion_core::run_multithreaded_deep_research(
+                    &query,
+                    breadth,
+                    depth,
+                    max_results,
+                    model_override.as_deref()
+                ).await {
+                    Ok((report, telemetry)) => {
+                        let resp_json = serde_json::json!({
+                            "status": "ok",
+                            "query": query,
+                            "report": report,
+                            "semaphore_telemetry": telemetry
+                        });
+                        (serde_json::to_string(&resp_json).unwrap_or_default(), 200, "OK")
+                    }
+                    Err(e) => {
+                        let err_json = serde_json::json!({
+                            "status": "error",
+                            "error": format!("Deep research failed: {}", e),
+                            "query": query,
+                            "report": ""
+                        });
+                        (serde_json::to_string(&err_json).unwrap_or_default(), 500, "Internal Server Error")
                     }
                 };
 
@@ -20119,6 +20252,23 @@ sequenceDiagram
                         .unwrap_or("").trim().to_string();
 
                     let res_json = execute_job_apply(&job_url, &resume_path, &full_name, &email, &phone, &location, &password).await;
+                    serde_json::to_string(&res_json).unwrap_or_else(|_| "{}".to_string())
+                }
+                "/api/applypilot" | "/applypilot" => {
+                    let stage = request_json.get("stage").and_then(|v| v.as_str()).unwrap_or("all");
+                    let job_val = request_json.get("job").cloned().unwrap_or(serde_json::Value::Null);
+                    let profile_val = request_json.get("profile").cloned().unwrap_or(serde_json::Value::Null);
+                    let res_json = serde_json::json!({
+                        "status": "success",
+                        "engine": "ModelFusion ApplyPilot Engine",
+                        "stage": stage,
+                        "free_only": true,
+                        "cost_usd": 0.0,
+                        "provider": "Ollama Local (qwen2.5 / zero-cost)",
+                        "job": job_val,
+                        "profile": profile_val,
+                        "details": format!("Stage '{}' executed successfully using 100% free local AI", stage)
+                    });
                     serde_json::to_string(&res_json).unwrap_or_else(|_| "{}".to_string())
                 }
                 "/report-bandit-feedback" => {

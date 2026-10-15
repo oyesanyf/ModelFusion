@@ -18,8 +18,9 @@ pub use task_handler::ComprehensiveTaskHandler;
 pub use task_processor::UniversalTaskProcessor;
 pub use web_research::{
     calculate_search_relevance, langextract_interpret_query, live_web_search, parse_arxiv_atom,
-    run_deep_research, run_web_agent, run_web_search_only, search_arxiv, IndexedDocument,
-    IndexedMatch, SearchResult, TermPosting, WebAgentResult, WebSearchIndex,
+    run_deep_research, run_multithreaded_deep_research, run_web_agent, run_web_search_only,
+    search_arxiv, IndexedDocument, IndexedMatch, MultithreadedDeepResearchReport,
+    SearchResult, SemaphoreTelemetry, TermPosting, WebAgentResult, WebSearchIndex,
 };
 pub use wikiskill::{
     distill_wikipedia_knowledge, fetch_wikipedia_article, fetch_wikipedia_sections,
