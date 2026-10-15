@@ -21,7 +21,13 @@ if not os.path.exists(WIX_EXE):
     WIX_EXE = r"D:\tools\wix\PFiles64\WiX Toolset v5.0\bin\wix.exe"
 PFX_PATH = os.path.join(REPO_ROOT, "IDE", "hugos-signing-cert.pfx")
 PFX_PASS = "HugOSPassword123!"
-SIGNTOOL_EXE = r"C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe"
+
+signtool_candidates = [
+    r"C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe",
+    r"C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe",
+    r"C:\Program Files (x86)\Windows Kits\10\App Certification Kit\signtool.exe"
+]
+SIGNTOOL_EXE = next((s for s in signtool_candidates if os.path.isfile(s)), signtool_candidates[0])
 
 def build_wix_msi(wxs_path, base_dir, out_msi_path):
     print(f"\n========================================================")
@@ -156,11 +162,23 @@ def compute_sha256(path):
 def main():
     target = sys.argv[1] if len(sys.argv) > 1 else "all"
 
-    # 1. Deploy icons first so they are baked into all distribution dirs
+    # 1. Install signing cert into CurrentUser Root & TrustedPublisher
+    cert_script = os.path.join(REPO_ROOT, "scripts", "install_signing_cert.py")
+    if os.path.exists(cert_script):
+        print("[INFO] Ensuring signing certificate is trusted...")
+        subprocess.run([sys.executable, cert_script], check=True)
+
+    # 2. Deploy icons so they are baked into all distribution dirs
     deploy_script = os.path.join(REPO_ROOT, "scripts", "deploy_icons.py")
     if os.path.exists(deploy_script):
         print("[INFO] Deploying high-res multi-layer icons across all targets...")
         subprocess.run([sys.executable, deploy_script], check=True)
+
+    # 3. Restore official Microsoft-signed binaries and runtime
+    restore_script = os.path.join(REPO_ROOT, "IDE", "restore_microsoft_signatures.py")
+    if os.path.exists(restore_script):
+        print("[INFO] Restoring official Microsoft-signed VSCode binaries & commit runtime...")
+        subprocess.run([sys.executable, restore_script], check=True)
 
     if target in ("browser", "all"):
         # Build HugOS Browser MSI

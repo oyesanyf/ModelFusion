@@ -219,22 +219,10 @@ def main():
     else:
         print("[INFO] PIL not available; preserved existing high-res PNG assets.")
 
-    # 3. Bake PE Icon Header into HugOS.exe
-    primary_ico = os.path.join(repo_root, "IDE", "hugos.ico")
-    exe_targets = [
-        os.path.join(repo_root, "IDE", "VSCode-win32-x64", "HugOS.exe"),
-    ]
-    if local_app:
-        exe_targets.append(os.path.join(local_app, "HugOS IDE", "HugOS.exe"))
-
-    for exe in exe_targets:
-        if os.path.exists(exe):
-            patch_pe_icon(exe, primary_ico)
-
-    # 4. Flush Windows Icon Cache
+    # 3. Flush Windows Icon Cache
     flush_windows_icon_cache()
                 
-    print("\n[SUCCESS] All multi-layer icons, PE resources, and UI assets deployed successfully!")
+    print("\n[SUCCESS] All multi-layer icons and UI assets deployed successfully!")
 
 if __name__ == "__main__":
     main()

@@ -73,8 +73,8 @@ while ((catBlockMatch = catBlockRegex.exec(indexHtml)) !== null) {
 }
 
 assert.strictEqual(categories.length, 17, `Expected exactly 17 categories, found ${categories.length}`);
-assert.strictEqual(allTools.length, 117, `Expected exactly 117 tools, found ${allTools.length}`);
-console.log(`✓ Inventory Verified: exactly 17 categories and 117 tools extracted from index.html.\n`);
+assert.strictEqual(allTools.length, 116, `Expected exactly 116 tools, found ${allTools.length}`);
+console.log(`✓ Inventory Verified: exactly 17 categories and 116 tools extracted from index.html.\n`);
 
 // =========================================================================
 // 2. Realistic Domain-Tailored Inputs Registry for all 106 Tools
@@ -105,8 +105,7 @@ const TOOL_INPUTS = {
   'tool_graph_index': 'src/core/compiler.rs - AST tokenization and visitor graph traversal',
   'tool_code_helper': 'Implement a thread-safe ring buffer in Rust with zero heap allocations',
 
-  // Computer Use & OS Automation (11)
-  'tool_apply_jobs': 'Apply for senior Rust engineer jobs at Google Mountain View or Remote with full-time contract',
+  // Computer Use & OS Automation (10)
   'tool_computer_use': 'Navigate to https://wikipedia.org and extract the summary of Quantum Computing',
   'tool_exam_solver': 'Question 1: What is the primary function of mitochondria in eukaryotic cells? A) Protein synthesis B) ATP generation C) Lipid storage D) DNA replication',
   'tool_map_directions': 'From JFK Airport to Times Square Manhattan via public transit',

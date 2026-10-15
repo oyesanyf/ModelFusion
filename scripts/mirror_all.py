@@ -3,7 +3,68 @@ import shutil
 import hashlib
 import re
 
+import subprocess
+import glob
+
 src = os.path.abspath("target/release/cli.exe")
+
+def ensure_signed(exe_path):
+    if not os.path.exists(exe_path):
+        return
+    try:
+        check = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", f"(Get-AuthenticodeSignature '{exe_path}').Status.ToString()"],
+            capture_output=True, text=True, timeout=10
+        )
+        if "Valid" in check.stdout:
+            print(f"[SIGN] {exe_path} is already signed with a valid signature.")
+            return
+    except Exception:
+        pass
+
+    pfx = os.path.abspath("IDE/hugos-signing-cert.pfx")
+    if not os.path.exists(pfx):
+        print(f"[SIGN WARN] Certificate {pfx} not found, skipping signing.")
+        return
+
+    signtool_candidates = [
+        r"C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe",
+        r"C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe",
+        r"C:\Program Files (x86)\Windows Kits\10\App Certification Kit\signtool.exe"
+    ]
+    signtool = next((s for s in signtool_candidates if os.path.isfile(s)), None)
+    if not signtool:
+        kits = glob.glob(r"C:\Program Files (x86)\Windows Kits\10\**\signtool.exe", recursive=True)
+        signtool = next((s for s in kits if "x64" in s), kits[0] if kits else None)
+
+    if signtool:
+        print(f"[SIGN] Signing {exe_path} with {signtool}...")
+        res = subprocess.run([
+            signtool, "sign",
+            "/f", pfx,
+            "/p", "HugOSPassword123!",
+            "/fd", "SHA256",
+            "/tr", "http://timestamp.digicert.com",
+            "/td", "SHA256",
+            exe_path
+        ], capture_output=True, text=True)
+        if res.returncode == 0:
+            print(f"[SIGN OK] Successfully signed {exe_path}")
+            return
+        # Retry without timestamp if offline/blocked
+        res = subprocess.run([
+            signtool, "sign",
+            "/f", pfx,
+            "/p", "HugOSPassword123!",
+            "/fd", "SHA256",
+            exe_path
+        ], capture_output=True, text=True)
+        if res.returncode == 0:
+            print(f"[SIGN OK] Successfully signed (without timestamp) {exe_path}")
+            return
+        print(f"[SIGN WARN] signtool failed: {res.stderr}")
+
+ensure_signed(src)
 
 def get_sha256(path):
     try:

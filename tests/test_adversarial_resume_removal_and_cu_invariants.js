@@ -285,7 +285,6 @@ console.log('✅ Adversarial Test 6 Passed: Router regex strictly matches clear 
 console.log('--- Adversarial Test 7: All 11 Computer Use Tools & Invariants ---');
 
 const expectedTools = [
-  { id: 'tool_apply_jobs', cmd: '@agent apply-jobs ', label: 'Apply for Jobs' },
   { id: 'tool_computer_use', cmd: '@agent computer-use ', label: 'Autonomous Agent' },
   { id: 'tool_exam_solver', cmd: '@agent exam-solver ', label: 'Exam Solver' },
   { id: 'tool_ticket_booking', cmd: '@agent ticket-booking ', label: 'Flight Booking' },

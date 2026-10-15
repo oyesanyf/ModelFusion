@@ -61,6 +61,11 @@ if ($signtoolPath) {
 }
 
 # 3. Code Signing Certificate Setup
+$installCertScript = Join-Path (Split-Path $PSScriptRoot -Parent) "scripts\install_signing_cert.py"
+if (Test-Path $installCertScript) {
+    python $installCertScript
+}
+
 if (-not (Test-Path $pfxPath)) {
     Write-Host "[INFO] Creating a self-signed code signing certificate..." -ForegroundColor Yellow
     
@@ -144,28 +149,11 @@ $versionedDirs = @(Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.N
 $versionedComplete = ($versionedDirs.Count -gt 0) -and (Test-Path (Join-Path $vsCodePackDir "7e7950df89\locales\ms.pak"))
 if ($exeSig.Status -ne 'Valid' -or $exeSig.SignerCertificate.Subject -notlike '*Microsoft*' -or -not $versionedComplete) {
     Write-Host "[INFO] Restoring Electron binary & versioned runtime from VSCode 1.126.0..." -ForegroundColor Yellow
-    if (-not (Test-Path $vscodeDlZip) -or (Get-Item $vscodeDlZip).Length -lt 100MB) {
-        Write-Host "[INFO] Downloading VSCode 1.126.0 (~280MB)..." -ForegroundColor Yellow
-        Invoke-WebRequest -Uri $vscodeDlUrl -OutFile $vscodeDlZip -UseBasicParsing
+    $restoreScript = Join-Path $PSScriptRoot "restore_microsoft_signatures.py"
+    if (Test-Path $restoreScript) {
+        python $restoreScript
     }
-    $pyExtract = "
-import zipfile, os
-zp = r'$vscodeDlZip'
-dest = r'$vsCodePackDir'
-with zipfile.ZipFile(zp) as z:
-    for m in z.infolist():
-        if m.filename.startswith('7e7950df89/') or m.filename == 'Code.exe':
-            z.extract(m, dest)
-src_exe = os.path.join(dest, 'Code.exe')
-dst_exe = os.path.join(dest, 'HugOS.exe')
-if os.path.exists(src_exe):
-    if os.path.exists(dst_exe):
-        try: os.remove(dst_exe)
-        except: pass
-    os.replace(src_exe, dst_exe)
-"
-    python -c "$pyExtract"
-    Write-Host "[OK] Extracted versioned runtime and restored HugOS.exe via Python zipfile" -ForegroundColor Green
+    Write-Host "[OK] Extracted versioned runtime and restored HugOS.exe via restore_microsoft_signatures.py" -ForegroundColor Green
     $versionedDirs = @(Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' })
     $versionedDir = $versionedDirs | Select-Object -First 1
     if ($versionedDir) {
