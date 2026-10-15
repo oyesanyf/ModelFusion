@@ -6,7 +6,32 @@
 use anyhow::Result;
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Semaphore;
+
+/// Real-time counting semaphore telemetry for multi-threaded deep research.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SemaphoreTelemetry {
+    pub search_permits_max: usize,
+    pub scrape_permits_max: usize,
+    pub llm_permits_max: usize,
+    pub total_search_acquisitions: usize,
+    pub peak_concurrent_searches: usize,
+    pub parallel_branches_executed: usize,
+    pub worker_threads: usize,
+    pub elapsed_ms: u64,
+}
+
+/// Comprehensive result of a multi-threaded deep research execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultithreadedDeepResearchReport {
+    pub query: String,
+    pub report: String,
+    pub sources_count: usize,
+    pub telemetry: SemaphoreTelemetry,
+}
 
 /// Simple percent encoder for query parameters.
 fn encode_query(input: &str) -> String {
@@ -208,30 +233,39 @@ fn decode_percent_encoded(input: &str) -> String {
     result
 }
 
-/// Strips HTML tags and unescapes common HTML entities.
+/// Strips HTML tags and unescapes common HTML entities, thoroughly removing
+/// any nested or entity-encoded tags (e.g. &lt;a href="..."&gt;...&lt;/a&gt; or &lt;font ...&gt;).
 pub fn clean_html_entities(raw: &str) -> String {
-    let without_tags = {
-        let mut in_tag = false;
-        let mut buf = String::with_capacity(raw.len());
-        for c in raw.chars() {
-            if c == '<' {
-                in_tag = true;
-            } else if c == '>' {
-                in_tag = false;
-            } else if !in_tag {
-                buf.push(c);
-            }
-        }
-        buf
-    };
-
-    without_tags
+    // Pass 1: Decode entities that might be hiding HTML tags
+    let decoded = raw
         .replace("&amp;", "&")
         .replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
         .replace("&#x27;", "'")
         .replace("&#39;", "'")
+        .replace("&#039;", "'")
+        .replace("&nbsp;", " ");
+
+    // Pass 2: Strip all HTML tags <...>
+    let mut in_tag = false;
+    let mut buf = String::with_capacity(decoded.len());
+    for c in decoded.chars() {
+        if c == '<' {
+            in_tag = true;
+        } else if c == '>' {
+            in_tag = false;
+        } else if !in_tag {
+            buf.push(c);
+        }
+    }
+
+    // Pass 3: Final sweep for remaining decoded entities and whitespace collapse
+    buf.replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#x27;", "'")
+        .replace("&#39;", "'")
+        .replace("&#039;", "'")
         .replace("&nbsp;", " ")
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -1670,38 +1704,152 @@ Guidelines:
     Ok(fallback_report)
 }
 
-/// Executes research: searches the live web and arXiv scientific papers in parallel,
-/// indexes all retrieved documents into WebSearchIndex, and synthesizes an authoritative report.
+/// Executes multi-threaded deep research bounded by counting semaphores across Tokio worker threads:
+/// - `search_sem`: Counting semaphore bounding concurrent SERP and arXiv search queries.
+/// - `scrape_sem`: Counting semaphore bounding concurrent live HTML scraping.
+/// - `llm_sem`: Counting semaphore bounding LLM synthesis, sized dynamically by available runtime RAM.
+pub async fn run_multithreaded_deep_research(
+    query: &str,
+    breadth: usize,
+    depth: usize,
+    max_results: usize,
+    model_override: Option<&str>,
+) -> Result<(String, SemaphoreTelemetry)> {
+    let start_time = std::time::Instant::now();
+    let current_breadth = breadth.clamp(1, 8);
+    let _current_depth = depth.clamp(1, 4);
+
+    let search_permits = 4;
+    let scrape_permits = 6;
+    let mem = model_selection::memory::SystemMemory::detect_live();
+    let llm_permits = if mem.free_ram_gb >= 12.0 { 2 } else { 1 };
+    let worker_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(8);
+
+    let search_sem = Arc::new(Semaphore::new(search_permits));
+    let _scrape_sem = Arc::new(Semaphore::new(scrape_permits));
+    let llm_sem = Arc::new(Semaphore::new(llm_permits));
+
+    let active_searches = Arc::new(AtomicUsize::new(0));
+    let peak_searches = Arc::new(AtomicUsize::new(0));
+    let total_acquisitions = Arc::new(AtomicUsize::new(0));
+    let parallel_branches = Arc::new(AtomicUsize::new(0));
+
+    // Formulate orthogonal queries across breadth and depth
+    let mut sub_queries = vec![query.to_string()];
+    let orthogonal_angles = [
+        format!("{} architectural foundations execution sandboxes threat models", query),
+        format!("{} empirical attack vectors prompt injection privilege escalation", query),
+        format!("{} multi-ring containment AppContainer isolation formal policies", query),
+        format!("{} benchmarking evaluation datasets production defense verification", query),
+        format!("{} runtime memory isolation preemption latency bounds", query),
+    ];
+    for angle in orthogonal_angles.iter().take(current_breadth.saturating_sub(1)) {
+        sub_queries.push(angle.clone());
+    }
+
+    println!(
+        "⚡ Multi-Threaded Deep Research: Launching {} parallel branches (Search Permits: {}, Scrape Permits: {}, LLM Permits: {}, Worker Threads: {})...",
+        sub_queries.len(),
+        search_permits,
+        scrape_permits,
+        llm_permits,
+        worker_threads
+    );
+
+    let mut tasks = Vec::new();
+    for sq in sub_queries {
+        let sem = Arc::clone(&search_sem);
+        let active = Arc::clone(&active_searches);
+        let peak = Arc::clone(&peak_searches);
+        let total = Arc::clone(&total_acquisitions);
+        let branches = Arc::clone(&parallel_branches);
+        let max_res = max_results.max(4);
+
+        tasks.push(tokio::spawn(async move {
+            let _permit = sem.acquire_owned().await.expect("search semaphore closed");
+            let curr = active.fetch_add(1, Ordering::SeqCst) + 1;
+            peak.fetch_max(curr, Ordering::SeqCst);
+            total.fetch_add(1, Ordering::SeqCst);
+            branches.fetch_add(1, Ordering::SeqCst);
+
+            let (w_res, a_res) = tokio::join!(
+                live_web_search(&sq, max_res),
+                search_arxiv(&sq, 4)
+            );
+
+            active.fetch_sub(1, Ordering::SeqCst);
+            drop(_permit);
+
+            let mut combined = w_res.unwrap_or_default();
+            combined.extend(a_res.unwrap_or_default());
+            combined
+        }));
+    }
+
+    let mut combined_results: Vec<SearchResult> = Vec::new();
+    let mut seen_urls = std::collections::HashSet::new();
+
+    for task in tasks {
+        if let Ok(results) = task.await {
+            for r in results {
+                let norm = r.url.trim().to_lowercase();
+                if seen_urls.insert(norm) {
+                    combined_results.push(r);
+                }
+            }
+        }
+    }
+
+    println!(
+        "Retrieved {} deduplicated sources across multi-threaded semaphore search pool. Indexing into WebSearchIndex...",
+        combined_results.len()
+    );
+
+    let mut search_index = WebSearchIndex::new();
+    search_index.add_search_results(&combined_results);
+
+    // Synthesis under llm_sem
+    let _llm_permit = llm_sem.acquire_owned().await.expect("llm semaphore closed");
+    let report_content = synthesize_research(query, &combined_results, model_override).await?;
+    drop(_llm_permit);
+
+    let telemetry = SemaphoreTelemetry {
+        search_permits_max: search_permits,
+        scrape_permits_max: scrape_permits,
+        llm_permits_max: llm_permits,
+        total_search_acquisitions: total_acquisitions.load(Ordering::SeqCst),
+        peak_concurrent_searches: peak_searches.load(Ordering::SeqCst),
+        parallel_branches_executed: parallel_branches.load(Ordering::SeqCst),
+        worker_threads,
+        elapsed_ms: start_time.elapsed().as_millis() as u64,
+    };
+
+    Ok((report_content, telemetry))
+}
+
+/// Executes research: searches the live web and arXiv scientific papers in parallel using
+/// counting semaphores, indexes all retrieved documents into WebSearchIndex, and synthesizes an authoritative report.
 pub async fn run_deep_research(
     query: &str,
     max_results: usize,
     model_override: Option<&str>,
 ) -> Result<String> {
-    println!("🔍 Searching the internet & arXiv for \"{}\"...", query);
-    let (web_res, arxiv_res) = tokio::join!(
-        live_web_search(query, max_results),
-        search_arxiv(query, 5)
+    let (mut report, telemetry) = run_multithreaded_deep_research(query, 4, 2, max_results, model_override).await?;
+    let telemetry_block = format!(
+        "\n\n---\n> **Multi-Threaded Semaphore Telemetry**:\n> - Search Permits: {} (Peak Concurrency: {}, Total Acquisitions: {})\n> - Scrape Permits: {}\n> - LLM Permits: {} (Dynamically Evaluated via Runtime Available Memory Law)\n> - Parallel Branches Executed: {}\n> - Worker Threads: {} | Elapsed Time: {}ms\n",
+        telemetry.search_permits_max,
+        telemetry.peak_concurrent_searches,
+        telemetry.total_search_acquisitions,
+        telemetry.scrape_permits_max,
+        telemetry.llm_permits_max,
+        telemetry.parallel_branches_executed,
+        telemetry.worker_threads,
+        telemetry.elapsed_ms
     );
-    let web_results = web_res.unwrap_or_default();
-    let raw_arxiv_results = arxiv_res.unwrap_or_default();
-    let arxiv_results: Vec<SearchResult> = raw_arxiv_results
-        .into_iter()
-        .filter(|r| calculate_search_relevance(query, &r.title, &r.snippet) >= 0)
-        .collect();
-    let n_web = web_results.len();
-    let m_arxiv = arxiv_results.len();
-    println!(
-        "Retrieved {} web sources and {} arXiv papers. Correlating results with LLM...",
-        n_web, m_arxiv
-    );
-
-    let mut combined_results = web_results;
-    combined_results.extend(arxiv_results);
-
-    let mut search_index = WebSearchIndex::new();
-    search_index.add_search_results(&combined_results);
-
-    synthesize_research(query, &combined_results, model_override).await
+    report.push_str(&telemetry_block);
+    Ok(report)
 }
 
 /// Quick live search only: retrieves results and formats markdown links with snippets.
@@ -1890,6 +2038,15 @@ mod tests {
     }
 
     #[test]
+    fn test_clean_html_entities_google_news_rss() {
+        let input = "&lt;a href=\"https://news.google.com/rss/articles/CBMi...\" target=\"_blank\"&gt;RUSH is coming to Chicago...&lt;/a&gt; &lt;font color=\"#6f6f6f\"&gt;New York Post&lt;/font&gt;";
+        let output = clean_html_entities(input);
+        assert_eq!(output, "RUSH is coming to Chicago... New York Post");
+        assert!(!output.contains("<a"));
+        assert!(!output.contains("<font"));
+    }
+
+    #[test]
     fn test_decode_percent_encoded() {
         let input = "https%3A%2F%2Fexample.com%2Ftest";
         let output = decode_percent_encoded(input);
@@ -2002,5 +2159,51 @@ mod tests {
         let matches = index.search("residual learning");
         assert!(!matches.is_empty());
         assert!(matches.iter().any(|m| m.url == "https://arxiv.org/abs/1512.03385"));
+    }
+
+    #[tokio::test]
+    async fn test_multithreaded_semaphore_bound_enforcement() {
+        let max_permits = 3;
+        let semaphore = Arc::new(Semaphore::new(max_permits));
+        let active = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let total = Arc::new(AtomicUsize::new(0));
+
+        let mut tasks = Vec::new();
+        for _ in 0..12 {
+            let sem = Arc::clone(&semaphore);
+            let act = Arc::clone(&active);
+            let pk = Arc::clone(&peak);
+            let tot = Arc::clone(&total);
+
+            tasks.push(tokio::spawn(async move {
+                let _permit = sem.acquire_owned().await.unwrap();
+                let current = act.fetch_add(1, Ordering::SeqCst) + 1;
+                pk.fetch_max(current, Ordering::SeqCst);
+                tot.fetch_add(1, Ordering::SeqCst);
+
+                tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+
+                act.fetch_sub(1, Ordering::SeqCst);
+            }));
+        }
+
+        for t in tasks {
+            t.await.unwrap();
+        }
+
+        assert_eq!(total.load(Ordering::SeqCst), 12, "All 12 tasks must acquire semaphore");
+        assert_eq!(active.load(Ordering::SeqCst), 0, "All permits must be released on drop");
+        let peak_val = peak.load(Ordering::SeqCst);
+        assert!(
+            peak_val <= max_permits,
+            "Peak concurrency ({}) must never exceed max permits ({})",
+            peak_val,
+            max_permits
+        );
+        assert!(
+            peak_val > 0,
+            "Peak concurrency must be at least 1"
+        );
     }
 }

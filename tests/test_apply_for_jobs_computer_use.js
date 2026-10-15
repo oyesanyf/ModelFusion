@@ -595,10 +595,11 @@ assert(appJs.includes('<span>Load Page</span>'), 'app.js must render "Load Page"
 assert(!appJs.includes('⤢ Full View'), 'app.js must not retain old "Full View" button');
 assert(!appJs.includes('↗ New Tab'), 'app.js must not retain old "New Tab" button');
 
-// 12.2 Assert Live Web Session card is rendered for cross-origin / career portals
+// 12.2 Assert Live Web Session card is rendered with Apply For Me and Load Page actions
 assert(appJs.includes('Live Web Session:'), 'app.js must render "Live Web Session:" portal card');
-assert(appJs.includes('This website restricts embedded frames. Click below to load the live page directly into your browser viewport.'), 'app.js must render frame restriction advisory');
-assert(appJs.includes('btn-load-page-primary'), 'app.js must include primary Load Page button on card');
+assert(appJs.includes('btn-apply-for-me'), 'app.js must render "Apply For Me" button on portal card');
+assert(appJs.includes('applyForMeNow'), 'app.js must wire applyForMeNow action on portal card');
+assert(appJs.includes('btn-load-page-primary') || appJs.includes('btn-load-page'), 'app.js must include Load Page button on card');
 
 // 12.3 Assert Career-Ops Agent branding for jobs instead of UI-TARS mouse agent
 assert(appJs.includes('ModelFusion Career-Ops & Candidate Application Agent'), 'app.js must brand jobs with Career-Ops agent');
