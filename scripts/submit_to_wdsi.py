@@ -109,7 +109,7 @@ def inspect_authenticode_signature(file_path: Path) -> dict:
         ps_script = f"""
 $ErrorActionPreference = 'SilentlyContinue'
 $sig = Get-AuthenticodeSignature -FilePath "{file_path.resolve()}"
-$statusStr = if ($sig.Status) {{ $sig.Status.ToString() }} else {{ 'NotSigned' }}
+$statusStr = if ($null -ne $sig -and $null -ne $sig.Status) {{ $sig.Status.ToString() }} else {{ 'NotSigned' }}
 $hasCert = ($sig.SignerCertificate -ne $null)
 $isSigned = ($hasCert) -or ($statusStr -eq 'Valid')
 
