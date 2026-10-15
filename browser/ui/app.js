@@ -15163,6 +15163,11 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
   // 2. Navigation & View Switching
   // -----------------------------------------------------------------
   function showDashboard() {
+    const mainViewport = document.getElementById('chatgpt-viewport');
+    if (mainViewport) mainViewport.classList.remove('hidden');
+    const floatRet = document.querySelector('.floating-return-chat-container');
+    if (floatRet) floatRet.style.display = 'none';
+
     dashboardView.classList.remove('hidden');
     webviewView.classList.add('hidden');
     try {
@@ -15614,12 +15619,26 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
 
     termLog(`Navigating to: ${currentNavUrl}`, 'info');
 
-    if (switchView) {
-      // Switch to webview
-      dashboardView.classList.add('hidden');
-      webviewView.classList.remove('hidden');
-      frameFallback.classList.add('hidden');
+    if (!switchView) {
+      if (typeof updateNavigationUiState === 'function') updateNavigationUiState();
+      return;
     }
+
+    // Switch to webview: Ensure parent #chatgpt-viewport is not hidden, hide chat views, show webview
+    const mainViewport = document.getElementById('chatgpt-viewport');
+    if (mainViewport) mainViewport.classList.remove('hidden');
+
+    const heroSec = document.getElementById('chat-hero-section');
+    const convView = document.getElementById('chat-conversation-view');
+    if (heroSec) heroSec.classList.add('hidden');
+    if (convView) convView.classList.add('hidden');
+
+    dashboardView.classList.add('hidden');
+    webviewView.classList.remove('hidden');
+    frameFallback.classList.add('hidden');
+
+    const floatRet = document.querySelector('.floating-return-chat-container');
+    if (floatRet) floatRet.style.display = 'flex';
 
     updateNavigationUiState();
 
@@ -15823,11 +15842,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
       }
       return;
     }
-    if (currentSettings.homepageUrl && currentSettings.homepageUrl.trim()) {
-      navigateTo(currentSettings.homepageUrl.trim());
-    } else {
-      showDashboard();
-    }
+    showDashboard();
   });
   brandHome.addEventListener('click', showDashboard);
   if (btnWvHome) {
@@ -27929,6 +27944,22 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           ${buildCandidateProfileCardHtml(updatedProfile, goal)}
         `;
       }
+
+      // Re-render active job workspace immediately on the exact same page
+      if (typeof document !== 'undefined') {
+        const activeWorkspaces = document.querySelectorAll('.hitl-job-workspace');
+        if (activeWorkspaces && activeWorkspaces.length > 0) {
+          const lastWs = activeWorkspaces[activeWorkspaces.length - 1];
+          let postings = window.activeJobPostings;
+          if (!postings || postings.length === 0) {
+            postings = extractDiscoveredJobsFromDomOrText(document, '', window._pendingJobGoal || goal || 'Software Engineer');
+          }
+          if (postings && postings.length > 0) {
+            const newHtml = buildHitlJobApplicationWorkspaceHtml(postings, window.selectedJobIndex || 0, updatedProfile);
+            lastWs.outerHTML = newHtml;
+          }
+        }
+      }
     } catch (err) {
       if (typeof termLog === 'function') {
         termLog(`[RESUME PARSER] ❌ Error parsing resume: ${err.message}`, 'error');
@@ -29232,33 +29263,30 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     window.selectedJobIndex = idx;
     window.currentNavUrl = targetUrl;
 
-    const dash = document.getElementById('chatgpt-viewport');
+    // Stay 100% on the same page — never hide #chatgpt-viewport or trap user in webview!
+    const mainViewport = document.getElementById('chatgpt-viewport');
+    if (mainViewport) mainViewport.classList.remove('hidden');
     const web = document.getElementById('webview-view');
-    if (dash) dash.classList.add('hidden');
-    if (web) web.classList.remove('hidden');
+    if (web) web.classList.add('hidden');
+    const convView = document.getElementById('chat-conversation-view');
+    if (convView) convView.classList.remove('hidden');
 
-    const omni = document.getElementById('omnibox-input');
-    if (omni) omni.value = targetUrl;
-    const curUrl = document.getElementById('wv-current-url');
-    if (curUrl) curUrl.textContent = targetUrl;
-
-    const frame = document.getElementById('browser-frame');
-    const fallback = document.getElementById('frame-fallback');
-    const loading = document.getElementById('frame-loading');
-    if (fallback) fallback.classList.add('hidden');
-    if (loading) loading.classList.add('hidden');
-
-    if (frame) {
-      frame.removeAttribute('src');
-      frame.srcdoc = buildInteractiveJobPortalHtml(targetUrl, idx);
+    if (typeof selectJobPosting === 'function') {
+      selectJobPosting(idx);
     }
 
-    if (typeof updateNavigationUiState === 'function') updateNavigationUiState();
+    if (typeof document !== 'undefined') {
+      const card = document.getElementById(`best-fit-job-card-${idx}`) || document.getElementById(`job-card-${idx}`);
+      if (card && typeof card.scrollIntoView === 'function') {
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
 
     if (typeof termLog === 'function') {
       const title = job ? job.title : 'Job Posting';
-      termLog(`[CAREER-OPS] 🌐 Loaded interactive job portal page for: ${title} (${targetUrl})`, 'success');
+      termLog(`[CAREER-OPS] 🔗 Job Fit URL ready on same page for: ${title} (${targetUrl})`, 'success');
     }
+    return targetUrl;
   }
   if (typeof window !== 'undefined') window.loadJobPostingPage = loadJobPostingPage;
 
@@ -29610,73 +29638,142 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           </div>
         </div>
 
-        <!-- Primary 2-Column Ladders-Style Apply4Me Executive Card -->
-        <div class="apply4me-hero-container" style="display: flex; gap: 16px; flex-wrap: wrap; align-items: stretch; margin-bottom: 14px;">
-          <!-- Left Column: Primary 1-Click Apply4Me Work Area -->
-          <div style="flex: 1.5; min-width: 300px; background: rgba(255,255,255,0.03); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 10px; padding: 18px; display: flex; flex-direction: column; justify-content: space-between;">
-            <div>
-              <div id="apply4me-status-${selectedIdx}" style="display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; font-weight: 600; color: #10b981; margin-bottom: 14px; text-align: center;">
-                <span>⚡</span> <span>ModelFusion Apply4Me Ready · 1-Click Autonomous Computer Use</span>
-              </div>
-
-              <!-- Clean Inner Job Box -->
-              <div style="background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 18px; margin-bottom: 16px;">
-                <div style="font-size: 16px; font-weight: 700; color: var(--text-primary, #f8fafc); margin-bottom: 6px;">${escapeHtml(selJob.title)}</div>
-                <div style="font-size: 13.5px; color: var(--text-secondary, #cbd5e1); margin-bottom: 8px;">${escapeHtml(selJob.company)} &nbsp;•&nbsp; <strong style="color: #f8fafc;">${escapeHtml(selJob.salary)} *</strong></div>
-                <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted, #94a3b8); margin-bottom: 6px;">
-                  <span>${selJob.isRemote ? 'Remote' : escapeHtml(selJob.location)}</span>
-                  <span style="background: rgba(148, 163, 184, 0.16); color: var(--text-secondary, #e2e8f0); padding: 2px 8px; border-radius: 4px; font-size: 11px;">${escapeHtml(selJob.location || 'Remote in United States')}</span>
-                </div>
-                <div style="font-size: 11.5px; color: var(--text-muted, #94a3b8); margin-bottom: 14px;">Posted recently &nbsp;•&nbsp; <span style="color: #34d399; font-weight: 600;">${selJob.matchScore || 96}% Resume Match</span></div>
-
-                <!-- Action Buttons -->
-                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                  <button type="button" class="btn-view-job" onclick="if(window.loadJobPostingPage) window.loadJobPostingPage(${selectedIdx});" style="background: transparent; border: 1px solid rgba(148, 163, 184, 0.4); color: var(--text-primary, #f8fafc); font-size: 12.5px; font-weight: 600; padding: 8px 18px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
-                    <span>↗</span> <span>View Job</span>
-                  </button>
-                  <button type="button" class="btn-apply-for-me" onclick="window.applyForMeNow(${selectedIdx})" style="background: #34d399; border: 1px solid #10b981; color: #064e3b; font-size: 13px; font-weight: 700; padding: 8px 22px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);">
-                    <span>👆</span> <span>Apply For Me</span>
-                  </button>
-                </div>
+        <!-- Resume Fit & Skills Summary Box (One-Page Resume Grounding) -->
+        <div class="resume-fit-summary-box" style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 20px;">📄</span>
+              <div>
+                <div style="font-weight: 700; color: #38bdf8; font-size: 13.5px;">Candidate Resume &amp; Best Job Fit Matching</div>
+                <div style="font-size: 11px; color: var(--text-muted, #94a3b8);">All jobs below are ranked and scored based on your parsed resume skills. Click any job URL to apply directly.</div>
               </div>
             </div>
-
-            <!-- Center CTA Section Below Inner Box -->
-            <div id="apply4me-cta-box-${selectedIdx}" style="text-align: center; padding: 8px 0;">
-              <div style="font-size: 15px; font-weight: 700; color: var(--text-primary, #f8fafc); margin-bottom: 4px;">1-Click Autonomous Application</div>
-              <div style="width: 180px; height: 2.5px; background: #34d399; margin: 0 auto 10px auto; border-radius: 2px;"></div>
-              <div style="font-size: 12px; color: var(--text-secondary, #cbd5e1); margin-bottom: 12px;">With <strong>Apply4Me</strong>, Computer Use takes over: attaches <code>${escapeHtml(prof.resumeFileName || 'your resume')}</code>, fills out screening questions, and submits automatically.</div>
-              <button type="button" class="btn-keep-using-apply4me" onclick="window.applyForMeNow(${selectedIdx})" style="background: #34d399; border: 1px solid #059669; color: #064e3b; font-size: 13px; font-weight: 700; padding: 9px 24px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px;">
-                <span>👆</span> <span>Apply For Me (${escapeHtml(selJob.company)})</span>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <button type="button" class="btn-hitl-upload-resume btn-upload-resume" onclick="window.uploadResumeFile()" style="background: #0284c7; border: 1px solid #38bdf8; color: #fff; font-size: 11.5px; padding: 6px 14px; border-radius: 5px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 1px 4px rgba(2,132,199,0.3);">
+                <span>📤</span> <span>Upload / Replace Resume</span>
               </button>
+              ${prof.hasUploadedResume ? `
+                <button type="button" class="btn-remove-resume" onclick="window.removeSavedResume()" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.35); color: #f87171; font-size: 11px; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-weight: 600;">
+                  <span>🗑️</span> <span>Remove Resume</span>
+                </button>
+              ` : ''}
             </div>
           </div>
-
-          <!-- Right Column: More Matching Jobs Sidebar Card -->
-          <div style="flex: 1; min-width: 240px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 16px; display: flex; flex-direction: column;">
-            <div style="font-size: 13.5px; font-weight: 700; color: var(--text-primary, #f8fafc); margin-bottom: 12px;">More Matching Jobs</div>
-            <div style="display: flex; flex-direction: column; gap: 12px; overflow-y: auto; max-height: 380px;">
-              ${postings.map((job, idx) => `
-                <div style="border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 10px; ${idx === selectedIdx ? 'background: rgba(56, 189, 248, 0.06); padding: 8px; border-radius: 6px;' : ''}">
-                  <div style="display: flex; align-items: flex-start; gap: 6px;">
-                    <span style="font-size: 14px;">🏛️</span>
-                    <div style="flex: 1;">
-                      <a href="javascript:void(0)" onclick="window.selectJobPosting(${idx})" style="color: #60a5fa; font-weight: 600; font-size: 13px; text-decoration: none; display: block; line-height: 1.3;">
-                        ${escapeHtml(job.title)}
-                      </a>
-                      <div style="font-size: 11.5px; color: var(--text-muted, #94a3b8); margin-top: 2px;">${escapeHtml(job.company)}</div>
-                      <div style="font-weight: 700; font-size: 12px; color: #f8fafc; margin-top: 2px;">${escapeHtml(job.salary)} *</div>
-                      <div style="font-size: 11px; color: var(--text-muted, #94a3b8); margin-top: 2px;">${escapeHtml(job.location || 'Remote in United States')}</div>
-                      <button type="button" class="btn-apply-for-me-mini" onclick="event.stopPropagation(); window.applyForMeNow(${idx})" style="margin-top: 6px; background: rgba(52, 211, 153, 0.15); border: 1px solid #34d399; color: #34d399; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
-                        <span>👆</span> <span>Apply For Me</span>
-                      </button>
-                    </div>
-                  </div>
+          <div style="background: rgba(0, 0, 0, 0.3); border-radius: 6px; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+            <div style="font-size: 12px; color: var(--text-primary, #f1f5f9);">
+              ${prof.hasUploadedResume ? `
+                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                  <span style="color: #34d399; font-weight: 700;">✓ Active Resume:</span>
+                  <strong style="color: #f8fafc; font-family: var(--mono-font);">${escapeHtml(prof.resumeFileName)}</strong>
+                  <span style="color: var(--text-muted); font-size: 11px;">(${escapeHtml(prof.resumeFileSize || '')})</span>
+                  <span style="color: var(--text-muted);">•</span>
+                  <span>Candidate: <strong style="color: #38bdf8;">${escapeHtml(prof.fullName || 'Candidate')}</strong></span>
+                  <span style="color: var(--text-muted);">•</span>
+                  <span>Exp: <strong style="color: #fbbf24;">${escapeHtml(prof.yearsExperience || '5+ years')}</strong></span>
                 </div>
-              `).join('')}
+                <div style="font-size: 11px; color: var(--text-secondary, #cbd5e1); margin-top: 5px;">
+                  <span style="color: #38bdf8; font-weight: 600;">Parsed Skills:</span> ${escapeHtml(prof.skills || 'General Engineering')}
+                </div>
+              ` : `
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="color: #fbbf24;">⚠️</span>
+                  <span>No resume uploaded yet. Click <strong>Upload / Replace Resume</strong> above to auto-score these positions against your experience.</span>
+                </div>
+              `}
+            </div>
+            <div id="apply4me-status-${selectedIdx}" style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; color: #10b981;">
+              <span>⚡</span> <span>ModelFusion Apply4Me Ready · 1-Click Autonomous Computer Use</span>
             </div>
           </div>
         </div>
+
+        <!-- Best Job Fit Ranked Cards with Direct Clickable URLs -->
+        <div style="margin-bottom: 14px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+            <div style="font-weight: 700; color: var(--text-primary, #f8fafc); font-size: 14px; display: flex; align-items: center; gap: 6px;">
+              <span>🏆</span> <span>Ranked Best Job Fit Positions (${postings.length})</span>
+            </div>
+            <span style="font-size: 11px; color: var(--text-muted, #94a3b8);">Click Job URL to open directly or use 1-Click Apply For Me</span>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            ${postings.map((job, idx) => {
+              const isSelected = (idx === selectedIdx);
+              const cardBorder = isSelected ? 'border: 1.5px solid #38bdf8; background: rgba(56, 189, 248, 0.07);' : 'border: 1px solid rgba(255,255,255,0.08); background: rgba(15, 23, 42, 0.65);';
+              const jobUrl = job.applyUrl || (typeof buildInteractiveJobPortalHtml === 'function' ? 'https://www.google.com/about/careers/applications/' : '#');
+              const matchedSkills = job.matchedSkills || (prof.parsedSkills && prof.parsedSkills.length > 0 ? prof.parsedSkills.slice(0, 5) : ['Rust', 'Python', 'Distributed Systems', 'Cloud Architecture', 'Linux']);
+
+              return `
+                <div id="job-card-${idx}" class="job-card best-fit-job-card" data-job-index="${idx}" style="${cardBorder} border-radius: 8px; padding: 14px 16px; transition: all 0.2s ease;">
+                  <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                    <div style="flex: 1; min-width: 280px;">
+                      <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px;">
+                        <span style="font-size: 15.5px; font-weight: 700; color: var(--text-primary, #f8fafc);">${escapeHtml(job.title)}</span>
+                        <span style="font-size: 11px; font-weight: 700; background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.4); color: #34d399; padding: 2px 8px; border-radius: 4px;">
+                          ${job.matchScore || (98 - idx * 3)}% BEST FIT
+                        </span>
+                        ${(idx === 0 || job.isRecommended) ? '<span style="font-size: 10.5px; font-weight: 700; background: rgba(56, 189, 248, 0.2); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; padding: 2px 7px; border-radius: 4px;">★ TOP PICK</span>' : ''}
+                      </div>
+
+                      <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary, #cbd5e1); flex-wrap: wrap; margin-bottom: 6px;">
+                        <span style="color: #f1f5f9; font-weight: 600;">🏢 ${escapeHtml(job.company)}</span>
+                        ${job.team ? `<span style="color: var(--text-muted);">(${escapeHtml(job.team)})</span>` : ''}
+                        <span style="color: var(--text-muted);">•</span>
+                        <span>📍 ${escapeHtml(job.location || (job.isRemote ? 'Remote, US' : 'Multiple Locations'))}</span>
+                        <span style="color: var(--text-muted);">•</span>
+                        <span style="color: #34d399; font-weight: 600;">💰 ${escapeHtml(job.salary || '$165,000 - $245,000 / yr')}</span>
+                        <span style="color: var(--text-muted);">•</span>
+                        <span style="background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 3px; font-size: 11px;">${escapeHtml(job.employmentType || 'Full-time')}</span>
+                      </div>
+
+                      <div style="font-size: 11.5px; color: var(--text-muted, #94a3b8); margin-bottom: 8px; line-height: 1.4;">
+                        ${escapeHtml(job.description || '')}
+                      </div>
+
+                      <!-- Matched Skills Tags -->
+                      <div style="display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-bottom: 10px;">
+                        <span style="font-size: 10.5px; color: var(--text-muted); font-weight: 600;">Matched Skills:</span>
+                        ${matchedSkills.map(s => `
+                          <span style="font-size: 10.5px; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8; padding: 1px 7px; border-radius: 3px; font-weight: 500;">
+                            ✓ ${escapeHtml(s)}
+                          </span>
+                        `).join('')}
+                      </div>
+
+                      <!-- Direct Clickable Job URL Box -->
+                      <div style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 5px; padding: 7px 10px; margin-bottom: 8px; font-size: 11.5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <span style="font-weight: 600; color: #38bdf8;">Job URL:</span>
+                        <a href="${escapeHtml(jobUrl)}" target="_blank" rel="noopener noreferrer" style="color: #60a5fa; text-decoration: underline; word-break: break-all; flex: 1;" title="Open job application directly in new window">
+                          ${escapeHtml(jobUrl)}
+                        </a>
+                      </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-end; min-width: 170px;">
+                      <a href="${escapeHtml(jobUrl)}" target="_blank" rel="noopener noreferrer" class="btn-job-direct-apply" style="background: #0284c7; border: 1px solid #38bdf8; color: #ffffff; font-size: 12px; font-weight: 700; padding: 7px 14px; border-radius: 5px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 1px 4px rgba(2,132,199,0.3); text-align: center; width: 100%; justify-content: center; box-sizing: border-box;">
+                        <span>↗</span> <span>Click to Apply at URL</span>
+                      </a>
+                      <button type="button" class="btn-apply-for-me" onclick="window.applyForMeNow(${idx})" style="background: #34d399; border: 1px solid #10b981; color: #064e3b; font-size: 12px; font-weight: 700; padding: 7px 14px; border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; width: 100%; justify-content: center; box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25); box-sizing: border-box;">
+                        <span>👆</span> <span>Apply For Me</span>
+                      </button>
+                      <div style="display: flex; gap: 6px; width: 100%;">
+                        <button type="button" class="btn-select-job" onclick="window.selectJobPosting(${idx})" style="flex: 1; background: ${isSelected ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255,255,255,0.06)'}; border: 1px solid rgba(56, 189, 248, 0.4); color: ${isSelected ? '#38bdf8' : 'var(--text-secondary)'}; font-size: 11px; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-weight: 600;">
+                          ${isSelected ? '✓ Selected' : 'Select'}
+                        </button>
+                        <button type="button" class="btn-view-job btn-job-load-page" onclick="if(window.loadJobPostingPage) window.loadJobPostingPage(${idx});" style="flex: 1; background: transparent; border: 1px solid rgba(148, 163, 184, 0.3); color: var(--text-muted); font-size: 11px; padding: 4px 8px; border-radius: 4px; cursor: pointer;">
+                          <span>🔍 View</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+
+        <div id="apply4me-cta-box-${selectedIdx}" style="display: none;"></div>
 
         <!-- Collapsible Details Drawer for Full Customization & Career-Ops -->
         <details class="apply4me-advanced-drawer" style="margin-top: 12px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 8px 12px;">
@@ -31519,25 +31616,10 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       }
     }
 
-    // Mandatory Resume Gate: Always prompt for resume upload or confirm active resume
+    // Track pending job goal for resume grounding & re-scoring
     if (isJobApplicationCmd) {
-      const prof = getJobApplicantProfile();
-      const hasResumeInGoalOrProfile = Boolean((prof && prof.hasUploadedResume && prof.resumeFileName) || (cmd && /resume/i.test(cmd)));
-      if (!cmd.includes('--skip-resume') && !cmd.includes('--force') && !(options && options.resumeApproved) && !hasResumeInGoalOrProfile) {
-        if (typeof termLog === 'function') {
-          termLog('📄 Please verify or upload your candidate resume so I can parse your skills, calculate your years of experience, and accurately autofill employer screening questions.', 'info');
-        }
-        const cardBubble = createAiBubble({
-          icon: '💼',
-          title: 'Job Application Agent · Candidate Resume Gate',
-          modelTag: 'Resume Gate',
-          isTool: true,
-          streaming: false
-        });
-        const contentEl = cardBubble.querySelector('.stream-content') || cardBubble;
-        contentEl.innerHTML = promptForResumeUploadFirst(goal);
-        setChatRunningState(false);
-        return;
+      if (typeof window !== 'undefined') {
+        window._pendingJobGoal = goal;
       }
     }
 
@@ -31575,7 +31657,7 @@ Analyze the temporal progression across the sampled video keyframes, describing 
       }
     }
 
-    if (targetNavUrl) {
+    if (targetNavUrl && !isJobApplicationCmd) {
       targetNavUrl = sanitizeAndDeduplicateUrl(targetNavUrl);
       termLog(`🌐 [COMPUTER USE] Synchronizing live webview to target URL (preserving conversation on page): ${targetNavUrl}`, 'info');
       try {
@@ -32291,11 +32373,14 @@ The live webpage contains ${detectedDirections?.routes?.length || 1} navigation 
       userAiPrompt += `Please summarize the route options, highlight the fastest route, and describe turn-by-turn guidance.`;
     }
 
+    const shouldShowLiveCard = Boolean(livePageCardHtml && !isJobGoal && (!detectedJobs || detectedJobs.length === 0));
+    const liveCardToRender = shouldShowLiveCard ? livePageCardHtml : '';
+
     const preStreamEl = bubble ? bubble.querySelector('.stream-content') : null;
-    if (preStreamEl && (hitlWorkspaceCardHtml || searchCardHtml || livePageCardHtml)) {
+    if (preStreamEl && (hitlWorkspaceCardHtml || searchCardHtml || liveCardToRender)) {
       preStreamEl.innerHTML = `
         ${searchCardHtml}
-        ${livePageCardHtml}
+        ${liveCardToRender}
         ${hitlWorkspaceCardHtml}
         ${uitarsGroundingHtml}
         <div class="stream-content-planner" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text-muted);">⏳ Synthesizing Career-Ops & grounding analysis...</div>
@@ -32348,7 +32433,7 @@ The live webpage contains ${detectedDirections?.routes?.length || 1} navigation 
             let html = `
               <div class="grounding-cards-container">
                 ${searchCardHtml}
-                ${livePageCardHtml}
+                ${liveCardToRender}
                 ${hitlWorkspaceCardHtml}
                 ${uitarsGroundingHtml}
                 <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; padding: 8px 10px; margin-bottom: 8px;">
@@ -32376,7 +32461,7 @@ The live webpage contains ${detectedDirections?.routes?.length || 1} navigation 
             return;
           }
 
-          let html = searchCardHtml + livePageCardHtml + hitlWorkspaceCardHtml + uitarsGroundingHtml;
+          let html = searchCardHtml + liveCardToRender + hitlWorkspaceCardHtml + uitarsGroundingHtml;
           html += `<div><strong>🎯 Goal:</strong> ${escapeHtml(res.goal || goal)}</div>`;
           html += `<div style="margin: 8px 0; color: #10b981; font-weight: 600;">✅ ${escapeHtml(res.final_message || 'Completed')}</div>`;
           html += `<div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Executed ${res.steps ? res.steps.length : 0} autonomous actions (${res.total_duration_ms || 0}ms)</div>`;
@@ -32401,7 +32486,7 @@ The live webpage contains ${detectedDirections?.routes?.length || 1} navigation 
             streamEl.innerHTML = `
               <div class="grounding-cards-container">
                 ${searchCardHtml}
-                ${livePageCardHtml}
+                ${liveCardToRender}
                 ${hitlWorkspaceCardHtml}
                 ${uitarsGroundingHtml}
                 ${hasGroundedFindings ? `
