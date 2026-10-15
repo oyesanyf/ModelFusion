@@ -101,6 +101,12 @@ function extractAndRun(regex, name, targetFn) {
 }
 
 extractAndRun(
+  /(class AsyncCountingSemaphore \{[\s\S]*?\n  \})[\s\r\n]+\/\*\*/,
+  'AsyncCountingSemaphore',
+  code => `${code} window.AsyncCountingSemaphore = AsyncCountingSemaphore;`
+);
+
+extractAndRun(
   /function isWikipediaResultRelevant\(query, title, snippet\) \{([\s\S]*?)\n  \}/,
   'isWikipediaResultRelevant',
   code => `function isWikipediaResultRelevant(query, title, snippet) { ${code} }`
@@ -110,6 +116,12 @@ extractAndRun(
   /function getAuthoritySearchRecords\(query\) \{([\s\S]*?)\n  \}/,
   'getAuthoritySearchRecords',
   code => `function getAuthoritySearchRecords(query) { ${code} } window.getAuthoritySearchRecords = getAuthoritySearchRecords;`
+);
+
+extractAndRun(
+  /function cleanSearchSnippetText\(raw\) \{([\s\S]*?)\n  \}/,
+  'cleanSearchSnippetText',
+  code => `function cleanSearchSnippetText(raw) { ${code} } window.cleanSearchSnippetText = cleanSearchSnippetText;`
 );
 
 extractAndRun(
@@ -181,7 +193,7 @@ extractAndRun(
 extractAndRun(
   /async function runRecursiveDeepResearch\([\s\S]*?\)\s*\{([\s\S]*?)\n  \}/,
   'runRecursiveDeepResearch',
-  code => `async function runRecursiveDeepResearch({ query, breadth = 4, depth = 2, learnings = [], visitedUrls = [], onProgress = null, treeLog = [] } = {}) { ${code} } window.runRecursiveDeepResearch = runRecursiveDeepResearch;`
+  code => `async function runRecursiveDeepResearch({ query, breadth = 4, depth = 2, concurrencyLimit = 4, scrapeConcurrency = 6, synthesisConcurrency = 4, semaphores = null, learnings = [], visitedUrls = [], onProgress = null, treeLog = [] } = {}) { ${code} } window.runRecursiveDeepResearch = runRecursiveDeepResearch;`
 );
 
 extractAndRun(
@@ -247,13 +259,13 @@ extractAndRun(
 extractAndRun(
   /function publishResearchMonograph\([^\)]*\) \{([\s\S]*?)\n  \}/,
   'publishResearchMonograph',
-  code => `function publishResearchMonograph(query, sections = [], contextDossier = null, agent = null) { ${code} } window.publishResearchMonograph = publishResearchMonograph;`
+  code => `function publishResearchMonograph(query, sections = [], contextDossier = null, agent = null, semaphoreStats = null) { ${code} } window.publishResearchMonograph = publishResearchMonograph;`
 );
 
 extractAndRun(
   /async function runSynthesizedDeepResearch\([\s\S]*?\)\s*\{([\s\S]*?)\n  \}/,
   'runSynthesizedDeepResearch',
-  code => `async function runSynthesizedDeepResearch({ query, breadth = 4, depth = 2, onProgress = null } = {}) { ${code} } window.runSynthesizedDeepResearch = runSynthesizedDeepResearch;`
+  code => `async function runSynthesizedDeepResearch({ query, breadth = 4, depth = 2, concurrencyLimit = 4, scrapeConcurrency = 6, synthesisConcurrency = 4, onProgress = null } = {}) { ${code} } window.runSynthesizedDeepResearch = runSynthesizedDeepResearch;`
 );
 
 const {

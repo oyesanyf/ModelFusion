@@ -8757,10 +8757,29 @@ You MUST directly and specifically answer the user's exact follow-up question ("
     const allFollowUps = [];
 
     // Initialize or inherit shared counting semaphores across the entire recursion tree
-    const activeSemaphores = semaphores || {
-      searchSem: new AsyncCountingSemaphore(concurrencyLimit || 4, 'serp_arxiv_search'),
-      scrapeSem: new AsyncCountingSemaphore(scrapeConcurrency || 6, 'live_url_scraper'),
-      synthesisSem: new AsyncCountingSemaphore(synthesisConcurrency || 4, 'section_writer_pool')
+    const SemCls = (typeof AsyncCountingSemaphore === 'function')
+      ? AsyncCountingSemaphore
+      : (typeof window !== 'undefined' && typeof window.AsyncCountingSemaphore === 'function')
+        ? window.AsyncCountingSemaphore
+        : (typeof global !== 'undefined' && typeof global.AsyncCountingSemaphore === 'function')
+          ? global.AsyncCountingSemaphore
+          : class FallbackSemaphore {
+              constructor(p = 1, name = 'sem') { this.maxPermits = p; this.name = name; }
+              async acquire() { return () => {}; }
+              release() {}
+              async runExclusive(fn) { return await fn(); }
+              async mapConcurrent(items, fn) { return Promise.all((items || []).map(fn)); }
+              getStats() { return { maxPermits: this.maxPermits, activePermits: 0 }; }
+            };
+
+    const _concurrencyLimit = (typeof concurrencyLimit !== 'undefined') ? (concurrencyLimit || 4) : 4;
+    const _scrapeConcurrency = (typeof scrapeConcurrency !== 'undefined') ? (scrapeConcurrency || 6) : 6;
+    const _synthesisConcurrency = (typeof synthesisConcurrency !== 'undefined') ? (synthesisConcurrency || 4) : 4;
+
+    const activeSemaphores = (typeof semaphores !== 'undefined' && semaphores) ? semaphores : {
+      searchSem: new SemCls(_concurrencyLimit, 'serp_arxiv_search'),
+      scrapeSem: new SemCls(_scrapeConcurrency, 'live_url_scraper'),
+      synthesisSem: new SemCls(_synthesisConcurrency, 'section_writer_pool')
     };
 
     // Step 1: Generate orthogonal SERP queries for this breadth level
@@ -9233,10 +9252,29 @@ You MUST directly and specifically answer the user's exact follow-up question ("
       };
     }
 
+    const SemCls = (typeof AsyncCountingSemaphore === 'function')
+      ? AsyncCountingSemaphore
+      : (typeof window !== 'undefined' && typeof window.AsyncCountingSemaphore === 'function')
+        ? window.AsyncCountingSemaphore
+        : (typeof global !== 'undefined' && typeof global.AsyncCountingSemaphore === 'function')
+          ? global.AsyncCountingSemaphore
+          : class FallbackSemaphore {
+              constructor(p = 1, name = 'sem') { this.maxPermits = p; this.name = name; }
+              async acquire() { return () => {}; }
+              release() {}
+              async runExclusive(fn) { return await fn(); }
+              async mapConcurrent(items, fn) { return Promise.all((items || []).map(fn)); }
+              getStats() { return { maxPermits: this.maxPermits, activePermits: 0 }; }
+            };
+
+    const _concurrencyLimit = (typeof concurrencyLimit !== 'undefined') ? (concurrencyLimit || 4) : 4;
+    const _scrapeConcurrency = (typeof scrapeConcurrency !== 'undefined') ? (scrapeConcurrency || 6) : 6;
+    const _synthesisConcurrency = (typeof synthesisConcurrency !== 'undefined') ? (synthesisConcurrency || 4) : 4;
+
     const semaphores = {
-      searchSem: new AsyncCountingSemaphore(concurrencyLimit || 4, 'serp_arxiv_search'),
-      scrapeSem: new AsyncCountingSemaphore(scrapeConcurrency || 6, 'live_url_scraper'),
-      synthesisSem: new AsyncCountingSemaphore(synthesisConcurrency || 4, 'section_writer_pool')
+      searchSem: new SemCls(_concurrencyLimit, 'serp_arxiv_search'),
+      scrapeSem: new SemCls(_scrapeConcurrency, 'live_url_scraper'),
+      synthesisSem: new SemCls(_synthesisConcurrency, 'section_writer_pool')
     };
 
     // Stage 1: choose_agent (Task-specific persona)
@@ -9406,7 +9444,21 @@ You MUST directly and specifically answer the user's exact follow-up question ("
    * Concurrently synthesizes all monograph subtopic sections bounded by synthesisSemaphore.
    */
   async function writeAllSubtopicSectionsParallel(subtopics, contextDossier, agentRole, query, synthesisSemaphore = null) {
-    const sem = synthesisSemaphore || new AsyncCountingSemaphore(4, 'section_writer_pool');
+    const SemCls = (typeof AsyncCountingSemaphore === 'function')
+      ? AsyncCountingSemaphore
+      : (typeof window !== 'undefined' && typeof window.AsyncCountingSemaphore === 'function')
+        ? window.AsyncCountingSemaphore
+        : (typeof global !== 'undefined' && typeof global.AsyncCountingSemaphore === 'function')
+          ? global.AsyncCountingSemaphore
+          : class FallbackSemaphore {
+              constructor(p = 1, name = 'sem') { this.maxPermits = p; this.name = name; }
+              async acquire() { return () => {}; }
+              release() {}
+              async runExclusive(fn) { return await fn(); }
+              async mapConcurrent(items, fn) { return Promise.all((items || []).map(fn)); }
+              getStats() { return { maxPermits: this.maxPermits, activePermits: 0 }; }
+            };
+    const sem = synthesisSemaphore || new SemCls(4, 'section_writer_pool');
     if (!Array.isArray(subtopics) || subtopics.length === 0) {
       return [];
     }
@@ -9504,10 +9556,11 @@ You MUST directly and specifically answer the user's exact follow-up question ("
     doc += `> **Framework**: Synthesized GPT-Researcher (Plan-and-Solve) × dzhng/deep-research (Breadth × Depth Tree) × Google LangExtract × arXiv\n`;
     doc += `> **Execution Tier**: 100% Free Local AI & Open Retrievers (Zero API Fees)\n`;
 
-    const searchP = semaphoreStats?.searchSemaphore?.maxPermits || 4;
-    const scrapeP = semaphoreStats?.scrapeSemaphore?.maxPermits || 6;
-    const synthP = semaphoreStats?.synthesisSemaphore?.maxPermits || 4;
-    const peakC = semaphoreStats?.searchSemaphore?.peakConcurrency || 4;
+    const stats = (typeof semaphoreStats !== 'undefined' && semaphoreStats) ? semaphoreStats : null;
+    const searchP = stats?.searchSemaphore?.maxPermits || 4;
+    const scrapeP = stats?.scrapeSemaphore?.maxPermits || 6;
+    const synthP = stats?.synthesisSemaphore?.maxPermits || 4;
+    const peakC = stats?.searchSemaphore?.peakConcurrency || 4;
     doc += `> **Concurrency Engine**: Multi-Threaded Counting Semaphores (Search Permits: ${searchP}, Scrape Permits: ${scrapeP}, Synthesis Permits: ${synthP}, Peak Concurrency: ${peakC})\n\n`;
 
     doc += `## 📑 Table of Contents\n`;
@@ -31639,8 +31692,12 @@ Analyze the temporal progression across the sampled video keyframes, describing 
     let detectedExamQuestions = [];
     let groundedDoc = null;
 
-    const isExamGoal = /exam[- ]?solver\b|\bexam\b|\bquiz\b|\btest questions?\b|\bpractice test\b/i.test(goal) || /exam[- ]?solver/i.test(cmd);
-    const isExamUrl = /(?:exam|quiz|test|tests\.com|practice-test)/i.test(targetNavUrl || '');
+    const isBookingGoal = /(?:ticket[- ]?booking|flight[- ]?booking|book[- ]?ticket|book[- ]?flight|booking|ticket|flight|hotel|reservation)/i.test(goal);
+    const isShoppingGoal = /(?:shopping|price|product|buy|cart|order|deal)/i.test(goal);
+    const isDirectionsGoal = /(?:map[- ]?directions|maps?|directions?|route|navigate|distance|drive|transit|walk)/i.test(goal);
+    const isGroundingGoal = /(?:screen[- ]?grounding|grounding|ground)/i.test(goal);
+    const isExamGoal = !isBookingGoal && !isShoppingGoal && !isEarlyJobGoal && (/exam[- ]?solver\b|\bexam\b|\bquiz\b|\btest questions?\b|\bpractice test\b/i.test(goal) || /exam[- ]?solver/i.test(cmd));
+    const isExamUrl = !isBookingGoal && !isShoppingGoal && !isEarlyJobGoal && /(?:exam|quiz|test|tests\.com|practice-test)/i.test(targetNavUrl || '');
     const shouldExtractExam = isExamGoal || isExamUrl;
 
     if (targetNavUrl) {
@@ -31700,12 +31757,10 @@ Analyze the temporal progression across the sampled video keyframes, describing 
           groundedDoc = doc;
           livePageTitle = doc.title ? doc.title.trim() : '';
 
-          // Ground structured exam / test questions before stripping interactive DOM elements ONLY if an exam
-          if (shouldExtractExam || /(?:exam|quiz|test)/i.test(livePageTitle)) {
+          doc.querySelectorAll('script, style, noscript, svg, link, meta, iframe').forEach(el => el.remove());
+          if (shouldExtractExam) {
             detectedExamQuestions = extractExamQuestions(doc, htmlContent);
           }
-
-          doc.querySelectorAll('script, style, noscript, svg, link, meta, iframe').forEach(el => el.remove());
           doc.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]').forEach(h => {
             const t = (h.textContent || '').trim();
             if (t && !livePageHeadings.includes(t)) livePageHeadings.push(t);
@@ -31975,11 +32030,6 @@ Analyze the temporal progression across the sampled video keyframes, describing 
 
     // Build Step-by-Step UI-TARS Grounding Actions HTML
     const groundingTargetUrl = targetNavUrl || 'https://www.google.com';
-    const isExamGoal = /exam-solver\b|exam|quiz|test|questions?/i.test(goal);
-    const isBookingGoal = /(?:ticket[- ]?booking|flight[- ]?booking|book[- ]?ticket|book[- ]?flight|booking|ticket|flight|hotel|reservation)/i.test(goal);
-    const isShoppingGoal = /(?:shopping|price|product|buy|cart|order|deal)/i.test(goal);
-    const isDirectionsGoal = /(?:map[- ]?directions|maps?|directions?|route|navigate|distance|drive|transit|walk)/i.test(goal);
-    const isGroundingGoal = /(?:screen[- ]?grounding|grounding|ground)/i.test(goal);
 
     let uitarsGroundingHtml = '';
     if (isJobGoal || detectedJobs.length > 0) {
