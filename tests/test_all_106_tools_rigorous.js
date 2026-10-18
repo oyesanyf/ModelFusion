@@ -26,8 +26,8 @@ while ((catMatch = catTitleRegex.exec(indexHtml)) !== null) {
   rawCatTitles.push(catMatch[1].replace(/&amp;/g, '&').trim());
 }
 
-assert.strictEqual(rawCatTitles.length, 17, `Expected exactly 17 categories, found ${rawCatTitles.length}`);
-console.log(`  ✓ Found exactly 17 categories in sidebar accordion`);
+assert.strictEqual(rawCatTitles.length, 18, `Expected exactly 18 categories, found ${rawCatTitles.length}`);
+console.log(`  ✓ Found exactly 18 categories in sidebar accordion`);
 
 const cleanCatTitles = rawCatTitles.map(t => t.replace(/^[^\w\s]+/, '').trim());
 const sortedCatTitles = [...cleanCatTitles].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
@@ -35,14 +35,14 @@ const sortedCatTitles = [...cleanCatTitles].sort((a, b) => a.localeCompare(b, un
 for (let i = 0; i < cleanCatTitles.length; i++) {
   assert.strictEqual(cleanCatTitles[i], sortedCatTitles[i], `Category at index ${i} is out of order: "${cleanCatTitles[i]}" vs expected "${sortedCatTitles[i]}"`);
 }
-console.log('  ✅ All 16 categories are in 100% strict alphabetical order (A-Z):');
+console.log('  ✅ All 18 categories are in 100% strict alphabetical order (A-Z):');
 cleanCatTitles.forEach((c, idx) => console.log(`     ${idx + 1}. ${c}`));
 
 // =========================================================================
 // TEST 2: Strict Alphabetical Order & Integrity of ALL 108 Sub-Item Tools
 // =========================================================================
 console.log('\n--- Test 2: Sub-Item Tool Inventory & Alphabetical Ordering (A-Z) ---');
-const catBlockRegex = /<div class="tool-category">([\s\S]*?)<\/div>\s*<\/div>/g;
+const catBlockRegex = /<div class="tool-category"(?: [^>]*)?>([\s\S]*?)<\/div>\s*<\/div>/g;
 let totalToolsCount = 0;
 const allExtractedTools = [];
 let catBlockMatch;
@@ -95,13 +95,13 @@ while ((catBlockMatch = catBlockRegex.exec(indexHtml)) !== null) {
   catIdx++;
 }
 
-assert.strictEqual(totalToolsCount, 117, `Expected exactly 117 tools, found ${totalToolsCount}`);
-console.log(`  ✅ Exactly 117 tool buttons verified with non-empty labels, tags, and actions across all 17 categories!`);
+assert.strictEqual(totalToolsCount, 123, `Expected exactly 123 tools, found ${totalToolsCount}`);
+console.log(`  ✅ Exactly 123 tool buttons verified with non-empty labels, tags, and actions across all 18 categories!`);
 
 // =========================================================================
 // TEST 3: Intent Routing & Non-Falling-Through to Default Web Search
 // =========================================================================
-console.log('\n--- Test 3: Command Routing & Intent Protection for All 117 Tools ---');
+console.log('\n--- Test 3: Command Routing & Intent Protection for All 123 Tools ---');
 
 // Extract shouldRouteToWeb from app.js to verify tools are never accidentally sent to web search
 const fnStart = appJs.indexOf('function shouldRouteToWeb(query, mode) {');
@@ -128,6 +128,8 @@ const currentSessionIdMock = 'test';
 const shouldRouteToWeb = new Function('currentSettings', 'activeOllamaModel', 'chatSessions', 'currentSessionId', `
   function isImageGenerationDirective() { return { isImage: false, cleanPrompt: '' }; }
   function isHelpDirective(clean) { return new RegExp('^(?:@agent\\\\s+|@|\\\\/|--|-)?(?:help|helo|hlp|halp|\\\\?)(?:\\\\b|$)', 'i').test(clean); }
+  function getOrCreateSessionLangExtractMemory() { return null; }
+  function langExtractInterpretQuery() { return null; }
   ${shouldRouteToWebSrc}
   return shouldRouteToWeb;
 `)(currentSettingsMock, activeOllamaModelMock, chatSessionsMock, currentSessionIdMock);
@@ -260,21 +262,22 @@ assert.ok(proxyRegex.test('@agent api/proxy'), 'Must match @agent api/proxy');
 console.log('  ✅ Proxy URL commands safely intercepted and protected from CLI syntax failures');
 
 // =========================================================================
-// TEST 7: Universal @help Engine Coverage Across All 15 Categories
+// TEST 7: Universal @help Engine Coverage Across All 18 Categories
 // =========================================================================
 console.log('\n--- Test 7: Universal @help Engine Coverage ---');
 assert.ok(appJs.includes('HELP_CATEGORIES'), 'HELP_CATEGORIES registry missing');
 assert.ok(appJs.includes('SPECIFIC_MODEL_CARDS'), 'SPECIFIC_MODEL_CARDS registry missing');
 
 const helpCategories = [
-  'classification', 'code', 'computer_use', 'tabular', 'finance', 'vision',
-  'pe_binary', 'legal', 'agent', 'science', 'sentiment', 'utilities', 'audio', 'web', 'writing'
+  'classification', 'code', 'compliance', 'computer_use', 'tabular', 'deep_research',
+  'finance', 'vision', 'pe_binary', 'legal', 'agent', 'rd_agent', 'science',
+  'sentiment', 'utilities', 'audio', 'web', 'writing'
 ];
 
 for (const cat of helpCategories) {
   assert.ok(appJs.includes(`'${cat}': {`) || appJs.includes(`"${cat}": {`), `HELP_CATEGORIES must contain entry for '${cat}'`);
 }
-console.log(`  ✅ All 15 category help entries verified in HELP_CATEGORIES registry`);
+console.log(`  ✅ All 18 category help entries verified in HELP_CATEGORIES registry`);
 
 console.log('\n=================================================================');
 console.log('🎉 ALL 109 TOOLS & CAPABILITIES RIGOROUSLY TESTED AND PASSED 100%');

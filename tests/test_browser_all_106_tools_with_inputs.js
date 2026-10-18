@@ -29,7 +29,7 @@ const appJs = fs.readFileSync(appJsPath, 'utf8');
 // =========================================================================
 // 1. Parse all 14 categories and 106 tools directly from index.html
 // =========================================================================
-const catBlockRegex = /<div class="tool-category">([\s\S]*?)<\/div>\s*<\/div>/g;
+const catBlockRegex = /<div class="tool-category"(?: [^>]*)?>([\s\S]*?)<\/div>\s*<\/div>/g;
 let catBlockMatch;
 const allTools = [];
 const categories = [];
@@ -72,14 +72,22 @@ while ((catBlockMatch = catBlockRegex.exec(indexHtml)) !== null) {
   }
 }
 
-assert.strictEqual(categories.length, 17, `Expected exactly 17 categories, found ${categories.length}`);
-assert.strictEqual(allTools.length, 116, `Expected exactly 116 tools, found ${allTools.length}`);
-console.log(`✓ Inventory Verified: exactly 17 categories and 116 tools extracted from index.html.\n`);
+assert.strictEqual(categories.length, 18, `Expected exactly 18 categories, found ${categories.length}`);
+assert.strictEqual(allTools.length, 123, `Expected exactly 123 tools, found ${allTools.length}`);
+console.log(`✓ Inventory Verified: exactly 18 categories and 123 tools extracted from index.html.\n`);
 
 // =========================================================================
-// 2. Realistic Domain-Tailored Inputs Registry for all 106 Tools
+// 2. Realistic Domain-Tailored Inputs Registry for all 106+ Tools
 // =========================================================================
 const TOOL_INPUTS = {
+  // Deep Research (7) - SakanaAI AI-Scientist-v3 & Multi-Model Speculative Fusion
+  'tool_agsci_ablations': 'Circle packing in a square with GRPO reasoning policy',
+  'tool_agsci_run': 'Circle packing in a square with GRPO reasoning policy',
+  'tool_deep_research_web': 'SakanaAI AI-Scientist-v3 multi-agent automated scientific discovery arXiv:2610.18933',
+  'tool_agsci_investigate': 'Circle packing in a square with GRPO reasoning policy',
+  'tool_agsci_paper': 'Circle packing in a square with GRPO reasoning policy',
+  'tool_agsci_posthoc': 'Circle packing in a square with GRPO reasoning policy',
+  'tool_agsci_draft': 'Circle packing in a square with GRPO reasoning policy',
   // Classification & Taxonomy (12)
   'tool_bart_large_mnli': '"SpaceX successfully launched Starship Flight 6 into low earth orbit" --labels aerospace, commercial aviation, satellite telecommunications',
   'tool_cross_encoder_deberta': '"The appellate court affirmed the district court summary judgment" --labels judicial ruling, statutory law, constitutional law',

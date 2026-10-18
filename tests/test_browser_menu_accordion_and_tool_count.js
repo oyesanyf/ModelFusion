@@ -345,11 +345,11 @@ console.log(`  ✅ Tools badge dynamically evaluated to: ${badgeNum} capabilitie
 console.log(`  ✅ Toggle button title: "${env.toggleBtn.title}"`);
 
 // ============================================================================
-// PART 4: All 17 Tool Categories and 117 Sub-items Verification
+// PART 4: All 18 Tool Categories and 123 Sub-items Verification
 // ============================================================================
 console.log('\n--- Part 4: Category and Sub-item Inspection across DOM ---');
-assert.strictEqual(env.categoryHeaders.length, 17, `Expected 17 category headers, found ${env.categoryHeaders.length}`);
-console.log(`  ✓ Exactly 17 category headers verified in DOM`);
+assert.strictEqual(env.categoryHeaders.length, 18, `Expected 18 category headers, found ${env.categoryHeaders.length}`);
+console.log(`  ✓ Exactly 18 category headers verified in DOM`);
 
 // Bind category click toggle handler
 env.categoryHeaders.forEach((catHeader) => {
@@ -366,7 +366,7 @@ env.categoryHeaders.forEach((catHeader) => {
   });
 });
 
-// Test each of the 17 categories expands and collapses
+// Test each of the 18 categories expands and collapses
 for (let i = 0; i < env.categoryHeaders.length; i++) {
   const catHeader = env.categoryHeaders[i];
   const catContent = env.categoryContents[i];
@@ -381,10 +381,10 @@ for (let i = 0; i < env.categoryHeaders.length; i++) {
   assert.strictEqual(catContent.classList.contains('collapsed'), true, `Category ${i} should re-collapse on click`);
   assert.strictEqual(catChevron.textContent, '▸', `Category ${i} chevron should be ▸`);
 }
-console.log(`  ✅ All 17 category accordion panels expand and collapse cleanly`);
+console.log(`  ✅ All 18 category accordion panels expand and collapse cleanly`);
 
-assert.strictEqual(env.toolButtons.length, 116, `Expected exactly 116 tool items, found ${env.toolButtons.length}`);
-console.log(`  ✅ All 116 tool items confirmed present in DOM`);
+assert.strictEqual(env.toolButtons.length, 123, `Expected exactly 123 tool items, found ${env.toolButtons.length}`);
+console.log(`  ✅ All 123 tool items confirmed present in DOM`);
 
 // ============================================================================
 // PART 5: Origin Resilience (file:// vs http://)
