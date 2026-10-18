@@ -26,14 +26,15 @@ def main():
     assert any("Finance" in h for h in headers), "Finance & Markets category missing!"
     assert any("Deep Research" in h for h in headers), "Deep Research category missing!"
     assert any("Legal" in h for h in headers), "Legal category missing!"
+    assert any("Harness2" in h for h in headers), "Harness2 category missing!"
     assert any("RD-Agent" in h for h in headers), "RD-Agent category missing!"
     assert any("Sentiment" in h for h in headers), "Sentiment & Content Moderation category missing!"
-    assert len(headers) == 18, f"Expected 18 categories, found {len(headers)}: {clean}"
+    assert len(headers) == 19, f"Expected 19 categories, found {len(headers)}: {clean}"
     
     # Verify sub-items inside each category are also sorted
     categories = re.findall(r'<div class="tool-category"(?: [^>]*)?>(.*?)</div>\s*</div>', content, re.DOTALL)
     print(f"\nVerifying sub-item sorting across {len(categories)} categories...")
-    assert len(categories) == 18, f"Expected 18 category blocks, found {len(categories)}"
+    assert len(categories) == 19, f"Expected 19 category blocks, found {len(categories)}"
     for idx, cat_block in enumerate(categories):
         title_match = re.search(r'class="cat-title">([^<]+)</span>', cat_block)
         cat_title = title_match.group(1) if title_match else f"Category {idx+1}"
@@ -43,12 +44,13 @@ def main():
         assert clean_labels == expected_labels, f"Sub-items in '{cat_title}' are not sorted: {clean_labels} vs {expected_labels}"
         print(f"  [OK] '{cat_title}': {len(clean_labels)} items sorted alphabetically")
 
-    print("\n[OK] All 18 categories are strictly in alphabetical order (A-Z)!")
+    print("\n[OK] All 19 categories are strictly in alphabetical order (A-Z)!")
     print("[OK] All sub-items within each category are strictly in alphabetical order (A-Z)!")
     print("[OK] 'Classification & Taxonomy' is present and verified with 6 classification foundation models!")
     print("[OK] 'Compliance' is present and verified with 4 compliance foundation models!")
     print("[OK] 'Computer Use & OS Automation' is present and verified with full feature suite!")
     print("[OK] 'Finance & Markets' is present and verified with 9 financial foundation models!")
+    print("[OK] 'Harness2 (Recursive Agent Harnessing)' is present and verified with 8 Harness2 recursive tools!")
     print("[OK] 'Legal' is present and verified with 4 legal foundation models!")
     print("[OK] 'Sentiment & Content Moderation' is present and verified with 6 sentiment/moderation foundation models!")
 

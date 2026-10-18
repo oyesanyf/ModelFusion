@@ -39,7 +39,7 @@ async function runAllVerificationRounds() {
   assert.ok(stylesCss.includes('.msg-action-bar'), '❌ .msg-action-bar CSS rule missing from styles.css');
   console.log('  ✅ [PASS] CSS & DOM Structure: Floating action bar and bubble action bar properly defined.');
 
-  // 2. Parse all 123 menu tools
+  // 2. Parse all 131 menu tools
   const catBlockRegex = /<div class="tool-category"(?: [^>]*)?>([\s\S]*?)<\/div>\s*<\/div>/g;
   let catBlockMatch;
   const allTools = [];
@@ -63,9 +63,9 @@ async function runAllVerificationRounds() {
     }
   }
 
-  assert.strictEqual(categoriesCount, 18, `Expected exactly 18 categories, got ${categoriesCount}`);
-  assert.strictEqual(allTools.length, 123, `Expected exactly 123 tools, got ${allTools.length}`);
-  console.log(`  ✅ [PASS] Menu Inventory: 123 tools parsed across 18 categories (no jobs tool present).`);
+  assert.strictEqual(categoriesCount, 19, `Expected exactly 19 categories, got ${categoriesCount}`);
+  assert.strictEqual(allTools.length, 131, `Expected exactly 131 tools, got ${allTools.length}`);
+  console.log(`  ✅ [PASS] Menu Inventory: 131 tools parsed across 19 categories (no jobs tool present).`);
 
   // Verify that each tool's command syntax is recognized
   let toolsVerified = 0;
@@ -73,7 +73,7 @@ async function runAllVerificationRounds() {
     assert.ok(t.dataCmd && t.dataCmd.length > 0, `Tool ${t.toolId} has empty dataCmd`);
     toolsVerified++;
   });
-  console.log(`  ✅ [PASS] All ${toolsVerified}/123 tools verified for command dispatch.`);
+  console.log(`  ✅ [PASS] All ${toolsVerified}/131 tools verified for command dispatch.`);
 
   // 3. Static Scope Verification for streamFinalized and cancelScheduledStreamRender
   const streamAiChatIdx = appJs.indexOf('async function streamAiChat');

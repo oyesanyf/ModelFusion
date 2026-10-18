@@ -204,4 +204,34 @@ if os.path.exists(ext_dst):
             except Exception as e:
                 print(f"[ERROR COPYING EXTENSION] {src_e} -> {dst_e}: {e}")
 
+# Mirror copilot extension files
+copilot_src_dir = os.path.abspath("IDE/vscode/extensions/copilot")
+copilot_dests = [
+    os.path.abspath(r"IDE\VSCode-win32-x64\resources\app\extensions\copilot"),
+    os.path.abspath(r"IDE\VSCode-win32-x64\7e7950df89\resources\app\extensions\copilot"),
+    os.path.join(localappdata, r"HugOS IDE\resources\app\extensions\copilot"),
+    os.path.join(localappdata, r"HugOS IDE\7e7950df89\resources\app\extensions\copilot"),
+]
+copilot_files = [
+    "package.json",
+    os.path.join("dist", "extension.js"),
+]
+
+for c_dst in copilot_dests:
+    for cf in copilot_files:
+        src_cf = os.path.join(copilot_src_dir, cf)
+        dst_cf = os.path.join(c_dst, cf)
+        if os.path.exists(src_cf):
+            try:
+                os.makedirs(os.path.dirname(dst_cf), exist_ok=True)
+                if os.path.exists(dst_cf) and get_sha256(dst_cf) == get_sha256(src_cf):
+                    print(f"[MATCH COPILOT EXTENSION] {dst_cf}")
+                    continue
+                shutil.copy2(src_cf, dst_cf)
+                print(f"[COPIED COPILOT EXTENSION] {src_cf} -> {dst_cf}")
+            except Exception as e:
+                print(f"[ERROR COPYING COPILOT EXTENSION] {src_cf} -> {dst_cf}: {e}")
+
+
+
 

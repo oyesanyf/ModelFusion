@@ -72,9 +72,9 @@ while ((catBlockMatch = catBlockRegex.exec(indexHtml)) !== null) {
   }
 }
 
-assert.strictEqual(categories.length, 18, `Expected exactly 18 categories, found ${categories.length}`);
-assert.strictEqual(allTools.length, 123, `Expected exactly 123 tools, found ${allTools.length}`);
-console.log(`✓ Inventory Verified: exactly 18 categories and 123 tools extracted from index.html.\n`);
+assert.strictEqual(categories.length, 19, `Expected exactly 19 categories, found ${categories.length}`);
+assert.strictEqual(allTools.length, 131, `Expected exactly 131 tools, found ${allTools.length}`);
+console.log(`✓ Inventory Verified: exactly 19 categories and 131 tools extracted from index.html.\n`);
 
 // =========================================================================
 // 2. Realistic Domain-Tailored Inputs Registry for all 106+ Tools
@@ -88,6 +88,17 @@ const TOOL_INPUTS = {
   'tool_agsci_paper': 'Circle packing in a square with GRPO reasoning policy',
   'tool_agsci_posthoc': 'Circle packing in a square with GRPO reasoning policy',
   'tool_agsci_draft': 'Circle packing in a square with GRPO reasoning policy',
+
+  // Harness2 (Recursive Agent Harnessing) (8)
+  'tool_harness2_judge': '--bench lab --subset antitrust-competition',
+  'tool_harness2_check': '',
+  'tool_harness2_meta': '',
+  'tool_harness2_demo': '--k 2',
+  'tool_harness2_parallel': '--bench jb --k 2',
+  'tool_harness2_run': '--bench wb --subset code --mode parallel --k 2',
+  'tool_harness2_report': '',
+  'tool_harness2_sequential': '--bench wb --subset office --k 2',
+
   // Classification & Taxonomy (12)
   'tool_bart_large_mnli': '"SpaceX successfully launched Starship Flight 6 into low earth orbit" --labels aerospace, commercial aviation, satellite telecommunications',
   'tool_cross_encoder_deberta': '"The appellate court affirmed the district court summary judgment" --labels judicial ruling, statutory law, constitutional law',

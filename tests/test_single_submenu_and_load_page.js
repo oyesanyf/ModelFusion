@@ -37,7 +37,7 @@ console.log('  ✅ 0 domain-filter-tabs confirmed in index.html (all inner sub-g
 // ============================================================================
 // PART 2: Verify Exactly 17 Categories in Strict Alphabetical Order A-Z
 // ============================================================================
-console.log('\n--- Part 2: Verifying Exactly 17 Categories in Strict Alphabetical Order A-Z ---');
+console.log('\n--- Part 2: Verifying Exactly 19 Categories in Strict Alphabetical Order A-Z ---');
 
 const catTitleRegex = /class="cat-title">([^<]+)<\/span>/g;
 const titles = [];
@@ -49,18 +49,19 @@ while ((match = catTitleRegex.exec(indexHtml)) !== null) {
 console.log(`Found ${titles.length} categories:`);
 titles.forEach((t, i) => console.log(`  ${i + 1}. ${t}`));
 
-assert.strictEqual(titles.length, 18, `Expected exactly 18 categories, found ${titles.length}`);
+assert.strictEqual(titles.length, 19, `Expected exactly 19 categories, found ${titles.length}`);
 
 // Normalize for clean alphabetical comparison
 const cleanTitles = titles.map(t => t.replace(/&amp;/g, '&').replace(/^[^\w\s]+/, '').trim());
 const expectedTitles = [...cleanTitles].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 
 assert.deepStrictEqual(cleanTitles, expectedTitles, 'Categories must be strictly sorted alphabetically A-Z');
-console.log('  ✅ Exactly 18 categories verified in strict alphabetical order (A-Z).');
+console.log('  ✅ Exactly 19 categories verified in strict alphabetical order (A-Z).');
 
 // Verify Compliance and Legal separation
 assert.ok(cleanTitles.includes('Compliance'), 'Compliance category must be present under C');
 assert.ok(cleanTitles.includes('Deep Research'), 'Deep Research category must be present under D');
+assert.ok(cleanTitles.includes('Harness2 (Recursive Agent Harnessing)'), 'Harness2 category must be present under H');
 assert.ok(cleanTitles.includes('Legal'), 'Legal category must be present under L');
 assert.ok(cleanTitles.includes('RD-Agent (Autonomous R&D)'), 'RD-Agent category must be present under R');
 
@@ -74,6 +75,10 @@ const deepResearchIdx = cleanTitles.indexOf('Deep Research');
 const financeIdx = cleanTitles.indexOf('Finance & Markets');
 assert.ok(dataIdx < deepResearchIdx && deepResearchIdx < financeIdx, 'Deep Research must be between Data & Spreadsheets and Finance & Markets');
 
+const harnessIdx = cleanTitles.indexOf('Harness2 (Recursive Agent Harnessing)');
+const imagesIdx = cleanTitles.indexOf('Images & Vision');
+assert.ok(financeIdx < harnessIdx && harnessIdx < imagesIdx, 'Harness2 must be between Finance & Markets and Images & Vision');
+
 const legalIdx = cleanTitles.indexOf('Legal');
 const inspectIdx = cleanTitles.indexOf('Inspect Windows Apps (.EXE / .DLL)');
 const planningIdx = cleanTitles.indexOf('Planning & Deep Thinking');
@@ -86,12 +91,13 @@ assert.ok(planningIdx < rdAgentIdx && rdAgentIdx < scienceIdx, 'RD-Agent must be
 console.log('  ✅ Category ordering verified:');
 console.log(`     - 'Compliance' placed at index ${complianceIdx + 1} (after 'Code & Security', before 'Computer Use')`);
 console.log(`     - 'Deep Research' placed at index ${deepResearchIdx + 1} (after 'Data & Spreadsheets', before 'Finance & Markets')`);
+console.log(`     - 'Harness2' placed at index ${harnessIdx + 1} (after 'Finance & Markets', before 'Images & Vision')`);
 console.log(`     - 'Legal' placed at index ${legalIdx + 1} (after 'Inspect Windows Apps', before 'Planning & Deep Thinking')`);
 console.log(`     - 'RD-Agent (Autonomous R&D)' placed at index ${rdAgentIdx + 1} (after 'Planning & Deep Thinking', before 'Science & Discovery')`);
 
-// Verify sub-items inside each of the 18 categories are sorted
+// Verify sub-items inside each of the 19 categories are sorted
 const catBlocks = indexHtml.match(/<div class="tool-category"(?: [^>]*)?>([\s\S]*?)<\/div>\s*<\/div>/g) || [];
-assert.strictEqual(catBlocks.length, 18, `Expected 18 tool-category blocks, found ${catBlocks.length}`);
+assert.strictEqual(catBlocks.length, 19, `Expected 19 tool-category blocks, found ${catBlocks.length}`);
 
 catBlocks.forEach((block, idx) => {
   const titleM = block.match(/class="cat-title">([^<]+)<\/span>/);
@@ -100,7 +106,7 @@ catBlocks.forEach((block, idx) => {
   const expectedLabels = [...labelMatches].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   assert.deepStrictEqual(labelMatches, expectedLabels, `Tool items in '${title}' must be sorted alphabetically: ${JSON.stringify(labelMatches)} vs ${JSON.stringify(expectedLabels)}`);
 });
-console.log('  ✅ Sub-items in all 18 categories verified strictly sorted alphabetically A-Z.');
+console.log('  ✅ Sub-items in all 19 categories verified strictly sorted alphabetically A-Z.');
 
 // ============================================================================
 // PART 3: Verify Load Page Blank Resilience & Frame Fallback Guard
