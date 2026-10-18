@@ -160,6 +160,7 @@ const expectedCategories = [
   'tabular',
   'deep_research',
   'finance',
+  'harness2',
   'vision',
   'pe_binary',
   'legal',
@@ -173,14 +174,14 @@ const expectedCategories = [
   'writing'
 ];
 
-assert.strictEqual(Object.keys(HELP_CATEGORIES).length, 18, 'HELP_CATEGORIES must contain exactly 18 menus');
+assert.strictEqual(Object.keys(HELP_CATEGORIES).length, 19, 'HELP_CATEGORIES must contain exactly 19 menus');
 
 for (const catKey of expectedCategories) {
   const cat = HELP_CATEGORIES[catKey];
   assert.ok(cat, `Category "${catKey}" must exist in HELP_CATEGORIES`);
   assert.ok(cat.title, `Category "${catKey}" must have a title`);
   assert.ok(cat.icon, `Category "${catKey}" must have an icon`);
-  assert.ok(cat.menuIndex >= 1 && cat.menuIndex <= 18, `Category "${catKey}" menuIndex must be 1..18`);
+  assert.ok(cat.menuIndex >= 1 && cat.menuIndex <= 19, `Category "${catKey}" menuIndex must be 1..19`);
   assert.ok(Array.isArray(cat.engines) && cat.engines.length >= 2, `Category "${catKey}" must have >=2 engines`);
   assert.ok(Array.isArray(cat.directives) && cat.directives.length >= 2, `Category "${catKey}" must have >=2 directives`);
   assert.ok(Array.isArray(cat.examples) && cat.examples.length >= 2, `Category "${catKey}" must have >=2 runnable examples`);

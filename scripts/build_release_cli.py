@@ -48,14 +48,25 @@ def watcher_thread():
         if os.path.exists(target_dir):
             for root, _, files in os.walk(target_dir):
                 for f in files:
-                    if f.endswith(".exe"):
+                    if f.endswith(".exe") or f.endswith(".dll"):
                         full_path = os.path.join(root, f)
                         if full_path not in signed_files:
                             sign_file(full_path)
-        time.sleep(0.05)
+        time.sleep(0.02)
+
+def pre_sign_existing():
+    target_dir = os.path.join(REPO_ROOT, "target", "release")
+    if os.path.exists(target_dir):
+        for root, _, files in os.walk(target_dir):
+            for f in files:
+                if f.endswith(".exe") or f.endswith(".dll"):
+                    full_path = os.path.join(root, f)
+                    sign_file(full_path)
 
 def main():
-    print("[BUILD] Starting Real-Time Signer Watcher Thread...")
+    print("[BUILD] Pre-signing existing binaries and proc-macro DLLs...")
+    pre_sign_existing()
+    print("[BUILD] Starting Real-Time Signer Watcher Thread (watching .exe and .dll)...")
     t = threading.Thread(target=watcher_thread, daemon=True)
     t.start()
 
