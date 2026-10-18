@@ -158,6 +158,7 @@ const expectedCategories = [
   'compliance',
   'computer_use',
   'tabular',
+  'deep_research',
   'finance',
   'vision',
   'pe_binary',
@@ -172,14 +173,14 @@ const expectedCategories = [
   'writing'
 ];
 
-assert.strictEqual(Object.keys(HELP_CATEGORIES).length, 17, 'HELP_CATEGORIES must contain exactly 17 menus');
+assert.strictEqual(Object.keys(HELP_CATEGORIES).length, 18, 'HELP_CATEGORIES must contain exactly 18 menus');
 
 for (const catKey of expectedCategories) {
   const cat = HELP_CATEGORIES[catKey];
   assert.ok(cat, `Category "${catKey}" must exist in HELP_CATEGORIES`);
   assert.ok(cat.title, `Category "${catKey}" must have a title`);
   assert.ok(cat.icon, `Category "${catKey}" must have an icon`);
-  assert.ok(cat.menuIndex >= 1 && cat.menuIndex <= 17, `Category "${catKey}" menuIndex must be 1..17`);
+  assert.ok(cat.menuIndex >= 1 && cat.menuIndex <= 18, `Category "${catKey}" menuIndex must be 1..18`);
   assert.ok(Array.isArray(cat.engines) && cat.engines.length >= 2, `Category "${catKey}" must have >=2 engines`);
   assert.ok(Array.isArray(cat.directives) && cat.directives.length >= 2, `Category "${catKey}" must have >=2 directives`);
   assert.ok(Array.isArray(cat.examples) && cat.examples.length >= 2, `Category "${catKey}" must have >=2 runnable examples`);
@@ -290,9 +291,9 @@ for (const pc of prepCases) {
 }
 console.log(`✅ Check 7 Passed: All ${prepCases.length} preposition variations correctly routed with zero false category collisions.`);
 
-// 8. Test Numbered Menus (Menu 1 to Menu 17)
-console.log('\n--- Check 8: Numbered Menus (1 to 17) ---');
-for (let i = 1; i <= 17; i++) {
+// 8. Test Numbered Menus (Menu 1 to Menu 18)
+console.log('\n--- Check 8: Numbered Menus (1 to 18) ---');
+for (let i = 1; i <= 18; i++) {
   const p1 = parseHelpQuery(`@help ${i}`);
   const r1 = resolveHelpResolution(p1);
   assert.ok(r1 && r1.category, `@help ${i} must resolve to a category`);
@@ -303,7 +304,7 @@ for (let i = 1; i <= 17; i++) {
   assert.ok(r2 && r2.category, `@help menu ${i} must resolve to a category`);
   assert.strictEqual(r2.category.menuIndex, i, `@help menu ${i} must match menuIndex ${i}`);
 }
-console.log('✅ Check 8 Passed: All 17 numbered menus (@help 1..17, @help menu 1..17) accurately resolved.');
+console.log('✅ Check 8 Passed: All 18 numbered menus (@help 1..18, @help menu 1..18) accurately resolved.');
 
 // 9. Test Multi-Entity Compound Guides
 console.log('\n--- Check 9: Multi-Entity Compound Guides ---');

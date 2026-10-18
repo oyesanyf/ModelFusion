@@ -39,8 +39,8 @@ async function runAllVerificationRounds() {
   assert.ok(stylesCss.includes('.msg-action-bar'), '❌ .msg-action-bar CSS rule missing from styles.css');
   console.log('  ✅ [PASS] CSS & DOM Structure: Floating action bar and bubble action bar properly defined.');
 
-  // 2. Parse all 116 menu tools
-  const catBlockRegex = /<div class="tool-category">([\s\S]*?)<\/div>\s*<\/div>/g;
+  // 2. Parse all 123 menu tools
+  const catBlockRegex = /<div class="tool-category"(?: [^>]*)?>([\s\S]*?)<\/div>\s*<\/div>/g;
   let catBlockMatch;
   const allTools = [];
   let categoriesCount = 0;
@@ -63,9 +63,9 @@ async function runAllVerificationRounds() {
     }
   }
 
-  assert.strictEqual(categoriesCount, 17, `Expected exactly 17 categories, got ${categoriesCount}`);
-  assert.strictEqual(allTools.length, 116, `Expected exactly 116 tools, got ${allTools.length}`);
-  console.log(`  ✅ [PASS] Menu Inventory: 116 tools parsed across 17 categories (no jobs tool present).`);
+  assert.strictEqual(categoriesCount, 18, `Expected exactly 18 categories, got ${categoriesCount}`);
+  assert.strictEqual(allTools.length, 123, `Expected exactly 123 tools, got ${allTools.length}`);
+  console.log(`  ✅ [PASS] Menu Inventory: 123 tools parsed across 18 categories (no jobs tool present).`);
 
   // Verify that each tool's command syntax is recognized
   let toolsVerified = 0;
@@ -73,7 +73,7 @@ async function runAllVerificationRounds() {
     assert.ok(t.dataCmd && t.dataCmd.length > 0, `Tool ${t.toolId} has empty dataCmd`);
     toolsVerified++;
   });
-  console.log(`  ✅ [PASS] All ${toolsVerified}/116 tools verified for command dispatch.`);
+  console.log(`  ✅ [PASS] All ${toolsVerified}/123 tools verified for command dispatch.`);
 
   // 3. Static Scope Verification for streamFinalized and cancelScheduledStreamRender
   const streamAiChatIdx = appJs.indexOf('async function streamAiChat');
@@ -164,7 +164,7 @@ async function runAllVerificationRounds() {
   assert.ok(mockBubble.innerHTML.includes('msg-action-bar'), 'msg-action-bar was preserved 150ms post-abort without overwrite');
   assert.strictEqual(mockFloatingActions.style.display, 'flex', '#chat-floating-actions remained visible post-abort');
   console.log('  ✅ [PASS] Live Asynchronous Cycle: 150ms post-abort/stream verified without ReferenceError or DOM overwrites.');
-  console.log('  ✅ [PASS] Round 1 Succeeded: All 116 menu items and action bar persistence verified!\n');
+  console.log('  ✅ [PASS] Round 1 Succeeded: All 123 menu items and action bar persistence verified!\n');
 
   // ============================================================================
   // ROUND 2: Authenticode Signature Verification Across All Binaries & DLLs
