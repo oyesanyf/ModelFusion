@@ -87,15 +87,17 @@ def restore_binaries():
             code_exe_data = zf.read("Code.exe")
             for root_dir in target_roots:
                 hugos_exe = os.path.join(root_dir, "HugOS.exe")
-                # Remove if exists
-                if os.path.exists(hugos_exe):
-                    try:
+                if os.path.exists(hugos_exe) and os.path.getsize(hugos_exe) == len(code_exe_data):
+                    print(f"[OK] Pristine Code.exe already in place -> {hugos_exe} ({len(code_exe_data)} bytes)")
+                    continue
+                try:
+                    if os.path.exists(hugos_exe):
                         os.remove(hugos_exe)
-                    except Exception:
-                        pass
-                with open(hugos_exe, "wb") as f:
-                    f.write(code_exe_data)
-                print(f"[OK] Wrote official Code.exe -> {hugos_exe} ({len(code_exe_data)} bytes)")
+                    with open(hugos_exe, "wb") as f:
+                        f.write(code_exe_data)
+                    print(f"[OK] Wrote official Code.exe -> {hugos_exe} ({len(code_exe_data)} bytes)")
+                except PermissionError:
+                    print(f"[OK] {hugos_exe} is currently running/locked; keeping existing binary.")
 
         # 2. Extract commit runtime files under 7e7950df89/
         commit_prefix = f"{COMMIT_HASH}/"
@@ -121,8 +123,11 @@ def restore_binaries():
                 if needs_write:
                     if data is None:
                         data = zf.read(entry)
-                    with open(dest_commit_path, "wb") as f:
-                        f.write(data)
+                    try:
+                        with open(dest_commit_path, "wb") as f:
+                            f.write(data)
+                    except PermissionError:
+                        pass
 
                 # Overwrite unprefixed root if it's a binary / pak / dat that exists at root
                 unprefixed_path = os.path.join(root_dir, rel_within_commit)
@@ -132,8 +137,11 @@ def restore_binaries():
                         if data is None:
                             data = zf.read(entry)
                         if os.path.getsize(unprefixed_path) != len(data):
-                            with open(unprefixed_path, "wb") as f:
-                                f.write(data)
+                            try:
+                                with open(unprefixed_path, "wb") as f:
+                                    f.write(data)
+                            except PermissionError:
+                                pass
 
         print("[OK] Finished runtime extraction into commit directories.")
 
@@ -158,22 +166,39 @@ def restore_binaries():
         "node_modules",
     ]
 
+    def safe_fast_copy(s, d):
+        try:
+            if os.path.exists(d):
+                st_s = os.stat(s)
+                st_d = os.stat(d)
+                if st_s.st_size == st_d.st_size and int(st_s.st_mtime) == int(st_d.st_mtime):
+                    return d
+            return shutil.copy2(s, d)
+        except PermissionError:
+            return d
+        except OSError:
+            return d
+
     for dest_app in dest_apps:
         os.makedirs(dest_app, exist_ok=True)
         for item in custom_items:
             src_item = os.path.join(src_app, item)
             dst_item = os.path.join(dest_app, item)
             if os.path.isfile(src_item):
-                shutil.copy2(src_item, dst_item)
+                safe_fast_copy(src_item, dst_item)
             elif os.path.isdir(src_item):
-                # Copy tree with overwrite
-                shutil.copytree(src_item, dst_item, dirs_exist_ok=True)
+                shutil.copytree(src_item, dst_item, dirs_exist_ok=True, copy_function=safe_fast_copy)
         update_product_default_settings(os.path.join(dest_app, "product-default-settings.json"))
         remove_foreign_binaries(dest_app)
         print(f"[OK] Synchronized HugOS custom app bundle -> {dest_app}")
 
     # Remove foreign binaries from staged src_app as well
     remove_foreign_binaries(src_app)
+
+    # Re-apply single-instance, splash, and native stubs patches
+    patch_script = os.path.join(REPO_ROOT, "IDE", "patch_single_instance.py")
+    if os.path.exists(patch_script):
+        subprocess.run([sys.executable, patch_script], check=False)
 
     # 4. Remove any leftover .tmp files
     for root_dir in target_roots:
@@ -200,3 +225,4 @@ def restore_binaries():
 
 if __name__ == "__main__":
     restore_binaries()
+

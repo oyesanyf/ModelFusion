@@ -383,12 +383,27 @@ if (Test-Path $stubsDir) {
         "@vscode_spdlog_index.js"         = "resources\app\node_modules\@vscode\spdlog\index.js"
         "@vscode_windows-mutex_index.js"  = "resources\app\node_modules\@vscode\windows-mutex\index.js"
     }
-    foreach ($stub in $stubMap.GetEnumerator()) {
-        $stubSrc = Join-Path $stubsDir $stub.Key
-        $stubDst = Join-Path $vsCodePackDir $stub.Value
-        if ((Test-Path $stubSrc) -and (Test-Path (Split-Path $stubDst -Parent))) {
-            Copy-Item $stubSrc $stubDst -Force
-            Write-Host "[OK] Applied native stub: $($stub.Value)" -ForegroundColor Green
+    $stubBaseDirs = @($vsCodePackDir)
+    $verDirsForStubs = Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' }
+    foreach ($vd in $verDirsForStubs) {
+        $stubBaseDirs += $vd.FullName
+    }
+    $localAppIde = Join-Path $env:LOCALAPPDATA "HugOS IDE"
+    if (Test-Path $localAppIde) {
+        $stubBaseDirs += $localAppIde
+        $localVerDirs = Get-ChildItem $localAppIde -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' }
+        foreach ($lvd in $localVerDirs) {
+            $stubBaseDirs += $lvd.FullName
+        }
+    }
+    foreach ($baseDir in $stubBaseDirs) {
+        foreach ($stub in $stubMap.GetEnumerator()) {
+            $stubSrc = Join-Path $stubsDir $stub.Key
+            $stubDst = Join-Path $baseDir $stub.Value
+            if ((Test-Path $stubSrc) -and (Test-Path (Split-Path $stubDst -Parent))) {
+                Copy-Item $stubSrc $stubDst -Force
+                Write-Host "[OK] Applied native stub: $stubDst" -ForegroundColor Green
+            }
         }
     }
 } else {

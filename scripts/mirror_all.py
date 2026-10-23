@@ -179,7 +179,7 @@ for target_ui_dir in ui_destinations:
 # Mirror launcher scripts & browser icon
 launcher_dst = os.path.join(localappdata, r"HugOS Browser\Chromium-win32-x64")
 if os.path.exists(launcher_dst):
-    for f in ["hugos-browser.bat", "hugos-browser.vbs", "run_hidden.vbs", "hugos_browser.ico"]:
+    for f in ["hugos-browser.bat", "hugos-browser.vbs", "hugos-splash.hta", "run_hidden.vbs", "hugos_browser.ico"]:
         src_l = os.path.join(os.path.abspath("browser/Chromium-win32-x64"), f)
         if not os.path.exists(src_l) and f == "hugos_browser.ico":
             src_l = os.path.join(os.path.abspath("browser/ui"), f)

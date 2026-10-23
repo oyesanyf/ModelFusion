@@ -3,10 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-// HugOS stub: @vscode/spdlog native binary (.node) is missing from this build.
-// We provide a no-op logger that writes to the console so the IDE starts normally.
-// File-based rotating logs are simply not written; all log output goes to stderr instead.
-
+const fs = require('fs');
 const path = require('path');
 
 class Logger {
@@ -14,14 +11,27 @@ class Logger {
 		this._name = name;
 		this._filepath = filepath;
 		this._level = 0;
+		if (this._filepath) {
+			try {
+				fs.mkdirSync(path.dirname(this._filepath), { recursive: true });
+			} catch (_) {}
+		}
 	}
-	trace(msg) {}
-	debug(msg) {}
-	info(msg) { /* silent */ }
-	warn(msg) { process.stderr.write(`[${this._name}] WARN: ${msg}\n`); }
-	error(msg) { process.stderr.write(`[${this._name}] ERROR: ${msg}\n`); }
-	critical(msg) { process.stderr.write(`[${this._name}] CRITICAL: ${msg}\n`); }
+	_write(levelStr, msg) {
+		if (!this._filepath) return;
+		try {
+			const ts = new Date().toISOString();
+			fs.appendFileSync(this._filepath, `${ts} [${levelStr}] ${msg}\n`);
+		} catch (_) {}
+	}
+	trace(msg) { if (this._level <= 0) this._write('trace', msg); }
+	debug(msg) { if (this._level <= 1) this._write('debug', msg); }
+	info(msg) { if (this._level <= 2) this._write('info', msg); }
+	warn(msg) { if (this._level <= 3) this._write('warn', msg); }
+	error(msg) { if (this._level <= 4) this._write('error', msg); }
+	critical(msg) { if (this._level <= 5) this._write('critical', msg); }
 	setLevel(level) { this._level = level; }
+	getLevel() { return this._level; }
 	flush() {}
 	drop() {}
 	clearFormatters() {}

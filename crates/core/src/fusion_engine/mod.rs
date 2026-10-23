@@ -81,6 +81,69 @@ pub fn derive_fusion_model_count() -> usize {
     model_selection::memory::derive_fusion_model_count()
 }
 
+/// Helper to determine if a prompt or task is a coding task eligible for Recursive Flint
+/// (`RecursiveSI/flint` 40B total / 2.5B active MoE) Coding Fusion.
+///
+/// CRITICAL DUAL GATE LAW:
+/// Flint is reserved strictly for Multi-Model Fusion AND strictly for coding tasks.
+/// If the task is non-coding (e.g. general chat, creative writing, history, legal, finance, medical, vision, audio),
+/// this function returns false, completely excluding Flint from the Fusion panel even on 64GB+ machines.
+pub fn is_coding_task_for_flint(detected_task: &str, prompt: &str) -> bool {
+    let task_lower = detected_task.to_lowercase();
+    let prompt_lower = prompt.to_lowercase();
+
+    // 1. Task-level detection
+    if task_lower.contains("code")
+        || task_lower.contains("security")
+        || task_lower.contains("software")
+        || task_lower.contains("programming")
+    {
+        return true;
+    }
+
+    // 2. Direct Flint directives or coding agent directives
+    if prompt_lower.contains("flint")
+        || prompt_lower.contains("@flint")
+        || prompt_lower.contains("flint-coding")
+        || prompt_lower.contains("flint-fusion")
+        || prompt_lower.contains("flint-swe")
+        || prompt_lower.contains("flint-terminal")
+        || prompt_lower.contains("flint-eureka")
+        || prompt_lower.contains("@agent code-helper")
+        || prompt_lower.contains("@code-helper")
+        || prompt_lower.contains("@agent security")
+        || prompt_lower.contains("@security")
+        || prompt_lower.contains("@agent graph-index")
+        || prompt_lower.contains("@graph")
+        || prompt_lower.contains("@agent vuln-scan")
+    {
+        return true;
+    }
+
+    // 3. Explicit code constructs in prompt
+    prompt_lower.contains("def ")
+        || prompt_lower.contains("fn ")
+        || prompt_lower.contains("function ")
+        || prompt_lower.contains("class ")
+        || prompt_lower.contains("import ")
+        || prompt_lower.contains("struct ")
+        || prompt_lower.contains("impl ")
+        || prompt_lower.contains("```")
+        || prompt_lower.contains("code")
+        || prompt_lower.contains("python")
+        || prompt_lower.contains("rust")
+        || prompt_lower.contains("javascript")
+        || prompt_lower.contains("typescript")
+        || prompt_lower.contains("golang")
+        || prompt_lower.contains("c++")
+        || prompt_lower.contains("algorithm")
+        || prompt_lower.contains("bug")
+        || prompt_lower.contains("refactor")
+        || prompt_lower.contains("debug")
+        || prompt_lower.contains("swe-bench")
+        || prompt_lower.contains("terminal-bench")
+}
+
 /// Run the model fusion pipeline.
 pub async fn run_fusion(
     prompt: &str,
@@ -172,6 +235,30 @@ pub async fn run_fusion(
         // 1. If forced_model is present, Slot 1
         if let Some(ref model_id) = forced_model {
             panel_models.push(ModelConfig::huggingface(model_id));
+        }
+
+        // 1.5. Dual Gate Law for Recursive Flint (40B total / 2.5B active MoE):
+        // Fused ONLY when task is a coding task AND runtime hardware resources are available.
+        let is_coding = is_coding_task_for_flint(&detected_task, prompt);
+        if is_coding {
+            let flint_eval = model_selection::memory::SystemMemory::detect_live().assess_flint_for_task(true, true);
+            eprintln!("🔥 [FLINT CODING FUSION] Resource Check: Free RAM {:.1} GB, Free VRAM {:.1} GB -> Tier: {} (Flint 40B-A2.5B Ready: {})",
+                flint_eval.detected_free_ram_gb, flint_eval.detected_free_vram_gb, flint_eval.active_tier, flint_eval.resources_available);
+
+            let forced_flint = forced_model.map(|m| m.to_lowercase().contains("flint")).unwrap_or(false);
+            if flint_eval.flint_activated_in_fusion || forced_flint {
+                let mut flint_cfg = if flint_eval.ollama_cached {
+                    ModelConfig::local("flint:latest")
+                } else {
+                    ModelConfig::huggingface("RecursiveSI/flint")
+                };
+                flint_cfg.temperature = Some(1.0);
+                flint_cfg.name = format!("Recursive Flint 40B-A2.5B MoE ({}, T=1.0)", if flint_eval.resources_available { "Full" } else { "Compact Q4" });
+                if !panel_models.iter().any(|m| m.endpoint.contains("flint")) {
+                    panel_models.push(flint_cfg);
+                    eprintln!("🔥 [FLINT CODING FUSION] Injected Recursive Flint into Coding Fusion Panel (Slot {})", panel_models.len());
+                }
+            }
         }
 
         // 2. Query selector for candidates
@@ -378,4 +465,27 @@ pub async fn run_fusion(
     let final_answer = write_final_answer(&prompt_with_context, &judge_json, &writer_model).await?;
 
     Ok(final_answer)
+}
+
+#[cfg(test)]
+mod flint_fusion_tests {
+    use super::*;
+
+    #[test]
+    fn test_is_coding_task_for_flint() {
+        // Coding tasks -> True
+        assert!(is_coding_task_for_flint("code-generation", "Implement binary search"));
+        assert!(is_coding_task_for_flint("text-generation", "def calculate_primes(n):"));
+        assert!(is_coding_task_for_flint("text-generation", "fn main() { println!(\"hello\"); }"));
+        assert!(is_coding_task_for_flint("text-generation", "@agent flint-coding implement red-black tree"));
+        assert!(is_coding_task_for_flint("text-generation", "@code-helper write a rust http server"));
+        assert!(is_coding_task_for_flint("software-engineering", "fix memory leak in c++"));
+
+        // Non-coding tasks -> False
+        assert!(!is_coding_task_for_flint("text-generation", "Write an essay about the history of Nigeria"));
+        assert!(!is_coding_task_for_flint("finance", "What is the market capitalization of Apple?"));
+        assert!(!is_coding_task_for_flint("legal", "What are the essential clauses in a non-disclosure agreement?"));
+        assert!(!is_coding_task_for_flint("translation", "Translate this paragraph into French"));
+        assert!(!is_coding_task_for_flint("summarization", "Summarize this medical case report"));
+    }
 }

@@ -10,6 +10,7 @@ import sys
 import time
 import threading
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -22,46 +23,88 @@ SIGNTOOL_EXE = r"C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\sig
 
 stop_event = threading.Event()
 signed_files = set()
+lock = threading.Lock()
 
 def sign_file(file_path):
-    if file_path in signed_files:
-        return True
-    try:
-        # Check if file is ready and writable
-        res = subprocess.run([
-            SIGNTOOL_EXE, "sign",
-            "/f", PFX_PATH,
-            "/p", "HugOSPassword123!",
-            "/fd", "SHA256",
-            file_path
-        ], capture_output=True, text=True)
-        if res.returncode == 0:
-            signed_files.add(file_path)
+    with lock:
+        if file_path in signed_files:
             return True
-    except Exception:
-        pass
+    
+    # Retry loop in case rustc is still finalizing file writes
+    for attempt in range(5):
+        try:
+            res = subprocess.run([
+                SIGNTOOL_EXE, "sign",
+                "/f", PFX_PATH,
+                "/p", "HugOSPassword123!",
+                "/fd", "SHA256",
+                file_path
+            ], capture_output=True, text=True)
+            if res.returncode == 0:
+                with lock:
+                    signed_files.add(file_path)
+                return True
+        except Exception:
+            pass
+        time.sleep(0.01)
     return False
 
-def watcher_thread():
+def get_candidate_files():
+    candidates = []
     target_dir = os.path.join(REPO_ROOT, "target", "release")
-    while not stop_event.is_set():
-        if os.path.exists(target_dir):
-            for root, _, files in os.walk(target_dir):
+    
+    # 1. target/release/*.exe and *.dll
+    if os.path.exists(target_dir):
+        try:
+            for f in os.listdir(target_dir):
+                if f.endswith(".exe") or f.endswith(".dll"):
+                    candidates.append(os.path.join(target_dir, f))
+        except Exception:
+            pass
+            
+    # 2. target/release/deps/*.exe and *.dll
+    deps_dir = os.path.join(target_dir, "deps")
+    if os.path.exists(deps_dir):
+        try:
+            for f in os.listdir(deps_dir):
+                if f.endswith(".exe") or f.endswith(".dll"):
+                    candidates.append(os.path.join(deps_dir, f))
+        except Exception:
+            pass
+
+    # 3. target/release/build/**/*.exe and *.dll
+    build_dir = os.path.join(target_dir, "build")
+    if os.path.exists(build_dir):
+        try:
+            for root, _, files in os.walk(build_dir):
                 for f in files:
                     if f.endswith(".exe") or f.endswith(".dll"):
-                        full_path = os.path.join(root, f)
-                        if full_path not in signed_files:
-                            sign_file(full_path)
-        time.sleep(0.02)
+                        candidates.append(os.path.join(root, f))
+        except Exception:
+            pass
+            
+    return candidates
+
+def watcher_thread():
+    while not stop_event.is_set():
+        candidates = get_candidate_files()
+        for fp in candidates:
+            if fp not in signed_files:
+                sign_file(fp)
+        time.sleep(0.005)
 
 def pre_sign_existing():
-    target_dir = os.path.join(REPO_ROOT, "target", "release")
-    if os.path.exists(target_dir):
-        for root, _, files in os.walk(target_dir):
-            for f in files:
-                if f.endswith(".exe") or f.endswith(".dll"):
-                    full_path = os.path.join(root, f)
-                    sign_file(full_path)
+    candidates = get_candidate_files()
+    to_sign = [fp for fp in candidates if fp not in signed_files]
+    if to_sign:
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            pool.map(sign_file, to_sign)
+
+def sweep_and_sign():
+    candidates = get_candidate_files()
+    for fp in candidates:
+        if fp not in signed_files:
+            sign_file(fp)
 
 def main():
     print("[BUILD] Pre-signing existing binaries and proc-macro DLLs...")
@@ -78,17 +121,8 @@ def main():
     
     for line in iter(proc.stdout.readline, ''):
         print(line, end='', flush=True)
-        # If we see a compiling build script, poll immediately
         if "Compiling" in line:
-            # Quick sweep
-            target_build = os.path.join(REPO_ROOT, "target", "release", "build")
-            if os.path.exists(target_build):
-                for r, _, fs in os.walk(target_build):
-                    for f in fs:
-                        if f.endswith(".exe"):
-                            fp = os.path.join(r, f)
-                            if fp not in signed_files:
-                                sign_file(fp)
+            sweep_and_sign()
 
     proc.stdout.close()
     return_code = proc.wait()

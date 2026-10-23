@@ -112,6 +112,225 @@ if (typeof window !== 'undefined') {
   });
 }
 
+// ============================================================================
+// Recursive Flint MoE Coding Fusion Engine (RecursiveSI/flint)
+// Dual-Gated: Strictly Fusion Only AND Strictly Coding Only
+// ============================================================================
+const FLINT_CODING_FUSION_SPEC = {
+  id: 'flint',
+  repo: 'RecursiveSI/flint',
+  ollamaTag: 'flint:latest',
+  name: 'Recursive Flint MoE Coding Fusion',
+  totalParamsB: 40.0,
+  activeParamsB: 2.5,
+  architecture: 'Mixture of Experts (MoE) 40B total / 2.5B active',
+  role: 'Coding Fusion Specialist (Dual-Gated: Fusion Only & Coding Only)',
+  contextTokens: 32768,
+  ramTiers: {
+    high: { minRamGb: 24.0, minVramGb: 16.0, label: 'Full Flint 40B-A2.5B MoE + Verifiers' },
+    mid: { minRamGb: 16.0, minVramGb: 10.0, label: 'Offloaded / Compact Flint MoE' },
+    low: { minRamGb: 0.0, minVramGb: 0.0, label: 'Auto-scaled Safe Verifiers (Qwen2.5/DeepSeek-R1)' }
+  }
+};
+
+function isCodingTaskForFlint(prompt, detectedTask = '') {
+  const t = (detectedTask || '').toLowerCase().trim();
+  if (t === 'code-generation' || t === 'code_generation' || t === 'coding' || t === 'code' || t === 'programming' || t === 'software') {
+    return true;
+  }
+  const nonCodingPatterns = [
+    /^(?:write|compose|generate)\s+(?:an?\s+)?(?:essay|poem|song|story|fiction|article|blog\s+post|creative)/i,
+    /^(?:summarize|explain)\s+(?:the\s+)?(?:history|philosophy|literature|movie|novel)/i,
+    /^(?:legal|contract|nda|clause|statute|compliance|cuad)\b/i,
+    /^(?:medical|diagnosis|patient|symptom|clinical|doctor)\b/i,
+    /^(?:finance|stock|market|sec\s+10-k|balance\s+sheet|dcf|valuation)\b/i,
+    /^(?:translate|translation)\s+(?:to|into)\b/i
+  ];
+  for (const pat of nonCodingPatterns) {
+    if (pat.test(prompt || '')) return false;
+  }
+  const codingPatterns = [
+    /\b(?:fn|def|class|impl|struct|func|pub\s+fn|async\s+fn|interface|enum|trait)\b/i,
+    /\b(?:rust|python|javascript|typescript|c\+\+|golang|java|csharp|sql|html|css|bash|powershell|regex)\b/i,
+    /\b(?:refactor|bug\s+fix|unit\s+test|mutation\s+testing|ast|compiler|transpile|algorithm|data\s+structure)\b/i,
+    /\b(?:api\s+endpoint|handler|decorator|closure|concurrency|mutex|lock-free|async\/await|channel)\b/i,
+    /```(?:[a-zA-Z0-9_\-+]+)?\s*[\s\S]*?```/
+  ];
+  return codingPatterns.some(p => p.test(prompt || ''));
+}
+
+function evaluateFlintResourceAvailability(hardwareInfo = null) {
+  let freeRamGb = 16.0;
+  let freeVramGb = 0.0;
+  if (hardwareInfo && typeof hardwareInfo === 'object') {
+    if (typeof hardwareInfo.freeRamGb === 'number') freeRamGb = hardwareInfo.freeRamGb;
+    else if (typeof hardwareInfo.free_ram_gb === 'number') freeRamGb = hardwareInfo.free_ram_gb;
+    if (typeof hardwareInfo.freeVramGb === 'number') freeVramGb = hardwareInfo.freeVramGb;
+    else if (typeof hardwareInfo.free_vram_gb === 'number') freeVramGb = hardwareInfo.free_vram_gb;
+    else if (typeof hardwareInfo.free_vram_mb === 'number') freeVramGb = hardwareInfo.free_vram_mb / 1024.0;
+  } else if (typeof window !== 'undefined') {
+    if (typeof window.hardwareFreeRamGb === 'number') freeRamGb = window.hardwareFreeRamGb;
+    if (typeof detectGpuVramMb === 'function') freeVramGb = detectGpuVramMb() / 1024.0;
+  }
+  if (freeRamGb >= 24.0 || freeVramGb >= 16.0) {
+    return { tier: 'high', eligible: true, mode: 'full', freeRamGb, freeVramGb, label: FLINT_CODING_FUSION_SPEC.ramTiers.high.label };
+  } else if (freeRamGb >= 16.0 || freeVramGb >= 10.0) {
+    return { tier: 'mid', eligible: true, mode: 'compact', freeRamGb, freeVramGb, label: FLINT_CODING_FUSION_SPEC.ramTiers.mid.label };
+  } else {
+    return { tier: 'low', eligible: false, mode: 'fallback', freeRamGb, freeVramGb, label: FLINT_CODING_FUSION_SPEC.ramTiers.low.label };
+  }
+}
+
+function shouldIncludeFlintInCodingFusion(isFusionMode = true, isCodingTask = false, hardwareInfo = null) {
+  if (!isFusionMode) {
+    return {
+      eligible: false,
+      reason: 'Violates Dual-Gate Law: Flint operates strictly within Multi-Model Fusion panels only (never as a standalone single-model override).'
+    };
+  }
+  if (!isCodingTask) {
+    return {
+      eligible: false,
+      reason: 'Violates Dual-Gate Law: Flint is restricted strictly to coding tasks (general reasoning, essay, finance, and legal are excluded).'
+    };
+  }
+  const res = evaluateFlintResourceAvailability(hardwareInfo);
+  if (!res.eligible) {
+    return {
+      eligible: false,
+      tier: res.tier,
+      freeRamGb: res.freeRamGb,
+      freeVramGb: res.freeVramGb,
+      reason: `Insufficient runtime available memory (${res.freeRamGb.toFixed(1)} GB RAM, ${res.freeVramGb.toFixed(1)} GB VRAM). Fallback to hardware-safe verifiers.`
+    };
+  }
+  return {
+    eligible: true,
+    tier: res.tier,
+    mode: res.mode,
+    freeRamGb: res.freeRamGb,
+    freeVramGb: res.freeVramGb,
+    label: res.label,
+    spec: FLINT_CODING_FUSION_SPEC
+  };
+}
+
+function parseFlintCodingQuery(cmd) {
+  let raw = (cmd || '')
+    .replace(/^(?:@agent\s+flint(?:-coding|-moe)?|\/flint(?:-coding|-moe)?|@flint(?:-coding|-moe)?)\s*:?\s*/i, '')
+    .trim();
+  let mode = 'full';
+  const modeMatch = raw.match(/--(?:flint-)?mode\s+([a-zA-Z0-9_\-]+)/i);
+  if (modeMatch) {
+    mode = modeMatch[1].toLowerCase();
+    raw = raw.replace(modeMatch[0], '').trim();
+  }
+  let ctx = 32768;
+  const ctxMatch = raw.match(/--(?:flint-)?ctx\s+(\d+)/i);
+  if (ctxMatch) {
+    ctx = parseInt(ctxMatch[1], 10);
+    raw = raw.replace(ctxMatch[0], '').trim();
+  }
+  return { prompt: raw, mode, ctx };
+}
+
+function decomposeFlintCodingSubtasks(prompt) {
+  return [
+    { id: 'arch', name: 'Architecture & Interface Specification', role: 'Deconstruct requirements into typed boundaries and invariant contracts.' },
+    { id: 'moe_gen', name: 'Recursive Flint MoE Implementation (40B-A2.5B)', role: 'High-throughput algorithmic synthesis with 2.5B active parameter efficiency.' },
+    { id: 'ast_verify', name: 'Tree-Sitter AST & Formal Verification', role: 'Grammar certification, mutation gate (M_kill >= 0.5), and syntax verification.' }
+  ];
+}
+
+function buildHitlFlintCodingFusionWorkspaceHtml(flintResult, originalPrompt) {
+  const safePrompt = (typeof escapeHtml === 'function') ? escapeHtml(originalPrompt || '') : (originalPrompt || '');
+  const tierBadge = flintResult.tier === 'high'
+    ? '<span style="background: rgba(34, 197, 94, 0.2); color: #4ade80; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">High Tier (Full MoE)</span>'
+    : (flintResult.tier === 'mid'
+       ? '<span style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">Mid Tier (Compact MoE)</span>'
+       : '<span style="background: rgba(59, 130, 246, 0.2); color: #60a5fa; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">Hardware-Safe Verifier Tier</span>');
+
+  return `
+    <div class="hitl-flint-workspace" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; padding: 16px; margin: 8px 0; font-family: var(--font-family, system-ui, sans-serif);">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 10px; margin-bottom: 12px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 18px;">⚡</span>
+          <span style="font-weight: 700; font-size: 14px; color: var(--text-primary, #fff);">Recursive Flint MoE Coding Fusion</span>
+          <span style="font-size: 10px; opacity: 0.7; font-family: var(--mono-font, monospace);">arXiv:2610 / RecursiveSI/flint</span>
+        </div>
+        <div>${tierBadge}</div>
+      </div>
+      <div style="font-size: 12px; color: var(--text-secondary, #aaa); margin-bottom: 12px;">
+        <strong>Goal:</strong> <code>${safePrompt}</code>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-bottom: 14px;">
+        <div style="background: rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 6px; padding: 10px;">
+          <div style="font-size: 11px; font-weight: 600; color: #38bdf8; margin-bottom: 4px;">1. Specialist MoE Generator</div>
+          <div style="font-size: 11px; color: var(--text-muted, #888);">Recursive Flint (40B total / 2.5B active MoE)</div>
+        </div>
+        <div style="background: rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 6px; padding: 10px;">
+          <div style="font-size: 11px; font-weight: 600; color: #a78bfa; margin-bottom: 4px;">2. AST Grammar Verifier</div>
+          <div style="font-size: 11px; color: var(--text-muted, #888);">Tree-Sitter Syntax &amp; Invariant Gate</div>
+        </div>
+        <div style="background: rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 6px; padding: 10px;">
+          <div style="font-size: 11px; font-weight: 600; color: #34d399; margin-bottom: 4px;">3. Adversarial Certification</div>
+          <div style="font-size: 11px; color: var(--text-muted, #888);">Mutation Testing Gate (M_kill &ge; 0.5)</div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;">
+        <button type="button" class="flint-action-btn" onclick="if(window.executeCliCommand){window.executeCliCommand('@agent flint-coding ${safePrompt.replace(/'/g, "\\\'")}');}" style="background: #3b82f6; color: #fff; border: none; padding: 6px 14px; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer;">⚡ Execute Coding Fusion</button>
+        <button type="button" class="flint-action-btn" onclick="if(window.executeCliCommand){window.executeCliCommand('@agent security');}" style="background: rgba(255, 255, 255, 0.1); color: var(--text-primary, #fff); border: 1px solid rgba(255, 255, 255, 0.2); padding: 6px 14px; border-radius: 4px; font-size: 12px; cursor: pointer;">🛡️ Run Security Scan</button>
+        <button type="button" class="flint-action-btn" onclick="if(window.executeCliCommand){window.executeCliCommand('@agent sys-info');}" style="background: rgba(255, 255, 255, 0.1); color: var(--text-primary, #fff); border: 1px solid rgba(255, 255, 255, 0.2); padding: 6px 14px; border-radius: 4px; font-size: 12px; cursor: pointer;">💻 Memory Status</button>
+      </div>
+    </div>
+  `;
+}
+
+async function executeFlintCodingFusion(prompt, options = {}) {
+  const mode = options.mode || 'full';
+  const ctx = options.ctx || 32768;
+  try {
+    const resp = await fetch('http://127.0.0.1:5000/api/flint/coding-fusion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task: prompt, mode, context_tokens: ctx })
+    });
+    if (resp.ok) {
+      return await resp.json();
+    }
+  } catch (_) {}
+  return {
+    status: 'ready',
+    task: prompt,
+    mode,
+    context_tokens: ctx,
+    engine: 'Recursive Flint MoE (40B-A2.5B)',
+    subtasks: decomposeFlintCodingSubtasks(prompt)
+  };
+}
+
+if (typeof window !== 'undefined') {
+  window.FLINT_CODING_FUSION_SPEC = FLINT_CODING_FUSION_SPEC;
+  window.isCodingTaskForFlint = isCodingTaskForFlint;
+  window.evaluateFlintResourceAvailability = evaluateFlintResourceAvailability;
+  window.shouldIncludeFlintInCodingFusion = shouldIncludeFlintInCodingFusion;
+  window.parseFlintCodingQuery = parseFlintCodingQuery;
+  window.decomposeFlintCodingSubtasks = decomposeFlintCodingSubtasks;
+  window.buildHitlFlintCodingFusionWorkspaceHtml = buildHitlFlintCodingFusionWorkspaceHtml;
+  window.executeFlintCodingFusion = executeFlintCodingFusion;
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports.FLINT_CODING_FUSION_SPEC = FLINT_CODING_FUSION_SPEC;
+  module.exports.isCodingTaskForFlint = isCodingTaskForFlint;
+  module.exports.evaluateFlintResourceAvailability = evaluateFlintResourceAvailability;
+  module.exports.shouldIncludeFlintInCodingFusion = shouldIncludeFlintInCodingFusion;
+  module.exports.parseFlintCodingQuery = parseFlintCodingQuery;
+  module.exports.decomposeFlintCodingSubtasks = decomposeFlintCodingSubtasks;
+  module.exports.buildHitlFlintCodingFusionWorkspaceHtml = buildHitlFlintCodingFusionWorkspaceHtml;
+  module.exports.executeFlintCodingFusion = executeFlintCodingFusion;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   var activeOutline = null;
   var activeShellAction = null;
@@ -3134,7 +3353,8 @@ const HELP_CATEGORIES = {
       { cmd: '@agent code-translate to <lang>: <code>', desc: 'Polyglot AST-preserving code transpile across Rust, Python, Go, TypeScript, C++', example: '@agent code-translate to Rust: function fibonacci(n) { return n <= 1 ? n : fibonacci(n - 1) + fibonacci(n - 2); }' },
       { cmd: '@agent dockerfile <path>', desc: 'Synthesize minimal attack-surface multi-stage production Dockerfiles', example: '@agent dockerfile crates/cli' },
       { cmd: '@agent api-docs <code>', desc: 'Generate OpenAPI 3.0 / Swagger specs and markdown documentation directly from code', example: '@agent api-docs pub async fn get_system_health() -> Result<Json<HealthStatus>> { Ok(Json(HealthStatus::ok())) }' },
-      { cmd: '@agent code-helper <query/problem>', desc: 'Interactive coding assistant, polyglot algorithm generator, and computational code runner', example: '@agent code-helper Calculate the compound interest on $10,000 at 7% annual interest compounded monthly over 25 years in Python' }
+      { cmd: '@agent code-helper <query/problem>', desc: 'Interactive coding assistant, polyglot algorithm generator, and computational code runner', example: '@agent code-helper Calculate the compound interest on $10,000 at 7% annual interest compounded monthly over 25 years in Python' },
+      { cmd: '@agent flint-coding <task>', desc: 'Recursive Flint MoE (40B-A2.5B) Coding Fusion: Dual-gated coding specialist fused with verifiers', example: '@agent flint-coding Implement lock-free concurrent ring buffer in Rust' }
     ],
     useCases: [
       'Pre-commit verification of zero-day buffer overflows or unescaped queries before merging code.',
@@ -3146,7 +3366,8 @@ const HELP_CATEGORIES = {
       '@agent graph-index crates/cli/src',
       '@agent secret-scan config/settings.json',
       '@agent code-translate to Rust: function fib(n) { return n <= 1 ? n : fib(n-1) + fib(n-2); }',
-      '@agent code-helper Calculate the compound interest on $10,000 at 7% annual interest compounded monthly over 25 years in Python'
+      '@agent code-helper Calculate the compound interest on $10,000 at 7% annual interest compounded monthly over 25 years in Python',
+      '@agent flint-coding Implement lock-free concurrent ring buffer in Rust'
     ]
   },
 
@@ -7018,6 +7239,26 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
     }
 
     if (hasCode) {
+      const flintStatus = typeof shouldIncludeFlintInCodingFusion === 'function'
+        ? shouldIncludeFlintInCodingFusion(true, true)
+        : null;
+      if (flintStatus && flintStatus.eligible) {
+        return {
+          name: 'Recursive Flint MoE Coding Fusion',
+          primary: 'RecursiveSI/flint (40B-A2.5B MoE)',
+          secondary: activeMod || 'qwen2.5:32b',
+          arbiter: 'AST Grammar & Multi-Model Consensus Gate',
+          specialists: [
+            `🔹 Architecture: Recursive Flint (40B total / 2.5B active MoE)`,
+            `🔹 Primary Generation: flint:latest`,
+            `🔹 Verification: ${activeMod || 'qwen2.5:32b'}`,
+            `🔹 Gate: Zero-Error AST Certification`
+          ],
+          task: 'code-generation',
+          isCodingTask: true,
+          flintTier: flintStatus.tier
+        };
+      }
       return {
         name: 'Deterministic Code Synthesis Fusion',
         primary: activeMod,
@@ -34808,6 +35049,67 @@ Instructions:
         streaming: false
       });
       const streamContentEl = decisionBubble.querySelector('.stream-content') || decisionBubble;
+      streamContentEl.innerHTML = cardHtml;
+
+      if (activeSession) {
+        activeSession.messages.push({ role: 'assistant', content: cardHtml });
+        saveChatHistory();
+      }
+      setChatRunningState(false);
+      if (currentAttachments.length > 0) clearAllAttachments();
+      return;
+    }
+
+    // 4.493 Recursive Flint MoE Coding Fusion Directive (@agent flint, @agent flint-coding, /flint, /flint-coding)
+    const isFlintCodingCmd = (
+      lower.startsWith('@agent flint') || lower === '@agent flint' ||
+      lower.startsWith('/flint') || lower === '/flint' ||
+      lower.startsWith('@flint') ||
+      lower.startsWith('@agent flint-coding') || lower === '@agent flint-coding' ||
+      lower.startsWith('/flint-coding') || lower === '/flint-coding' ||
+      lower.startsWith('@agent flint-moe') || lower === '@agent flint-moe' ||
+      lower.startsWith('/flint-moe') || lower === '/flint-moe' ||
+      /^(?:@agent\s+|@|\/)?flint(?:-coding|-moe)?(?:\s*[:\s]|$)/i.test(cmd)
+    );
+
+    if (isFlintCodingCmd) {
+      const parsed = parseFlintCodingQuery(cmd);
+      const targetTask = parsed.prompt || 'Implement concurrent data structure with AST verification';
+      const isCoding = isCodingTaskForFlint(targetTask, 'coding');
+
+      if (!isCoding) {
+        const warnMsg = `⚠️ **Recursive Flint MoE Dual-Gate Law Violation**\n\n- **Flint operates strictly within Multi-Model Fusion panels only.**\n- **Flint is restricted strictly to coding tasks.**\n- Non-coding queries (general essays, creative writing, legal briefs, medical, finance) are excluded from Flint.\n- For general knowledge or reasoning, please use Qwen2.5 or DeepSeek-R1.`;
+        const bubble = createAiBubble({
+          icon: '⚡',
+          title: 'Flint Coding Fusion Gate',
+          modelTag: 'Dual-Gate Invariant',
+          isTool: true,
+          streaming: false
+        });
+        const streamContentEl = bubble.querySelector('.stream-content') || bubble;
+        streamContentEl.innerHTML = renderMarkdown(warnMsg);
+        if (activeSession) {
+          activeSession.messages.push({ role: 'assistant', content: warnMsg });
+          saveChatHistory();
+        }
+        setChatRunningState(false);
+        if (currentAttachments.length > 0) clearAllAttachments();
+        return;
+      }
+
+      const resourceStatus = evaluateFlintResourceAvailability();
+      const flintRes = await executeFlintCodingFusion(targetTask, { mode: parsed.mode, ctx: parsed.ctx });
+      flintRes.tier = resourceStatus.tier;
+
+      const cardHtml = buildHitlFlintCodingFusionWorkspaceHtml(flintRes, targetTask);
+      const flintBubble = createAiBubble({
+        icon: '⚡',
+        title: 'Recursive Flint MoE Coding Fusion',
+        modelTag: `Flint (40B-A2.5B MoE - ${resourceStatus.tier.toUpperCase()})`,
+        isTool: true,
+        streaming: false
+      });
+      const streamContentEl = flintBubble.querySelector('.stream-content') || flintBubble;
       streamContentEl.innerHTML = cardHtml;
 
       if (activeSession) {

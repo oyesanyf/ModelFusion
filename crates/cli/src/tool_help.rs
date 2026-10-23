@@ -65,7 +65,7 @@ pub fn is_known_tool_or_model(name: &str) -> bool {
         .to_lowercase();
     let keywords = [
         "classify", "zero-shot", "topic", "bart", "deberta", "distilbart", "longformer",
-        "security", "graph-index", "graph", "vuln-scan", "secret-scan", "pii-scan",
+        "flint", "flint-coding", "flint-fusion", "security", "graph-index", "graph", "vuln-scan", "secret-scan", "pii-scan",
         "code-translate", "dockerfile", "api-docs", "sast",
         "computer-use", "computer_use", "ui-tars", "screen-grounding", "desktop-click",
         "desktop-type", "desktop-scroll", "shopping", "ticket-booking", "exam-solver",

@@ -3,14 +3,18 @@ setlocal enabledelayedexpansion
 
 REM =========================================================================
 REM HugOS Intelligent Chromium Browser Launcher
-REM Instant Launch (<100ms): Spawns Chromium GUI immediately on Step 1,
-REM then performs non-blocking background daemon discovery in Step 2.
+REM Instant Launch (<100ms): Shows instant splash, spawns Chromium GUI immediately
+REM on Step 1, then performs non-blocking background daemon startup in Step 2.
 REM =========================================================================
+
+set SCRIPT_DIR=%~dp0
+if exist "%SCRIPT_DIR%hugos-splash.hta" (
+    start "" mshta.exe "%SCRIPT_DIR%hugos-splash.hta"
+)
 
 REM -------------------------------------------------------------------------
 REM Step 1: Instant Browser Window Launch (Zero Blocking Delays)
 REM -------------------------------------------------------------------------
-set SCRIPT_DIR=%~dp0
 set EXTENSION_DIR=%SCRIPT_DIR%..\extension
 for %%i in ("%EXTENSION_DIR%") do set EXTENSION_PATH=%%~fi
 
@@ -30,7 +34,6 @@ if not "%~1"=="" (
 
 set USER_DATA_DIR=%LOCALAPPDATA%\HugOS Browser\User Data
 if not exist "%USER_DATA_DIR%" mkdir "%USER_DATA_DIR%"
-REM Preserve Chromium icon cache and Web Applications to prevent taskbar wireframe globe fallback
 
 REM Search for local or installed Chromium / Chrome / Edge binary
 set CHROME_BIN=
@@ -53,27 +56,16 @@ if exist "%SCRIPT_DIR%chrome.exe" (
 
 if "%CHROME_BIN%"=="" (
     echo [ERROR] No compatible Chromium, Google Chrome, or Microsoft Edge executable found.
-    echo Please install Google Chrome or place chrome.exe in %SCRIPT_DIR%
-    pause
     exit /b 1
 )
 
-echo [START] Launching HugOS Browser Engine...
-echo [INFO] Binary: "%CHROME_BIN%"
-echo [INFO] Remote Debugging Port: 9222
-echo [INFO] Extension Path: "%EXTENSION_PATH%"
-echo [INFO] User Data Dir: "%USER_DATA_DIR%"
-echo [INFO] Startup URL: "%START_URL%"
-
-REM Launch Chromium IMMEDIATELY so the window appears on screen in <100ms
-start "" "%CHROME_BIN%" --app="%START_URL%" --remote-debugging-port=9222 --remote-allow-origins=* --load-extension="%EXTENSION_PATH%" --user-data-dir="%USER_DATA_DIR%" --enable-gpu-rasterization --enable-zero-copy --ignore-gpu-blocklist --disable-renderer-backgrounding --disable-background-timer-throttling --enable-smooth-scrolling --disable-backgrounding-occluded-windows --no-first-run --no-default-browser-check --enable-features=SidePanel,SidePanelPinning,CanvasOopRasterization --disable-features=Translate,OptimizationHints --disk-cache-size=104857600
+REM Launch Chromium IMMEDIATELY in normal window state so the window appears on screen in <100ms
+start "" "%CHROME_BIN%" --app="%START_URL%" --new-window --remote-debugging-port=9222 --remote-allow-origins=* --load-extension="%EXTENSION_PATH%" --user-data-dir="%USER_DATA_DIR%" --enable-gpu-rasterization --enable-zero-copy --ignore-gpu-blocklist --disable-renderer-backgrounding --disable-background-timer-throttling --enable-smooth-scrolling --disable-backgrounding-occluded-windows --no-first-run --no-default-browser-check --enable-features=SidePanel,SidePanelPinning,CanvasOopRasterization --disable-features=Translate,OptimizationHints --disk-cache-size=104857600
 
 REM -------------------------------------------------------------------------
-REM Step 2: Background Daemon Verification (Ollama & ModelFusion Master Server)
-REM Runs asynchronously AFTER the browser window is already active on screen.
+REM Step 2: Non-Blocking Background Daemon Startup (Ollama & ModelFusion Master Server)
+REM Spawns hidden via run_hidden.vbs with zero blocking curl waits.
 REM -------------------------------------------------------------------------
-
-REM Discover Browser Dedicated CLI Binary (clibrowser.exe with fallback to browser cli.exe)
 set CLI_BIN=
 if exist "%SCRIPT_DIR%..\bin\clibrowser.exe" (
     set "CLI_BIN=%SCRIPT_DIR%..\bin\clibrowser.exe"
@@ -91,48 +83,13 @@ if exist "%SCRIPT_DIR%..\bin\clibrowser.exe" (
     set "CLI_BIN=D:\harfile\ModelFusion\target\release\clibrowser.exe"
 ) else if exist "D:\harfile\ModelFusion\target\release\cli.exe" (
     set "CLI_BIN=D:\harfile\ModelFusion\target\release\cli.exe"
-) else (
-    where clibrowser >nul 2>&1
-    if not errorlevel 1 for /f "delims=" %%f in ('where clibrowser') do set "CLI_BIN=%%f"
-    if "!CLI_BIN!"=="" (
-        where cli >nul 2>&1
-        if not errorlevel 1 for /f "delims=" %%f in ('where cli') do set "CLI_BIN=%%f"
-    )
 )
 
-REM Check & Auto-start Ollama Local AI Engine with Open CORS (non-blocking 1s probe)
 set "OLLAMA_ORIGINS=*"
-curl -s -o nul --connect-timeout 1 --max-time 1 http://127.0.0.1:11434/api/tags
-if errorlevel 1 (
-    echo [INFO] Ollama engine not responding. Auto-starting Ollama...
-    if not "%CLI_BIN%"=="" (
-        wscript.exe //B //nologo "%SCRIPT_DIR%run_hidden.vbs" "%CLI_BIN%" "--ensure-ollama"
-    ) else (
-        where ollama >nul 2>&1
-        if errorlevel 1 (
-            echo [INFO] Ollama is not installed. Installing silently in background...
-            curl -s -L -o "%TEMP%\OllamaSetup.exe" https://ollama.com/download/OllamaSetup.exe
-            wscript.exe //B //nologo "%SCRIPT_DIR%run_hidden.vbs" "%TEMP%\OllamaSetup.exe" "/SILENT" "/NORESTART"
-        )
-        wscript.exe //B //nologo "%SCRIPT_DIR%run_hidden.vbs" "ollama" "serve"
-    )
-)
-
-REM Check & Auto-start ModelFusion Master Server on port 5000 or port 5005 (non-blocking probe)
-set SERVER_ACTIVE=0
-curl -s -f --connect-timeout 1 --max-time 1 http://127.0.0.1:5000/health | findstr /i "modelfusion" >nul 2>&1
-if not errorlevel 1 (
-    set SERVER_ACTIVE=1
-) else (
-    curl -s -f --connect-timeout 1 --max-time 1 http://127.0.0.1:5005/health | findstr /i "modelfusion" >nul 2>&1
-    if not errorlevel 1 set SERVER_ACTIVE=1
-)
-
-if "!SERVER_ACTIVE!"=="0" (
-    echo [INFO] ModelFusion Master Server offline on port 5000 and 5005. Auto-starting server...
-    if not "%CLI_BIN%"=="" (
-        wscript.exe //B //nologo "%SCRIPT_DIR%run_hidden.vbs" "%CLI_BIN%" --server --port 5000
-    )
+if not "%CLI_BIN%"=="" (
+    wscript.exe //B //nologo "%SCRIPT_DIR%run_hidden.vbs" "%CLI_BIN%" "--ensure-ollama"
+    wscript.exe //B //nologo "%SCRIPT_DIR%run_hidden.vbs" "%CLI_BIN%" --server --port 5000
 )
 
 endlocal
+exit /b 0
