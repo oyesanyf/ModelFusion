@@ -63,6 +63,17 @@ def ensure_signed(exe_path):
             print(f"[SIGN OK] Successfully signed (without timestamp) {exe_path}")
             return
         print(f"[SIGN WARN] signtool failed: {res.stderr}")
+    else:
+        ps_cmd = (
+            f"$pwd = ConvertTo-SecureString 'HugOSPassword123!' -AsPlainText -Force; "
+            f"$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2('{pfx}', $pwd); "
+            f"$res = Set-AuthenticodeSignature -FilePath '{exe_path}' -Certificate $cert -TimestampServer 'http://timestamp.digicert.com' -HashAlgorithm SHA256 -ErrorAction SilentlyContinue; "
+            f"if (-not ($res -and $res.SignerCertificate)) {{ Set-AuthenticodeSignature -FilePath '{exe_path}' -Certificate $cert -HashAlgorithm SHA256 | Out-Null }}"
+        )
+        res = subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], capture_output=True, text=True)
+        if res.returncode == 0:
+            print(f"[SIGN OK] Successfully signed {exe_path} via Set-AuthenticodeSignature")
+            return
 
 ensure_signed(src)
 

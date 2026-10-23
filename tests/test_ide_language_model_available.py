@@ -101,8 +101,8 @@ def test_real_provider_chat_response_capital_of_nigeria_and_why():
         content = f.read()
 
     idx_start = content.find("ModelFusionLMProvider = class extends AbstractLanguageModelChatProvider")
-    idx_end = content.find('this.providerName = "ModelFusion";', idx_start)
-    idx_close = content.find("};", idx_end) + 2
+    idx_close = content.find("ModelFusionLMProvider = __decorateClass([", idx_start)
+    assert idx_start != -1 and idx_close != -1, "Could not locate ModelFusionLMProvider class boundaries"
     provider_class_code = content[idx_start:idx_close]
 
     harness_js = f"""
@@ -131,6 +131,7 @@ const vscode15 = {{
       update: async () => {{}},
     }}),
     onDidChangeTextDocument: () => ({{ dispose: () => {{}} }}),
+    onDidChangeConfiguration: () => ({{ dispose: () => {{}} }}),
     workspaceFolders: [{{ uri: {{ fsPath: {json.dumps(REPO_ROOT)} }} }}],
   }},
   commands: {{

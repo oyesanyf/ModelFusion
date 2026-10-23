@@ -1028,7 +1028,7 @@ pub fn resolve_dynamic_ollama_model_from_state(
 }
 
 /// Dynamically resolves the optimal Ollama model for the request and runtime hardware.
-/// Queries GET {endpoint}/api/tags with a 1500ms timeout to discover installed local models.
+/// Queries GET {endpoint}/api/ps (warm VRAM models) and GET {endpoint}/api/tags (installed models).
 pub async fn resolve_dynamic_ollama_model(
     requested_model: Option<&str>,
     is_low_budget: bool,
@@ -1039,7 +1039,39 @@ pub async fn resolve_dynamic_ollama_model(
         .build()
         .unwrap_or_default();
 
-    let tags_url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
+    let base_endpoint = endpoint.trim_end_matches('/');
+
+    // 1. Check /api/ps first: if a general chat model is ALREADY warm in VRAM, use it to avoid 25s cold-swap stalls
+    let ps_url = format!("{}/api/ps", base_endpoint);
+    if let Ok(resp) = client.get(&ps_url).send().await {
+        if resp.status().is_success() {
+            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                if let Some(models) = json.get("models").and_then(|m| m.as_array()) {
+                    let warm_names: Vec<String> = models
+                        .iter()
+                        .filter_map(|m| m.get("name").and_then(|n| n.as_str()).map(|s| s.trim().to_string()))
+                        .collect();
+                    if let Some(req) = requested_model {
+                        let req_clean = req.trim();
+                        if warm_names.iter().any(|w| w == req_clean || w.strip_suffix(":latest") == Some(req_clean)) {
+                            return req_clean.to_string();
+                        }
+                    }
+                    for w in &warm_names {
+                        let wl = w.to_lowercase();
+                        let is_general_chat = (wl.starts_with("qwen2.5") || wl.starts_with("gemma2") || wl.starts_with("llama3") || wl.starts_with("mistral") || wl.starts_with("deepseek-r1"))
+                            && !wl.contains("embed") && !wl.contains("moondream") && !wl.contains("llava");
+                        if is_general_chat {
+                            eprintln!("[SERVER] ⚡ Using already-warm VRAM model from /api/ps: {}", w);
+                            return w.clone();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let tags_url = format!("{}/api/tags", base_endpoint);
     let mut installed_models = std::collections::HashSet::new();
 
     if let Ok(resp) = client.get(&tags_url).send().await {
@@ -1068,29 +1100,14 @@ pub async fn resolve_dynamic_ollama_model(
 
 
 /// Dynamically determine the optimal context window (num_ctx) for the chosen Ollama model.
-/// Balances context size against runtime available RAM constraints to prevent OOM/slowdowns.
-fn select_context_window_for_model(model: &str) -> u32 {
-    let lower_model = model.to_lowercase();
-    let mut sys = sysinfo::System::new();
-    sys.refresh_memory();
-    let avail_ram_gb = sys.available_memory() / 1_073_741_824;
-
-    if lower_model.contains("0.5b") || lower_model.contains("1.5b") {
-        if avail_ram_gb >= 12 { 8192 } else { 4096 }
-    } else if lower_model.contains("3b") || lower_model.contains("4b") {
-        if avail_ram_gb >= 16 { 8192 } else { 4096 }
-    } else if lower_model.contains("7b") || lower_model.contains("8b") || lower_model.contains("llama3") {
-        // Large models need substantial memory for KV cache at high contexts
-        if avail_ram_gb >= 32 {
-            16384
-        } else if avail_ram_gb >= 16 {
-            8192
-        } else {
-            4096
-        }
+/// Balances context size against runtime available VRAM and RAM constraints to prevent GPU VRAM overflow and model reload stalls.
+fn select_context_window_for_model(_model: &str) -> u32 {
+    let sys_res = query_system_resources();
+    if sys_res.has_gpu && sys_res.free_vram_mb >= 16_000 {
+        8192
     } else {
-        // Safe default fallback for custom models
-        if avail_ram_gb >= 16 { 8192 } else { 4096 }
+        // 4096 matches Ollama's default runner context_length and keeps 7B/8B models 100% inside 8GB GPUs
+        4096
     }
 }
 
@@ -20228,7 +20245,7 @@ sequenceDiagram
                             } else {
                                 resolve_dynamic_ollama_model(model_override.as_deref(), budget <= 0.5, &endpoint).await
                             };
-                            let chosen_model = model_override.as_deref().unwrap_or(dynamic_model.as_str());
+                            let chosen_model = dynamic_model.as_str();
                             let ollama_model = chosen_model;
 
                             let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));

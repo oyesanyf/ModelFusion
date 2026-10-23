@@ -92,11 +92,13 @@ def test_registry_invariance():
     print(f"  [SNAPSHOT BEFORE] Captured {len(snapshot_before)} registry values.")
 
     # 1. Cargo test for Gemini key persistence (compiled with --no-run and signed with Authenticode to satisfy AppLocker / WDAC)
-    deps_dir = os.path.join(REPO_ROOT, "target", "debug", "deps")
+    deps_dir = os.path.join(REPO_ROOT, "target", "release", "deps")
+    if not os.path.isdir(deps_dir):
+        deps_dir = os.path.join(REPO_ROOT, "target", "debug", "deps")
     cargo_test_succeeded = False
     try:
-        print(f"  -> Compiling test binary: {cargo_exe} test --bin cli --no-run")
-        run_command([cargo_exe, "test", "--bin", "cli", "--no-run"], env=env)
+        print(f"  -> Compiling test binary: {cargo_exe} test --release --bin cli --no-run")
+        run_command([cargo_exe, "test", "--release", "--bin", "cli", "--no-run"], env=env)
         test_exes = [
             os.path.join(deps_dir, f)
             for f in os.listdir(deps_dir)
@@ -111,23 +113,36 @@ def test_registry_invariance():
             ]
             signtool = next((s for s in signtool_candidates if os.path.isfile(s)), None)
             pfx_path = os.path.join(REPO_ROOT, "IDE", "hugos-signing-cert.pfx")
-            if signtool and os.path.isfile(pfx_path):
-                subprocess.run(
-                    [
-                        signtool,
-                        "sign",
-                        "/f",
-                        pfx_path,
-                        "/p",
-                        "HugOSPassword123!",
-                        "/fd",
-                        "SHA256",
-                        test_exe,
-                    ],
-                    check=False,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+            if os.path.isfile(pfx_path):
+                if signtool:
+                    subprocess.run(
+                        [
+                            signtool,
+                            "sign",
+                            "/f",
+                            pfx_path,
+                            "/p",
+                            "HugOSPassword123!",
+                            "/fd",
+                            "SHA256",
+                            test_exe,
+                        ],
+                        check=False,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                else:
+                    ps_cmd = (
+                        f"$pwd = ConvertTo-SecureString 'HugOSPassword123!' -AsPlainText -Force; "
+                        f"$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2('{pfx_path}', $pwd); "
+                        f"Set-AuthenticodeSignature -FilePath '{test_exe}' -Certificate $cert -HashAlgorithm SHA256 | Out-Null"
+                    )
+                    subprocess.run(
+                        ["powershell", "-NoProfile", "-Command", ps_cmd],
+                        check=False,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
             print(f"  -> Executing signed test: {test_exe} test_set_and_persist_gemini_key_env")
             run_command([test_exe, "test_set_and_persist_gemini_key_env"], env=env)
             cargo_test_succeeded = True
