@@ -97,72 +97,79 @@ def patch_extension_js(ext_js_path, node_path):
             print("  [SKIP] ByokUtilityModelNotificationContribution._update() pattern not matched.")
 
     # 2. Auto-route utility family in _resolveUtilityFamily(family)
-    util_target = (
-        "  async _resolveUtilityFamily(family) {\n"
-        "    const override = await this._resolveUtilityOverride(family);\n"
-        "    if (override) {\n"
-        "      return override;\n"
-        "    }"
-    )
-    util_routing = (
-        f"\n    try {{\n"
-        f"      const mfModels = await {vscode_var}.lm.selectChatModels({{ vendor: \"modelfusion\" }});\n"
-        f"      if (mfModels && mfModels.length > 0) {{\n"
-        f"        this._logService.info(`[ProductionEndpointProvider] Auto-routing utility family '${{family}}' to ModelFusion (${{mfModels[0].id}}).`);\n"
-        f"        return this._instantiationService.createInstance(ExtensionContributedChatEndpoint, mfModels[0]);\n"
-        f"      }}\n"
-        f"    }} catch (e) {{}}"
-    )
-    util_replacement = util_target + util_routing
-
     if "Auto-routing utility family" in content:
         print("  [OK] Utility family ModelFusion auto-route already present.")
-    elif util_target in content:
-        content = content.replace(util_target, util_replacement, 1)
-        changed = True
-        print("  [APPLIED] Injected ModelFusion auto-route into _resolveUtilityFamily(family).")
     else:
-        print("  [WARN] Could not find exact _resolveUtilityFamily anchor.")
+        matched_util = False
+        for indent in ("      ", "  "):
+            util_target = (
+                f"{indent}async _resolveUtilityFamily(family) {{\n"
+                f"{indent}  const override = await this._resolveUtilityOverride(family);\n"
+                f"{indent}  if (override) {{\n"
+                f"{indent}    return override;\n"
+                f"{indent}  }}"
+            )
+            util_routing = (
+                f"\n{indent}  try {{\n"
+                f"{indent}    const mfModels = await {vscode_var}.lm.selectChatModels({{ vendor: \"modelfusion\" }});\n"
+                f"{indent}    if (mfModels && mfModels.length > 0) {{\n"
+                f"{indent}      this._logService.info(`[ProductionEndpointProvider] Auto-routing utility family '${{family}}' to ModelFusion (${{mfModels[0].id}}).`);\n"
+                f"{indent}      return this._instantiationService.createInstance(ExtensionContributedChatEndpoint, mfModels[0]);\n"
+                f"{indent}    }}\n"
+                f"{indent}  }} catch (e) {{}}"
+            )
+            if util_target in content:
+                content = content.replace(util_target, util_target + util_routing, 1)
+                changed = True
+                matched_util = True
+                print("  [APPLIED] Injected ModelFusion auto-route into _resolveUtilityFamily(family).")
+                break
+        if not matched_util:
+            print("  [WARN] Could not find exact _resolveUtilityFamily anchor.")
 
     # 3. Auto-route CAPI family fallback in _resolveFamily(family)
-    capi_orig = (
-        "  async _resolveFamily(family) {\n"
-        "    if (family === \"copilot-utility\" || family === \"copilot-utility-small\") {\n"
-        "      return this._resolveUtilityFamily(family);\n"
-        "    }\n"
-        "    const modelMetadata = await this._modelFetcher.getChatModelFromCapiFamily(family);\n"
-        "    return this.getOrCreateChatEndpointInstance(modelMetadata);\n"
-        "  }"
-    )
-    capi_replacement = (
-        "  async _resolveFamily(family) {\n"
-        "    if (family === \"copilot-utility\" || family === \"copilot-utility-small\") {\n"
-        "      return this._resolveUtilityFamily(family);\n"
-        "    }\n"
-        "    try {\n"
-        "      const modelMetadata = await this._modelFetcher.getChatModelFromCapiFamily(family);\n"
-        "      return this.getOrCreateChatEndpointInstance(modelMetadata);\n"
-        "    } catch (err) {\n"
-        f"      try {{\n"
-        f"        const mfModels = await {vscode_var}.lm.selectChatModels({{ vendor: \"modelfusion\" }});\n"
-        f"        if (mfModels && mfModels.length > 0) {{\n"
-        f"          this._logService.info(`[ProductionEndpointProvider] CAPI family '${{family}}' unavailable; auto-routing to ModelFusion (${{mfModels[0].id}}).`);\n"
-        f"          return this._instantiationService.createInstance(ExtensionContributedChatEndpoint, mfModels[0]);\n"
-        f"        }}\n"
-        f"      }} catch (e) {{}}\n"
-        "      throw err;\n"
-        "    }\n"
-        "  }"
-    )
-
     if "unavailable; auto-routing to ModelFusion" in content:
         print("  [OK] CAPI family ModelFusion fallback auto-route already present.")
-    elif capi_orig in content:
-        content = content.replace(capi_orig, capi_replacement, 1)
-        changed = True
-        print("  [APPLIED] Wrapped _resolveFamily(family) with ModelFusion fallback auto-route.")
     else:
-        print("  [WARN] Could not find exact _resolveFamily anchor.")
+        matched_capi = False
+        for indent in ("      ", "  "):
+            capi_orig = (
+                f"{indent}async _resolveFamily(family) {{\n"
+                f"{indent}  if (family === \"copilot-utility\" || family === \"copilot-utility-small\") {{\n"
+                f"{indent}    return this._resolveUtilityFamily(family);\n"
+                f"{indent}  }}\n"
+                f"{indent}  const modelMetadata = await this._modelFetcher.getChatModelFromCapiFamily(family);\n"
+                f"{indent}  return this.getOrCreateChatEndpointInstance(modelMetadata);\n"
+                f"{indent}}}"
+            )
+            capi_replacement = (
+                f"{indent}async _resolveFamily(family) {{\n"
+                f"{indent}  if (family === \"copilot-utility\" || family === \"copilot-utility-small\") {{\n"
+                f"{indent}    return this._resolveUtilityFamily(family);\n"
+                f"{indent}  }}\n"
+                f"{indent}  try {{\n"
+                f"{indent}    const modelMetadata = await this._modelFetcher.getChatModelFromCapiFamily(family);\n"
+                f"{indent}    return this.getOrCreateChatEndpointInstance(modelMetadata);\n"
+                f"{indent}  }} catch (err) {{\n"
+                f"{indent}    try {{\n"
+                f"{indent}      const mfModels = await {vscode_var}.lm.selectChatModels({{ vendor: \"modelfusion\" }});\n"
+                f"{indent}      if (mfModels && mfModels.length > 0) {{\n"
+                f"{indent}        this._logService.info(`[ProductionEndpointProvider] CAPI family '${{family}}' unavailable; auto-routing to ModelFusion (${{mfModels[0].id}}).`);\n"
+                f"{indent}        return this._instantiationService.createInstance(ExtensionContributedChatEndpoint, mfModels[0]);\n"
+                f"{indent}      }}\n"
+                f"{indent}    }} catch (e) {{}}\n"
+                f"{indent}    throw err;\n"
+                f"{indent}  }}\n"
+                f"{indent}}}"
+            )
+            if capi_orig in content:
+                content = content.replace(capi_orig, capi_replacement, 1)
+                changed = True
+                matched_capi = True
+                print("  [APPLIED] Wrapped _resolveFamily(family) with ModelFusion fallback auto-route.")
+                break
+        if not matched_capi:
+            print("  [WARN] Could not find exact _resolveFamily anchor.")
 
     if not changed:
         print("  [NO CHANGES] File already contains all required patches.")
@@ -318,15 +325,16 @@ def main():
     has_errors = False
     for c_dir in copilot_dirs:
         pkg_file = os.path.join(c_dir, "package.json")
-        ext_file = os.path.join(c_dir, "dist", "extension.js")
-
         ok_pkg, _ = patch_package_json(pkg_file)
         if not ok_pkg and os.path.exists(pkg_file):
             has_errors = True
 
-        ok_ext, _ = patch_extension_js(ext_file, node_path)
-        if not ok_ext and os.path.exists(ext_file):
-            has_errors = True
+        for bundle_name in ("extension.js", "test-extension.js", "sanity-test-extension.js"):
+            ext_file = os.path.join(c_dir, "dist", bundle_name)
+            if os.path.isfile(ext_file):
+                ok_ext, _ = patch_extension_js(ext_file, node_path)
+                if not ok_ext:
+                    has_errors = True
 
     root_pds = os.path.join(pack_dir, "resources", "app", "product-default-settings.json")
     default_settings_targets = [root_pds]

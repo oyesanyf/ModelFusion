@@ -296,6 +296,73 @@ def patch_workbench_content(content):
         content = content.replace(t8_u_orig, t8_u_repl, 1)
         changed = True
 
+    # 9. Always mark modelfusion vendor as isDefault in LanguageModelsService
+    t9_u_orig = 'isDefault: item.vendor === "modelfusion" ? !this._vendors.has("copilot") : item.isDefault ?? false'
+    t9_u_repl = 'isDefault: item.vendor === "modelfusion" ? true : item.isDefault ?? false'
+    if t9_u_orig in content and t9_u_repl not in content:
+        content = content.replace(t9_u_orig, t9_u_repl, 1)
+        changed = True
+
+    # 10. Resolve language models immediately when a provider registers in LanguageModelsService
+    t10_u_orig = (
+        "    this._providers.set(vendor, provider);\n"
+        "    const modelChangeListener = provider.onDidChange(() => {\n"
+        "      this._resolveAllLanguageModels(vendor, true);\n"
+        "    });"
+    )
+    t10_u_repl = (
+        "    this._providers.set(vendor, provider);\n"
+        "    this._resolveAllLanguageModels(vendor, true);\n"
+        "    const modelChangeListener = provider.onDidChange(() => {\n"
+        "      this._resolveAllLanguageModels(vendor, true);\n"
+        "    });"
+    )
+    if t10_u_orig in content and t10_u_repl not in content:
+        content = content.replace(t10_u_orig, t10_u_repl, 1)
+        changed = True
+
+    # 11. Resolve modelfusion language models on startup even when provider group already exists
+    t11_u_orig = (
+        '          this._logService.error("[LM] Failed to add default ModelFusion provider group on startup", e);\n'
+        "        }\n"
+        "      }\n"
+        "    });"
+    )
+    t11_u_repl = (
+        '          this._logService.error("[LM] Failed to add default ModelFusion provider group on startup", e);\n'
+        "        }\n"
+        "      } else {\n"
+        '        this._resolveAllLanguageModels("modelfusion", true);\n'
+        "      }\n"
+        "    });"
+    )
+    if t11_u_orig in content and t11_u_repl not in content:
+        content = content.replace(t11_u_orig, t11_u_repl, 1)
+        changed = True
+
+    # 12. Guard Ask-mode detectAgentOrCommand so participant detection errors never abort sendRequestInternal
+    t12_u_orig = (
+        "            const result = await this.chatAgentService.detectAgentOrCommand(chatAgentRequest, defaultAgentHistory, { location: location2 }, token);\n"
+        "            if (result && this.chatAgentService.getAgent(result.agent.id)?.locations?.includes(location2)) {\n"
+        "              request2?.response?.setAgent(result.agent, result.command);\n"
+        "              detectedAgent = result.agent;\n"
+        "              detectedCommand = result.command;\n"
+        "            }"
+    )
+    t12_u_repl = (
+        "            try {\n"
+        "              const result = await this.chatAgentService.detectAgentOrCommand(chatAgentRequest, defaultAgentHistory, { location: location2 }, token);\n"
+        "              if (result && this.chatAgentService.getAgent(result.agent.id)?.locations?.includes(location2)) {\n"
+        "                request2?.response?.setAgent(result.agent, result.command);\n"
+        "                detectedAgent = result.agent;\n"
+        "                detectedCommand = result.command;\n"
+        "              }\n"
+        "            } catch (_) {}"
+    )
+    if t12_u_orig in content and t12_u_repl not in content:
+        content = content.replace(t12_u_orig, t12_u_repl, 1)
+        changed = True
+
     return content, changed
 
 def patch_workbench_file(file_path, node_path):

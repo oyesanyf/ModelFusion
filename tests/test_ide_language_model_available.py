@@ -4,10 +4,16 @@ Verifies:
 1. ModelFusionLMProvider in extension.js, test-extension.js, and sanity-test-extension.js
    retains getAllModels, provideLanguageModelChatInformation, provideLanguageModelChatResponse,
    and _sendOrchestrationRequest across all IDE distributions and passes `node --check`.
-2. extensionHostProcess.js in IDE/VSCode-win32-x64 contains hardened getDefaultLanguageModel,
-   getLanguageModelByIdentifier, and _sendChatRequest fallbacks so Error("Language model unavailable")
-   is never thrown.
-3. Real end-to-end execution of ModelFusionLMProvider.provideLanguageModelChatInformation and
+2. BYOKContrib is registered before ConversationFeature in vscodeNodeContributions,
+   buildAutoModel sets isDefault: false, _resolveUtilityFamily/_resolveFamily auto-route to
+   ModelFusion, and provideParticipantDetection skips non-Copilot models.
+3. extensionHostProcess.js in IDE/VSCode-win32-x64 contains hardened registerLanguageModelChatProvider,
+   getDefaultLanguageModel, selectLanguageModels, getLanguageModelByIdentifier, _sendChatRequest,
+   getModelForRequest, and $detectChatParticipant so Error("Language model unavailable") is never thrown
+   even when copilotcli/auto is in _localModels or main-thread $selectChatModels returns [].
+4. workbench.desktop.main.js resolves language models immediately on registerLanguageModelProvider,
+   marks modelfusion vendor isDefault: true, and guards Ask-mode detectAgentOrCommand in try/catch.
+5. Real end-to-end execution of ModelFusionLMProvider.provideLanguageModelChatInformation and
    ModelFusionLMProvider.provideLanguageModelChatResponse for general prompts ("WHAT IS THE CAPITAL OF NIGERIA"
    and "why") returns accurate answers from the live local model with zero "Language model unavailable" errors.
 """
@@ -66,11 +72,62 @@ def test_all_extension_bundles_have_lm_provider_methods():
         for m in required_methods:
             assert m in class_body, f"Missing method {m} in ModelFusionLMProvider of {bpath}"
 
+        # Verify BYOKContrib is registered before ConversationFeature
+        idx_byok = content.find("asContributionFactory(BYOKContrib)")
+        idx_conv = content.find("asContributionFactory(ConversationFeature)")
+        assert idx_byok != -1 and idx_conv != -1 and idx_byok < idx_conv, (
+            f"Expected BYOKContrib before ConversationFeature in {bpath}"
+        )
+
+        # Verify buildAutoModel has isDefault: false
+        assert 'targetChatSessionType: "copilotcli",\n    isDefault: false' in content, (
+            f"buildAutoModel still has isDefault: true in {bpath}"
+        )
+
+        # Verify utility family & CAPI family ModelFusion auto-routes are present
+        assert "Auto-routing utility family" in content, f"Missing _resolveUtilityFamily auto-route in {bpath}"
+        assert "unavailable; auto-routing to ModelFusion" in content, f"Missing _resolveFamily auto-route in {bpath}"
+
+        # Verify provideParticipantDetection skips non-Copilot models
+        assert 'if (!chatRequest?.model || chatRequest.model.vendor !== "copilot")' in content, (
+            f"Missing provideParticipantDetection guard in {bpath}"
+        )
+
+        # Verify /api/ps + /api/tags fallback in _sendOrchestrationRequest
+        assert "const queryTagsFallback = () => {" in content, f"Missing queryTagsFallback in {bpath}"
+
         res = subprocess.run([node_bin, "--check", bpath], capture_output=True, text=True, timeout=45)
         assert res.returncode == 0, f"node --check failed for {bpath}: {res.stderr}"
 
 
-def test_extension_host_process_hardened():
+def test_workbench_main_language_models_service_hardened():
+    node_bin = find_node()
+    wb_path = os.path.join(
+        IDE_DIR, "VSCode-win32-x64", "resources", "app", "out", "vs", "workbench", "workbench.desktop.main.js"
+    )
+    assert os.path.isfile(wb_path), f"Missing {wb_path}"
+    with open(wb_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    assert 'isDefault: item.vendor === "modelfusion" ? true : item.isDefault ?? false' in content
+    assert "this._providers.set(vendor, provider);\n    this._resolveAllLanguageModels(vendor, true);" in content
+    assert 'this._resolveAllLanguageModels("modelfusion", true);' in content
+    assert "try {\n              const result = await this.chatAgentService.detectAgentOrCommand(" in content
+
+    res = subprocess.run([node_bin, "--check", wb_path], capture_output=True, text=True, timeout=45)
+    assert res.returncode == 0, f"node --check failed for {wb_path}: {res.stderr}"
+
+
+def test_extension_host_process_hardened_and_adversarial_races():
+    """
+    Tests both static hardening of extensionHostProcess.js and live Node.js execution
+    of the actual getDefaultLanguageModel, selectLanguageModels, getModelForRequest,
+    and $detectChatParticipant methods under adversarial startup race conditions:
+      - copilotcli/auto already populated in _localModels with isDefaultForLocation.panel = true
+      - main-thread $selectChatModels returning []
+      - userSelectedModelId set to "copilotcli/auto"
+      - $detectChatParticipant throwing inside provideParticipantDetection
+    """
     node_bin = find_node()
     ext_host = os.path.join(
         IDE_DIR, "VSCode-win32-x64", "resources", "app", "out", "vs", "workbench", "api", "node", "extensionHostProcess.js"
@@ -79,12 +136,175 @@ def test_extension_host_process_hardened():
     with open(ext_host, "r", encoding="utf-8") as f:
         content = f.read()
 
-    assert 'await this.$provideLanguageModelChatInfo(vendor, { silent: true }, CancellationToken.None);' in content
-    assert 'modelData.metadata.vendor === "modelfusion"' in content
+    assert 'this.$provideLanguageModelChatInfo(vendor, { silent: true }, CancellationToken.None).catch(() => {});' in content
+    assert 'if (modelData.metadata.vendor === "modelfusion" && modelData.metadata.isDefaultForLocation?.["panel" /* Chat */])' in content
     assert 'const provData = knownModel ? this._languageModelProviders.get(knownModel.metadata.vendor) : void 0;' in content
+    assert '!String(request.userSelectedModelId).startsWith("copilotcli/")' in content
 
     res = subprocess.run([node_bin, "--check", ext_host], capture_output=True, text=True, timeout=45)
     assert res.returncode == 0, f"node --check failed for {ext_host}: {res.stderr}"
+
+    # Extract actual getDefaultLanguageModel and selectLanguageModels from extensionHostProcess.js
+    gdlm_s = content.find("  async getDefaultLanguageModel(extension, forceResolveModels) {")
+    gdlm_e = content.find("  async _sendChatRequest(extension, languageModelId, messages, options2, token) {", gdlm_s)
+    assert gdlm_s != -1 and gdlm_e != -1
+    ext_host_methods_js = content[gdlm_s:gdlm_e]
+
+    gmr_s = content.find("  async getModelForRequest(request, extension) {")
+    gmr_e = content.find("  async $setRequestTools(requestId, tools) {", gmr_s)
+    assert gmr_s != -1 and gmr_e != -1
+    gmr_js = content[gmr_s:gmr_e]
+
+    det_s = content.find("  async $detectChatParticipant(handle, requestDto, context, options2, token) {")
+    det_e = content.find("  async _createRequest(requestDto, context, extension) {", det_s)
+    assert det_s != -1 and det_e != -1
+    det_js = content[det_s:det_e]
+
+    race_test_js = f"""
+const CancellationToken = {{ None: {{ isCancellationRequested: false }} }};
+const COPILOT_VENDOR_ID = "copilot";
+const ChatAgentRequest = {{ to: () => ({{}}) }};
+const ChatLocation2 = {{ to: () => 1 }};
+
+class HarnessExtHostLM {{
+  constructor() {{
+    this._localModels = new Map();
+    this._languageModelProviders = new Map();
+    this._logService = {{ warn: () => {{}}, trace: () => {{}}, error: () => {{}} }};
+    this._proxy = {{
+      // Simulate main-thread race: $selectChatModels returns []!
+      $selectChatModels: async () => []
+    }};
+  }}
+  getVendorFromModelIdentifier(modelIdentifier) {{
+    const idx = modelIdentifier.indexOf("/");
+    return idx === -1 ? undefined : modelIdentifier.substring(0, idx);
+  }}
+  _isUsingAuth() {{ return false; }}
+  async $provideLanguageModelChatInfo(vendor, options, token) {{
+    const data = this._languageModelProviders.get(vendor);
+    if (!data) return [];
+    const infos = await data.provider.provideLanguageModelChatInformation(options, token);
+    for (const info of infos) {{
+      const id = `${{vendor}}/${{info.id}}`;
+      this._localModels.set(id, {{
+        group: undefined,
+        metadata: {{
+          vendor,
+          id: info.id,
+          name: info.name,
+          family: info.family,
+          version: info.version,
+          isDefaultForLocation: info.isDefaultForLocation || {{ panel: true }},
+          maxInputTokens: 32768,
+          capabilities: {{ toolCalling: true }}
+        }},
+        info
+      }});
+    }}
+    return infos;
+  }}
+{ext_host_methods_js}
+}}
+
+class HarnessChatAgents {{
+  constructor(lm) {{
+    this._languageModels = lm;
+    this._participantDetectionProviders = new Map();
+    this._logService = {{}};
+  }}
+  async _createRequest(dto) {{ return {{ request: dto, location: 1, history: [] }}; }}
+  async getToolsForRequest() {{ return []; }}
+  getDiagnosticsWhenEnabled() {{ return []; }}
+{det_js}
+{gmr_js}
+}}
+
+(async () => {{
+  const lm = new HarnessExtHostLM();
+  const ext = {{ identifier: {{ value: "GitHub.copilot-chat" }} }};
+
+  // Adversarial Condition 1: copilotcli/auto is ALREADY in _localModels with isDefaultForLocation.panel = true,
+  // while modelfusion provider is registered in _languageModelProviders but NOT yet in _localModels!
+  lm._localModels.set("copilotcli/auto", {{
+    group: undefined,
+    metadata: {{
+      vendor: "copilotcli",
+      id: "auto",
+      name: "Auto",
+      family: "",
+      version: "",
+      isDefaultForLocation: {{ panel: true }},
+      maxInputTokens: 0
+    }},
+    info: {{ id: "auto", name: "Auto" }}
+  }});
+  lm._languageModelProviders.set("modelfusion", {{
+    extension: ext,
+    provider: {{
+      provideLanguageModelChatInformation: async () => [{{
+        id: "modelfusion-local",
+        name: "ModelFusion (Local Engine)",
+        family: "modelfusion",
+        version: "1.0.0",
+        isDefaultForLocation: {{ panel: true }}
+      }}]
+    }}
+  }});
+
+  // Test A: getDefaultLanguageModel MUST return modelfusion/modelfusion-local, NOT copilotcli/auto!
+  const defaultModel = await lm.getDefaultLanguageModel(ext);
+  if (!defaultModel || defaultModel.vendor !== "modelfusion" || defaultModel.id !== "modelfusion-local") {{
+    throw new Error("Test A failed: getDefaultLanguageModel returned " + JSON.stringify(defaultModel));
+  }}
+
+  // Test B: selectLanguageModels({{ vendor: "modelfusion" }}) MUST return [modelfusion-local] even when $selectChatModels returns []!
+  lm._localModels.delete("modelfusion/modelfusion-local");
+  const selectedMf = await lm.selectLanguageModels(ext, {{ vendor: "modelfusion" }});
+  if (!selectedMf || selectedMf.length !== 1 || selectedMf[0].id !== "modelfusion-local") {{
+    throw new Error("Test B failed: selectLanguageModels returned " + JSON.stringify(selectedMf));
+  }}
+
+  // Test C: getModelForRequest with userSelectedModelId = "copilotcli/auto" MUST ignore the session stub and return modelfusion-local!
+  const agents = new HarnessChatAgents(lm);
+  const reqModel = await agents.getModelForRequest({{ userSelectedModelId: "copilotcli/auto" }}, ext);
+  if (!reqModel || reqModel.vendor !== "modelfusion" || reqModel.id !== "modelfusion-local") {{
+    throw new Error("Test C failed: getModelForRequest returned " + JSON.stringify(reqModel));
+  }}
+
+  // Test D: $detectChatParticipant MUST catch errors and return undefined instead of crashing Ask mode!
+  agents._participantDetectionProviders.set(1, {{
+    extension: ext,
+    provider: {{
+      provideParticipantDetection: async () => {{
+        throw new Error("Simulated CAPI utility model failure");
+      }}
+    }}
+  }});
+  const detResult = await agents.$detectChatParticipant(1, {{}}, {{}}, {{ participants: [], location: 1 }}, CancellationToken.None);
+  if (detResult !== undefined) {{
+    throw new Error("Test D failed: expected undefined from $detectChatParticipant, got " + JSON.stringify(detResult));
+  }}
+
+  console.log(JSON.stringify({{ ok: true, defaultVendor: defaultModel.vendor, defaultId: defaultModel.id }}));
+}})().catch((e) => {{
+  console.error(e);
+  process.exit(1);
+}});
+"""
+    with tempfile.NamedTemporaryFile("w", suffix=".cjs", delete=False, encoding="utf-8") as tf:
+        tf.write(race_test_js)
+        temp_race_js = tf.name
+    try:
+        res = subprocess.run([node_bin, temp_race_js], capture_output=True, text=True, timeout=30)
+        assert res.returncode == 0, f"Adversarial race test failed:\nSTDOUT: {res.stdout}\nSTDERR: {res.stderr}"
+        payload = json.loads(res.stdout.strip().splitlines()[-1])
+        assert payload["ok"] is True
+        assert payload["defaultVendor"] == "modelfusion"
+        assert payload["defaultId"] == "modelfusion-local"
+    finally:
+        if os.path.exists(temp_race_js):
+            os.remove(temp_race_js)
 
 
 def test_real_provider_chat_response_capital_of_nigeria_and_why():
