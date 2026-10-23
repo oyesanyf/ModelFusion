@@ -383,12 +383,27 @@ if (Test-Path $stubsDir) {
         "@vscode_spdlog_index.js"         = "resources\app\node_modules\@vscode\spdlog\index.js"
         "@vscode_windows-mutex_index.js"  = "resources\app\node_modules\@vscode\windows-mutex\index.js"
     }
-    foreach ($stub in $stubMap.GetEnumerator()) {
-        $stubSrc = Join-Path $stubsDir $stub.Key
-        $stubDst = Join-Path $vsCodePackDir $stub.Value
-        if ((Test-Path $stubSrc) -and (Test-Path (Split-Path $stubDst -Parent))) {
-            Copy-Item $stubSrc $stubDst -Force
-            Write-Host "[OK] Applied native stub: $($stub.Value)" -ForegroundColor Green
+    $stubBaseDirs = @($vsCodePackDir)
+    $verDirsForStubs = Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' }
+    foreach ($vd in $verDirsForStubs) {
+        $stubBaseDirs += $vd.FullName
+    }
+    $localAppIde = Join-Path $env:LOCALAPPDATA "HugOS IDE"
+    if (Test-Path $localAppIde) {
+        $stubBaseDirs += $localAppIde
+        $localVerDirs = Get-ChildItem $localAppIde -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' }
+        foreach ($lvd in $localVerDirs) {
+            $stubBaseDirs += $lvd.FullName
+        }
+    }
+    foreach ($baseDir in $stubBaseDirs) {
+        foreach ($stub in $stubMap.GetEnumerator()) {
+            $stubSrc = Join-Path $stubsDir $stub.Key
+            $stubDst = Join-Path $baseDir $stub.Value
+            if ((Test-Path $stubSrc) -and (Test-Path (Split-Path $stubDst -Parent))) {
+                Copy-Item $stubSrc $stubDst -Force
+                Write-Host "[OK] Applied native stub: $stubDst" -ForegroundColor Green
+            }
         }
     }
 } else {
@@ -731,6 +746,27 @@ if (Test-Path $patchVisualCanvasScript) {
         Exit 1
     }
     Write-Host "[OK] Applied Visual Canvas patches and verified 4-way parity across extension.js" -ForegroundColor Green
+}
+
+# 4.982 Apply Language Model Availability Guard & Error Shielding patches
+Write-Host "[INFO] Applying Language Model Availability Guard & Error Shielding patches..." -ForegroundColor Yellow
+$patchLmAvailScript = Join-Path $PSScriptRoot "patch_language_model_availability.py"
+if (Test-Path $patchLmAvailScript) {
+    python $patchLmAvailScript
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] patch_language_model_availability script failed! Aborting MSI build." -ForegroundColor Red
+        Exit 1
+    }
+    Write-Host "[OK] Applied Language Model Availability Guard across extension & ExtensionHost bundles" -ForegroundColor Green
+}
+$patchErrShieldScript = Join-Path $PSScriptRoot "patch_error_shielding.py"
+if (Test-Path $patchErrShieldScript) {
+    python $patchErrShieldScript --force-validate
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] patch_error_shielding script failed! Aborting MSI build." -ForegroundColor Red
+        Exit 1
+    }
+    Write-Host "[OK] Applied Error Shielding across extension bundles" -ForegroundColor Green
 }
 
 # 4.98 Ensure 100% parity and presence across all versioned runtime directories

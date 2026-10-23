@@ -650,7 +650,7 @@ pub fn launch_hugos_browser(url: Option<&str>) -> Result<(), String> {
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            cmd.creation_flags(0x08000000 | 0x00000008); // CREATE_NO_WINDOW | DETACHED_PROCESS
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
         }
 
         cmd.spawn().map_err(|e| format!("Failed to spawn {}: {}", chrome_bin.display(), e))?;
@@ -676,4 +676,240 @@ pub fn launch_hugos_browser(url: Option<&str>) -> Result<(), String> {
 
     Ok(())
 }
+
+#[cfg(windows)]
+mod win32_focus {
+    use std::ffi::c_void;
+
+    type HWND = isize;
+    type HDESK = *mut c_void;
+    type BOOL = i32;
+    type UINT = u32;
+    type LPARAM = isize;
+    type WPARAM = usize;
+    type WNDENUMPROC = unsafe extern "system" fn(HWND, LPARAM) -> BOOL;
+
+    const SW_SHOW: i32 = 5;
+    const SW_RESTORE: i32 = 9;
+    const HWND_TOPMOST: HWND = -1;
+    const HWND_NOTOPMOST: HWND = -2;
+    const SWP_NOSIZE: UINT = 0x0001;
+    const SWP_NOMOVE: UINT = 0x0002;
+    const SWP_SHOWWINDOW: UINT = 0x0040;
+    const WM_CLOSE: UINT = 0x0010;
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn OpenDesktopW(lpszDesktop: *const u16, dwFlags: u32, fInherit: BOOL, dwDesiredAccess: u32) -> HDESK;
+        fn SetThreadDesktop(hDesktop: HDESK) -> BOOL;
+        fn EnumDesktopWindows(hDesktop: HDESK, lpfn: WNDENUMPROC, lParam: LPARAM) -> BOOL;
+        fn EnumWindows(lpEnumFunc: WNDENUMPROC, lParam: LPARAM) -> BOOL;
+        fn IsWindowVisible(hWnd: HWND) -> BOOL;
+        fn IsIconic(hWnd: HWND) -> BOOL;
+        fn GetWindowTextLengthW(hWnd: HWND) -> i32;
+        fn GetWindowTextW(hWnd: HWND, lpString: *mut u16, nMaxCount: i32) -> i32;
+        fn ShowWindow(hWnd: HWND, nCmdShow: i32) -> BOOL;
+        fn SetWindowPos(hWnd: HWND, hWndInsertAfter: HWND, X: i32, Y: i32, cx: i32, cy: i32, uFlags: UINT) -> BOOL;
+        fn SetForegroundWindow(hWnd: HWND) -> BOOL;
+        fn BringWindowToTop(hWnd: HWND) -> BOOL;
+        fn SwitchToThisWindow(hWnd: HWND, fAltTab: BOOL);
+        fn PostMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL;
+    }
+
+    unsafe extern "system" fn enum_cb(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let vis = IsWindowVisible(hwnd) != 0;
+        let iconic = IsIconic(hwnd) != 0;
+        if vis || iconic {
+            let len = GetWindowTextLengthW(hwnd);
+            if len > 0 {
+                let mut buf = vec![0u16; (len + 1) as usize];
+                let copied = GetWindowTextW(hwnd, buf.as_mut_ptr(), len + 1);
+                if copied > 0 {
+                    let title = String::from_utf16_lossy(&buf[..copied as usize]);
+                    let list = &mut *(lparam as *mut Vec<(HWND, bool, String)>);
+                    list.push((hwnd, iconic, title));
+                }
+            }
+        }
+        1
+    }
+
+    pub fn enumerate_windows() -> Vec<(HWND, bool, String)> {
+        let mut out: Vec<(HWND, bool, String)> = Vec::new();
+        unsafe {
+            let default_name: [u16; 8] = [b'D' as u16, b'e' as u16, b'f' as u16, b'a' as u16, b'u' as u16, b'l' as u16, b't' as u16, 0];
+            let hdesk = OpenDesktopW(default_name.as_ptr(), 0, 0, 0x01FF);
+            if !hdesk.is_null() {
+                let _ = SetThreadDesktop(hdesk);
+                let _ = EnumDesktopWindows(hdesk, enum_cb, &mut out as *mut _ as LPARAM);
+            }
+            if out.is_empty() {
+                let _ = EnumWindows(enum_cb, &mut out as *mut _ as LPARAM);
+            }
+        }
+        out
+    }
+
+    pub fn promote_topmost(hwnd: HWND, iconic: bool) {
+        unsafe {
+            if iconic {
+                let _ = ShowWindow(hwnd, SW_RESTORE);
+            } else {
+                let _ = ShowWindow(hwnd, SW_SHOW);
+            }
+            let _ = SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+            let _ = BringWindowToTop(hwnd);
+            SwitchToThisWindow(hwnd, 1);
+            let _ = SetForegroundWindow(hwnd);
+        }
+    }
+
+    pub fn settle_foreground_notopmost(hwnd: HWND) {
+        unsafe {
+            let _ = BringWindowToTop(hwnd);
+            SwitchToThisWindow(hwnd, 1);
+            let _ = SetForegroundWindow(hwnd);
+            let _ = SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+            let _ = SetForegroundWindow(hwnd);
+        }
+    }
+
+    pub fn close_window(hwnd: HWND) {
+        unsafe {
+            let _ = PostMessageW(hwnd, WM_CLOSE, 0, 0);
+        }
+    }
+}
+
+pub fn check_browser_window_exists() -> bool {
+    #[cfg(windows)]
+    {
+        for (_, _, title) in win32_focus::enumerate_windows() {
+            if title.contains("HugOS Browser | ModelFusion")
+                || (title.contains("HugOS Browser") && !title.contains("Starting HugOS Browser"))
+            {
+                return true;
+            }
+        }
+        false
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
+pub fn focus_browser_and_close_splash(dedup: bool) {
+    #[cfg(windows)]
+    {
+        for step in 0..85 {
+            let wins = win32_focus::enumerate_windows();
+            let splash_hwnds: Vec<(isize, bool, String)> = wins
+                .iter()
+                .filter(|(_, _, t)| t.contains("Starting HugOS Browser"))
+                .cloned()
+                .collect();
+            let browser_hwnds: Vec<(isize, bool, String)> = wins
+                .iter()
+                .filter(|(_, _, t)| {
+                    t.contains("HugOS Browser | ModelFusion")
+                        || (t.contains("HugOS Browser") && !t.contains("Starting HugOS Browser"))
+                        || (t.contains("HugOS") && t.contains("ui/index.html"))
+                })
+                .cloned()
+                .collect();
+
+            if step < 18 {
+                if let Some((s_hwnd, s_iconic, _)) = splash_hwnds.first() {
+                    win32_focus::promote_topmost(*s_hwnd, *s_iconic);
+                }
+            } else if !browser_hwnds.is_empty() {
+                let fully_titled = browser_hwnds.iter().any(|(_, _, t)| t.contains("HugOS Browser | ModelFusion"));
+                if fully_titled || step >= 32 {
+                    let target = browser_hwnds
+                        .iter()
+                        .find(|(_, _, t)| t.contains("HugOS Browser | ModelFusion"))
+                        .unwrap_or(&browser_hwnds[0]);
+
+                    win32_focus::promote_topmost(target.0, target.1);
+
+                    for (s_hwnd, _, _) in &splash_hwnds {
+                        win32_focus::close_window(*s_hwnd);
+                    }
+
+                    if dedup && browser_hwnds.len() > 1 {
+                        for (b_hwnd, _, _) in &browser_hwnds {
+                            if *b_hwnd != target.0 {
+                                win32_focus::close_window(*b_hwnd);
+                            }
+                        }
+                    }
+
+                    std::thread::sleep(std::time::Duration::from_millis(220));
+                    win32_focus::promote_topmost(target.0, false);
+                    std::thread::sleep(std::time::Duration::from_millis(60));
+                    win32_focus::settle_foreground_notopmost(target.0);
+                    return;
+                } else if let Some((s_hwnd, s_iconic, _)) = splash_hwnds.first() {
+                    win32_focus::promote_topmost(*s_hwnd, *s_iconic);
+                }
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(45));
+        }
+    }
+}
+
+pub fn focus_ide_and_close_splash() {
+    #[cfg(windows)]
+    {
+        for step in 0..95 {
+            let wins = win32_focus::enumerate_windows();
+            let splash_hwnds: Vec<(isize, bool, String)> = wins
+                .iter()
+                .filter(|(_, _, t)| t.contains("Starting HugOS IDE"))
+                .cloned()
+                .collect();
+            let ide_hwnds: Vec<(isize, bool, String)> = wins
+                .iter()
+                .filter(|(_, _, t)| {
+                    (t.ends_with("HugOS IDE") || t.contains("- HugOS IDE"))
+                        && !t.contains("Starting HugOS IDE")
+                })
+                .cloned()
+                .collect();
+
+            if step < 22 {
+                if let Some((s_hwnd, s_iconic, _)) = splash_hwnds.first() {
+                    win32_focus::promote_topmost(*s_hwnd, *s_iconic);
+                }
+            } else if !ide_hwnds.is_empty() {
+                let fully_loaded = ide_hwnds.iter().any(|(_, _, t)| t.contains("- HugOS IDE"));
+                if fully_loaded || step >= 42 {
+                    let target = ide_hwnds
+                        .iter()
+                        .find(|(_, _, t)| t.contains("- HugOS IDE"))
+                        .unwrap_or(&ide_hwnds[0]);
+
+                    win32_focus::promote_topmost(target.0, target.1);
+
+                    for (s_hwnd, _, _) in &splash_hwnds {
+                        win32_focus::close_window(*s_hwnd);
+                    }
+
+                    std::thread::sleep(std::time::Duration::from_millis(240));
+                    win32_focus::promote_topmost(target.0, false);
+                    std::thread::sleep(std::time::Duration::from_millis(60));
+                    win32_focus::settle_foreground_notopmost(target.0);
+                    return;
+                } else if let Some((s_hwnd, s_iconic, _)) = splash_hwnds.first() {
+                    win32_focus::promote_topmost(*s_hwnd, *s_iconic);
+                }
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(45));
+        }
+    }
+}
+
 

@@ -244,6 +244,43 @@ if (Test-Path $wdsiScript) {
     }
 }
 
+# 7.5 Sync updated launcher scripts, HTA splash, and zero-console shortcuts to %LOCALAPPDATA%\HugOS Browser
+$localBrowserRoot = Join-Path $env:LOCALAPPDATA "HugOS Browser"
+$localBrowserChromium = Join-Path $localBrowserRoot "Chromium-win32-x64"
+$srcBrowserChromium = Join-Path $browserDir "Chromium-win32-x64"
+if (Test-Path $localBrowserChromium) {
+    foreach ($launcherFile in @("hugos-browser.vbs", "hugos-browser.bat", "hugos-splash.hta", "run_hidden.vbs", "hugos_browser.ico")) {
+        $srcLf = Join-Path $srcBrowserChromium $launcherFile
+        $dstLf = Join-Path $localBrowserChromium $launcherFile
+        if (Test-Path $srcLf) {
+            Copy-Item -Path $srcLf -Destination $dstLf -Force -ErrorAction SilentlyContinue
+        }
+    }
+    try {
+        $wsh = New-Object -ComObject WScript.Shell
+        $wscriptExe = Join-Path $env:SystemRoot "System32\wscript.exe"
+        $vbsTarget = Join-Path $localBrowserChromium "hugos-browser.vbs"
+        $icoTarget = Join-Path $localBrowserChromium "hugos_browser.ico"
+        $lnkPaths = @(
+            (Join-Path ([Environment]::GetFolderPath("Desktop")) "HugOS Browser.lnk"),
+            (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\HugOS Browser\HugOS Browser.lnk")
+        )
+        foreach ($lp in $lnkPaths) {
+            $lpDir = Split-Path -Parent $lp
+            if (-not (Test-Path $lpDir)) { New-Item -ItemType Directory -Force -Path $lpDir | Out-Null }
+            $sc = $wsh.CreateShortcut($lp)
+            $sc.TargetPath = $wscriptExe
+            $sc.Arguments = "//B //nologo `"$vbsTarget`""
+            $sc.WorkingDirectory = $localBrowserChromium
+            if (Test-Path $icoTarget) { $sc.IconLocation = "$icoTarget,0" }
+            $sc.Save()
+        }
+        Write-Host "[OK] Synced zero-console HugOS Browser launcher and shortcuts to $localBrowserChromium" -ForegroundColor Green
+    } catch {
+        Write-Host "[WARN] Shortcut update warning: $_" -ForegroundColor Yellow
+    }
+}
+
 # 8. Ensure ModelFusion Master Server daemon is online on port 5000
 Write-Host "[INFO] Verifying ModelFusion Master Server daemon on port 5000..." -ForegroundColor Cyan
 $serverRunning = $false

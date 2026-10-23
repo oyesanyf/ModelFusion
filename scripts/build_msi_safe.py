@@ -174,9 +174,9 @@ def main():
         print("[INFO] Deploying high-res multi-layer icons across all targets...")
         subprocess.run([sys.executable, deploy_script], check=True)
 
-    # 3. Restore official Microsoft-signed binaries and runtime
+    # 3. Restore official Microsoft-signed binaries and runtime (only needed for IDE build)
     restore_script = os.path.join(REPO_ROOT, "IDE", "restore_microsoft_signatures.py")
-    if os.path.exists(restore_script):
+    if target in ("ide", "all") and os.path.exists(restore_script):
         print("[INFO] Restoring official Microsoft-signed VSCode binaries & commit runtime...")
         subprocess.run([sys.executable, restore_script], check=True)
 

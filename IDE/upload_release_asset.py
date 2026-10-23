@@ -81,8 +81,11 @@ def get_or_create_release(tag_name, release_name, token, make_latest=False):
         f"Official Release for the Three Pillars: **Master CLI**, **HugOS IDE**, and **HugOS Browser**.\n\n"
         "### 📦 Release Artifacts:\n"
         "1. **`cli.exe`** (ModelFusion Master CLI - 100% Self-Contained Static CRT)\n"
-        "2. **`HugOS_Browser.msi`** (HugOS Browser - Digitally Signed Installer)\n"
-        "3. **`HugOS.msi`** (HugOS IDE - Digitally Signed Installer)\n"
+        "2. **`clibrowser.exe`** (HugOS Browser Dedicated CLI)\n"
+        "3. **`cliide.exe`** (HugOS IDE Dedicated CLI)\n"
+        "4. **`climcp.exe`** (HugOS MCP Server Dedicated CLI)\n"
+        "5. **`HugOS_Browser.msi`** (HugOS Browser - Digitally Signed Installer)\n"
+        "6. **`HugOS.msi`** (HugOS IDE - Digitally Signed Installer)\n"
     )
     try:
         rel = api_request(f"{API_URL}/releases/tags/{tag_name}", token=token)
@@ -296,8 +299,21 @@ def main():
         print(f"[ERROR] Browser MSI not found at: {browser_msi_path}")
         sys.exit(1)
 
+    clibrowser_path = os.path.join(os.path.dirname(script_dir), "browser", "bin", "clibrowser.exe")
+    if not os.path.isfile(clibrowser_path):
+        clibrowser_path = os.path.join(os.path.dirname(script_dir), "target", "release", "clibrowser.exe")
+
+    cliide_path = os.path.join(script_dir, "bin", "cliide.exe")
+
+    climcp_path = os.path.join(os.path.dirname(script_dir), "target", "release", "climcp.exe")
+    if not os.path.isfile(climcp_path):
+        climcp_path = os.path.join(os.path.dirname(script_dir), "mcp", "bin", "climcp.exe")
+
     artifacts = [
         (cli_path, "cli.exe"),
+        (clibrowser_path, "clibrowser.exe"),
+        (cliide_path, "cliide.exe"),
+        (climcp_path, "climcp.exe"),
         (msi_path, "HugOS.msi"),
         (browser_msi_path, "HugOS_Browser.msi"),
     ]

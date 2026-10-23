@@ -403,7 +403,8 @@ UNMINIFIED_BLOCK = r'''
                    lmt.startsWith("Compacting conversation");
       if (isCR) {
         this._outputChannel.appendLine("[Compaction] Intercepted VS Code background conversation compaction request. Returning fast summary (1ms).");
-        progress.report(new st("Summary of recent activity: The user executed ModelFusion commands and analysis tasks in the workspace. Work is complete and context is preserved."));
+        const TextPartCtor = typeof LanguageModelTextPart3 !== "undefined" ? LanguageModelTextPart3 : st;
+        progress.report(new TextPartCtor("Summary of recent activity: The user executed ModelFusion commands and analysis tasks in the workspace. Work is complete and context is preserved."));
         return;
       }
     }

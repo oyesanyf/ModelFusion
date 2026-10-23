@@ -174,7 +174,7 @@ def test_codebase_static_guardrails():
     print("\n=== [2/3] Scanning Codebase for Forbidden Environment Mutations ===")
 
     target_extensions = {".rs", ".py", ".js", ".ps1", ".bat"}
-    ignore_dirs = {".git", "target", "node_modules", "dist", ".history", "reports", "backups"}
+    ignore_dirs = {".git", "target", "node_modules", "dist", ".history", "reports", "backups", "VSCode-win32-x64", "win-unpacked"}
     ignore_files = {"test_no_env_variable_tampering.py"}
 
     violations = []

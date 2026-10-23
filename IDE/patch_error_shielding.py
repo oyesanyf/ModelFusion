@@ -283,8 +283,8 @@ def patch_extension_js(file_path, node_path, force_validate=False):
                 return False, False
         return True, False
 
-def generate_methods_block(vsc, cfg, path_mod, fs_mod, os_mod, lmt):
-    """Generate clean, robust, and fully shielded implementations of _runDatabaseUpdate and _spawnCliFallback."""
+def generate_run_database_update_block(vsc, cfg, path_mod, fs_mod, os_mod):
+    """Generate clean, robust, and fully shielded implementation of _runDatabaseUpdate."""
     return f"""      async _runDatabaseUpdate() {{
         if (this._isUpdateRunning) {{
           this._logService.info("ModelFusionProvider: Database update is already running. Skipping this tick.");
@@ -373,8 +373,11 @@ def generate_methods_block(vsc, cfg, path_mod, fs_mod, os_mod, lmt):
           this._logService.error(`ModelFusionProvider: Error in database update watcher: ${{e4.message}}`);
           this._outputChannel.appendLine(`[Watcher] [ERROR] Error in database update watcher: ${{e4.message}}`);
         }}
-      }}
-      _spawnCliFallback(promptText, budget, selectionStrategy, fusionMode, fusionModels, openvino, gpu, cpu, fusion, progress, token) {{
+      }}"""
+
+def generate_spawn_cli_fallback_block(vsc, cfg, path_mod, fs_mod, os_mod, lmt):
+    """Generate clean, robust, and fully shielded implementation of _spawnCliFallback."""
+    return f"""      _spawnCliFallback(promptText, budget, selectionStrategy, fusionMode, fusionModels, openvino, gpu, cpu, fusion, progress, token) {{
         const cliPath = this._findCliBinary();
         const spawnCwd = {path_mod}.dirname({path_mod}.dirname(cliPath));
         const {cfg} = {vsc}.workspace.getConfiguration("hugos.modelfusion");
@@ -566,12 +569,10 @@ def patch_test_bundle_js(file_path, node_path, force_validate=False):
     else:
         print("  [WARN] Could not match startServer error handler pattern.")
 
-    # 4. Shield Watcher (_runDatabaseUpdate) and CLI Fallback (_spawnCliFallback)
+    # 4. Shield Watcher (_runDatabaseUpdate) and CLI Fallback (_spawnCliFallback) SEPARATELY
+    #    NEVER slice directly from _runDatabaseUpdate to provideTokenCount as that deletes getAllModels.._sendOrchestrationRequest!
     idx1 = content.find("async _runDatabaseUpdate()")
-    idx2 = content.find("async provideTokenCount(", idx1) if idx1 != -1 else -1
-
-    if idx1 != -1 and idx2 != -1:
-        # Detect environment variable names from context surrounding _runDatabaseUpdate
+    if idx1 != -1:
         window_ctx = content[max(0, idx1 - 2000):idx1 + 500]
         if "vscode15" in window_ctx:
             vsc = "vscode15"
@@ -588,17 +589,41 @@ def patch_test_bundle_js(file_path, node_path, force_validate=False):
             os_mod = "os2"
             lmt = "LanguageModelTextPart3"
 
-        new_block = generate_methods_block(vsc, cfg, path_mod, fs_mod, os_mod, lmt).strip() + "\n      "
-        existing_block = content[idx1:idx2]
+        # Find end of _runDatabaseUpdate (next method is provideLanguageModelChatInformation, getAllModels, or _spawnCliFallback within the same class)
+        idx1_end = -1
+        for next_marker in ("async provideLanguageModelChatInformation(", "async getAllModels(", "_spawnCliFallback("):
+            cand = content.find(next_marker, idx1)
+            if cand != -1 and (cand - idx1) < 5000 and (idx1_end == -1 or cand < idx1_end):
+                idx1_end = cand
 
-        if existing_block.strip() != new_block.strip():
-            content = content[:idx1] + new_block + content[idx2:]
-            changed = True
-            print(f"  [APPLIED] Shielded _runDatabaseUpdate and _spawnCliFallback ({vsc}, {cfg}, {path_mod}, {fs_mod}, {os_mod}).")
+        if idx1_end != -1:
+            new_update_block = generate_run_database_update_block(vsc, cfg, path_mod, fs_mod, os_mod).strip() + "\n      "
+            existing_update_block = content[idx1:idx1_end]
+            if existing_update_block.strip() != new_update_block.strip():
+                content = content[:idx1] + new_update_block + content[idx1_end:]
+                changed = True
+                print(f"  [APPLIED] Shielded _runDatabaseUpdate ({vsc}, {cfg}, {path_mod}, {fs_mod}, {os_mod}).")
+            else:
+                print("  [OK] _runDatabaseUpdate already shielded.")
         else:
-            print("  [OK] _runDatabaseUpdate and _spawnCliFallback already shielded.")
+            print("  [WARN] Could not locate end boundary for _runDatabaseUpdate.")
+
+        # Now patch _spawnCliFallback separately
+        idx_fb = content.find("_spawnCliFallback(promptText, budget,", idx1)
+        idx_fb_end = content.find("async provideTokenCount(", idx_fb) if idx_fb != -1 else -1
+        if idx_fb != -1 and idx_fb_end != -1:
+            new_fb_block = generate_spawn_cli_fallback_block(vsc, cfg, path_mod, fs_mod, os_mod, lmt).strip() + "\n      "
+            existing_fb_block = content[idx_fb:idx_fb_end]
+            if existing_fb_block.strip() != new_fb_block.strip():
+                content = content[:idx_fb] + new_fb_block + content[idx_fb_end:]
+                changed = True
+                print(f"  [APPLIED] Shielded _spawnCliFallback ({vsc}, {cfg}, {path_mod}, {fs_mod}, {os_mod}).")
+            else:
+                print("  [OK] _spawnCliFallback already shielded.")
+        else:
+            print("  [WARN] Could not locate boundaries for _spawnCliFallback.")
     else:
-        print("  [WARN] Could not locate boundaries for _runDatabaseUpdate and _spawnCliFallback.")
+        print("  [WARN] Could not locate _runDatabaseUpdate.")
 
     if changed:
         safe_write_file(file_path, content.encode("utf-8"))
