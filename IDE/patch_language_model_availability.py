@@ -187,6 +187,100 @@ def patch_ext_host_process(file_path, node_path):
         return True, False
 
 
+def patch_provider_bundle(file_path, node_path):
+    if not os.path.isfile(file_path):
+        return False
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    changed = False
+
+    # 1. Prevent unhandled rejection on inflight.finally(...) derived Promise in Node v20+
+    old_inflight = """            inflight.finally(() => {
+              this._inflightMap.delete(promptText);
+            });"""
+    new_inflight = """            inflight.finally(() => {
+              this._inflightMap.delete(promptText);
+            }).catch(() => {});"""
+    if old_inflight in content:
+        content = content.replace(old_inflight, new_inflight, 1)
+        changed = True
+        print(f"  [APPLIED] Attached .catch(() => {{}}) to inflight.finally in {file_path}")
+
+    # 2. Upgrade direct Ollama :11434 fallback in _sendOrchestrationRequest to check /api/ps warm models first
+    old_ollama_tags = r"""            const tagsReq = http.request({
+              hostname: "127.0.0.1",
+              port: 11434,
+              path: "/api/tags",
+              method: "GET",
+              timeout: 2000
+            }, (tRes) => {
+              let tData = "";
+              tRes.on("data", (c) => { tData += c; });
+              tRes.on("end", () => {
+                let picked = model && model !== "modelfusion-local" ? model : "";
+                if (!picked) {
+                  try {
+                    const tj = JSON.parse(tData);
+                    const avail = (tj.models || []).map((m) => m.name).filter(Boolean);
+                    for (const pref of ["qwen2.5:32b", "qwen2.5:14b", "qwen2.5:7b", "qwen2.5:3b", "qwen2.5:1.5b"]) {
+                      if (avail.includes(pref)) { picked = pref; break; }
+                    }
+                    if (!picked && avail.length > 0) picked = avail[0];
+                  } catch (_) {}
+                }
+                tryOllamaDirect(picked || "qwen2.5:1.5b");
+              });
+            });
+            tagsReq.on("error", () => reject(e4));
+            tagsReq.on("timeout", () => { tagsReq.destroy(); reject(e4); });
+            tagsReq.end();"""
+
+    new_ollama_tags = r"""            const psReq = http.request({
+              hostname: "127.0.0.1",
+              port: 11434,
+              path: "/api/ps",
+              method: "GET",
+              timeout: 1500
+            }, (pRes) => {
+              let pData = "";
+              pRes.on("data", (c) => { pData += c; });
+              pRes.on("end", () => {
+                try {
+                  const pj = JSON.parse(pData);
+                  const warm = (pj.models || []).map((m) => m.name).filter((n) => n && !/embed|nomic|bge|moondream|llava/i.test(n));
+                  if (warm.length > 0) {
+                    tryOllamaDirect(warm[0]);
+                    return;
+                  }
+                } catch (_) {}
+                tryOllamaDirect(model && model !== "modelfusion-local" ? model : "qwen2.5:1.5b");
+              });
+            });
+            psReq.on("error", () => tryOllamaDirect("qwen2.5:1.5b"));
+            psReq.on("timeout", () => { psReq.destroy(); tryOllamaDirect("qwen2.5:1.5b"); });
+            psReq.end();"""
+
+    if old_ollama_tags in content:
+        content = content.replace(old_ollama_tags, new_ollama_tags, 1)
+        changed = True
+        print(f"  [APPLIED] Upgraded direct Ollama :11434 fallback to use warm /api/ps model in {file_path}")
+
+    if changed:
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+    idx_p = content.find("ModelFusionLMProvider = class extends AbstractLanguageModelChatProvider")
+    idx_e = content.find("async provideTokenCount(", idx_p)
+    cls_slice = content[idx_p:idx_e] if idx_p != -1 and idx_e != -1 else ""
+    for req_m in ("async getAllModels(", "async provideLanguageModelChatResponse(", "_sendOrchestrationRequest("):
+        if req_m not in cls_slice:
+            print(f"[FATAL] Missing {req_m} in ModelFusionLMProvider of {file_path}!")
+            return False
+    return validate_js_syntax(file_path, node_path)
+
+
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     node_path = find_node_executable()
@@ -194,20 +288,11 @@ def main():
     local_app_data = os.environ.get("LOCALAPPDATA", "")
     hugos_installed = os.path.join(local_app_data, "HugOS IDE") if local_app_data else ""
 
-    # 1. Sync authoritative dist/{extension.js,test-extension.js,sanity-test-extension.js} to all runtime dirs
+    # 1. Harden and sync authoritative dist/{extension.js,test-extension.js,sanity-test-extension.js} to all runtime dirs
     src_dist = os.path.join(script_dir, "vscode", "extensions", "copilot", "dist")
     for fname in ("extension.js", "test-extension.js", "sanity-test-extension.js"):
         fpath = os.path.join(src_dist, fname)
-        with open(fpath, "r", encoding="utf-8") as f:
-            c = f.read()
-        idx_p = c.find("ModelFusionLMProvider = class extends AbstractLanguageModelChatProvider")
-        idx_e = c.find("async provideTokenCount(", idx_p)
-        cls_slice = c[idx_p:idx_e] if idx_p != -1 and idx_e != -1 else ""
-        for req_m in ("async getAllModels(", "async provideLanguageModelChatResponse(", "_sendOrchestrationRequest("):
-            if req_m not in cls_slice:
-                print(f"[FATAL] Missing {req_m} in ModelFusionLMProvider of {fpath}!")
-                sys.exit(1)
-        if not validate_js_syntax(fpath, node_path):
+        if not patch_provider_bundle(fpath, node_path):
             sys.exit(1)
 
     base_dirs = [pack_dir]
