@@ -5,7 +5,8 @@ pub mod fusion_arbiter;
 pub use fusion_arbiter::{ArbitrationResult, CandidateSolution, FusionArbiter};
 pub mod browser_fusion;
 pub use browser_fusion::{
-    find_browser_launcher_bat, launch_hugos_browser, BrowserActionProposal,
+    check_browser_window_exists, find_browser_launcher_bat, focus_browser_and_close_splash,
+    focus_ide_and_close_splash, launch_hugos_browser, BrowserActionProposal,
     BrowserArbitrationDecision, BrowserFusionArbiter, ConsensusType, SpecialistType,
 };
 pub mod mcp_catalog;
@@ -1067,30 +1068,29 @@ pub async fn resolve_dynamic_ollama_model(
 
 
 /// Dynamically determine the optimal context window (num_ctx) for the chosen Ollama model.
-/// Balances context size against the physical RAM constraints to prevent OOM/slowdowns.
+/// Balances context size against runtime available RAM constraints to prevent OOM/slowdowns.
 fn select_context_window_for_model(model: &str) -> u32 {
     let lower_model = model.to_lowercase();
     let mut sys = sysinfo::System::new();
     sys.refresh_memory();
-    let ram_gb = sys.total_memory() / 1_073_741_824;
+    let avail_ram_gb = sys.available_memory() / 1_073_741_824;
 
     if lower_model.contains("0.5b") || lower_model.contains("1.5b") {
-        // Very small models can easily handle larger context with low overhead
-        16384
+        if avail_ram_gb >= 12 { 8192 } else { 4096 }
     } else if lower_model.contains("3b") || lower_model.contains("4b") {
-        if ram_gb >= 16 { 16384 } else { 8192 }
+        if avail_ram_gb >= 16 { 8192 } else { 4096 }
     } else if lower_model.contains("7b") || lower_model.contains("8b") || lower_model.contains("llama3") {
         // Large models need substantial memory for KV cache at high contexts
-        if ram_gb >= 32 {
+        if avail_ram_gb >= 32 {
             16384
-        } else if ram_gb >= 16 {
+        } else if avail_ram_gb >= 16 {
             8192
         } else {
             4096
         }
     } else {
         // Safe default fallback for custom models
-        if ram_gb >= 16 { 8192 } else { 4096 }
+        if avail_ram_gb >= 16 { 8192 } else { 4096 }
     }
 }
 
@@ -2508,13 +2508,12 @@ fn spawn_rest_rl_daemon() -> Result<(), String> {
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
-        const DETACHED_PROCESS: u32 = 0x00000008;
         const IDLE_PRIORITY_CLASS: u32 = 0x00000040;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         let mut cmd = std::process::Command::new(&py_cmd);
         cmd.arg(&daemon_script)
             .current_dir(&rl_dir)
-            .creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | IDLE_PRIORITY_CLASS | CREATE_NO_WINDOW)
+            .creation_flags(CREATE_NEW_PROCESS_GROUP | IDLE_PRIORITY_CLASS | CREATE_NO_WINDOW)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());
@@ -4765,8 +4764,10 @@ pub fn run_flint_coding_fusion_pipeline(
     ctx_tokens: usize,
     task_opt: Option<&str>,
 ) -> serde_json::Value {
-    let flint_eval = model_selection::memory::SystemMemory::detect_live().assess_flint_for_task(true, true);
     let task_desc = task_opt.unwrap_or("Autonomous Coding & Reasoning Fusion Task").to_string();
+    let is_fusion = !mode.eq_ignore_ascii_case("single");
+    let is_coding = modelfusion_core::fusion_engine::is_coding_task_for_flint("", &task_desc);
+    let flint_eval = model_selection::memory::SystemMemory::detect_live().assess_flint_for_task(is_fusion, is_coding);
 
     let subtasks = serde_json::json!([
         {
@@ -4796,7 +4797,13 @@ pub fn run_flint_coding_fusion_pipeline(
     ]);
 
     serde_json::json!({
-        "status": if flint_eval.resources_available || flint_eval.compact_offload_available { "ok" } else { "resource_gated" },
+        "status": if !flint_eval.flint_activated_in_fusion {
+            if !is_coding { "excluded_non_coding_task" } else if !is_fusion { "excluded_single_model" } else { "resource_gated" }
+        } else if flint_eval.resources_available || flint_eval.compact_offload_available {
+            "ok"
+        } else {
+            "resource_gated"
+        },
         "model": "RecursiveSI/flint",
         "model_id": "RecursiveSI/flint",
         "ollama_tag": "flint:latest",
@@ -6336,6 +6343,18 @@ pub fn is_ide_binary() -> bool {
 fn main() -> Result<()> {
     // Parse arguments on the main thread first, before starting runtime or semaphore
     let raw_args: Vec<String> = std::env::args().collect();
+    if raw_args.iter().any(|a| a == "--check-browser-window") {
+        std::process::exit(if check_browser_window_exists() { 0 } else { 1 });
+    }
+    if raw_args.iter().any(|a| a == "--focus-browser") {
+        let dedup = !raw_args.iter().any(|a| a == "--no-dedup");
+        focus_browser_and_close_splash(dedup);
+        return Ok(());
+    }
+    if raw_args.iter().any(|a| a == "--focus-ide") {
+        focus_ide_and_close_splash();
+        return Ok(());
+    }
     if is_ide_binary() {
         let is_job_query = raw_args.iter().any(|arg| {
             let lower = arg.to_lowercase();
@@ -6366,8 +6385,8 @@ fn main() -> Result<()> {
             #[cfg(windows)]
             {
                 use std::os::windows::process::CommandExt;
-                // DETACHED_PROCESS = 0x00000008, CREATE_NO_WINDOW = 0x08000000
-                cmd.creation_flags(0x00000008 | 0x08000000);
+                // CREATE_NO_WINDOW = 0x08000000
+                cmd.creation_flags(0x08000000);
             }
             if let Some(ref folder) = args.folder {
                 cmd.arg(folder);
@@ -6751,7 +6770,13 @@ async fn run(args: Args) -> Result<()> {
 
     // Auto-start Ollama and background FFmpeg check
     if args.prompt.is_some() || args.query.is_some() || args.server || args.mcp || args.browser || args.browser_task.is_some() || args.browser_extract.is_some() || args.ensure_ollama || args.humanize.is_some() || args.translate.is_some() || args.computer_use.is_some() {
-        let _ = model_selection::memory::ensure_ollama_running();
+        if args.server || args.browser || args.mcp {
+            std::thread::spawn(|| {
+                let _ = model_selection::memory::ensure_ollama_running();
+            });
+        } else {
+            let _ = model_selection::memory::ensure_ollama_running();
+        }
         std::thread::spawn(|| {
             let _ = model_selection::memory::ensure_ffmpeg_available();
         });
@@ -12801,11 +12826,13 @@ async fn ensure_server_running(port: u16) {
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            const DETACHED_PROCESS: u32 = 0x00000008;
             const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
             const CREATE_NO_WINDOW: u32 = 0x08000000;
-            cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
+            cmd.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
         }
+        cmd.stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
         match cmd.spawn() {
             Ok(_) => {
                 for _ in 0..15 {
@@ -13250,7 +13277,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                 }
                 _ => {
                     consecutive_failures += 1;
-                    if consecutive_failures >= 1 {
+                    if consecutive_failures >= 3 {
                         eprintln!("[SERVER WATCHDOG] ⚠️ Ollama engine unresponsive at {} (check {}). Auto-waking Ollama daemon...", tags_url, consecutive_failures);
                         let _ = tokio::task::spawn_blocking(model_selection::memory::ensure_ollama_running).await;
                     }
@@ -20426,10 +20453,14 @@ sequenceDiagram
                                             let estimated_tokens = accumulated_content.len() / 4;
                                             let has_remaining_budget = estimated_tokens < (target_tokens * 85 / 100);
                                             let substantial = turn_text.trim().len() > 120;
+                                            let explicit_long_loop = user_msg.to_lowercase().contains("agentic-loop")
+                                                || user_msg.to_lowercase().contains("exhaustive")
+                                                || user_msg.to_lowercase().contains("complete book")
+                                                || user_msg.to_lowercase().contains("multi-part");
                                             let is_apology = turn_text.to_lowercase().contains("i cannot continue without more details")
                                                 || turn_text.to_lowercase().contains("i am sorry, but i can't provide")
                                                 || turn_text.to_lowercase().contains("i'm sorry, but i can't provide");
-                                            let should_continue = (done_reason == "length" || unclosed || (has_remaining_budget && substantial)) && !is_apology;
+                                            let should_continue = (done_reason == "length" || unclosed || (explicit_long_loop && has_remaining_budget && substantial)) && !is_apology;
 
                                             if !should_continue {
                                                 break;

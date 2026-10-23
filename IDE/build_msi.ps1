@@ -748,6 +748,27 @@ if (Test-Path $patchVisualCanvasScript) {
     Write-Host "[OK] Applied Visual Canvas patches and verified 4-way parity across extension.js" -ForegroundColor Green
 }
 
+# 4.982 Apply Language Model Availability Guard & Error Shielding patches
+Write-Host "[INFO] Applying Language Model Availability Guard & Error Shielding patches..." -ForegroundColor Yellow
+$patchLmAvailScript = Join-Path $PSScriptRoot "patch_language_model_availability.py"
+if (Test-Path $patchLmAvailScript) {
+    python $patchLmAvailScript
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] patch_language_model_availability script failed! Aborting MSI build." -ForegroundColor Red
+        Exit 1
+    }
+    Write-Host "[OK] Applied Language Model Availability Guard across extension & ExtensionHost bundles" -ForegroundColor Green
+}
+$patchErrShieldScript = Join-Path $PSScriptRoot "patch_error_shielding.py"
+if (Test-Path $patchErrShieldScript) {
+    python $patchErrShieldScript --force-validate
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] patch_error_shielding script failed! Aborting MSI build." -ForegroundColor Red
+        Exit 1
+    }
+    Write-Host "[OK] Applied Error Shielding across extension bundles" -ForegroundColor Green
+}
+
 # 4.98 Ensure 100% parity and presence across all versioned runtime directories
 Write-Host "[INFO] Synchronizing all configuration, settings, extensions, and ReST-RL to versioned runtime directories..." -ForegroundColor Yellow
 $versionedDirs = @(Get-ChildItem $vsCodePackDir -Directory | Where-Object { $_.Name -match '^[0-9a-f]{7,40}$' })

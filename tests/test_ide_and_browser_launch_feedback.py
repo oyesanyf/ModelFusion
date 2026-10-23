@@ -36,7 +36,9 @@ class TestIdeAndBrowserLaunchFeedback(unittest.TestCase):
             with open(path, "r", encoding="utf-8") as f:
                 content = f.read()
             self.assertIn("globalThis.__hugosSplashWin", content, f"Missing instant splash window in {path}")
+            self.assertIn("globalThis.__hugosSplashStart", content, f"Missing splash timer in {path}")
             self.assertIn("Starting HugOS IDE...", content, f"Missing splash title in {path}")
+            self.assertIn('setAlwaysOnTop(true, "screen-saver")', content, f"Missing foreground promotion in {path}")
             self.assertNotIn(
                 "if (!app14.requestSingleInstanceLock()) {\n          app14.quit();\n          return;\n        }",
                 content,
@@ -44,7 +46,7 @@ class TestIdeAndBrowserLaunchFeedback(unittest.TestCase):
             )
 
     def test_browser_vbs_direct_launch_and_hta_splash(self):
-        """Verify hugos-browser.vbs launches hugos-splash.hta and chrome.exe directly without cmd.exe."""
+        """Verify hugos-browser.vbs launches hugos-splash.hta and chrome.exe directly without cmd.exe and focuses window."""
         vbs_path = os.path.join(REPO_ROOT, "browser", "Chromium-win32-x64", "hugos-browser.vbs")
         hta_path = os.path.join(REPO_ROOT, "browser", "Chromium-win32-x64", "hugos-splash.hta")
         wix_gen_path = os.path.join(REPO_ROOT, "browser", "generate_wix.js")
@@ -56,7 +58,8 @@ class TestIdeAndBrowserLaunchFeedback(unittest.TestCase):
             vbs_content = f.read()
         self.assertIn("hugos-splash.hta", vbs_content)
         self.assertIn("chrome.exe", vbs_content)
-        self.assertIn("--new-window", vbs_content)
+        self.assertIn("--check-browser-window", vbs_content)
+        self.assertIn("--focus-browser", vbs_content)
         self.assertNotIn("cmd.exe /c", vbs_content)
 
         with open(wix_gen_path, "r", encoding="utf-8") as f:
@@ -67,3 +70,4 @@ class TestIdeAndBrowserLaunchFeedback(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

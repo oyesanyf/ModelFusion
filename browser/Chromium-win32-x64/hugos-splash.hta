@@ -23,10 +23,11 @@
     var w = 440, h = 250;
     window.resizeTo(w, h);
     window.moveTo(Math.floor((screen.availWidth - w) / 2), Math.floor((screen.availHeight - h) / 2));
+    window.focus();
   } catch (e) {}
   setTimeout(function() {
     try { window.close(); } catch (e) {}
-  }, 1800);
+  }, 3200);
 </script>
 <style type="text/css">
   * { box-sizing: border-box; margin: 0; padding: 0; }

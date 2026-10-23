@@ -584,15 +584,19 @@ pub fn model_fits(params_billions: f64, backend: Backend, memory: &SystemMemory)
 pub fn is_ollama_responding(endpoint: &str) -> bool {
     let client = reqwest::blocking::Client::builder()
         .no_proxy()
-        .timeout(std::time::Duration::from_millis(1500))
+        .timeout(std::time::Duration::from_millis(3000))
         .build()
         .unwrap_or_default();
     let url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
-    client.get(&url)
-        .header("Origin", "null")
-        .send()
-        .map(|r| r.status().is_success())
-        .unwrap_or(false)
+    for _ in 0..2 {
+        if let Ok(r) = client.get(&url).header("Origin", "null").send() {
+            if r.status().is_success() {
+                return true;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(150));
+    }
+    false
 }
 
 /// Check if Ollama is installed on the system (in PATH or common installation paths).
@@ -799,14 +803,19 @@ pub fn ensure_ollama_running() -> Result<(), String> {
     // Ensure OLLAMA_ORIGINS=* is active so local browsers/file origins are never rejected with 403 Forbidden
     std::env::set_var("OLLAMA_ORIGINS", "*");
 
-    // Launch ollama serve as a detached background process with OLLAMA_ORIGINS=* and CREATE_NO_WINDOW
+    // Launch ollama serve with OLLAMA_ORIGINS=* and CREATE_NO_WINDOW (0x08000000) only.
+    // CRITICAL: Never combine CREATE_NO_WINDOW with DETACHED_PROCESS (0x00000008); Win32 CreateProcessW
+    // ignores CREATE_NO_WINDOW when DETACHED_PROCESS is set, causing child llama-server.exe to open a visible console window.
     let mut direct_cmd = create_hidden_command(&ollama_exec);
     direct_cmd.arg("serve");
     direct_cmd.env("OLLAMA_ORIGINS", "*");
+    direct_cmd.stdin(std::process::Stdio::null());
+    direct_cmd.stdout(std::process::Stdio::null());
+    direct_cmd.stderr(std::process::Stdio::null());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        direct_cmd.creation_flags(0x08000000 | 0x00000008); // CREATE_NO_WINDOW | DETACHED_PROCESS
+        direct_cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
     let start_result = direct_cmd.spawn();
 
