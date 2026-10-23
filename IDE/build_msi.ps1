@@ -807,27 +807,43 @@ foreach ($vDir in $versionedDirs) {
         Copy-Item -Path $srcPkg -Destination (Join-Path $vCopilotDir "package.json") -Force
     }
     
-    # 4. Copilot dist/extension.js
-    $srcExt = Join-Path $vsCodePackDir "resources\app\extensions\copilot\dist\extension.js"
-    if (Test-Path $srcExt) {
-        $dstExt = Join-Path $vCopilotDistDir "extension.js"
-        for ($retry = 0; $retry -lt 5; $retry++) {
-            try {
-                Copy-Item -Path $srcExt -Destination $dstExt -Force -ErrorAction Stop
-                break
-            } catch {
-                Start-Sleep -Milliseconds 500
+    # 4. Copilot dist/{extension.js,test-extension.js,sanity-test-extension.js}
+    foreach ($bundleName in @('extension.js', 'test-extension.js', 'sanity-test-extension.js')) {
+        $srcExt = Join-Path $vsCodePackDir "resources\app\extensions\copilot\dist\$bundleName"
+        if (Test-Path $srcExt) {
+            $dstExt = Join-Path $vCopilotDistDir $bundleName
+            for ($retry = 0; $retry -lt 5; $retry++) {
+                try {
+                    Copy-Item -Path $srcExt -Destination $dstExt -Force -ErrorAction Stop
+                    break
+                } catch {
+                    Start-Sleep -Milliseconds 500
+                }
             }
         }
     }
     
-    # 5. Workbench main js
+    # 5. Workbench main js & extensionHostProcess.js
     $srcWb = Join-Path $vsCodePackDir "resources\app\out\vs\workbench\workbench.desktop.main.js"
     if (Test-Path $srcWb) {
         $dstWb = Join-Path $vOutVsDir "workbench.desktop.main.js"
         for ($retry = 0; $retry -lt 5; $retry++) {
             try {
                 Copy-Item -Path $srcWb -Destination $dstWb -Force -ErrorAction Stop
+                break
+            } catch {
+                Start-Sleep -Milliseconds 500
+            }
+        }
+    }
+    $srcExtHost = Join-Path $vsCodePackDir "resources\app\out\vs\workbench\api\node\extensionHostProcess.js"
+    if (Test-Path $srcExtHost) {
+        $vApiNodeDir = Join-Path $vOutVsDir "api\node"
+        if (-not (Test-Path $vApiNodeDir)) { New-Item -ItemType Directory -Force -Path $vApiNodeDir | Out-Null }
+        $dstExtHost = Join-Path $vApiNodeDir "extensionHostProcess.js"
+        for ($retry = 0; $retry -lt 5; $retry++) {
+            try {
+                Copy-Item -Path $srcExtHost -Destination $dstExtHost -Force -ErrorAction Stop
                 break
             } catch {
                 Start-Sleep -Milliseconds 500

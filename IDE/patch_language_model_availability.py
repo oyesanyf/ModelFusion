@@ -4,10 +4,17 @@ HugOS IDE Language Model Availability Guard & ExtensionHost Hardening Script
 Ensures:
 1. ModelFusionLMProvider in extension.js, test-extension.js, and sanity-test-extension.js
    always exposes provideLanguageModelChatInformation, getAllModels, provideLanguageModelChatResponse,
-   and _sendOrchestrationRequest (with direct Ollama :11434 fallback if port 5000 is starting up).
-2. ExtHostLanguageModels in extensionHostProcess.js resolves local language model providers
-   directly in-process if main-thread model indexing is still initializing on first chat request,
-   preventing Error("Language model unavailable").
+   and _sendOrchestrationRequest (with direct Ollama :11434 fallback querying /api/ps then /api/tags).
+2. BYOKContrib is registered BEFORE ConversationFeature in vscodeNodeContributions so the
+   'modelfusion' language model provider is registered before chat participants initialize.
+3. CopilotCLI buildAutoModel has isDefault: false, and ProductionEndpointProvider.getChatEndpoint
+   routes session stub vendors ('copilotcli', 'claude-code') to ModelFusion instead of no-op stubs.
+4. IntentDetector.provideParticipantDetection skips participant detection for non-Copilot vendors
+   and catches errors so Ask-mode requests never abort before invokeAgent.
+5. ExtHostLanguageModels in extensionHostProcess.js eagerly populates _localModels on provider
+   registration, prioritizes 'modelfusion' in getDefaultLanguageModel, resolves local providers
+   directly in selectLanguageModels/getLanguageModelByIdentifier/_sendChatRequest, and guards
+   $detectChatParticipant and getModelForRequest against session stub vendors.
 """
 
 import os
@@ -46,6 +53,19 @@ def validate_js_syntax(file_path, node_path):
     return True
 
 
+def discover_vscode_var(content):
+    idx = content.find("async _resolveUtilityOverride(family)")
+    if idx != -1:
+        chunk = content[idx : idx + 4000]
+        m = re.search(r"([a-zA-Z0-9_$]+)\.lm\.selectChatModels", chunk)
+        if m:
+            return m.group(1)
+    m = re.search(r"([a-zA-Z0-9_$]+)\.lm\.selectChatModels\(\{\s*vendor", content)
+    if m:
+        return m.group(1)
+    return "import_vscode90"
+
+
 def patch_ext_host_process(file_path, node_path):
     if not os.path.isfile(file_path):
         return True, False
@@ -56,47 +76,112 @@ def patch_ext_host_process(file_path, node_path):
 
     changed = False
 
-    # 1. Harden getDefaultLanguageModel to populate _localModels from _languageModelProviders if empty
-    old_get_default = """    if (forceResolveModels) {
-      await this.selectLanguageModels(extension, {});
-    }"""
+    # 1. Eagerly populate _localModels on registerLanguageModelChatProvider
+    old_reg_prov = """  registerLanguageModelChatProvider(extension, vendor, provider) {
+    this._languageModelProviders.set(vendor, { extension, provider });
+    this._proxy.$registerLanguageModelProvider(vendor);"""
+    new_reg_prov = """  registerLanguageModelChatProvider(extension, vendor, provider) {
+    this._languageModelProviders.set(vendor, { extension, provider });
+    this._proxy.$registerLanguageModelProvider(vendor);
+    this.$provideLanguageModelChatInfo(vendor, { silent: true }, CancellationToken.None).catch(() => {});"""
+    if "this.$provideLanguageModelChatInfo(vendor, { silent: true }, CancellationToken.None).catch(() => {});" not in content:
+        if old_reg_prov in content:
+            content = content.replace(old_reg_prov, new_reg_prov, 1)
+            changed = True
+            print("  [APPLIED] Eagerly populate _localModels in registerLanguageModelChatProvider.")
 
-    new_get_default = """    if (forceResolveModels) {
+    # 2. Replace getDefaultLanguageModel with deterministic modelfusion-first & provider-resolving implementation
+    gdlm_start_marker = "  async getDefaultLanguageModel(extension, forceResolveModels) {"
+    gdlm_end_marker = "  async getLanguageModelByIdentifier(extension, modelId) {"
+    s_idx = content.find(gdlm_start_marker)
+    e_idx = content.find(gdlm_end_marker, s_idx) if s_idx != -1 else -1
+    new_gdlm = """  async getDefaultLanguageModel(extension, forceResolveModels) {
+    let defaultModelId;
+    let hasModelFusionLocal = false;
+    for (const [, mData] of this._localModels) {
+      if (mData.metadata.vendor === "modelfusion") {
+        hasModelFusionLocal = true;
+        break;
+      }
+    }
+    if (!hasModelFusionLocal && this._languageModelProviders.has("modelfusion")) {
+      try {
+        await this.$provideLanguageModelChatInfo("modelfusion", { silent: true }, CancellationToken.None);
+      } catch (_) {}
+    }
+    if (forceResolveModels) {
       try {
         await this.selectLanguageModels(extension, {});
       } catch (_) {}
-      if (this._localModels.size === 0 && this._languageModelProviders.size > 0) {
-        for (const [vendor] of this._languageModelProviders) {
-          try {
-            await this.$provideLanguageModelChatInfo(vendor, { silent: true }, CancellationToken.None);
-          } catch (_) {}
+      if (!this._languageModelProviders.has("modelfusion")) {
+        for (let waitStep = 0; waitStep < 30 && !this._languageModelProviders.has("modelfusion"); waitStep++) {
+          await new Promise((r) => setTimeout(r, 50));
         }
       }
-    }"""
-
-    if "await this.$provideLanguageModelChatInfo(vendor, { silent: true }, CancellationToken.None);" not in content:
-        if old_get_default in content:
-            content = content.replace(old_get_default, new_get_default, 1)
+      for (const [vendor] of this._languageModelProviders) {
+        try {
+          await this.$provideLanguageModelChatInfo(vendor, { silent: true }, CancellationToken.None);
+        } catch (_) {}
+      }
+    }
+    for (const [modelIdentifier, modelData] of this._localModels) {
+      if (modelData.metadata.vendor === "modelfusion" && modelData.metadata.isDefaultForLocation?.["panel" /* Chat */]) {
+        defaultModelId = modelIdentifier;
+        break;
+      }
+    }
+    if (!defaultModelId) {
+      for (const [modelIdentifier, modelData] of this._localModels) {
+        if (modelData.metadata.vendor === "modelfusion") {
+          defaultModelId = modelIdentifier;
+          break;
+        }
+      }
+    }
+    if (!defaultModelId) {
+      for (const [modelIdentifier, modelData] of this._localModels) {
+        if (modelData.metadata.isDefaultForLocation?.["panel" /* Chat */] && modelData.metadata.vendor === COPILOT_VENDOR_ID) {
+          defaultModelId = modelIdentifier;
+          break;
+        }
+      }
+    }
+    if (!defaultModelId && !forceResolveModels) {
+      return this.getDefaultLanguageModel(extension, true);
+    }
+    if (!defaultModelId) {
+      for (const [modelIdentifier, modelData] of this._localModels) {
+        if (modelData.metadata.isDefaultForLocation?.["panel" /* Chat */] && modelData.metadata.vendor !== "copilotcli" && modelData.metadata.vendor !== "claude-code") {
+          defaultModelId = modelIdentifier;
+          break;
+        }
+      }
+    }
+    if (!defaultModelId) {
+      for (const [modelIdentifier, modelData] of this._localModels) {
+        if (modelData.metadata.vendor !== "copilotcli" && modelData.metadata.vendor !== "claude-code") {
+          defaultModelId = modelIdentifier;
+          break;
+        }
+      }
+    }
+    if (!defaultModelId) {
+      for (const [modelIdentifier] of this._localModels) {
+        defaultModelId = modelIdentifier;
+        break;
+      }
+    }
+    return this.getLanguageModelByIdentifier(extension, defaultModelId);
+  }
+"""
+    if s_idx != -1 and e_idx != -1:
+        current_gdlm = content[s_idx:e_idx]
+        if current_gdlm != new_gdlm:
+            content = content[:s_idx] + new_gdlm + content[e_idx:]
             changed = True
-            print("  [APPLIED] Hardened getDefaultLanguageModel with direct provider fallback.")
+            print("  [APPLIED] Upgraded getDefaultLanguageModel with deterministic modelfusion priority and session-stub exclusion.")
 
-    # Also guard isDefaultForLocation optional chaining and prioritize modelfusion vendor in getDefaultLanguageModel
-    for old_loc_check_1 in (
-        'if (modelData.metadata.isDefaultForLocation["panel" /* Chat */] && modelData.metadata.vendor === COPILOT_VENDOR_ID)',
-        'if (modelData.metadata.isDefaultForLocation?.["panel" /* Chat */] && modelData.metadata.vendor === COPILOT_VENDOR_ID)',
-    ):
-        new_loc_check_1 = 'if (modelData.metadata.isDefaultForLocation?.["panel" /* Chat */] && (modelData.metadata.vendor === "modelfusion" || modelData.metadata.vendor === COPILOT_VENDOR_ID))'
-        if old_loc_check_1 in content:
-            content = content.replace(old_loc_check_1, new_loc_check_1, 1)
-            changed = True
-
-    old_loc_check_2 = 'if (modelData.metadata.isDefaultForLocation["panel" /* Chat */])'
-    new_loc_check_2 = 'if (modelData.metadata.isDefaultForLocation?.["panel" /* Chat */])'
-    if old_loc_check_2 in content:
-        content = content.replace(old_loc_check_2, new_loc_check_2, 1)
-        changed = True
-
-    # 2. Harden getLanguageModelByIdentifier to query provider directly if _localModels cache misses
+    # 3. Harden getLanguageModelByIdentifier to query provider directly if _localModels cache misses
     old_by_id = """      await this._proxy.$selectChatModels({ vendor, extension: extension.identifier });
       if (!this._localModels.has(modelId)) {"""
 
@@ -115,7 +200,50 @@ def patch_ext_host_process(file_path, node_path):
         changed = True
         print("  [APPLIED] Hardened getLanguageModelByIdentifier with direct provider fallback.")
 
-    # 3. Harden _sendChatRequest so if $tryStartChatRequest fails during main-thread startup race,
+    # 4. Harden selectLanguageModels so vscode.lm.selectChatModels resolves local providers when main thread returns []
+    sel_start_marker = "  async selectLanguageModels(extension, selector) {"
+    sel_end_marker = "  async _sendChatRequest(extension, languageModelId, messages, options2, token) {"
+    sel_s = content.find(sel_start_marker)
+    sel_e = content.find(sel_end_marker, sel_s) if sel_s != -1 else -1
+    new_sel = """  async selectLanguageModels(extension, selector) {
+    let models = [];
+    try {
+      models = await this._proxy.$selectChatModels({ ...selector, extension: extension.identifier }) ?? [];
+    } catch (_) {}
+    const targetVendor = selector?.vendor;
+    if (models.length === 0 || (targetVendor === "modelfusion" && !models.some((id) => String(id).startsWith("modelfusion/")))) {
+      if (targetVendor && this._languageModelProviders.has(targetVendor)) {
+        try {
+          await this.$provideLanguageModelChatInfo(targetVendor, { silent: true }, CancellationToken.None);
+        } catch (_) {}
+      } else if (!targetVendor) {
+        for (const [v] of this._languageModelProviders) {
+          try {
+            await this.$provideLanguageModelChatInfo(v, { silent: true }, CancellationToken.None);
+          } catch (_) {}
+        }
+      }
+      const fallbackIds = new Set(models);
+      for (const [id, mData] of this._localModels) {
+        const meta = mData.metadata;
+        if ((!selector?.vendor || meta.vendor === selector.vendor) && (!selector?.id || meta.id === selector.id) && (!selector?.family || meta.family === selector.family) && (!selector?.version || meta.version === selector.version)) {
+          fallbackIds.add(id);
+        }
+      }
+      models = Array.from(fallbackIds);
+    }
+    const modelResults = await Promise.all(models.map((identifier) => this._createLanguageModelChatApi(extension, identifier)));
+    return modelResults.filter((m) => !!m);
+  }
+"""
+    if sel_s != -1 and sel_e != -1:
+        current_sel = content[sel_s:sel_e]
+        if current_sel != new_sel:
+            content = content[:sel_s] + new_sel + content[sel_e:]
+            changed = True
+            print("  [APPLIED] Hardened selectLanguageModels with in-process provider fallback.")
+
+    # 5. Harden _sendChatRequest so if $tryStartChatRequest fails during main-thread startup race,
     #    it executes the local provider's provideLanguageModelChatResponse directly in-process
     old_try_start = """    try {
       await this._proxy.$tryStartChatRequest(from, languageModelId, requestId, new SerializableObjectWithBuffers(internalMessages), options2, token);
@@ -175,6 +303,71 @@ def patch_ext_host_process(file_path, node_path):
             changed = True
             print("  [APPLIED] Hardened _sendChatRequest with in-process provider fallback.")
 
+    # 6. Guard $detectChatParticipant and getModelForRequest in ExtHostChatAgents2
+    det_start = "  async $detectChatParticipant(handle, requestDto, context, options2, token) {"
+    det_end = "  async _createRequest(requestDto, context, extension) {"
+    d_s = content.find(det_start)
+    d_e = content.find(det_end, d_s) if d_s != -1 else -1
+    new_det = """  async $detectChatParticipant(handle, requestDto, context, options2, token) {
+    try {
+      const detector = this._participantDetectionProviders.get(handle);
+      if (!detector) {
+        return void 0;
+      }
+      const { request, location: location2, history } = await this._createRequest(requestDto, context, detector.extension);
+      const model = await this.getModelForRequest(request, detector.extension);
+      const tools = await this.getToolsForRequest(detector.extension, request.userSelectedTools, model.id, token);
+      const extRequest = ChatAgentRequest.to(
+        request,
+        location2,
+        model,
+        request.modelConfiguration,
+        this.getDiagnosticsWhenEnabled(detector.extension),
+        tools,
+        detector.extension,
+        this._logService
+      );
+      return await detector.provider.provideParticipantDetection(
+        extRequest,
+        { history, yieldRequested: false },
+        { participants: options2.participants, location: ChatLocation2.to(options2.location) },
+        token
+      );
+    } catch (_) {
+      return void 0;
+    }
+  }
+"""
+    if d_s != -1 and d_e != -1:
+        if content[d_s:d_e] != new_det:
+            content = content[:d_s] + new_det + content[d_e:]
+            changed = True
+            print("  [APPLIED] Guarded $detectChatParticipant with try/catch.")
+
+    gmr_start = "  async getModelForRequest(request, extension) {"
+    gmr_end = "  async $setRequestTools(requestId, tools) {"
+    g_s = content.find(gmr_start)
+    g_e = content.find(gmr_end, g_s) if g_s != -1 else -1
+    new_gmr = """  async getModelForRequest(request, extension) {
+    let model;
+    if (request.userSelectedModelId && !String(request.userSelectedModelId).startsWith("copilotcli/") && !String(request.userSelectedModelId).startsWith("claude-code/")) {
+      model = await this._languageModels.getLanguageModelByIdentifier(extension, request.userSelectedModelId);
+    }
+    if (!model) {
+      model = await this._languageModels.getDefaultLanguageModel(extension);
+      if (!model) {
+        throw new Error("Language model unavailable");
+      }
+    }
+    return model;
+  }
+"""
+    if g_s != -1 and g_e != -1:
+        if content[g_s:g_e] != new_gmr:
+            content = content[:g_s] + new_gmr + content[g_e:]
+            changed = True
+            print("  [APPLIED] Guarded getModelForRequest against copilotcli/claude-code session stub IDs.")
+
     if changed:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(content)
@@ -195,6 +388,7 @@ def patch_provider_bundle(file_path, node_path):
         content = f.read()
 
     changed = False
+    vscode_var = discover_vscode_var(content)
 
     # 1. Prevent unhandled rejection on inflight.finally(...) derived Promise in Node v20+
     old_inflight = """            inflight.finally(() => {
@@ -208,64 +402,209 @@ def patch_provider_bundle(file_path, node_path):
         changed = True
         print(f"  [APPLIED] Attached .catch(() => {{}}) to inflight.finally in {file_path}")
 
-    # 2. Upgrade direct Ollama :11434 fallback in _sendOrchestrationRequest to check /api/ps warm models first
-    old_ollama_tags = r"""            const tagsReq = http.request({
-              hostname: "127.0.0.1",
-              port: 11434,
-              path: "/api/tags",
-              method: "GET",
-              timeout: 2000
-            }, (tRes) => {
-              let tData = "";
-              tRes.on("data", (c) => { tData += c; });
-              tRes.on("end", () => {
-                let picked = model && model !== "modelfusion-local" ? model : "";
-                if (!picked) {
-                  try {
-                    const tj = JSON.parse(tData);
-                    const avail = (tj.models || []).map((m) => m.name).filter(Boolean);
-                    for (const pref of ["qwen2.5:32b", "qwen2.5:14b", "qwen2.5:7b", "qwen2.5:3b", "qwen2.5:1.5b"]) {
-                      if (avail.includes(pref)) { picked = pref; break; }
-                    }
-                    if (!picked && avail.length > 0) picked = avail[0];
-                  } catch (_) {}
-                }
-                tryOllamaDirect(picked || "qwen2.5:1.5b");
-              });
-            });
-            tagsReq.on("error", () => reject(e4));
-            tagsReq.on("timeout", () => { tagsReq.destroy(); reject(e4); });
-            tagsReq.end();"""
+    # 2. Move BYOKContrib before ConversationFeature in vscodeNodeContributions so ModelFusionLMProvider
+    #    registers BEFORE chat participants initialize
+    old_contribs_head = """    vscodeNodeContributions = [
+      ...contributions_default,
+      asContributionFactory(ExtensionStateCommandContribution),
+      asContributionFactory(ConversationFeature),"""
+    new_contribs_head = """    vscodeNodeContributions = [
+      ...contributions_default,
+      asContributionFactory(ExtensionStateCommandContribution),
+      asContributionFactory(BYOKContrib),
+      asContributionFactory(ConversationFeature),"""
+    old_contribs_tail = """      sessionSync_contribution_exports,
+      asContributionFactory(BYOKContrib),
+      asContributionFactory(DashboardContribution)"""
+    new_contribs_tail = """      sessionSync_contribution_exports,
+      asContributionFactory(DashboardContribution)"""
+    if old_contribs_head in content and old_contribs_tail in content:
+        content = content.replace(old_contribs_tail, new_contribs_tail, 1)
+        content = content.replace(old_contribs_head, new_contribs_head, 1)
+        changed = True
+        print(f"  [APPLIED] Moved BYOKContrib before ConversationFeature in {file_path}")
 
-    new_ollama_tags = r"""            const psReq = http.request({
+    # Also fire modelFusion._onDidChange on BYOK registration
+    old_byok_reg = """        this._register(import_vscode6.lm.registerLanguageModelChatProvider(ModelFusionLMProvider.providerId, modelFusion));"""
+    new_byok_reg = """        this._register(import_vscode6.lm.registerLanguageModelChatProvider(ModelFusionLMProvider.providerId, modelFusion));
+        try { modelFusion._onDidChange?.fire?.(); } catch (_) {}"""
+    if "try { modelFusion._onDidChange?.fire?.(); } catch (_) {}" not in content:
+        for v_match in re.finditer(r"this\._register\((import_vscode\d+)\.lm\.registerLanguageModelChatProvider\(ModelFusionLMProvider\.providerId,\s*modelFusion\)\);", content):
+            orig_stmt = v_match.group(0)
+            repl_stmt = orig_stmt + "\n        try { modelFusion._onDidChange?.fire?.(); } catch (_) {}"
+            content = content.replace(orig_stmt, repl_stmt, 1)
+            changed = True
+            print(f"  [APPLIED] Added _onDidChange.fire() after ModelFusionLMProvider registration in {file_path}")
+            break
+
+    # 3. Change buildAutoModel isDefault: true -> isDefault: false so copilotcli/auto never hijacks default panel chat
+    old_auto_model = """    targetChatSessionType: "copilotcli",
+    isDefault: true
+  };
+}"""
+    new_auto_model = """    targetChatSessionType: "copilotcli",
+    isDefault: false
+  };
+}"""
+    if old_auto_model in content:
+        content = content.replace(old_auto_model, new_auto_model, 1)
+        changed = True
+        print(f"  [APPLIED] Set buildAutoModel isDefault: false in {file_path}")
+
+    # 4. Route session stub vendors ('copilotcli', 'claude-code') to ModelFusion in ProductionEndpointProvider.getChatEndpoint
+    old_vendor_check = """        if (model.vendor !== "copilot") {
+          return this._instantiationService.createInstance(ExtensionContributedChatEndpoint, model);
+        }"""
+    new_vendor_check = f"""        if (model.vendor === "copilotcli" || model.vendor === "claude-code") {{
+          const mfModels = await {vscode_var}.lm.selectChatModels({{ vendor: "modelfusion" }});
+          if (mfModels && mfModels.length > 0) {{
+            return this._instantiationService.createInstance(ExtensionContributedChatEndpoint, mfModels[0]);
+          }}
+        }}
+        if (model.vendor !== "copilot") {{
+          return this._instantiationService.createInstance(ExtensionContributedChatEndpoint, model);
+        }}"""
+    if 'if (model.vendor === "copilotcli" || model.vendor === "claude-code")' not in content and old_vendor_check in content:
+        content = content.replace(old_vendor_check, new_vendor_check, 1)
+        changed = True
+        print(f"  [APPLIED] Routed copilotcli/claude-code session stubs to ModelFusion in getChatEndpoint of {file_path}")
+
+    # 5. Guard IntentDetector.provideParticipantDetection so non-Copilot vendors skip participant detection
+    old_part_det = """      async provideParticipantDetection(chatRequest, context2, options, token) {
+        if (options.location !== 1 /* Panel */ && options.location !== 4 /* Editor */ || this.configurationService.getNonExtensionConfig("chat.detectParticipant.enabled") === false) {
+          return;
+        }"""
+    new_part_det = """      async provideParticipantDetection(chatRequest, context2, options, token) {
+        if (!chatRequest?.model || chatRequest.model.vendor !== "copilot") {
+          return;
+        }
+        if (options.location !== 1 /* Panel */ && options.location !== 4 /* Editor */ || this.configurationService.getNonExtensionConfig("chat.detectParticipant.enabled") === false) {
+          return;
+        }"""
+    if 'if (!chatRequest?.model || chatRequest.model.vendor !== "copilot")' not in content and old_part_det in content:
+        content = content.replace(old_part_det, new_part_det, 1)
+        changed = True
+        print(f"  [APPLIED] Guarded provideParticipantDetection for non-Copilot models in {file_path}")
+
+    # 6. Upgrade direct Ollama :11434 fallback in _sendOrchestrationRequest to check /api/ps warm models first,
+    #    then /api/tags installed models before falling back to qwen2.5:1.5b
+    for http_ident in ("http", "http2"):
+        old_ps_only = f"""            const psReq = {http_ident}.request({{
               hostname: "127.0.0.1",
               port: 11434,
               path: "/api/ps",
               method: "GET",
               timeout: 1500
-            }, (pRes) => {
+            }}, (pRes) => {{
               let pData = "";
-              pRes.on("data", (c) => { pData += c; });
-              pRes.on("end", () => {
-                try {
+              pRes.on("data", (c) => {{ pData += c; }});
+              pRes.on("end", () => {{
+                try {{
                   const pj = JSON.parse(pData);
                   const warm = (pj.models || []).map((m) => m.name).filter((n) => n && !/embed|nomic|bge|moondream|llava/i.test(n));
-                  if (warm.length > 0) {
+                  if (warm.length > 0) {{
                     tryOllamaDirect(warm[0]);
                     return;
-                  }
-                } catch (_) {}
+                  }}
+                }} catch (_) {{}}
                 tryOllamaDirect(model && model !== "modelfusion-local" ? model : "qwen2.5:1.5b");
-              });
-            });
+              }});
+            }});
             psReq.on("error", () => tryOllamaDirect("qwen2.5:1.5b"));
-            psReq.on("timeout", () => { psReq.destroy(); tryOllamaDirect("qwen2.5:1.5b"); });
+            psReq.on("timeout", () => {{ psReq.destroy(); tryOllamaDirect("qwen2.5:1.5b"); }});
             psReq.end();"""
 
-    if old_ollama_tags in content:
-        content = content.replace(old_ollama_tags, new_ollama_tags, 1)
-        changed = True
-        print(f"  [APPLIED] Upgraded direct Ollama :11434 fallback to use warm /api/ps model in {file_path}")
+        old_tags_only = f"""            const tagsReq = {http_ident}.request({{
+              hostname: "127.0.0.1",
+              port: 11434,
+              path: "/api/tags",
+              method: "GET",
+              timeout: 2000
+            }}, (tRes) => {{
+              let tData = "";
+              tRes.on("data", (c) => {{ tData += c; }});
+              tRes.on("end", () => {{
+                let picked = model && model !== "modelfusion-local" ? model : "";
+                if (!picked) {{
+                  try {{
+                    const tj = JSON.parse(tData);
+                    const avail = (tj.models || []).map((m) => m.name).filter(Boolean);
+                    for (const pref of ["qwen2.5:32b", "qwen2.5:14b", "qwen2.5:7b", "qwen2.5:3b", "qwen2.5:1.5b"]) {{
+                      if (avail.includes(pref)) {{ picked = pref; break; }}
+                    }}
+                    if (!picked && avail.length > 0) picked = avail[0];
+                  }} catch (_) {{}}
+                }}
+                tryOllamaDirect(picked || "qwen2.5:1.5b");
+              }});
+            }});
+            tagsReq.on("error", () => reject(e4));
+            tagsReq.on("timeout", () => {{ tagsReq.destroy(); reject(e4); }});
+            tagsReq.end();"""
+
+        new_ps_then_tags = f"""            const queryTagsFallback = () => {{
+              const tagsReq = {http_ident}.request({{
+                hostname: "127.0.0.1",
+                port: 11434,
+                path: "/api/tags",
+                method: "GET",
+                timeout: 1500
+              }}, (tRes) => {{
+                let tData = "";
+                tRes.on("data", (c) => {{ tData += c; }});
+                tRes.on("end", () => {{
+                  let picked = model && model !== "modelfusion-local" ? model : "";
+                  if (!picked) {{
+                    try {{
+                      const tj = JSON.parse(tData);
+                      const avail = (tj.models || []).map((m) => m.name).filter((n) => n && !/embed|nomic|bge|moondream|llava/i.test(n));
+                      for (const pref of ["qwen2.5:32b", "qwen2.5:14b", "qwen2.5:7b", "qwen2.5:3b", "qwen2.5:1.5b"]) {{
+                        if (avail.includes(pref)) {{ picked = pref; break; }}
+                      }}
+                      if (!picked && avail.length > 0) picked = avail[0];
+                    }} catch (_) {{}}
+                  }}
+                  tryOllamaDirect(picked || "qwen2.5:1.5b");
+                }});
+              }});
+              tagsReq.on("error", () => tryOllamaDirect("qwen2.5:1.5b"));
+              tagsReq.on("timeout", () => {{ tagsReq.destroy(); tryOllamaDirect("qwen2.5:1.5b"); }});
+              tagsReq.end();
+            }};
+            const psReq = {http_ident}.request({{
+              hostname: "127.0.0.1",
+              port: 11434,
+              path: "/api/ps",
+              method: "GET",
+              timeout: 1500
+            }}, (pRes) => {{
+              let pData = "";
+              pRes.on("data", (c) => {{ pData += c; }});
+              pRes.on("end", () => {{
+                try {{
+                  const pj = JSON.parse(pData);
+                  const warm = (pj.models || []).map((m) => m.name).filter((n) => n && !/embed|nomic|bge|moondream|llava/i.test(n));
+                  if (warm.length > 0) {{
+                    tryOllamaDirect(warm[0]);
+                    return;
+                  }}
+                }} catch (_) {{}}
+                queryTagsFallback();
+              }});
+            }});
+            psReq.on("error", () => queryTagsFallback());
+            psReq.on("timeout", () => {{ psReq.destroy(); queryTagsFallback(); }});
+            psReq.end();"""
+
+        if "const queryTagsFallback = () => {" not in content:
+            if old_ps_only in content:
+                content = content.replace(old_ps_only, new_ps_then_tags, 1)
+                changed = True
+                print(f"  [APPLIED] Upgraded Ollama :11434 fallback to check /api/ps then /api/tags in {file_path}")
+            elif old_tags_only in content:
+                content = content.replace(old_tags_only, new_ps_then_tags, 1)
+                changed = True
+                print(f"  [APPLIED] Upgraded Ollama :11434 fallback to check /api/ps then /api/tags in {file_path}")
 
     if changed:
         with open(file_path, "w", encoding="utf-8") as f:
