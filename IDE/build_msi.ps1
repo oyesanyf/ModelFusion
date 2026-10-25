@@ -942,6 +942,11 @@ $filesToSign = Get-ChildItem -Path (Join-Path $vsCodePackDir "bin\*") -Include *
 $count = 0
 if ($filesToSign) {
     foreach ($file in $filesToSign) {
+        $sig = Get-AuthenticodeSignature $file -ErrorAction SilentlyContinue
+        if ($sig -and $sig.Status -eq 'Valid') {
+            Write-Host "Skipping already signed: $file" -ForegroundColor Green
+            continue
+        }
         Write-Host "Signing ModelFusion binary: $file"
         if (Sign-FileWithCert $file) {
             $count++
@@ -1100,7 +1105,10 @@ if (-not $serverRunning) {
         $cliPath = Join-Path $repoRoot "target\release\cli.exe"
     }
     if (Test-Path $cliPath) {
-        Sign-FileWithCert $cliPath
+        $sigCli = Get-AuthenticodeSignature $cliPath -ErrorAction SilentlyContinue
+        if (-not ($sigCli -and $sigCli.Status -eq 'Valid')) {
+            Sign-FileWithCert $cliPath
+        }
         $cliDir = Split-Path -Parent $cliPath
         Start-Process -FilePath $cliPath -ArgumentList "--server", "--port", "5000" -WorkingDirectory $cliDir -WindowStyle Hidden -RedirectStandardOutput "$env:TEMP\modelfusion_server_out.log" -RedirectStandardError "$env:TEMP\modelfusion_server_err.log"
         for ($i = 0; $i -lt 10; $i++) {

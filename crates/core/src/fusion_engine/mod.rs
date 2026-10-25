@@ -81,6 +81,58 @@ pub fn derive_fusion_model_count() -> usize {
     model_selection::memory::derive_fusion_model_count()
 }
 
+/// Truncate a long prompt only in the middle, NEVER at the end where the user's question lives.
+/// Keeps the first 1,500 chars and the last 2,500 chars (`head + "\n...[middle truncated]...\n" + tail`),
+/// and ensures any `<userRequest>` or `<prompt>` or text after `</attachments>`/`</context>` is placed at the VERY TOP.
+pub fn preserve_head_and_tail_prompt(prompt: &str, max_chars: usize) -> String {
+    let mut extracted_req = String::new();
+    let lower = prompt.to_lowercase();
+    for (open_tag, close_tag) in [
+        ("<userrequest>", "</userrequest>"),
+        ("<user_request>", "</user_request>"),
+        ("<prompt>", "</prompt>"),
+    ] {
+        if let Some(s_idx) = lower.rfind(open_tag) {
+            let content_start = s_idx + open_tag.len();
+            if let Some(e_rel) = lower[content_start..].find(close_tag) {
+                let candidate = prompt[content_start..content_start + e_rel].trim();
+                if !candidate.is_empty() {
+                    extracted_req = candidate.to_string();
+                    break;
+                }
+            }
+        }
+    }
+    if extracted_req.is_empty() {
+        for close_tag in ["</attachments>", "</attachment>", "</context>"] {
+            if let Some(idx) = lower.rfind(close_tag) {
+                let after = prompt[idx + close_tag.len()..].trim();
+                if !after.is_empty() && after.len() < 4000 {
+                    extracted_req = after.to_string();
+                    break;
+                }
+            }
+        }
+    }
+
+    let base = if !extracted_req.is_empty() && !prompt.trim_start().starts_with("USER REQUEST:") {
+        format!("USER REQUEST: {}\n\n{}", extracted_req, prompt)
+    } else {
+        prompt.to_string()
+    };
+
+    let char_count = base.chars().count();
+    let limit = max_chars.max(4000);
+    if char_count <= limit {
+        return base;
+    }
+    let head_len = 1500;
+    let tail_len = 2500;
+    let head: String = base.chars().take(head_len).collect();
+    let tail: String = base.chars().skip(char_count.saturating_sub(tail_len)).collect();
+    format!("{}\n...[middle truncated]...\n{}", head, tail)
+}
+
 /// Helper to determine if a prompt or task is a coding task for Recursive Flint
 /// (`RecursiveSI/flint` / `flint:latest` 40B total / 2.5B active MoE) + Block Goose Coding Fusion.
 pub fn is_coding_task_for_flint(detected_task: &str, prompt: &str) -> bool {
@@ -412,6 +464,7 @@ pub async fn run_fusion(
     eprintln!("[FUSION] Starting Model Fusion Pipeline...");
     let mode_label = if is_multi_sample { "samples" } else { "models" };
     eprintln!("[FUSION] Step 1: Running Panel of {} {} ...", panel_models.len(), mode_label);
+    let prompt_with_context = preserve_head_and_tail_prompt(&prompt_with_context, 12000);
     let mut panel_answers = run_panel(&prompt_with_context, panel_models.clone()).await?;
     
     // Dynamic fallback: replace failed models with fallback candidates
@@ -503,5 +556,20 @@ mod flint_fusion_tests {
         assert!(!is_coding_task_for_flint("legal", "What are the essential clauses in a non-disclosure agreement?"));
         assert!(!is_coding_task_for_flint("translation", "Translate this paragraph into French"));
         assert!(!is_coding_task_for_flint("summarization", "Summarize this medical case report"));
+        assert!(is_coding_task_for_flint("text-generation", "create a javafile that can be able to dend prompts to openai"));
+        assert!(is_coding_task_for_flint("text-generation", "wrie javacode that can call open ai llm"));
+    }
+
+    #[test]
+    fn test_preserve_head_and_tail_prompt() {
+        let pqc_attachment = "import os\ndef pqc(): pass\n".repeat(1000);
+        let raw = format!(
+            "System: IDE Assistant\n<attachments>\n{}\n</attachments>\n<userRequest>create a javafile that can be able to dend prompts to openai</userRequest>",
+            pqc_attachment
+        );
+        let preserved = preserve_head_and_tail_prompt(&raw, 4000);
+        assert!(preserved.starts_with("USER REQUEST: create a javafile that can be able to dend prompts to openai"));
+        assert!(preserved.contains("...[middle truncated]..."));
+        assert!(preserved.ends_with("<userRequest>create a javafile that can be able to dend prompts to openai</userRequest>"));
     }
 }

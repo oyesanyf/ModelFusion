@@ -315,6 +315,53 @@ async function ensureServerRunning() {
   assert.strictEqual(savedCalled, true, 'document.save() must be triggered when Save File is selected');
   console.log(`  ✅ Target file ${targetJavaFile} written on disk (${writtenContent.length} chars of Java code) and saved!`);
 
+  // 4b. Verify multi-block response where blocks[0] is a short shell snippet and blocks[1] is the main Java class
+  const multiBlockResponse = [
+    'Run the following command to compile:',
+    '```bash',
+    'javac OpenAIClient.java',
+    '```',
+    'Here is the complete Java source file:',
+    '```java',
+    'import java.net.http.HttpClient;',
+    'public class OpenAIClientMultiBlock {',
+    '    public static void main(String[] args) {',
+    '        System.out.println("Multi-block OpenAI client");',
+    '    }',
+    '}',
+    '```'
+  ].join('\n');
+  mockProvider._tryInlineApply(
+    multiBlockResponse,
+    'create a javafile that can be able to dend prompts to openai',
+    '',
+    targetJavaFile,
+    tmpWorkspace
+  );
+  const multiBlockContent = fs.readFileSync(targetJavaFile, 'utf8');
+  assert(multiBlockContent.includes('class OpenAIClientMultiBlock'), '_tryInlineApply must select the main Java class block rather than a 1-line bash command block');
+  console.log('  ✅ Multi-block selection verified (largest code block written instead of 1-line shell snippet)');
+
+  // 4c. Verify >= 3-line fenced block without Java/JS keyword regex is still recognized and written when workspace/editor exists
+  const configFile = path.join(tmpWorkspace, 'config.yaml');
+  const yamlResponse = [
+    '```yaml',
+    'openai:',
+    '  model: gpt-4o',
+    '  timeout_seconds: 30',
+    '  max_retries: 3',
+    '```'
+  ].join('\n');
+  assert.strictEqual(
+    mockProvider._isCodeGenerationIntent('create config', '', yamlResponse),
+    true,
+    'Any >= 3-line fenced block must be recognized as code generation intent'
+  );
+  mockProvider._tryInlineApply(yamlResponse, 'create config', '', configFile, tmpWorkspace);
+  const writtenYaml = fs.readFileSync(configFile, 'utf8');
+  assert(writtenYaml.includes('model: gpt-4o'), '_tryInlineApply must write >= 3-line non-keyword fenced code blocks');
+  console.log('  ✅ Non-keyword >= 3-line fenced block writing verified');
+
   // Cleanup temp workspace
   try {
     fs.rmSync(tmpWorkspace, { recursive: true, force: true });
