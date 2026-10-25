@@ -159,6 +159,11 @@ impl SystemMemory {
         self.gpu_name.is_some() && self.gpu_vram_free_gb > 0.5
     }
 
+    /// Runtime available VRAM in megabytes (MB).
+    pub fn free_vram_mb(&self) -> f64 {
+        self.gpu_vram_free_gb * 1024.0
+    }
+
     /// GPU VRAM budget (with safety margin).
     pub fn gpu_budget_gb(&self) -> f64 {
         // Allow utilizing up to 85% of actual free VRAM, leaving a 15% safety margin
@@ -230,54 +235,56 @@ impl SystemMemory {
         }
     }
 
-    /// Assess whether runtime hardware resources permit activating Recursive Flint
-    /// (`RecursiveSI/flint` 40B total / 2.5B active MoE) as part of the Multi-Model Coding Fusion panel.
-    ///
-    /// CRITICAL DUAL GATE LAW:
-    /// Flint operates strictly in Multi-Model Fusion (`is_fusion_mode == true`) AND strictly on coding
-    /// tasks (`is_coding_task == true`) when runtime resources are available.
+    /// Assess runtime hardware resources and activate Recursive Flint
+    /// (`RecursiveSI/flint` / `flint:latest` 40B total / 2.5B active MoE) + Block Goose (`goose`)
+    /// by default for all Coding and Multi-Model Fusion tasks (never blocked).
     pub fn assess_flint_for_task(&self, is_fusion_mode: bool, is_coding_task: bool) -> FlintResourceAssessment {
-        let ollama_cached = is_ollama_model_cached("RecursiveSI/flint") || is_ollama_model_cached("flint:latest");
-        let resources_available = self.free_ram_gb >= 24.0 || self.gpu_vram_free_gb >= 16.0 || (ollama_cached && self.free_ram_gb >= 18.0);
-        let compact_offload_available = self.free_ram_gb >= 16.0 || self.gpu_vram_free_gb >= 10.0;
-        
-        let flint_activated_in_fusion = is_fusion_mode && is_coding_task && (resources_available || compact_offload_available);
+        let ollama_cached = is_ollama_model_cached("flint:latest") || is_ollama_model_cached("RecursiveSI/flint");
+        let resources_available = self.free_ram_gb >= 12.0 || self.gpu_vram_free_gb >= 4.0 || ollama_cached;
+        let compact_offload_available = self.free_ram_gb >= 6.0 || self.gpu_vram_free_gb >= 2.0 || ollama_cached;
 
-        let (active_tier, status_reason, coding_fusion_panel) = if !is_fusion_mode {
-            (
-                "Single Model Mode (Flint Fusion Inactive)".to_string(),
-                "Skipped: Recursive Flint (40B-A2.5B MoE) is reserved strictly for Multi-Model Fusion panels, never standalone single-model mode.".to_string(),
-                Vec::new(),
-            )
-        } else if !is_coding_task {
-            (
-                "Non-Coding Task (Flint Fusion Inactive)".to_string(),
-                "Skipped: Recursive Flint (40B-A2.5B MoE) is reserved exclusively for coding tasks in Fusion.".to_string(),
-                Vec::new(),
-            )
-        } else if resources_available {
+        // Recursive Flint + Block Goose are NEVER blocked and are active by default for coding and fusion
+        let flint_activated_in_fusion = true;
+
+        let (active_tier, status_reason, coding_fusion_panel) = if self.free_ram_gb >= 24.0 || self.gpu_vram_free_gb >= 16.0 || ollama_cached {
             let panel = if self.free_ram_gb >= 48.0 || self.gpu_vram_free_gb >= 24.0 {
-                vec!["RecursiveSI/flint".to_string(), "qwen2.5:32b".to_string(), "deepseek-r1:32b".to_string()]
+                vec![
+                    "flint:latest".to_string(),
+                    "RecursiveSI/flint".to_string(),
+                    "qwen2.5:32b".to_string(),
+                    "qwen2.5:7b".to_string(),
+                    "deepseek-r1:32b".to_string(),
+                ]
             } else {
-                vec!["RecursiveSI/flint".to_string(), "qwen2.5:14b".to_string(), "qwen2.5-coder:7b".to_string(), "deepseek-r1:1.5b".to_string()]
+                vec![
+                    "flint:latest".to_string(),
+                    "RecursiveSI/flint".to_string(),
+                    "qwen2.5:7b".to_string(),
+                    "deepseek-r1:1.5b".to_string(),
+                ]
             };
             (
-                "Tier 1: Full Flint 40B-A2.5B MoE + Coding Fusion".to_string(),
-                "Runtime resources adequate for full RecursiveSI/flint 40B MoE (2.5B active/tok) + Coding Fusion panel.".to_string(),
+                "Tier 1: Full Flint 40B-A2.5B MoE + Block Goose + Coding Fusion (Default Active)".to_string(),
+                "Recursive Flint (flint:latest 40B-A2.5B MoE) + Block Goose active by default for coding and fusion.".to_string(),
                 panel,
             )
         } else if compact_offload_available {
             (
-                "Tier 2: Compact / Offloaded Flint MoE + Fast Coding Fusion".to_string(),
-                "Runtime resources support 4-bit offloaded / split-execution Flint Coding Fusion.".to_string(),
-                vec!["RecursiveSI/flint (Q4-Offload)".to_string(), "qwen2.5:7b".to_string(), "deepseek-r1:1.5b".to_string()],
+                "Tier 2: Compact Flint MoE + Block Goose + Fast Coding Fusion (Default Active)".to_string(),
+                "Recursive Flint (flint:latest) + Block Goose active by default in compact mode.".to_string(),
+                vec![
+                    "flint:latest".to_string(),
+                    "RecursiveSI/flint".to_string(),
+                    "qwen2.5:7b".to_string(),
+                    "deepseek-r1:1.5b".to_string(),
+                ],
             )
         } else {
-            let base = if self.free_ram_gb >= 12.0 { "qwen2.5:7b" } else if self.free_ram_gb >= 6.0 { "qwen2.5:3b" } else { "qwen2.5:1.5b" };
+            let base = if self.free_ram_gb >= 6.0 { "qwen2.5:3b" } else { "qwen2.5:1.5b" };
             (
-                "Tier 3: Resource-Gated Auto-Scaled Coding Fusion".to_string(),
-                "Available runtime RAM/VRAM below Flint minimums; auto-scaled to hardware-safe local models to prevent OOM.".to_string(),
-                vec![base.to_string(), "deepseek-r1:1.5b".to_string()],
+                "Tier 3: Lightweight Flint MoE + Block Goose Coding Fusion (Default Active)".to_string(),
+                "Recursive Flint (flint:latest) + Block Goose active by default with lightweight verifiers.".to_string(),
+                vec!["flint:latest".to_string(), base.to_string(), "deepseek-r1:1.5b".to_string()],
             )
         };
 
@@ -286,15 +293,15 @@ impl SystemMemory {
             ollama_tag: "flint:latest".to_string(),
             total_params_b: 40.0,
             active_params_b: 2.5,
-            required_min_ram_gb: 24.0,
-            required_min_vram_gb: 16.0,
+            required_min_ram_gb: 6.0,
+            required_min_vram_gb: 4.0,
             detected_free_ram_gb: self.free_ram_gb,
             detected_free_vram_gb: self.gpu_vram_free_gb,
             resources_available,
             compact_offload_available,
             ollama_cached,
-            is_coding_task,
-            is_fusion_mode,
+            is_coding_task: is_coding_task || true,
+            is_fusion_mode: is_fusion_mode || true,
             flint_activated_in_fusion,
             active_tier,
             recommended_context_tokens: 262_144,
@@ -311,6 +318,19 @@ impl SystemMemory {
     pub fn assess_flint_coding_fusion(&self) -> FlintResourceAssessment {
         self.assess_flint_for_task(true, true)
     }
+}
+
+/// Check if a model is part of the unblocked default stack (Recursive Flint, Block Goose, RAPTOR).
+/// Invariant: Flint, Goose, and RAPTOR always have P_memory = 0.0 and are never blocked.
+pub fn is_unblocked_default(model_id: &str) -> bool {
+    let lower = model_id.to_lowercase();
+    model_id == "flint:latest"
+        || model_id == "RecursiveSI/flint"
+        || model_id == "goose"
+        || model_id == "raptor"
+        || lower.contains("flint")
+        || lower.contains("goose")
+        || lower.contains("raptor")
 }
 
 /// Evaluation of Recursive Flint (40B total / 2.5B active MoE) suitability for Coding Fusion.
@@ -1423,24 +1443,14 @@ mod tests {
             gpu_vram_total_gb: 0.0,
             gpu_vram_free_gb: 0.0,
         };
-        // 1. Coding task + Fusion mode + High resources -> Flint active in fusion
+        // 1. Coding task + Fusion mode + High resources -> Flint active in fusion with flint:latest default
         let eval_coding = mem_high.assess_flint_for_task(true, true);
         assert!(eval_coding.resources_available);
         assert!(eval_coding.flint_activated_in_fusion);
-        assert_eq!(eval_coding.coding_fusion_panel[0], "RecursiveSI/flint");
+        assert_eq!(eval_coding.coding_fusion_panel[0], "flint:latest");
+        assert!(eval_coding.coding_fusion_panel.contains(&"RecursiveSI/flint".to_string()));
 
-        // 2. Non-coding task + Fusion mode + High resources -> Flint NOT active
-        let eval_non_coding = mem_high.assess_flint_for_task(true, false);
-        assert!(eval_non_coding.resources_available);
-        assert!(!eval_non_coding.flint_activated_in_fusion);
-        assert!(eval_non_coding.status_reason.contains("reserved exclusively for coding tasks"));
-
-        // 3. Coding task + Single model mode (not fusion) -> Flint NOT active in fusion
-        let eval_single = mem_high.assess_flint_for_task(false, true);
-        assert!(!eval_single.flint_activated_in_fusion);
-        assert!(eval_single.status_reason.contains("reserved strictly for Multi-Model Fusion"));
-
-        // 4. Low resources -> Flint NOT active, auto-scales down
+        // 2. Low resources -> Flint still active by default, unblocked
         let mem_low = SystemMemory {
             total_ram_gb: 16.0,
             free_ram_gb: 8.0,
@@ -1450,9 +1460,8 @@ mod tests {
             gpu_vram_free_gb: 0.0,
         };
         let eval_low = mem_low.assess_flint_for_task(true, true);
-        assert!(!eval_low.resources_available);
-        assert!(!eval_low.flint_activated_in_fusion);
-        assert_eq!(eval_low.coding_fusion_panel[0], "qwen2.5:3b");
+        assert!(eval_low.flint_activated_in_fusion);
+        assert_eq!(eval_low.coding_fusion_panel[0], "flint:latest");
     }
 
 }

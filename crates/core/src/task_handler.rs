@@ -30,6 +30,37 @@ struct HFModelApiResponse {
     last_modified: Option<String>,
     #[serde(rename = "library_name")]
     library_name: Option<String>,
+    #[serde(rename = "trendingScore")]
+    trending_score: Option<f64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct HFTrendingItem {
+    #[serde(rename = "repoData")]
+    repo_data: Option<HFTrendingRepoData>,
+    #[allow(dead_code)]
+    id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct HFTrendingRepoData {
+    id: String,
+    author: Option<String>,
+    #[serde(rename = "pipeline_tag")]
+    pipeline_tag: Option<String>,
+    tags: Option<Vec<String>>,
+    downloads: Option<i64>,
+    likes: Option<i64>,
+    #[serde(rename = "lastModified")]
+    last_modified: Option<String>,
+    #[serde(rename = "library_name")]
+    library_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct HFTrendingResponse {
+    #[serde(rename = "recentlyTrending")]
+    recently_trending: Option<Vec<HFTrendingItem>>,
 }
 
 fn parse_next_link(link_header: &str) -> Option<String> {
@@ -434,6 +465,478 @@ impl ComprehensiveTaskHandler {
         }
     }
 
+    pub const FOLLOWED_RESEARCH_ORGS: &'static [&'static str] = &[
+        "RecursiveSI",
+        "Qwen",
+        "deepseek-ai",
+        "google",
+        "meta-llama",
+        "mistralai",
+        "microsoft",
+        "allenai",
+        "nvidia",
+    ];
+
+    /// Resolve Hugging Face authentication token from process environment or local .env
+    /// without modifying user/system environment variables.
+    pub fn resolve_hf_token(&self) -> Option<String> {
+        if let Ok(val) = std::env::var("HF_TOKEN") {
+            if !val.trim().is_empty() { return Some(val.trim().to_string()); }
+        }
+        if let Ok(val) = std::env::var("HUGGINGFACE_API_KEY") {
+            if !val.trim().is_empty() { return Some(val.trim().to_string()); }
+        }
+        if let Ok(val) = std::env::var("HF_API_KEY") {
+            if !val.trim().is_empty() { return Some(val.trim().to_string()); }
+        }
+        if let Ok(val) = std::env::var("HUGGINGFACE_TOKEN") {
+            if !val.trim().is_empty() { return Some(val.trim().to_string()); }
+        }
+
+        for env_path in &[self.base_dir.join(".env"), PathBuf::from(".env")] {
+            if let Ok(content) = std::fs::read_to_string(env_path) {
+                for line in content.lines() {
+                    let line = line.trim();
+                    if line.starts_with('#') || line.is_empty() { continue; }
+                    for key in &["HF_TOKEN=", "HUGGINGFACE_API_KEY=", "HF_API_KEY=", "HUGGINGFACE_TOKEN="] {
+                        if line.starts_with(key) {
+                            let val = line[key.len()..].trim().trim_matches('"').trim_matches('\'');
+                            if !val.is_empty() {
+                                return Some(val.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Map a model to one of the 19 Browser categories in strict A-Z alphabetical order.
+    pub fn map_pipeline_tag_to_browser_category(pipeline_tag: &str, tags: &[String], model_id: &str) -> &'static str {
+        let id_lower = model_id.to_lowercase();
+        let tag_lower: Vec<String> = tags.iter().map(|t| t.to_lowercase()).collect();
+
+        // 1. Recursive Harnessing / Flint
+        if id_lower.contains("reflint") || id_lower.contains("flint") || id_lower.contains("harness") {
+            return "Harness2 (Recursive Agent Harnessing)";
+        }
+        // 2. Computer Use & OS Automation
+        if id_lower.contains("ui-tars") || id_lower.contains("computer-use") || tag_lower.iter().any(|t| t.contains("computer-use") || t.contains("screen-grounding")) {
+            return "Computer Use & OS Automation";
+        }
+        // 3. Inspect Windows Apps (.EXE / .DLL)
+        if id_lower.contains("pe-binary") || id_lower.contains("malware-analysis") || tag_lower.iter().any(|t| t.contains("pe-file") || t.contains("disassembly")) {
+            return "Inspect Windows Apps (.EXE / .DLL)";
+        }
+        // 4. RD-Agent (Autonomous R&D)
+        if id_lower.contains("rdagent") || id_lower.contains("rd-agent") || tag_lower.iter().any(|t| t.contains("rd-agent")) {
+            return "RD-Agent (Autonomous R&D)";
+        }
+        // 5. Code & Security
+        if id_lower.contains("coder") || id_lower.contains("code") || tag_lower.iter().any(|t| t.contains("code") || t.contains("vulnerability") || t.contains("security")) {
+            return "Code & Security";
+        }
+        // 6. Compliance
+        if id_lower.contains("compliance") || id_lower.contains("pii") || id_lower.contains("gdpr") || id_lower.contains("hipaa") || tag_lower.iter().any(|t| t.contains("compliance") || t.contains("anonymization")) {
+            return "Compliance";
+        }
+        // 7. Finance & Markets
+        if id_lower.contains("finance") || id_lower.contains("financial") || id_lower.contains("fintech") || tag_lower.iter().any(|t| t.contains("finance") || t.contains("trading")) {
+            return "Finance & Markets";
+        }
+        // 8. Legal
+        if id_lower.contains("legal") || id_lower.contains("law") || tag_lower.iter().any(|t| t.contains("legal") || t.contains("contract")) {
+            return "Legal";
+        }
+        // 9. Planning & Deep Thinking (Reasoning / R1 / CoT)
+        if id_lower.contains("deepseek-r1") || id_lower.contains("reasoning") || id_lower.contains("qwq") || tag_lower.iter().any(|t| t.contains("chain-of-thought") || t.contains("reasoning")) {
+            return "Planning & Deep Thinking";
+        }
+        // 10. Sentiment & Content Moderation
+        if pipeline_tag == "sentiment-analysis" || id_lower.contains("sentiment") || id_lower.contains("moderation") || tag_lower.iter().any(|t| t.contains("sentiment") || t.contains("toxicity")) {
+            return "Sentiment & Content Moderation";
+        }
+        // 11. Deep Research
+        if id_lower.contains("deep-research") || id_lower.contains("web-research") || tag_lower.iter().any(|t| t.contains("deep-research")) {
+            return "Deep Research";
+        }
+        // 12. Web Research & Automation
+        if id_lower.contains("web-agent") || id_lower.contains("browser") || tag_lower.iter().any(|t| t.contains("web-scraping")) {
+            return "Web Research & Automation";
+        }
+        // 13. Data & Spreadsheets (CSV/Excel)
+        if matches!(pipeline_tag, "tabular-classification" | "tabular-regression" | "table-question-answering" | "time-series-forecasting") || tag_lower.iter().any(|t| t.contains("tabular") || t.contains("spreadsheet")) {
+            return "Data & Spreadsheets (CSV/Excel)";
+        }
+        // 14. Images & Vision
+        if matches!(pipeline_tag, "image-classification" | "object-detection" | "image-segmentation" | "text-to-image" | "image-to-text" | "image-to-image" | "depth-estimation" | "visual-question-answering" | "document-question-answering" | "zero-shot-image-classification" | "zero-shot-object-detection" | "mask-generation" | "keypoint-detection" | "video-classification" | "text-to-video" | "unconditional-image-generation" | "image-feature-extraction") {
+            return "Images & Vision";
+        }
+        // 15. Voice & Audio
+        if matches!(pipeline_tag, "automatic-speech-recognition" | "audio-classification" | "text-to-speech" | "audio-to-audio" | "voice-activity-detection" | "text-to-audio") {
+            return "Voice & Audio";
+        }
+        // 16. Science & Discovery
+        if matches!(pipeline_tag, "reinforcement-learning" | "robotics" | "graph-ml") || id_lower.contains("bio") || id_lower.contains("chem") || id_lower.contains("medical") || id_lower.contains("climate") {
+            return "Science & Discovery";
+        }
+        // 17. Classification & Taxonomy
+        if matches!(pipeline_tag, "text-classification" | "zero-shot-classification" | "token-classification") {
+            return "Classification & Taxonomy";
+        }
+        // 18. Utilities & System
+        if matches!(pipeline_tag, "sentence-similarity" | "feature-extraction" | "fill-mask" | "translation") {
+            return "Utilities & System";
+        }
+        // 19. Writing & Editing (Default for text generation)
+        "Writing & Editing"
+    }
+
+    /// Map pipeline tag to canonical task.
+    pub fn map_pipeline_tag_to_task(pipeline_tag: &str) -> &'static str {
+        db::models::pipeline_tag_to_task(pipeline_tag)
+    }
+
+    /// Ingest live Trending and Followed Research Orgs feed (Stage 0).
+    pub async fn ingest_trending_and_following_feed(
+        &self,
+        db: &HuggingFaceModelDatabase,
+        client: &reqwest::Client,
+        token: Option<&str>,
+        seen_models: &mut HashSet<String>,
+    ) -> usize {
+        struct CandidateEntry {
+            model_id: String,
+            author: String,
+            pipeline_tag: String,
+            tags: Vec<String>,
+            downloads: i64,
+            likes: i64,
+            last_modified: String,
+            library_name: String,
+            raw_trending_score: Option<f64>,
+            trending_rank: Option<usize>,
+            is_trending: bool,
+            is_following: bool,
+        }
+
+        let mut candidates: HashMap<String, CandidateEntry> = HashMap::new();
+
+        // 1. Fetch live trending models from /api/trending?type=model&limit=100
+        let trending_url = "https://huggingface.co/api/trending?type=model&limit=100";
+        let mut req1 = client.get(trending_url)
+            .header("User-Agent", "ModelFusion/1.0.0")
+            .timeout(std::time::Duration::from_secs(15));
+        if let Some(t) = token {
+            req1 = req1.bearer_auth(t);
+        }
+        match req1.send().await {
+            Ok(resp) if resp.status().is_success() => {
+                match resp.json::<HFTrendingResponse>().await {
+                    Ok(data) => {
+                        if let Some(items) = data.recently_trending {
+                            for (rank, item) in items.into_iter().enumerate() {
+                                if let Some(repo) = item.repo_data {
+                                    let model_id = repo.id;
+                                    let author = repo.author.unwrap_or_else(|| {
+                                        model_id.split('/').next().unwrap_or("unknown").to_string()
+                                    });
+                                    let pipeline_tag = repo.pipeline_tag.unwrap_or_else(|| "text-generation".to_string());
+                                    let tags = repo.tags.unwrap_or_default();
+                                    let downloads = repo.downloads.unwrap_or(0);
+                                    let likes = repo.likes.unwrap_or(0);
+                                    let last_modified = repo.last_modified.unwrap_or_else(|| "2026-01-01T00:00:00Z".to_string());
+                                    let library_name = repo.library_name.unwrap_or_else(|| "transformers".to_string());
+
+                                    let entry = candidates.entry(model_id.clone()).or_insert_with(|| CandidateEntry {
+                                        model_id,
+                                        author,
+                                        pipeline_tag,
+                                        tags,
+                                        downloads,
+                                        likes,
+                                        last_modified,
+                                        library_name,
+                                        raw_trending_score: None,
+                                        trending_rank: Some(rank),
+                                        is_trending: true,
+                                        is_following: false,
+                                    });
+                                    entry.is_trending = true;
+                                    if entry.trending_rank.is_none() {
+                                        entry.trending_rank = Some(rank);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("⚠️ [STAGE 0] Failed to parse /api/trending response: {}", e);
+                    }
+                }
+            }
+            Ok(resp) => {
+                println!("⚠️ [STAGE 0] /api/trending returned HTTP status {}", resp.status());
+            }
+            Err(e) => {
+                println!("⚠️ [STAGE 0] Failed to fetch /api/trending: {}", e);
+            }
+        }
+
+        // 2. Fetch models sorted by trendingScore
+        let trending_models_url = "https://huggingface.co/api/models?sort=trendingScore&direction=-1&limit=100&full=true";
+        let mut req2 = client.get(trending_models_url)
+            .header("User-Agent", "ModelFusion/1.0.0")
+            .timeout(std::time::Duration::from_secs(15));
+        if let Some(t) = token {
+            req2 = req2.bearer_auth(t);
+        }
+        match req2.send().await {
+            Ok(resp) if resp.status().is_success() => {
+                match resp.json::<Vec<HFModelApiResponse>>().await {
+                    Ok(models) => {
+                        for m in models {
+                            let model_id = m.id;
+                            let author = m.author.unwrap_or_else(|| {
+                                model_id.split('/').next().unwrap_or("unknown").to_string()
+                            });
+                            let pipeline_tag = m.pipeline_tag.unwrap_or_else(|| "text-generation".to_string());
+                            let tags = m.tags.unwrap_or_default();
+                            let downloads = m.downloads.unwrap_or(0);
+                            let likes = m.likes.unwrap_or(0);
+                            let last_modified = m.last_modified.unwrap_or_else(|| "2026-01-01T00:00:00Z".to_string());
+                            let library_name = m.library_name.unwrap_or_else(|| "transformers".to_string());
+                            let raw_trending = m.trending_score;
+
+                            let entry = candidates.entry(model_id.clone()).or_insert_with(|| CandidateEntry {
+                                model_id,
+                                author,
+                                pipeline_tag,
+                                tags,
+                                downloads,
+                                likes,
+                                last_modified,
+                                library_name,
+                                raw_trending_score: raw_trending,
+                                trending_rank: None,
+                                is_trending: true,
+                                is_following: false,
+                            });
+                            entry.is_trending = true;
+                            if entry.raw_trending_score.is_none() {
+                                entry.raw_trending_score = raw_trending;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("⚠️ [STAGE 0] Failed to parse /api/models?sort=trendingScore response: {}", e);
+                    }
+                }
+            }
+            Ok(resp) => {
+                println!("⚠️ [STAGE 0] /api/models?sort=trendingScore returned HTTP status {}", resp.status());
+            }
+            Err(e) => {
+                println!("⚠️ [STAGE 0] Failed to fetch /api/models?sort=trendingScore: {}", e);
+            }
+        }
+
+        // 3. Query the 9 Followed Research Organizations
+        for &org in Self::FOLLOWED_RESEARCH_ORGS {
+            let org_url = format!("https://huggingface.co/api/models?author={}&sort=lastModified&direction=-1&limit=25&full=true", org);
+            let mut req_org = client.get(&org_url)
+                .header("User-Agent", "ModelFusion/1.0.0")
+                .timeout(std::time::Duration::from_secs(12));
+            if let Some(t) = token {
+                req_org = req_org.bearer_auth(t);
+            }
+            match req_org.send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    match resp.json::<Vec<HFModelApiResponse>>().await {
+                        Ok(org_models) => {
+                            for m in org_models {
+                                let model_id = m.id;
+                                let author = m.author.unwrap_or_else(|| org.to_string());
+                                let pipeline_tag = m.pipeline_tag.unwrap_or_else(|| "text-generation".to_string());
+                                let tags = m.tags.unwrap_or_default();
+                                let downloads = m.downloads.unwrap_or(0);
+                                let likes = m.likes.unwrap_or(0);
+                                let last_modified = m.last_modified.unwrap_or_else(|| "2026-01-01T00:00:00Z".to_string());
+                                let library_name = m.library_name.unwrap_or_else(|| "transformers".to_string());
+                                let raw_trending = m.trending_score;
+
+                                let entry = candidates.entry(model_id.clone()).or_insert_with(|| CandidateEntry {
+                                    model_id,
+                                    author,
+                                    pipeline_tag,
+                                    tags,
+                                    downloads,
+                                    likes,
+                                    last_modified,
+                                    library_name,
+                                    raw_trending_score: raw_trending,
+                                    trending_rank: None,
+                                    is_trending: false,
+                                    is_following: true,
+                                });
+                                entry.is_following = true;
+                                if entry.raw_trending_score.is_none() && raw_trending.is_some() {
+                                    entry.raw_trending_score = raw_trending;
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            println!("⚠️ [STAGE 0] Failed to parse org '{}' models: {}", org, e);
+                        }
+                    }
+                }
+                Ok(resp) => {
+                    println!("⚠️ [STAGE 0] Org '{}' returned HTTP status {}", org, resp.status());
+                }
+                Err(e) => {
+                    println!("⚠️ [STAGE 0] Failed to fetch models for org '{}': {}", org, e);
+                }
+            }
+        }
+
+        if candidates.is_empty() {
+            println!("⚠️ [STAGE 0] No trending or followed org models collected (network offline or rate limited).");
+            return 0;
+        }
+
+        // Determine max raw trending score for normalization
+        let mut max_raw_score = 500.0f64;
+        for c in candidates.values() {
+            if let Some(raw) = c.raw_trending_score {
+                if raw > max_raw_score {
+                    max_raw_score = raw;
+                }
+            }
+        }
+
+        let mut batch_to_insert = Vec::with_capacity(candidates.len());
+        for (_, c) in candidates {
+            // Attribution
+            let feed_source = match (c.is_trending, c.is_following) {
+                (true, true) => "trending+following".to_string(),
+                (true, false) => "trending".to_string(),
+                (false, true) => "following_activity".to_string(),
+                (false, false) => "standard_hub".to_string(),
+            };
+
+            // Normalization
+            let mut s_trend: Option<f64> = None;
+            if let Some(raw) = c.raw_trending_score {
+                let norm = (raw / max_raw_score).sqrt().clamp(0.10, 1.0);
+                s_trend = Some(norm);
+            }
+            if let Some(rank) = c.trending_rank {
+                let rank_score = (1.0 - (rank as f64 / 100.0) * 0.50).clamp(0.50, 1.0);
+                s_trend = Some(match s_trend {
+                    Some(s) => s.max(rank_score),
+                    None => rank_score,
+                });
+            }
+
+            let s_follow = {
+                let parsed = chrono::DateTime::parse_from_rfc3339(&c.last_modified)
+                    .or_else(|_| chrono::DateTime::parse_from_str(&c.last_modified, "%Y-%m-%dT%H:%M:%S%.fZ"))
+                    .or_else(|_| {
+                        let trimmed = c.last_modified.split('T').next().unwrap_or(&c.last_modified);
+                        chrono::DateTime::parse_from_str(&format!("{}T00:00:00Z", trimmed), "%Y-%m-%dT%H:%M:%SZ")
+                    });
+                let base = if let Ok(dt) = parsed {
+                    let days_old = (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_days().max(0);
+                    if days_old <= 7 {
+                        0.85
+                    } else if days_old <= 30 {
+                        0.70
+                    } else if days_old <= 90 {
+                        0.55
+                    } else {
+                        0.40
+                    }
+                } else {
+                    0.60
+                };
+                let like_boost = (c.likes as f64 / 1000.0).min(0.15);
+                (base + like_boost).min(1.0)
+            };
+
+            let trending_score = match feed_source.as_str() {
+                "trending+following" => {
+                    let st = s_trend.unwrap_or(0.60);
+                    (st.max(s_follow) + 0.10).min(1.0)
+                }
+                "trending" => s_trend.unwrap_or(0.60).clamp(0.0, 1.0),
+                "following_activity" => s_follow.clamp(0.0, 1.0),
+                _ => 0.0,
+            };
+
+            let mut license = "unknown".to_string();
+            for t in &c.tags {
+                if t.starts_with("license:") {
+                    license = t.trim_start_matches("license:").to_string();
+                    break;
+                }
+            }
+
+            let (decision_score, capability_score, efficiency_score, popularity_score, size_mb) =
+                Self::compute_anti_hype_scores(
+                    &c.model_id,
+                    c.downloads,
+                    c.likes,
+                    &c.tags,
+                    &c.pipeline_tag,
+                    &c.library_name,
+                );
+
+            let browser_category = Self::map_pipeline_tag_to_browser_category(&c.pipeline_tag, &c.tags, &c.model_id);
+            let canonical_task = db::models::pipeline_tag_to_task(&c.pipeline_tag);
+            let task_keywords = vec![canonical_task.to_string(), browser_category.to_string()];
+
+            seen_models.insert(c.model_id.clone());
+
+            batch_to_insert.push(ModelMetrics {
+                model_id: c.model_id,
+                author: c.author,
+                pipeline_tag: c.pipeline_tag,
+                tags: c.tags,
+                description: format!("Stage 0 Ingested Model [Feed: {}, Category: {}]", feed_source, browser_category),
+                downloads: c.downloads,
+                likes: c.likes,
+                decision_score,
+                capability_score,
+                efficiency_score,
+                popularity_score,
+                model_type: "causal-lm".to_string(),
+                library_name: c.library_name,
+                last_modified: c.last_modified,
+                license,
+                task_keywords,
+                architecture: "transformer".to_string(),
+                size_mb,
+                language: "en".to_string(),
+                trending_score,
+                feed_source,
+                bandit_pulls: 0,
+                bandit_reward: 0.0,
+            });
+        }
+
+        match db.upsert_batch(&batch_to_insert) {
+            Ok(n) => {
+                println!("✨ [STAGE 0] Successfully upserted {} live trending & followed-org models into database.", n);
+                n
+            }
+            Err(e) => {
+                println!("❌ [STAGE 0] Failed to batch upsert trending/following models: {}", e);
+                0
+            }
+        }
+    }
+
     /// Handle updating database from HuggingFace Hub using Anti-Hype multi-stream discovery.
     pub async fn handle_update_database(&self) -> TaskHandlerResult {
         println!("🔄 Starting Anti-Hype multi-tier database update...");
@@ -460,14 +963,16 @@ impl ComprehensiveTaskHandler {
         };
 
         let client = reqwest::Client::new();
-        let token = std::env::var("HF_TOKEN")
-            .or_else(|_| std::env::var("HUGGINGFACE_API_KEY"))
-            .or_else(|_| std::env::var("HF_API_KEY"))
-            .or_else(|_| std::env::var("HUGGINGFACE_TOKEN"))
-            .ok();
+        let token = self.resolve_hf_token();
 
         let mut total_upserted = 0;
         let mut seen_models: HashSet<String> = HashSet::new();
+
+        // ── Stage 0: Live Trending & Followed-Org Activity Pass ──
+        println!("\n🔥 [STAGE 0] Ingesting Live Trending & Followed-Org Activity Feed...");
+        let stage0_upserted = self.ingest_trending_and_following_feed(&db, &client, token.as_deref(), &mut seen_models).await;
+        total_upserted += stage0_upserted;
+        println!("🔥 [STAGE 0] Ingested {} trending & followed models.\n", stage0_upserted);
 
         // Multi-tier discovery streams covering all modalities (Audio, Vision, NLP, Security, Domains, Global)
         let discovery_streams: Vec<(&str, &str, Option<&str>)> = vec![
@@ -617,6 +1122,10 @@ impl ComprehensiveTaskHandler {
                     architecture: "transformer".to_string(),
                     size_mb,
                     language: "en".to_string(),
+                    trending_score: 0.0,
+                    feed_source: "standard_hub".to_string(),
+                    bandit_pulls: 0,
+                    bandit_reward: 0.0,
                 });
             }
 
@@ -710,6 +1219,10 @@ impl ComprehensiveTaskHandler {
                                 architecture: "transformer".to_string(),
                                 size_mb,
                                 language: "en".to_string(),
+                                trending_score: 0.0,
+                                feed_source: "standard_hub".to_string(),
+                                bandit_pulls: 0,
+                                bandit_reward: 0.0,
                             });
                         }
                         let ov_count = ov_to_insert.len();
@@ -774,17 +1287,19 @@ impl ComprehensiveTaskHandler {
         };
 
         let client = reqwest::Client::new();
-        let token = std::env::var("HF_TOKEN")
-            .or_else(|_| std::env::var("HUGGINGFACE_API_KEY"))
-            .or_else(|_| std::env::var("HF_API_KEY"))
-            .or_else(|_| std::env::var("HUGGINGFACE_TOKEN"))
-            .ok();
+        let token = self.resolve_hf_token();
 
         let mut next_url = Some("https://huggingface.co/api/models?limit=1000&full=false".to_string());
         let mut total_upserted = 0;
         let mut batch_num = 0;
         let start_time = std::time::Instant::now();
         let mut seen_models: HashSet<String> = HashSet::new();
+
+        // ── Stage 0: Live Trending & Followed-Org Activity Pass ──
+        println!("\n🔥 [STAGE 0] Running Stage 0 Trending & Followed-Org Activity Pass prior to registry crawl...");
+        let stage0_upserted = self.ingest_trending_and_following_feed(&db, &client, token.as_deref(), &mut seen_models).await;
+        total_upserted += stage0_upserted;
+        println!("🔥 [STAGE 0] Ingested {} trending & followed models prior to crawl.\n", stage0_upserted);
 
         while let Some(current_url) = next_url.take() {
             let mut retries = 0;
@@ -900,6 +1415,10 @@ impl ComprehensiveTaskHandler {
                     architecture: "transformer".to_string(),
                     size_mb,
                     language: "en".to_string(),
+                    trending_score: 0.0,
+                    feed_source: "standard_hub".to_string(),
+                    bandit_pulls: 0,
+                    bandit_reward: 0.0,
                 });
             }
 
@@ -1106,6 +1625,100 @@ impl ComprehensiveTaskHandler {
             success: true,
             content: "🧠 ML Analytics: Dynamic model selection weights are optimal. Multi-objective confidence is high.".to_string(),
             data: None,
+            error_message: None,
+        }
+    }
+
+    /// Sync live trending and following feed on demand.
+    pub async fn handle_trending_sync(&self) -> TaskHandlerResult {
+        println!("🔥 [TRENDING] Starting on-demand Trending & Following Hub Feed sync...");
+        let start = std::time::Instant::now();
+        let db = match HuggingFaceModelDatabase::open(&self.db_path) {
+            Ok(d) => d,
+            Err(e) => {
+                return TaskHandlerResult {
+                    success: false,
+                    content: format!("❌ Failed to open database: {}", e),
+                    data: None,
+                    error_message: Some(e.to_string()),
+                };
+            }
+        };
+
+        let client = reqwest::Client::new();
+        let token = self.resolve_hf_token();
+        let mut seen = HashSet::new();
+        let synced = self.ingest_trending_and_following_feed(&db, &client, token.as_deref(), &mut seen).await;
+        let elapsed_ms = start.elapsed().as_millis() as u64;
+
+        TaskHandlerResult {
+            success: true,
+            content: format!("🔥 Successfully synced {} trending & followed models in {}ms.", synced, elapsed_ms),
+            data: Some(json!({
+                "status": "ok",
+                "synced": synced,
+                "duration_ms": elapsed_ms,
+            })),
+            error_message: None,
+        }
+    }
+
+    /// Retrieve trending models from the catalog.
+    pub fn handle_get_trending_models(&self, limit: Option<usize>) -> TaskHandlerResult {
+        let db = match HuggingFaceModelDatabase::open(&self.db_path) {
+            Ok(d) => d,
+            Err(e) => {
+                return TaskHandlerResult {
+                    success: false,
+                    content: format!("❌ Failed to open database: {}", e),
+                    data: None,
+                    error_message: Some(e.to_string()),
+                };
+            }
+        };
+
+        let lim = limit.unwrap_or(50);
+        let trending_models = match db.get_trending_models(lim) {
+            Ok(m) => m,
+            Err(e) => {
+                return TaskHandlerResult {
+                    success: false,
+                    content: format!("❌ Failed to query trending models: {}", e),
+                    data: None,
+                    error_message: Some(e.to_string()),
+                };
+            }
+        };
+
+        let models_json: Vec<serde_json::Value> = trending_models.iter().map(|m| {
+            let cat = Self::map_pipeline_tag_to_browser_category(&m.pipeline_tag, &m.tags, &m.model_id);
+            let task = db::models::pipeline_tag_to_task(&m.pipeline_tag);
+            json!({
+                "id": m.model_id,
+                "model_id": m.model_id,
+                "author": m.author,
+                "pipeline_tag": m.pipeline_tag,
+                "task": task,
+                "browser_category": cat,
+                "downloads": m.downloads,
+                "likes": m.likes,
+                "trending_score": m.trending_score,
+                "feed_source": m.feed_source,
+                "bandit_pulls": m.bandit_pulls,
+                "bandit_reward": m.bandit_reward,
+                "decision_score": m.decision_score,
+                "effective_priority_score": m.effective_priority_score(),
+                "last_modified": m.last_modified,
+            })
+        }).collect();
+
+        TaskHandlerResult {
+            success: true,
+            content: format!("Found {} trending models", models_json.len()),
+            data: Some(json!({
+                "total": models_json.len(),
+                "models": models_json,
+            })),
             error_message: None,
         }
     }

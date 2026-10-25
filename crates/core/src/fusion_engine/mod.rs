@@ -81,13 +81,8 @@ pub fn derive_fusion_model_count() -> usize {
     model_selection::memory::derive_fusion_model_count()
 }
 
-/// Helper to determine if a prompt or task is a coding task eligible for Recursive Flint
-/// (`RecursiveSI/flint` 40B total / 2.5B active MoE) Coding Fusion.
-///
-/// CRITICAL DUAL GATE LAW:
-/// Flint is reserved strictly for Multi-Model Fusion AND strictly for coding tasks.
-/// If the task is non-coding (e.g. general chat, creative writing, history, legal, finance, medical, vision, audio),
-/// this function returns false, completely excluding Flint from the Fusion panel even on 64GB+ machines.
+/// Helper to determine if a prompt or task is a coding task for Recursive Flint
+/// (`RecursiveSI/flint` / `flint:latest` 40B total / 2.5B active MoE) + Block Goose Coding Fusion.
 pub fn is_coding_task_for_flint(detected_task: &str, prompt: &str) -> bool {
     let task_lower = detected_task.to_lowercase();
     let prompt_lower = prompt.to_lowercase();
@@ -97,18 +92,17 @@ pub fn is_coding_task_for_flint(detected_task: &str, prompt: &str) -> bool {
         || task_lower.contains("security")
         || task_lower.contains("software")
         || task_lower.contains("programming")
+        || task_lower.contains("flint")
+        || task_lower.contains("goose")
+        || task_lower.contains("raptor")
     {
         return true;
     }
 
-    // 2. Direct Flint directives or coding agent directives
+    // 2. Direct Flint / Goose / RAPTOR / Coding directives
     if prompt_lower.contains("flint")
-        || prompt_lower.contains("@flint")
-        || prompt_lower.contains("flint-coding")
-        || prompt_lower.contains("flint-fusion")
-        || prompt_lower.contains("flint-swe")
-        || prompt_lower.contains("flint-terminal")
-        || prompt_lower.contains("flint-eureka")
+        || prompt_lower.contains("goose")
+        || prompt_lower.contains("raptor")
         || prompt_lower.contains("@agent code-helper")
         || prompt_lower.contains("@code-helper")
         || prompt_lower.contains("@agent security")
@@ -120,7 +114,7 @@ pub fn is_coding_task_for_flint(detected_task: &str, prompt: &str) -> bool {
         return true;
     }
 
-    // 3. Explicit code constructs in prompt
+    // 3. Explicit code constructs & file creation requests (including typos like wrie, javafile, javacode, dend)
     prompt_lower.contains("def ")
         || prompt_lower.contains("fn ")
         || prompt_lower.contains("function ")
@@ -130,12 +124,24 @@ pub fn is_coding_task_for_flint(detected_task: &str, prompt: &str) -> bool {
         || prompt_lower.contains("impl ")
         || prompt_lower.contains("```")
         || prompt_lower.contains("code")
+        || prompt_lower.contains("javafile")
+        || prompt_lower.contains("javacode")
+        || prompt_lower.contains("pyfile")
+        || prompt_lower.contains("java")
         || prompt_lower.contains("python")
         || prompt_lower.contains("rust")
         || prompt_lower.contains("javascript")
         || prompt_lower.contains("typescript")
         || prompt_lower.contains("golang")
         || prompt_lower.contains("c++")
+        || prompt_lower.contains("c#")
+        || prompt_lower.contains("html")
+        || prompt_lower.contains("css")
+        || prompt_lower.contains("sql")
+        || prompt_lower.contains("openai")
+        || prompt_lower.contains("file")
+        || prompt_lower.contains("script")
+        || prompt_lower.contains("program")
         || prompt_lower.contains("algorithm")
         || prompt_lower.contains("bug")
         || prompt_lower.contains("refactor")
@@ -174,7 +180,7 @@ pub async fn run_fusion(
         
     let forced_model = forced_model
         .map(|s| s.trim())
-        .filter(|s| !s.is_empty() && *s != "modelfusion-local" && *s != "modelfusion" && *s != "auto" && *s != "default");
+        .filter(|s| !s.is_empty() && *s != "modelfusion-local" && *s != "modelfusion" && *s != "auto" && *s != "default" && *s != "qwen2.5:1.5b");
 
     let max_candidates = match max_candidates {
         Some(n) if n > 1 => n,
@@ -232,31 +238,41 @@ pub async fn run_fusion(
         // Multi-model: construct a panel of max_candidates models
         let mut panel_models: Vec<ModelConfig> = Vec::new();
 
-        // 1. If forced_model is present, Slot 1
-        if let Some(ref model_id) = forced_model {
-            panel_models.push(ModelConfig::huggingface(model_id));
-        }
-
-        // 1.5. Dual Gate Law for Recursive Flint (40B total / 2.5B active MoE):
-        // Fused ONLY when task is a coding task AND runtime hardware resources are available.
+        // 1. Default Recursive Flint (flint:latest / RecursiveSI/flint 40B-A2.5B MoE) + Block Goose in Fusion & Coding:
+        // Always active by default for coding and fusion tasks (never blocked).
         let is_coding = is_coding_task_for_flint(&detected_task, prompt);
-        if is_coding {
-            let flint_eval = model_selection::memory::SystemMemory::detect_live().assess_flint_for_task(true, true);
-            eprintln!("🔥 [FLINT CODING FUSION] Resource Check: Free RAM {:.1} GB, Free VRAM {:.1} GB -> Tier: {} (Flint 40B-A2.5B Ready: {})",
-                flint_eval.detected_free_ram_gb, flint_eval.detected_free_vram_gb, flint_eval.active_tier, flint_eval.resources_available);
+        let flint_eval = model_selection::memory::SystemMemory::detect_live().assess_flint_for_task(true, is_coding);
+        eprintln!(
+            "🔥 [FLINT + GOOSE DEFAULT FUSION] Resource Check: Free RAM {:.1} GB, Free VRAM {:.1} GB -> Tier: {} (Flint 40B-A2.5B Ready: {}, Ollama Cached: {})",
+            flint_eval.detected_free_ram_gb,
+            flint_eval.detected_free_vram_gb,
+            flint_eval.active_tier,
+            flint_eval.resources_available,
+            flint_eval.ollama_cached
+        );
+        let mut flint_cfg = if flint_eval.ollama_cached {
+            ModelConfig::local("flint:latest")
+        } else {
+            ModelConfig::huggingface("RecursiveSI/flint")
+        };
+        flint_cfg.temperature = Some(1.0);
+        flint_cfg.name = format!(
+            "Recursive Flint 40B-A2.5B MoE + Block Goose ({}, T=1.0)",
+            if flint_eval.resources_available { "Full" } else { "Compact Q4" }
+        );
+        panel_models.push(flint_cfg);
+        eprintln!(
+            "🔥 [FLINT + GOOSE DEFAULT FUSION] Injected Recursive Flint (flint:latest) + Block Goose into Fusion Panel (Slot {})",
+            panel_models.len()
+        );
 
-            let forced_flint = forced_model.map(|m| m.to_lowercase().contains("flint")).unwrap_or(false);
-            if flint_eval.flint_activated_in_fusion || forced_flint {
-                let mut flint_cfg = if flint_eval.ollama_cached {
-                    ModelConfig::local("flint:latest")
+        // 1.5. If forced_model is present and not already flint, add it next
+        if let Some(ref model_id) = forced_model {
+            if !panel_models.iter().any(|m| m.endpoint == *model_id || m.endpoint.contains("flint") && model_id.contains("flint")) {
+                if model_selection::memory::is_ollama_model_cached(model_id) {
+                    panel_models.push(ModelConfig::local(model_id));
                 } else {
-                    ModelConfig::huggingface("RecursiveSI/flint")
-                };
-                flint_cfg.temperature = Some(1.0);
-                flint_cfg.name = format!("Recursive Flint 40B-A2.5B MoE ({}, T=1.0)", if flint_eval.resources_available { "Full" } else { "Compact Q4" });
-                if !panel_models.iter().any(|m| m.endpoint.contains("flint")) {
-                    panel_models.push(flint_cfg);
-                    eprintln!("🔥 [FLINT CODING FUSION] Injected Recursive Flint into Coding Fusion Panel (Slot {})", panel_models.len());
+                    panel_models.push(ModelConfig::huggingface(model_id));
                 }
             }
         }

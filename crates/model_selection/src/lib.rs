@@ -47,6 +47,139 @@ impl std::fmt::Display for SelectionStrategy {
     }
 }
 
+pub use memory::is_unblocked_default;
+
+fn default_feed_source() -> String {
+    "standard_hub".to_string()
+}
+
+pub const HIGH_SIGNAL_RESEARCH_ORGS: &[&str] = &[
+    "RecursiveSI", "Qwen", "deepseek-ai", "google", "meta-llama",
+    "mistralai", "microsoft", "allenai", "nvidia",
+];
+
+pub fn is_high_signal_research_org(author_or_id: &str) -> bool {
+    let lower = author_or_id.to_lowercase();
+    HIGH_SIGNAL_RESEARCH_ORGS.iter().any(|org| {
+        let org_lower = org.to_lowercase();
+        lower == org_lower || lower.starts_with(&format!("{}/", org_lower))
+    })
+}
+
+pub fn normalize_trending_velocity(trending_score: f64) -> f64 {
+    if trending_score > 1.0 {
+        (trending_score / 1000.0).clamp(0.0, 1.0)
+    } else {
+        trending_score.clamp(0.0, 1.0)
+    }
+}
+
+pub fn calculate_following_boost(m: &ModelMetrics) -> f64 {
+    if m.feed_source.contains("following")
+        || is_high_signal_research_org(&m.author)
+        || is_high_signal_research_org(&m.model_id)
+        || memory::is_unblocked_default(&m.model_id)
+    {
+        1.0
+    } else {
+        0.0
+    }
+}
+
+pub fn calculate_ucb1_exploration_bonus(alpha: f64, total_pulls_n: i64, model_pulls_n_i: i64) -> f64 {
+    let n_eff = (model_pulls_n_i.max(0) as f64).max(1.0);
+    let n_total = (total_pulls_n.max(0) as f64).max(2.0);
+    alpha * ((2.0 * n_total.ln()) / n_eff).sqrt()
+}
+
+pub fn calculate_memory_penalty(model_id: &str, required_gb: f64, free_ram_gb: f64) -> f64 {
+    if memory::is_unblocked_default(model_id) {
+        0.0
+    } else if free_ram_gb <= 0.0 && required_gb > 0.0 {
+        1000.0
+    } else if required_gb > free_ram_gb && free_ram_gb > 0.0 {
+        ((required_gb - free_ram_gb) / free_ram_gb) * 10.0
+    } else {
+        0.0
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MultiObjectiveScoreBreakdown {
+    pub raw_score: f64,
+    pub quality_term: f64,
+    pub download_term: f64,
+    pub trending_term: f64,
+    pub following_term: f64,
+    pub ucb1_term: f64,
+    pub memory_penalty: f64,
+    pub is_unblocked_default: bool,
+    #[serde(default)]
+    pub task_quality_q: f64,
+    #[serde(default)]
+    pub log_downloads: f64,
+    #[serde(default)]
+    pub trending_velocity: f64,
+    #[serde(default)]
+    pub following_boost: f64,
+    #[serde(default)]
+    pub ucb1_exploration_bonus: f64,
+    #[serde(default)]
+    pub composite_pareto_score: f64,
+    #[serde(default)]
+    pub pareto_rank: usize,
+    #[serde(default)]
+    pub is_knee_point: bool,
+}
+
+pub fn calculate_multi_objective_score(
+    model_id: &str,
+    q_task: f64,
+    downloads: i64,
+    v_trending: f64,
+    b_following: f64,
+    total_pulls_n: i64,
+    model_pulls_n_i: i64,
+    required_gb: f64,
+    free_ram_gb: f64,
+) -> MultiObjectiveScoreBreakdown {
+    let w1 = 0.25;
+    let w2 = 0.15;
+    let w3 = 0.25;
+    let w4 = 0.15;
+    let alpha = 0.20;
+
+    let quality_term = w1 * q_task;
+    let download_term = w2 * (1.0 + downloads.max(0) as f64).log10();
+    let trending_term = w3 * v_trending.clamp(0.0, 1.0);
+    let following_term = w4 * b_following.clamp(0.0, 1.0);
+
+    let ucb1_term = calculate_ucb1_exploration_bonus(alpha, total_pulls_n, model_pulls_n_i);
+    let memory_penalty = calculate_memory_penalty(model_id, required_gb, free_ram_gb);
+    let is_unblocked = memory::is_unblocked_default(model_id);
+
+    let raw_score = quality_term + download_term + trending_term + following_term + ucb1_term - memory_penalty;
+
+    MultiObjectiveScoreBreakdown {
+        raw_score,
+        quality_term,
+        download_term,
+        trending_term,
+        following_term,
+        ucb1_term,
+        memory_penalty,
+        is_unblocked_default: is_unblocked,
+        task_quality_q: q_task,
+        log_downloads: (1.0 + downloads.max(0) as f64).log10(),
+        trending_velocity: v_trending.clamp(0.0, 1.0),
+        following_boost: b_following.clamp(0.0, 1.0),
+        ucb1_exploration_bonus: ucb1_term,
+        composite_pareto_score: raw_score,
+        pareto_rank: 0,
+        is_knee_point: false,
+    }
+}
+
 /// Represents a model candidate with computed weights and evaluation scores.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelCandidate {
@@ -64,6 +197,16 @@ pub struct ModelCandidate {
     pub confidence_score: f64,
     pub estimated_params_b: f64,
     pub estimated_memory_gb: f64,
+    #[serde(default)]
+    pub trending_score: f64,
+    #[serde(default = "default_feed_source")]
+    pub feed_source: String,
+    #[serde(default)]
+    pub bandit_pulls: i64,
+    #[serde(default)]
+    pub bandit_reward: f64,
+    #[serde(default)]
+    pub pareto_breakdown: Option<MultiObjectiveScoreBreakdown>,
 }
 
 /// Result of model selection.
@@ -186,12 +329,25 @@ impl EnhancedModelSelector {
         }
 
         // Calculate max downloads for normalization
+        // Calculate max downloads for normalization
         let max_downloads = filtered_models.iter().map(|m| m.downloads).max().unwrap_or(1) as f64;
+        let _ = max_downloads;
+
+        // Detect live system memory per Available Runtime Memory Rule
+        let live_mem = SystemMemory::detect_live();
+        let free_ram_gb = live_mem.free_ram_gb;
+
+        let total_pulls_n: i64 = filtered_models
+            .iter()
+            .map(|m| m.bandit_pulls)
+            .sum::<i64>()
+            .max(10);
 
         let mut candidates = Vec::new();
         for m in &filtered_models {
             let freshness = self.calculate_freshness(m);
             let license_val = self.evaluate_license(m);
+            let _ = license_val;
 
             let mut backend = if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || memory::is_ollama_model_cached(&m.model_id) {
                 Backend::Ollama
@@ -209,118 +365,75 @@ impl EnhancedModelSelector {
                 backend = Backend::Transformers;
             }
 
-            // Anti-Hype Model Scoring:
-            // High downloads indicate true automated/production pipeline adoption (0.35)
-            // Stored anti-hype decision score (0.25)
-            // Utility-to-Hype ratio: downloads / max(1, likes) (0.15)
-            // Parameter efficiency sweet-spot (0.15)
-            // Open license (0.05) + Freshness/stability (0.05)
-            let downloads_norm = if max_downloads > 0.0 { (m.downloads as f64 / max_downloads).clamp(0.0, 1.0) } else { 0.0 };
-            
-            // Calculate utility ratio (downloads per like)
-            let d_val = m.downloads.max(0) as f64;
-            let l_val = (m.likes.max(0) as f64).max(1.0);
-            let utility_ratio = d_val / l_val;
-            let utility_ratio_norm = if d_val > 100.0 {
-                (utility_ratio.log10() / 5.5).clamp(0.0, 1.0)
+            let estimated_params_b = estimate_params_billions(&m.model_id).unwrap_or(0.0);
+            let estimated_memory_gb = if estimated_params_b > 0.0 {
+                estimate_runtime_memory_gb(estimated_params_b, backend)
+            } else if m.size_mb > 0.0 {
+                m.size_mb / 1024.0
             } else {
-                0.1
+                0.0
             };
 
-            // Stored on a 0.0 to 10.0 scale in the database, normalize to 0.0-1.0
-            let decision_norm = (m.decision_score / 10.0).clamp(0.0, 1.0);
-            
-            // Efficiency (prefer practical sweet-spot sizes: <1B = 83% of downloads, 1-14B = local desktop sweet spot)
-            let efficiency_val = if m.size_mb > 0.0 {
-                let size_gb = m.size_mb / 1024.0;
-                if size_gb <= 1.0 {
-                    1.0 // Super fast/lightweight (MiniLM, 0.5B, 1B)
-                } else if size_gb <= 8.0 {
-                    0.9 // 1B-4B sweet spot
-                } else if size_gb <= 16.0 {
-                    0.75 // 7B-8B desktop standard
-                } else if size_gb <= 32.0 {
-                    0.55 // 14B
-                } else if size_gb <= 70.0 {
-                    0.35 // 32B-70B (only 3% usage)
-                } else {
-                    0.15 // >70B / 100B+ / frontier behemoths (only 1% usage)
-                }
-            } else {
-                0.7 // Default neutral
+            let q_task = {
+                let cap = if m.capability_score > 1.0 { (m.capability_score / 10.0).clamp(0.0, 1.0) } else { m.capability_score.clamp(0.0, 1.0) };
+                let dec = if m.decision_score > 1.0 { (m.decision_score / 10.0).clamp(0.0, 1.0) } else { m.decision_score.clamp(0.0, 1.0) };
+                cap * 0.6 + dec * 0.4
             };
 
-            let mut final_score = downloads_norm * 0.22
-                + decision_norm * 0.26
-                + utility_ratio_norm * 0.15
-                + efficiency_val * 0.12
-                + license_val * 0.03
-                + freshness * 0.22;
+            let v_trending = normalize_trending_velocity(m.trending_score);
+            let b_following = calculate_following_boost(m);
+
+            let mut score_breakdown = calculate_multi_objective_score(
+                &m.model_id,
+                q_task,
+                m.downloads,
+                v_trending,
+                b_following,
+                total_pulls_n,
+                m.bandit_pulls,
+                estimated_memory_gb,
+                free_ram_gb,
+            );
+
+            let mut final_score = score_breakdown.raw_score;
 
             if freshness < 0.35 {
-                final_score *= 0.60; // Strict multiplicative penalty for stale models (>2 years old or legacy architecture)
+                final_score *= 0.60;
             }
 
             // Apply strategy variations/stubs
             match strategy {
                 SelectionStrategy::CrossValidation => {
-                    // Slight variation based on meta evaluation
                     final_score += 0.02 * m.capability_score.clamp(0.0, 1.0);
                 }
                 SelectionStrategy::HyperparameterTuning => {
-                    // Optimization stub variation
                     final_score += 0.01 * m.efficiency_score.clamp(0.0, 1.0);
                 }
                 SelectionStrategy::EnsembleMethods => {
-                    // Combine decision + capability + popularity
                     final_score = (final_score + m.popularity_score.clamp(0.0, 1.0)) / 2.0;
                 }
                 SelectionStrategy::BayesianOptimization => {
-                    final_score *= 1.02; // BO scalar boost stub
+                    final_score *= 1.02;
                 }
                 SelectionStrategy::MetaLearning => {
-                    // Feature similarity mock modifier
                     if prompt.contains("code") && m.library_name.contains("transformers") {
                         final_score += 0.05;
                     }
                 }
                 SelectionStrategy::Fastest => {
-                    // Normalize size score to [0.01, 1.0]: Smaller models rank the highest
                     final_score = if m.size_mb > 0.0 {
                         (1.0 - (m.size_mb / 100_000.0)).clamp(0.01, 1.0)
                     } else {
-                        0.5 // Default neutral score when size metadata is unknown
+                        0.5
                     };
                 }
                 SelectionStrategy::WeightedVoting => {
-                    // Weighted voting score: combines base score (50%), decision score (30%), and capability score (20%)
                     let dec_norm = (m.decision_score / 10.0).clamp(0.0, 1.0);
                     let cap_norm = (m.capability_score / 10.0).clamp(0.0, 1.0);
                     final_score = final_score * 0.5 + dec_norm * 0.3 + cap_norm * 0.2;
                 }
                 SelectionStrategy::MultiObjective => {
-                    // Sophisticated multi-objective optimization:
-                    // Competing objectives: Accuracy vs Latency vs Memory constraints.
-                    // Calculate capability/accuracy reward:
-                    let accuracy_obj = m.capability_score.clamp(0.0, 1.0);
-                    
-                    // Calculate latency/speed reward:
-                    let speed_obj = m.efficiency_score.clamp(0.0, 1.0);
-                    
-                    // Calculate memory compliance safety reward:
-                    let memory = memory::SystemMemory::detect();
-                    let estimated_params_b = estimate_params_billions(&m.model_id).unwrap_or(7.0);
-                    let runtime_mem = estimate_runtime_memory_gb(estimated_params_b, backend);
-                    let memory_obj = if runtime_mem <= memory.gpu_budget_gb() {
-                        1.0 // High compliance (runs fully on fast GPU)
-                    } else if runtime_mem <= memory.ram_budget_gb() {
-                        0.5 // Medium compliance (runs on CPU)
-                    } else {
-                        0.1 // Low compliance (potential paging/thrashing)
-                    };
-                    
-                    // Scalar weighting: 40% Accuracy, 30% Speed, 30% Memory Safety
-                    final_score = accuracy_obj * 0.4 + speed_obj * 0.3 + memory_obj * 0.3;
+                    // Multi-objective composite score is calculated by calculate_multi_objective_score
                 }
             }
 
@@ -331,25 +444,13 @@ impl EnhancedModelSelector {
 
             let confidence = (final_score * 1.2).clamp(0.1, 1.0);
 
-            let estimated_params_b = estimate_params_billions(&m.model_id).unwrap_or(0.0);
-
             // OpenVINO-aware scoring adjustment:
-            // On first run, uncached models must be downloaded + converted (slow).
-            // Strongly prefer ≤3B models which convert in ~2 min vs. ~15 min for 7B+.
-            // Once cached, restore full scoring — conversion cost is already paid.
             if is_openvino {
                 if is_cached {
-                    // Cached model: small bonus to keep it ranked above uncached equivalents
                     final_score = (final_score + 0.15).min(1.0);
                 } else if estimated_params_b > 3.0 {
-                    // Uncached large model: heavy penalty — download+convert would take 10-15+ min
                     final_score = (final_score - 0.4).max(0.0);
-                    log::debug!(
-                        "[OPENVINO] Penalising uncached {:.1}B model '{}' (score {:.2} → {:.2})",
-                        estimated_params_b, m.model_id, final_score + 0.4, final_score
-                    );
                 }
-                // ≤3B uncached: no penalty — they convert fast (~2 min), keep normal score
             }
 
             let is_local = std::env::var("MODELFUSION_USE_TRANSFORMERS").is_ok()
@@ -358,40 +459,32 @@ impl EnhancedModelSelector {
                 || std::env::var("MODELFUSION_USE_ONNX").is_ok();
 
             // Local Transformers cache-aware scoring:
-            // If the model is already downloaded in local HuggingFace cache, prioritize it.
-            // If not, penalize it to avoid unnecessary slow model downloads.
             let is_transformers = backend == Backend::Transformers;
             if is_local && is_transformers {
                 let is_tf_cached = memory::is_transformers_model_cached(&m.model_id);
                 if is_tf_cached {
-                    // Boost cached models to keep them on top of uncached ones
                     final_score = (final_score + 0.35).min(1.0);
-                    log::debug!("[TRANSFORMERS] Boosting cached model '{}' (score +0.35)", m.model_id);
                 } else {
-                    // Penalize uncached models to avoid downloading on slow connections
                     final_score = (final_score - 0.45).max(0.0);
-                    log::debug!(
-                        "[TRANSFORMERS] Penalising uncached model '{}' (score {:.2} → {:.2})",
-                        m.model_id, final_score + 0.45, final_score
-                    );
                 }
             }
 
-
             // Hardware suitability scoring adjustment:
-            let suitability = if is_local {
-                let sys_mem = SystemMemory::detect();
+            let is_unblocked = memory::is_unblocked_default(&m.model_id);
+            let suitability = if is_unblocked {
+                memory::SuitabilityResult::Adequate
+            } else if is_local {
                 memory::evaluate_hardware_suitability(
                     estimated_params_b,
                     backend,
-                    &sys_mem,
+                    &live_mem,
                 )
             } else {
                 memory::SuitabilityResult::Adequate
             };
 
-            // Filter out models that do not meet minimum requirements immediately
-            if is_local && suitability == memory::SuitabilityResult::Inadequate {
+            // Filter out models that do not meet minimum requirements immediately (unblocked models are never filtered)
+            if is_local && !is_unblocked && suitability == memory::SuitabilityResult::Inadequate {
                 log::debug!("Skipping candidate '{}' due to inadequate hardware resources", m.model_id);
                 continue;
             }
@@ -403,11 +496,8 @@ impl EnhancedModelSelector {
                 final_score = (final_score - 0.20).max(0.0);
             }
 
-            let estimated_memory_gb = if estimated_params_b > 0.0 {
-                estimate_runtime_memory_gb(estimated_params_b, backend)
-            } else {
-                0.0
-            };
+            score_breakdown.raw_score = final_score;
+            score_breakdown.composite_pareto_score = final_score;
 
             candidates.push(ModelCandidate {
                 model_id: m.model_id.clone(),
@@ -424,6 +514,11 @@ impl EnhancedModelSelector {
                 confidence_score: confidence,
                 estimated_params_b,
                 estimated_memory_gb,
+                trending_score: m.trending_score,
+                feed_source: m.feed_source.clone(),
+                bandit_pulls: m.bandit_pulls,
+                bandit_reward: m.bandit_reward,
+                pareto_breakdown: Some(score_breakdown),
             });
         }
 
@@ -431,23 +526,32 @@ impl EnhancedModelSelector {
         let mut pareto_knee_id: Option<String> = None;
 
         if strategy == SelectionStrategy::MultiObjective && !candidates.is_empty() {
-            let directions = [
-                ObjectiveDirection::Maximize,
-                ObjectiveDirection::Maximize,
-                ObjectiveDirection::Minimize,
-                ObjectiveDirection::Minimize,
-            ];
+            let directions = pareto::default_pareto_directions();
 
             let pareto_candidates: Vec<ParetoCandidate> = candidates
                 .iter()
-                .map(|c| ParetoCandidate {
-                    id: c.model_id.clone(),
-                    objectives: vec![
+                .map(|c| {
+                    let v_trending = normalize_trending_velocity(c.trending_score);
+                    let b_following = if c.feed_source.contains("following")
+                        || is_high_signal_research_org(&c.model_id)
+                        || memory::is_unblocked_default(&c.model_id)
+                    {
+                        1.0
+                    } else {
+                        0.0
+                    };
+                    let efficiency = (c.efficiency_score / 10.0).clamp(0.0, 1.0);
+                    let ucb1 = calculate_ucb1_exploration_bonus(0.20, total_pulls_n, c.bandit_pulls);
+
+                    ParetoCandidate::from_model_objectives(
+                        &c.model_id,
                         c.capability_score,
-                        c.efficiency_score,
+                        v_trending,
+                        b_following,
+                        efficiency,
+                        ucb1,
                         c.estimated_memory_gb,
-                        1.0 - (c.decision_score / 10.0).clamp(0.0, 1.0),
-                    ],
+                    )
                 })
                 .collect();
 
@@ -459,8 +563,15 @@ impl EnhancedModelSelector {
                 for c in &mut candidates {
                     if c.model_id == knee.id {
                         c.final_score = 1.0;
+                        if let Some(ref mut b) = c.pareto_breakdown {
+                            b.is_knee_point = true;
+                            b.pareto_rank = 1;
+                        }
                     } else if front_ids.contains(&c.model_id) {
                         c.final_score += 0.40;
+                        if let Some(ref mut b) = c.pareto_breakdown {
+                            b.pareto_rank = 1;
+                        }
                     }
                 }
                 pareto_knee_id = Some(knee.id);
@@ -495,7 +606,7 @@ impl EnhancedModelSelector {
                 "Phi-3-mini-4k-instruct", "Phi-4-mini-instruct", "Phi-4",
                 "Mistral-7B-Instruct", "Mixtral-8x7B-Instruct",
             ];
-            candidates.retain(|c| memory::is_ollama_model_cached(&c.model_id) || ollama_models.iter().any(|m| c.model_id.contains(m)));
+            candidates.retain(|c| memory::is_unblocked_default(&c.model_id) || memory::is_ollama_model_cached(&c.model_id) || ollama_models.iter().any(|m| c.model_id.contains(m)));
 
             // Apply a major boost to candidates that are already installed / cached in Ollama
             for c in &mut candidates {
@@ -523,8 +634,8 @@ impl EnhancedModelSelector {
 
         let verbose = std::env::var("MODELFUSION_VERBOSE").is_ok();
         if is_local {
-            // Dynamic memory-aware filtering: detect system resources and exclude models that won't fit
-            let sys_mem = SystemMemory::detect();
+            // Dynamic memory-aware filtering: detect live system resources and exclude models that won't fit
+            let sys_mem = SystemMemory::detect_live();
             if verbose {
                 sys_mem.print_summary();
             }
@@ -532,6 +643,9 @@ impl EnhancedModelSelector {
 
             let before_count = candidates.len();
             candidates.retain(|c| {
+                if memory::is_unblocked_default(&c.model_id) {
+                    return true;
+                }
                 let suitability = memory::evaluate_hardware_suitability(
                     c.estimated_params_b,
                     if std::env::var("MODELFUSION_USE_OLLAMA").is_ok() || memory::is_ollama_model_cached(&c.model_id) { Backend::Ollama } else if std::env::var("MODELFUSION_USE_OPENVINO").is_ok() { Backend::OpenVINO } else { Backend::Transformers },
@@ -742,6 +856,11 @@ mod tests {
             confidence_score: 0.85,
             estimated_params_b: 0.5,
             estimated_memory_gb: 1.0,
+            trending_score: 0.0,
+            feed_source: "standard_hub".to_string(),
+            bandit_pulls: 0,
+            bandit_reward: 0.0,
+            pareto_breakdown: None,
         };
 
         let candidate_b = ModelCandidate {
@@ -759,6 +878,11 @@ mod tests {
             confidence_score: 0.95,
             estimated_params_b: 7.0,
             estimated_memory_gb: 14.0,
+            trending_score: 0.0,
+            feed_source: "standard_hub".to_string(),
+            bandit_pulls: 0,
+            bandit_reward: 0.0,
+            pareto_breakdown: None,
         };
 
         let ensemble_choice = EnsembleModelSelector::select_ensemble(&[candidate_a.clone(), candidate_b.clone()]);
@@ -838,5 +962,178 @@ mod tests {
         assert!(result.reasoning.contains("on front"));
 
         let _ = std::fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_pareto_trending_velocity_scoring() {
+        // 1. Stale legacy model: 1,000,000 downloads, zero trending velocity, zero following boost, high pull count
+        let legacy_score = calculate_multi_objective_score(
+            "legacy/million-downloads",
+            0.85,
+            1_000_000,
+            0.0,
+            0.0,
+            200,
+            150,
+            12.0,
+            32.0,
+        );
+
+        // 2. Breakout model: only 500 downloads, but rapid 7-day velocity + followed research org + under-explored
+        let breakout_score = calculate_multi_objective_score(
+            "RecursiveSI/breakout-v1",
+            0.85,
+            500,
+            0.98,
+            1.0,
+            200,
+            2,
+            12.0,
+            32.0,
+        );
+
+        // Breakout model must outscore stale legacy model
+        assert!(
+            breakout_score.raw_score > legacy_score.raw_score,
+            "Breakout model ({:.4}) must outscore stale legacy model ({:.4})",
+            breakout_score.raw_score,
+            legacy_score.raw_score
+        );
+
+        // 3. Pareto front verification: breakout cold-start model appears on the non-dominated Pareto frontier
+        let directions = default_pareto_directions();
+        // Legacy model trades off higher capability (0.95) against zero trending/following velocity
+        let c_legacy = ParetoCandidate::from_model_objectives("legacy", 0.95, 0.0, 0.0, 0.8, legacy_score.ucb1_term, 12.0);
+        let c_breakout = ParetoCandidate::from_model_objectives("breakout", 0.85, 0.98, 1.0, 0.8, breakout_score.ucb1_term, 12.0);
+        let c_dominated = ParetoCandidate::from_model_objectives("dominated", 0.50, 0.0, 0.0, 0.4, 0.05, 24.0);
+
+        let front = compute_pareto_front(&[c_legacy, c_breakout.clone(), c_dominated], &directions);
+        let front_ids: Vec<String> = front.iter().map(|c| c.id.clone()).collect();
+        assert!(front_ids.contains(&"breakout".to_string()));
+        assert!(front_ids.contains(&"legacy".to_string()));
+        assert!(!front_ids.contains(&"dominated".to_string()));
+    }
+
+    #[test]
+    fn test_ucb1_exploration_bonus() {
+        let total_n = 1000;
+        let pulls = [1, 5, 20, 50, 200];
+        let mut prev_bonus = f64::INFINITY;
+
+        for &ni in &pulls {
+            let bonus = calculate_ucb1_exploration_bonus(0.20, total_n, ni);
+            assert!(
+                bonus < prev_bonus,
+                "UCB1 bonus must decrease monotonically as pull count increases: ni={} ({}) vs prev ({})",
+                ni, bonus, prev_bonus
+            );
+            assert!(bonus > 0.0, "UCB1 bonus must be strictly positive");
+            prev_bonus = bonus;
+        }
+
+        // Verify exact mathematical formula at N=100, n_i=8
+        // 0.20 * sqrt(2 * ln(100) / 8) = 0.20 * sqrt(9.21034037 / 8) = 0.20 * 1.072983 = 0.214596...
+        let exact_check = calculate_ucb1_exploration_bonus(0.20, 100, 8);
+        let expected = 0.20 * ((2.0 * (100.0f64).ln()) / 8.0).sqrt();
+        assert!((exact_check - expected).abs() < 1e-6);
+        assert!((exact_check - 0.214596).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_runtime_memory_penalty_and_unblocked_law() {
+        let free_ram_gb = 8.0;
+
+        // 1. Model that fits: required 6 GB on 8 GB free -> 0 penalty
+        let fit_res = calculate_multi_objective_score(
+            "small/fit-model",
+            0.8,
+            1000,
+            0.5,
+            0.0,
+            100,
+            10,
+            6.0,
+            free_ram_gb,
+        );
+        assert_eq!(fit_res.memory_penalty, 0.0);
+
+        // 2. Oversized model: required 16 GB on 8 GB free -> ((16-8)/8)*10 = 10.0 penalty
+        let oversized_res = calculate_multi_objective_score(
+            "huge/oversized-model",
+            0.8,
+            1000,
+            0.5,
+            0.0,
+            100,
+            10,
+            16.0,
+            free_ram_gb,
+        );
+        assert_eq!(oversized_res.memory_penalty, 10.0);
+        assert!(oversized_res.raw_score < fit_res.raw_score);
+
+        // 3. Unblocked Default Law: Flint, Goose, and RAPTOR always have P_memory = 0.0
+        let low_free_ram = 4.0;
+
+        let flint_res = calculate_multi_objective_score(
+            "RecursiveSI/flint",
+            0.95,
+            5000,
+            0.95,
+            1.0,
+            100,
+            10,
+            24.0,
+            low_free_ram,
+        );
+        assert_eq!(flint_res.memory_penalty, 0.0);
+        assert!(flint_res.is_unblocked_default);
+
+        let flint_latest_res = calculate_multi_objective_score(
+            "flint:latest",
+            0.95,
+            5000,
+            0.95,
+            1.0,
+            100,
+            10,
+            24.0,
+            low_free_ram,
+        );
+        assert_eq!(flint_latest_res.memory_penalty, 0.0);
+        assert!(flint_latest_res.is_unblocked_default);
+
+        let goose_res = calculate_multi_objective_score(
+            "goose",
+            0.90,
+            3000,
+            0.80,
+            1.0,
+            100,
+            10,
+            16.0,
+            low_free_ram,
+        );
+        assert_eq!(goose_res.memory_penalty, 0.0);
+        assert!(goose_res.is_unblocked_default);
+
+        let raptor_res = calculate_multi_objective_score(
+            "raptor",
+            0.90,
+            3000,
+            0.80,
+            1.0,
+            100,
+            10,
+            16.0,
+            low_free_ram,
+        );
+        assert_eq!(raptor_res.memory_penalty, 0.0);
+        assert!(raptor_res.is_unblocked_default);
+
+        // 4. Live system memory detection check
+        let live_mem = SystemMemory::detect_live();
+        assert!(live_mem.free_ram_gb > 0.0);
+        assert!(live_mem.free_vram_mb() >= 0.0);
     }
 }

@@ -1,110 +1,104 @@
-# Project: Next-Generation Autonomous Capabilities for HugOS IDE & ModelFusion Master CLI
+# Project: Hugging Face Trending & Following Feed Integration & Resilient Release Synchronization
 
-## Architecture & System Overview
-ModelFusion and HugOS IDE form a proactive, self-healing, multi-modal developer operating system:
-1. **ModelFusion Master CLI & Rust Workspace (`crates/`)**:
-   - `crates/cli`: Command dispatch, HTTP API server (:5000), MCP JSON-RPC, `FusionArbiter` multi-model consensus, and mesh offloading.
-   - `crates/core`: Task orchestration, multi-modal model catalog integration, and pipeline execution.
-   - `crates/code_graph`: Tree-Sitter multi-language AST extraction (Rust, TypeScript, Python), SQLite database (`code_graph.db`), FTS5 virtual table, and sub-25ms structural symbol queries.
-   - `crates/mesh`: P2P mDNS discovery (`_hugos-mesh._tcp.local.`) and encrypted mTLS transport for LAN compute offloading.
-2. **HugOS IDE Extension & TypeScript Layer (`IDE/vscode/extensions/copilot/`, `IDE/src/`)**:
-   - `ide_client_shim.ts`: Event-driven background watcher on `vscode.languages.onDidChangeDiagnostics`, Win32 Named Pipe / TCP IPC, virtual document diff provider (`restrl-diff://`), and verified fix CodeLens / QuickFix.
-   - `speculativeGhostText.ts`: `vscode.InlineCompletionItemProvider` implementing 120+ tok/s speculative ghost text within a 150ms latency budget.
-   - `visualCanvas.ts` & Webview: Multi-modal drag-and-drop and clipboard paste canvas routing to local VLMs for UI synthesis and visual layout diagnosis.
-   - `codeGraphService.ts`: Symbol hierarchy context extraction for `@agent` and `/orchestrate`.
-3. **Python ReST-RL & AI Engine (`IDE/rest_rl/`, `IDE/ov_models/`)**:
-   - Sub-50ms preemption architecture: Win32 Job Objects (`_kernel32.TerminateJobObject`) for <8ms cancellation and streaming socket preemption for <25ms token abortion.
-   - Adversarial AST Mutation Certification Gate ($K=5$ mutants, $M_{kill} \ge 0.50 \implies R=1.00$).
-   - 4-Tier Graduated Dense Verification Signal ($R(c) = 0.15 S_{ast} + 0.25 S_{diag} + 0.25 S_{reg} + 0.35 S_{test}$).
-   - Speculative draft model serving: OpenVINO INT4 `OpenVINO_Qwen2.5-Coder-0.5B-Instruct-int4-ov` (>120 tok/s).
-   - Multi-modal local VLM serving: OpenVINO `OpenVINO_Qwen2-VL-7B-Instruct-int4-ov` and Ollama `qwen2-vl`.
+## Architecture
+- **Stage 0 Feed Ingestion (`crates/core`, `crates/cli`, `crates/db`)**:
+  - Live query to Hugging Face Trending API (`/api/trending?type=model&limit=100`, `/api/models?sort=trendingScore`) and 9 high-signal research orgs (`RecursiveSI`, `Qwen`, `deepseek-ai`, `google`, `meta-llama`, `mistralai`, `microsoft`, `allenai`, `nvidia`).
+  - Idempotent SQLite `ALTER TABLE` migration adding `trending_score`, `feed_source`, `bandit_pulls`, and `bandit_reward` to `hf_models.db`.
+  - Automatic task mapping across all 45+ Hugging Face tasks and 19 Browser categories.
+- **Multi-Objective Pareto & UCB1 Bandit Selector (`crates/model_selection`)**:
+  - Unified multi-objective scoring formula:
+    $$S(\text{model}) = w_1 \cdot Q_{\text{task}} + w_2 \cdot \log_{10}(1 + \text{Downloads}) + w_3 \cdot V_{\text{trending}} + w_4 \cdot B_{\text{following}} + \alpha \sqrt{\frac{2 \ln N}{\max(1, n_i)}} - P_{\text{memory}}$$
+  - Dynamic hardware sizing via `SystemMemory::detect_live()` (`free_ram_gb`, `free_vram_mb`).
+  - Unblocked default active status for Recursive Flint (`flint:latest` / `RecursiveSI/flint`), Block Goose (`goose`), and RAPTOR (`raptor`) ($P_{\text{memory}} = 0.0$).
+- **Multi-Client Discovery & UI Directives (`crates/cli`, `browser/ui`, `IDE/vscode/extensions/copilot`)**:
+  - Master CLI: `--trending`, `--trending-models`, `--update --trending`, `GET /api/trending/models`, `POST /api/trending/sync`.
+  - HugOS Browser: `@agent trending-models`, `/trending`, `#sidebar-trending-models`, `#tool_trending_models` under `Utilities & System` strictly A-Z sorted, clean headerless canvas with 9-action `.msg-action-bar`, long-form 8192-token responses.
+  - HugOS IDE: commands & directives across all 5 distribution locations, direct inline file-writer with active editor/workspace auto-save.
+  - Port 5000..5010 failover: verified with `service === "modelfusion"` on `/health`.
+- **Distribution, Parity & Signing Pipeline**:
+  - 18-way cryptographic CLI binary parity (`cli.exe`, `clibrowser.exe`, `cliide.exe`, `climcp.exe`).
+  - Zero-touch environment variable invariance.
+  - WiX MSI packaging (`HugOS.msi`, `HugOS_Browser.msi`), Authenticode digital signing with DigiCert timestamp, Microsoft WDSI submission, and GitHub release synchronization.
 
 ---
 
 ## Feature Inventory
 
-| # | Feature | Scope & Description | Milestone | Source |
-|---|---|---|---|---|
-| F1 | Real-Time LSP Diagnostic Watcher | Event-driven background watcher on `vscode.languages.onDidChangeDiagnostics` with 750ms debounce | M1 | ORIGINAL_REQUEST §R1 |
-| F2 | Autonomous Candidate Patch Synthesis | Non-blocking background repair synthesis using compiler oracles (`cargo check`, `tsc`, `py_compile`) | M1 | ORIGINAL_REQUEST §R1 |
-| F3 | AST Mutation Certification & $R=1.00$ Gate | $K=5$ AST mutants; $M_{kill} \ge 0.50 \implies R=1.00$; vacuous test suites rejected | M1 | ORIGINAL_REQUEST §R1 |
-| F4 | In-Editor CodeLens & QuickFix Actions | Surfaces `[🤖 Verified Fix Available (Score: 1.00) — Review Virtual Diff]` and QuickFix atomically | M1 | ORIGINAL_REQUEST §R1 |
-| F5 | In-Memory Virtual Document Diffs | `restrl-diff://` virtual document diffing and atomic `vscode.workspace.applyEdit` without disk temp files | M1 | ORIGINAL_REQUEST §R1 |
-| F6 | Speculative Inline Completion Provider | `vscode.languages.registerInlineCompletionItemProvider` responding within 150ms of typing pause | M2 | ORIGINAL_REQUEST §R2 |
-| F7 | 0.5B Draft Model Speculative Pipeline | Speculative drafting via local 0.5B model (`qwen2.5-coder:0.5b` via OpenVINO CPU/NPU or Ollama) >120 tok/s | M2 | ORIGINAL_REQUEST §R2 |
-| F8 | Background AST Integrity Verification | Fast incremental AST syntax validation via bundled Tree-Sitter WASM grammars in <20ms | M2 | ORIGINAL_REQUEST §R2 |
-| F9 | Tree-Sitter Multi-Language Symbol Extractor | Rust AST parsing for Rust, TypeScript/JS, and Python extracting definitions, calls, impls, and refs | M3 | ORIGINAL_REQUEST §R3 |
-| F10 | Semantic Knowledge Graph SQLite Schema | `code_graph.db` schema (`files`, `symbols`, `calls`, `implementations`, `symbol_references`, `symbols_fts`) | M3 | ORIGINAL_REQUEST §R3 |
-| F11 | Sub-25ms Graph Query CLI & HTTP API | Prepared statements and recursive CTEs delivering call hierarchy and symbol lookups in <25ms | M3 | ORIGINAL_REQUEST §R3 |
-| F12 | Structural Context Injection for `@agent` | Inject call hierarchy and symbol signatures into `@agent` and `/orchestrate` chat prompts | M3 | ORIGINAL_REQUEST §R3 |
-| F13 | Chat Webview Visual Dropzone & Clipboard | Drag-and-drop and clipboard paste (`Win+Shift+S`) image dropzone with Base64 encoding | M4 | ORIGINAL_REQUEST §R4 |
-| F14 | Local Vision Model Pipeline | Local VLM inference (`qwen2-vl` / `Florence-2`) via OpenVINO GenAI or Ollama `/api/chat` | M4 | ORIGINAL_REQUEST §R4 |
-| F15 | Frontend Component & Layout Synthesis | Automatic synthesis of Tailwind/React components and diagnosis of visual CSS layout bugs | M4 | ORIGINAL_REQUEST §R4 |
-| F16 | Peer-to-Peer mDNS Discovery Protocol | DNS-SD `_hugos-mesh._tcp.local.` advertising host, free RAM, GPU, free VRAM, and capabilities | M5 | ORIGINAL_REQUEST §R5 |
-| F17 | Encrypted Local mTLS Transport | Mutual TLS using self-signed cluster certificates (`rcgen` / `rustls`) over LAN | M5 | ORIGINAL_REQUEST §R5 |
-| F18 | Distributed Workload Offloading | Routing 32B model arbitration and ReST-RL compute sweeps from laptops to LAN GPU workstations | M5 | ORIGINAL_REQUEST §R5 |
-| F19 | 4-Way Cryptographic Binary Parity | 100% SHA-256 and byte parity across all 4 `cli.exe` locations verified via `sync_cli_parity.py` | M6 | Persistent Rules |
-| F20 | WiX v5 MSI Build & Authenticode Signing | Compile `HugOS.msi` with incremented build number, signed via `hugos-signing-cert.pfx` | M6 | Persistent Rules |
-| F21 | Comprehensive E2E Test Suite | Automated end-to-end verification of all R1–R5 capabilities with 100% pass rate | M6 | ORIGINAL_REQUEST |
+| # | Feature | Description | Milestone | Source |
+|---|---------|-------------|-----------|--------|
+| F1 | SQLite Schema Evolution & Non-Destructive Migration | Add `trending_score: f64`, `feed_source: String`, `bandit_pulls: i64`, `bandit_reward: f64` to `models` table via idempotent `ALTER TABLE` migration | M1 | ORIGINAL_REQUEST §R1 |
+| F2 | ModelMetrics Extended Persistence | Persist and deserialize trending, feed source, and bandit fields in `crates/db/src/models.rs` | M1 | ORIGINAL_REQUEST §R1 |
+| F3 | Stage 0 Trending & Following Feed Ingestion | Live HTTP queries for public trending models and 9 followed research orgs inserted into `--update` and `--updatedb` | M1 | ORIGINAL_REQUEST §R1 |
+| F4 | Pipeline Tag Task & Browser Category Mapping | Map all ingested models by `pipeline_tag` across 45+ Hugging Face tasks and 19 browser categories | M1 | ORIGINAL_REQUEST §R1 |
+| F5 | Pareto Velocity & UCB1 Bandit Scoring | Incorporate $V_{\text{trending}}$, $B_{\text{following}}$, and $\alpha \sqrt{\frac{2\ln N}{\max(1, n_i)}}$ into `EnhancedModelSelector` and Pareto candidate objectives | M2 | ORIGINAL_REQUEST §R2 |
+| F6 | Live Runtime Available Memory Invariant | Enforce `SystemMemory::detect_live()` (`free_ram_gb`, `free_vram_mb`) to apply $P_{\text{memory}}$ preventing OOM | M2 | ORIGINAL_REQUEST §R2 |
+| F7 | Recursive Flint + Block Goose + RAPTOR Default Stack | Ensure Flint, Goose, and RAPTOR are never blocked, default active for Coding/Fusion ($P_{\text{memory}} = 0.0$), fixing `test_flint_dual_gate_law` | M2 | ORIGINAL_REQUEST §R2 |
+| F8 | Master CLI Trending Flags & HTTP Endpoints | Support `--trending`, `--trending-models`, `--update --trending`, `GET /api/trending/models`, `POST /api/trending/sync` | M3 | ORIGINAL_REQUEST §R3 |
+| F9 | Port 5000..5010 Resilient Failover | Discover active server port across ports 5000..5010 verifying `data.service === "modelfusion"` on `/health` | M3 | ORIGINAL_REQUEST §R3 |
+| F10 | HugOS Browser Trending Discovery & A-Z Alphabetical Order | Add `@agent trending-models`, `/trending`, `#sidebar-trending-models`, `#tool_trending_models` in `Utilities & System` strictly A-Z sorted | M3 | ORIGINAL_REQUEST §R3 |
+| F11 | Clean Canvas & Long-Form Response Stream | Headerless assistant canvas, preserved 9-action `.msg-action-bar`, and 8192-token long-form response generation | M3 | ORIGINAL_REQUEST §R3 |
+| F12 | HugOS IDE Commands, Directives & 5-Location Mirroring | Support `/trending`, `@agent trending-models`, `/raptor`, `/goose`, `/flint` synced across all 5 IDE extension locations | M3 | ORIGINAL_REQUEST §R3 |
+| F13 | IDE Inline File-Writer & Auto-Save | Extract `<userRequest>` to top of prompt, generate compilable code, and write directly to active editor/workspace files | M3 | ORIGINAL_REQUEST §R3 |
+| F14 | Comprehensive E2E Test Suite | Create and verify `tests/test_hf_trending_and_following_feed.js`, verify `test_goose_19_categories_and_longform_canvas.js`, `test_flint_coding_fusion.js`, `test_alphabetical_menu.py`, `test_browser_menu_accordion_and_tool_count.js` | M3 | ORIGINAL_REQUEST §AC |
+| F15 | 18-Way Cryptographic Binary Parity | Mirror release `cli.exe` across all 18 locations with identical SHA-256 hashes via `scripts/mirror_all.py` | M4 | Persistent Rules & R4 |
+| F16 | Zero-Touch Environment Verification | Verify zero registry modifications in `HKCU\Environment` via `tests/test_no_env_variable_tampering.py` | M4 | Persistent Rules & R4 |
+| F17 | WiX MSI Packaging & Authenticode Signing | Rebuild and sign `IDE/HugOS.msi` and `browser/HugOS_Browser.msi` with DigiCert timestamp | M4 | Persistent Rules & R4 |
+| F18 | Microsoft WDSI Submissions & GitHub Release Sync | Submit all 6 targets to WDSI, commit/push to `origin/main`, and upload release assets | M4 | Persistent Rules & R4 |
 
 ---
 
 ## Milestones
 
-| # | Milestone Name | Scope | Dependencies | Status |
-|---|---|---|---|---|
-| M1 | Real-Time Self-Healing LSP Diagnostic Auto-Patcher | F1, F2, F3, F4, F5: `onDidChangeDiagnostics`, ReST-RL daemon repair task, AST mutation gate ($M_{kill}\ge 0.5 \implies R=1.00$), CodeLens/QuickFix, `restrl-diff://` | None | **DONE** (`run_all_tests.py` 59/59, mutation gate certified) |
-| M2 | Speculative Ensemble Ghost Text (120+ Tok/s) | F6, F7, F8: InlineCompletionItemProvider, 0.5B draft model FIM prompt, WASM tree-sitter AST validation, <150ms response SLA | None | **DONE** (`test_ast_validator_flaws.mjs` 3/3, 0.0127ms preemption) |
-| M3 | Semantic Codebase Knowledge Graph (`code_graph.db`) | F9, F10, F11, F12: Tree-Sitter AST parser in Rust, `code_graph.db` SQLite schema & FTS5, sub-25ms CLI queries, `@agent` context injection | None | **DONE** (`cargo test --workspace` 71 passed, 0 panics) |
-| M4 | Native Multi-Modal Visual Canvas & UI Synthesis | F13, F14, F15: Webview drag-and-drop & clipboard dropzone, Base64 transmission, local VLM inference (`qwen2-vl`), component/layout synthesis | None | **DONE** (`run_model_visual.py` process dispatch verified) |
-| M5 | Distributed Local AI Mesh (mDNS & mTLS) | F16, F17, F18: mDNS peer discovery (`_hugos-mesh._tcp.local.`), mTLS encryption (`rustls`/`rcgen`), `FusionArbiter` 32B/ReST-RL LAN offloading | None | **DONE** (`cargo test -p mesh` 5/5 passed with client cert & pinning) |
-| M6 | Packaging, 4-Way Parity & E2E Validation | F19, F20, F21: Release CLI build, 4-way parity sync, WiX v5 MSI compilation, Authenticode signing, and comprehensive E2E test pass | M1–M5 | **DONE** (`verify_msi_contents.py` 42/42, parity 100%, E2E 120/120) |
-
+| # | Name | Scope | Dependencies | Status |
+|---|------|-------|-------------|--------|
+| M1 | Stage 0 Trending & Following Activity Ingestion | F1, F2, F3, F4: `crates/db/src/schema.rs`, `models.rs`, migration logic, `crates/core/src/task_handler.rs` Stage 0 ingestion, task/category mapping, unit tests | None | **DONE** (`cargo test -p db` 7/7 pass, 16-thread race & conflict merge verified) |
+| M2 | Multi-Objective Pareto + Contextual Bandit Velocity Scoring | F5, F6, F7: `crates/model_selection/src/lib.rs`, `pareto.rs`, `memory.rs`, UCB1 exploration, live memory rule, Flint/Goose/RAPTOR unblocked law & test fix | M1 | **DONE** (`cargo test -p model_selection` 38/38 pass, `cargo test -p db -p model_selection` 45/45 pass, gate passed) |
+| M3 | Discovery Directives, Frontend/IDE Integration & E2E Testing | F8, F9, F10, F11, F12, F13, F14: CLI flags/endpoints, Browser UI A-Z ordering, IDE commands across 5 locations, inline file writer, `test_hf_trending_and_following_feed.js` | M1, M2 | **DONE** (CLI flags/endpoints, Browser UI A-Z menu & canvas, IDE commands across 5 locations, inline file writer, E2E test suites verified) |
+| M4 | 18-Way Parity, WiX Packaging, WDSI Submissions & Release Sync | F15, F16, F17, F18: Release CLI compilation, 18-way mirror parity, zero-touch verification, MSI build/signing, WDSI submission, GitHub release sync | M1, M2, M3 | **DONE** (18-way parity 18/18 verified, zero-touch env verified, MSI build 415 Authenticode-signed, 6 WDSI targets submitted, release assets synced) |
 
 ---
 
 ## Interface Contracts
 
-### 1. LSP Auto-Patcher: Extension ↔ ReST-RL Daemon
-- Protocol: Windows Named Pipe `\\.\pipe\hugos_rest_rl_ipc` / TCP `127.0.0.1:45454`
-- Ingestion RPC: `diagnostics/report`
-  ```json
-  { "jsonrpc": "2.0", "method": "diagnostics/report", "params": { "file_path": "...", "code": "...", "diagnostics": [...] }, "id": 1 }
-  ```
-- Resolution RPC: `agent/poll_resolutions`
-  ```json
-  { "file_path": "...", "passed": true, "reward": 1.0, "candidate_code": "...", "diff": "...", "mutation_certified": true }
-  ```
-- CodeLens: `[🤖 Verified Fix Available (Score: 1.00) — Review Virtual Diff]` -> opens `restrl-diff://candidate/<file>?taskId=<id>`.
-- QuickFix: `🤖 Apply Verified Fix (Score: 1.00)` -> executes `vscode.workspace.applyEdit`.
+### 1. Database Schema & Migration (`crates/db`)
+- `ALTER TABLE models ADD COLUMN trending_score REAL DEFAULT 0.0;`
+- `ALTER TABLE models ADD COLUMN feed_source TEXT DEFAULT 'standard_hub';`
+- `ALTER TABLE models ADD COLUMN bandit_pulls INTEGER DEFAULT 0;`
+- `ALTER TABLE models ADD COLUMN bandit_reward REAL DEFAULT 0.0;`
+- Idempotency: `PRAGMA table_info(models)` inspected prior to executing `ALTER TABLE`.
 
-### 2. Speculative Ghost Text: Extension ↔ Draft Pipeline
-- Latency SLA: $\le 150\text{ ms}$ from typing pause.
-- Debounce: 40ms; Drafting: 75ms; AST verification: 20ms; Rendering: 15ms.
-- FIM Format: `<|fim_prefix|>${prefix}<|fim_suffix|>${suffix}<|fim_middle|>`
-- Validation: Tree-Sitter WASM syntax check. If parse errors are introduced, drop candidate.
+### 2. Multi-Objective Scoring Equation (`crates/model_selection`)
+- Formula:
+  $$S(\text{model}) = 0.25 \cdot Q_{\text{task}} + 0.15 \cdot \log_{10}(1 + \text{Downloads}) + 0.25 \cdot V_{\text{trending}} + 0.15 \cdot B_{\text{following}} + 0.20 \sqrt{\frac{2 \ln N}{\max(1, n_i)}} - P_{\text{memory}}$$
+- Memory penalty $P_{\text{memory}}$:
+  $$P_{\text{memory}} = \max\left(0, \frac{\text{Required GB} - \text{Free RAM GB}}{\text{Free RAM GB}}\right) \times 10.0$$
+- Unblocked law: For `flint:latest`, `RecursiveSI/flint`, `goose`, `raptor`: $P_{\text{memory}} = 0.0$.
 
-### 3. Knowledge Graph: Master CLI ↔ Extension
-- Database: `IDE/db/code_graph.db`
-- Index Command: `cli.exe --graph-index [--workspace <DIR>]`
-- Query Command: `cli.exe --graph-query "<SYMBOL>" [--workspace <DIR>] [--type <all|calls|callees|impls|refs>]`
-- Latency SLA: $\le 25\text{ ms}$ response time via prepared SQLite queries.
+### 3. Master CLI HTTP API (`crates/cli`)
+- `GET /api/trending/models`
+  - Response: `{ "status": "ok", "count": N, "models": [ { "id": "...", "trending_score": 0.85, "feed_source": "trending", "pipeline_tag": "text-generation", "task": "text-generation", "browser_category": "NLP & Language", "pareto_score": 0.92 } ] }`
+- `POST /api/trending/sync`
+  - Response: `{ "status": "ok", "synced": N, "duration_ms": M }`
 
-### 4. Visual Canvas: Webview ↔ ModelFusion VLM
-- Webview Event: `dragover`/`drop` and `paste` -> `FileReader.readAsDataURL` -> `{ type: 'attachVisualAsset', asset: { id, filename, mimeType, base64Data } }`.
-- Inference: Ollama `/api/chat` (`images: [base64]`) or Master CLI `--task visual-question-answering`.
+### 4. Browser UI (`browser/ui/index.html` & `app.js`)
+- Sidebar Nav: `<li id="sidebar-trending-models" class="sidebar-nav-item"><span class="sidebar-icon">🔥</span><span class="sidebar-label">Trending Models</span></li>`
+- Tool Item in `Utilities & System`: `<button id="tool_trending_models" class="tool-item">Trending Hub Models</button>` (alphabetically between `Optimize Database` and `Update Top Models`).
+- Directives: `@agent trending-models` and `/trending`.
 
-### 5. Distributed Mesh: Local Node ↔ Remote GPU Node
-- Discovery: mDNS service `_hugos-mesh._tcp.local.` / `_modelfusion._tcp.local.`.
-- Transport: TLS 1.3 mutual authentication (mTLS) on port `5055`.
-- Arbitration RPC: `POST /mesh/tasks/arbitrate` passing `CandidateSolution` array; returns consensus synthesized code from 32B model.
+### 5. IDE Extension (`IDE/vscode/extensions/copilot/`)
+- Command: `hugos.modelfusion.trendingModels`
+- Chat Directives: `/trending`, `@agent trending-models`, `/raptor`, `/goose`, `/flint`.
+- Distribution Sync: All 5 locations mirrored with identical hash.
 
 ---
 
-## Code Layout & Boundaries
+## Code Layout
 
-- **Rust Workspace**: `crates/cli/`, `crates/core/`, `crates/code_graph/`, `crates/mesh/`, `crates/db/`
-- **TypeScript IDE Extension**: `IDE/rest_rl/ide_client_shim.ts`, `IDE/src/autocomplete/`, `IDE/src/visual/`, `IDE/src/graph/`, `IDE/vscode/extensions/copilot/`
-- **Python ReST-RL & AI Engine**: `IDE/rest_rl/`, `IDE/ov_models/`
-- **Packaging Scripts**: `IDE/build_msi.ps1`, `IDE/sync_cli_parity.py`, `IDE/generate_wix.js`, `IDE/verify_msi_contents.py`
-- **Metadata Workspace**: `.agents/orchestrator_3/`
+- `crates/db/`: `src/schema.rs`, `src/models.rs`, `src/lib.rs` (owned by M1)
+- `crates/core/`: `src/task_handler.rs`, `src/fusion_engine/` (owned by M1)
+- `crates/model_selection/`: `src/lib.rs`, `src/pareto.rs`, `src/memory.rs` (owned by M2)
+- `crates/cli/`: `src/main.rs` (owned by M3)
+- `browser/ui/`: `index.html`, `app.js`, `styles.css` (owned by M3)
+- `IDE/vscode/extensions/copilot/`: `package.json`, `dist/extension.js` (owned by M3)
+- `tests/`: `test_hf_trending_and_following_feed.js`, `test_flint_coding_fusion.js`, etc. (owned by M3 / Test Writer)
+- Packaging & Release: `scripts/mirror_all.py`, `scripts/verify_18_way_parity.py`, `IDE/build_msi.ps1`, `scripts/submit_to_wdsi.py` (owned by M4)

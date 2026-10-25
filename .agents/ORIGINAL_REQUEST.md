@@ -100,3 +100,45 @@ Provide peer-to-peer mDNS discovery allowing lightweight developer machines (e.g
 ### Packaging & Parity
 - [ ] Master CLI compiles release binary with 100% 4-way parity across all locations.
 - [ ] Packages, Authenticode-signs, and verifies the final MSI installer (`HugOS.msi`).
+
+
+## 2026-10-24T22:55:00Z
+
+Integrate Hugging Face’s Trending & Followed-Org Activity Feed (`https://huggingface.co/?activityType=all&feedType=following&trending=model`) across ModelFusion's update pipelines (`--update`, `--updatedb`), SQLite catalog (`crates/db`), Multi-Objective Pareto + Contextual Bandit model selector (`crates/model_selection`), Master CLI (`crates/cli`), HugOS Browser (`browser/ui/`), and HugOS IDE (`IDE/vscode/extensions/copilot/`), while also finalizing and shipping the in-progress **Recursive Flint + Block Goose + RAPTOR** default IDE coding/file-writer and port `5000..5010` failover changes currently in the working tree.
+
+Working directory: `d:\harfile\ModelFusion`
+Integrity mode: `development`
+
+Reference URL: `https://huggingface.co/?activityType=all&feedType=following&trending=model`
+
+## Requirements
+
+### R1. Stage 0 Trending & Following Activity Ingestion (`--update` & `--updatedb` in `crates/cli` & `crates/db`)
+- Extend the SQLite model catalog (`crates/db/src/schema.rs` & `crates/db/src/models.rs`) and `ModelMetrics` to persist `trending_score: f64` (normalized 7-day velocity of likes and downloads), `feed_source: String` (`"trending"`, `"following_activity"`, `"trending+following"`, or `"standard_hub"`), `bandit_pulls: i64`, and `bandit_reward: f64`, with automatic non-destructive `ALTER TABLE` migration for existing `hf_models.db` files.
+- Add **Stage 0: Live Trending & Followed-Org Activity Pass** to `--update` (Fast Curated Engine) and `--updatedb` (Full Registry Crawler) that fetches:
+  1. Public Trending Models Feed (`GET https://huggingface.co/api/trending?type=model&limit=100` and `GET https://huggingface.co/api/models?sort=trendingScore&direction=-1&limit=100&full=true`).
+  2. Authenticated "Following" Activity Feed (using `HF_TOKEN` from `.env` when present, plus high-signal research orgs `RecursiveSI`, `Qwen`, `deepseek-ai`, `google`, `meta-llama`, `mistralai`, `microsoft`, `allenai`, `nvidia`).
+- Automatically map each ingested trending/following model via its `pipeline_tag` into the corresponding task across all 45+ Hugging Face tasks and 19 Browser categories.
+
+### R2. Multi-Objective Pareto + Contextual Bandit Velocity Scoring (`crates/model_selection`)
+- Incorporate Trending Velocity ($V_{\text{trending}} \in [0, 1]$), Followed-Org Boost ($B_{\text{following}}$), and the UCB1 Exploration Bonus ($\alpha \sqrt{\frac{2 \ln N}{\max(1, n_i)}}$) into `EnhancedModelSelector` (`crates/model_selection/src/lib.rs` & `pareto.rs`) alongside task quality, log-downloads, and the strict runtime available memory penalty ($P_{\text{memory}}$):
+  $$S(\text{model}) = w_1 \cdot Q_{\text{task}} + w_2 \cdot \log_{10}(1 + \text{Downloads}) + w_3 \cdot V_{\text{trending}} + w_4 \cdot B_{\text{following}} + \alpha \sqrt{\frac{2 \ln N}{\max(1, n_i)}} - P_{\text{memory}}$$
+- Enforce the **Available Runtime Memory Rule** (`SystemMemory::detect_live()` checking `free_ram_gb` and `free_vram_mb`, never total physical RAM) so oversized trending models never cause OOM and are automatically filtered or quantized to fit live available memory.
+- Ensure **Recursive Flint (`flint:latest` / `RecursiveSI/flint`) + Block Goose (`goose`) + RAPTOR (`raptor`)** are NEVER blocked and are used by default for all Coding and Fusion tasks across CLI, Browser, and IDE (extracting `<userRequest>` to the top of prompts, generating real compilable source code, and writing/applying code directly into the active IDE editor / workspace file so it can be saved).
+
+### R3. CLI, HugOS Browser, & HugOS IDE Discovery Directives
+- **Master CLI (`crates/cli/src/main.rs`)**: Support `--trending`, `--trending-models`, `--update --trending`, and HTTP endpoints `GET /api/trending/models` and `POST /api/trending/sync` (with automatic port `5000..5010` failover verifying `service === "modelfusion"` on `/health`).
+- **HugOS Browser (`browser/ui/index.html` & `browser/ui/app.js`)**: Expose Trending & Following Hub Feed discovery (`@agent trending-models`, `/trending`, and sidebar integration preserving strict A-Z alphabetical sorting across all 19 categories, plus no top menu bar on chat responses, preserved bottom `.msg-action-bar`, and long-form `8192`-token responses).
+- **HugOS IDE (`IDE/vscode/extensions/copilot/package.json` & `dist/extension.js`)**: Support `/trending`, `@agent trending-models`, `/raptor`, `/goose`, `/flint`, and command `hugos.modelfusion.trendingModels` synced across all 5 IDE extension locations (`IDE/vscode/extensions/copilot`, `IDE/VSCode-win32-x64`, `IDE/VSCode-win32-x64/7e7950df89`, `%LOCALAPPDATA%\HugOS IDE`, `%LOCALAPPDATA%\HugOS IDE\7e7950df89`).
+
+### R4. Build, 18-Way Binary Parity, WDSI & Release Synchronization
+- Recompile and Authenticode-sign `target/release/cli.exe`, mirror across all 18 CLI binary paths (`cli.exe`, `clibrowser.exe`, `cliide.exe`, `climcp.exe`) via `python scripts/mirror_all.py`, rebuild and sign `IDE/HugOS.msi` and `browser/HugOS_Browser.msi`, submit all 6 targets to WDSI (`python scripts/submit_to_wdsi.py --all --no-launch`), commit/push to `origin/main`, and upload all 6 release artifacts to GitHub Releases.
+
+## Acceptance Criteria
+
+### Programmatic Verification & Test Suites
+- [ ] `cargo test -p db -p model_selection` passes 100%, including unit tests verifying `trending_score` and `feed_source` persistence, cold-start breakout model promotion on the Pareto frontier, UCB1 exploration bonus calculation, and strict runtime memory filtering (`P_memory`).
+- [ ] `cli.exe --trending-models` and `GET http://127.0.0.1:<port>/api/trending/models` return structured JSON containing live/cached trending models with `trending_score`, `feed_source`, `pipeline_tag`, and Pareto score breakdown.
+- [ ] `node tests/test_hf_trending_and_following_feed.js` and `node tests/test_goose_19_categories_and_longform_canvas.js` pass 100%.
+- [ ] `python tests/test_alphabetical_menu.py` and `node tests/test_browser_menu_accordion_and_tool_count.js` pass 100% with strict A-Z ordering across all 19 Browser categories.
+- [ ] `python tests/test_no_env_variable_tampering.py` and `python scripts/verify_18_way_parity.py` pass 100%.

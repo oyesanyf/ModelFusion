@@ -7604,3 +7604,26 @@ body.theme-midnight .agent-autocomplete-dropdown {
   color: #34d399;
   border: 1px solid rgba(16, 185, 129, 0.3);
 }
+
+/* ─────────────────────────────────────────────────────────────
+   Clean Headerless Chat Response Canvas & Bottom Action Bar Law
+   ───────────────────────────────────────────────────────────── */
+.canvas-card-header,
+.assistant-bubble-actions {
+  display: none !important;
+}
+
+.chatgpt-canvas-card {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.chatgpt-canvas-card .canvas-card-body {
+  padding-top: 12px;
+}
+
+.hitl-goose-workspace {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+  transition: border-color 0.2s ease;
+}
+

@@ -81,7 +81,7 @@ pub fn is_known_tool_or_model(name: &str) -> bool {
         "pe", "pe_binary", "entropy", "strings", "packer-detect",
         "legal", "cuad", "cuad-bert", "saul-7b", "legal-bert", "legal-longformer",
         "law-chat", "law-llm", "lawma", "pile-of-law",
-        "agent", "boost", "grill-me", "goal", "plan", "cot", "agentic-loop", "reflection", "decompose",
+        "agent", "boost", "grill-me", "goal", "plan", "cot", "agentic-loop", "reflection", "decompose", "goose", "block-goose",
         "rl-route", "rl_route", "distributional-rl", "cvar",
         "science", "esm2", "esmfold", "esm3", "chemberta", "molformer", "evo", "prithvi", "climax", "galactica",
         "sentiment", "moderation", "distilbert-sst2", "twitter-roberta", "go-emotions",
@@ -2002,6 +2002,31 @@ pub static TOOL_CARDS: &[ToolCard] = &[
             "cli.exe --tool-help plan",
         ],
         related: &["boost", "grill-me", "goal"],
+    },
+    ToolCard {
+        id: "goose",
+        name: "Block Goose Autonomous Agent & MCP Recipe Orchestrator (All 19 Domains)",
+        category: "agent",
+        menu_index: 9,
+        icon: "🪿",
+        architecture: "Block Open-Source Autonomous AI Agent (block/goose) + MCP Extension Bus + Subagent Recipe Pipeline",
+        purpose: "Execute autonomous multi-step workflows across all 19 HugOS Browser & ModelFusion domains using Block Goose's Developer toolkit (Shell, Text Editor), ComputerController, Memory, and Model Context Protocol (MCP) extensions.",
+        input_format: "Target domain (--domain <category>) and natural language task or recipe goal.",
+        options: &[
+            ("--domain <category>", "Target menu category across all 19 domains (classification, code, compliance, computer_use, tabular, deep_research, finance, harness2, vision, pe_binary, legal, agent, rdagent, science, sentiment, utilities, audio, web, writing)"),
+            ("--goose-task <goal>", "Autonomous task objective for the Goose Recipe & Subagent pipeline"),
+        ],
+        directives: &[
+            ("@agent goose --domain <category> <task>", "Launch Block Goose autonomous agent workflow and interactive HITL workspace for any of the 19 domains"),
+            ("cli.exe --goose --goose-domain <category> --goose-task \"<task>\"", "Execute Block Goose recipe pipeline from CLI"),
+        ],
+        examples: &[
+            "@agent goose --domain code Refactor authentication module and run unit test suite",
+            "@agent goose --domain pe_binary Audit PE section entropy, imports, and Authenticode signature",
+            "@agent goose --domain deep_research Synthesize multi-agent literature review and ablation study",
+            "cli.exe --tool-help goose",
+        ],
+        related: &["harness2", "computer-use", "rd-agent", "ai-scientist", "boost"],
     },
 ];
 

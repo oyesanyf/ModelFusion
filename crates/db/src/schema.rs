@@ -24,6 +24,10 @@ CREATE TABLE IF NOT EXISTS models (
     architecture      TEXT,
     size_mb           REAL     DEFAULT 0.0,
     language          TEXT,
+    trending_score    REAL     DEFAULT 0.0,
+    feed_source       TEXT     DEFAULT 'standard_hub',
+    bandit_pulls      INTEGER  DEFAULT 0,
+    bandit_reward     REAL     DEFAULT 0.0,
     created_at        TEXT     DEFAULT (datetime('now')),
     updated_at        TEXT     DEFAULT (datetime('now'))
 )
@@ -55,7 +59,53 @@ pub const CREATE_INDEXES: &[&str] = &[
     "CREATE INDEX IF NOT EXISTS idx_decision_score  ON models(decision_score DESC)",
     "CREATE INDEX IF NOT EXISTS idx_downloads       ON models(downloads DESC)",
     "CREATE INDEX IF NOT EXISTS idx_last_modified   ON models(last_modified)",
+    "CREATE INDEX IF NOT EXISTS idx_trending_score  ON models(trending_score DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_feed_source     ON models(feed_source)",
 ];
+
+pub const MIGRATION_COLUMNS: &[(&str, &str)] = &[
+    ("trending_score", "ALTER TABLE models ADD COLUMN trending_score REAL DEFAULT 0.0"),
+    ("feed_source", "ALTER TABLE models ADD COLUMN feed_source TEXT DEFAULT 'standard_hub'"),
+    ("bandit_pulls", "ALTER TABLE models ADD COLUMN bandit_pulls INTEGER DEFAULT 0"),
+    ("bandit_reward", "ALTER TABLE models ADD COLUMN bandit_reward REAL DEFAULT 0.0"),
+];
+
+/// Inspects existing table schema and applies missing columns non-destructively.
+pub fn migrate_schema(conn: &rusqlite::Connection) -> anyhow::Result<()> {
+    let table_exists: bool = conn.query_row(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'models'",
+        [],
+        |_| Ok(true),
+    ).unwrap_or(false);
+
+    if !table_exists {
+        return Ok(());
+    }
+
+    let mut stmt = conn.prepare("PRAGMA table_info(models)")?;
+    let existing_columns: std::collections::HashSet<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .filter_map(|r| r.ok())
+        .map(|s| s.to_ascii_lowercase())
+        .collect();
+
+    for (col_name, alter_stmt) in MIGRATION_COLUMNS {
+        if !existing_columns.contains(&col_name.to_ascii_lowercase()) {
+            log::info!("Migrating models schema: adding missing column '{}'", col_name);
+            if let Err(e) = conn.execute_batch(alter_stmt) {
+                let msg = e.to_string().to_lowercase();
+                if !msg.contains("duplicate column name") {
+                    return Err(e.into());
+                }
+            }
+        }
+    }
+
+    let _ = conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_trending_score ON models(trending_score DESC)");
+    let _ = conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_feed_source ON models(feed_source)");
+
+    Ok(())
+}
 
 /// Pragmas applied at connection open for performance and safety.
 pub const STARTUP_PRAGMAS: &[&str] = &[
