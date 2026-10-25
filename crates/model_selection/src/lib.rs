@@ -578,6 +578,37 @@ impl EnhancedModelSelector {
             }
         }
 
+        // If the geometric knee-point picked a tiny <= 2.0B model on a machine with >= 12 GB free RAM,
+        // upgrade knee_id to an unblocked default (Flint) or larger cached Ollama / front model (>= 6.5B) that fits in RAM.
+        if free_ram_gb >= 12.0 && max_model_params_b.unwrap_or(100.0) > 2.0 {
+            if let Some(ref current_knee) = pareto_knee_id {
+                let knee_is_tiny = candidates.iter()
+                    .find(|c| &c.model_id == current_knee)
+                    .map(|c| !memory::is_unblocked_default(&c.model_id) && c.estimated_params_b > 0.0 && c.estimated_params_b <= 2.0)
+                    .unwrap_or(false);
+                if knee_is_tiny {
+                    if let Some(better) = candidates.iter().find(|c| {
+                        memory::is_unblocked_default(&c.model_id)
+                            || (memory::is_ollama_model_cached(&c.model_id) && c.estimated_params_b >= 6.5 && c.estimated_memory_gb <= free_ram_gb * 0.75)
+                    }).or_else(|| candidates.iter().find(|c| {
+                        c.estimated_params_b >= 6.5 && c.estimated_params_b <= 34.0 && c.estimated_memory_gb <= free_ram_gb * 0.75 && c.final_score >= 0.80
+                    })) {
+                        let better_id = better.model_id.clone();
+                        for c in &mut candidates {
+                            if c.model_id == better_id {
+                                c.final_score = 1.0;
+                                if let Some(ref mut b) = c.pareto_breakdown {
+                                    b.is_knee_point = true;
+                                    b.pareto_rank = 1;
+                                }
+                            }
+                        }
+                        pareto_knee_id = Some(better_id);
+                    }
+                }
+            }
+        }
+
         // Sort candidates by final score descending (safe against NaN values)
         candidates.sort_by(|a, b| {
             if let Some(ref knee_id) = pareto_knee_id {
@@ -588,7 +619,17 @@ impl EnhancedModelSelector {
                     return std::cmp::Ordering::Greater;
                 }
             }
-            b.final_score.partial_cmp(&a.final_score).unwrap_or(std::cmp::Ordering::Equal)
+            let a_cached = memory::is_ollama_model_cached(&a.model_id) || memory::is_unblocked_default(&a.model_id);
+            let b_cached = memory::is_ollama_model_cached(&b.model_id) || memory::is_unblocked_default(&b.model_id);
+            if a_cached != b_cached && (b.final_score - a.final_score).abs() < 1e-6 {
+                return if a_cached { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+            }
+            let score_cmp = b.final_score.partial_cmp(&a.final_score).unwrap_or(std::cmp::Ordering::Equal);
+            if (b.final_score - a.final_score).abs() < 1e-6 && free_ram_gb >= 12.0 {
+                b.estimated_params_b.partial_cmp(&a.estimated_params_b).unwrap_or(score_cmp)
+            } else {
+                score_cmp
+            }
         });
 
         // When using Ollama, keep models that are installed in Ollama OR match known Ollama equivalents
@@ -615,14 +656,26 @@ impl EnhancedModelSelector {
                 }
             }
 
-            // Re-sort so installed models appear first
+            // Re-sort so unblocked defaults and hardware-appropriate installed models appear before tiny 1.5B fallbacks
             candidates.sort_by(|a, b| {
+                let a_unblocked = memory::is_unblocked_default(&a.model_id);
+                let b_unblocked = memory::is_unblocked_default(&b.model_id);
                 let a_cached = memory::is_ollama_model_cached(&a.model_id);
                 let b_cached = memory::is_ollama_model_cached(&b.model_id);
+                if a_unblocked != b_unblocked && (a_cached == b_cached || a_unblocked && a_cached || b_unblocked && b_cached) {
+                    return if a_unblocked { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+                }
                 match (a_cached, b_cached) {
                     (true, false) => std::cmp::Ordering::Less,
                     (false, true) => std::cmp::Ordering::Greater,
-                    _ => b.final_score.partial_cmp(&a.final_score).unwrap_or(std::cmp::Ordering::Equal),
+                    _ => {
+                        let score_cmp = b.final_score.partial_cmp(&a.final_score).unwrap_or(std::cmp::Ordering::Equal);
+                        if (b.final_score - a.final_score).abs() < 1e-6 && free_ram_gb >= 12.0 {
+                            b.estimated_params_b.partial_cmp(&a.estimated_params_b).unwrap_or(score_cmp)
+                        } else {
+                            score_cmp
+                        }
+                    }
                 }
             });
         }

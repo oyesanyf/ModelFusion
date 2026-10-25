@@ -6,8 +6,9 @@ pub fn build_judge_prompt(user_prompt: &str, answers: &[ModelAnswer]) -> String 
 
     prompt.push_str("You are an expert judge model evaluating and comparing multiple assistant responses.\n\n");
 
+    let safe_user_prompt = crate::fusion_engine::preserve_head_and_tail_prompt(user_prompt, 4000);
     prompt.push_str("### USER REQUEST:\n");
-    prompt.push_str(user_prompt);
+    prompt.push_str(&safe_user_prompt);
     prompt.push_str("\n\n");
 
     prompt.push_str("### ASSISTANT RESPONSES TO EVALUATE:\n");
@@ -22,6 +23,7 @@ pub fn build_judge_prompt(user_prompt: &str, answers: &[ModelAnswer]) -> String 
     prompt.push_str("### INSTRUCTIONS FOR THE JUDGE:\n");
     prompt.push_str("Compare the assistant responses above. Identify consensus, disagreements, unique insights, blind spots, risk flags, and recommend a final synthesized position.\n");
     prompt.push_str("CRITICAL QUALITY RULE: Do not automatically select the majority consensus. If a minority response contains significantly more specific evidence, source code alignment, or detailed technical reasoning than the majority consensus, recommend the technically superior minority response.\n");
+    prompt.push_str("CRITICAL: When the user asks to create, write, generate, edit, or fix code/files, you MUST output the complete, working, compilable source code inside a fenced code block (` ```java ... ``` `). NEVER output meta-commentary such as 'The code snippet provided is well-structured' or 'aligns with best practices'.\n");
     prompt.push_str("You MUST return a valid JSON object ONLY. Do not write a markdown introduction or conversational text.\n\n");
     prompt.push_str("### REQUIRED JSON FORMAT:\n");
     prompt.push_str("{\n");
@@ -133,10 +135,12 @@ pub async fn write_final_answer(
     writer_prompt.push_str("Do not blindly prioritize consensus. If a minority response offers more specific evidence, code snippets, or deeper technical accuracy than the majority agreement, prioritize the technically superior minority view.\n");
     writer_prompt.push_str("Prioritize accuracy, technical depth, and specific evidence over simple consensus.\n");
     writer_prompt.push_str("Mention uncertainty where models disagreed.\n");
-    writer_prompt.push_str("Do not pretend disagreement is resolved.\n\n");
+    writer_prompt.push_str("Do not pretend disagreement is resolved.\n");
+    writer_prompt.push_str("CRITICAL: When the user asks to create, write, generate, edit, or fix code/files, you MUST output the complete, working, compilable source code inside a fenced code block (` ```java ... ``` `). NEVER output meta-commentary such as 'The code snippet provided is well-structured' or 'aligns with best practices'.\n\n");
     
+    let safe_prompt = crate::fusion_engine::preserve_head_and_tail_prompt(prompt, 4000);
     writer_prompt.push_str("USER REQUEST:\n");
-    writer_prompt.push_str(prompt);
+    writer_prompt.push_str(&safe_prompt);
     writer_prompt.push_str("\n\nJUDGE ANALYSIS:\n");
     writer_prompt.push_str(&format!("Consensus: {:?}\n", judge_json.consensus));
     writer_prompt.push_str(&format!("Disagreements: {:?}\n", judge_json.disagreements));

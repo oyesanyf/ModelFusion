@@ -405,7 +405,9 @@ pub(crate) fn pick_best_ollama_fallback(target: &str, list: &[String]) -> Option
         return None;
     }
     let target_lower = target.to_lowercase();
-    let family = if target_lower.contains("qwen2.5") {
+    let family = if target_lower.contains("flint") {
+        "flint"
+    } else if target_lower.contains("qwen2.5") {
         "qwen2.5"
     } else if target_lower.contains("qwen") {
         "qwen"
@@ -434,7 +436,9 @@ pub(crate) fn pick_best_ollama_fallback(target: &str, list: &[String]) -> Option
         }
     }
 
-    list.iter().find(|m| m.contains("qwen") || m.contains("llama") || m.contains("deepseek") || m.contains("mistral") || m.contains("gemma") || m.contains("phi"))
+    list.iter().find(|m| m.contains("flint"))
+        .or_else(|| list.iter().find(|m| m.contains("qwen2.5:32b") || m.contains("qwen2.5:14b") || m.contains("qwen2.5:7b")))
+        .or_else(|| list.iter().find(|m| m.contains("qwen") || m.contains("llama") || m.contains("deepseek") || m.contains("mistral") || m.contains("gemma") || m.contains("phi")))
         .or_else(|| list.first())
         .cloned()
 }
@@ -493,7 +497,8 @@ impl HuggingFaceProvider {
             .unwrap_or_else(|_| "int8".to_string());
 
         let timeout_duration = std::time::Duration::from_secs(self.config.timeout_seconds.max(900));
-        let safe_prompt = if prompt.len() > 8000 { &prompt[..8000] } else { prompt };
+        let safe_prompt_owned = crate::fusion_engine::preserve_head_and_tail_prompt(prompt, 8000);
+        let safe_prompt = safe_prompt_owned.as_str();
         let output = tokio::time::timeout(
             timeout_duration,
             hidden_tokio_command("python")
@@ -543,7 +548,8 @@ impl HuggingFaceProvider {
         };
 
         let timeout_duration = std::time::Duration::from_secs(self.config.timeout_seconds.max(600));
-        let safe_prompt = if prompt.len() > 8000 { &prompt[..8000] } else { prompt };
+        let safe_prompt_owned = crate::fusion_engine::preserve_head_and_tail_prompt(prompt, 8000);
+        let safe_prompt = safe_prompt_owned.as_str();
         let output = tokio::time::timeout(
             timeout_duration,
             hidden_tokio_command("python")
@@ -592,7 +598,8 @@ impl HuggingFaceProvider {
         };
 
         let timeout_duration = std::time::Duration::from_secs(self.config.timeout_seconds.max(300));
-        let safe_prompt = if prompt.len() > 8000 { &prompt[..8000] } else { prompt };
+        let safe_prompt_owned = crate::fusion_engine::preserve_head_and_tail_prompt(prompt, 8000);
+        let safe_prompt = safe_prompt_owned.as_str();
         let output = tokio::time::timeout(
             timeout_duration,
             hidden_tokio_command("python")
@@ -1147,6 +1154,9 @@ impl LLMProvider for LocalProvider {
 pub fn map_hf_to_ollama(hf_model_id: &str) -> String {
     let id = hf_model_id.to_lowercase();
     match id.as_str() {
+        // Recursive Flint family (Default Coding & Fusion Model)
+        _ if id.contains("flint") => "flint:latest".to_string(),
+
         // Qwen family
         _ if id.contains("qwen2") && id.contains("72b") => "qwen2.5:72b".to_string(),
         _ if id.contains("qwen2") && id.contains("32b") => "qwen2.5:32b".to_string(),
@@ -1204,6 +1214,11 @@ pub fn map_hf_to_ollama(hf_model_id: &str) -> String {
 /// List of HuggingFace model ID substrings that are known to have Ollama equivalents
 /// and are small enough to run locally.
 pub const OLLAMA_COMPATIBLE_MODELS: &[&str] = &[
+    "RecursiveSI/flint",
+    "flint:latest",
+    "flint",
+    "Qwen2.5-72B-Instruct",
+    "Qwen2.5-32B-Instruct",
     "Qwen2.5-7B-Instruct",
     "Qwen2.5-3B-Instruct",
     "Qwen2.5-1.5B-Instruct",
