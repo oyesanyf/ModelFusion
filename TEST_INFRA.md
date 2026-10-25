@@ -1,129 +1,121 @@
-# ModelFusion & HugOS IDE Next-Generation Autonomous Test Infrastructure
+# ModelFusion & HugOS Dual-Track E2E Test Infrastructure
+## Hugging Face Trending & Following Feed Integration & Resilient Model Selection
 
-## Overview
+## 1. Overview & Objectives
 
-This document outlines the test architecture, methodology, execution procedures, and verification criteria for the next-generation autonomous developer operating system capabilities (R1–R5) implemented across ModelFusion Master CLI and HugOS IDE:
+This document establishes the authoritative test architecture, verification methodology, execution procedures, and expected output derivations for the **Hugging Face Trending & Following Activity Feed Integration** across the ModelFusion Master CLI (`crates/cli`), SQLite Model Catalog (`crates/db`), Multi-Objective Pareto & UCB1 Bandit Selector (`crates/model_selection`), HugOS Browser (`browser/ui/`), and HugOS IDE (`IDE/vscode/extensions/copilot/`).
 
-1. **R1: Real-Time Self-Healing LSP Diagnostic Auto-Patcher ("Continuous Code Repair")**
-2. **R2: Speculative Ensemble Ghost Text (120+ Tok/s Local Autocomplete)**
-3. **R3: Semantic Codebase Knowledge Graph (`code_graph.db`)**
-4. **R4: Native Multi-Modal Visual Canvas & UI Synthesis**
-5. **R5: Distributed Local AI Mesh (mDNS & mTLS Compute Offloading)**
+The testing architecture adheres to a strict 4-Tier taxonomy:
+- **Tier 1: Feature Coverage (Core Requirements & JSON Schema Contracts)**
+- **Tier 2: Boundary & Corner Cases (Stress, Offline Resilience, Rate Limiting, Missing Credentials)**
+- **Tier 3: Cross-Feature Combinations (Pareto Velocity, UCB1 Contextual Bandit, Hardware Invariants)**
+- **Tier 4: Real-World Scenarios (Full Stage 0 Ingestion, Idempotent SQLite Migration, Port 5000..5010 Failover)**
 
 ---
 
-## 1. Test Architecture & 4-Tier Taxonomy
-
-The test suite employs a strict, opaque-box, category-partition methodology divided into 4 complementary tiers:
+## 2. 4-Tier Test Taxonomy & Verification Matrix
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        COMPREHENSIVE TEST SUITE                        │
 ├────────────────────────────────┬───────────────────────────────────────┤
 │ Tier 1: Feature Coverage       │ Happy-path requirement verification   │
-│ (45 Tests: R1-F01 to R5-F45)   │ Core functional contracts for R1–R5   │
+│ (Tests 1.1 - 1.6)              │ Core functional contracts & schema    │
 ├────────────────────────────────┼───────────────────────────────────────┤
-│ Tier 2: Boundary & Corner      │ Stress testing, vacuous test defense, │
-│ (45 Tests: R1-B01 to R5-B45)   │ SLAs, timeouts, preemption, invalid   │
+│ Tier 2: Boundary & Corner      │ Offline resilience, rate limits,      │
+│ (Tests 2.1 - 2.5)              │ missing tokens, empty/malformed feeds │
 ├────────────────────────────────┼───────────────────────────────────────┤
-│ Tier 3: Pairwise Interactions  │ Inter-capability cross-dependencies   │
-│ (20 Tests: INT-01 to INT-20)   │ Concurrency, pipeline handoffs, state │
+│ Tier 3: Cross-Feature Pairwise │ Pareto velocity, UCB1 bandit bonus,   │
+│ (Tests 3.1 - 3.5)              │ memory penalties & unblocked stack    │
 ├────────────────────────────────┼───────────────────────────────────────┤
-│ Tier 4: Real-World Scenarios   │ End-to-end user workflows, lifecycle, │
-│ (10 Tests: SCENARIO-01 to 10)  │ Resilience, full-stack loop           │
+│ Tier 4: Real-World Scenarios   │ Stage 0 sync simulation, SQLite       │
+│ (Tests 4.1 - 4.5)              │ migration, port failover, IDE/UI      │
 └────────────────────────────────┴───────────────────────────────────────┘
 ```
 
-Total: **120 Tests** (100% Deterministic, Opaque-Box, Zero-Flake).
+### Detailed Capability Matrix
+
+| Tier | Test ID | Description | Authoritative Source | Oracle / Expected Output |
+|---|---|---|---|---|
+| **Tier 1** | T1.1 | CLI `--trending-models` JSON contract | `PROJECT.md` §3 | JSON object with `status: "ok"`, `count: N`, `models: [...]` |
+| **Tier 1** | T1.2 | Model item schema integrity | `ORIGINAL_REQUEST.md` §R1 | Each model contains `id`, `trending_score`, `feed_source`, `pipeline_tag`, `task`, `browser_category`, `pareto_score` |
+| **Tier 1** | T1.3 | Task to 19-Browser-Category mapping | `PROJECT.md` §1 | `pipeline_tag` deterministically maps to one of the 19 browser categories |
+| **Tier 1** | T1.4 | HTTP API `GET /api/trending/models` | `PROJECT.md` §3 | Status 200, valid JSON payload with ranked trending models |
+| **Tier 1** | T1.5 | HTTP API `POST /api/trending/sync` | `PROJECT.md` §3 | Status 200, `{ status: "ok", synced: N, duration_ms: M }` |
+| **Tier 1** | T1.6 | CLI preprocessor & command directives | `GEMINI.md` §7 | `@agent trending-models` and `/trending` parsed into goal directives |
+| **Tier 2** | T2.1 | Offline network resilience (`ENOTFOUND`) | `ORIGINAL_REQUEST.md` §R1 | Zero crash; graceful fallback to SQLite cache or empty feed with warning |
+| **Tier 2** | T2.2 | Upstream HTTP 429 rate-limit fallback | `ORIGINAL_REQUEST.md` §R1 | Catches 429, falls back to local cached catalog; zero uncaught exceptions |
+| **Tier 2** | T2.3 | Missing / unset `HF_TOKEN` handling | `ORIGINAL_REQUEST.md` §R1 | Gracefully falls back to public trending feed & 9 curated research orgs |
+| **Tier 2** | T2.4 | Empty upstream feed (`[]`) handling | `computer_use_and_ollama_resilience.md` | Ingests 0 items; returns clean JSON without panic or empty state corruption |
+| **Tier 2** | T2.5 | Malformed JSON & schema divergence | `ORIGINAL_REQUEST.md` §R1 | Defensive JSON parsing ignores corrupted rows without aborting batch |
+| **Tier 3** | T3.1 | Multi-Objective Pareto + UCB1 scoring | `PROJECT.md` §2 | $$S(\text{model}) = 0.25 Q + 0.15 \log_{10}(1+D) + 0.25 V_{\text{trend}} + 0.15 B_{\text{follow}} + 0.20 \sqrt{\frac{2\ln N}{n_i}} - P_{\text{mem}}$$ |
+| **Tier 3** | T3.2 | Cold-start breakout model promotion | `ORIGINAL_REQUEST.md` §R2 | High-velocity new model ($V=0.95$) outranks stale 1M-download model ($V=0$) |
+| **Tier 3** | T3.3 | Contextual Bandit UCB1 exploration | `PROJECT.md` §2 | Under-explored candidate ($n_i=1$) receives higher bonus than ($n_i=100$) |
+| **Tier 3** | T3.4 | Dynamic Runtime Memory Invariant | `GEMINI.md` §3 | $P_{\text{memory}} = \max(0, \frac{\text{Req} - \text{Free}}{\text{Free}}) \times 10.0$; evaluated on free RAM, never total RAM |
+| **Tier 3** | T3.5 | Unblocked Default Stack Law | `PROJECT.md` §2 | Flint (`flint:latest`), Goose (`goose`), RAPTOR (`raptor`) have $P_{\text{memory}} = 0.0$ |
+| **Tier 4** | T4.1 | Non-destructive SQLite schema migration | `crates/db/src/schema.rs` | Idempotent `ALTER TABLE` adds `trending_score`, `feed_source`, `bandit_pulls`, `bandit_reward` |
+| **Tier 4** | T4.2 | Stage 0 feed ingestion simulation | `ORIGINAL_REQUEST.md` §R1 | Inserts trending & followed-org batch into SQLite, updates indices & queries |
+| **Tier 4** | T4.3 | Multi-port 5000..5010 failover | `PROJECT.md` §3 | Iterates ports 5000..5010 checking `/health` for `service === "modelfusion"` |
+| **Tier 4** | T4.4 | Browser UI sidebar & tools integration | `browser/ui/index.html` | `#sidebar-trending-models` & `#tool_trending_models` present in A-Z order |
+| **Tier 4** | T4.5 | IDE extension command mirroring | `PROJECT.md` §5 | `hugos.modelfusion.trendingModels` wired across extension manifests |
 
 ---
 
-## 2. Capability Matrix & Verification Contracts
+## 3. Mathematical Specifications & Scoring Oracles
 
-### R1: Real-Time Self-Healing LSP Diagnostic Auto-Patcher
-- **Ingestion & Debounce**: Ingests `vscode.languages.onDidChangeDiagnostics` via JSON-RPC `diagnostics/report`. Only errors (`DiagnosticSeverity.Error`) trigger repairs. Debounce window of 750ms ensures active typing is never interrupted.
-- **Background Synthesis**: Runs at `IDLE_PRIORITY_CLASS` with compiler oracles (`py_compile`, `tsc`, `cargo check`).
-- **AST Mutation Testing Certification Gate**: $K=5$ AST mutants (ROR, AOR, LOR, SDL, RVR). A patch is certified ONLY when $M_{kill} \ge 0.50 \implies R=1.00$. Vacuous test suites where $M_{kill} = 0.00$ are strictly rejected with $R=0.00$.
-- **4-Tier Graduated Reward Evaluator**: Dense scoring formula:
-  $$R(c) = 0.15 S_{ast} + 0.25 S_{diag} + 0.25 S_{reg} + 0.35 S_{test}$$
-  Hard security gate: forbidden imports/calls (`os.system`, `subprocess.Popen`, `eval`) yield $S_{ast} = 0 \implies R=0$.
-- **In-Editor CodeLens & QuickFix**: Surfaces `[🤖 Verified Fix Available (Score: 1.00) — Review Virtual Diff]` and `🤖 Apply Verified Fix (Score: 1.00)` CodeAction.
-- **In-Memory Virtual Diff**: `restrl-diff://candidate/...` diff provider and atomic `vscode.workspace.applyEdit` without creating temporary files on disk.
+### 3.1 Multi-Objective Model Scoring Equation
+$$S(\text{model}) = w_1 \cdot Q_{\text{task}} + w_2 \cdot \log_{10}(1 + \text{Downloads}) + w_3 \cdot V_{\text{trending}} + w_4 \cdot B_{\text{following}} + \alpha \sqrt{\frac{2 \ln N}{\max(1, n_i)}} - P_{\text{memory}}$$
 
-### R2: Speculative Ensemble Ghost Text (120+ Tok/s Local Autocomplete)
-- **Latency SLA Budget**: $\le 150\text{ ms}$ total from typing pause:
-  - 40ms: Typing pause debounce
-  - 75ms: Speculative token drafting (0.5B model >120 tok/s)
-  - 20ms: AST syntax integrity verification
-  - 15ms: VS Code editor rendering
-- **Fill-in-the-Middle (FIM)**: Standardized `<|fim_prefix|>${prefix}<|fim_suffix|>${suffix}<|fim_middle|>` prompt formatting.
-- **AST Syntax Integrity Check**: Verifies completion candidates using Tree-Sitter grammars. Syntactically invalid tokens (unclosed brackets, illegal keywords) are dropped.
-- **Instant Preemption**: Cancels drafting within $<25\text{ ms}$ when user resumes typing (`token.isCancellationRequested`).
+Where:
+- $w_1 = 0.25$ (Task Capability & Quality)
+- $w_2 = 0.15$ (Log-normalized historical downloads)
+- $w_3 = 0.25$ (Normalized 7-day trending velocity $V_{\text{trending}} \in [0.0, 1.0]$)
+- $w_4 = 0.15$ (Followed research organization bonus $B_{\text{following}} \in \{0.0, 1.0\}$)
+- $\alpha = 0.20$ (Contextual Bandit UCB1 exploration coefficient)
+- $N$: Total bandit pulls across all candidate models for the task
+- $n_i$: Bandit pull count for candidate $i$
+- $P_{\text{memory}}$: Runtime memory constraint penalty
 
-### R3: Semantic Codebase Knowledge Graph (`code_graph.db`)
-- **Multi-Language Tree-Sitter Extraction**: Extracts symbol definitions, calls, implementations, and references across Rust, TypeScript, and Python.
-- **SQLite Storage & Schema**: `files`, `symbols`, `calls`, `implementations`, `symbol_references`, and FTS5 virtual table `symbols_fts`. Configured with WAL mode and B-Tree indexes.
-- **Sub-25ms Query Engine**:
-  - Single symbol definition lookup: $<1.0\text{ ms}$
-  - Recursive CTE 3-hop call hierarchy traversal: $<5.0\text{ ms}$
-  - FTS5 + TermVector hybrid search: $<10.0\text{ ms}$
-- **Structural Context Injection**: `injectStructuralContext(prompt, activeFile, activeSymbol)` enriches chat prompts for `@agent` and `/orchestrate`.
+### 3.2 Dynamic Runtime Memory Penalty Formula
+$$P_{\text{memory}} = \max\left(0, \frac{\text{Required GB} - \text{Free RAM GB}}{\text{Free RAM GB}}\right) \times 10.0$$
 
-### R4: Native Multi-Modal Visual Canvas & UI Synthesis
-- **Webview Dropzone & Clipboard**: Accepts `.png`, `.jpg`, `.jpeg`, `.webp`, `.svg`, and clipboard paste (`Win+Shift+S`). Rejects non-image files.
-- **Base64 Encoding**: `FileReader.readAsDataURL` $\rightarrow$ `{ type: 'attachVisualAsset', asset: { id, filename, mimeType, base64Data, width, height } }`.
-- **Local VLM Routing**: Routes image attachments to local OpenVINO Qwen2-VL or Ollama `qwen2-vl` via `/api/chat` with `images: [base64]`. Zero external cloud leakage.
-- **Visual Workflows**:
-  - Component Synthesis: Mockup/wireframe screenshot $\rightarrow$ React JSX + Tailwind CSS code.
-  - Layout Bug Diagnosis: Layout screenshot $\rightarrow$ CSS box model & flexbox/grid misalignment diagnosis + patch.
-
-### R5: Distributed Local AI Mesh (mDNS & mTLS)
-- **mDNS Discovery**: P2P advertisement on `_hugos-mesh._tcp.local.` with TXT records (`node_id`, `hostname`, `free_ram_gb`, `gpu_name`, `free_vram_mb`, `capabilities`).
-- **Encrypted mTLS**: Mutual TLS 1.3 authentication using self-signed cluster certificates (`CN=<node_id>.hugos.local`). SHA-256 fingerprint verified against mDNS advertisement.
-- **Hardware Sizing & Offloading**:
-  - Available RAM $\ge 24\text{ GB}$ or Free VRAM $\ge 14\text{ GB} \implies$ local execution of 32B model / ReST-RL sweep.
-  - Lightweight nodes (e.g. laptops with 8 GB RAM) offload heavy 32B model arbitration and ReST-RL sweeps to LAN workstation peers.
-  - Resilient fallback: If no LAN peer satisfies capacity requirements, falls back to local degraded model (1.5B) without error.
+- **Free RAM Evaluation Law**: Always computed using `SystemMemory::detect_live()` (`free_ram_gb`, `free_vram_mb`), never installed physical RAM.
+- **Unblocked Stack Law**: For Recursive Flint (`flint:latest`, `RecursiveSI/flint`), Block Goose (`goose`), and RAPTOR (`raptor`):
+  $$P_{\text{memory}} = 0.0$$
 
 ---
 
-## 3. How to Run the Tests
+## 4. How to Run the Tests
 
-### Command Line Execution
+### Primary Test Runner (Node.js E2E Harness)
 ```powershell
-# Run the complete test suite (All 120 tests across 4 tiers)
-& "D:\tools\nodejs\node.exe" tests/e2e/test_nextgen_autonomous.mjs
+node tests/test_hf_trending_and_following_feed.js
+```
 
-# Run with quiet mode (summary only)
-& "D:\tools\nodejs\node.exe" tests/e2e/test_nextgen_autonomous.mjs --quiet
-
-# Run in JSON machine-readable mode
-& "D:\tools\nodejs\node.exe" tests/e2e/test_nextgen_autonomous.mjs --json
+### Options & Flags
+```powershell
+# Run with verbose diagnostic logs
+node tests/test_hf_trending_and_following_feed.js --verbose
 
 # Run specific tier only
-& "D:\tools\nodejs\node.exe" tests/e2e/test_nextgen_autonomous.mjs --tier 1
-& "D:\tools\nodejs\node.exe" tests/e2e/test_nextgen_autonomous.mjs --tier 2
-& "D:\tools\nodejs\node.exe" tests/e2e/test_nextgen_autonomous.mjs --tier 3
-& "D:\tools\nodejs\node.exe" tests/e2e/test_nextgen_autonomous.mjs --tier 4
+node tests/test_hf_trending_and_following_feed.js --tier 1
+node tests/test_hf_trending_and_following_feed.js --tier 2
+node tests/test_hf_trending_and_following_feed.js --tier 3
+node tests/test_hf_trending_and_following_feed.js --tier 4
+
+# Machine-readable JSON output
+node tests/test_hf_trending_and_following_feed.js --json
 ```
 
 ---
 
-## 4. Expected Output Derivation & Verification Oracles
+## 5. Adversarial Verification & Boundary Invariants
 
-| Capability | Test Input | Authoritative Oracle | Verification Method |
-|---|---|---|---|
-| R1 Auto-Patcher | Rust/TS/Python compiler error diagnostics | Compiler oracles (`cargo check`, `tsc`, `py_compile`), `GraduatedRewardEvaluator`, `AdversarialCertificationGate` | Reward must equal 1.00, $M_{kill} \ge 0.50$, CodeLens title matches pattern, `restrl-diff://` content matches candidate, no temp disk files. |
-| R2 Ghost Text | Document prefix/suffix and cursor position | FIM grammar specification, INT4 0.5B token generation, Tree-Sitter syntax parser | Latency $\le 150\text{ ms}$, syntax errors dropped, cancellation $<25\text{ ms}$, indentation preserved. |
-| R3 Knowledge Graph | Multi-language source code | Tree-Sitter AST grammars, SQLite B-Tree index & FTS5 virtual table | Response time $<25\text{ ms}$, single-symbol $<1\text{ ms}$, call hierarchy $<5\text{ ms}$, schema integrity verified. |
-| R4 Visual Canvas | PNG/JPEG/WEBP/SVG image buffers | Base64 MIME spec, local VLM chat API contract (`openvino_genai` / Ollama) | Valid Base64 data URL, thumbnail chip emitted, React/Tailwind code or CSS patch synthesized. |
-| R5 Local AI Mesh | Node telemetry and arbitration request | RFC 6762 (mDNS), TLS 1.3 mTLS handshake, `FusionArbiter` dynamic sizing matrix | Valid TXT records, cert fingerprint match, 32B offloaded to workstation with fallback. |
-
----
-
-## 5. Adversarial Verification Gates
-
-1. **Vacuous Test Suite Defense**: A candidate patch tested against unit tests with zero assertion sensitivity (e.g. `assert True`) will have all mutants survive ($M_{kill} = 0.00$). The certification gate detects this and rejects the patch with $R=0.00$.
-2. **Security Sandbox Escape Barrier**: Any candidate attempting code injection, command execution (`os.system`, `eval`, `subprocess.Popen`), or memory tampering triggers an immediate AST security block ($S_{ast} = 0 \implies R=0$).
-3. **Sub-25ms Preemption Under Stress**: Typing interrupts streaming token drafting in $<25\text{ ms}$, with zero orphaned child processes or leaked socket descriptors.
-4. **Resilient LAN Partition Handling**: When a remote mesh node disconnects or drops packets mid-arbitration, `FusionArbiter` catches socket errors within timeout and transparently falls back to local degraded models.
+1. **Zero-Touch PATH Law**:
+   All test runs verify process-scoped execution without writing to `HKCU\Environment` or `HKLM\SYSTEM`.
+2. **Vacuous Feed Defense**:
+   Empty or degraded feeds must not erase existing cached high-utility models in SQLite (`hf_models.db`).
+3. **Cold-Start Pareto Penetration**:
+   A brand new zero-download model published by a high-signal org with rapid 7-day velocity must break through the Pareto frontier against legacy million-download models.
+4. **Resilient Port Discovery**:
+   If port 5000 is occupied by a foreign process, the client probes 5001..5010, confirming `data.service === "modelfusion"` on `/health` before issuing `/api/trending/sync` commands.

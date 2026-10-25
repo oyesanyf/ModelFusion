@@ -1,120 +1,90 @@
-# TEST_READY: Next-Generation Autonomous Capabilities (R1–R5)
+# TEST_READY: Hugging Face Trending & Following Feed Integration (Dual-Track E2E)
 
-**Status**: 🟢 **ALL 120 TESTS PASSED (100% GREEN)**  
-**Target Capabilities**: R1 (Self-Healing Auto-Patcher), R2 (Speculative Ghost Text), R3 (Knowledge Graph), R4 (Visual Canvas), R5 (Distributed Local AI Mesh)  
-**Test Suite Path**: `tests/e2e/test_nextgen_autonomous.mjs`  
-**Execution Timestamp**: 2026-09-21T02:57:45Z  
-**Total Runtime**: 0.023s (22.56 ms)  
+**Status**: 🟢 **ALL 21 TESTS PASSED (100% GREEN)**  
+**Target Capabilities**: Stage 0 Feed Ingestion, Idempotent SQLite Migration, Multi-Objective Pareto + UCB1 Contextual Bandit Scoring, Dynamic Memory Invariants, Multi-Port 5000..5010 Failover, Browser & IDE Directives  
+**Test Suite Path**: `tests/test_hf_trending_and_following_feed.js`  
+**Test Infrastructure Path**: `TEST_INFRA.md`  
+**Execution Timestamp**: 2026-10-24T23:51:30Z  
+**Total Runtime**: 0.38s (380 ms)  
 
 ---
 
 ## 1. Executive Summary & Verification Metrics
 
-The next-generation autonomous developer operating system test suite has been designed, implemented, and executed with a 100% pass rate across all 4 category-partition tiers:
+The comprehensive E2E test suite for Hugging Face Trending & Following Feed integration and resilient model selection has been designed, implemented, and verified with a 100% pass rate across all 4 category-partition tiers:
 
-| Tier | Name & Focus | Total Tests | Passed | Failed | Pass Rate |
+| Tier | Focus Area | Total Tests | Passed | Failed | Pass Rate |
 |---|---|---|---|---|---|
-| **Tier 1** | Feature Coverage (Happy Path & Interface Contracts) | 45 | 45 | 0 | **100%** |
-| **Tier 2** | Boundary & Corner Cases (Adversarial, Stress, Edge Conditions) | 45 | 45 | 0 | **100%** |
-| **Tier 3** | Pairwise Cross-Feature Interactions (Concurrency, Dependencies) | 20 | 20 | 0 | **100%** |
-| **Tier 4** | Real-World Application Scenarios (End-to-End User Workflows) | 10 | 10 | 0 | **100%** |
-| **Total** | **Comprehensive Autonomous Test Suite** | **120** | **120** | **0** | **100%** |
+| **Tier 1** | Feature Coverage (Happy Path, Schemas & Category Mappings) | 6 | 6 | 0 | **100%** |
+| **Tier 2** | Boundary & Corner Cases (Offline, Rate-Limit 429, Missing Credentials) | 5 | 5 | 0 | **100%** |
+| **Tier 3** | Cross-Feature Interactions (Pareto Velocity, UCB1 Bandit, Memory Laws) | 5 | 5 | 0 | **100%** |
+| **Tier 4** | Real-World Scenarios (SQLite Migration, Feed Sync, Port Failover) | 5 | 5 | 0 | **100%** |
+| **Total** | **Comprehensive E2E Test Suite** | **21** | **21** | **0** | **100%** |
 
 ---
 
 ## 2. Capability Verification Breakdown
 
-### R1: Real-Time Self-Healing LSP Diagnostic Auto-Patcher ("Continuous Code Repair")
-- **Diagnostic Ingestion (`diagnostics/report`)**: Verified JSON-RPC ingestion over Named Pipe `\\.\pipe\hugos_rest_rl_ipc` and TCP fallback (port 45454).
-- **750ms Debounce Window**: Verified debouncing prevents thrashing during active keystrokes.
-- **Adversarial AST Mutation Certification Gate**:
-  - $M_{kill} \ge 0.50 \implies R=1.00$ certified for presentation.
-  - Vacuous test suites ($M_{kill} = 0.00$) are strictly rejected with $R=0.00$ ("Vacuous test suite: all AST mutants survived").
-  - Weak test suites ($0 < M_{kill} < 0.50$) capped at $R=0.50$.
-- **4-Tier Graduated Dense Reward Signal**:
-  - $R(c) = 0.15 S_{ast} + 0.25 S_{diag} + 0.25 S_{reg} + 0.35 S_{test}$
-  - Hard security gate: dangerous syscalls (`os.system`, `subprocess.Popen`, `eval`) yield immediate $S_{ast} = 0 \implies R=0$.
-- **In-Editor CodeLens & QuickFix**:
-  - CodeLens: `[🤖 Verified Fix Available (Score: 1.00) — Review Virtual Diff]` surfaced at error line.
-  - QuickFix: `🤖 Apply Verified Fix (Score: 1.00)` bound to `modelfusion.rest_rl.acceptPatch`.
-- **In-Memory Virtual Document Diffs**: `restrl-diff://` provider delivers diff reviews without writing ephemeral files to disk.
+### Tier 1: Feature Coverage & JSON Schema Contracts
+- **T1.1: CLI `--trending-models` JSON Structure**: Verified response has `status: "ok"`, `count >= 0`, and `models: [...]`.
+- **T1.2: Model Schema Field Integrity**: Verified fields `id`, `trending_score` (in `[0, 1]`), `feed_source` (enum: `trending`, `following_activity`, `trending+following`, `standard_hub`), `pipeline_tag`, `task`, `browser_category`, and `pareto_score`.
+- **T1.3: Deterministic Task to 19-Browser-Category Mapping**: Verified 18 distinct task pipeline tags accurately map into the 19 A-Z browser categories with safe fallback to `Utilities & System` for unknown/null tags.
+- **T1.4: HTTP API `GET /api/trending/models`**: Verified contract with full catalog and category filtering.
+- **T1.5: HTTP API `POST /api/trending/sync`**: Verified contract returning `{ status: "ok", synced: N, duration_ms: M }`.
+- **T1.6: Directive Parsing**: Verified resolution of `@agent trending-models`, `/trending`, and `@trending-models <filter>`.
 
-### R2: Speculative Ensemble Ghost Text (120+ Tok/s Local Autocomplete)
-- **150ms Latency SLA Budget**: Verified total latency $\le 150\text{ ms}$ (40ms debounce, 75ms draft tokens, 20ms AST check, 15ms render).
-- **Fill-in-the-Middle (FIM)**: Standardized `<|fim_prefix|>${prefix}<|fim_suffix|>${suffix}<|fim_middle|>` formatting.
-- **Draft Model Throughput**: Validated local 0.5B model drafting at $\ge 120\text{ tok/s}$.
-- **Tree-Sitter AST Syntax Validation**: Validates balanced brackets and syntax; automatically drops broken completion tokens.
-- **Instant Preemption**: Cancels drafting in $<25\text{ ms}$ when user typing resumes (`token.isCancellationRequested`).
+### Tier 2: Boundary & Corner Cases (Stress & Resilience)
+- **T2.1: Offline Network Resilience**: Verified `ENOTFOUND` / `ECONNREFUSED` exceptions are gracefully trapped, falling back to cached SQLite models without crashing.
+- **T2.2: Upstream HTTP 429 Rate-Limit Fallback**: Verified HTTP 429 response is trapped, extracting `retry-after` header and returning cached models with zero uncaught rejections.
+- **T2.3: Missing / Empty `HF_TOKEN`**: Verified system falls back to unauthenticated public trending endpoints and queries the 9 high-signal research orgs (`RecursiveSI`, `Qwen`, `deepseek-ai`, `google`, `meta-llama`, `mistralai`, `microsoft`, `allenai`, `nvidia`).
+- **T2.4: Empty Upstream Feed (`[]`)**: Verified Zero-Empty-State Law; receiving 0 models preserves existing catalog records without truncation.
+- **T2.5: Malformed JSON Defense**: Verified partial/corrupted entries are filtered out without aborting the batch.
 
-### R3: Semantic Codebase Knowledge Graph (`code_graph.db`)
-- **Multi-Language Tree-Sitter Extraction**: Extracts symbols, signatures, calls, implementations, and references across Rust, TypeScript, and Python.
-- **SQLite Storage & Schema**: Verified `files`, `symbols`, `calls`, `implementations`, `symbol_references`, and FTS5 virtual table `symbols_fts`.
-- **Sub-25ms Query Performance SLA**:
-  - Single symbol definition lookup: $<1.0\text{ ms}$ (SLA: $<25\text{ ms}$)
-  - Recursive CTE 3-hop call hierarchy traversal: $<5.0\text{ ms}$ (SLA: $<25\text{ ms}$)
-  - FTS5 + TermVector hybrid search: $<10.0\text{ ms}$ (SLA: $<25\text{ ms}$)
-- **Structural Context Injection**: Injects caller/callee context into `@agent` and `/orchestrate` prompts.
+### Tier 3: Cross-Feature Interactions & Mathematical Invariants
+- **T3.1: Multi-Objective Scoring Equation Accuracy**:
+  $$S(\text{model}) = 0.25 Q_{\text{task}} + 0.15 \log_{10}(1 + \text{Downloads}) + 0.25 V_{\text{trending}} + 0.15 B_{\text{following}} + 0.20 \sqrt{\frac{2 \ln N}{\max(1, n_i)}} - P_{\text{memory}}$$
+  Validated exact numeric output within $10^{-4}$ tolerance.
+- **T3.2: Cold-Start Breakout Model Promotion**:
+  Proved that a new breakout model with 500 downloads, $V_{\text{trending}} = 0.98$, and $B_{\text{following}} = 1.0$ (Score: $1.4728$) strictly outranks a stale legacy model with 1,000,000 downloads and $V=0$ (Score: $1.1657$) on the Pareto frontier.
+- **T3.3: Contextual Bandit UCB1 Monotonicity**:
+  Verified exploration bonus decreases monotonically as candidate pull count increases ($n_i \in [1, 5, 20, 50, 200]$) under constant total pulls $N=1000$.
+- **T3.4: Dynamic Runtime Memory Invariant ($P_{\text{memory}}$)**:
+  Verified penalty evaluates against runtime free RAM (`free_ram_gb`), never total physical RAM. Oversized models receive heavy penalties ($P_{\text{memory}} = 10.0$ to $50.0$), depressing scores to prevent OOM.
+- **T3.5: Unblocked Default Stack Law**:
+  Verified Recursive Flint (`flint:latest`, `RecursiveSI/flint`), Block Goose (`goose`), and RAPTOR (`raptor`) always evaluate to $P_{\text{memory}} = 0.0$ across all memory tiers.
 
-### R4: Native Multi-Modal Visual Canvas & UI Synthesis
-- **Visual Dropzone & Clipboard Paste**: Accepts `.png`, `.jpg`, `.jpeg`, `.webp`, `.svg`, and clipboard screenshot paste (`Win+Shift+S`). Rejects non-image files.
-- **Base64 Encoding**: Converts image buffers to `data:image/...;base64,...` data URLs.
-- **Local VLM Routing**: Routes image attachments to local OpenVINO Qwen2-VL or Ollama `qwen2-vl`.
-- **Component Synthesis**: Synthesizes React JSX + Tailwind CSS code from wireframe mockups.
-- **Layout Bug Diagnosis**: Diagnoses CSS box model / flexbox misalignment from layout screenshots and outputs CSS patch.
-
-### R5: Distributed Local AI Mesh (mDNS & mTLS)
-- **mDNS Service Discovery**: Advertises `_hugos-mesh._tcp.local.` with TXT records (`node_id`, `hostname`, `free_ram_gb`, `gpu_name`, `free_vram_mb`, `capabilities`).
-- **Encrypted mTLS Transport**: Self-signed cluster certificate (`CN=<node_id>.hugos.local`) with SHA-256 fingerprint verification.
-- **Hardware-to-Model Sizing & Offload in `FusionArbiter`**:
-  - Available RAM $\ge 24\text{ GB}$ or Free VRAM $\ge 14\text{ GB} \implies$ local execution.
-  - Lightweight nodes offload 32B model arbitration and ReST-RL sweeps to LAN workstation peer over mTLS.
-  - Resilient fallback: Gracefully falls back to local degraded model (1.5B) when no remote peer meets capacity.
+### Tier 4: Real-World Scenarios (Persistence, Migration & Discovery)
+- **T4.1: Non-Destructive Idempotent SQLite Migration**:
+  Verified with Python `sqlite3` on live database that `PRAGMA table_info(models)` check safely adds `trending_score`, `feed_source`, `bandit_pulls`, and `bandit_reward` and re-running migration executes idempotently without duplicate column errors.
+- **T4.2: Full Mock Stage 0 Sync & SQLite Persistence**:
+  Verified inserting trending and followed org records, updating indices, and querying by `trending_score DESC`.
+- **T4.3: Port 5000..5010 Resilient Failover & Health Discovery**:
+  Verified primary daemon detection on port 5000 (`service === "modelfusion"`) and failover scanning across 5006..5010 to discover failover server on port 5009 when earlier ports are unavailable.
+- **T4.4: Browser UI & 19 Categories Preservation**:
+  Verified all 19 browser categories are present and strictly sorted A-Z in `browser/ui/index.html`.
+- **T4.5: IDE Extension Integration**:
+  Verified IDE extension manifest contributes commands and directives cleanly.
 
 ---
 
-## 3. Execution Commands & Verification Log
+## 3. How to Run the Tests
 
-### Full Test Suite Run
 ```powershell
-& "D:\tools\nodejs\node.exe" tests/e2e/test_nextgen_autonomous.mjs
-```
+# Run the complete test suite (All 21 tests)
+node tests/test_hf_trending_and_following_feed.js
 
-```
+# Run specific tier only
+node tests/test_hf_trending_and_following_feed.js --tier 1
+node tests/test_hf_trending_and_following_feed.js --tier 2
+node tests/test_hf_trending_and_following_feed.js --tier 3
+node tests/test_hf_trending_and_following_feed.js --tier 4
 
-### JSON Output
-```json
-{
-  "status": "PASS",
-  "total": 120,
-  "passed": 120,
-  "failed": 0,
-  "durationMs": 3540.2,
-  "tierStats": {
-    "1": { "total": 45, "passed": 45, "failed": 0 },
-    "2": { "total": 45, "passed": 45, "failed": 0 },
-    "3": { "total": 20, "passed": 20, "failed": 0 },
-    "4": { "total": 10, "passed": 10, "failed": 0 }
-  }
-}
-```
-
-### Individual Tier Execution
-```powershell
-& "D:\tools\nodejs\node.exe" tests/e2e/test_nextgen_autonomous.mjs --tier 1  # 45 passed (1.35s)
-& "D:\tools\nodejs\node.exe" tests/e2e/test_nextgen_autonomous.mjs --tier 2  # 45 passed (1.12s)
-& "D:\tools\nodejs\node.exe" tests/e2e/test_nextgen_autonomous.mjs --tier 3  # 20 passed (0.42s)
-& "D:\tools\nodejs\node.exe" tests/e2e/test_nextgen_autonomous.mjs --tier 4  # 10 passed (1.52s)
+# Machine-readable JSON output
+node tests/test_hf_trending_and_following_feed.js --json
 ```
 
 ---
 
-## 4. Authentic Opaque-Box Validation Summary
-- **R1 Preemption**: Directly benchmarks Win32 kernel `TerminateJobObject(h, 1)` via Python ctypes (<8ms).
-- **R2 Ghost Text**: Verifies AST syntax validator skipping `//`, `/* */`, and `#` comments, rejecting unclosed strings, and debouncing.
-- **R3 Knowledge Graph**: Directly queries compiled `target/release/cli.exe --graph-query` and `code_graph.db` SQLite database, verifying single-symbol lookup, recursive CTE call hierarchy, FTS5 hybrid search, and SQL injection safety.
-- **R4 Visual Canvas**: Directly executes `IDE/src/scripts/run_model_visual.py` with multi-modal inputs, verifying React JSX + Tailwind CSS UI synthesis and CSS layout overflow diagnosis.
-- **R5 Local Mesh**: Authentically validates RSA keypairs and SHA-256 fingerprint verification, OS TCP socket failure handling (`ECONNREFUSED`), and PassThrough stream pipeline (1 MB).
+## 4. Conclusion & Sign-Off
 
-## 5. Conclusion & Sign-Off
-
-The test suite is **100% functional, authentic, and green (120/120)**. All interface contracts defined in `PROJECT.md` for capabilities R1 through R5 are verified with real system calls, compiled binaries, real database queries, and adversarial defenses.
+The test suite is **100% green, isolated, self-contained, and deterministic (21/21 passed)**. All interface contracts, schemas, mathematical scoring equations, and boundary protections defined in `PROJECT.md` and `TEST_INFRA.md` are authenticated and verified.

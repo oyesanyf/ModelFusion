@@ -55,7 +55,7 @@
         </div>
       </div>
 
-      <nav class="sidebar-nav-list" aria-label="Main Navigation">
+      <nav id="sidebar-nav-list" class="sidebar-nav-list" aria-label="Main Navigation">
         <button type="button" class="sidebar-nav-item active" id="sidebar-new-chat" title="New chat (Ctrl+N)">
           <span class="nav-item-icon">📝</span>
           <span class="nav-item-text">New Chat</span>
@@ -73,6 +73,7 @@
           <span class="nav-item-icon">✍️</span>
           <span class="nav-item-text">Writing &amp; Editing</span>
         </button>
+        <li id="sidebar-trending-models" class="sidebar-nav-item" style="cursor: pointer; list-style: none;"><span class="sidebar-icon">🔥</span><span class="sidebar-label">Trending Models</span></li>
 
         <div class="sidebar-section-divider"></div>
 
@@ -98,7 +99,6 @@
                 <span class="cat-chevron">▸</span>
               </button>
               <div class="tool-category-content collapsed">
-                <!-- 6 Classification Foundation Models in Strict Alphabetical Order A-Z -->
                 <button type="button" class="tool-item-btn tool-command-btn classification-tool-item" data-tool-id="tool_deberta_v3_mnli_fever_anli" data-category="classification" data-cmd="@agent classify deberta-v3-base-mnli-fever-anli " data-original-title="DeBERTa-v3 FEVER ANLI: Robust zero-shot NLI trained across MNLI, FEVER, and Adversarial NLI for complex negations" title="DeBERTa-v3 FEVER ANLI: Robust zero-shot NLI trained across MNLI, FEVER, and Adversarial NLI for complex negations">
                   <span class="tool-btn-left"><span class="tool-icon">🛡️</span><span class="tool-label">Fact &amp; Logic Verification</span></span>
                   <span class="tool-tag">@deberta-fever</span>
@@ -106,6 +106,10 @@
                 <button type="button" class="tool-item-btn tool-command-btn classification-tool-item" data-tool-id="tool_finbert_classifier" data-category="classification" data-cmd="@agent topic finbert " data-original-title="FinBERT: Specialized domain classifier for financial disclosures, earnings transcripts, and market sentiment" title="FinBERT: Specialized domain classifier for financial disclosures, earnings transcripts, and market sentiment">
                   <span class="tool-btn-left"><span class="tool-icon">📈</span><span class="tool-label">Financial Disclosure Classifier</span></span>
                   <span class="tool-tag">@finbert-cls</span>
+                </button>
+                <button type="button" id="tool_goose_classification" class="tool-item-btn tool-command-btn" data-tool-id="tool_goose_classification" data-category="classification" data-cmd="@agent goose --domain classification " data-original-title="Block Goose Autonomous Taxonomy, Multi-Label Triage &amp; MCP Classification" title="Block Goose Autonomous Taxonomy, Multi-Label Triage &amp; MCP Classification">
+                  <span class="tool-btn-left"><span class="tool-icon">🪿</span><span class="tool-label">Goose Zero-Shot Taxonomy Agent</span></span>
+                  <span class="tool-tag">@goose-cls</span>
                 </button>
                 <button type="button" class="tool-item-btn tool-command-btn classification-tool-item" data-tool-id="tool_nli_deberta_v3_base" data-category="classification" data-cmd="@agent classify nli-deberta-v3-base " data-original-title="Cross-Encoder DeBERTa-v3: High-precision NLI pair classification and semantic boundary detection" title="Cross-Encoder DeBERTa-v3: High-precision NLI pair classification and semantic boundary detection">
                   <span class="tool-btn-left"><span class="tool-icon">🔀</span><span class="tool-label">High-Precision Text Matcher</span></span>
@@ -146,6 +150,10 @@
                   <span class="tool-btn-left"><span class="tool-icon">💻</span><span class="tool-label">Coding Helper</span></span>
                   <span class="tool-tag">@code-helper</span>
                 </button>
+                <button type="button" id="tool_goose_code" class="tool-item-btn tool-command-btn" data-tool-id="tool_goose_code" data-category="code" data-cmd="@agent goose --domain code " data-original-title="Block Goose Autonomous Developer, Shell, Editor &amp; MCP Code Engineering" title="Block Goose Autonomous Developer, Shell, Editor &amp; MCP Code Engineering">
+                  <span class="tool-btn-left"><span class="tool-icon">🪿</span><span class="tool-label">Goose Autonomous Coding Agent</span></span>
+                  <span class="tool-tag">@goose-code</span>
+                </button>
               </div>
             </div>
 
@@ -164,6 +172,10 @@
                 <button type="button" class="tool-item-btn tool-command-btn compliance-tool-item" data-tool-id="tool_legal_bert" data-category="compliance" data-cmd="@agent legal legal-bert " data-original-title="Legal-BERT: Pretrained on European and US court rulings, contracts, and LexGLUE" title="Legal-BERT: Pretrained on European and US court rulings, contracts, and LexGLUE">
                   <span class="tool-btn-left"><span class="tool-icon">⚖️</span><span class="tool-label">Document Classifier</span></span>
                   <span class="tool-tag">@legal-bert</span>
+                </button>
+                <button type="button" id="tool_goose_compliance" class="tool-item-btn tool-command-btn" data-tool-id="tool_goose_compliance" data-category="compliance" data-cmd="@agent goose --domain compliance " data-original-title="Block Goose Autonomous Policy Audit, SOC2/GDPR/HIPAA &amp; Contract Verifier" title="Block Goose Autonomous Policy Audit, SOC2/GDPR/HIPAA &amp; Contract Verifier">
+                  <span class="tool-btn-left"><span class="tool-icon">🪿</span><span class="tool-label">Goose Regulatory Compliance Agent</span></span>
+                  <span class="tool-tag">@goose-comp</span>
                 </button>
                 <button type="button" class="tool-item-btn tool-command-btn compliance-tool-item" data-tool-id="tool_legal_longformer" data-category="compliance" data-cmd="@agent legal legal-longformer " data-original-title="Legal-Longformer: Long document attention for thousands of tokens in judicial briefs" title="Legal-Longformer: Long document attention for thousands of tokens in judicial briefs">
                   <span class="tool-btn-left"><span class="tool-icon">📑</span><span class="tool-label">Multi-Page Contracts</span></span>
@@ -195,6 +207,10 @@
                 <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_ticket_booking" data-category="computer_use" data-cmd="@agent ticket-booking " data-original-title="Ticket &amp; Travel Booking" title="Ticket &amp; Travel Booking">
                   <span class="tool-btn-left"><span class="tool-icon">🎟️</span><span class="tool-label">Flight Booking</span></span>
                   <span class="tool-tag">@ticket-booking</span>
+                </button>
+                <button type="button" id="tool_goose_computer_use" class="tool-item-btn tool-command-btn" data-tool-id="tool_goose_computer_use" data-category="computer_use" data-cmd="@agent goose --domain computer_use " data-original-title="Block Goose OS ComputerController, Screen Automation &amp; Browser MCP" title="Block Goose OS ComputerController, Screen Automation &amp; Browser MCP">
+                  <span class="tool-btn-left"><span class="tool-icon">🪿</span><span class="tool-label">Goose Computer Use Agent</span></span>
+                  <span class="tool-tag">@goose-cu</span>
                 </button>
                 <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_desktop_type" data-category="computer_use" data-cmd="@agent desktop-type " data-original-title="Type Text or OS Keystroke" title="Type Text or OS Keystroke">
                   <span class="tool-btn-left"><span class="tool-icon">⌨️</span><span class="tool-label">Keyboard & Type</span></span>
@@ -251,6 +267,10 @@
                   <span class="tool-btn-left"><span class="tool-icon">⚖️</span><span class="tool-label">Decision Optimizer</span></span>
                   <span class="tool-tag">@decision</span>
                 </button>
+                <button type="button" id="tool_goose_tabular" class="tool-item-btn tool-command-btn" data-tool-id="tool_goose_tabular" data-category="tabular" data-cmd="@agent goose --domain tabular " data-original-title="Block Goose Autonomous Data Pipeline, DuckDB/SQL &amp; Feature Engineering" title="Block Goose Autonomous Data Pipeline, DuckDB/SQL &amp; Feature Engineering">
+                  <span class="tool-btn-left"><span class="tool-icon">🪿</span><span class="tool-label">Goose Tabular Data SQL Agent</span></span>
+                  <span class="tool-tag">@goose-sql</span>
+                </button>
                 <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_predict" data-category="tabular" data-cmd="@agent predict " data-original-title="Predict Outcomes" title="Predict Outcomes">
                   <span class="tool-btn-left"><span class="tool-icon">🎯</span><span class="tool-label">Predict Outcome</span></span>
                   <span class="tool-tag">@predict</span>
@@ -282,6 +302,10 @@
                   <span class="tool-label">Deep Web &amp; Literature Research</span>
                   <span class="tool-tag">@deep-research</span>
                 </button>
+                <button type="button" id="tool_goose_deep_research" class="tool-item-btn tool-command-btn" data-tool-id="tool_goose_deep_research" data-category="deep_research" data-cmd="@agent goose --domain deep_research " data-original-title="Block Goose Multi-Hop Literature Synthesis, Citation Graph &amp; Lab Automation" title="Block Goose Multi-Hop Literature Synthesis, Citation Graph &amp; Lab Automation">
+                  <span class="tool-btn-left"><span class="tool-icon">🪿</span><span class="tool-label">Goose Autonomous Research Agent</span></span>
+                  <span class="tool-tag">@goose-res</span>
+                </button>
                 <button type="button" class="tool-item-btn tool-command-btn tool-item" data-tool-id="tool_agsci_investigate" data-category="deep_research" data-cmd="@agent agsci-investigate " title="AI-Scientist-v3 Phase 2: Agentic Idea ➔ Code Experiment ➔ Rubric Evaluation loop with parallel workers &amp; optimizer memory">
                   <span class="tool-label">Investigation &amp; Idea Loop</span>
                   <span class="tool-tag">@agsci-investigate</span>
@@ -309,7 +333,6 @@
                 <span class="cat-chevron">▸</span>
               </button>
               <div class="tool-category-content collapsed">
-                <!-- 9 Financial Models in Strict Alphabetical Order A-Z for test_alphabetical_menu.py -->
                 <button type="button" class="tool-item-btn tool-command-btn finance-tool-item" data-tool-id="tool_finbert_esg" data-category="finance" data-domain="sentiment" data-cmd="@agent finance finbert-esg " data-original-title="FinBERT-ESG: Categorize Environmental, Social, and Governance signals in corporate reports" title="FinBERT-ESG: Categorize Environmental, Social, and Governance signals in corporate reports">
                   <span class="tool-btn-left"><span class="tool-icon">🌱</span><span class="tool-label">Corporate ESG</span></span>
                   <span class="tool-tag">@finbert-esg</span>
@@ -329,6 +352,10 @@
                 <button type="button" class="tool-item-btn tool-command-btn finance-tool-item" data-tool-id="tool_finbert" data-category="finance" data-domain="sentiment" data-cmd="@agent finance finbert " data-original-title="FinBERT: Market sentiment analysis on corporate disclosures and financial news" title="FinBERT: Market sentiment analysis on corporate disclosures and financial news">
                   <span class="tool-btn-left"><span class="tool-icon">📊</span><span class="tool-label">Financial News Mood</span></span>
                   <span class="tool-tag">@finbert</span>
+                </button>
+                <button type="button" id="tool_goose_finance" class="tool-item-btn tool-command-btn" data-tool-id="tool_goose_finance" data-category="finance" data-cmd="@agent goose --domain finance " data-original-title="Block Goose Autonomous SEC Edgar, Portfolio Risk &amp; Alpha Backtesting" title="Block Goose Autonomous SEC Edgar, Portfolio Risk &amp; Alpha Backtesting">
+                  <span class="tool-btn-left"><span class="tool-icon">🪿</span><span class="tool-label">Goose Quantitative Finance Agent</span></span>
+                  <span class="tool-tag">@goose-fin</span>
                 </button>
                 <button type="button" class="tool-item-btn tool-command-btn finance-tool-item" data-tool-id="tool_qwen_finance" data-category="finance" data-domain="generative" data-cmd="@agent finance qwen-finance " data-original-title="Qwen-Pro-Finance-32B: Financial mathematics, quantitative code, and balance sheet modeling" title="Qwen-Pro-Finance-32B: Financial mathematics, quantitative code, and balance sheet modeling">
                   <span class="tool-btn-left"><span class="tool-icon">🏢</span><span class="tool-label">Institutional Fund</span></span>
@@ -364,6 +391,10 @@
                 <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_harness2_check" data-category="harness2" data-cmd="@agent harness2-check " data-original-title="Harness² Setup &amp; Readiness Check (harness2-setup / harness2-check): Audits all 8 editable harness components" title="Harness² Setup &amp; Readiness Check (harness2-setup / harness2-check): Audits all 8 editable harness components">
                   <span class="tool-btn-left"><span class="tool-icon">🔍</span><span class="tool-label">Component &amp; Setup Check</span></span>
                   <span class="tool-tag">@harness2-check</span>
+                </button>
+                <button type="button" id="tool_goose_harness2" class="tool-item-btn tool-command-btn" data-tool-id="tool_goose_harness2" data-category="harness2" data-cmd="@agent goose --domain harness2 " data-original-title="Block Goose Subagent Orchestration, Recipe Execution &amp; Self-Refinement" title="Block Goose Subagent Orchestration, Recipe Execution &amp; Self-Refinement">
+                  <span class="tool-btn-left"><span class="tool-icon">🪿</span><span class="tool-label">Goose Recursive Harness Agent</span></span>
+                  <span class="tool-tag">@goose-h2</span>
                 </button>
                 <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_harness2_meta" data-category="harness2" data-cmd="@agent harness2-meta " data-original-title="Level 2 Harnessing-Level Recursion: Updates the persistent improvement harness with adopted execution harnesses and evidence-supported lessons" title="Level 2 Harnessing-Level Recursion: Updates the persistent improvement harness with adopted execution harnesses and evidence-supported lessons">
                   <span class="tool-btn-left"><span class="tool-icon">🧠</span><span class="tool-label">Harnessing-Level Recursion</span></span>
@@ -412,6 +443,10 @@
                   <span class="tool-btn-left"><span class="tool-icon">🎨</span><span class="tool-label">Generate Image</span></span>
                   <span class="tool-tag">@image</span>
                 </button>
+                <button type="button" id="tool_goose_vision" class="tool-item-btn tool-command-btn" data-tool-id="tool_goose_vision" data-category="vision" data-cmd="@agent goose --domain vision " data-original-title="Block Goose Screen Capture, OCR Grounding, VQA &amp; Visual Inspection" title="Block Goose Screen Capture, OCR Grounding, VQA &amp; Visual Inspection">
+                  <span class="tool-btn-left"><span class="tool-icon">🪿</span><span class="tool-label">Goose Multimodal Vision Agent</span></span>
+                  <span class="tool-tag">@goose-vis</span>
+                </button>
                 <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_image_classification" data-category="vision" data-cmd="@agent image-classification " data-original-title="Identify Image Category" title="Identify Image Category">
                   <span class="tool-btn-left"><span class="tool-icon">🏷️</span><span class="tool-label">Identify Image</span></span>
                   <span class="tool-tag">@classify</span>
@@ -435,6 +470,10 @@
                 <span class="cat-chevron">▸</span>
               </button>
               <div class="tool-category-content collapsed">
+                <button type="button" id="tool_goose_pe_binary" class="tool-item-btn tool-command-btn" data-tool-id="tool_goose_pe_binary" data-category="pe_binary" data-cmd="@agent goose --domain pe_binary " data-original-title="Block Goose Autonomous PE/ELF Disassembly, YARA &amp; Malware Triage" title="Block Goose Autonomous PE/ELF Disassembly, YARA &amp; Malware Triage">
+                  <span class="tool-btn-left"><span class="tool-icon">🪿</span><span class="tool-label">Goose Binary Reverse Engineering Agent</span></span>
+                  <span class="tool-tag">@goose-pe</span>
+                </button>
                 <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_pe_header" data-category="pe_binary" data-cmd="@agent pe " data-original-title="Inspect File Headers &amp; Security" title="Inspect File Headers &amp; Security">
                   <span class="tool-btn-left"><span class="tool-icon">🔬</span><span class="tool-label">Inspect PE File</span></span>
                   <span class="tool-tag">@pe</span>
@@ -453,6 +492,10 @@
                 <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_lawma" data-category="legal" data-cmd="@agent legal lawma " data-original-title="Lawma-8B: Llama-based legal reasoning and automated contract drafting" title="Lawma-8B: Llama-based legal reasoning and automated contract drafting">
                   <span class="tool-btn-left"><span class="tool-icon">🦙</span><span class="tool-label">Case Law & Precedent</span></span>
                   <span class="tool-tag">@lawma</span>
+                </button>
+                <button type="button" id="tool_goose_legal" class="tool-item-btn tool-command-btn" data-tool-id="tool_goose_legal" data-category="legal" data-cmd="@agent goose --domain legal " data-original-title="Block Goose Case Law Discovery, Redline Drafting &amp; Statutory Analysis" title="Block Goose Case Law Discovery, Redline Drafting &amp; Statutory Analysis">
+                  <span class="tool-btn-left"><span class="tool-icon">🪿</span><span class="tool-label">Goose Autonomous Legal Agent</span></span>
+                  <span class="tool-tag">@goose-leg</span>
                 </button>
                 <button type="button" class="tool-item-btn tool-command-btn legal-tool-item" data-tool-id="tool_law_chat" data-category="legal" data-cmd="@agent legal law-chat " data-original-title="Law-Chat: Instruction-tuned model for interactive statutory analysis and document Q&amp;A" title="Law-Chat: Instruction-tuned model for interactive statutory analysis and document Q&amp;A">
                   <span class="tool-btn-left"><span class="tool-icon">💬</span><span class="tool-label">Interactive Legal</span></span>
@@ -485,6 +528,10 @@
                   <span class="tool-btn-left"><span class="tool-icon">🎯</span><span class="tool-label">Goal Orchestrator</span></span>
                   <span class="tool-tag">@goal</span>
                 </button>
+                <button type="button" id="tool_goose_agent" class="tool-item-btn tool-command-btn" data-tool-id="tool_goose_agent" data-category="agent" data-cmd="@agent goose " data-original-title="Block Goose Full-Stack Autonomous AI Engineer (Developer + MCP Extensions)" title="Block Goose Full-Stack Autonomous AI Engineer (Developer + MCP Extensions)">
+                  <span class="tool-btn-left"><span class="tool-icon">🪿</span><span class="tool-label">Goose Autonomous Developer Agent</span></span>
+                  <span class="tool-tag">@goose</span>
+                </button>
                 <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_grill_me" data-category="agent" data-cmd="@agent grill-me " data-original-title="Interview &amp; Clarify (Grill Me)" title="Interview &amp; Clarify (Grill Me)">
                   <span class="tool-btn-left"><span class="tool-icon">🔥</span><span class="tool-label">Interview & Clarify</span></span>
                   <span class="tool-tag">@grill-me</span>
@@ -508,7 +555,6 @@
                 <span class="cat-chevron">▸</span>
               </button>
               <div class="tool-category-content collapsed">
-                <!-- 7 RD-Agent Tools in Strict Alphabetical Order A-Z -->
                 <button type="button" class="tool-item-btn tool-command-btn rdagent-tool-item" data-tool-id="tool_rd_finetune" data-category="rdagent" data-cmd="@agent rd-finetune " data-original-title="FT-Agent / FT-Dojo: Autonomous LLM fine-tuning, benchmark evaluation, and iterative refinement (ICML 2026)" title="FT-Agent / FT-Dojo: Autonomous LLM fine-tuning, benchmark evaluation, and iterative refinement (ICML 2026)">
                   <span class="tool-btn-left"><span class="tool-icon">🧪</span><span class="tool-label">Autonomous LLM Fine-Tuning</span></span>
                   <span class="tool-tag">@rd-finetune</span>
@@ -516,6 +562,10 @@
                 <button type="button" class="tool-item-btn tool-command-btn rdagent-tool-item" data-tool-id="tool_rd_factor" data-category="rdagent" data-cmd="@agent rd-factor " data-original-title="RD-Agent FinFactor: Automated financial factor proposal and formula implementation from market data and reports" title="RD-Agent FinFactor: Automated financial factor proposal and formula implementation from market data and reports">
                   <span class="tool-btn-left"><span class="tool-icon">📈</span><span class="tool-label">Financial Factor Mining</span></span>
                   <span class="tool-tag">@rd-factor</span>
+                </button>
+                <button type="button" id="tool_goose_rdagent" class="tool-item-btn tool-command-btn" data-tool-id="tool_goose_rdagent" data-category="rdagent" data-cmd="@agent goose --domain rdagent " data-original-title="Block Goose Hypothesis Loop, Benchmark Evolution &amp; Experiment Runner" title="Block Goose Hypothesis Loop, Benchmark Evolution &amp; Experiment Runner">
+                  <span class="tool-btn-left"><span class="tool-icon">🪿</span><span class="tool-label">Goose Autonomous RD Agent</span></span>
+                  <span class="tool-tag">@goose-rd</span>
                 </button>
                 <button type="button" class="tool-item-btn tool-command-btn rdagent-tool-item" data-tool-id="tool_rd_kaggle" data-category="rdagent" data-cmd="@agent rd-kaggle " data-original-title="RD-Agent Kaggle &amp; Data Science: End-to-end automated feature engineering, model tuning, and competition submissions" title="RD-Agent Kaggle &amp; Data Science: End-to-end automated feature engineering, model tuning, and competition submissions">
                   <span class="tool-btn-left"><span class="tool-icon">🏆</span><span class="tool-label">Kaggle Competition Agent</span></span>
@@ -548,7 +598,6 @@
                 <span class="cat-chevron">▸</span>
               </button>
               <div class="tool-category-content collapsed">
-                <!-- 20 Scientific Models in Strict Alphabetical Order A-Z for test_alphabetical_menu.py -->
                 <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_aurora" data-category="science" data-domain="earth" data-cmd="@agent science aurora " data-original-title="Aurora: High-resolution atmospheric and operational weather forecasting" title="Aurora: High-resolution atmospheric and operational weather forecasting">
                   <span class="tool-btn-left"><span class="tool-icon">🌦️</span><span class="tool-label">Atmospheric Weather</span></span>
                   <span class="tool-tag">@aurora</span>
@@ -584,6 +633,10 @@
                 <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_climax" data-category="science" data-domain="earth" data-cmd="@agent science climax " data-original-title="ClimaX: Climate modeling and global weather forecasting" title="ClimaX: Climate modeling and global weather forecasting">
                   <span class="tool-btn-left"><span class="tool-icon">🌪️</span><span class="tool-label">Global Climate</span></span>
                   <span class="tool-tag">@climax</span>
+                </button>
+                <button type="button" id="tool_goose_science" class="tool-item-btn tool-command-btn" data-tool-id="tool_goose_science" data-category="science" data-cmd="@agent goose --domain science " data-original-title="Block Goose Bio/Chem/Physics Simulation, Genomics &amp; Lab Workflow" title="Block Goose Bio/Chem/Physics Simulation, Genomics &amp; Lab Workflow">
+                  <span class="tool-btn-left"><span class="tool-icon">🪿</span><span class="tool-label">Goose Scientific Discovery Agent</span></span>
+                  <span class="tool-tag">@goose-sci</span>
                 </button>
                 <button type="button" class="tool-item-btn tool-command-btn science-tool-item" data-tool-id="tool_matscibert" data-category="science" data-domain="chemistry" data-cmd="@agent science matscibert " data-original-title="MatSciBERT: Materials science literature and crystal synthesis analysis" title="MatSciBERT: Materials science literature and crystal synthesis analysis">
                   <span class="tool-btn-left"><span class="tool-icon">💎</span><span class="tool-label">Materials Science</span></span>
@@ -640,7 +693,6 @@
                 <span class="cat-chevron">▸</span>
               </button>
               <div class="tool-category-content collapsed">
-                <!-- 6 Sentiment & Moderation Models in Strict Alphabetical Order A-Z -->
                 <button type="button" class="tool-item-btn tool-command-btn sentiment-tool-item" data-tool-id="tool_koalaai_text_moderation" data-category="sentiment" data-cmd="@agent moderation text-moderation " data-original-title="KoalaAI Text-Moderation: Safety classifier flagging self-harm, hate speech, harassment, and violence" title="KoalaAI Text-Moderation: Safety classifier flagging self-harm, hate speech, harassment, and violence">
                   <span class="tool-btn-left"><span class="tool-icon">🚨</span><span class="tool-label">Content Safety &amp; Moderation</span></span>
                   <span class="tool-tag">@moderation</span>
@@ -652,6 +704,10 @@
                 <button type="button" class="tool-item-btn tool-command-btn sentiment-tool-item" data-tool-id="tool_roberta_go_emotions" data-category="sentiment" data-cmd="@agent sentiment roberta-base-go_emotions " data-original-title="GoEmotions RoBERTa: Multi-label emotion classifier across 28 fine-grained emotional categories" title="GoEmotions RoBERTa: Multi-label emotion classifier across 28 fine-grained emotional categories">
                   <span class="tool-btn-left"><span class="tool-icon">💬</span><span class="tool-label">Fine-Grained Emotion Analysis</span></span>
                   <span class="tool-tag">@go-emotions</span>
+                </button>
+                <button type="button" id="tool_goose_sentiment" class="tool-item-btn tool-command-btn" data-tool-id="tool_goose_sentiment" data-category="sentiment" data-cmd="@agent goose --domain sentiment " data-original-title="Block Goose Multi-Platform Affective Computing, Brand Drift &amp; Safety Triage" title="Block Goose Multi-Platform Affective Computing, Brand Drift &amp; Safety Triage">
+                  <span class="tool-btn-left"><span class="tool-icon">🪿</span><span class="tool-label">Goose Sentiment Moderation Agent</span></span>
+                  <span class="tool-tag">@goose-sent</span>
                 </button>
                 <button type="button" class="tool-item-btn tool-command-btn sentiment-tool-item" data-tool-id="tool_distilbert_sst2" data-category="sentiment" data-cmd="@agent sentiment distilbert-base-uncased-finetuned-sst-2-english " data-original-title="DistilBERT SST-2: High-speed binary positive and negative sentiment classification" title="DistilBERT SST-2: High-speed binary positive and negative sentiment classification">
                   <span class="tool-btn-left"><span class="tool-icon">👍</span><span class="tool-label">Sentiment Polarity (Pos/Neg)</span></span>
@@ -716,6 +772,10 @@
                   <span class="tool-btn-left"><span class="tool-icon">🌐</span><span class="tool-label">Full 2M+ Registry</span></span>
                   <span class="tool-tag">@updatedb</span>
                 </button>
+                <button type="button" id="tool_goose_utilities" class="tool-item-btn tool-command-btn" data-tool-id="tool_goose_utilities" data-category="utilities" data-cmd="@agent goose --domain utilities " data-original-title="Block Goose Autonomous Diagnostics, Shell Telemetry &amp; MCP Server Manager" title="Block Goose Autonomous Diagnostics, Shell Telemetry &amp; MCP Server Manager">
+                  <span class="tool-btn-left"><span class="tool-icon">🪿</span><span class="tool-label">Goose System DevOps Agent</span></span>
+                  <span class="tool-tag">@goose-sys</span>
+                </button>
                 <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_sys_info" data-category="utilities" data-cmd="@agent sys-info" data-original-title="My Hardware &amp; Memory" title="My Hardware &amp; Memory">
                   <span class="tool-btn-left"><span class="tool-icon">💻</span><span class="tool-label">Hardware & VRAM</span></span>
                   <span class="tool-tag">@sys-info</span>
@@ -727,6 +787,10 @@
                 <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_db_vacuum" data-category="utilities" data-cmd="@agent db-vacuum" data-original-title="Vacuum &amp; Defragment Database" title="Vacuum &amp; Defragment Database">
                   <span class="tool-btn-left"><span class="tool-icon">🧹</span><span class="tool-label">Optimize Database</span></span>
                   <span class="tool-tag">@db-vacuum</span>
+                </button>
+                <button type="button" id="tool_trending_models" class="tool-item-btn tool-command-btn tool-item" data-tool-id="tool_trending_models" data-category="utilities" data-cmd="@agent trending-models" data-original-title="Trending Hub Models" title="Trending Hub Models">
+                  <span class="tool-btn-left"><span class="tool-icon">🔥</span><span class="tool-label">Trending Hub Models</span></span>
+                  <span class="tool-tag">@trending</span>
                 </button>
                 <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_update" data-category="utilities" data-cmd="@agent update" data-original-title="Update Recommended Models (~6.5k models)" title="Update Recommended Models (~6.5k models)">
                   <span class="tool-btn-left"><span class="tool-icon">⚡</span><span class="tool-label">Update Top Models</span></span>
@@ -746,6 +810,10 @@
                 <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_audio_classification" data-category="audio" data-cmd="@agent audio " data-original-title="Identify Sound or Music" title="Identify Sound or Music">
                   <span class="tool-btn-left"><span class="tool-icon">🎵</span><span class="tool-label">Audio Recognition</span></span>
                   <span class="tool-tag">@audio</span>
+                </button>
+                <button type="button" id="tool_goose_audio" class="tool-item-btn tool-command-btn" data-tool-id="tool_goose_audio" data-category="audio" data-cmd="@agent goose --domain audio " data-original-title="Block Goose Autonomous ASR Transcription, Diarization &amp; TTS Synthesis" title="Block Goose Autonomous ASR Transcription, Diarization &amp; TTS Synthesis">
+                  <span class="tool-btn-left"><span class="tool-icon">🪿</span><span class="tool-label">Goose Voice Audio Agent</span></span>
+                  <span class="tool-tag">@goose-aud</span>
                 </button>
                 <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_asr" data-category="audio" data-cmd="@agent asr " data-original-title="Transcribe Audio to Text" title="Transcribe Audio to Text">
                   <span class="tool-btn-left"><span class="tool-icon">🎙️</span><span class="tool-label">Speech to Text</span></span>
@@ -778,6 +846,10 @@
                   <span class="tool-btn-left"><span class="tool-icon">📖</span><span class="tool-label">Encyclopedia Wiki</span></span>
                   <span class="tool-tag">@wiki</span>
                 </button>
+                <button type="button" id="tool_goose_web" class="tool-item-btn tool-command-btn" data-tool-id="tool_goose_web" data-category="web" data-cmd="@agent goose --domain web " data-original-title="Block Goose Autonomous Web Scraper, DOM Extractor &amp; Knowledge Crawler" title="Block Goose Autonomous Web Scraper, DOM Extractor &amp; Knowledge Crawler">
+                  <span class="tool-btn-left"><span class="tool-icon">🪿</span><span class="tool-label">Goose Web Automation Agent</span></span>
+                  <span class="tool-tag">@goose-web</span>
+                </button>
                 <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_summarize" data-category="web" data-cmd="@agent summarize" data-original-title="Summarize Active Page Content" title="Summarize Active Page Content">
                   <span class="tool-btn-left"><span class="tool-icon">📑</span><span class="tool-label">Page Summarizer</span></span>
                   <span class="tool-tag">@summarize</span>
@@ -808,6 +880,10 @@
                 <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_outline" data-category="writing" data-cmd="@agent outline " data-original-title="Outline &amp; Book Pacing Workspace (HITL)" title="Outline &amp; Book Pacing Workspace (HITL)">
                   <span class="tool-btn-left"><span class="tool-icon">📖</span><span class="tool-label">Book Outlining</span></span>
                   <span class="tool-tag">@outline</span>
+                </button>
+                <button type="button" id="tool_goose_writing" class="tool-item-btn tool-command-btn" data-tool-id="tool_goose_writing" data-category="writing" data-cmd="@agent goose --domain writing " data-original-title="Block Goose Long-Form Documentation, RFC Authoring &amp; Editorial Engine" title="Block Goose Long-Form Documentation, RFC Authoring &amp; Editorial Engine">
+                  <span class="tool-btn-left"><span class="tool-icon">🪿</span><span class="tool-label">Goose Technical Creative Writer</span></span>
+                  <span class="tool-tag">@goose-write</span>
                 </button>
                 <button type="button" class="tool-item-btn tool-command-btn" data-tool-id="tool_humanize" data-category="writing" data-cmd="@agent humanize " data-original-title="Humanize AI Text &amp; Files (Anti-AI Stylometry)" title="Humanize AI Text &amp; Files (Anti-AI Stylometry)">
                   <span class="tool-btn-left"><span class="tool-icon">✍️</span><span class="tool-label">Humanize Text</span></span>
@@ -2338,6 +2414,15 @@
             <div class="mf-task-pill"><span>⚡</span> <strong>DOM Specialist:</strong> Fast token-pruned subtree parser</div>
             <div class="mf-task-pill"><span>👁️</span> <strong>Vision Specialist:</strong> Set-of-Mark visual grounder (qwen2.5-vl)</div>
             <div class="mf-task-pill"><span>🧠</span> <strong>Deep Reasoning:</strong> Speculative verify (deepseek-r1:1.5b)</div>
+          </div>
+        </div>
+
+        <div class="mf-section">
+          <div class="mf-section-title">🪿 Block Goose Autonomous Agent &amp; Long-Form Canvas (All 19 Domains)</div>
+          <div class="mf-task-breakdown">
+            <div class="mf-task-pill"><span>🪿</span> <strong>Block Goose (block/goose):</strong> Integrated across all 19 menu categories (<code>@agent goose --domain &lt;category&gt;</code>) with Developer Toolkit, Shell, Editor, ComputerController &amp; MCP Extensions.</div>
+            <div class="mf-task-pill"><span>📚</span> <strong>Comprehensive Long-Form Responses:</strong> All chat answers default to exhaustive, multi-section 800–2,000+ word deep dives (<code>maxTokens &gt;= 8192</code>) with structured <code>###</code> headings.</div>
+            <div class="mf-task-pill"><span>✨</span> <strong>Clean Response Canvas:</strong> Distraction-free chat cards with no top header clutter and full bottom action controls (Copy, Regenerate, Like/Dislike, Share, Continue, Download PDF/Word/MD).</div>
           </div>
         </div>
 

@@ -21,6 +21,59 @@ pub struct ParetoCandidate {
     pub objectives: Vec<f64>,
 }
 
+impl ParetoCandidate {
+    pub fn new(id: impl Into<String>, objectives: Vec<f64>) -> Self {
+        Self {
+            id: id.into(),
+            objectives,
+        }
+    }
+
+    /// Construct a candidate for multi-objective model selection accounting for:
+    /// - Objective 0 (Maximize): Task Quality & Accuracy
+    /// - Objective 1 (Maximize): Trending Velocity & Following Signal (V_trending + B_following)
+    /// - Objective 2 (Maximize): Efficiency & Exploration Bonus (Efficiency + U_i)
+    /// - Objective 3 (Minimize): Runtime Memory Footprint (M_runtime in GB)
+    ///
+    /// By incorporating velocity and exploration into dedicated Pareto objectives,
+    /// newly trending, cold-start models with high velocity or exploration bonus
+    /// are guaranteed to appear on the non-dominated Pareto frontier, preventing
+    /// legacy high-download models from completely dominating them.
+    pub fn from_model_objectives(
+        id: impl Into<String>,
+        task_quality: f64,
+        v_trending: f64,
+        b_following: f64,
+        efficiency_score: f64,
+        ucb1_exploration: f64,
+        estimated_memory_gb: f64,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            objectives: vec![
+                task_quality,
+                v_trending + b_following,
+                efficiency_score + ucb1_exploration,
+                estimated_memory_gb,
+            ],
+        }
+    }
+}
+
+/// Default objective directions for multi-objective model selection:
+/// - Objective 0: Maximize (Task Quality)
+/// - Objective 1: Maximize (Trending Velocity + Following Signal)
+/// - Objective 2: Maximize (Efficiency + UCB1 Exploration)
+/// - Objective 3: Minimize (Runtime Memory in GB)
+pub fn default_pareto_directions() -> [ObjectiveDirection; 4] {
+    [
+        ObjectiveDirection::Maximize,
+        ObjectiveDirection::Maximize,
+        ObjectiveDirection::Maximize,
+        ObjectiveDirection::Minimize,
+    ]
+}
+
 /// Check if candidate objectives `a` Pareto-dominates candidate objectives `b`.
 ///
 /// Returns true if `a` is at least as good as `b` in all objectives
@@ -343,5 +396,32 @@ mod tests {
 
         let knee = select_knee_point(&candidates, &directions).expect("Should find knee point");
         assert_eq!(knee.id, "BalancedKnee");
+    }
+
+    #[test]
+    fn test_pareto_trending_velocity_and_cold_start_promotion() {
+        let directions = default_pareto_directions();
+
+        // 1. Stale legacy model: High quality (0.90), Zero velocity (0.0), Stale following (0.0), High efficiency (0.85), 8 GB memory
+        let legacy = ParetoCandidate::from_model_objectives("legacy-model", 0.90, 0.0, 0.0, 0.85, 0.05, 8.0);
+
+        // 2. Breakout cold-start model: High quality (0.88), Top trending velocity (0.98), Followed org (1.0), High efficiency (0.85), 8 GB memory
+        let breakout = ParetoCandidate::from_model_objectives("breakout-trending-model", 0.88, 0.98, 1.0, 0.85, 0.25, 8.0);
+
+        // 3. Strictly dominated model: Lower quality (0.60), Zero velocity (0.0), Lower efficiency (0.40), High memory (16.0 GB)
+        let dominated = ParetoCandidate::from_model_objectives("dominated-model", 0.60, 0.0, 0.0, 0.40, 0.05, 16.0);
+
+        let candidates = vec![legacy.clone(), breakout.clone(), dominated.clone()];
+        let front = compute_pareto_front(&candidates, &directions);
+
+        let front_ids: Vec<String> = front.into_iter().map(|c| c.id).collect();
+
+        // Breakout model MUST appear on the Pareto front because it dominates on Objective 1 (Velocity + Following)
+        assert!(front_ids.contains(&"breakout-trending-model".to_string()));
+        assert!(front_ids.contains(&"legacy-model".to_string()));
+        assert!(!front_ids.contains(&"dominated-model".to_string()));
+
+        // Legacy cannot dominate breakout because breakout has superior trending velocity + exploration
+        assert!(!dominates(&legacy.objectives, &breakout.objectives, &directions));
     }
 }
