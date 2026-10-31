@@ -322,7 +322,8 @@ impl SystemMemory {
     /// Calibrate Z.ai General Language Model (GLM) variants for ModelFusion strictly when
     /// runtime memory resources are available (`free_ram_gb >= 8.0 || gpu_vram_free_gb >= 6.0`).
     /// Never activates GLM when runtime available memory is below the 8 GB RAM / 6 GB VRAM floor.
-    pub fn assess_glm_for_fusion(&self) -> GlmResourceAssessment {
+    /// Invariant: GLM is strictly reserved for Multi-Model Fusion (`is_fusion_mode == true`).
+    pub fn assess_glm_for_mode(&self, is_fusion_mode: bool) -> GlmResourceAssessment {
         let free_ram = self.free_ram_gb;
         let free_vram = self.gpu_vram_free_gb;
         let combined_free = free_ram + free_vram;
@@ -333,10 +334,14 @@ impl SystemMemory {
             return GlmResourceAssessment {
                 resources_available: false,
                 glm_activated_in_fusion: false,
+                fusion_only: true,
+                is_fusion_mode,
                 model_id: "zai-org/GLM-4-9B-0414".to_string(),
                 ollama_tag: "glm4:9b".to_string(),
                 vram_sweet_spot_tag: None,
                 moe_offload_tag: None,
+                vision_variant_tag: None,
+                quantization_format: "None (Insufficient Memory)".to_string(),
                 workstation_flagship_build: None,
                 total_params_b: 9.0,
                 active_params_b: 9.0,
@@ -369,17 +374,21 @@ impl SystemMemory {
             default_hf_id,
             default_ollama_tag,
             moe_offload_tag,
+            vision_variant_tag,
+            quantization_format,
             workstation_flagship_build,
             total_params_b,
             active_params_b,
             active_tier,
-            status_reason,
+            base_reason,
         ) = if combined_free >= 245.0 || free_ram >= 245.0 {
             (
                 "zai-org/GLM-5.3",
                 "glm-4.7-flash:bf16",
                 Some("glm-4.7-flash:bf16".to_string()),
-                Some("GLM-5.3-UD-Q2_K_XL (753B/40B active ~245 GB) & GLM-5.3-Flash-Q4_K_M (320B/18B active)".to_string()),
+                Some("GLM-5.3-Flash-Q4_K_M (320B/18B active 4-bit Multimodal)".to_string()),
+                "1-bit/2-bit Unsloth Dynamic (GLM-5.1/5.2/5.3) & 4-bit Q4_K_M (GLM-5.3-Flash)".to_string(),
+                Some("GLM-5.1 / GLM-5.2 / GLM-5.3 (744B-753B total / 40B active 1-bit/2-bit ~245-256 GB) & GLM-5.3-Flash (320B/18B active 4-bit)".to_string()),
                 753.0,
                 40.0,
                 "Tier 6: Frontier 256 GB+ Workstation/Cluster (GLM-5.1/5.2/5.3 744B-753B MoE & GLM-5.3-Flash 4-bit)".to_string(),
@@ -390,6 +399,8 @@ impl SystemMemory {
                 "zai-org/GLM-4.7",
                 "glm-4.7-flash:bf16",
                 Some("glm-4.7-flash:bf16".to_string()),
+                Some("GLM-5.3-Flash-UD-IQ1_M (320B/18B active 1-bit Multimodal)".to_string()),
+                "4-bit Standard Build (Q4_K_M ~210 GB)".to_string(),
                 Some("GLM-4.7-Q4_K_M (355B 4-bit ~210 GB)".to_string()),
                 355.0,
                 32.0,
@@ -401,6 +412,8 @@ impl SystemMemory {
                 "zai-org/GLM-4.7-Flash",
                 if free_vram >= 6.0 && free_vram < 16.0 { "glm4:9b" } else { "glm-4.7-flash:q8_0" },
                 Some("glm-4.7-flash:q8_0".to_string()),
+                Some("GLM-5.3-Flash-UD-IQ1_M (320B/18B active 1-bit ~128 GB) & GLM-4.6V-Flash".to_string()),
+                "2-bit Dynamic (GLM-4.7 355B ~128 GB) / 1-bit (GLM-5.3-Flash 320B ~128 GB) / 8-bit MoE (GLM-4.7-Flash)".to_string(),
                 Some("GLM-4.7-UD-Q2_K_XL (355B 2-bit ~128 GB) / GLM-5.3-Flash-UD-IQ1_M (320B/18B 1-bit ~128 GB)".to_string()),
                 30.0,
                 3.6,
@@ -412,6 +425,8 @@ impl SystemMemory {
                 "zai-org/GLM-4.7-Flash",
                 "glm-4.7-flash:q8_0",
                 Some("glm-4.7-flash:q8_0".to_string()),
+                Some("GLM-4.6V-Flash / GLM-4V-9B (FP16)".to_string()),
+                "8-bit (Q8_0) / Full 16-bit (BF16/FP16)".to_string(),
                 Some("GLM-4.7-Flash-Q8_0 (30B/3.6B active MoE 8-bit/16-bit)".to_string()),
                 30.0,
                 3.6,
@@ -423,6 +438,8 @@ impl SystemMemory {
                 "zai-org/GLM-4.7-Flash",
                 "glm-4.7-flash:q4_K_M",
                 Some("glm-4.7-flash:q4_K_M".to_string()),
+                Some("GLM-4.6V-Flash / GLM-4V-9B (Q8_0/FP16)".to_string()),
+                "4-bit MoE Sweet Spot (Q4_K_M ~19 GB in 24 GB)".to_string(),
                 Some("GLM-4.7-Flash-Q4_K_M (30B/3.6B active MoE 4-bit ~19 GB)".to_string()),
                 30.0,
                 3.6,
@@ -434,6 +451,8 @@ impl SystemMemory {
                 "zai-org/GLM-4-9B-0414",
                 "glm4:9b-chat-q8_0",
                 Some("glm-4.7-flash:q2_K".to_string()),
+                Some("GLM-4.6V-Flash / GLM-4V-9B (Q8_0/FP16)".to_string()),
+                "8-bit/16-bit (GLM-4 9B) or 2-bit Q2_K (GLM-4.7-Flash)".to_string(),
                 Some("GLM-4-9B (Q8_0 / FP16) or GLM-4.7-Flash (Q2_K)".to_string()),
                 9.0,
                 9.0,
@@ -445,6 +464,8 @@ impl SystemMemory {
                 "zai-org/GLM-4-9B-0414",
                 "glm4:9b",
                 Some("glm4:9b".to_string()),
+                Some("GLM-4V-9B / GLM-4.6V-Flash (4-bit Q4_K_M)".to_string()),
+                "4-bit Quantization (Q4_K_M ~6-8 GB)".to_string(),
                 Some("GLM-4-9B / GLM-4V-9B / GLM-4.6V-Flash (4-bit Q4_K_M ~5.5-8 GB)".to_string()),
                 9.0,
                 9.0,
@@ -463,14 +484,27 @@ impl SystemMemory {
         };
 
         let ollama_cached = is_ollama_model_cached(&resolved_ollama_tag);
+        let glm_activated_in_fusion = is_fusion_mode && resources_available;
+        let status_reason = if !is_fusion_mode {
+            format!(
+                "GLM is strictly reserved for Multi-Model Fusion mode only (IDE, CLI, Browser); disabled in single-model mode despite sufficient hardware ({}).",
+                active_tier
+            )
+        } else {
+            base_reason
+        };
 
         GlmResourceAssessment {
-            resources_available: true,
-            glm_activated_in_fusion: true,
+            resources_available,
+            glm_activated_in_fusion,
+            fusion_only: true,
+            is_fusion_mode,
             model_id: default_hf_id.to_string(),
             ollama_tag: resolved_ollama_tag,
             vram_sweet_spot_tag,
             moe_offload_tag,
+            vision_variant_tag,
+            quantization_format,
             workstation_flagship_build,
             total_params_b,
             active_params_b,
@@ -483,6 +517,11 @@ impl SystemMemory {
             status_reason,
         }
     }
+
+    /// Convenience helper to assess Z.ai GLM for Multi-Model Fusion mode.
+    pub fn assess_glm_for_fusion(&self) -> GlmResourceAssessment {
+        self.assess_glm_for_mode(true)
+    }
 }
 
 /// Resource-gated Z.ai GLM assessment for ModelFusion.
@@ -490,10 +529,14 @@ impl SystemMemory {
 pub struct GlmResourceAssessment {
     pub resources_available: bool,
     pub glm_activated_in_fusion: bool,
+    pub fusion_only: bool,
+    pub is_fusion_mode: bool,
     pub model_id: String,
     pub ollama_tag: String,
     pub vram_sweet_spot_tag: Option<String>,
     pub moe_offload_tag: Option<String>,
+    pub vision_variant_tag: Option<String>,
+    pub quantization_format: String,
     pub workstation_flagship_build: Option<String>,
     pub total_params_b: f64,
     pub active_params_b: f64,
@@ -1684,7 +1727,7 @@ mod tests {
 
     #[test]
     fn test_glm_resource_gated_fusion_calibration() {
-        // 1. Insufficient runtime memory (< 6 GB VRAM & < 8 GB Free RAM): GLM must NOT activate in fusion
+        // 0. Insufficient runtime memory (< 6 GB VRAM & < 8 GB Free RAM): GLM must NOT activate in fusion
         let mem_insufficient = SystemMemory {
             total_ram_gb: 64.0,
             free_ram_gb: 4.5,
@@ -1696,8 +1739,19 @@ mod tests {
         let eval_off = mem_insufficient.assess_glm_for_fusion();
         assert!(!eval_off.resources_available);
         assert!(!eval_off.glm_activated_in_fusion);
+        assert!(eval_off.fusion_only);
+        assert!(eval_off.is_fusion_mode);
+        assert!(eval_off.active_tier.contains("Tier 0"));
+        assert_eq!(eval_off.quantization_format, "None (Insufficient Memory)");
 
-        // 2. 8-16 GB tier: GLM-4 9B active
+        // Non-fusion mode check on insufficient hardware
+        let eval_off_single = mem_insufficient.assess_glm_for_mode(false);
+        assert!(!eval_off_single.resources_available);
+        assert!(!eval_off_single.glm_activated_in_fusion);
+        assert!(eval_off_single.fusion_only);
+        assert!(!eval_off_single.is_fusion_mode);
+
+        // 1A. 8-16 GB tier: GLM-4 9B active in fusion, but disabled in single-model mode
         let mem_8_16 = SystemMemory {
             total_ram_gb: 16.0,
             free_ram_gb: 10.0,
@@ -1709,9 +1763,37 @@ mod tests {
         let eval_9b = mem_8_16.assess_glm_for_fusion();
         assert!(eval_9b.resources_available);
         assert!(eval_9b.glm_activated_in_fusion);
+        assert!(eval_9b.fusion_only);
+        assert!(eval_9b.is_fusion_mode);
+        assert!(eval_9b.active_tier.contains("Tier 1A"));
         assert_eq!(eval_9b.vram_sweet_spot_tag.as_deref(), Some("glm4:9b"));
+        assert!(eval_9b.quantization_format.contains("4-bit Quantization"));
 
-        // 3. 24 GB VRAM tier: GLM-4.7-Flash Q4_K_M active
+        // Single-model mode: must be disabled despite sufficient hardware
+        let eval_9b_single = mem_8_16.assess_glm_for_mode(false);
+        assert!(eval_9b_single.resources_available);
+        assert!(!eval_9b_single.glm_activated_in_fusion);
+        assert!(eval_9b_single.fusion_only);
+        assert!(!eval_9b_single.is_fusion_mode);
+        assert!(eval_9b_single.status_reason.contains("strictly reserved for Multi-Model Fusion"));
+
+        // 1B. 16-20 GB tier: GLM-4 9B Q8_0 / FP16 or GLM-4.7-Flash Q2_K
+        let mem_1b = SystemMemory {
+            total_ram_gb: 32.0,
+            free_ram_gb: 18.0,
+            cpu_cores: 12,
+            gpu_name: Some("RTX 4070".to_string()),
+            gpu_vram_total_gb: 12.0,
+            gpu_vram_free_gb: 5.0,
+        };
+        let eval_1b = mem_1b.assess_glm_for_fusion();
+        assert!(eval_1b.resources_available);
+        assert!(eval_1b.glm_activated_in_fusion);
+        assert!(eval_1b.active_tier.contains("Tier 1B"));
+        assert_eq!(eval_1b.total_params_b, 9.0);
+        assert_eq!(eval_1b.moe_offload_tag.as_deref(), Some("glm-4.7-flash:q2_K"));
+
+        // 2. 24 GB VRAM tier: GLM-4.7-Flash Q4_K_M active
         let mem_24vram = SystemMemory {
             total_ram_gb: 32.0,
             free_ram_gb: 24.0,
@@ -1723,12 +1805,30 @@ mod tests {
         let eval_47flash = mem_24vram.assess_glm_for_fusion();
         assert!(eval_47flash.resources_available);
         assert!(eval_47flash.glm_activated_in_fusion);
+        assert!(eval_47flash.active_tier.contains("Tier 2"));
         assert_eq!(
             eval_47flash.vram_sweet_spot_tag.as_deref(),
             Some("glm-4.7-flash:q4_K_M")
         );
         assert_eq!(eval_47flash.total_params_b, 30.0);
         assert_eq!(eval_47flash.active_params_b, 3.6);
+        assert!(eval_47flash.quantization_format.contains("4-bit MoE Sweet Spot"));
+
+        // 3. 36-64 GB tier: GLM-4.7-Flash Q8_0 / BF16
+        let mem_36gb = SystemMemory {
+            total_ram_gb: 64.0,
+            free_ram_gb: 42.0,
+            cpu_cores: 16,
+            gpu_name: Some("RTX 6000 Ada".to_string()),
+            gpu_vram_total_gb: 48.0,
+            gpu_vram_free_gb: 40.0,
+        };
+        let eval_tier3 = mem_36gb.assess_glm_for_fusion();
+        assert!(eval_tier3.resources_available);
+        assert!(eval_tier3.glm_activated_in_fusion);
+        assert!(eval_tier3.active_tier.contains("Tier 3"));
+        assert_eq!(eval_tier3.vram_sweet_spot_tag.as_deref(), Some("glm-4.7-flash:q8_0"));
+        assert!(eval_tier3.quantization_format.contains("8-bit"));
 
         // 4. Workstation 128 GB+ tier (Dell Precision 7920 Tower profile: ~176 GB Free RAM + 6.6 GB Free VRAM)
         let mem_workstation = SystemMemory {
@@ -1742,6 +1842,7 @@ mod tests {
         let eval_ws = mem_workstation.assess_glm_for_fusion();
         assert!(eval_ws.resources_available);
         assert!(eval_ws.glm_activated_in_fusion);
+        assert!(eval_ws.active_tier.contains("Tier 4"));
         assert_eq!(eval_ws.vram_sweet_spot_tag.as_deref(), Some("glm4:9b"));
         assert_eq!(
             eval_ws.moe_offload_tag.as_deref(),
@@ -1752,6 +1853,50 @@ mod tests {
             .as_deref()
             .unwrap_or("")
             .contains("GLM-4.7"));
+        assert!(eval_ws.quantization_format.contains("2-bit Dynamic"));
+
+        // 5. Heavy Workstation 210 GB+ tier (GLM-4.7 355B 4-bit)
+        let mem_210gb = SystemMemory {
+            total_ram_gb: 256.0,
+            free_ram_gb: 215.0,
+            cpu_cores: 64,
+            gpu_name: Some("Dual RTX 4090".to_string()),
+            gpu_vram_total_gb: 48.0,
+            gpu_vram_free_gb: 12.0,
+        };
+        let eval_tier5 = mem_210gb.assess_glm_for_fusion();
+        assert!(eval_tier5.resources_available);
+        assert!(eval_tier5.glm_activated_in_fusion);
+        assert!(eval_tier5.active_tier.contains("Tier 5"));
+        assert_eq!(eval_tier5.total_params_b, 355.0);
+        assert_eq!(eval_tier5.active_params_b, 32.0);
+        assert!(eval_tier5.quantization_format.contains("4-bit Standard Build"));
+
+        // 6. Frontier Workstation 256 GB+ tier (GLM-5.1/5.2/5.3 744B-753B MoE & GLM-5.3-Flash)
+        let mem_frontier = SystemMemory {
+            total_ram_gb: 512.0,
+            free_ram_gb: 260.0,
+            cpu_cores: 128,
+            gpu_name: Some("H100 80GB".to_string()),
+            gpu_vram_total_gb: 80.0,
+            gpu_vram_free_gb: 64.0,
+        };
+        let eval_tier6 = mem_frontier.assess_glm_for_fusion();
+        assert!(eval_tier6.resources_available);
+        assert!(eval_tier6.glm_activated_in_fusion);
+        assert!(eval_tier6.active_tier.contains("Tier 6"));
+        assert_eq!(eval_tier6.total_params_b, 753.0);
+        assert_eq!(eval_tier6.active_params_b, 40.0);
+        assert!(eval_tier6.quantization_format.contains("1-bit/2-bit Unsloth Dynamic"));
+        assert!(eval_tier6.vision_variant_tag.as_deref().unwrap_or("").contains("GLM-5.3-Flash"));
+
+        // Frontier workstation single-model mode check: MUST be disabled despite massive hardware!
+        let eval_tier6_single = mem_frontier.assess_glm_for_mode(false);
+        assert!(eval_tier6_single.resources_available);
+        assert!(!eval_tier6_single.glm_activated_in_fusion);
+        assert!(eval_tier6_single.fusion_only);
+        assert!(!eval_tier6_single.is_fusion_mode);
+        assert!(eval_tier6_single.status_reason.contains("strictly reserved for Multi-Model Fusion"));
     }
 
 }

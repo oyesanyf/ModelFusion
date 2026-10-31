@@ -320,7 +320,7 @@ pub async fn run_fusion(
 
         // 1.25. Resource-Gated Z.ai GLM Specialist in Fusion:
         // Strictly activated ONLY when runtime resources are available (Free RAM >= 8.0 GB or Free VRAM >= 6.0 GB).
-        let glm_eval = model_selection::memory::SystemMemory::detect_live().assess_glm_for_fusion();
+        let glm_eval = model_selection::memory::SystemMemory::detect_live().assess_glm_for_mode(true);
         if glm_eval.glm_activated_in_fusion && glm_eval.resources_available && panel_models.len() < max_candidates {
             let mut glm_cfg = if glm_eval.ollama_cached {
                 ModelConfig::local(&glm_eval.ollama_tag)
@@ -333,10 +333,12 @@ pub async fn run_fusion(
             );
             panel_models.push(glm_cfg);
             eprintln!(
-                "🧠 [GLM RESOURCE-GATED FUSION] Activated {} in Fusion Panel (Slot {}): {}",
+                "🧠 [GLM RESOURCE-GATED FUSION] Activated {} in Fusion Panel (Slot {}): {} | Quant: {} | Vision: {:?}",
                 glm_eval.ollama_tag,
                 panel_models.len(),
-                glm_eval.status_reason
+                glm_eval.status_reason,
+                glm_eval.quantization_format,
+                glm_eval.vision_variant_tag
             );
         } else {
             eprintln!(
@@ -443,7 +445,7 @@ pub async fn run_fusion(
         ModelConfig::huggingface(model_id)
     } else {
         let cached = model_selection::memory::get_ollama_cached_models();
-        if let Some(m) = cached.iter().find(|m| m.contains("qwen") || m.contains("llama") || m.contains("deepseek")) {
+        if let Some(m) = cached.iter().find(|m| m.contains("qwen") || m.contains("llama") || m.contains("deepseek") || m.contains("glm")) {
             ModelConfig::local(m)
         } else {
             let judge_res = selector.select_best_model("text-generation", "judge evaluation", strategy, 1, None)
@@ -458,7 +460,7 @@ pub async fn run_fusion(
         ModelConfig::huggingface(model_id)
     } else {
         let cached = model_selection::memory::get_ollama_cached_models();
-        if let Some(m) = cached.iter().find(|m| m.contains("qwen") || m.contains("llama") || m.contains("deepseek")) {
+        if let Some(m) = cached.iter().find(|m| m.contains("qwen") || m.contains("llama") || m.contains("deepseek") || m.contains("glm")) {
             ModelConfig::local(m)
         } else {
             let writer_res = selector.select_best_model("text-generation", "final synthesis writing", strategy, 1, None)

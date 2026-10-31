@@ -857,7 +857,6 @@ fn is_fictional_or_non_chat(model_id: &str) -> bool {
     if lower.contains("gemma-4")
         || lower.contains("qwen3")
         || lower.contains("gpt-5.5")
-        || lower.contains("glm-5.2")
         || lower.contains("gpt-oss")
     {
         return true;

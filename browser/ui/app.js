@@ -321,6 +321,246 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports.executeFlintCodingFusion = executeFlintCodingFusion;
 }
 
+// ============================================================================
+// Z.ai GLM Multi-Model Fusion Engine (Hardware-Calibrated & Fusion-Only)
+// ============================================================================
+
+const GLM_FUSION_SPEC = {
+  name: 'Z.ai GLM Multi-Model Fusion Engine',
+  lineup: [
+    'GLM-4 9B (Dense 9B)',
+    'GLM-4V 9B (Multimodal 9B)',
+    'GLM-4.6V-Flash (Fast Multimodal)',
+    'GLM-4.7-Flash (30B Total / 3.6B Active MoE)',
+    'GLM-4.7 (Dense 355B / 32B Active)',
+    'GLM-5.3-Flash (320B Total / 18B Active Multimodal MoE)',
+    'GLM-5.1 / GLM-5.2 / GLM-5.3 (744B-753B Total / 40B Active Frontier MoE)'
+  ],
+  fusionOnly: true,
+  minFreeRamGb: 8.0,
+  minFreeVramGb: 6.0
+};
+
+function evaluateGlmResourceAvailability(hardwareInfo = null) {
+  let freeRam = 0;
+  let freeVram = 0;
+
+  if (hardwareInfo && typeof hardwareInfo === 'object') {
+    if (typeof hardwareInfo.freeRamGb === 'number') freeRam = hardwareInfo.freeRamGb;
+    else if (typeof hardwareInfo.free_ram_gb === 'number') freeRam = hardwareInfo.free_ram_gb;
+    else if (typeof hardwareInfo.free_ram === 'number') freeRam = hardwareInfo.free_ram;
+
+    if (typeof hardwareInfo.freeVramGb === 'number') freeVram = hardwareInfo.freeVramGb;
+    else if (typeof hardwareInfo.gpu_vram_free === 'number') freeVram = hardwareInfo.gpu_vram_free;
+    else if (typeof hardwareInfo.free_vram_mb === 'number') freeVram = hardwareInfo.free_vram_mb / 1024.0;
+    else if (typeof hardwareInfo.gpu_vram_free_gb === 'number') freeVram = hardwareInfo.gpu_vram_free_gb;
+  } else {
+    if (typeof window !== 'undefined') {
+      if (typeof window.hardwareFreeRamGb === 'number') freeRam = window.hardwareFreeRamGb;
+      else if (typeof window.getAvailableFreeRamGb === 'function') freeRam = window.getAvailableFreeRamGb();
+
+      if (typeof window.hardwareFreeVramMb === 'number') freeVram = window.hardwareFreeVramMb / 1024.0;
+      else if (typeof window.detectGpuVramMb === 'function') freeVram = window.detectGpuVramMb() / 1024.0;
+    }
+  }
+
+  const combinedFree = freeRam + freeVram;
+  const resourcesAvailable = freeVram >= 6.0 || freeRam >= 8.0;
+
+  if (!resourcesAvailable) {
+    return {
+      resourcesAvailable: false,
+      modelId: 'zai-org/GLM-4-9B-0414',
+      ollamaTag: 'glm4:9b',
+      vramSweetSpotTag: null,
+      moeOffloadTag: null,
+      visionVariantTag: null,
+      quantizationFormat: 'None (Insufficient Memory)',
+      workstationFlagshipBuild: null,
+      totalParamsB: 9.0,
+      activeParamsB: 9.0,
+      requiredMinRamGb: 8.0,
+      requiredMinVramGb: 6.0,
+      detectedFreeRamGb: freeRam,
+      detectedFreeVramGb: freeVram,
+      activeTier: 'Tier 0: Insufficient Runtime Memory (< 6 GB Free VRAM & < 8 GB Free RAM — GLM Disabled)',
+      shortTier: 'Tier 0',
+      statusReason: `GLM excluded from fusion: runtime Free RAM (${freeRam.toFixed(1)} GB) < 8.0 GB and Free VRAM (${freeVram.toFixed(1)} GB) < 6.0 GB.`
+    };
+  }
+
+  let vramSweetSpotTag = null;
+  if (freeVram >= 36.0) {
+    vramSweetSpotTag = 'glm-4.7-flash:q8_0';
+  } else if (freeVram >= 20.0) {
+    vramSweetSpotTag = 'glm-4.7-flash:q4_K_M';
+  } else if (freeVram >= 16.0) {
+    vramSweetSpotTag = 'glm4:9b-chat-q8_0';
+  } else if (freeVram >= 6.0) {
+    vramSweetSpotTag = 'glm4:9b';
+  }
+
+  let tierData = null;
+  if (combinedFree >= 245.0 || freeRam >= 245.0) {
+    tierData = {
+      modelId: 'zai-org/GLM-5.3',
+      ollamaTag: 'glm-4.7-flash:bf16',
+      moeOffloadTag: 'glm-4.7-flash:bf16',
+      visionVariantTag: 'GLM-5.3-Flash-Q4_K_M (320B/18B active 4-bit Multimodal)',
+      quantizationFormat: '1-bit/2-bit Unsloth Dynamic (GLM-5.1/5.2/5.3) & 4-bit Q4_K_M (GLM-5.3-Flash)',
+      workstationFlagshipBuild: 'GLM-5.1 / GLM-5.2 / GLM-5.3 (744B-753B total / 40B active 1-bit/2-bit ~245-256 GB) & GLM-5.3-Flash (320B/18B active 4-bit)',
+      totalParamsB: 753.0,
+      activeParamsB: 40.0,
+      activeTier: 'Tier 6: Frontier 256 GB+ Workstation/Cluster (GLM-5.1/5.2/5.3 744B-753B MoE & GLM-5.3-Flash 4-bit)',
+      shortTier: 'Tier 6 (256 GB+ Frontier)',
+      statusReason: 'Frontier 256 GB+ tier active: supports GLM-5.1/5.2/5.3 (1-bit/2-bit) and GLM-5.3-Flash (4-bit).'
+    };
+  } else if (combinedFree >= 210.0 || freeRam >= 210.0) {
+    tierData = {
+      modelId: 'zai-org/GLM-4.7',
+      ollamaTag: 'glm-4.7-flash:bf16',
+      moeOffloadTag: 'glm-4.7-flash:bf16',
+      visionVariantTag: 'GLM-5.3-Flash-UD-IQ1_M (320B/18B active 1-bit Multimodal)',
+      quantizationFormat: '4-bit Standard Build (Q4_K_M ~210 GB)',
+      workstationFlagshipBuild: 'GLM-4.7-Q4_K_M (355B 4-bit ~210 GB)',
+      totalParamsB: 355.0,
+      activeParamsB: 32.0,
+      activeTier: 'Tier 5: Heavy 210 GB+ Workstation (GLM-4.7 355B 4-bit + GLM-4.7-Flash 30B-A3.6B MoE)',
+      shortTier: 'Tier 5 (210 GB+ Workstation)',
+      statusReason: 'Heavy 210 GB+ workstation tier active: supports full GLM-4.7 355B 4-bit and GLM-4.7-Flash.'
+    };
+  } else if (combinedFree >= 128.0 || freeRam >= 128.0) {
+    tierData = {
+      modelId: 'zai-org/GLM-4.7-Flash',
+      ollamaTag: (freeVram >= 6.0 && freeVram < 16.0) ? 'glm4:9b' : 'glm-4.7-flash:q8_0',
+      moeOffloadTag: 'glm-4.7-flash:q8_0',
+      visionVariantTag: 'GLM-5.3-Flash-UD-IQ1_M (320B/18B active 1-bit ~128 GB) & GLM-4.6V-Flash',
+      quantizationFormat: '2-bit Dynamic (GLM-4.7 355B ~128 GB) / 1-bit (GLM-5.3-Flash 320B ~128 GB) / 8-bit MoE (GLM-4.7-Flash)',
+      workstationFlagshipBuild: 'GLM-4.7-UD-Q2_K_XL (355B 2-bit ~128 GB) / GLM-5.3-Flash-UD-IQ1_M (320B/18B 1-bit ~128 GB)',
+      totalParamsB: 30.0,
+      activeParamsB: 3.6,
+      activeTier: 'Tier 4: 128 GB+ Workstation Offload (GLM-4.7-Flash 30B-A3.6B MoE + In-VRAM GLM-4 9B + GLM-4.7 355B Q2_K)',
+      shortTier: 'Tier 4 (128 GB+ Offload)',
+      statusReason: 'Workstation 128 GB+ tier active: pairs in-VRAM glm4:9b (5.5 GB) with GLM-4.7-Flash (30B/3.6B active MoE) and supports 128 GB GLM-4.7 Q2_K / GLM-5.3-Flash IQ1_M.'
+    };
+  } else if (freeVram >= 36.0 || freeRam >= 36.0) {
+    tierData = {
+      modelId: 'zai-org/GLM-4.7-Flash',
+      ollamaTag: 'glm-4.7-flash:q8_0',
+      moeOffloadTag: 'glm-4.7-flash:q8_0',
+      visionVariantTag: 'GLM-4.6V-Flash / GLM-4V-9B (FP16)',
+      quantizationFormat: '8-bit (Q8_0) / Full 16-bit (BF16/FP16)',
+      workstationFlagshipBuild: 'GLM-4.7-Flash-Q8_0 (30B/3.6B active MoE 8-bit/16-bit)',
+      totalParamsB: 30.0,
+      activeParamsB: 3.6,
+      activeTier: 'Tier 3: 36-64 GB Memory (GLM-4.7-Flash 30B-A3.6B MoE 8-bit Q8_0 / FP16)',
+      shortTier: 'Tier 3 (36-64 GB MoE)',
+      statusReason: '36-64 GB tier active: GLM-4.7-Flash (30B/3.6B active MoE) at 8-bit/full precision.'
+    };
+  } else if (freeVram >= 20.0 || freeRam >= 24.0) {
+    tierData = {
+      modelId: 'zai-org/GLM-4.7-Flash',
+      ollamaTag: 'glm-4.7-flash:q4_K_M',
+      moeOffloadTag: 'glm-4.7-flash:q4_K_M',
+      visionVariantTag: 'GLM-4.6V-Flash / GLM-4V-9B (Q8_0/FP16)',
+      quantizationFormat: '4-bit MoE Sweet Spot (Q4_K_M ~19 GB in 24 GB)',
+      workstationFlagshipBuild: 'GLM-4.7-Flash-Q4_K_M (30B/3.6B active MoE 4-bit ~19 GB)',
+      totalParamsB: 30.0,
+      activeParamsB: 3.6,
+      activeTier: 'Tier 2: 24-36 GB Sweet Spot (GLM-4.7-Flash 30B-A3.6B MoE 4-bit Q4_K_M)',
+      shortTier: 'Tier 2 (24-36 GB Sweet Spot)',
+      statusReason: '24-36 GB tier active: GLM-4.7-Flash (30B/3.6B active MoE) at 4-bit quantization.'
+    };
+  } else if (freeVram >= 16.0 || freeRam >= 16.0) {
+    tierData = {
+      modelId: 'zai-org/GLM-4-9B-0414',
+      ollamaTag: 'glm4:9b-chat-q8_0',
+      moeOffloadTag: 'glm-4.7-flash:q2_K',
+      visionVariantTag: 'GLM-4.6V-Flash / GLM-4V-9B (Q8_0/FP16)',
+      quantizationFormat: '8-bit/16-bit (GLM-4 9B) or 2-bit Q2_K (GLM-4.7-Flash)',
+      workstationFlagshipBuild: 'GLM-4-9B (Q8_0 / FP16) or GLM-4.7-Flash (Q2_K)',
+      totalParamsB: 9.0,
+      activeParamsB: 9.0,
+      activeTier: 'Tier 1B: 16-20 GB Memory (GLM-4 9B Q8_0/FP16 or GLM-4.7-Flash Q2_K)',
+      shortTier: 'Tier 1B (16-20 GB)',
+      statusReason: '16-20 GB tier active: GLM-4 9B 8-bit/16-bit or 2-bit GLM-4.7-Flash.'
+    };
+  } else {
+    tierData = {
+      modelId: 'zai-org/GLM-4-9B-0414',
+      ollamaTag: 'glm4:9b',
+      moeOffloadTag: 'glm4:9b',
+      visionVariantTag: 'GLM-4V-9B / GLM-4.6V-Flash (4-bit Q4_K_M)',
+      quantizationFormat: '4-bit Quantization (Q4_K_M ~6-8 GB)',
+      workstationFlagshipBuild: 'GLM-4-9B / GLM-4V-9B / GLM-4.6V-Flash (4-bit Q4_K_M ~5.5-8 GB)',
+      totalParamsB: 9.0,
+      activeParamsB: 9.0,
+      activeTier: 'Tier 1A: 8-16 GB Memory (GLM-4 9B / GLM-4V 9B / GLM-4.6V-Flash 4-bit Q4_K_M)',
+      shortTier: 'Tier 1A (8-16 GB)',
+      statusReason: '8-16 GB tier active: GLM-4 9B family at 4-bit quantization (~5.5-8 GB).'
+    };
+  }
+
+  return {
+    resourcesAvailable: true,
+    vramSweetSpotTag,
+    requiredMinRamGb: 8.0,
+    requiredMinVramGb: 6.0,
+    detectedFreeRamGb: freeRam,
+    detectedFreeVramGb: freeVram,
+    ...tierData
+  };
+}
+
+function shouldIncludeGlmInFusion(isFusionMode = true, hardwareInfo = null) {
+  const res = evaluateGlmResourceAvailability(hardwareInfo);
+
+  if (!isFusionMode) {
+    return {
+      ...res,
+      eligible: false,
+      glmActivatedInFusion: false,
+      fusionOnly: true,
+      isFusionMode: false,
+      resourcesAvailable: res.resourcesAvailable,
+      statusReason: 'GLM is strictly reserved for Multi-Model Fusion mode only (IDE, CLI, Browser); disabled in single-model mode despite sufficient hardware (' + res.activeTier + ').'
+    };
+  }
+
+  if (!res.resourcesAvailable) {
+    return {
+      ...res,
+      eligible: false,
+      glmActivatedInFusion: false,
+      fusionOnly: true,
+      isFusionMode: true,
+      resourcesAvailable: false
+    };
+  }
+
+  return {
+    ...res,
+    eligible: true,
+    glmActivatedInFusion: true,
+    fusionOnly: true,
+    isFusionMode: true,
+    resourcesAvailable: true
+  };
+}
+
+if (typeof window !== 'undefined') {
+  window.GLM_FUSION_SPEC = GLM_FUSION_SPEC;
+  window.evaluateGlmResourceAvailability = evaluateGlmResourceAvailability;
+  window.shouldIncludeGlmInFusion = shouldIncludeGlmInFusion;
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports.GLM_FUSION_SPEC = GLM_FUSION_SPEC;
+  module.exports.evaluateGlmResourceAvailability = evaluateGlmResourceAvailability;
+  module.exports.shouldIncludeGlmInFusion = shouldIncludeGlmInFusion;
+}
+
+
 document.addEventListener('DOMContentLoaded', () => {
   var activeOutline = null;
   var activeShellAction = null;
@@ -750,7 +990,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // For task-specific categories where domain models didn't match, general reasoning models are allowed as robust workhorses
-    if (/qwen|deepseek|gemma|llama|mistral|mixtral|phi|smollm/i.test(m) && !SPECIALIZED_NON_GENERAL_MODELS_REGEX.test(m)) {
+    if (/qwen|deepseek|gemma|llama|mistral|mixtral|phi|smollm|glm/i.test(m) && !SPECIALIZED_NON_GENERAL_MODELS_REGEX.test(m)) {
       return true;
     }
 
@@ -7098,6 +7338,29 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
   // Adaptive Multimodal Fusion Router
   // -----------------------------------------------------------------
   function determineFusionPanel(prompt, files = [], settings = {}) {
+    const isFusionEnabled = settings && settings.fusion !== false;
+    const glmStatus = typeof shouldIncludeGlmInFusion === 'function' ? shouldIncludeGlmInFusion(isFusionEnabled) : null;
+    const rawPanel = _computeRawFusionPanel(prompt, files, settings);
+    if (!rawPanel) return null;
+
+    if (isFusionEnabled && glmStatus && glmStatus.eligible && glmStatus.glmActivatedInFusion) {
+      const isImageTask = (files && files.some(f => f.type === 'image')) || (rawPanel.task === 'visual-question-answering');
+      const glmDisplayTag = (isImageTask && glmStatus.visionVariantTag) ? glmStatus.visionVariantTag : glmStatus.ollamaTag;
+      if (!rawPanel.specialists) rawPanel.specialists = [];
+      rawPanel.specialists.push(`🔹 Z.ai GLM Specialist: ${glmDisplayTag} (${glmStatus.shortTier})`);
+      rawPanel.glmSpecialist = glmStatus.ollamaTag;
+      rawPanel.glmTier = glmStatus.activeTier;
+      rawPanel.glmActivatedInFusion = true;
+      rawPanel.glmFusionOnly = true;
+    } else {
+      rawPanel.glmActivatedInFusion = false;
+      rawPanel.glmFusionOnly = true;
+    }
+
+    return rawPanel;
+  }
+
+  function _computeRawFusionPanel(prompt, files = [], settings = {}) {
     const clean = (prompt || '').trim().toLowerCase();
     const isSysInfoDir = /^(?:@agent\s+|@|\/|--)?(?:sys[-_ ]?info(?:rmation)?|system[-_ ]?info(?:rmation)?|info)(?:\b|$)/i.test(clean) ||
                          /^(?:sys[-_ ]?info|system[-_ ]?info|systeminfo|sysinfo|system_info|sys_info)$/i.test(clean);
@@ -7317,6 +7580,13 @@ window.SPECIFIC_MODEL_CARDS = SPECIFIC_MODEL_CARDS;
       ],
       task: 'general-reasoning'
     };
+  }
+
+  if (typeof window !== 'undefined') {
+    window.determineFusionPanel = determineFusionPanel;
+  }
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports.determineFusionPanel = determineFusionPanel;
   }
 
   function termLogFusion(panel) {
@@ -15290,6 +15560,7 @@ ${!data.isFull && data.prompt ? `PROMPT:\n${data.prompt}\n\nRESPONSE:\n` : ''}${
       window.consensusPrimaryModel = data.consensus.primary;
       window.consensusCompanionModel = data.consensus.companion;
     }
+    window.hardwareGlmCalibration = data.glm_calibration || (typeof shouldIncludeGlmInFusion === 'function' ? shouldIncludeGlmInFusion(true) : null);
 
     const count = data.total_models || 6438;
     const hwModel = data.active_hardware_model || activeOllamaModel || 'qwen2.5:7b';
