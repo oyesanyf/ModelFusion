@@ -15087,6 +15087,7 @@ async fn run_server(port: u16, db_path: Option<String>, enable_slash_commands: b
                             "status": "Ready",
                             "zero_cloud_guarantee": true
                         },
+                        "glm_calibration": model_selection::memory::SystemMemory::detect_live().assess_glm_for_fusion(),
                         "tasks_breakdown": {
                             "vision": 12,
                             "audio": 8,

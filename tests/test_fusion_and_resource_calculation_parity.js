@@ -101,6 +101,12 @@ try {
   assert.ok('max_capable_model' in sysInfo, '--sys-info must include max_capable_model');
   assert.ok('fusion_panel_size' in sysInfo, '--sys-info must include fusion_panel_size');
   assert.ok('active_hardware_model' in sysInfo, '--sys-info must include active_hardware_model');
+  assert.ok('glm_calibration' in sysInfo, '--sys-info must include glm_calibration');
+  const glmCalib = sysInfo.glm_calibration;
+  assert.strictEqual(glmCalib.fusion_only, true, 'glm_calibration.fusion_only must be true');
+  assert.strictEqual(glmCalib.is_fusion_mode, true, 'glm_calibration.is_fusion_mode must be true');
+  assert.ok('active_tier' in glmCalib, 'glm_calibration must include active_tier');
+  assert.ok('quantization_format' in glmCalib, 'glm_calibration must include quantization_format');
 
   console.log(`  • free_ram: ${sysInfo.free_ram.toFixed(1)} GB, gpu_vram_free: ${sysInfo.gpu_vram_free.toFixed(1)} GB`);
   console.log(`  • calibrated_sweet_spot: ${sysInfo.calibrated_sweet_spot}, active_hardware_model: ${sysInfo.active_hardware_model}`);
