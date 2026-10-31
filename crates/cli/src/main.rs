@@ -1593,19 +1593,30 @@ async fn generate_active_models_report(db_path_opt: Option<&str>) -> String {
 pub fn generate_fusion_status_report() -> String {
     let sys = query_system_resources();
     let best_model = select_ollama_model_from_sys(false, &sys);
+    let glm_eval = model_selection::memory::SystemMemory::detect_live().assess_glm_for_fusion();
+    let glm_line = if glm_eval.glm_activated_in_fusion && glm_eval.resources_available {
+        format!(
+            "\n  - 🔹 **Z.ai GLM Specialist**: `{}` ({} — MoEOffload: `{}`)",
+            glm_eval.ollama_tag,
+            glm_eval.active_tier,
+            glm_eval.moe_offload_tag.as_deref().unwrap_or("glm4:9b")
+        )
+    } else {
+        "\n  - 🔹 **Z.ai GLM Specialist**: `Disabled` (Insufficient Runtime Memory < 8 GB RAM / 6 GB VRAM)".to_string()
+    };
     format!(
         "🎭 **Active Multimodal Model Fusion Panel**\n\n\
         - **Engine Status**: Synchronized & Operational (Zero-Cloud Local Execution)\n\
         - **Participating Specialists**:\n  \
           - 🔹 **Vision Specialist**: `qwen2.5-vl` / `llama3.2-vision` (Visual Grounding & OCR)\n  \
-          - 🔹 **Reasoning & Synthesis**: `{}` (Deep Multi-Objective Reasoning)\n  \
+          - 🔹 **Reasoning & Synthesis**: `{}` (Deep Multi-Objective Reasoning){}\n  \
           - 🔹 **Audio Specialist**: `whisper-base` (Speech Recognition & Acoustic Profiling)\n  \
           - 🔹 **AutoML & Tabular Analytics**: `ACDSO Engine` (5-Dimension Pareto Knee-Point Optimization)\n  \
           - 🔹 **Live Web Retrieval**: `DuckDuckGo / ModelFusion IPC` (Fact Correlation)\n\
         - **Arbiter & Consensus**: Dynamic Multi-Objective Pareto Arbiter (Dominant Gate)\n\
         - **Hardware Budget**: Available RAM: {:.2} GB | Free VRAM: {} MB ({})\n\
         - **Privacy & Security**: 100% Zero-Cloud / Offline Local Execution",
-        best_model, sys.free_ram_gb, sys.free_vram_mb, sys.gpu_name
+        best_model, glm_line, sys.free_ram_gb, sys.free_vram_mb, sys.gpu_name
     )
 }
 
@@ -7134,6 +7145,7 @@ fn real_main() -> Result<()> {
             "max_capable_model": max_capable_model,
             "fusion_panel_size": fusion_panel_size,
             "active_hardware_model": active_hw,
+            "glm_calibration": sys_mem.assess_glm_for_fusion(),
             "free_disk": free_disk_gb,
             "total_disk": total_disk_gb,
             "disks": disks_info,
@@ -7435,6 +7447,7 @@ async fn run(args: Args) -> Result<()> {
             "max_capable_model": max_capable_model,
             "fusion_panel_size": fusion_panel_size,
             "active_hardware_model": active_hw,
+            "glm_calibration": sys_mem.assess_glm_for_fusion(),
             "free_disk": free_disk_gb,
             "available_disk": free_disk_gb,
             "total_disk": total_disk_gb,

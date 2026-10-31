@@ -318,6 +318,192 @@ impl SystemMemory {
     pub fn assess_flint_coding_fusion(&self) -> FlintResourceAssessment {
         self.assess_flint_for_task(true, true)
     }
+
+    /// Calibrate Z.ai General Language Model (GLM) variants for ModelFusion strictly when
+    /// runtime memory resources are available (`free_ram_gb >= 8.0 || gpu_vram_free_gb >= 6.0`).
+    /// Never activates GLM when runtime available memory is below the 8 GB RAM / 6 GB VRAM floor.
+    pub fn assess_glm_for_fusion(&self) -> GlmResourceAssessment {
+        let free_ram = self.free_ram_gb;
+        let free_vram = self.gpu_vram_free_gb;
+        let combined_free = free_ram + free_vram;
+
+        // Strict resource gate: only activate GLM in fusion when runtime resources are available
+        let resources_available = free_vram >= 6.0 || free_ram >= 8.0;
+        if !resources_available {
+            return GlmResourceAssessment {
+                resources_available: false,
+                glm_activated_in_fusion: false,
+                model_id: "zai-org/GLM-4-9B-0414".to_string(),
+                ollama_tag: "glm4:9b".to_string(),
+                vram_sweet_spot_tag: None,
+                moe_offload_tag: None,
+                workstation_flagship_build: None,
+                total_params_b: 9.0,
+                active_params_b: 9.0,
+                required_min_ram_gb: 8.0,
+                required_min_vram_gb: 6.0,
+                detected_free_ram_gb: free_ram,
+                detected_free_vram_gb: free_vram,
+                ollama_cached: false,
+                active_tier: "Tier 0: Insufficient Runtime Memory (< 6 GB Free VRAM & < 8 GB Free RAM — GLM Disabled)".to_string(),
+                status_reason: format!(
+                    "GLM excluded from fusion: runtime Free RAM ({:.1} GB) < 8.0 GB and Free VRAM ({:.1} GB) < 6.0 GB.",
+                    free_ram, free_vram
+                ),
+            };
+        }
+
+        let vram_sweet_spot_tag = if free_vram >= 36.0 {
+            Some("glm-4.7-flash:q8_0".to_string())
+        } else if free_vram >= 20.0 {
+            Some("glm-4.7-flash:q4_K_M".to_string())
+        } else if free_vram >= 16.0 {
+            Some("glm4:9b-chat-q8_0".to_string())
+        } else if free_vram >= 6.0 {
+            Some("glm4:9b".to_string())
+        } else {
+            None
+        };
+
+        let (
+            default_hf_id,
+            default_ollama_tag,
+            moe_offload_tag,
+            workstation_flagship_build,
+            total_params_b,
+            active_params_b,
+            active_tier,
+            status_reason,
+        ) = if combined_free >= 245.0 || free_ram >= 245.0 {
+            (
+                "zai-org/GLM-5.3",
+                "glm-4.7-flash:bf16",
+                Some("glm-4.7-flash:bf16".to_string()),
+                Some("GLM-5.3-UD-Q2_K_XL (753B/40B active ~245 GB) & GLM-5.3-Flash-Q4_K_M (320B/18B active)".to_string()),
+                753.0,
+                40.0,
+                "Tier 6: Frontier 256 GB+ Workstation/Cluster (GLM-5.1/5.2/5.3 744B-753B MoE & GLM-5.3-Flash 4-bit)".to_string(),
+                "Frontier 256 GB+ tier active: supports GLM-5.1/5.2/5.3 (1-bit/2-bit) and GLM-5.3-Flash (4-bit).".to_string(),
+            )
+        } else if combined_free >= 210.0 || free_ram >= 210.0 {
+            (
+                "zai-org/GLM-4.7",
+                "glm-4.7-flash:bf16",
+                Some("glm-4.7-flash:bf16".to_string()),
+                Some("GLM-4.7-Q4_K_M (355B 4-bit ~210 GB)".to_string()),
+                355.0,
+                32.0,
+                "Tier 5: Heavy 210 GB+ Workstation (GLM-4.7 355B 4-bit + GLM-4.7-Flash 30B-A3.6B MoE)".to_string(),
+                "Heavy 210 GB+ workstation tier active: supports full GLM-4.7 355B 4-bit and GLM-4.7-Flash.".to_string(),
+            )
+        } else if combined_free >= 128.0 || free_ram >= 128.0 {
+            (
+                "zai-org/GLM-4.7-Flash",
+                if free_vram >= 6.0 && free_vram < 16.0 { "glm4:9b" } else { "glm-4.7-flash:q8_0" },
+                Some("glm-4.7-flash:q8_0".to_string()),
+                Some("GLM-4.7-UD-Q2_K_XL (355B 2-bit ~128 GB) / GLM-5.3-Flash-UD-IQ1_M (320B/18B 1-bit ~128 GB)".to_string()),
+                30.0,
+                3.6,
+                "Tier 4: 128 GB+ Workstation Offload (GLM-4.7-Flash 30B-A3.6B MoE + In-VRAM GLM-4 9B + GLM-4.7 355B Q2_K)".to_string(),
+                "Workstation 128 GB+ tier active: pairs in-VRAM glm4:9b (5.5 GB) with GLM-4.7-Flash (30B/3.6B active MoE) and supports 128 GB GLM-4.7 Q2_K / GLM-5.3-Flash IQ1_M.".to_string(),
+            )
+        } else if free_vram >= 36.0 || free_ram >= 36.0 {
+            (
+                "zai-org/GLM-4.7-Flash",
+                "glm-4.7-flash:q8_0",
+                Some("glm-4.7-flash:q8_0".to_string()),
+                Some("GLM-4.7-Flash-Q8_0 (30B/3.6B active MoE 8-bit/16-bit)".to_string()),
+                30.0,
+                3.6,
+                "Tier 3: 36-64 GB Memory (GLM-4.7-Flash 30B-A3.6B MoE 8-bit Q8_0 / FP16)".to_string(),
+                "36-64 GB tier active: GLM-4.7-Flash (30B/3.6B active MoE) at 8-bit/full precision.".to_string(),
+            )
+        } else if free_vram >= 20.0 || free_ram >= 24.0 {
+            (
+                "zai-org/GLM-4.7-Flash",
+                "glm-4.7-flash:q4_K_M",
+                Some("glm-4.7-flash:q4_K_M".to_string()),
+                Some("GLM-4.7-Flash-Q4_K_M (30B/3.6B active MoE 4-bit ~19 GB)".to_string()),
+                30.0,
+                3.6,
+                "Tier 2: 24-36 GB Sweet Spot (GLM-4.7-Flash 30B-A3.6B MoE 4-bit Q4_K_M)".to_string(),
+                "24-36 GB tier active: GLM-4.7-Flash (30B/3.6B active MoE) at 4-bit quantization.".to_string(),
+            )
+        } else if free_vram >= 16.0 || free_ram >= 16.0 {
+            (
+                "zai-org/GLM-4-9B-0414",
+                "glm4:9b-chat-q8_0",
+                Some("glm-4.7-flash:q2_K".to_string()),
+                Some("GLM-4-9B (Q8_0 / FP16) or GLM-4.7-Flash (Q2_K)".to_string()),
+                9.0,
+                9.0,
+                "Tier 1B: 16-20 GB Memory (GLM-4 9B Q8_0/FP16 or GLM-4.7-Flash Q2_K)".to_string(),
+                "16-20 GB tier active: GLM-4 9B 8-bit/16-bit or 2-bit GLM-4.7-Flash.".to_string(),
+            )
+        } else {
+            (
+                "zai-org/GLM-4-9B-0414",
+                "glm4:9b",
+                Some("glm4:9b".to_string()),
+                Some("GLM-4-9B / GLM-4V-9B / GLM-4.6V-Flash (4-bit Q4_K_M ~5.5-8 GB)".to_string()),
+                9.0,
+                9.0,
+                "Tier 1A: 8-16 GB Memory (GLM-4 9B / GLM-4V 9B / GLM-4.6V-Flash 4-bit Q4_K_M)".to_string(),
+                "8-16 GB tier active: GLM-4 9B family at 4-bit quantization (~5.5-8 GB).".to_string(),
+            )
+        };
+
+        let cached_tags = get_ollama_cached_models();
+        let resolved_ollama_tag = if free_vram >= 6.0 && free_vram < 16.0 && cached_tags.iter().any(|t| t == "glm4:9b" || t.starts_with("glm4:")) {
+            cached_tags.iter().find(|t| t == &"glm4:9b" || t.starts_with("glm4:")).cloned().unwrap_or_else(|| "glm4:9b".to_string())
+        } else if let Some(found) = cached_tags.iter().find(|t| t.starts_with("glm-4.7-flash") || t.starts_with("glm4")) {
+            found.clone()
+        } else {
+            default_ollama_tag.to_string()
+        };
+
+        let ollama_cached = is_ollama_model_cached(&resolved_ollama_tag);
+
+        GlmResourceAssessment {
+            resources_available: true,
+            glm_activated_in_fusion: true,
+            model_id: default_hf_id.to_string(),
+            ollama_tag: resolved_ollama_tag,
+            vram_sweet_spot_tag,
+            moe_offload_tag,
+            workstation_flagship_build,
+            total_params_b,
+            active_params_b,
+            required_min_ram_gb: 8.0,
+            required_min_vram_gb: 6.0,
+            detected_free_ram_gb: free_ram,
+            detected_free_vram_gb: free_vram,
+            ollama_cached,
+            active_tier,
+            status_reason,
+        }
+    }
+}
+
+/// Resource-gated Z.ai GLM assessment for ModelFusion.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GlmResourceAssessment {
+    pub resources_available: bool,
+    pub glm_activated_in_fusion: bool,
+    pub model_id: String,
+    pub ollama_tag: String,
+    pub vram_sweet_spot_tag: Option<String>,
+    pub moe_offload_tag: Option<String>,
+    pub workstation_flagship_build: Option<String>,
+    pub total_params_b: f64,
+    pub active_params_b: f64,
+    pub required_min_ram_gb: f64,
+    pub required_min_vram_gb: f64,
+    pub detected_free_ram_gb: f64,
+    pub detected_free_vram_gb: f64,
+    pub ollama_cached: bool,
+    pub active_tier: String,
+    pub status_reason: String,
 }
 
 /// Check if a model is part of the unblocked default stack (Recursive Flint, Block Goose, RAPTOR).
@@ -486,19 +672,38 @@ pub fn estimate_params_billions(model_id: &str) -> Option<f64> {
         ("bloom-560m", 0.56),
         ("bloom-1b7", 1.7),
         ("bloom-7b1", 7.1),
+        ("GLM-4-9B", 9.0),
+        ("GLM-4-9B-0414", 9.0),
+        ("GLM-4V-9B", 9.0),
+        ("GLM-4.6V-Flash", 9.0),
         ("GLM-4.7-Flash", 30.0),
+        ("GLM-4.7", 355.0),
+        ("GLM-5.3-Flash", 320.0),
         ("GLM-5-FP8", 744.0),
         ("GLM-5", 744.0),
         ("GLM-5.1", 744.0),
         ("GLM-5.2", 744.0),
+        ("GLM-5.3", 753.0),
     ];
 
     // Check hardcoded known models first (must check before regex to avoid false matches)
     let model_name = model_id.split('/').last().unwrap_or(model_id);
     for (name, params) in known_models {
-        if model_name == *name {
+        if model_name.eq_ignore_ascii_case(name) {
             return Some(*params);
         }
+    }
+    let lower_id = model_id.to_lowercase();
+    if lower_id.starts_with("glm-4.7-flash") || lower_id.contains("/glm-4.7-flash") {
+        return Some(30.0);
+    } else if lower_id.starts_with("glm-4.7") || lower_id.contains("/glm-4.7") {
+        return Some(355.0);
+    } else if lower_id.starts_with("glm-5.3-flash") || lower_id.contains("/glm-5.3-flash") {
+        return Some(320.0);
+    } else if lower_id.starts_with("glm-5") || lower_id.contains("/glm-5") {
+        return Some(744.0);
+    } else if lower_id.starts_with("glm4") || lower_id.starts_with("glm-4") {
+        return Some(9.0);
     }
 
     // Special case: "DeepSeek-R1" exactly (not a distill variant)
@@ -574,6 +779,14 @@ pub fn estimate_active_params_billions(model_id: &str) -> Option<f64> {
     let lower = model_id.to_lowercase();
     if lower.contains("recursivesi/flint") || lower == "flint" || lower.starts_with("flint:") || lower.contains("flint-40b") {
         Some(2.5)
+    } else if lower.contains("glm-4.7-flash") {
+        Some(3.6)
+    } else if lower.contains("glm-5.3-flash") {
+        Some(18.0)
+    } else if lower.contains("glm-5") {
+        Some(40.0)
+    } else if lower.contains("glm-4.7") {
+        Some(32.0)
     } else {
         estimate_params_billions(model_id)
     }
@@ -994,6 +1207,11 @@ fn map_hf_to_ollama(hf_model_id: &str) -> String {
     else if id.contains("deepseek-r1-distill") && id.contains("qwen-1.5b") { "deepseek-r1:1.5b".to_string() }
     else if id.contains("gemma-2") && id.contains("2b") { "gemma2:2b".to_string() }
     else if id.contains("recursivesi/flint") || id == "flint" || id.starts_with("flint:") { "flint:latest".to_string() }
+    else if id.contains("glm-4.7-flash") { "glm-4.7-flash:latest".to_string() }
+    else if id.contains("glm-4-9b") || id.contains("glm4") || id.contains("glm-4v") || id.contains("glm-4.6v") { "glm4:9b".to_string() }
+    else if id.contains("glm-5.3-flash") { "glm-5.3-flash:latest".to_string() }
+    else if id.contains("glm-5.3") { "glm-5.3:latest".to_string() }
+    else if id.contains("glm-5.2") { "glm-5.2:latest".to_string() }
     else { hf_model_id.to_string() }
 }
 
@@ -1462,6 +1680,78 @@ mod tests {
         let eval_low = mem_low.assess_flint_for_task(true, true);
         assert!(eval_low.flint_activated_in_fusion);
         assert_eq!(eval_low.coding_fusion_panel[0], "flint:latest");
+    }
+
+    #[test]
+    fn test_glm_resource_gated_fusion_calibration() {
+        // 1. Insufficient runtime memory (< 6 GB VRAM & < 8 GB Free RAM): GLM must NOT activate in fusion
+        let mem_insufficient = SystemMemory {
+            total_ram_gb: 64.0,
+            free_ram_gb: 4.5,
+            cpu_cores: 8,
+            gpu_name: Some("Busy GPU".to_string()),
+            gpu_vram_total_gb: 8.0,
+            gpu_vram_free_gb: 2.0,
+        };
+        let eval_off = mem_insufficient.assess_glm_for_fusion();
+        assert!(!eval_off.resources_available);
+        assert!(!eval_off.glm_activated_in_fusion);
+
+        // 2. 8-16 GB tier: GLM-4 9B active
+        let mem_8_16 = SystemMemory {
+            total_ram_gb: 16.0,
+            free_ram_gb: 10.0,
+            cpu_cores: 8,
+            gpu_name: Some("RTX 4060".to_string()),
+            gpu_vram_total_gb: 8.0,
+            gpu_vram_free_gb: 6.5,
+        };
+        let eval_9b = mem_8_16.assess_glm_for_fusion();
+        assert!(eval_9b.resources_available);
+        assert!(eval_9b.glm_activated_in_fusion);
+        assert_eq!(eval_9b.vram_sweet_spot_tag.as_deref(), Some("glm4:9b"));
+
+        // 3. 24 GB VRAM tier: GLM-4.7-Flash Q4_K_M active
+        let mem_24vram = SystemMemory {
+            total_ram_gb: 32.0,
+            free_ram_gb: 24.0,
+            cpu_cores: 16,
+            gpu_name: Some("RTX 4090".to_string()),
+            gpu_vram_total_gb: 24.0,
+            gpu_vram_free_gb: 22.0,
+        };
+        let eval_47flash = mem_24vram.assess_glm_for_fusion();
+        assert!(eval_47flash.resources_available);
+        assert!(eval_47flash.glm_activated_in_fusion);
+        assert_eq!(
+            eval_47flash.vram_sweet_spot_tag.as_deref(),
+            Some("glm-4.7-flash:q4_K_M")
+        );
+        assert_eq!(eval_47flash.total_params_b, 30.0);
+        assert_eq!(eval_47flash.active_params_b, 3.6);
+
+        // 4. Workstation 128 GB+ tier (Dell Precision 7920 Tower profile: ~176 GB Free RAM + 6.6 GB Free VRAM)
+        let mem_workstation = SystemMemory {
+            total_ram_gb: 223.65,
+            free_ram_gb: 176.4,
+            cpu_cores: 36,
+            gpu_name: Some("Quadro RTX 4000".to_string()),
+            gpu_vram_total_gb: 8.0,
+            gpu_vram_free_gb: 6.6,
+        };
+        let eval_ws = mem_workstation.assess_glm_for_fusion();
+        assert!(eval_ws.resources_available);
+        assert!(eval_ws.glm_activated_in_fusion);
+        assert_eq!(eval_ws.vram_sweet_spot_tag.as_deref(), Some("glm4:9b"));
+        assert_eq!(
+            eval_ws.moe_offload_tag.as_deref(),
+            Some("glm-4.7-flash:q8_0")
+        );
+        assert!(eval_ws
+            .workstation_flagship_build
+            .as_deref()
+            .unwrap_or("")
+            .contains("GLM-4.7"));
     }
 
 }
