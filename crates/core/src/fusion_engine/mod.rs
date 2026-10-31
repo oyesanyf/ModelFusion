@@ -318,6 +318,33 @@ pub async fn run_fusion(
             panel_models.len()
         );
 
+        // 1.25. Resource-Gated Z.ai GLM Specialist in Fusion:
+        // Strictly activated ONLY when runtime resources are available (Free RAM >= 8.0 GB or Free VRAM >= 6.0 GB).
+        let glm_eval = model_selection::memory::SystemMemory::detect_live().assess_glm_for_fusion();
+        if glm_eval.glm_activated_in_fusion && glm_eval.resources_available && panel_models.len() < max_candidates {
+            let mut glm_cfg = if glm_eval.ollama_cached {
+                ModelConfig::local(&glm_eval.ollama_tag)
+            } else {
+                ModelConfig::huggingface(&glm_eval.model_id)
+            };
+            glm_cfg.name = format!(
+                "Z.ai GLM Specialist ({} — {})",
+                glm_eval.ollama_tag, glm_eval.active_tier
+            );
+            panel_models.push(glm_cfg);
+            eprintln!(
+                "🧠 [GLM RESOURCE-GATED FUSION] Activated {} in Fusion Panel (Slot {}): {}",
+                glm_eval.ollama_tag,
+                panel_models.len(),
+                glm_eval.status_reason
+            );
+        } else {
+            eprintln!(
+                "🛡️ [GLM RESOURCE-GATED FUSION] Skipped GLM in Fusion Panel: {}",
+                glm_eval.status_reason
+            );
+        }
+
         // 1.5. If forced_model is present and not already flint, add it next
         if let Some(ref model_id) = forced_model {
             if !panel_models.iter().any(|m| m.endpoint == *model_id || m.endpoint.contains("flint") && model_id.contains("flint")) {
