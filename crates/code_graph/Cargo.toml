@@ -8,7 +8,7 @@ anyhow         = { workspace = true }
 thiserror      = { workspace = true }
 serde          = { workspace = true }
 serde_json     = { workspace = true }
-rusqlite       = { version = "0.31", features = ["bundled-full"] }
+rusqlite       = { version = "0.32", features = ["bundled-full"] }
 sha2           = { workspace = true }
 hex            = { workspace = true }
 walkdir        = { workspace = true }
