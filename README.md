@@ -1444,6 +1444,29 @@ Access via `cli.exe --mcp` or through any MCP-compatible client (**Cursor**, **V
 
 ---
 
+## 🛡️ RFCHunt Local Abliterated Security Bridge & Anti-Junk Grounding Guards
+
+ModelFusion natively powers **RFCHunt**'s zero-cloud defensive auditing and vulnerability verification workflows with hardware-fitted abliterated security models, deterministic output guards, and Draft-only HugOS Browser HITL staging:
+
+- **Synchronized 15-Model Abliterated Security Catalog (`crates/model_selection/src/memory.rs`):** `SystemMemory::assess_security_abliterated_for_task()` selects a complementary 3-specialist defensive panel (Boundary/Security + Protocol/Code + GLM/Reasoning Arbiter) strictly gated against runtime free RAM/VRAM, excluding embedding models and reserving 432B/744B `vllm_docker` builds for 256 GB+ / 512 GB+ nodes.
+- **Deterministic Anti-Junk & Grounding Guard (`crates/core/src/fusion_engine/anti_junk_guard.rs`):** Strips `<think>...</think>` reasoning leaks, rejects character/line/6-gram repetition loops and meta-slop stubs, validates strict JSON schemas, and verifies cited file paths against the grounded prompt context (`verify_grounding`) before consensus judging.
+- **Process-Scoped `shell = false` RFCHunt Bridge (`crates/core/src/rfchunt_bridge.rs` & `scripts/run_rfchunt_with_modelfusion.py`):** Allowlists defensive RFCHunt subcommands (`fast-ooda`, `ensemble-audit`, `freshness-watch`, `linux-poc`, `eligibility-check`, `h1-draft-stage`, `check-drafts`, `qa-drafts`), enforces `<= 400ms` health probes on `:5000` and `:11434`, and never mutates the Windows Registry or system `PATH`.
+- **Clean Cross-Platform Build Hygiene:** `Cargo.toml` disables `image`'s default `avif`/`av1-grain` feature chain (retaining `png`, `jpeg`, `gif`, `webp`, `bmp`, `ico`, `tiff`, `pnm`, `tga`, `qoi`, `hdr`, `ff`) and `.cargo/config.toml` passes `/IGNORE:4099` to `rust-lld` for zero-noise Windows static-CRT builds.
+
+```powershell
+# Inspect synchronized abliterated security catalog & live ModelFusion/Ollama health:
+python scripts/run_rfchunt_with_modelfusion.py --list-abliterated
+
+# Run an RFCHunt ensemble audit or QA Phase draft check backed by local ModelFusion:
+python scripts/run_rfchunt_with_modelfusion.py ensemble-audit -- --target D:\path\to\repo --all --ensemble
+python scripts/run_rfchunt_with_modelfusion.py qa-drafts -- --snapshot-json reports/ensemble_hunt/drafts_snapshot.json --strict
+
+# Run ModelFusion Rust unit tests for security model sizing, anti-junk guards, and RFCHunt bridge:
+cargo test -p model_selection -p modelfusion_core
+```
+
+---
+
 ## 📄 References & Citation
 For more information, please consult the complete research paper: 
 *   Draft PDF: `Beyond Model Scale: Open-Weight Compound Intelligence Through Retrieval-Augmented Consensus Deliberation`

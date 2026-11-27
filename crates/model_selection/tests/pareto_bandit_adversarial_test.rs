@@ -10,14 +10,14 @@
 //! 6. High-signal research org recognition and following boost resolution
 
 use db::{HuggingFaceModelDatabase, ModelMetrics};
-use model_selection::memory::{self, SystemMemory};
+use model_selection::memory;
 use model_selection::pareto::{
     compute_pareto_front, default_pareto_directions, dominates, select_knee_point,
     ObjectiveDirection, ParetoCandidate,
 };
 use model_selection::{
-    calculate_following_boost, calculate_memory_penalty, calculate_multi_objective_score,
-    calculate_ucb1_exploration_bonus, is_high_signal_research_org, normalize_trending_velocity,
+    calculate_memory_penalty, calculate_multi_objective_score,
+    calculate_ucb1_exploration_bonus, is_high_signal_research_org,
     EnhancedModelSelector, SelectionStrategy,
 };
 

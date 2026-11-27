@@ -3,6 +3,7 @@ pub mod models;
 pub mod fusion;
 pub mod judge;
 pub mod skeletonizer;
+pub mod anti_junk_guard;
 
 use schema::ModelConfig;
 use fusion::run_panel;
@@ -202,6 +203,54 @@ pub fn is_coding_task_for_flint(detected_task: &str, prompt: &str) -> bool {
         || prompt_lower.contains("terminal-bench")
 }
 
+/// Detects whether a task/prompt is a defensive security audit, vulnerability triage,
+/// or RFCHunt verification workload where fitted local abliterated security specialists
+/// and strict anti-junk grounding guards should be prioritized.
+pub fn is_security_audit_task(detected_task: &str, prompt: &str) -> bool {
+    let task_lower = detected_task.to_lowercase();
+    let prompt_lower = prompt.to_lowercase();
+
+    if task_lower.contains("vulnerability")
+        || task_lower.contains("security")
+        || task_lower.contains("malware")
+        || task_lower.contains("audit")
+        || task_lower.contains("pentest")
+        || task_lower.contains("rfchunt")
+        || task_lower.contains("owasp")
+        || task_lower.contains("sarif")
+    {
+        return true;
+    }
+
+    const SECURITY_MARKERS: &[&str] = &[
+        "rfchunt",
+        "cwe-",
+        "cve-",
+        "owasp",
+        "vulnerability",
+        "exploitability",
+        "attack_chain",
+        "attack chain",
+        "static_findings",
+        "gha_workflow",
+        "hackerone",
+        "bug bounty",
+        "security audit",
+        "defensive semantic verification",
+        "untrusted_data",
+        "path traversal",
+        "ssrf",
+        "prototype pollution",
+        "symlink",
+        "pwn_request",
+        "template_script_injection",
+        "@agent security",
+        "@agent vuln-scan",
+        "/security",
+    ];
+    SECURITY_MARKERS.iter().any(|m| prompt_lower.contains(m))
+}
+
 /// Run the model fusion pipeline.
 pub async fn run_fusion(
     prompt: &str,
@@ -245,6 +294,12 @@ pub async fn run_fusion(
     }
 
     let is_multi_sample = fusion_mode == "multi-sample";
+    let is_security_audit = is_security_audit_task(&detected_task, prompt);
+    let security_eval = if is_security_audit {
+        Some(model_selection::memory::SystemMemory::detect_live().assess_security_abliterated_for_task())
+    } else {
+        None
+    };
 
     // For multi-sample mode: select 1 best model, create N configs with different temperatures
     // For multi-model mode: select N different models (uses detected_task with text-generation fallback)
@@ -290,8 +345,37 @@ pub async fn run_fusion(
         // Multi-model: construct a panel of max_candidates models
         let mut panel_models: Vec<ModelConfig> = Vec::new();
 
+        // 0. Defensive Security / RFCHunt Abliterated Specialist Panel (runtime-memory-gated):
+        // Uses low temperature (0.15) to keep abliterated models factual, crisp, and non-hallucinatory.
+        if let Some(ref sec_eval) = security_eval {
+            eprintln!(
+                "🛡️ [ABLITERATED SECURITY FUSION] Resource Check: Free RAM {:.1} GB, Free VRAM {:.1} GB -> {} (Installed Security Models: {})",
+                sec_eval.detected_free_ram_gb,
+                sec_eval.detected_free_vram_gb,
+                sec_eval.active_tier,
+                sec_eval.installed_security_models.len()
+            );
+            for sec_tag in sec_eval.recommended_panel.iter().take(max_candidates.min(3)) {
+                if !panel_models.iter().any(|m| m.endpoint.eq_ignore_ascii_case(sec_tag)) {
+                    let mut sec_cfg = if model_selection::memory::is_ollama_model_cached(sec_tag) {
+                        ModelConfig::local(sec_tag)
+                    } else {
+                        ModelConfig::huggingface(sec_tag)
+                    };
+                    sec_cfg.temperature = Some(0.15);
+                    sec_cfg.name = format!("Abliterated Security Specialist ({}, T=0.15)", sec_tag);
+                    panel_models.push(sec_cfg);
+                    eprintln!(
+                        "🛡️ [ABLITERATED SECURITY FUSION] Injected {} into Fusion Panel (Slot {})",
+                        sec_tag,
+                        panel_models.len()
+                    );
+                }
+            }
+        }
+
         // 1. Default Recursive Flint (flint:latest / RecursiveSI/flint 40B-A2.5B MoE) + Block Goose in Fusion & Coding:
-        // Always active by default for coding and fusion tasks (never blocked).
+        // Always active by default for coding and fusion tasks (never blocked) when panel slots remain.
         let is_coding = is_coding_task_for_flint(&detected_task, prompt);
         let flint_eval = model_selection::memory::SystemMemory::detect_live().assess_flint_for_task(true, is_coding);
         eprintln!(
@@ -302,21 +386,24 @@ pub async fn run_fusion(
             flint_eval.resources_available,
             flint_eval.ollama_cached
         );
-        let mut flint_cfg = if flint_eval.ollama_cached {
-            ModelConfig::local("flint:latest")
-        } else {
-            ModelConfig::huggingface("RecursiveSI/flint")
-        };
-        flint_cfg.temperature = Some(1.0);
-        flint_cfg.name = format!(
-            "Recursive Flint 40B-A2.5B MoE + Block Goose ({}, T=1.0)",
-            if flint_eval.resources_available { "Full" } else { "Compact Q4" }
-        );
-        panel_models.push(flint_cfg);
-        eprintln!(
-            "🔥 [FLINT + GOOSE DEFAULT FUSION] Injected Recursive Flint (flint:latest) + Block Goose into Fusion Panel (Slot {})",
-            panel_models.len()
-        );
+        if panel_models.len() < max_candidates {
+            let mut flint_cfg = if flint_eval.ollama_cached {
+                ModelConfig::local("flint:latest")
+            } else {
+                ModelConfig::huggingface("RecursiveSI/flint")
+            };
+            flint_cfg.temperature = Some(if is_security_audit { 0.2 } else { 1.0 });
+            flint_cfg.name = format!(
+                "Recursive Flint 40B-A2.5B MoE + Block Goose ({}, T={:.1})",
+                if flint_eval.resources_available { "Full" } else { "Compact Q4" },
+                flint_cfg.temperature.unwrap_or(1.0)
+            );
+            panel_models.push(flint_cfg);
+            eprintln!(
+                "🔥 [FLINT + GOOSE DEFAULT FUSION] Injected Recursive Flint (flint:latest) + Block Goose into Fusion Panel (Slot {})",
+                panel_models.len()
+            );
+        }
 
         // 1.25. Resource-Gated Z.ai GLM Specialist in Fusion:
         // Strictly activated ONLY when runtime resources are available (Free RAM >= 8.0 GB or Free VRAM >= 6.0 GB).
@@ -397,8 +484,15 @@ pub async fn run_fusion(
                 if panel_models.len() >= max_candidates {
                     break;
                 }
+                if model_selection::memory::is_embedding_model_tag(&cm) {
+                    continue;
+                }
                 if !panel_models.iter().any(|m| m.endpoint == *cm || m.name.contains(cm.as_str())) {
-                    panel_models.push(ModelConfig::local(&cm));
+                    let mut cfg = ModelConfig::local(&cm);
+                    if is_security_audit {
+                        cfg.temperature = Some(0.15);
+                    }
+                    panel_models.push(cfg);
                 }
             }
         }
@@ -440,12 +534,43 @@ pub async fn run_fusion(
         (panel_models, leftover_db)
     };
 
-    // Define the judge model
-    let judge_model = if let Some(model_id) = forced_model {
-        ModelConfig::huggingface(model_id)
+    // Define the judge model (never select embedding models; prefer fitted abliterated security models for audits)
+    let mut judge_model = if let Some(model_id) = forced_model {
+        if model_selection::memory::is_ollama_model_cached(model_id) {
+            ModelConfig::local(model_id)
+        } else {
+            ModelConfig::huggingface(model_id)
+        }
+    } else if let Some(ref sec_eval) = security_eval {
+        if let Some(sec_judge) = sec_eval
+            .installed_security_models
+            .first()
+            .or_else(|| sec_eval.recommended_panel.first())
+        {
+            if model_selection::memory::is_ollama_model_cached(sec_judge) {
+                ModelConfig::local(sec_judge)
+            } else {
+                ModelConfig::huggingface(sec_judge)
+            }
+        } else {
+            let cached = model_selection::memory::get_ollama_cached_models();
+            if let Some(m) = cached.iter().find(|m| {
+                !model_selection::memory::is_embedding_model_tag(m)
+                    && (m.contains("qwen") || m.contains("llama") || m.contains("deepseek") || m.contains("glm"))
+            }) {
+                ModelConfig::local(m)
+            } else {
+                let judge_res = selector.select_best_model("text-generation", "judge evaluation", strategy, 1, None)
+                    .context("⚠️ [FUSION] Failed to select judge model from database.")?;
+                ModelConfig::huggingface(&judge_res.best_model.model_id)
+            }
+        }
     } else {
         let cached = model_selection::memory::get_ollama_cached_models();
-        if let Some(m) = cached.iter().find(|m| m.contains("qwen") || m.contains("llama") || m.contains("deepseek") || m.contains("glm")) {
+        if let Some(m) = cached.iter().find(|m| {
+            !model_selection::memory::is_embedding_model_tag(m)
+                && (m.contains("qwen") || m.contains("llama") || m.contains("deepseek") || m.contains("glm"))
+        }) {
             ModelConfig::local(m)
         } else {
             let judge_res = selector.select_best_model("text-generation", "judge evaluation", strategy, 1, None)
@@ -453,14 +578,50 @@ pub async fn run_fusion(
             ModelConfig::huggingface(&judge_res.best_model.model_id)
         }
     };
+    if is_security_audit {
+        judge_model.temperature = Some(0.1);
+    }
     eprintln!("⚖️ [FUSION] Selected judge model: {}", judge_model.name);
 
-    // Define the final writer model
-    let writer_model = if let Some(model_id) = forced_model {
-        ModelConfig::huggingface(model_id)
+    // Define the final writer model (prefer LongWriter / fitted abliterated security model for audits)
+    let mut writer_model = if let Some(model_id) = forced_model {
+        if model_selection::memory::is_ollama_model_cached(model_id) {
+            ModelConfig::local(model_id)
+        } else {
+            ModelConfig::huggingface(model_id)
+        }
+    } else if let Some(ref sec_eval) = security_eval {
+        let sec_writer = sec_eval
+            .installed_security_models
+            .iter()
+            .find(|m| m.to_lowercase().contains("longwriter") || m.to_lowercase().contains("glm-5.3") || m.to_lowercase().contains("glm-4.7"))
+            .or_else(|| sec_eval.installed_security_models.first())
+            .or_else(|| sec_eval.recommended_panel.first());
+        if let Some(sw) = sec_writer {
+            if model_selection::memory::is_ollama_model_cached(sw) {
+                ModelConfig::local(sw)
+            } else {
+                ModelConfig::huggingface(sw)
+            }
+        } else {
+            let cached = model_selection::memory::get_ollama_cached_models();
+            if let Some(m) = cached.iter().find(|m| {
+                !model_selection::memory::is_embedding_model_tag(m)
+                    && (m.contains("qwen") || m.contains("llama") || m.contains("deepseek") || m.contains("glm"))
+            }) {
+                ModelConfig::local(m)
+            } else {
+                let writer_res = selector.select_best_model("text-generation", "final synthesis writing", strategy, 1, None)
+                    .context("⚠️ [FUSION] Failed to select writer model from database.")?;
+                ModelConfig::huggingface(&writer_res.best_model.model_id)
+            }
+        }
     } else {
         let cached = model_selection::memory::get_ollama_cached_models();
-        if let Some(m) = cached.iter().find(|m| m.contains("qwen") || m.contains("llama") || m.contains("deepseek") || m.contains("glm")) {
+        if let Some(m) = cached.iter().find(|m| {
+            !model_selection::memory::is_embedding_model_tag(m)
+                && (m.contains("qwen") || m.contains("llama") || m.contains("deepseek") || m.contains("glm"))
+        }) {
             ModelConfig::local(m)
         } else {
             let writer_res = selector.select_best_model("text-generation", "final synthesis writing", strategy, 1, None)
@@ -468,6 +629,9 @@ pub async fn run_fusion(
             ModelConfig::huggingface(&writer_res.best_model.model_id)
         }
     };
+    if is_security_audit {
+        writer_model.temperature = Some(0.1);
+    }
     eprintln!("✍️ [FUSION] Selected writer model: {}", writer_model.name);
 
     let prompt_with_context = if let Some(ctx) = context {
@@ -556,13 +720,123 @@ pub async fn run_fusion(
         return Err(anyhow::anyhow!("⚠️ [FUSION] All panel models failed. No responses to judge."));
     }
 
-    eprintln!("[FUSION] Step 2: Judging panel responses...");
-    let judge_json = judge_panel(&prompt_with_context, &panel_answers, &judge_model).await?;
+    // Step 1.5: Deterministic Anti-Junk, Refusal, Repetition & Grounding Guard over panel outputs.
+    // Prevents abliterated local models from passing loops, refusals, meta-slop, broken JSON,
+    // or hallucinated file paths into the consensus judge.
+    let mut rescue_queue: Vec<String> = security_eval
+        .as_ref()
+        .map(|se| {
+            se.fitted_ollama_models
+                .iter()
+                .filter(|t| !panel_models.iter().any(|pm| pm.endpoint.eq_ignore_ascii_case(t)))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut vetted_scored: Vec<(f64, schema::ModelAnswer)> = Vec::new();
+    let mut fallback_clean: Vec<schema::ModelAnswer> = Vec::new();
+
+    for ans in panel_answers {
+        if ans.answer.starts_with("MODEL ERROR") {
+            continue;
+        }
+        let verdict = anti_junk_guard::evaluate_candidate_response(
+            &prompt_with_context,
+            &ans.answer,
+            is_security_audit,
+        );
+        if verdict.accepted {
+            vetted_scored.push((
+                verdict.quality_score,
+                schema::ModelAnswer {
+                    model_name: ans.model_name,
+                    answer: verdict.cleaned_text,
+                },
+            ));
+        } else {
+            eprintln!(
+                "  🛡️ [ANTI-JUNK GUARD] Filtered '{}' (reasons: {:?})",
+                ans.model_name, verdict.rejection_reasons
+            );
+            if !verdict.cleaned_text.is_empty() && !crate::providers::is_refusal_response(&verdict.cleaned_text) {
+                fallback_clean.push(schema::ModelAnswer {
+                    model_name: ans.model_name.clone(),
+                    answer: verdict.cleaned_text,
+                });
+            }
+            // Attempt automatic rescue from unused fitted abliterated specialist if available
+            if let Some(rescue_tag) = rescue_queue.pop() {
+                let mut rescue_cfg = if model_selection::memory::is_ollama_model_cached(&rescue_tag) {
+                    ModelConfig::local(&rescue_tag)
+                } else {
+                    ModelConfig::huggingface(&rescue_tag)
+                };
+                rescue_cfg.temperature = Some(0.15);
+                rescue_cfg.name = format!("Abliterated Rescue ({})", rescue_tag);
+                if let Ok(rescue_answers) = run_panel(&prompt_with_context, vec![rescue_cfg]).await {
+                    if let Some(r_ans) = rescue_answers.into_iter().next() {
+                        let r_verdict = anti_junk_guard::evaluate_candidate_response(
+                            &prompt_with_context,
+                            &r_ans.answer,
+                            is_security_audit,
+                        );
+                        if r_verdict.accepted {
+                            eprintln!(
+                                "  ✅ [ANTI-JUNK RESCUE] Rescued slot with '{}' (quality: {:.2})",
+                                r_ans.model_name, r_verdict.quality_score
+                            );
+                            vetted_scored.push((
+                                r_verdict.quality_score,
+                                schema::ModelAnswer {
+                                    model_name: r_ans.model_name,
+                                    answer: r_verdict.cleaned_text,
+                                },
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    vetted_scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    let vetted_answers: Vec<schema::ModelAnswer> = if !vetted_scored.is_empty() {
+        vetted_scored.into_iter().map(|(_, a)| a).collect()
+    } else if !fallback_clean.is_empty() {
+        fallback_clean
+    } else {
+        return Err(anyhow::anyhow!(
+            "⚠️ [FUSION] All panel responses were rejected by the anti-junk/refusal guard."
+        ));
+    };
+
+    let best_vetted_fallback = vetted_answers[0].answer.clone();
+
+    eprintln!(
+        "[FUSION] Step 2: Judging {} vetted panel responses...",
+        vetted_answers.len()
+    );
+    let judge_json = judge_panel(&prompt_with_context, &vetted_answers, &judge_model).await?;
 
     eprintln!("[FUSION] Step 3: Writing final synthesized answer...");
     let final_answer = write_final_answer(&prompt_with_context, &judge_json, &writer_model).await?;
 
-    Ok(final_answer)
+    // Final post-write anti-junk safety check: never return junk when a vetted grounded answer exists
+    let final_verdict = anti_junk_guard::evaluate_candidate_response(
+        &prompt_with_context,
+        &final_answer,
+        is_security_audit,
+    );
+    if final_verdict.accepted {
+        Ok(final_verdict.cleaned_text)
+    } else {
+        eprintln!(
+            "  🛡️ [ANTI-JUNK GUARD] Final synthesis failed guard ({:?}); returning highest-grounded vetted panel output.",
+            final_verdict.rejection_reasons
+        );
+        Ok(best_vetted_fallback)
+    }
 }
 
 #[cfg(test)]
@@ -600,5 +874,15 @@ mod flint_fusion_tests {
         assert!(preserved.starts_with("USER REQUEST: create a javafile that can be able to dend prompts to openai"));
         assert!(preserved.contains("...[middle truncated]..."));
         assert!(preserved.ends_with("<userRequest>create a javafile that can be able to dend prompts to openai</userRequest>"));
+    }
+
+    #[test]
+    fn test_is_security_audit_task() {
+        assert!(is_security_audit_task("code-vulnerability-detection", "Review diff"));
+        assert!(is_security_audit_task("text-generation", "Perform defensive semantic verification on CWE-22 symlink bug in src/store.ts"));
+        assert!(is_security_audit_task("text-generation", "RFCHunt static_findings exploitability triage"));
+        assert!(is_security_audit_task("text-generation", "Audit .github/workflows/ci.yml for pwn_request"));
+        assert!(!is_security_audit_task("text-generation", "Write a poem about autumn leaves"));
+        assert!(!is_security_audit_task("summarization", "Summarize quarterly sales report"));
     }
 }

@@ -34,7 +34,6 @@ sha2          = "0.10"
 md-5          = "0.10"
 sha1          = "0.10"
 hex           = "0.4"
-indicatif     = "0.17"
 async-trait   = "0.1"
 futures       = "0.3"
 sysinfo       = "0.30"
@@ -42,4 +41,4 @@ sqlx          = { version = "0.8.6", features = ["runtime-tokio", "sqlite"] }
 uuid          = { version = "1.10", features = ["v4", "serde"] }
 tiktoken-rs   = "0.5"
 aho-corasick  = "1.1"
-image         = "0.25"
+image         = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico", "tiff", "pnm", "tga", "qoi", "hdr", "ff"] }

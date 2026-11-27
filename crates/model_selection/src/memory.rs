@@ -737,7 +737,16 @@ pub fn estimate_params_billions(model_id: &str) -> Option<f64> {
         }
     }
     let lower_id = model_id.to_lowercase();
-    if lower_id.starts_with("glm-4.7-flash") || lower_id.contains("/glm-4.7-flash") {
+    if lower_id.contains("glm-5.2-abliterated") {
+        return Some(432.0);
+    } else if lower_id.contains("glm-5-abliterated") {
+        return Some(744.0);
+    } else if lower_id.contains("glm-5.3-abliterated")
+        || lower_id.contains("penclaw-glm-5.3")
+        || lower_id.contains("cyber-glp-77")
+    {
+        return Some(30.0);
+    } else if lower_id.contains("glm-4.7-flash") {
         return Some(30.0);
     } else if lower_id.starts_with("glm-4.7") || lower_id.contains("/glm-4.7") {
         return Some(355.0);
@@ -745,7 +754,11 @@ pub fn estimate_params_billions(model_id: &str) -> Option<f64> {
         return Some(320.0);
     } else if lower_id.starts_with("glm-5") || lower_id.contains("/glm-5") {
         return Some(744.0);
-    } else if lower_id.starts_with("glm4") || lower_id.starts_with("glm-4") {
+    } else if lower_id.contains("gemma-4-12b-obliterated") {
+        return Some(12.0);
+    } else if lower_id.contains("foundation-sec") {
+        return Some(8.0);
+    } else if lower_id.contains("glm-4-9b") || lower_id.contains("longwriter-glm4-9b") || lower_id.starts_with("glm4") || lower_id.starts_with("glm-4") {
         return Some(9.0);
     }
 
@@ -822,7 +835,11 @@ pub fn estimate_active_params_billions(model_id: &str) -> Option<f64> {
     let lower = model_id.to_lowercase();
     if lower.contains("recursivesi/flint") || lower == "flint" || lower.starts_with("flint:") || lower.contains("flint-40b") {
         Some(2.5)
-    } else if lower.contains("glm-4.7-flash") {
+    } else if lower.contains("glm-4.7-flash")
+        || lower.contains("glm-5.3-abliterated")
+        || lower.contains("penclaw-glm-5.3")
+        || lower.contains("cyber-glp-77")
+    {
         Some(3.6)
     } else if lower.contains("glm-5.3-flash") {
         Some(18.0)
@@ -1235,8 +1252,71 @@ pub fn is_transformers_model_cached(model_id: &str) -> bool {
     false
 }
 
-fn map_hf_to_ollama(hf_model_id: &str) -> String {
-    let id = hf_model_id.to_lowercase();
+pub fn map_hf_to_ollama(hf_model_id: &str) -> String {
+    let trimmed = hf_model_id.trim();
+    let id = trimmed.to_lowercase();
+
+    // Preserve explicit HuggingFace GGUF tags (hf.co/...) verbatim so abliterated and custom
+    // quant tags are never clobbered into standard non-abliterated tags.
+    if id.starts_with("hf.co/") {
+        return trimmed.to_string();
+    }
+
+    // Explicit RFCHunt abliterated & security model mappings (exact parity with RFCHunt catalog)
+    if id.contains("obliteratus/gemma-4-12b-obliterated") || id == "gemma-4-12b-obliterated" || id == "gemma4-12b-obliterated" {
+        return "hf.co/OBLITERATUS/Gemma-4-12B-OBLITERATED:Q4_K_M".to_string();
+    }
+    if id.contains("foundation-sec-abliterated") {
+        return if trimmed.contains(':') { trimmed.to_string() } else { "huihui_ai/foundation-sec-abliterated:8b".to_string() };
+    }
+    if id.contains("foundation-sec") {
+        return if trimmed.contains(':') { trimmed.to_string() } else { "fenkohq/foundation-sec-8b:latest".to_string() };
+    }
+    if id.contains("penclaw-glm-5.3-abliterated") {
+        return "hf.co/audnai/penclaw-GLM-5.3-abliterated".to_string();
+    }
+    if id.contains("glm-5.3-abliterated-cyber-glp-77") {
+        return "hf.co/msuiche/GLM-5.3-abliterated-cyber-GLP-77".to_string();
+    }
+    if id.contains("huihui-ai/glm-5.3-abliterated") || id == "glm-5.3-abliterated" {
+        return "hf.co/huihui-ai/GLM-5.3-abliterated".to_string();
+    }
+    if id.contains("huihui-glm-4.7-flash-abliterated") {
+        return "hf.co/huihui-ai/Huihui-GLM-4.7-Flash-abliterated".to_string();
+    }
+    if id.contains("jsantillana/glm-4.7-flash-abliterated") {
+        return "hf.co/jsantillana/glm-4.7-flash-abliterated".to_string();
+    }
+    if id.contains("glm-4.7-flash-abliterated") {
+        return if trimmed.contains(':') { trimmed.to_string() } else { "huihui_ai/glm-4.7-flash-abliterated:latest".to_string() };
+    }
+    if id.contains("deepseek-r1-abliterated") {
+        return if trimmed.contains(':') { trimmed.to_string() } else { "huihui_ai/deepseek-r1-abliterated:8b".to_string() };
+    }
+    if id.contains("bartowski/glm-4-9b-chat-abliterated-gguf") {
+        return "hf.co/bartowski/glm-4-9b-chat-abliterated-GGUF:Q4_K_M".to_string();
+    }
+    if id.contains("byroneverson/glm-4-9b-chat-abliterated") {
+        return "hf.co/byroneverson/glm-4-9b-chat-abliterated".to_string();
+    }
+    if id.contains("byroneverson/longwriter-glm4-9b-abliterated") || id.contains("longwriter-glm4-9b-abliterated") {
+        return "hf.co/byroneverson/LongWriter-glm4-9b-abliterated".to_string();
+    }
+    // Preserve any other abliterated / obliterated Ollama or HF repo tag verbatim
+    if id.contains("abliterat") || id.contains("obliterat") {
+        if id.starts_with("huihui_ai/") || id.starts_with("fenkohq/") || trimmed.contains(':') {
+            return trimmed.to_string();
+        }
+        if id.contains("openyourmind/glm-5.2-abliterated") || id.contains("skyblanket/glm-5-abliterated") {
+            // High-memory vLLM/Docker repos (256GB+/512GB+) stay intact for vLLM routing
+            return trimmed.to_string();
+        }
+        if trimmed.contains('/') {
+            return format!("hf.co/{}", trimmed);
+        }
+        return trimmed.to_string();
+    }
+
     if id.contains("qwen2") && id.contains("72b") { "qwen2.5:72b".to_string() }
     else if id.contains("qwen2") && id.contains("32b") { "qwen2.5:32b".to_string() }
     else if id.contains("qwen2") && id.contains("14b") { "qwen2.5:14b".to_string() }
@@ -1255,7 +1335,7 @@ fn map_hf_to_ollama(hf_model_id: &str) -> String {
     else if id.contains("glm-5.3-flash") { "glm-5.3-flash:latest".to_string() }
     else if id.contains("glm-5.3") { "glm-5.3:latest".to_string() }
     else if id.contains("glm-5.2") { "glm-5.2:latest".to_string() }
-    else { hf_model_id.to_string() }
+    else { trimmed.to_string() }
 }
 
 /// Cached Ollama model list — cached with a short TTL (10s), never permanently caching empty results.
@@ -1545,6 +1625,466 @@ pub fn ensure_ffmpeg_available() -> Result<std::path::PathBuf, String> {
     }
 
     Err("FFmpeg executable could not be found or installed. Please install FFmpeg (winget install Gyan.FFmpeg)".to_string())
+}
+
+/// Canonical entry for a local abliterated or security-specialized model (100% parity with RFCHunt).
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+pub struct AbliteratedSecurityModelEntry {
+    pub ollama_tag: &'static str,
+    pub hf_repo: &'static str,
+    pub role: &'static str,
+    pub runtime: &'static str,
+    pub params_b: f64,
+    pub active_params_b: f64,
+    pub min_free_ram_gb: f64,
+    pub min_free_vram_gb: f64,
+    pub is_abliterated: bool,
+}
+
+/// Complete catalog of RFCHunt abliterated & defensive security models supported by ModelFusion.
+/// Local Ollama / GGUF models are strictly runtime-memory-gated; 432B/744B vLLM models require
+/// >= 256 GB / >= 512 GB available memory and are never auto-pulled into Ollama.
+pub const ABLITERATED_SECURITY_CATALOG: &[AbliteratedSecurityModelEntry] = &[
+    AbliteratedSecurityModelEntry {
+        ollama_tag: "huihui_ai/foundation-sec-abliterated:8b",
+        hf_repo: "huihui-ai/foundation-sec-abliterated",
+        role: "boundary_specialist",
+        runtime: "ollama",
+        params_b: 8.0,
+        active_params_b: 8.0,
+        min_free_ram_gb: 8.0,
+        min_free_vram_gb: 6.0,
+        is_abliterated: true,
+    },
+    AbliteratedSecurityModelEntry {
+        ollama_tag: "hf.co/OBLITERATUS/Gemma-4-12B-OBLITERATED:Q4_K_M",
+        hf_repo: "OBLITERATUS/Gemma-4-12B-OBLITERATED",
+        role: "protocol_specialist",
+        runtime: "ollama",
+        params_b: 12.0,
+        active_params_b: 12.0,
+        min_free_ram_gb: 10.0,
+        min_free_vram_gb: 8.0,
+        is_abliterated: true,
+    },
+    AbliteratedSecurityModelEntry {
+        ollama_tag: "hf.co/audnai/penclaw-GLM-5.3-abliterated",
+        hf_repo: "audnai/penclaw-GLM-5.3-abliterated",
+        role: "glm53_security",
+        runtime: "ollama",
+        params_b: 30.0,
+        active_params_b: 3.6,
+        min_free_ram_gb: 16.0,
+        min_free_vram_gb: 14.0,
+        is_abliterated: true,
+    },
+    AbliteratedSecurityModelEntry {
+        ollama_tag: "hf.co/msuiche/GLM-5.3-abliterated-cyber-GLP-77",
+        hf_repo: "msuiche/GLM-5.3-abliterated-cyber-GLP-77",
+        role: "glm53_cyber",
+        runtime: "ollama",
+        params_b: 30.0,
+        active_params_b: 3.6,
+        min_free_ram_gb: 16.0,
+        min_free_vram_gb: 14.0,
+        is_abliterated: true,
+    },
+    AbliteratedSecurityModelEntry {
+        ollama_tag: "hf.co/huihui-ai/GLM-5.3-abliterated",
+        hf_repo: "huihui-ai/GLM-5.3-abliterated",
+        role: "glm53_general",
+        runtime: "ollama",
+        params_b: 30.0,
+        active_params_b: 3.6,
+        min_free_ram_gb: 16.0,
+        min_free_vram_gb: 14.0,
+        is_abliterated: true,
+    },
+    AbliteratedSecurityModelEntry {
+        ollama_tag: "huihui_ai/glm-4.7-flash-abliterated:latest",
+        hf_repo: "huihui-ai/Huihui-GLM-4.7-Flash-abliterated",
+        role: "glm47_flash_moe",
+        runtime: "ollama",
+        params_b: 30.0,
+        active_params_b: 3.6,
+        min_free_ram_gb: 16.0,
+        min_free_vram_gb: 14.0,
+        is_abliterated: true,
+    },
+    AbliteratedSecurityModelEntry {
+        ollama_tag: "hf.co/huihui-ai/Huihui-GLM-4.7-Flash-abliterated",
+        hf_repo: "huihui-ai/Huihui-GLM-4.7-Flash-abliterated",
+        role: "glm47_flash_hf",
+        runtime: "ollama",
+        params_b: 30.0,
+        active_params_b: 3.6,
+        min_free_ram_gb: 16.0,
+        min_free_vram_gb: 14.0,
+        is_abliterated: true,
+    },
+    AbliteratedSecurityModelEntry {
+        ollama_tag: "hf.co/jsantillana/glm-4.7-flash-abliterated",
+        hf_repo: "jsantillana/glm-4.7-flash-abliterated",
+        role: "glm47_flash_community",
+        runtime: "ollama",
+        params_b: 30.0,
+        active_params_b: 3.6,
+        min_free_ram_gb: 16.0,
+        min_free_vram_gb: 14.0,
+        is_abliterated: true,
+    },
+    AbliteratedSecurityModelEntry {
+        ollama_tag: "huihui_ai/deepseek-r1-abliterated:8b",
+        hf_repo: "huihui-ai/deepseek-r1-abliterated",
+        role: "reasoning_arbiter",
+        runtime: "ollama",
+        params_b: 8.0,
+        active_params_b: 8.0,
+        min_free_ram_gb: 8.0,
+        min_free_vram_gb: 6.0,
+        is_abliterated: true,
+    },
+    AbliteratedSecurityModelEntry {
+        ollama_tag: "hf.co/bartowski/glm-4-9b-chat-abliterated-GGUF:Q4_K_M",
+        hf_repo: "bartowski/glm-4-9b-chat-abliterated-GGUF",
+        role: "glm4_9b_compact",
+        runtime: "ollama",
+        params_b: 9.0,
+        active_params_b: 9.0,
+        min_free_ram_gb: 6.0,
+        min_free_vram_gb: 5.5,
+        is_abliterated: true,
+    },
+    AbliteratedSecurityModelEntry {
+        ollama_tag: "hf.co/byroneverson/glm-4-9b-chat-abliterated",
+        hf_repo: "byroneverson/glm-4-9b-chat-abliterated",
+        role: "glm4_9b_dense",
+        runtime: "ollama",
+        params_b: 9.0,
+        active_params_b: 9.0,
+        min_free_ram_gb: 6.0,
+        min_free_vram_gb: 5.5,
+        is_abliterated: true,
+    },
+    AbliteratedSecurityModelEntry {
+        ollama_tag: "hf.co/byroneverson/LongWriter-glm4-9b-abliterated",
+        hf_repo: "byroneverson/LongWriter-glm4-9b-abliterated",
+        role: "longwriter_report",
+        runtime: "ollama",
+        params_b: 9.0,
+        active_params_b: 9.0,
+        min_free_ram_gb: 6.0,
+        min_free_vram_gb: 5.5,
+        is_abliterated: true,
+    },
+    AbliteratedSecurityModelEntry {
+        ollama_tag: "fenkohq/foundation-sec-8b:latest",
+        hf_repo: "fdtn-ai/Foundation-Sec-8B",
+        role: "security_fallback",
+        runtime: "ollama",
+        params_b: 8.0,
+        active_params_b: 8.0,
+        min_free_ram_gb: 8.0,
+        min_free_vram_gb: 6.0,
+        is_abliterated: false,
+    },
+    AbliteratedSecurityModelEntry {
+        ollama_tag: "OpenYourMind/GLM-5.2-abliterated",
+        hf_repo: "OpenYourMind/GLM-5.2-abliterated",
+        role: "glm52_432b_nvfp4",
+        runtime: "vllm_docker",
+        params_b: 432.0,
+        active_params_b: 40.0,
+        min_free_ram_gb: 256.0,
+        min_free_vram_gb: 192.0,
+        is_abliterated: true,
+    },
+    AbliteratedSecurityModelEntry {
+        ollama_tag: "skyblanket/GLM-5-abliterated",
+        hf_repo: "skyblanket/GLM-5-abliterated",
+        role: "glm5_744b_bf16_moe",
+        runtime: "vllm_docker",
+        params_b: 744.0,
+        active_params_b: 40.0,
+        min_free_ram_gb: 512.0,
+        min_free_vram_gb: 384.0,
+        is_abliterated: true,
+    },
+];
+
+/// Returns true if the tag is an embedding or reranker model (must never be selected for generative tasks).
+pub fn is_embedding_model_tag(model_id: &str) -> bool {
+    let lower = model_id.trim().to_lowercase();
+    lower.contains("embed")
+        || lower.contains("bge-")
+        || lower.contains("e5-")
+        || lower.contains("all-minilm")
+        || lower.contains("rerank")
+        || lower.contains("snowflake-arctic-embed")
+}
+
+/// Returns true if the model ID represents an abliterated/obliterated or security-specialized model.
+pub fn is_security_abliterated_model(model_id: &str) -> bool {
+    let lower = model_id.trim().to_lowercase();
+    !is_embedding_model_tag(&lower)
+        && (lower.contains("abliterat")
+            || lower.contains("obliterat")
+            || lower.contains("foundation-sec")
+            || lower.contains("penclaw")
+            || lower.contains("cyber-glp-77"))
+}
+
+fn security_tag_fits_memory(tag: &str, free_ram_gb: f64, free_vram_gb: f64) -> bool {
+    let tl = tag.to_lowercase();
+    // Exact catalog lookup first so every calibrated abliterated model honors its runtime memory floor
+    if let Some(entry) = ABLITERATED_SECURITY_CATALOG.iter().find(|e| {
+        e.ollama_tag.eq_ignore_ascii_case(tag) || e.hf_repo.eq_ignore_ascii_case(tag)
+    }) {
+        return free_ram_gb >= entry.min_free_ram_gb || free_vram_gb >= entry.min_free_vram_gb;
+    }
+    if free_ram_gb < 48.0
+        && free_vram_gb < 48.0
+        && [
+            "70b",
+            "72b",
+            "405b",
+            "432b",
+            "671b",
+            "744b",
+            "755b",
+            "glm-5.2",
+            "glm-5-abliterated",
+        ]
+        .iter()
+        .any(|sz| tl.contains(sz))
+    {
+        return false;
+    }
+    if free_ram_gb < 16.0
+        && free_vram_gb < 14.0
+        && [
+            "30b",
+            "31b",
+            "32b",
+            "34b",
+            "27b",
+            "glm-4.7-flash",
+            "glm-5.3-abliterated",
+            "penclaw-glm-5.3",
+            "cyber-glp-77",
+        ]
+        .iter()
+        .any(|sz| tl.contains(sz))
+    {
+        return false;
+    }
+    if free_ram_gb < 10.0 && free_vram_gb < 8.0 && tl.contains("12b") {
+        return false;
+    }
+    if free_ram_gb < 8.0
+        && free_vram_gb < 6.0
+        && ["8b", "foundation-sec", "deepseek-r1"]
+            .iter()
+            .any(|sz| tl.contains(sz))
+    {
+        return false;
+    }
+    if free_ram_gb < 6.0
+        && free_vram_gb < 5.5
+        && ["9b", "7b", "glm-4-9b", "longwriter-glm4"]
+            .iter()
+            .any(|sz| tl.contains(sz))
+    {
+        return false;
+    }
+    true
+}
+
+/// Ranks installed Ollama tags for defensive security / RFCHunt auditing tasks, excluding
+/// embedding models and penalizing models that exceed runtime free RAM/VRAM.
+/// Mirrors RFCHunt's `select_preferred_ollama_security_model()`.
+pub fn select_preferred_ollama_security_model(
+    installed_tags: &[String],
+    free_ram_gb: f64,
+    free_vram_gb: f64,
+) -> Option<(String, Vec<String>)> {
+    let mut generative: Vec<String> = installed_tags
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && !is_embedding_model_tag(s))
+        .collect();
+    if generative.is_empty() {
+        return None;
+    }
+
+    generative.sort_by(|a, b| {
+        let rank = |tag: &str| -> (u8, String) {
+            let tl = tag.to_lowercase();
+            let fits_penalty: u8 = if security_tag_fits_memory(tag, free_ram_gb, free_vram_gb) { 0 } else { 10 };
+            let is_abl = tl.contains("abliterat") || tl.contains("obliterat");
+            let tier: u8 = if is_abl
+                && (tl.contains("foundation-sec")
+                    || tl.contains("cisco")
+                    || tl.contains("penclaw")
+                    || tl.contains("cyber-glp-77"))
+            {
+                0
+            } else if is_abl
+                && (tl.contains("glm-5.3") || tl.contains("glm-4.7") || tl.contains("gemma-4-12b"))
+            {
+                1
+            } else if is_abl
+                && (tl.contains("glm-4-9b") || tl.contains("longwriter-glm4") || tl.contains("deepseek-r1"))
+            {
+                2
+            } else if is_abl {
+                3
+            } else if tl.contains("foundation-sec") || tl.contains("sec") || tl.contains("cyber") {
+                4
+            } else if tl.contains("qwen2.5") {
+                5
+            } else if tl.contains("deepseek") || tl.contains("glm") || tl.contains("gemma") {
+                6
+            } else {
+                7
+            };
+            (fits_penalty + tier, tl)
+        };
+        rank(a).cmp(&rank(b))
+    });
+
+    let primary = generative.remove(0);
+    Some((primary, generative))
+}
+
+/// Hardware-fitted evaluation of abliterated security models for ModelFusion security/RFCHunt tasks.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SecurityAbliteratedEvaluation {
+    pub detected_free_ram_gb: f64,
+    pub detected_free_vram_gb: f64,
+    pub active_tier: String,
+    pub fitted_ollama_models: Vec<String>,
+    pub installed_security_models: Vec<String>,
+    pub vllm_docker_models: Vec<String>,
+    pub recommended_primary: String,
+    pub recommended_panel: Vec<String>,
+}
+
+impl SystemMemory {
+    /// Deterministic, runtime-memory-gated selection of RFCHunt abliterated security specialists
+    /// against an explicit list of installed Ollama tags (used both in production and zero-mock tests).
+    pub fn assess_security_abliterated_with_installed(
+        &self,
+        installed_tags: &[String],
+    ) -> SecurityAbliteratedEvaluation {
+        let free_ram = self.free_ram_gb;
+        let free_vram = self.gpu_vram_free_gb;
+
+        let mut fitted_ollama_models = Vec::new();
+        let mut vllm_docker_models = Vec::new();
+
+        for entry in ABLITERATED_SECURITY_CATALOG {
+            let fits = free_ram >= entry.min_free_ram_gb || free_vram >= entry.min_free_vram_gb;
+            if !fits {
+                continue;
+            }
+            if entry.runtime == "ollama" {
+                fitted_ollama_models.push(entry.ollama_tag.to_string());
+            } else if entry.runtime == "vllm_docker" {
+                vllm_docker_models.push(entry.hf_repo.to_string());
+            }
+        }
+
+        // Rank installed security/abliterated models that fit memory
+        let mut installed_security_models: Vec<String> = Vec::new();
+        if let Some((primary, rest)) =
+            select_preferred_ollama_security_model(installed_tags, free_ram, free_vram)
+        {
+            for tag in std::iter::once(primary).chain(rest.into_iter()) {
+                if is_security_abliterated_model(&tag)
+                    && security_tag_fits_memory(&tag, free_ram, free_vram)
+                    && !installed_security_models.iter().any(|x| x.eq_ignore_ascii_case(&tag))
+                {
+                    installed_security_models.push(tag);
+                }
+            }
+        }
+
+        // Build a complementary 3-specialist defensive panel (Boundary/Security + Protocol/Code + GLM/Reasoning Arbiter)
+        let mut recommended_panel: Vec<String> = Vec::new();
+        fn push_unique_tag(panel: &mut Vec<String>, tag: String) {
+            if !panel.iter().any(|x| x.eq_ignore_ascii_case(&tag)) {
+                panel.push(tag);
+            }
+        }
+
+        // 1. Prefer already-installed fitted abliterated/security models across complementary roles first
+        let find_installed = |pred: &dyn Fn(&str) -> bool| -> Option<String> {
+            installed_security_models
+                .iter()
+                .find(|t| pred(&t.to_lowercase()))
+                .cloned()
+        };
+
+        if let Some(m) = find_installed(&|l| l.contains("foundation-sec") || l.contains("penclaw") || l.contains("cyber-glp-77")) {
+            push_unique_tag(&mut recommended_panel, m);
+        }
+        if let Some(m) = find_installed(&|l| l.contains("gemma")) {
+            push_unique_tag(&mut recommended_panel, m);
+        }
+        if let Some(m) = find_installed(&|l| l.contains("glm") || l.contains("deepseek-r1")) {
+            push_unique_tag(&mut recommended_panel, m);
+        }
+        for m in &installed_security_models {
+            if recommended_panel.len() >= 3 {
+                break;
+            }
+            push_unique_tag(&mut recommended_panel, m.clone());
+        }
+
+        // 2. Top up panel from catalog entries that fit runtime free RAM/VRAM if fewer than 3 installed
+        for cand in &fitted_ollama_models {
+            if recommended_panel.len() >= 3 {
+                break;
+            }
+            push_unique_tag(&mut recommended_panel, cand.clone());
+        }
+
+        // 3. Low-RAM fallback (< 6 GB free): fall back to compact Qwen2.5 so we never OOM
+        let recommended_primary = recommended_panel
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "qwen2.5:1.5b".to_string());
+
+        let active_tier = if !vllm_docker_models.is_empty() {
+            "Tier 4: High-Memory vLLM + Local Abliterated Security Panel (256GB+ RAM)".to_string()
+        } else if free_ram >= 16.0 || free_vram >= 14.0 {
+            "Tier 3: Full 3-Specialist Abliterated Security Panel (Foundation-Sec + Gemma-4-12B + GLM-5.3/4.7-Flash MoE)".to_string()
+        } else if free_ram >= 10.0 || free_vram >= 8.0 {
+            "Tier 2: Mid-RAM Abliterated Security Panel (Foundation-Sec 8B + Gemma-4-12B + GLM-4-9B / DeepSeek-R1 8B)".to_string()
+        } else if free_ram >= 6.0 || free_vram >= 5.5 {
+            "Tier 1: Compact Abliterated Security Panel (GLM-4-9B Q4_K_M / LongWriter-9B)".to_string()
+        } else {
+            "Tier 0: Low-Memory Safe Fallback (qwen2.5:1.5b)".to_string()
+        };
+
+        SecurityAbliteratedEvaluation {
+            detected_free_ram_gb: free_ram,
+            detected_free_vram_gb: free_vram,
+            active_tier,
+            fitted_ollama_models,
+            installed_security_models,
+            vllm_docker_models,
+            recommended_primary,
+            recommended_panel,
+        }
+    }
+
+    /// Evaluates fitted RFCHunt abliterated security models against live Ollama installed tags.
+    pub fn assess_security_abliterated_for_task(&self) -> SecurityAbliteratedEvaluation {
+        let installed = get_ollama_cached_models();
+        self.assess_security_abliterated_with_installed(&installed)
+    }
 }
 
 /// Check if FFmpeg is available.
@@ -1897,6 +2437,136 @@ mod tests {
         assert!(eval_tier6_single.fusion_only);
         assert!(!eval_tier6_single.is_fusion_mode);
         assert!(eval_tier6_single.status_reason.contains("strictly reserved for Multi-Model Fusion"));
+    }
+
+    #[test]
+    fn test_rfchunt_abliterated_catalog_mapping_and_params() {
+        assert_eq!(ABLITERATED_SECURITY_CATALOG.len(), 15);
+
+        // Preserve hf.co/... and RFCHunt abliterated tags verbatim (never clobber to standard glm4/glm-4.7-flash)
+        assert_eq!(
+            map_hf_to_ollama("hf.co/OBLITERATUS/Gemma-4-12B-OBLITERATED:Q4_K_M"),
+            "hf.co/OBLITERATUS/Gemma-4-12B-OBLITERATED:Q4_K_M"
+        );
+        assert_eq!(
+            map_hf_to_ollama("OBLITERATUS/Gemma-4-12B-OBLITERATED"),
+            "hf.co/OBLITERATUS/Gemma-4-12B-OBLITERATED:Q4_K_M"
+        );
+        assert_eq!(
+            map_hf_to_ollama("huihui-ai/foundation-sec-abliterated"),
+            "huihui_ai/foundation-sec-abliterated:8b"
+        );
+        assert_eq!(
+            map_hf_to_ollama("audnai/penclaw-GLM-5.3-abliterated"),
+            "hf.co/audnai/penclaw-GLM-5.3-abliterated"
+        );
+        assert_eq!(
+            map_hf_to_ollama("msuiche/GLM-5.3-abliterated-cyber-GLP-77"),
+            "hf.co/msuiche/GLM-5.3-abliterated-cyber-GLP-77"
+        );
+        assert_eq!(
+            map_hf_to_ollama("huihui-ai/GLM-5.3-abliterated"),
+            "hf.co/huihui-ai/GLM-5.3-abliterated"
+        );
+        assert_eq!(
+            map_hf_to_ollama("huihui_ai/glm-4.7-flash-abliterated:latest"),
+            "huihui_ai/glm-4.7-flash-abliterated:latest"
+        );
+        assert_eq!(
+            map_hf_to_ollama("bartowski/glm-4-9b-chat-abliterated-GGUF"),
+            "hf.co/bartowski/glm-4-9b-chat-abliterated-GGUF:Q4_K_M"
+        );
+        assert_eq!(
+            map_hf_to_ollama("byroneverson/LongWriter-glm4-9b-abliterated"),
+            "hf.co/byroneverson/LongWriter-glm4-9b-abliterated"
+        );
+        assert_eq!(
+            map_hf_to_ollama("huihui-ai/deepseek-r1-abliterated"),
+            "huihui_ai/deepseek-r1-abliterated:8b"
+        );
+
+        // Parameter sizing accuracy for MoE vs dense abliterated models
+        assert_eq!(estimate_params_billions("hf.co/audnai/penclaw-GLM-5.3-abliterated"), Some(30.0));
+        assert_eq!(estimate_active_params_billions("hf.co/audnai/penclaw-GLM-5.3-abliterated"), Some(3.6));
+        assert_eq!(estimate_params_billions("hf.co/msuiche/GLM-5.3-abliterated-cyber-GLP-77"), Some(30.0));
+        assert_eq!(estimate_active_params_billions("hf.co/msuiche/GLM-5.3-abliterated-cyber-GLP-77"), Some(3.6));
+        assert_eq!(estimate_params_billions("hf.co/OBLITERATUS/Gemma-4-12B-OBLITERATED:Q4_K_M"), Some(12.0));
+        assert_eq!(estimate_params_billions("huihui_ai/foundation-sec-abliterated:8b"), Some(8.0));
+        assert_eq!(estimate_params_billions("OpenYourMind/GLM-5.2-abliterated"), Some(432.0));
+        assert_eq!(estimate_params_billions("skyblanket/GLM-5-abliterated"), Some(744.0));
+
+        // Embedding exclusion
+        assert!(is_embedding_model_tag("nomic-embed-text:latest"));
+        assert!(is_embedding_model_tag("embeddinggemma:latest"));
+        assert!(!is_embedding_model_tag("huihui_ai/foundation-sec-abliterated:8b"));
+    }
+
+    #[test]
+    fn test_assess_security_abliterated_memory_gating() {
+        let installed = vec![
+            "nomic-embed-text:latest".to_string(),
+            "huihui_ai/foundation-sec-abliterated:8b".to_string(),
+            "hf.co/OBLITERATUS/Gemma-4-12B-OBLITERATED:Q4_K_M".to_string(),
+            "huihui_ai/glm-4.7-flash-abliterated:latest".to_string(),
+            "hf.co/bartowski/glm-4-9b-chat-abliterated-GGUF:Q4_K_M".to_string(),
+        ];
+
+        // 1. Low RAM (5 GB free, 2 GB VRAM) -> safe compact fallback, zero OOM models
+        let mem_low = SystemMemory {
+            total_ram_gb: 16.0,
+            free_ram_gb: 5.0,
+            cpu_cores: 8,
+            gpu_name: None,
+            gpu_vram_total_gb: 0.0,
+            gpu_vram_free_gb: 0.0,
+        };
+        let eval_low = mem_low.assess_security_abliterated_with_installed(&installed);
+        assert!(eval_low.vllm_docker_models.is_empty());
+        assert_eq!(eval_low.recommended_primary, "qwen2.5:1.5b");
+
+        // 2. Compact RAM (7 GB free) -> fits 9B Q4_K_M, excludes 12B and 30B MoE
+        let mem_compact = SystemMemory {
+            total_ram_gb: 16.0,
+            free_ram_gb: 7.0,
+            cpu_cores: 8,
+            gpu_name: None,
+            gpu_vram_total_gb: 0.0,
+            gpu_vram_free_gb: 0.0,
+        };
+        let eval_compact = mem_compact.assess_security_abliterated_with_installed(&installed);
+        assert!(eval_compact.recommended_panel.iter().any(|m| m.contains("glm-4-9b-chat-abliterated")));
+        assert!(!eval_compact.fitted_ollama_models.iter().any(|m| m.contains("glm-4.7-flash")));
+        assert!(!eval_compact.recommended_panel.iter().any(|m| m.contains("embed")));
+
+        // 3. Workstation RAM (32 GB free) -> full 3-specialist complementary panel (Boundary + Gemma-4-12B + GLM-4.7-Flash)
+        let mem_ws = SystemMemory {
+            total_ram_gb: 64.0,
+            free_ram_gb: 32.0,
+            cpu_cores: 16,
+            gpu_name: Some("RTX 4000".to_string()),
+            gpu_vram_total_gb: 8.0,
+            gpu_vram_free_gb: 6.5,
+        };
+        let eval_ws = mem_ws.assess_security_abliterated_with_installed(&installed);
+        assert_eq!(eval_ws.recommended_panel.len(), 3);
+        assert_eq!(eval_ws.recommended_panel[0], "huihui_ai/foundation-sec-abliterated:8b");
+        assert_eq!(eval_ws.recommended_panel[1], "hf.co/OBLITERATUS/Gemma-4-12B-OBLITERATED:Q4_K_M");
+        assert_eq!(eval_ws.recommended_panel[2], "huihui_ai/glm-4.7-flash-abliterated:latest");
+        assert!(eval_ws.vllm_docker_models.is_empty());
+
+        // 4. High-Memory vLLM node (520 GB free) -> unlocks 432B and 744B vLLM Docker models
+        let mem_vllm = SystemMemory {
+            total_ram_gb: 512.0,
+            free_ram_gb: 520.0,
+            cpu_cores: 64,
+            gpu_name: None,
+            gpu_vram_total_gb: 0.0,
+            gpu_vram_free_gb: 0.0,
+        };
+        let eval_vllm = mem_vllm.assess_security_abliterated_with_installed(&installed);
+        assert_eq!(eval_vllm.vllm_docker_models.len(), 2);
+        assert!(eval_vllm.vllm_docker_models.iter().any(|m| m == "OpenYourMind/GLM-5.2-abliterated"));
+        assert!(eval_vllm.vllm_docker_models.iter().any(|m| m == "skyblanket/GLM-5-abliterated"));
     }
 
 }

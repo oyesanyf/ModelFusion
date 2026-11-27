@@ -404,9 +404,47 @@ pub(crate) fn pick_best_ollama_fallback(target: &str, list: &[String]) -> Option
     if list.is_empty() {
         return None;
     }
+    // Never fall back to an embedding or reranking model for generative chat/fusion
+    let generative: Vec<&String> = list
+        .iter()
+        .filter(|m| !model_selection::memory::is_embedding_model_tag(m))
+        .collect();
+    let pool: Vec<&String> = if generative.is_empty() {
+        list.iter().collect()
+    } else {
+        generative
+    };
+
     let target_lower = target.to_lowercase();
+    let target_wants_abliterated = target_lower.contains("abliterat")
+        || target_lower.contains("obliterat")
+        || target_lower.contains("foundation-sec")
+        || target_lower.contains("penclaw")
+        || target_lower.contains("cyber-glp-77");
+
+    if target_wants_abliterated {
+        // Prefer another installed abliterated/security model first (respecting runtime free RAM/VRAM)
+        let sys = model_selection::memory::SystemMemory::detect();
+        let owned_pool: Vec<String> = pool.iter().map(|s| (*s).clone()).collect();
+        if let Some((best_sec, _)) = model_selection::memory::select_preferred_ollama_security_model(
+            &owned_pool,
+            sys.free_ram_gb,
+            sys.gpu_vram_free_gb,
+        ) {
+            if model_selection::memory::is_security_abliterated_model(&best_sec)
+                || best_sec.to_lowercase().contains("foundation-sec")
+            {
+                return Some(best_sec);
+            }
+        }
+    }
+
     let family = if target_lower.contains("flint") {
         "flint"
+    } else if target_lower.contains("foundation-sec") {
+        "foundation-sec"
+    } else if target_lower.contains("glm") {
+        "glm"
     } else if target_lower.contains("qwen2.5") {
         "qwen2.5"
     } else if target_lower.contains("qwen") {
@@ -426,21 +464,36 @@ pub(crate) fn pick_best_ollama_fallback(target: &str, list: &[String]) -> Option
     };
 
     if !family.is_empty() {
-        let matching: Vec<&String> = list.iter().filter(|m| m.contains(family)).collect();
+        let matching: Vec<&String> = pool
+            .iter()
+            .copied()
+            .filter(|m| m.to_lowercase().contains(family))
+            .collect();
         if !matching.is_empty() {
+            if target_wants_abliterated {
+                if let Some(abl) = matching.iter().find(|m| {
+                    let ml = m.to_lowercase();
+                    ml.contains("abliterat") || ml.contains("obliterat")
+                }) {
+                    return Some((*abl).clone());
+                }
+            }
             return matching.iter().find(|m| m.contains("32b"))
                 .or_else(|| matching.iter().find(|m| m.contains("14b")))
+                .or_else(|| matching.iter().find(|m| m.contains("12b")))
+                .or_else(|| matching.iter().find(|m| m.contains("9b")))
+                .or_else(|| matching.iter().find(|m| m.contains("8b")))
                 .or_else(|| matching.iter().find(|m| m.contains("7b")))
                 .or_else(|| matching.first())
                 .map(|s| (*s).clone());
         }
     }
 
-    list.iter().find(|m| m.contains("flint"))
-        .or_else(|| list.iter().find(|m| m.contains("qwen2.5:32b") || m.contains("qwen2.5:14b") || m.contains("qwen2.5:7b")))
-        .or_else(|| list.iter().find(|m| m.contains("qwen") || m.contains("llama") || m.contains("deepseek") || m.contains("mistral") || m.contains("gemma") || m.contains("phi")))
-        .or_else(|| list.first())
-        .cloned()
+    pool.iter().find(|m| m.contains("flint"))
+        .or_else(|| pool.iter().find(|m| m.contains("qwen2.5:32b") || m.contains("qwen2.5:14b") || m.contains("qwen2.5:7b")))
+        .or_else(|| pool.iter().find(|m| m.contains("qwen") || m.contains("llama") || m.contains("deepseek") || m.contains("mistral") || m.contains("gemma") || m.contains("phi") || m.contains("glm")))
+        .or_else(|| pool.first())
+        .map(|s| (*s).clone())
 }
 
 pub(crate) fn is_ollama_model_in_list(target: &str, list: &[String]) -> bool {
@@ -699,7 +752,8 @@ impl HuggingFaceProvider {
             "stream": false,
             "options": {
                 "temperature": self.config.temperature,
-                "num_predict": self.config.max_tokens
+                "num_predict": self.config.max_tokens,
+                "repeat_penalty": 1.15
             }
         });
 
@@ -1071,7 +1125,8 @@ impl LLMProvider for LocalProvider {
             "prompt": clean_prompt,
             "stream": false,
             "options": {
-                "temperature": self.config.temperature
+                "temperature": self.config.temperature,
+                "repeat_penalty": 1.15
             }
         });
 
@@ -1150,9 +1205,74 @@ impl LLMProvider for LocalProvider {
     }
 }
 
+/// Detects whether an LLM response is an AI safety refusal rather than technical output.
+/// Used during defensive security auditing and multi-model fusion arbitration so refusals
+/// from censored models can be filtered and rescued by fitted local abliterated specialists.
+pub fn is_refusal_response(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let lower = trimmed.to_lowercase();
+    const EXPLICIT_REFUSAL_MARKERS: &[&str] = &[
+        "i cannot fulfill",
+        "i cannot assist",
+        "i cannot generate",
+        "i am unable to generate",
+        "i am unable to provide",
+        "as an ai",
+        "as a language model",
+        "as a responsible ai",
+        "against safety guidelines",
+        "against my safety policies",
+        "ethical guidelines",
+        "cannot assist with creating exploits",
+        "cannot create attacks",
+        "cannot provide exploit payloads",
+        "cannot create code that exploits",
+        "i'm sorry, but i cannot",
+        "i am sorry, but i cannot",
+        "cannot generate harmful",
+        "harmful attacks",
+    ];
+    if EXPLICIT_REFUSAL_MARKERS.iter().any(|m| lower.contains(m)) {
+        return true;
+    }
+    let has_refusal_verb = ["cannot", "can't", "unable to", "i'm sorry", "i am sorry", "i will not", "i won't", "refuse to"]
+        .iter()
+        .any(|v| lower.contains(v));
+    if has_refusal_verb
+        && ["harmful or malicious", "potentially harmful", "malicious payloads"]
+            .iter()
+            .any(|adj| lower.contains(adj))
+    {
+        return true;
+    }
+    false
+}
+
 /// Maps HuggingFace model IDs to their Ollama equivalents.
+/// Preserves `hf.co/...` GGUF tags, RFCHunt abliterated/security models, and GLM models verbatim.
 pub fn map_hf_to_ollama(hf_model_id: &str) -> String {
-    let id = hf_model_id.to_lowercase();
+    let trimmed = hf_model_id.trim();
+    let id = trimmed.to_lowercase();
+
+    // First preserve hf.co/..., abliterated/obliterated, foundation-sec, and GLM tags via the shared catalog mapper
+    if id.starts_with("hf.co/")
+        || id.contains("abliterat")
+        || id.contains("obliterat")
+        || id.contains("foundation-sec")
+        || id.starts_with("huihui_ai/")
+        || id.starts_with("fenkohq/")
+        || id.contains("glm-4.7-flash")
+        || id.contains("glm-4-9b")
+        || id.contains("glm-5.3")
+        || id.contains("glm-5.2")
+        || id.starts_with("glm4")
+    {
+        return model_selection::memory::map_hf_to_ollama(trimmed);
+    }
+
     match id.as_str() {
         // Recursive Flint family (Default Coding & Fusion Model)
         _ if id.contains("flint") => "flint:latest".to_string(),
@@ -1212,11 +1332,38 @@ pub fn map_hf_to_ollama(hf_model_id: &str) -> String {
 }
 
 /// List of HuggingFace model ID substrings that are known to have Ollama equivalents
-/// and are small enough to run locally.
+/// and are small enough to run locally (including RFCHunt abliterated/security models).
 pub const OLLAMA_COMPATIBLE_MODELS: &[&str] = &[
     "RecursiveSI/flint",
     "flint:latest",
     "flint",
+    // RFCHunt Abliterated & Security Specialist Models (local Ollama & hf.co GGUF)
+    "huihui_ai/foundation-sec-abliterated:8b",
+    "foundation-sec-abliterated",
+    "fenkohq/foundation-sec-8b:latest",
+    "foundation-sec-8b",
+    "hf.co/OBLITERATUS/Gemma-4-12B-OBLITERATED:Q4_K_M",
+    "OBLITERATUS/Gemma-4-12B-OBLITERATED",
+    "hf.co/audnai/penclaw-GLM-5.3-abliterated",
+    "audnai/penclaw-GLM-5.3-abliterated",
+    "hf.co/msuiche/GLM-5.3-abliterated-cyber-GLP-77",
+    "msuiche/GLM-5.3-abliterated-cyber-GLP-77",
+    "hf.co/huihui-ai/GLM-5.3-abliterated",
+    "huihui-ai/GLM-5.3-abliterated",
+    "huihui_ai/glm-4.7-flash-abliterated:latest",
+    "hf.co/huihui-ai/Huihui-GLM-4.7-Flash-abliterated",
+    "huihui-ai/Huihui-GLM-4.7-Flash-abliterated",
+    "hf.co/jsantillana/glm-4.7-flash-abliterated",
+    "jsantillana/glm-4.7-flash-abliterated",
+    "huihui_ai/deepseek-r1-abliterated:8b",
+    "deepseek-r1-abliterated",
+    "hf.co/bartowski/glm-4-9b-chat-abliterated-GGUF:Q4_K_M",
+    "bartowski/glm-4-9b-chat-abliterated-GGUF",
+    "hf.co/byroneverson/glm-4-9b-chat-abliterated",
+    "byroneverson/glm-4-9b-chat-abliterated",
+    "hf.co/byroneverson/LongWriter-glm4-9b-abliterated",
+    "byroneverson/LongWriter-glm4-9b-abliterated",
+    // Standard workhorse families
     "Qwen2.5-72B-Instruct",
     "Qwen2.5-32B-Instruct",
     "Qwen2.5-7B-Instruct",
@@ -1248,7 +1395,19 @@ pub const OLLAMA_COMPATIBLE_MODELS: &[&str] = &[
 
 /// Returns true if a model ID is known to be available in Ollama.
 pub fn is_ollama_compatible(model_id: &str) -> bool {
-    OLLAMA_COMPATIBLE_MODELS.iter().any(|m| model_id.contains(m))
+    let lower = model_id.trim().to_lowercase();
+    if lower.starts_with("hf.co/") || lower.starts_with("huihui_ai/") || lower.starts_with("fenkohq/") {
+        return true;
+    }
+    if (lower.contains("abliterat") || lower.contains("obliterat"))
+        && !lower.contains("glm-5.2-abliterated")
+        && !lower.contains("glm-5-abliterated")
+    {
+        return true;
+    }
+    OLLAMA_COMPATIBLE_MODELS
+        .iter()
+        .any(|m| lower.contains(&m.to_lowercase()))
 }
 
 pub fn extract_media_from_prompt(prompt: &str) -> (String, Vec<String>, Vec<String>) {
@@ -1368,5 +1527,47 @@ mod tests {
         // deepseek falls back to installed deepseek-r1:1.5b
         let fallback_ds = pick_best_ollama_fallback("deepseek-r1:32b", &installed);
         assert_eq!(fallback_ds, Some("deepseek-r1:1.5b".to_string()));
+    }
+
+    #[test]
+    fn test_abliterated_mapping_compatibility_and_refusal_guard() {
+        // Abliterated & hf.co tags must NEVER collapse to qwen2.5:1.5b
+        assert_eq!(
+            map_hf_to_ollama("hf.co/OBLITERATUS/Gemma-4-12B-OBLITERATED:Q4_K_M"),
+            "hf.co/OBLITERATUS/Gemma-4-12B-OBLITERATED:Q4_K_M"
+        );
+        assert_eq!(
+            map_hf_to_ollama("huihui_ai/foundation-sec-abliterated:8b"),
+            "huihui_ai/foundation-sec-abliterated:8b"
+        );
+        assert_eq!(
+            map_hf_to_ollama("audnai/penclaw-GLM-5.3-abliterated"),
+            "hf.co/audnai/penclaw-GLM-5.3-abliterated"
+        );
+        assert_eq!(
+            map_hf_to_ollama("msuiche/GLM-5.3-abliterated-cyber-GLP-77"),
+            "hf.co/msuiche/GLM-5.3-abliterated-cyber-GLP-77"
+        );
+        assert!(is_ollama_compatible("hf.co/OBLITERATUS/Gemma-4-12B-OBLITERATED:Q4_K_M"));
+        assert!(is_ollama_compatible("huihui_ai/foundation-sec-abliterated:8b"));
+        assert!(is_ollama_compatible("hf.co/audnai/penclaw-GLM-5.3-abliterated"));
+        assert!(is_ollama_compatible("hf.co/bartowski/glm-4-9b-chat-abliterated-GGUF:Q4_K_M"));
+        // High-memory vLLM-only 432B/744B repos are NOT local Ollama compatible
+        assert!(!is_ollama_compatible("OpenYourMind/GLM-5.2-abliterated"));
+        assert!(!is_ollama_compatible("skyblanket/GLM-5-abliterated"));
+
+        // Fallback for an uninstalled abliterated model prefers another installed abliterated model and never picks an embedding model
+        let installed = vec![
+            "nomic-embed-text:latest".to_string(),
+            "qwen2.5:7b".to_string(),
+            "huihui_ai/foundation-sec-abliterated:8b".to_string(),
+        ];
+        let fb = pick_best_ollama_fallback("hf.co/audnai/penclaw-GLM-5.3-abliterated", &installed);
+        assert_eq!(fb, Some("huihui_ai/foundation-sec-abliterated:8b".to_string()));
+
+        // Refusal guard catches censored refusals without flagging real defensive technical analysis
+        assert!(is_refusal_response("I'm sorry, but I cannot assist with creating exploits or security testing payloads."));
+        assert!(is_refusal_response("As an AI language model, I cannot fulfill this request."));
+        assert!(!is_refusal_response("Confirmed CWE-22 path traversal at src/store.ts:48 because fs.realpathSync is not called on intermediate directories."));
     }
 }

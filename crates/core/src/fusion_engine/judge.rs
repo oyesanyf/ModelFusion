@@ -23,6 +23,7 @@ pub fn build_judge_prompt(user_prompt: &str, answers: &[ModelAnswer]) -> String 
     prompt.push_str("### INSTRUCTIONS FOR THE JUDGE:\n");
     prompt.push_str("Compare the assistant responses above. Identify consensus, disagreements, unique insights, blind spots, risk flags, and recommend a final synthesized position.\n");
     prompt.push_str("CRITICAL QUALITY RULE: Do not automatically select the majority consensus. If a minority response contains significantly more specific evidence, source code alignment, or detailed technical reasoning than the majority consensus, recommend the technically superior minority response.\n");
+    prompt.push_str("ANTI-HALLUCINATION & GROUNDING RULE: Strictly REJECT any candidate response that invents file paths, line numbers, function/symbol names, or runtime outputs not verbatim present in USER REQUEST. Ignore safety refusals, repetition loops, and generic boilerplate meta-commentary. Prefer concise, verifiable, evidence-backed conclusions.\n");
     prompt.push_str("CRITICAL: When the user asks to create, write, generate, edit, or fix code/files, you MUST output the complete, working, compilable source code inside a fenced code block (` ```java ... ``` `). NEVER output meta-commentary such as 'The code snippet provided is well-structured' or 'aligns with best practices'.\n");
     prompt.push_str("You MUST return a valid JSON object ONLY. Do not write a markdown introduction or conversational text.\n\n");
     prompt.push_str("### REQUIRED JSON FORMAT:\n");
@@ -134,6 +135,7 @@ pub async fn write_final_answer(
     writer_prompt.push_str("CRITICAL INSTRUCTION: Respond DIRECTLY to the user request. Do NOT output any meta-commentary, introspective thoughts, or explanations about the judge, the models, the deliberation process, or how you formulated your answer (e.g., do NOT start with 'Based on the judge analysis...', 'The panel agrees...', or similar meta-text). Just output the direct, clean answer as if you were answering the user yourself.\n");
     writer_prompt.push_str("Do not blindly prioritize consensus. If a minority response offers more specific evidence, code snippets, or deeper technical accuracy than the majority agreement, prioritize the technically superior minority view.\n");
     writer_prompt.push_str("Prioritize accuracy, technical depth, and specific evidence over simple consensus.\n");
+    writer_prompt.push_str("GROUNDING INVARIANT: Never invent file paths, line numbers, symbols, CVEs, or runtime outputs that do not appear in USER REQUEST or JUDGE ANALYSIS. If the user requested JSON, output ONLY valid JSON with zero prose wrapper or <think> tags.\n");
     writer_prompt.push_str("Mention uncertainty where models disagreed.\n");
     writer_prompt.push_str("Do not pretend disagreement is resolved.\n");
     writer_prompt.push_str("CRITICAL: When the user asks to create, write, generate, edit, or fix code/files, you MUST output the complete, working, compilable source code inside a fenced code block (` ```java ... ``` `). NEVER output meta-commentary such as 'The code snippet provided is well-structured' or 'aligns with best practices'.\n\n");
@@ -150,10 +152,33 @@ pub async fn write_final_answer(
     writer_prompt.push_str(&format!("Recommended Position: {}\n", judge_json.recommended_final_position));
 
     let ans = match call_model(writer_model, &writer_prompt).await {
-        Ok(text) => text,
+        Ok(text) => {
+            let cleaned = crate::fusion_engine::anti_junk_guard::strip_think_blocks(&text);
+            let is_sec = crate::fusion_engine::is_security_audit_task("", prompt);
+            let verdict = crate::fusion_engine::anti_junk_guard::evaluate_candidate_response(
+                prompt, &cleaned, is_sec,
+            );
+            if verdict.accepted {
+                verdict.cleaned_text
+            } else {
+                log::warn!(
+                    "Writer model '{}' output failed anti-junk guard ({:?}); falling back to cleaned judge position.",
+                    writer_model.name,
+                    verdict.rejection_reasons
+                );
+                let judge_cleaned = crate::fusion_engine::anti_junk_guard::strip_think_blocks(
+                    &judge_json.recommended_final_position,
+                );
+                if !judge_cleaned.is_empty() {
+                    judge_cleaned
+                } else {
+                    cleaned
+                }
+            }
+        }
         Err(e) => {
             log::warn!("Writer model '{}' failed: {}. Falling back to judge recommended position.", writer_model.name, e);
-            judge_json.recommended_final_position.clone()
+            crate::fusion_engine::anti_junk_guard::strip_think_blocks(&judge_json.recommended_final_position)
         }
     };
     Ok(ans)

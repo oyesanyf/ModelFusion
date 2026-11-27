@@ -108,6 +108,8 @@ impl HuggingFaceOrchestrator {
             detection.task_type
         };
 
+        let is_security_audit = crate::fusion_engine::is_security_audit_task(&task_name, prompt);
+
         // Determine final model selection
         let mut candidates = Vec::new();
         let selection_info;
@@ -120,12 +122,28 @@ impl HuggingFaceOrchestrator {
             candidates.push("meta-llama/Llama-3.1-8B-Instruct".to_string());
             selection_info = "default openai model".to_string();
         } else {
+            // For defensive security / RFCHunt audit tasks, prioritize runtime-memory-fitted abliterated security models
+            if is_security_audit {
+                let sec_eval = model_selection::memory::SystemMemory::detect_live()
+                    .assess_security_abliterated_for_task();
+                for sec_model in sec_eval.recommended_panel.into_iter().take(3) {
+                    if !candidates.iter().any(|c| c.eq_ignore_ascii_case(&sec_model)) {
+                        candidates.push(sec_model);
+                    }
+                }
+            }
             // Use enhanced selection from DB
             match EnhancedModelSelector::new(&self.db_path) {
                 Err(e) => {
                     log::warn!("Could not open database for selection: {}. Using fallback model.", e);
-                    candidates.push("HuggingFaceTB/SmolLM2-135M-Instruct".to_string());
-                    selection_info = "db error fallback".to_string();
+                    if candidates.is_empty() {
+                        candidates.push("HuggingFaceTB/SmolLM2-135M-Instruct".to_string());
+                    }
+                    selection_info = if is_security_audit && !candidates.is_empty() {
+                        "abliterated security catalog (db fallback)".to_string()
+                    } else {
+                        "db error fallback".to_string()
+                    };
                 }
                 Ok(selector) => {
                     let strategy = selection_strategy.unwrap_or(SelectionStrategy::MultiObjective);
@@ -143,8 +161,14 @@ impl HuggingFaceOrchestrator {
                     match selector.select_best_model(&task_name, prompt, strategy, max_candidates, Some(self.budget)) {
                         Err(e) => {
                             log::warn!("Selection failed: {}. Using fallback model.", e);
-                            candidates.push("HuggingFaceTB/SmolLM2-135M-Instruct".to_string());
-                            selection_info = "selection failure fallback".to_string();
+                            if candidates.is_empty() {
+                                candidates.push("HuggingFaceTB/SmolLM2-135M-Instruct".to_string());
+                            }
+                            selection_info = if is_security_audit && !candidates.is_empty() {
+                                "abliterated security catalog".to_string()
+                            } else {
+                                "selection failure fallback".to_string()
+                            };
                         }
                         Ok(res) => {
                             if self.verbose {
@@ -153,8 +177,16 @@ impl HuggingFaceOrchestrator {
                                     res.strategy, res.best_model.model_id, res.confidence_score
                                 );
                             }
-                            candidates = res.all_candidates.into_iter().map(|c| c.model_id).collect();
-                            selection_info = format!("strategy: {}", res.strategy);
+                            for c in res.all_candidates {
+                                if !candidates.iter().any(|existing| existing.eq_ignore_ascii_case(&c.model_id)) {
+                                    candidates.push(c.model_id);
+                                }
+                            }
+                            selection_info = if is_security_audit {
+                                format!("abliterated security + strategy: {}", res.strategy)
+                            } else {
+                                format!("strategy: {}", res.strategy)
+                            };
                         }
                     }
                 }
@@ -165,7 +197,7 @@ impl HuggingFaceOrchestrator {
             candidates.push("HuggingFaceTB/SmolLM2-135M-Instruct".to_string());
         }
 
-        // Execute task (loop through candidates in order of ranking)
+        // Execute task (loop through candidates in order of ranking, filtering refusals/junk via anti-junk guard)
         let mut final_result = None;
         let mut models_used = Vec::new();
 
@@ -175,7 +207,7 @@ impl HuggingFaceOrchestrator {
             }
             models_used.push(model_id.clone());
 
-            let res = if let Some(fp) = file_path {
+            let mut res = if let Some(fp) = file_path {
                 self.task_processor
                     .process_file_analysis(Path::new(fp), &task_name, prompt, Some(model_id), options.clone())
                     .await
@@ -185,14 +217,26 @@ impl HuggingFaceOrchestrator {
                     .await
             };
 
-            let is_failure = res.status != "success" 
-                || res.content.contains("API request failed");
+            let guard_verdict = crate::fusion_engine::anti_junk_guard::evaluate_candidate_response(
+                prompt,
+                &res.content,
+                is_security_audit,
+            );
+            let is_failure = res.status != "success"
+                || res.content.contains("API request failed")
+                || !guard_verdict.accepted;
 
             if !is_failure {
+                res.content = guard_verdict.cleaned_text;
                 final_result = Some(res);
                 break;
             } else {
-                log::warn!("⚠️ Model '{}' failed or went offline. Details: {:?}. Trying next candidate...", model_id, res.error_message);
+                log::warn!(
+                    "⚠️ Model '{}' failed or rejected by anti-junk guard (err={:?}, reasons={:?}). Trying next candidate...",
+                    model_id,
+                    res.error_message,
+                    guard_verdict.rejection_reasons
+                );
             }
         }
 
