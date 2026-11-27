@@ -7,7 +7,6 @@
 use anyhow::{anyhow, bail, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::f32;
 use std::time::Instant;
 
 /// Contiguous linear preallocated Key-Value cache for single-session inference.

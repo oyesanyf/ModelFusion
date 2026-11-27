@@ -32,7 +32,4 @@ aho-corasick    = { workspace = true }
 image           = { workspace = true }
 regex           = { workspace = true }
 
-[build-dependencies]
-winres          = "0.1"
-
 

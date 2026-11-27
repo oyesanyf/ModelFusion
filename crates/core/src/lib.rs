@@ -11,9 +11,17 @@ pub mod rl;
 pub mod memory;
 pub mod kv_cache;
 pub mod wikiskill;
+pub mod rfchunt_bridge;
 
 pub use orchestrator::{HuggingFaceOrchestrator, OrchestrationResult};
-pub use providers::{create_provider, LLMProvider, ModelConfig, ProviderResult};
+pub use providers::{create_provider, is_refusal_response, LLMProvider, ModelConfig, ProviderResult};
+pub use fusion_engine::anti_junk_guard::{
+    evaluate_candidate_response, strip_think_blocks, GroundingReport, GuardVerdict,
+};
+pub use rfchunt_bridge::{
+    build_rfchunt_command, execute_rfchunt_command, RfcHuntBridgeConfig, RfcHuntCommandSpec,
+    RfcHuntRunOutput, ALLOWED_RFCHUNT_SUBCOMMANDS,
+};
 pub use task_handler::ComprehensiveTaskHandler;
 pub use task_processor::UniversalTaskProcessor;
 pub use web_research::{

@@ -2665,3 +2665,28 @@ cli.exe --graph-index --force --workspace "."
 ```powershell
 cli.exe "Explain the Pareto frontier model selection algorithm"
 ```
+
+---
+
+## RFCHunt Local Abliterated Security Bridge (`scripts/run_rfchunt_with_modelfusion.py`)
+
+Invokes allowlisted RFCHunt defensive workflows (`fast-ooda`, `ensemble-audit`, `freshness-watch`, `linux-poc`, `eligibility-check`, `check-drafts`, `qa-drafts`) against the local ModelFusion server (`http://127.0.0.1:5000`) and Ollama (`http://127.0.0.1:11434`) with `RFCHUNT_ENABLE_ANTI_JUNK_GUARD=1`, `<= 400ms` health probes, and zero Windows Registry/`PATH` mutations.
+
+| Flag | Default | Description |
+| :--- | :--- | :--- |
+| `--list-abliterated` | `false` | Print synchronized abliterated security model catalog & live ModelFusion/Ollama status JSON. |
+| `--rfchunt-root <PATH>` | `d:\harfile\rfchunt` | Local RFCHunt repository checkout path (`RFCHUNT_ROOT`). |
+| `--modelfusion-endpoint <URL>` | `http://127.0.0.1:5000` | Local ModelFusion HTTP server endpoint (`MODELFUSION_ENDPOINT`). |
+| `--ollama-endpoint <URL>` | `http://127.0.0.1:11434` | Local Ollama daemon endpoint (`LOCAL_OLLAMA_ENDPOINT`). |
+| `--hugos-cdp-url <URL>` | `http://127.0.0.1:9222` | HugOS Browser CDP endpoint for Draft-only HITL staging (`RFCHUNT_HUGOS_CDP_URL`). |
+| `--model <TAG>` | `None` | Explicit abliterated Ollama model override (e.g. `huihui_ai/foundation-sec-abliterated:8b`). |
+
+```powershell
+# List live status and synchronized abliterated security catalog
+python scripts/run_rfchunt_with_modelfusion.py --list-abliterated
+
+# Run RFCHunt fast-ooda or QA Phase draft audit backed by ModelFusion
+python scripts/run_rfchunt_with_modelfusion.py fast-ooda -- --target D:\path\to\repo --program common_codes
+python scripts/run_rfchunt_with_modelfusion.py qa-drafts -- --snapshot-json reports/ensemble_hunt/drafts_snapshot.json --strict
+python scripts/run_rfchunt_with_modelfusion.py check-drafts -- --probe-only
+```
